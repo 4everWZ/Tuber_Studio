@@ -39,6 +39,7 @@ COPY assets ./assets
 COPY third_party ./third_party
 COPY evaluations/semantic-cases.json ./evaluations/semantic-cases.json
 COPY tools/evaluate_semantics.py ./tools/evaluate_semantics.py
+COPY tools/evaluate_context.py ./tools/evaluate_context.py
 COPY tools/jetson/tts/serve.py tools/jetson/tts/prepare.py tools/jetson/tts/requirements.txt tools/jetson/tts/tts_infer.yaml ./tools/jetson/tts/
 COPY tools/jetson/initialize-data.py ./tools/jetson/initialize-data.py
 RUN /opt/studio-venv/bin/python -m pip install --index-url "${PYPI_INDEX}" --no-deps -e . \
