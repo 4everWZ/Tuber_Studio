@@ -288,11 +288,16 @@ class TTSProvider(Protocol):
     async def synthesize(self, text: str, voice: dict) -> Audio: ...
 
 
-def wav_duration(path: Path) -> float:
+def wav_duration(path: Path, *, require_speech=False) -> float:
     with wave.open(str(path), "rb") as audio:
         duration = audio.getnframes() / audio.getframerate()
         if not 0 < duration <= 90:
             raise ValueError("音频时长无效或超过90秒")
+        if require_speech:
+            pcm = audio.readframes(audio.getnframes())
+            silent = all(value == 128 for value in pcm) if audio.getsampwidth() == 1 else not any(pcm)
+            if silent:
+                raise ValueError("动态TTS返回全静音，未作为合成成功")
         return duration
 
 
@@ -355,7 +360,11 @@ class VoiceService:
         key = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         path = self.settings.audio / f"{key}.wav"
         if path.exists():
-            return Audio(path, await asyncio.to_thread(wav_duration, path), text)
+            try:
+                duration = await asyncio.to_thread(wav_duration, path, require_speech=True)
+                return Audio(path, duration, text)
+            except (ValueError, wave.Error):
+                path.unlink(missing_ok=True)
         response = await self.client.post(
             "/tts",
             json={
@@ -375,7 +384,7 @@ class VoiceService:
         temporary = path.with_suffix(".part")
         try:
             await asyncio.to_thread(temporary.write_bytes, response.content)
-            duration = await asyncio.to_thread(wav_duration, temporary)
+            duration = await asyncio.to_thread(wav_duration, temporary, require_speech=True)
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)

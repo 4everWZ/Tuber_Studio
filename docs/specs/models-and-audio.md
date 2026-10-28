@@ -20,7 +20,7 @@
 
 Think模式通过原生chat template和reasoning_format=deepseek分离推理与正式内容；只解析message.content进入台词／摘要，不将reasoning_content播报、存入对话或当作回复JSON，不靠字符串裁掉思考标签补成功。模板默认正式输出预算1024 tokens，包含模型推理与最终JSON，台词仍受角色字数上限约束；摘要预算独立，未完整stop即失败。延迟须实测，不能从NoThink短句推断Think实时性。
 
-预录限于允许资产目录，字幕对应实际录音，不冒充动态台词。缓存还覆盖 Provider 和参考音频内容，防止同路径换文件串用。合成失败按配置退回预录／静音且显示原因，不伪造成功。音色持久语义含 ID、Provider、版本、权重、参考资产、许可和有效参数；音频、训练数据、权重及下游用途分别核对，原型允许现有内容不授额外商用权。
+预录限于允许资产目录，字幕对应实际录音，不冒充动态台词。缓存还覆盖 Provider 和参考音频内容，防止同路径换文件串用。合成失败按配置退回预录／静音且显示原因，不伪造成功。动态TTS的全静音结果必须拒绝，即使上游返回HTTP200；缓存命中也检查，静音缓存删除后重新合成，不能算成功播报。音色持久语义含 ID、Provider、版本、权重、参考资产、许可和有效参数；音频、训练数据、权重及下游用途分别核对，原型允许现有内容不授额外商用权。
 
 ## Profile 选择与准入
 
@@ -33,6 +33,8 @@ Think模式通过原生chat template和reasoning_format=deepseek分离推理与�
 3. 后续再评估1B质量与共驻收益，同一语义门槛通过才可考虑替换；1B不是默认兜底许可。
 
 当前默认保留MiniCPM5-2B Q4_K_M权重、q4 KV和131072窗口。Qwen3.5-2B已作候选比较：Bartowski社区Q4_K_M量化、q8 KV，官方原生262144，本项目实际配置131072；不附带视觉encoder／mmproj，不由模型名称推断已有图像工作流。固定用例中它的短句更快，但回忆／摘要出现更明显事实错配，尚不替换默认；参数、Think与模板条件不同，不能当纯模型因果比较。证据见[候选结果](../../evaluations/results/qwen35-2b-single-system-seed42.json)。
+
+同题集成来源检索后，两者都答全：MiniCPM使用一次补答约70秒，Qwen无需补答约32秒；原始摘要中的事实错配仍存在，这证明外围证据层能补该例，不证明模型原始记忆已改善。见[MiniCPM结果](../../evaluations/results/grounded-minicpm5-2b-seed42.json)、[Qwen结果](../../evaluations/results/grounded-qwen35-2b-seed42.json)。Qwen已通过一次128K配置下的LLM／TTS共驻和两条非静音动态合成，短程观测不代表长输入或长时稳定；MiniCPM共驻合成仍有明显换页及CUDA分配失败，不能当作稳定直播Profile。见[Qwen资源结果](../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json)。这些测量中其他两个项目服务均已停止，不外推为与其他服务同时运行的结果。
 
 候选源模型为[Qwen固定版本](https://huggingface.co/Qwen/Qwen3.5-2B/tree/15852e8c16360a2fea060d615a32b45270f8a8fc)，量化来自[Bartowski固定版本](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF/tree/7d26695454df6de5fbcce2e58681e62dae06ce43)，不能冒称Qwen官方GGUF。下载按固定revision、大小、SHA256及真实GGUF架构／窗口验证，默认初始化只取所选模型；可显式准备候选而不切默认。
 

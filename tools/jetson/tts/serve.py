@@ -83,7 +83,13 @@ def release_after_run(original):
     def run(self, *args, **kwargs):
         iterator = original(self, *args, **kwargs)
         try:
-            yield from iterator
+            for sample_rate, audio in iterator:
+                audible = bool(audio.any()) if hasattr(audio, "any") else any(audio)
+                if not audible:
+                    raise RuntimeError(
+                        "TTS returned an empty or silent fallback instead of synthesized speech"
+                    )
+                yield sample_rate, audio
         finally:
             try:
                 iterator.close()
