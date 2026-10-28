@@ -1,0 +1,1077 @@
+{
+  "source": "f35d061",
+  "image": "sha256:82870c094ddeb41286bbfdc42e919b3268387487474d5e992dc30e9cd3b9c8c6",
+  "scope": "Temporary Qwen candidate: live restart persistence, complete non-silent TTS warm, and one real 120000-token acceptance probe with TTS resident.",
+  "temporary_profile": true,
+  "default_selection_decision": "pending",
+  "original_default": "MiniCPM5-2B/text",
+  "restoration_completed": true,
+  "profile": {
+    "model": "Qwen3.5-2B",
+    "weights": "Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+    "publisher": "bartowski/Qwen_Qwen3.5-2B-GGUF",
+    "publisher_revision": "7d26695454df6de5fbcce2e58681e62dae06ce43",
+    "weights_sha256": "57a1085840f497d764a7fc5d346922dbde961efb54cc792ea81d694fd846a1d8",
+    "native_context_tokens": 262144,
+    "actual_context_tokens": 131072,
+    "cache_type_k": "q8_0",
+    "cache_type_v": "q8_0",
+    "thinking": false,
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 2.0,
+    "repeat_penalty": 1.0,
+    "ctx_checkpoints": 0,
+    "cache_reuse": 0,
+    "context_shift": false
+  },
+  "activation": {
+    "elapsed_seconds": 26.363,
+    "health": {
+      "state": "active",
+      "active_provider": "llmqwen35",
+      "error": null,
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    }
+  },
+  "normal_container_restart": {
+    "elapsed_seconds": 26.232,
+    "persistent_mode": "live",
+    "health": {
+      "state": "active",
+      "active_provider": "llmqwen35",
+      "error": null,
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    }
+  },
+  "tts_warm": {
+    "event": "warm_result",
+    "elapsed_seconds": 9.565,
+    "text": "海风吹亮了小灯笼，我们慢慢逛夜市吧。",
+    "duration_seconds": 3.52,
+    "bytes": 225324,
+    "frames": 112640,
+    "sample_rate": 32000,
+    "channels": 1,
+    "sample_width": 2,
+    "rms_pcm16": 6637.341718503244,
+    "non_silent": true,
+    "memory": {
+      "baseline": {
+        "available_kib": 1469144,
+        "swap_used_kib": 486656,
+        "pswpin": 271729,
+        "pswpout": 733612,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 579756,
+        "swap_used_kib": 486656,
+        "pswpin": 271730,
+        "pswpout": 733612,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 533160,
+      "swapin_bytes": 4096,
+      "swapout_bytes": 0,
+      "maximum_rolling_25s_swap_bytes": 4096,
+      "oom_kill_delta": 0,
+      "samples": 19
+    }
+  },
+  "before_context": {
+    "health": {
+      "state": "active",
+      "active_provider": "tts",
+      "error": null,
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    },
+    "processes": [
+      "2225021             /opt/studio-venv/bin/python /workspace/tuber/tools/jetson/tts/serve.py -c /workspace/tuber/runtime/tts/tts_infer.yaml -a 127.0.0.1 -p 9011",
+      "2225125             /opt/llama/bin/llama-server -m /workspace/tuber/runtime/models/Qwen_Qwen3.5-2B-Q4_K_M.gguf --alias Qwen3.5-2B --host 127.0.0.1 --port 9015 --jinja --ctx-size 131072 --parallel 1 --fit off --n-gpu-layers 99 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --reasoning auto --temp 1.0 --top-p 1.0 --min-p 0.0 --batch-size 256 --ubatch-size 64 --cache-ram 0 --no-mmap --direct-io --top-k 20 --presence-penalty 2.0 --repeat-penalty 1.0 --ctx-checkpoints 0 --cache-reuse 0 --no-context-shift"
+    ]
+  },
+  "context_progress": [
+    {
+      "event": "prepared",
+      "requested_tokens": 120000,
+      "warmed_up": false,
+      "model": "Qwen3.5-2B",
+      "configured_context": 131072,
+      "configured_native_context": 262144,
+      "actual_context": 131072,
+      "actual_native_context": 262144,
+      "native_source": "broker GGUF metadata",
+      "mode": "live",
+      "markers": {
+        "HEAD": "HEAD_87ad45fc0eb9",
+        "MIDDLE": "MIDDLE_87ad45fc0eb9",
+        "TAIL": "TAIL_87ad45fc0eb9"
+      },
+      "middle_token_offset": 59992,
+      "tail_token_offset": 119987
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 5.152,
+      "memory": {
+        "available_kib": 415776,
+        "swap_used_kib": 486400,
+        "pswpin": 271762,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 10.172,
+      "memory": {
+        "available_kib": 397216,
+        "swap_used_kib": 486400,
+        "pswpin": 271765,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 15.191,
+      "memory": {
+        "available_kib": 400500,
+        "swap_used_kib": 486400,
+        "pswpin": 271773,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 20.211,
+      "memory": {
+        "available_kib": 391180,
+        "swap_used_kib": 486400,
+        "pswpin": 271773,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 25.231,
+      "memory": {
+        "available_kib": 374036,
+        "swap_used_kib": 486400,
+        "pswpin": 271775,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 30.251,
+      "memory": {
+        "available_kib": 376044,
+        "swap_used_kib": 486400,
+        "pswpin": 271775,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 35.271,
+      "memory": {
+        "available_kib": 341108,
+        "swap_used_kib": 486400,
+        "pswpin": 271784,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 40.292,
+      "memory": {
+        "available_kib": 326396,
+        "swap_used_kib": 486400,
+        "pswpin": 271784,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 45.312,
+      "memory": {
+        "available_kib": 324348,
+        "swap_used_kib": 486400,
+        "pswpin": 271784,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 50.331,
+      "memory": {
+        "available_kib": 362340,
+        "swap_used_kib": 486400,
+        "pswpin": 271785,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 55.352,
+      "memory": {
+        "available_kib": 335972,
+        "swap_used_kib": 486400,
+        "pswpin": 271786,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 60.374,
+      "memory": {
+        "available_kib": 337672,
+        "swap_used_kib": 486400,
+        "pswpin": 271786,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 65.395,
+      "memory": {
+        "available_kib": 326976,
+        "swap_used_kib": 486400,
+        "pswpin": 271786,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 70.415,
+      "memory": {
+        "available_kib": 309888,
+        "swap_used_kib": 486400,
+        "pswpin": 271795,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 75.437,
+      "memory": {
+        "available_kib": 292828,
+        "swap_used_kib": 486400,
+        "pswpin": 271795,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 80.466,
+      "memory": {
+        "available_kib": 316564,
+        "swap_used_kib": 486400,
+        "pswpin": 271795,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 85.485,
+      "memory": {
+        "available_kib": 309948,
+        "swap_used_kib": 486400,
+        "pswpin": 271795,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 90.506,
+      "memory": {
+        "available_kib": 295836,
+        "swap_used_kib": 486400,
+        "pswpin": 271803,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 95.525,
+      "memory": {
+        "available_kib": 291236,
+        "swap_used_kib": 486400,
+        "pswpin": 271803,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 100.545,
+      "memory": {
+        "available_kib": 303536,
+        "swap_used_kib": 486400,
+        "pswpin": 271804,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 105.565,
+      "memory": {
+        "available_kib": 290744,
+        "swap_used_kib": 486400,
+        "pswpin": 271804,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 110.585,
+      "memory": {
+        "available_kib": 266984,
+        "swap_used_kib": 486400,
+        "pswpin": 271805,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 115.605,
+      "memory": {
+        "available_kib": 257140,
+        "swap_used_kib": 486400,
+        "pswpin": 271805,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 120.626,
+      "memory": {
+        "available_kib": 249052,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 125.645,
+      "memory": {
+        "available_kib": 243172,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 130.685,
+      "memory": {
+        "available_kib": 272796,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 135.707,
+      "memory": {
+        "available_kib": 252060,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 140.728,
+      "memory": {
+        "available_kib": 247744,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 145.748,
+      "memory": {
+        "available_kib": 243064,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 150.769,
+      "memory": {
+        "available_kib": 239016,
+        "swap_used_kib": 486400,
+        "pswpin": 271813,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 155.789,
+      "memory": {
+        "available_kib": 245296,
+        "swap_used_kib": 486400,
+        "pswpin": 271821,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 160.809,
+      "memory": {
+        "available_kib": 238900,
+        "swap_used_kib": 486400,
+        "pswpin": 271821,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 165.831,
+      "memory": {
+        "available_kib": 228696,
+        "swap_used_kib": 486400,
+        "pswpin": 271821,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 170.853,
+      "memory": {
+        "available_kib": 243580,
+        "swap_used_kib": 486400,
+        "pswpin": 271821,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 175.874,
+      "memory": {
+        "available_kib": 223616,
+        "swap_used_kib": 486144,
+        "pswpin": 271873,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 180.894,
+      "memory": {
+        "available_kib": 221048,
+        "swap_used_kib": 486144,
+        "pswpin": 271873,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 185.914,
+      "memory": {
+        "available_kib": 190592,
+        "swap_used_kib": 486144,
+        "pswpin": 271873,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 190.935,
+      "memory": {
+        "available_kib": 186400,
+        "swap_used_kib": 486144,
+        "pswpin": 271873,
+        "pswpout": 733613,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 195.957,
+      "memory": {
+        "available_kib": 202252,
+        "swap_used_kib": 492544,
+        "pswpin": 271881,
+        "pswpout": 735193,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 200.977,
+      "memory": {
+        "available_kib": 193236,
+        "swap_used_kib": 494592,
+        "pswpin": 271894,
+        "pswpout": 735662,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "progress",
+      "stage": "completion",
+      "elapsed_seconds": 205.997,
+      "memory": {
+        "available_kib": 189268,
+        "swap_used_kib": 494592,
+        "pswpin": 271903,
+        "pswpout": 735662,
+        "oom_kill": 0
+      }
+    },
+    {
+      "event": "summary",
+      "accepted_requested_tokens": true,
+      "verified_120k_input": true,
+      "requested_tokens": 120000,
+      "deadline_seconds": 900,
+      "probe_elapsed_seconds": 207.037,
+      "elapsed_seconds": 207.043,
+      "reason": null,
+      "profile": {
+        "warmed_up": false,
+        "model": "Qwen3.5-2B",
+        "configured_context": 131072,
+        "configured_native_context": 262144,
+        "actual_context": 131072,
+        "actual_native_context": 262144,
+        "native_source": "broker GGUF metadata",
+        "mode": "live",
+        "markers": {
+          "HEAD": "HEAD_87ad45fc0eb9",
+          "MIDDLE": "MIDDLE_87ad45fc0eb9",
+          "TAIL": "TAIL_87ad45fc0eb9"
+        },
+        "middle_token_offset": 59992,
+        "tail_token_offset": 119987
+      },
+      "evidence": {
+        "input_counts": {
+          "tokens_evaluated": 120000,
+          "timings.prompt_n": 120000
+        },
+        "output_counts": {
+          "tokens_predicted": 4,
+          "timings.predicted_n": 4
+        },
+        "truncated": false,
+        "cache_n": 0,
+        "prompt_ms": 206417.188,
+        "predicted_ms": 258.644,
+        "generated_text": "Synthetic capacity filler"
+      },
+      "memory": {
+        "baseline": {
+          "available_kib": 586504,
+          "swap_used_kib": 486400,
+          "pswpin": 271759,
+          "pswpout": 733613,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 196028,
+          "swap_used_kib": 498944,
+          "pswpin": 271952,
+          "pswpout": 736804,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 184132,
+        "swapin_bytes": 790528,
+        "swapout_bytes": 13070336,
+        "maximum_rolling_25s_swap_bytes": 13393920,
+        "oom_kill_delta": 0,
+        "samples": 414
+      },
+      "broker_cleanup": null,
+      "limitation": "Synthetic input acceptance only; not a test of long-text recall, factual accuracy or persona quality."
+    }
+  ],
+  "context_summary": {
+    "event": "summary",
+    "accepted_requested_tokens": true,
+    "verified_120k_input": true,
+    "requested_tokens": 120000,
+    "deadline_seconds": 900,
+    "probe_elapsed_seconds": 207.037,
+    "elapsed_seconds": 207.043,
+    "reason": null,
+    "profile": {
+      "warmed_up": false,
+      "model": "Qwen3.5-2B",
+      "configured_context": 131072,
+      "configured_native_context": 262144,
+      "actual_context": 131072,
+      "actual_native_context": 262144,
+      "native_source": "broker GGUF metadata",
+      "mode": "live",
+      "markers": {
+        "HEAD": "HEAD_87ad45fc0eb9",
+        "MIDDLE": "MIDDLE_87ad45fc0eb9",
+        "TAIL": "TAIL_87ad45fc0eb9"
+      },
+      "middle_token_offset": 59992,
+      "tail_token_offset": 119987
+    },
+    "evidence": {
+      "input_counts": {
+        "tokens_evaluated": 120000,
+        "timings.prompt_n": 120000
+      },
+      "output_counts": {
+        "tokens_predicted": 4,
+        "timings.predicted_n": 4
+      },
+      "truncated": false,
+      "cache_n": 0,
+      "prompt_ms": 206417.188,
+      "predicted_ms": 258.644,
+      "generated_text": "Synthetic capacity filler"
+    },
+    "memory": {
+      "baseline": {
+        "available_kib": 586504,
+        "swap_used_kib": 486400,
+        "pswpin": 271759,
+        "pswpout": 733613,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 196028,
+        "swap_used_kib": 498944,
+        "pswpin": 271952,
+        "pswpout": 736804,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 184132,
+      "swapin_bytes": 790528,
+      "swapout_bytes": 13070336,
+      "maximum_rolling_25s_swap_bytes": 13393920,
+      "oom_kill_delta": 0,
+      "samples": 414
+    },
+    "broker_cleanup": null,
+    "limitation": "Synthetic input acceptance only; not a test of long-text recall, factual accuracy or persona quality."
+  },
+  "mid_context_residency_checks": [
+    {
+      "timestamp_monotonic": 564736.738634953,
+      "mode": "live",
+      "busy": true,
+      "qwen_running": true,
+      "tts_running": true,
+      "processes": [
+        "2225021             /opt/studio-venv/bin/python /workspace/tuber/tools/jetson/tts/serve.py -c /workspace/tuber/runtime/tts/tts_infer.yaml -a 127.0.0.1 -p 9011",
+        "2225125             /opt/llama/bin/llama-server -m /workspace/tuber/runtime/models/Qwen_Qwen3.5-2B-Q4_K_M.gguf --alias Qwen3.5-2B --host 127.0.0.1 --port 9015 --jinja --ctx-size 131072 --parallel 1 --fit off --n-gpu-layers 99 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --reasoning auto --temp 1.0 --top-p 1.0 --min-p 0.0 --batch-size 256 --ubatch-size 64 --cache-ram 0 --no-mmap --direct-io --top-k 20 --presence-penalty 2.0 --repeat-penalty 1.0 --ctx-checkpoints 0 --cache-reuse 0 --no-context-shift"
+      ]
+    },
+    {
+      "timestamp_monotonic": 564863.872325819,
+      "mode": "live",
+      "busy": true,
+      "qwen_running": true,
+      "tts_running": true,
+      "processes": [
+        "2225021             /opt/studio-venv/bin/python /workspace/tuber/tools/jetson/tts/serve.py -c /workspace/tuber/runtime/tts/tts_infer.yaml -a 127.0.0.1 -p 9011",
+        "2225125             /opt/llama/bin/llama-server -m /workspace/tuber/runtime/models/Qwen_Qwen3.5-2B-Q4_K_M.gguf --alias Qwen3.5-2B --host 127.0.0.1 --port 9015 --jinja --ctx-size 131072 --parallel 1 --fit off --n-gpu-layers 99 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --reasoning auto --temp 1.0 --top-p 1.0 --min-p 0.0 --batch-size 256 --ubatch-size 64 --cache-ram 0 --no-mmap --direct-io --top-k 20 --presence-penalty 2.0 --repeat-penalty 1.0 --ctx-checkpoints 0 --cache-reuse 0 --no-context-shift"
+      ]
+    }
+  ],
+  "after_context": {
+    "health": {
+      "state": "active",
+      "active_provider": "llmqwen35",
+      "error": null,
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    },
+    "processes": [
+      "2225021             /opt/studio-venv/bin/python /workspace/tuber/tools/jetson/tts/serve.py -c /workspace/tuber/runtime/tts/tts_infer.yaml -a 127.0.0.1 -p 9011",
+      "2225125             /opt/llama/bin/llama-server -m /workspace/tuber/runtime/models/Qwen_Qwen3.5-2B-Q4_K_M.gguf --alias Qwen3.5-2B --host 127.0.0.1 --port 9015 --jinja --ctx-size 131072 --parallel 1 --fit off --n-gpu-layers 99 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --reasoning auto --temp 1.0 --top-p 1.0 --min-p 0.0 --batch-size 256 --ubatch-size 64 --cache-ram 0 --no-mmap --direct-io --top-k 20 --presence-penalty 2.0 --repeat-penalty 1.0 --ctx-checkpoints 0 --cache-reuse 0 --no-context-shift"
+    ],
+    "same_inference_processes": true,
+    "persistent_mode": "live"
+  },
+  "handoff_memory": {
+    "monotonic": 564984.075268424,
+    "available_kib": 228948,
+    "swap_used_kib": 498432,
+    "pswpin": 272154,
+    "pswpout": 736804,
+    "oom_kill": 0
+  },
+  "statistics": {
+    "elapsed_seconds": 207.043,
+    "prefill_seconds": 206.41718799999998,
+    "minimum_available_mib": 179.81640625,
+    "swapin_mib": 0.75390625,
+    "swapout_mib": 12.46484375,
+    "maximum_rolling_25s_swap_mib": 12.7734375,
+    "oom_kill_delta": 0,
+    "handoff_available_mib": 223.58203125
+  },
+  "conditions": {
+    "other_projects_running": false,
+    "external_state_note": "Unrelated project containers were already externally stopped; this agent did not stop or alter them.",
+    "restart_scope": "Only tuber-studio was normally restarted, first for temporary profile selection and then to verify persistent live startup. No restart or unload occurred between warm and the long probe or before the browser handoff."
+  },
+  "limitations": [
+    "Synthetic token input acceptance, not marker retrieval, long-text recall, persona or factual quality.",
+    "Small memory margin: minimum179.8MiB above the unchanged160MiB guard; not zero-swap and not general load headroom.",
+    "The helper warmed_up=false means it did not invoke typed warmup; TTS had already generated the complete non-silent3.52s waveform immediately beforehand.",
+    "The live pair remained warm for a separate browser LLM-to-TTS check; no final default selection is implied.",
+    "After the capacity probe and GPU handoff, an invalid browser observer cancelled generation and caused automatic LLM reload from PID2225125 to2227875; TTS remained2225021. The later browser run is not continuous same-LLM hot state. The120K probe itself retained both original PIDs and remains valid."
+  ],
+  "private_recovery": {
+    "backup_exists": true,
+    "backup_file_mode": "0600",
+    "backup_contents_included": false
+  },
+  "browser_transition": {
+    "context_probe_llm_pid": 2225125,
+    "after_invalid_observer_cancel_llm_pid": 2227875,
+    "unchanged_tts_pid": 2225021,
+    "cause": "The first browser observer ended early and cancelled generating; broker request cancellation stopped the owned LLM, and the next valid browser attempt automatically reloaded it.",
+    "continuous_same_llm_hot_state": false,
+    "long_probe_itself_remains_valid": true,
+    "boundary": "The valid browser attempt is a separate run with the same resident TTS process and an automatically reloaded LLM; do not merge it into same-LLM-process continuity after120K."
+  },
+  "restoration": {
+    "config_bytes_restored": true,
+    "health": {
+      "state": "active",
+      "active_provider": "llm2b",
+      "error": null,
+      "mode": "text",
+      "selected_provider": "llm2b",
+      "kv_cache_type": "q4_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    },
+    "verification": {
+      "auto_browse": false,
+      "auto_reply": false,
+      "runtime_state": "stopped",
+      "queue_depth": 0,
+      "model": "MiniCPM5-2B",
+      "configured_context_tokens": 131072,
+      "native_context_tokens": 131072,
+      "persistent_mode": "text",
+      "configured_kv": "q4_0",
+      "actual_model_alias": "MiniCPM5-2B",
+      "actual_context_tokens": 131072
+    },
+    "summary": "Exact original configuration bytes and0600 permissions restored; only tuber-studio normally restarted. MiniCPM5-2B/text/actual131072/q4_0 active, Qwen and TTS stopped, runtime stopped, queue empty, auto browse/reply disabled."
+  },
+  "review_status": "Candidate evidence only; original default restored, no Qwen promotion."
+}

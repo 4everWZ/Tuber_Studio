@@ -36,6 +36,8 @@ Think模式通过原生chat template和reasoning_format=deepseek分离推理与�
 
 同题集成来源检索后，两者都答全：MiniCPM使用一次补答约70秒，Qwen无需补答约32秒；原始摘要中的事实错配仍存在，这证明外围证据层能补该例，不证明模型原始记忆已改善。见[MiniCPM结果](../../evaluations/results/grounded-minicpm5-2b-seed42.json)、[Qwen结果](../../evaluations/results/grounded-qwen35-2b-seed42.json)。Qwen已通过一次128K配置下的LLM／TTS共驻和两条非静音动态合成，短程观测不代表长输入或长时稳定；MiniCPM共驻合成仍有明显换页及CUDA分配失败，不能当作稳定直播Profile。见[Qwen资源结果](../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json)。这些测量中其他两个项目服务均已停止，不外推为与其他服务同时运行的结果。
 
+Qwen候选在实际131072窗口、TTS已合成预热且同进程驻留时，约207秒完整接收120000输入tokens并输出4 tokens，未截断；最低可用内存约180MiB，有少量换页，无系统OOM。正常容器重启可恢复live及两进程。见[长输入与恢复结果](../../evaluations/results/qwen35-2b-live-context-f35d061.json)。独立浏览器闭环也已实际completed：短句LLM约4.0秒、动态TTS约5.0秒、非静音播放2.58秒；首轮观察脚本错误取消了生成，broker自动清理并重载LLM，修正观察器后的有效播放使用原TTS及重载LLM，不能拼接为同LLM进程长输入后的连续热态证明。见[播放结果](../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)。两项证明容量接收及一次短句闭环，不证明长文召回或持续稳定；RAM余量紧，默认仍待取舍确认。
+
 候选源模型为[Qwen固定版本](https://huggingface.co/Qwen/Qwen3.5-2B/tree/15852e8c16360a2fea060d615a32b45270f8a8fc)，量化来自[Bartowski固定版本](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF/tree/7d26695454df6de5fbcce2e58681e62dae06ce43)，不能冒称Qwen官方GGUF。下载按固定revision、大小、SHA256及真实GGUF架构／窗口验证，默认初始化只取所选模型；可显式准备候选而不切默认。
 
 共驻仅表示权重可同时保留，不放开生成并发。默认 active_llm_generations=1、active_tts_jobs=1，需要时串行；直播、评论和试听共享配额，直播高于离线工作。逻辑 subagent 不加载独立驻留模型。

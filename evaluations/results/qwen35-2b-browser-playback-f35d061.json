@@ -1,0 +1,109 @@
+{
+  "source": "f35d061",
+  "image": "sha256:82870c094ddeb41286bbfdc42e919b3268387487474d5e992dc30e9cd3b9c8c6",
+  "model": "Qwen3.5-2B",
+  "profile": "Q4_K_M weights / q8 K+V / 131072 context / NoThink / live",
+  "input": "大肥鱼，今天吃饭了吗？请用一句话回答。",
+  "temporary_candidate": true,
+  "result": {
+    "passed": true,
+    "failure": null,
+    "job": {
+      "id": "e74e23b3-3085-4f53-a0cc-efabe1c9ea4a",
+      "status": "completed",
+      "text": "没呀，还在深海思考呢！",
+      "audio_ref": "/media/audio/f4e203ca1029b99831d0eab958f30accc699133e5ed3e0678274629660e1f57e.wav",
+      "llm_ms": 4024,
+      "tts_ms": 4957,
+      "error": null
+    },
+    "acknowledgements": [
+      {
+        "type": "started",
+        "job_id": "e74e23b3-3085-4f53-a0cc-efabe1c9ea4a"
+      },
+      {
+        "type": "ended",
+        "job_id": "e74e23b3-3085-4f53-a0cc-efabe1c9ea4a"
+      }
+    ],
+    "audioEvidence": [
+      {
+        "type": "playing",
+        "trusted": true,
+        "currentTime": 0,
+        "duration": 2.58,
+        "paused": false,
+        "muted": false,
+        "volume": 1,
+        "src": "http://127.0.0.1:8021/media/audio/f4e203ca1029b99831d0eab958f30accc699133e5ed3e0678274629660e1f57e.wav"
+      },
+      {
+        "type": "ended",
+        "trusted": true,
+        "currentTime": 2.58,
+        "duration": 2.58,
+        "paused": true,
+        "muted": false,
+        "volume": 1,
+        "src": "http://127.0.0.1:8021/media/audio/f4e203ca1029b99831d0eab958f30accc699133e5ed3e0678274629660e1f57e.wav"
+      }
+    ],
+    "samples": {
+      "duration": 2.58,
+      "channels": 1,
+      "sample_rate": 44100,
+      "peak": 0.8051536679267883,
+      "rms": 0.18858604417512354,
+      "samples": 113778
+    },
+    "observer_valid": true,
+    "final_status": {
+      "state": "stopped",
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "busy": false,
+      "overlay_connected": false,
+      "queue_length": 0,
+      "last_played_id": "e74e23b3-3085-4f53-a0cc-efabe1c9ea4a",
+      "auto_browse": false,
+      "auto_reply": false
+    },
+    "process_continuity": {
+      "long_probe_llm_pid": 2225125,
+      "current_llm_pid": 2227875,
+      "llm_same_process": false,
+      "long_probe_tts_pid": 2225021,
+      "current_tts_pid": 2225021,
+      "tts_same_process": true,
+      "limitation": "First observer-invalid cancellation triggered broker-owned LLM cleanup/reload. Valid E2E used reloaded LLM with original TTS; it does not establish same-LLM-process continuity after the 120000-token probe."
+    },
+    "observer_fix": "Replaced async waitForFunction predicate with explicit awaited jobs GET polling until terminal status, bounded by a separate 180-second deadline."
+  },
+  "prior_invalid_observer": {
+    "passed": false,
+    "failure": null,
+    "job": {
+      "id": "4bb91a3b-3f60-410d-83bf-7df61e9466d9",
+      "status": "generating",
+      "text": null,
+      "audio_ref": null,
+      "llm_ms": null,
+      "tts_ms": null,
+      "error": null
+    },
+    "acknowledgements": [],
+    "audioEvidence": [],
+    "samples": null,
+    "observer_valid": false,
+    "observer_error": "Async waitForFunction predicate returned early; observer finally stopped and cancelled a generating job. Not a model failure.",
+    "final_job_status": "cancelled",
+    "final_job_error": "停止会话"
+  },
+  "limitations": [
+    "One short mock event and actual browser playback; no platform publication or long-run stability claim.",
+    "LLM automatically reloaded after the invalid observer cancelled its request. TTS remained resident; no same-LLM-process continuity from the 120000-token probe is claimed.",
+    "samples describe browser-decoded audio, resampled to 44100 Hz; nonzero PCM and trusted playback events are separate evidence.",
+    "Other project containers were already stopped during the hardware comparison."
+  ]
+}
