@@ -6,6 +6,7 @@ const model = {
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, draftDirty: false, draftId: null, policy: null,
+  importPreviewSignature: null, categorySaving: new Set(),
 };
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
@@ -78,6 +79,7 @@ async function busy(button, action) {
     button.disabled = wasDisabled; button.removeAttribute("aria-busy");
     if (model.status) renderControls();
     if (model.status?.context) renderContext(model.status.context);
+    if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
     if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) renderDraft();
   }
 }
@@ -147,9 +149,28 @@ function renderStatus(status) {
   const last = status.last_played;
   $("last-played").textContent = last ? typeof last === "string" ? last : `${last.text || last.spoken_text || ""}${last.completed_at ? ` · ${time(last.completed_at)}` : ""}` : "暂无已确认播放记录。";
   const providers = status.providers || {};
-  describe($("provider-summary"), [["平台", "Mock · 真实直播接入后置"], ["LLM", display(providers.llm)], ["TTS", display(providers.tts)], ["播放器", status.overlay_connected ? "已连接" : "未连接"], ["会话", status.session_id || "未启动"]]);
+  describe($("provider-summary"), [["平台", "Mock · 真实直播接入后置"], ["LLM", display(providers.llm)], ["TTS", display(providers.tts)], ...(status.inference ? [["推理资源", inferenceLabel(status.inference)]] : []), ["播放器", status.overlay_connected ? "已连接" : "未连接"], ["会话", status.session_id || "未启动"]]);
   renderCharacterImage(); renderControls();
   renderContext(status.context);
+  renderInference(status.inference);
+}
+function inferenceLabel(inference) {
+  const models = {llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", tts: "语音模型"};
+  const prefix = inference.mode === "exclusive" ? "GPU 互斥 · " : "";
+  if (inference.switching_to) return `${prefix}正在加载 ${models[inference.switching_to] || inference.switching_to}…`;
+  if (inference.error) return `${prefix}资源切换失败`;
+  if (["loading", "switching", "starting"].includes(inference.state)) return `${prefix}模型加载中…`;
+  const active = inference.active ?? inference.active_provider;
+  return active ? `${prefix}${models[active] || active} 驻留` : `${prefix}模型已休眠`;
+}
+function renderInference(inference) {
+  $("inference-state").hidden = !inference;
+  if (!inference) { $("inference-error").hidden = true; return; }
+  $("inference-state").textContent = inferenceLabel(inference);
+  $("inference-state").classList.toggle("bad", !!inference.error);
+  $("inference-state").title = inference.switching_to ? "资源切换期间任务等待模型加载。上下文容量验证与模型驻留状态分别记录。" : "驻留或休眠表示模型资源状态，不改变已验证的上下文容量。";
+  $("inference-error").hidden = !inference.error;
+  $("inference-error").textContent = inference.error ? `推理资源切换失败：${inference.error}` : "";
 }
 function tokenCount(value) {
   if (value == null) return "未报告";
@@ -285,6 +306,10 @@ async function refreshComments() {
 }
 function renderComments() {
   const tbody = $("comments"); $("comment-count").textContent = `(${model.comments.length})`;
+  // Preserve an open category menu or an in-flight save while background polling continues.
+  if (model.categorySaving.size || document.activeElement?.matches("#comments .category-select")) {
+    updateCommentSelection(); renderDraft(); return;
+  }
   if (!model.comments.length) empty(tbody, 4, "暂无匹配评论。读取视频或导入已有评论后开始。");
   else {
     tbody.replaceChildren();
@@ -294,10 +319,32 @@ function renderComments() {
       check.onchange = () => { check.checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id); updateCommentSelection(); }; cell(row, check);
       const text = node("button", comment.content, "comment-link"); text.onclick = () => selectComment(comment.id);
       cell(row, text, `${comment.display_name || "匿名观众"} · ${comment.platform_user_id || "未知 ID"} · ${comment.video_id || ""}${comment.like_count != null ? ` · ${comment.like_count} 赞` : ""}`);
-      cell(row, label(comment.category || "general")); cell(row, comment.draft ? badge(comment.draft.status) : "未生成"); tbody.append(row);
+      const categorySelect = node("select", null, "category-select");
+      categorySelect.setAttribute("aria-label", `评论 ${comment.comment_id} 的分类`);
+      ["question", "suggestion", "interaction", "spam", "general"].forEach(value => {
+        const option = node("option", label(value)); option.value = value; categorySelect.append(option);
+      });
+      categorySelect.value = comment.category || "general";
+      const categoryCell = cell(row, categorySelect);
+      const categoryFeedback = node("small", comment.category_source === "operator" ? "人工分类" : "", "cell-sub");
+      categoryFeedback.setAttribute("aria-live", "polite"); categoryCell.append(categoryFeedback);
+      categorySelect.onchange = () => saveCommentCategory(comment, categorySelect, categoryFeedback);
+      cell(row, comment.draft ? badge(comment.draft.status) : "未生成"); tbody.append(row);
     });
   }
   updateCommentSelection(); renderDraft();
+}
+async function saveCommentCategory(comment, select, feedback) {
+  const previous = comment.category || "general", category = select.value;
+  model.categorySaving.add(comment.id); select.disabled = true; feedback.textContent = "保存中…";
+  try {
+    const result = await api(`/api/comments/${encodeURIComponent(comment.id)}/category`, {method: "PUT", body: {category}});
+    const current = model.comments.find(item => item.id === comment.id);
+    if (current) { current.category = result.category || category; current.category_source = "operator"; }
+    comment.category = result.category || category; comment.category_source = "operator";
+    select.value = comment.category; feedback.textContent = "人工分类 · 已保存";
+  } catch (error) { select.value = previous; feedback.textContent = "保存失败，可重试"; notice(error.message, true); }
+  finally { model.categorySaving.delete(comment.id); select.disabled = false; }
 }
 function updateCommentSelection() {
   $("selected-comment-count").textContent = `已选 ${model.selectedComments.size} 条`;
@@ -463,16 +510,58 @@ $("fetch-comments-form").onsubmit = event => {
     } catch (error) { $("fetch-state").textContent = `读取失败：${error.message}。可重试或导入已有评论。`; throw error; }
   });
 };
+function readImportPayload() {
+  const raw = $("import-comments").value.trim(), payload = {video_id: $("import-video").value.trim()};
+  if (!payload.video_id || !raw) throw new Error("请填写视频标识和评论数据");
+  if (raw.startsWith("[") || raw.startsWith("{")) {
+    let value; try { value = JSON.parse(raw); } catch (error) { throw new Error(`评论 JSON 格式错误：${error.message}`); }
+    payload.items = Array.isArray(value) ? value : value.items;
+    if (!Array.isArray(payload.items)) throw new Error("JSON 必须是评论数组，或含 items 数组的对象");
+  } else payload.csv_text = raw;
+  const mapping = $("import-mapping").value.trim();
+  if (mapping) {
+    try { payload.field_mapping = JSON.parse(mapping); } catch (error) { throw new Error(`字段映射 JSON 格式错误：${error.message}`); }
+    if (!payload.field_mapping || typeof payload.field_mapping !== "object" || Array.isArray(payload.field_mapping)) throw new Error("字段映射必须是 JSON 对象");
+    const targets = ["comment_id", "platform_user_id", "display_name", "content", "like_count", "created_at"];
+    Object.entries(payload.field_mapping).forEach(([target, source]) => {
+      if (!targets.includes(target)) throw new Error(`不支持的目标字段：${target}`);
+      if (typeof source !== "string" || !source.trim()) throw new Error(`${target} 的来源字段名必须是非空字符串`);
+    });
+  }
+  return payload;
+}
+function invalidateImportPreview() {
+  model.importPreviewSignature = null; $("submit-import").disabled = true;
+  $("import-preview").hidden = true; $("import-preview-state").textContent = "输入已变更，请重新预览。";
+}
+["import-video", "import-comments", "import-mapping"].forEach(id => { $(id).addEventListener("input", invalidateImportPreview); });
+$("preview-import").onclick = () => busy($("preview-import"), async () => {
+  if (!$("import-comments-form").reportValidity()) return;
+  invalidateImportPreview(); $("import-preview-state").textContent = "正在规范化并预览数据…";
+  try {
+    const payload = readImportPayload(), signature = JSON.stringify(payload);
+    const result = await api("/api/comments/import/preview", {method: "POST", body: payload});
+    let stillCurrent = false; try { stillCurrent = JSON.stringify(readImportPayload()) === signature; } catch { /* Input changed while previewing. */ }
+    if (!stillCurrent) { invalidateImportPreview(); return; }
+    const items = list(result); const tbody = $("import-preview-rows"); tbody.replaceChildren();
+    if (!items.length) empty(tbody, 5, "没有可预览的数据。");
+    else items.slice(0, 10).forEach(item => {
+      const row = node("tr"); cell(row, item.comment_id); cell(row, item.platform_user_id || "未知 ID", item.display_name || "匿名观众");
+      cell(row, item.content); cell(row, item.like_count ?? 0); cell(row, item.created_at || "—"); tbody.append(row);
+    });
+    $("import-preview").hidden = false;
+    $("import-preview-state").textContent = `共 ${result.total ?? items.length} 条，预览前 ${Math.min(items.length, 10)} 条；尚未写入。`;
+    model.importPreviewSignature = signature; $("submit-import").disabled = !items.length;
+  } catch (error) { $("import-preview-state").textContent = `预览失败：${error.message}`; throw error; }
+});
 $("import-comments-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    const raw = $("import-comments").value.trim(); const payload = {video_id: $("import-video").value.trim()};
-    if (raw.startsWith("[") || raw.startsWith("{")) {
-      let value; try { value = JSON.parse(raw); } catch (error) { throw new Error(`评论 JSON 格式错误：${error.message}`); }
-      payload.items = Array.isArray(value) ? value : value.items;
-      if (!Array.isArray(payload.items)) throw new Error("JSON 必须是评论数组，或含 items 数组的对象");
-    } else payload.csv_text = raw;
+  event.preventDefault(); busy(event.submitter || $("submit-import"), async () => {
+    const payload = readImportPayload();
+    if (!model.importPreviewSignature || JSON.stringify(payload) !== model.importPreviewSignature) throw new Error("请先预览当前数据，再提交导入");
     const result = await api("/api/comments/import", {method: "POST", body: payload});
-    $("filter-video").value = payload.video_id; notice(`导入 ${result.imported ?? 0} 条评论。`); await refreshComments();
+    model.importPreviewSignature = null; $("submit-import").disabled = true;
+    $("import-preview-state").textContent = `已导入 ${result.imported ?? 0} 条${result.duplicates != null ? `，重复 ${result.duplicates} 条` : ""}。修改数据后可再次预览。`;
+    $("filter-video").value = result.video_id || payload.video_id; notice(`导入 ${result.imported ?? 0} 条评论。`); await refreshComments();
   });
 };
 $("filter-comments").onclick = () => busy($("filter-comments"), refreshComments);
