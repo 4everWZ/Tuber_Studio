@@ -283,6 +283,56 @@ def create_app(settings=None, adapter=None):
             return runtime.context.status(comments.context_scope(video_id, thread_id), runtime.character)
         return runtime.context.status()
 
+    @app.get("/api/retention", dependencies=[Depends(require_admin)])
+    async def retention_policy():
+        return runtime.retention.policy() | {"error": runtime.retention_error}
+
+    @app.put("/api/retention", dependencies=[Depends(require_admin)])
+    async def retention_settings(data: dict = Body(...)):
+        if set(data) != {"days"}:
+            raise ValueError("仅接受days；null表示不自动清理")
+        return runtime.retention.set_policy(data["days"])
+
+    def retention_arguments(data, *, cleanup=False):
+        if set(data) - ({"before", "confirm"} if cleanup else {"before"}):
+            raise ValueError("未知清理参数")
+        if cleanup and data.get("confirm") is not True:
+            raise ValueError("清理不可恢复，请先预览并明确确认")
+        return data.get("before")
+
+    @app.post("/api/retention/preview", dependencies=[Depends(require_admin)])
+    async def retention_preview(data: dict = Body(...)):
+        return runtime.retention.preview(retention_arguments(data))
+
+    @app.post("/api/retention/cleanup", dependencies=[Depends(require_admin)])
+    async def retention_cleanup(data: dict = Body(...)):
+        before = retention_arguments(data, cleanup=True)
+        if runtime.current_id or runtime.queue or runtime.generation_lock.locked():
+            raise HTTPException(409, "正在生成或播放，请暂停并等待当前任务结束后清理")
+        return await runtime.cleanup_retention(before)
+
+    @app.post("/api/context/rebuild", dependencies=[Depends(require_admin)])
+    async def rebuild_context(data: dict = Body(...)):
+        if set(data) != {"scope", "video_id", "thread_id"} or data.get("scope") != "comments":
+            raise ValueError("请指定comments、video_id和thread_id，仅重建单楼")
+        video_id, thread_id = data.get("video_id"), data.get("thread_id")
+        scope = comments.context_scope(video_id, thread_id)
+        if runtime.current_id or runtime.queue or runtime.generation_lock.locked():
+            raise HTTPException(409, "正在生成或播放，请等待当前任务结束后重建")
+        async with runtime.generation_lock:
+            window = store.one(
+                "SELECT history FROM context_windows WHERE key=?",
+                (runtime.context.key(scope, runtime.character),),
+            )
+            if window and json.loads(window["history"]):
+                raise HTTPException(409, "当前楼已有上下文，无需覆盖重建")
+            if not store.one(
+                "SELECT id FROM comments WHERE platform='bilibili' AND video_id=? AND thread_id=?",
+                (video_id, thread_id),
+            ):
+                raise HTTPException(404, "本地没有该楼原文，请重新读取或导入评论")
+            return await comments.rebuild_context(video_id, thread_id)
+
     @app.post("/api/context/compact", dependencies=[Depends(require_admin)])
     async def compact(data: dict = Body(...)):
         if runtime.current_id or runtime.queue:

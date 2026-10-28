@@ -35,8 +35,8 @@ class Platform:
 
 @pytest.fixture
 async def comments(settings, store, runtime, monkeypatch):
-    async def generate(scope, character, event, relationship=None, mode="live"):
-        messages = await runtime.context.prepare(scope, character, event, relationship, mode)
+    async def generate(scope, character, event, relationship=None, mode="live", *, context=None):
+        messages = await (context or runtime.context).prepare(scope, character, event, relationship, mode)
         reply = await runtime.llm.generate(messages, character, event["event_id"], event["text"])
         return reply, {"sources": [], "missing": [], "retried": False, "memory_kind": "role_story"}
 

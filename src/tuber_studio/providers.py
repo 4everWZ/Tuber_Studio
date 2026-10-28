@@ -80,6 +80,7 @@ class LLMProvider(Protocol):
         self, messages: list[dict], character: dict, event_id: str, source_text: str | None = None
     ) -> Reply: ...
     async def count_tokens(self, messages: list[dict]) -> int: ...
+    async def prefill(self, messages: list[dict]) -> bool: ...
     async def summarize(self, messages: list[dict], *, max_tokens: int | None = None) -> str: ...
     async def health(self) -> dict: ...
     async def close(self) -> None: ...
@@ -167,6 +168,38 @@ class LlamaCppProvider:
 
     async def count_tokens(self, messages):
         return await self._token_count(messages)
+
+    async def prefill(self, messages):
+        """Condition the real model on restored source text; discard its one token."""
+        await self.ensure_capacity()
+        messages = single_system_messages(messages)
+        tokens = await self.count_tokens(messages)
+        if tokens + 1 > self.config["context_tokens"] * 95 // 100:
+            raise ContextWindowExceeded("重建输入超出真实token预算")
+        response = await self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": self.config.get("model", "local"),
+                "messages": messages,
+                "max_tokens": 1,
+                "temperature": 0,
+                "cache_prompt": True,
+                "stream": False,
+                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
+            },
+            timeout=httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5),
+        )
+        response.raise_for_status()
+        data = response.json()
+        usage, choices = data.get("usage", {}), data.get("choices", [])
+        if (
+            type(usage.get("prompt_tokens")) is not int
+            or usage["prompt_tokens"] != tokens
+            or not choices
+            or choices[0].get("finish_reason") not in {"stop", "length"}
+        ):
+            raise ValueError("模型未确认完整原文prefill，未安装重建历史")
+        return True
 
     async def summarize(self, messages, *, max_tokens=None):
         await self.ensure_capacity()
@@ -259,6 +292,9 @@ class DemoProvider:
 
     async def count_tokens(self, messages):
         return sum(approx_token_count(m["content"]) + 8 for m in messages)
+
+    async def prefill(self, messages):
+        return False
 
     async def summarize(self, messages, *, max_tokens=None):
         raise ValueError("离线诊断Provider没有模型摘要能力，请连接真实LLM")

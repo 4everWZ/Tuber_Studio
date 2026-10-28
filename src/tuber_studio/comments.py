@@ -392,15 +392,10 @@ class Comments:
     def _live_pending(self):
         return self.runtime.state in {"live", "paused"} and (self.runtime.queue or self.runtime.current_id)
 
-    async def _process_comment(self, row, character, automatic):
-        cid = row["id"]
-        row = self.store.one("SELECT * FROM comments WHERE id=?", (cid,))
-        if row is None:
-            raise ValueError("来源评论不存在")
-        if row["category"] == "spam" or self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
-            return
-        event = {
-            "event_id": f"comment:{cid}",
+    @staticmethod
+    def _comment_event(row):
+        return {
+            "event_id": f"comment:{row['id']}",
             "text": row["content"],
             "display_name": row["display_name"],
             "platform_user_id": row["platform_user_id"],
@@ -409,7 +404,66 @@ class Comments:
             "thread_id": row["thread_id"],
             "parent_comment_id": row["parent_comment_id"],
             "platform_comment_id": row["comment_id"],
+            "source_created_at": row["created_at"],
+            "source_imported_at": row["imported_at"],
         }
+
+    def _thread_sources(self, video_id, thread_id, platform, exclude_id=None):
+        self.context_scope(video_id, thread_id, platform)
+        return [
+            row
+            for row in self.store.all(
+                "SELECT * FROM comments WHERE platform=? AND video_id=? AND thread_id=? ORDER BY id",
+                (platform, video_id, thread_id),
+            )
+            if row["id"] != exclude_id and row["content"].strip()
+        ]
+
+    def _check_sources(self, rows, video_id, thread_id, platform):
+        current = {row["id"]: row for row in self._thread_sources(video_id, thread_id, platform)}
+        if any(row["id"] not in current or current[row["id"]]["content"] != row["content"] for row in rows):
+            raise ValueError("楼原文在重建期间已清理或变化，未安装上下文")
+
+    async def rebuild_context(self, video_id, thread_id, character=None, *, platform="bilibili"):
+        """Caller owns generation_lock; rebuild only retained originals, never old drafts."""
+        character = character or self.runtime.character
+        scope = self.context_scope(video_id, thread_id, platform)
+        context = self.runtime.context
+        previous = context.existing(scope, character)
+        if previous and json.loads(previous["history"]):
+            raise ValueError("当前楼已有非空上下文，请先清除后再重建")
+        rows = self._thread_sources(video_id, thread_id, platform)
+        if not rows:
+            raise ValueError("当前楼没有保留的原始评论，不能重建；不会自动联网取回")
+        candidate = context.source_candidate(scope, character, [self._comment_event(row) for row in rows])
+        try:
+            messages = await candidate.prepare(scope, character, None, mode="comment_draft")
+            prefilled = await self.runtime.llm.prefill(messages)
+            self._check_sources(rows, video_id, thread_id, platform)
+            context.install_candidate(scope, character, candidate)
+            status = context.status(scope, character)
+            return {
+                "rebuilt": True,
+                "prefilled": prefilled,
+                "source_count": len(rows),
+                "scope": scope,
+                "input_tokens": status["active_tokens"],
+                "compacted": bool(status["compact_count"]),
+                "message": "已从本楼原文重建并完成真实模型prefill"
+                if prefilled
+                else "已恢复本楼原文；演示模式没有真实模型prefill",
+            }
+        finally:
+            candidate.store.close()
+
+    async def _process_comment(self, row, character, automatic):
+        cid = row["id"]
+        row = self.store.one("SELECT * FROM comments WHERE id=?", (cid,))
+        if row is None:
+            raise ValueError("来源评论不存在")
+        if row["category"] == "spam" or self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
+            return
+        event = self._comment_event(row)
         scope = self.context_scope(row["video_id"], row["thread_id"], row["platform"])
         while True:
             while self._live_pending():
@@ -421,36 +475,74 @@ class Comments:
                 # have produced a draft. Reviewed/published drafts are immutable here.
                 if self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
                     return
-                reply, check = await self.runtime.generate_reply(
-                    scope, character, event, mode="comment_draft"
+                context = self.runtime.context
+                previous = context.existing(scope, character)
+                sources = (
+                    self._thread_sources(row["video_id"], row["thread_id"], row["platform"], cid)
+                    if (not previous or not json.loads(previous["history"]))
+                    else []
                 )
-                cursor = self.store.execute(
-                    "INSERT OR IGNORE INTO drafts(comment_id,text,status,character_id,"
-                    "character_version,model,input_summary,answer_check,created_at,updated_at) "
-                    "VALUES(?,?,'pending_review',?,?,?,?,?,?,?)",
-                    (
-                        cid,
-                        reply.spoken_text,
-                        character["id"],
-                        character["version"],
-                        self.settings.data["llm"].get("model", "demo"),
-                        json.dumps(event, ensure_ascii=False),
-                        json.dumps(check, ensure_ascii=False),
-                        time.time(),
-                        time.time(),
-                    ),
+                candidate = (
+                    context.source_candidate(
+                        scope, character, [self._comment_event(source) for source in sources]
+                    )
+                    if sources
+                    else None
                 )
-                if not cursor.rowcount:
-                    return
-                draft_id = cursor.lastrowid
-                self.runtime.context.record(
-                    scope,
-                    character,
-                    event,
-                    reply.spoken_text,
-                    mode="comment_draft",
-                    memory_kind=check.get("memory_kind"),
-                )
+                try:
+                    reply, check = await self.runtime.generate_reply(
+                        scope,
+                        character,
+                        event,
+                        mode="comment_draft",
+                        **({"context": candidate} if candidate else {}),
+                    )
+                    if candidate:
+                        self._check_sources(sources, row["video_id"], row["thread_id"], row["platform"])
+                        candidate.record(
+                            scope,
+                            character,
+                            event,
+                            reply.spoken_text,
+                            "comment_draft",
+                            memory_kind=check.get("memory_kind"),
+                        )
+                    # The staged history, new draft and its new source index are
+                    # installed together, with no await inside the SQL transaction.
+                    with self.store.db:
+                        cursor = self.store.db.execute(
+                            "INSERT OR IGNORE INTO drafts(comment_id,text,status,character_id,"
+                            "character_version,model,input_summary,answer_check,created_at,updated_at) "
+                            "VALUES(?,?,'pending_review',?,?,?,?,?,?,?)",
+                            (
+                                cid,
+                                reply.spoken_text,
+                                character["id"],
+                                character["version"],
+                                self.settings.data["llm"].get("model", "demo"),
+                                json.dumps(event, ensure_ascii=False),
+                                json.dumps(check, ensure_ascii=False),
+                                time.time(),
+                                time.time(),
+                            ),
+                        )
+                        if not cursor.rowcount:
+                            return
+                        draft_id = cursor.lastrowid
+                        if candidate:
+                            context.install_candidate(scope, character, candidate)
+                    if not candidate:
+                        context.record(
+                            scope,
+                            character,
+                            event,
+                            reply.spoken_text,
+                            "comment_draft",
+                            memory_kind=check.get("memory_kind"),
+                        )
+                finally:
+                    if candidate:
+                        candidate.store.close()
                 break
         # Independent threads may prepare/publish concurrently; all model calls
         # above stay serialized, and publish() owns its one-shot write lock.

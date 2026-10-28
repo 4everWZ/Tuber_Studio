@@ -13,6 +13,7 @@ import psutil
 from .context import ContextManager
 from .memory import missing_slots
 from .providers import DemoProvider, LlamaCppProvider, VoiceService, public_error
+from .retention import INTERVAL_SECONDS, RetentionManager
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
 
@@ -27,6 +28,9 @@ class Runtime:
         )
         self.voices = VoiceService(settings)
         self.context = ContextManager(settings, store, self.llm)
+        self.retention = RetentionManager(settings, store)
+        self.retention_worker = None
+        self.retention_error = None
         self.generation_lock = asyncio.Lock()
         self.state = "stopped"
         self.muted = False
@@ -69,12 +73,16 @@ class Runtime:
             await self.llm.health()
         except Exception as error:
             self.error = public_error(error)
-        self.store.prune(self.settings.data.get("event_retention_days", 7))
+        await self.cleanup_retention(automatic=True)
+        self.retention_worker = asyncio.create_task(self._retention_loop())
         self.worker = asyncio.create_task(self._loop())
         if self.settings.data.get("inference_broker", {}).get("enabled"):
             self.inference_observer = asyncio.create_task(self._observe_inference())
 
     async def close(self):
+        if self.retention_worker:
+            self.retention_worker.cancel()
+            await asyncio.gather(self.retention_worker, return_exceptions=True)
         await self.control("stop")
         if self.inference_observer:
             self.inference_observer.cancel()
@@ -86,6 +94,30 @@ class Runtime:
         await self.voices.close()
         if self.inference_client:
             await self.inference_client.aclose()
+
+    async def cleanup_retention(self, before=None, *, automatic=False):
+        if automatic and self.retention.days is None:
+            return None
+        if self.current_id or self.queue or self.generation_lock.locked():
+            if automatic:
+                return None
+            raise ValueError("正在生成或播放，请暂停并等待当前任务结束后清理")
+        async with self.generation_lock:
+            result = self.retention.cleanup(before, manual=not automatic)
+            self.retention_error = None
+            if self.last_played and not self.store.job(self.last_played["id"]):
+                self.last_played = None
+            return result
+
+    async def _retention_loop(self):
+        while True:
+            await asyncio.sleep(60)
+            last = (self.retention.last_result or {}).get("completed_at", 0)
+            if time.time() - last >= INTERVAL_SECONDS:
+                try:
+                    await self.cleanup_retention(automatic=True)
+                except Exception as error:
+                    self.retention_error = public_error(error)
 
     def status(self):
         memory = psutil.virtual_memory()
@@ -168,10 +200,11 @@ class Runtime:
                         }
                     raise ValueError("工作模式切换失败：" + public_error(error)) from None
 
-    async def generate_reply(self, scope, character, event, relationship=None, mode="live"):
+    async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):
         """Caller owns generation_lock; evidence and one repair remain in its lease."""
-        evidence = self.context.memory.retrieve(scope, character, event["text"])
-        messages = await self.context.prepare(scope, character, event, relationship, mode, evidence=evidence)
+        context = context or self.context
+        evidence = context.memory.retrieve(scope, character, event["text"])
+        messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence)
         reply = await self.llm.generate(messages, character, event["event_id"], event["text"])
         missing = missing_slots(reply.spoken_text, evidence)
         audit = {

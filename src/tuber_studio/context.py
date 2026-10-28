@@ -16,6 +16,7 @@ from .compaction import (
 )
 from .memory import GroundedMemory, extract_facts
 from .providers import build_messages, public_error
+from .store import Store
 
 DOMAIN_GUIDANCE = (Path(__file__).parent / "prompts/domain-compact.md").read_text(encoding="utf-8").strip()
 SECOND_PASS_OCCUPANCY_PERCENT = 40
@@ -60,12 +61,13 @@ class ContextManager:
             history TEXT NOT NULL DEFAULT '[]',input_tokens INTEGER DEFAULT 0,
             carried_prefix_tokens INTEGER DEFAULT 0,compact_count INTEGER DEFAULT 0,
             last_error TEXT,last_warning TEXT,last_passes INTEGER DEFAULT 0,last_budgets TEXT DEFAULT '[]',
-            updated_at REAL NOT NULL)""")
+            updated_at REAL NOT NULL,oldest_source_at REAL)""")
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(context_windows)")}
         for name, definition in (
             ("last_warning", "TEXT"),
             ("last_passes", "INTEGER DEFAULT 0"),
             ("last_budgets", "TEXT DEFAULT '[]'"),
+            ("oldest_source_at", "REAL"),
         ):
             if name not in columns:
                 store.execute(f"ALTER TABLE context_windows ADD COLUMN {name} {definition}")
@@ -75,20 +77,93 @@ class ContextManager:
 
     def window(self, scope, character):
         key = self.key(scope, character)
+        now = time.time()
         self.store.execute(
-            "INSERT OR IGNORE INTO context_windows(key,mode,character_id,character_version,updated_at) "
-            "VALUES(?,?,?,?,?)",
-            (key, scope, character["id"], character["version"], time.time()),
+            "INSERT OR IGNORE INTO context_windows(key,mode,character_id,character_version,updated_at,oldest_source_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (key, scope, character["id"], character["version"], now, now),
         )
         self.last_key = key
         return self.store.one("SELECT * FROM context_windows WHERE key=?", (key,))
+
+    def existing(self, scope, character):
+        return self.store.one("SELECT * FROM context_windows WHERE key=?", (self.key(scope, character),))
+
+    def source_candidate(self, scope, character, events):
+        """Stage original viewer data separately from persistent conversation state."""
+        candidate = ContextManager(self.settings, Store(":memory:", [character]), self.provider)
+        try:
+            row = candidate.window(scope, character)
+            history = []
+            for event in events:
+                _, _, pending, _ = self.parts(character, event, {}, "comment_draft")
+                pending["created_at"] = row["oldest_source_at"]
+                pending["reconstructed"] = True
+                history.append(pending)
+                candidate.memory.record(
+                    scope, character, event["event_id"], "user", event["text"], kind="viewer_message"
+                )
+            candidate.store.execute(
+                "UPDATE context_windows SET history=? WHERE key=?",
+                (json.dumps(history, ensure_ascii=False), row["key"]),
+            )
+            return candidate
+        except BaseException:
+            candidate.store.close()
+            raise
+
+    def install_candidate(self, scope, character, candidate):
+        """Install one complete staged window, never overwrite an existing history."""
+        previous = self.existing(scope, character)
+        if previous and json.loads(previous["history"]):
+            raise ValueError("当前楼已有非空上下文，请先清除后再重建")
+        row = candidate.existing(scope, character)
+        if row is None or not json.loads(row["history"]):
+            raise ValueError("没有可安装的原文上下文")
+        columns = tuple(row)
+        # Column identifiers come from our fixed SQLite schema, not caller input.
+        assignments = ",".join(f"{column}=excluded.{column}" for column in columns if column != "key")
+        sources = candidate.store.all(
+            "SELECT * FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=?",
+            (scope, character["id"], character["version"]),
+        )
+        with self.store.db:
+            cursor = self.store.db.execute(
+                f"INSERT INTO context_windows({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) "
+                f"ON CONFLICT(key) DO UPDATE SET {assignments} WHERE context_windows.history=?",
+                tuple(row[column] for column in columns) + (previous["history"] if previous else None,),
+            )
+            if not cursor.rowcount:
+                raise ValueError("上下文在重建期间已变化，未覆盖")
+            for source in sources:
+                identity = tuple(
+                    source[key] for key in ("scope", "character_id", "character_version", "event_id", "role")
+                )
+                original = self.store.one(
+                    "SELECT text FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=? AND event_id=? AND role=?",
+                    identity,
+                )
+                if original and original["text"] != source["text"]:
+                    raise ValueError("已有来源原文不能被重建覆盖")
+                fields = tuple(key for key in source if key != "id")
+                self.store.db.execute(
+                    f"INSERT OR IGNORE INTO grounded_memory({','.join(fields)}) VALUES({','.join('?' for _ in fields)})",
+                    tuple(source[key] for key in fields),
+                )
+        self.last_key = row["key"]
 
     @staticmethod
     def parts(character, event, relationship, mode):
         scaffold = build_messages(character, event, relationship, mode)
         prefix = scaffold[:2]
         initial_context = [dict(scaffold[2], kind="context")]
-        pending = dict(scaffold[3], kind="viewer", source_event_id=event["event_id"], source_complete=True)
+        pending = dict(
+            scaffold[3],
+            kind="viewer",
+            source_event_id=event["event_id"],
+            source_complete=True,
+            created_at=time.time(),
+        )
         suffix = [scaffold[4]]
         return prefix, initial_context, pending, suffix
 
@@ -114,8 +189,16 @@ class ContextManager:
 
     async def prepare(self, scope, character, event, relationship=None, mode="live", *, evidence=None):
         row = self.window(scope, character)
-        prefix, initial, pending, suffix = self.parts(character, event, relationship or {}, mode)
-        evidence = evidence if evidence is not None else self.memory.retrieve(scope, character, event["text"])
+        prefix, initial, pending, suffix = self.parts(
+            character, event or {"text": "", "event_id": "context:rebuild"}, relationship or {}, mode
+        )
+        if event is None:
+            pending = None
+        evidence = (
+            evidence
+            if evidence is not None
+            else (self.memory.retrieve(scope, character, event["text"]) if event else {})
+        )
         if evidence.get("evidence"):
             initial.append(
                 {
@@ -223,10 +306,29 @@ class ContextManager:
         _, _, pending, _ = self.parts(character, event, {}, mode)
         # A delivered job or unique draft is recorded once. No in-flight speech is remembered as played.
         if any(
-            item.get("source_event_id") == event["event_id"] and item.get("kind") == "viewer"
+            item.get("source_event_id") == event["event_id"]
+            and item.get("kind") == "viewer"
+            and not item.get("reconstructed")
             for item in history
         ):
             return
+        # A restored source comment has not received a generated answer yet.
+        # Replace that quote when this comment is actually processed, instead
+        # of treating it as an already delivered interaction.
+        history = [
+            item
+            for item in history
+            if not (item.get("source_event_id") == event["event_id"] and item.get("reconstructed"))
+        ]
+        now = time.time()
+        # Age follows ingestion into this window, not an external comment date.
+        # Unknown legacy histories stay NULL until retention invalidates them.
+        oldest = row["oldest_source_at"]
+        if oldest is not None:
+            oldest = min(oldest, now)
+        elif not history:
+            oldest = now
+        pending["created_at"] = now
         history.extend(
             [
                 pending,
@@ -237,12 +339,13 @@ class ContextManager:
                     "source_event_id": event["event_id"],
                     "source_complete": True,
                     "memory_kind": memory_kind or "role_story",
+                    "created_at": now,
                 },
             ]
         )
         self.store.execute(
-            "UPDATE context_windows SET history=?,updated_at=? WHERE key=?",
-            (json.dumps(history, ensure_ascii=False), time.time(), row["key"]),
+            "UPDATE context_windows SET history=?,updated_at=?,oldest_source_at=? WHERE key=?",
+            (json.dumps(history, ensure_ascii=False), now, oldest, row["key"]),
         )
         if event["text"].strip():
             self.memory.record(scope, character, event["event_id"], "user", event["text"])
@@ -283,5 +386,6 @@ class ContextManager:
             "occupancy_percent": round((row["input_tokens"] if row else 0) * 100 / configured, 2),
             "profile_error": self.provider.profile_error,
             "scope": row["mode"] if row else scope,
+            "oldest_source_at": row["oldest_source_at"] if row else None,
             "is_sleeping": getattr(self.provider, "is_sleeping", None),
         }

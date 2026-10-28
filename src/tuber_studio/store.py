@@ -260,16 +260,3 @@ class Store:
                 ),
             )
         return True
-
-    def prune(self, days):
-        cutoff = time.time() - days * 86400
-        with self.db:
-            if self.one("SELECT name FROM sqlite_master WHERE type='table' AND name='context_windows'"):
-                self.db.execute("DELETE FROM context_windows WHERE updated_at<?", (cutoff,))
-            self.db.execute("DELETE FROM conversations WHERE created_at<?", (cutoff,))
-            self.db.execute(
-                "DELETE FROM jobs WHERE created_at<? AND status IN "
-                "('completed','failed','cancelled','expired')",
-                (cutoff,),
-            )
-            self.db.execute("DELETE FROM events WHERE created_at<? AND status!='queued'", (cutoff,))

@@ -18,6 +18,10 @@ class Settings:
         path = Path(os.getenv("TUBER_CONFIG", str(self.runtime / "studio.json")))
         example = self.root / "config/studio.example.json"
         self.data = json.loads((path if path.exists() else example).read_text(encoding="utf-8"))
+        # Conversation retention now has its own persisted policy; the old
+        # seven-day event setting must not silently override the requested 30 days.
+        self.data.pop("event_retention_days", None)
+        self.data.setdefault("conversation_retention_days", 30)
         self._validate()
         self.path = path
         self.admin_token = os.getenv("TUBER_ADMIN_TOKEN") or self._secret("admin-token")
@@ -40,6 +44,9 @@ class Settings:
             raise ValueError("有效上下文比例必须在1到95之间")
         if not 1 <= self.data["queue_limit"] <= 1000 or not 1 <= self.data["event_ttl_seconds"] <= 3600:
             raise ValueError("队列深度或TTL越界")
+        from .retention import validate_days
+
+        validate_days(self.data["conversation_retention_days"])
 
     def _secret(self, name: str) -> str:
         path = self.runtime / name

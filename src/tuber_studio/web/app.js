@@ -9,6 +9,7 @@ const model = {
   importPreviewSignature: null, categorySaving: new Set(),
   modeSwitch: null, modeResult: null,
   threadContextPending: null,
+  retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
 };
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
@@ -359,6 +360,73 @@ async function loadSettings() {
   try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
   $("overlay-url").value = url; $("open-overlay").href = url;
 }
+function dateTime(value) {
+  if (value == null) return "—";
+  const date = new Date(typeof value === "number" ? value * 1000 : value);
+  return Number.isNaN(date.getTime()) ? display(value) : date.toISOString();
+}
+function renderRetentionControls() {
+  const loaded = !!model.retention, pending = !!model.retentionPending;
+  $("retention-never").disabled = !loaded || pending;
+  $("retention-days").disabled = !loaded || pending || $("retention-never").checked;
+  $("retention-days").required = !$("retention-never").checked;
+  $("retention-before").disabled = !loaded || pending;
+  $("retention-save").disabled = !loaded || pending || !model.retentionDirty;
+  $("retention-preview").disabled = !loaded || pending || model.retentionDirty;
+  $("retention-confirm").disabled = pending || !model.retentionPreview;
+  $("retention-cleanup").disabled = pending || !model.retentionPreview || !$("retention-confirm").checked;
+  for (const kind of ["save", "preview", "cleanup"]) $("retention-" + kind).setAttribute("aria-busy", String(model.retentionPending === kind));
+}
+function invalidateRetentionPreview(message = "请先预览待清理范围，再明确确认。", error = false) {
+  model.retentionPreview = null; $("retention-confirm").checked = false;
+  $("retention-preview-panel").hidden = true; $("retention-cleanup-state").textContent = message;
+  $("retention-cleanup-state").classList.toggle("error-text", error);
+  renderRetentionControls();
+}
+async function loadRetention() {
+  try {
+    model.retention = await api("/api/retention");
+    if (!model.retentionDirty) {
+      $("retention-never").checked = model.retention.days == null;
+      $("retention-days").value = model.retention.days ?? 30;
+    }
+    const lastCompleteDay = new Date(); lastCompleteDay.setUTCDate(lastCompleteDay.getUTCDate() - 1);
+    $("retention-before").max = lastCompleteDay.toISOString().slice(0, 10);
+    const policy = model.retention;
+    describe($("retention-status"), [["已保存策略", policy.days == null ? "永不自动清理" : `保留 ${policy.days} 天`], ["自动清理", policy.enabled ? "已启用" : "已关闭"], ["最近执行（UTC）", dateTime(policy.last_run)], ["下次执行（UTC）", dateTime(policy.next_run)]]);
+    $("retention-last-result").hidden = policy.last_result == null;
+    $("retention-last-result").textContent = policy.last_result == null ? "" : JSON.stringify(policy.last_result, null, 2);
+    $("retention-policy-state").textContent = model.retentionDirty ? "有未保存修改，请保存后预览。" : "显示服务已保存策略。";
+    $("retention-policy-state").classList.remove("error-text");
+  } catch (error) {
+    $("retention-policy-state").textContent = `留存策略读取失败：${error.message}`;
+    $("retention-policy-state").classList.add("error-text");
+    throw error;
+  } finally { renderRetentionControls(); }
+}
+function retentionRequest() {
+  if (model.retentionDirty) throw new Error("请先保存留存策略，再预览清理范围。");
+  const selectedDate = $("retention-before").value;
+  if (!selectedDate) {
+    if (!model.retention || model.retention.days == null || model.retention.enabled === false) throw new Error("当前不自动清理；手动清理请指定截至日期。");
+    return {};
+  }
+  const cutoff = new Date(selectedDate + "T00:00:00.000Z");
+  if (Number.isNaN(cutoff.getTime())) throw new Error("请选择有效的截至日期。");
+  cutoff.setUTCDate(cutoff.getUTCDate() + 1);
+  if (cutoff.getTime() > Date.now()) throw new Error("截至日期必须是已结束的 UTC 日期；未来截止时间不能清理。");
+  return {before: cutoff.toISOString()};
+}
+async function retentionAction(kind, action) {
+  if (model.retentionPending) return;
+  model.retentionPending = kind; renderRetentionControls();
+  try { await action(); }
+  catch (error) {
+    if (kind !== "save") invalidateRetentionPreview(`操作未完成：${error.message} 请重新预览后再清理。`, true);
+    else { $("retention-policy-state").textContent = `策略保存失败：${error.message}`; $("retention-policy-state").classList.add("error-text"); }
+    notice(error.message, true);
+  } finally { model.retentionPending = null; renderRetentionControls(); }
+}
 function commentQuery() {
   const params = new URLSearchParams();
   [["video_id", "filter-video"], ["thread_id", "filter-thread"], ["category", "filter-category"], ["status", "filter-status"]].forEach(([key, id]) => { if ($(id).value.trim()) params.set(key, $(id).value.trim()); });
@@ -527,7 +595,7 @@ async function changePage() {
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page; link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
   document.title = `${({comments: "评论工作台", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await refreshComments(); else if (["overview", "live"].includes(model.page)) await refreshLive(); }
+  try { if (model.page === "comments") await refreshComments(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await loadRetention(); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {
@@ -743,6 +811,58 @@ $("compact-comments-settings").onclick = () => busy($("compact-comments-settings
 $("compact-comments").onclick = () => busy($("compact-comments"), () => {
   const target = selectedThread();
   return compactContext("comments", target?.videoId, target?.threadId);
+});
+$("rebuild-comments").onclick = () => busy($("rebuild-comments"), async () => {
+  const target = selectedThread();
+  if (!target) throw new Error("请先选择评论或筛选视频与单个楼ID，再重建该楼上下文。");
+  $("thread-rebuild-state").textContent = `正在使用本地现存原文重建 ${target.videoId} / ${target.threadId}…`;
+  try {
+    const result = await api("/api/context/rebuild", {method: "POST", body: {scope: "comments", video_id: target.videoId, thread_id: target.threadId}});
+    let message = result.message || result.detail || (result.rebuilt === false ? "本次未重建上下文，请检查该楼现存原文。" : `楼 ${target.videoId} / ${target.threadId} 上下文已重建，请查看实际占用。`);
+    if (result.prefilled === false) message += " 诊断：未执行真实模型 prefill，不能据此认定模型已预热。";
+    else if (result.prefilled === true) message += ` 模型 prefill 已完成${result.input_tokens != null ? `，输入 ${result.input_tokens} tokens` : ""}。`;
+    $("thread-rebuild-state").textContent = message; notice(message);
+    await refreshThreadContext();
+  } catch (error) { $("thread-rebuild-state").textContent = `重建失败：${error.message}`; throw error; }
+});
+["retention-days", "retention-never"].forEach(id => $(id).addEventListener("input", () => {
+  model.retentionDirty = true; $("retention-policy-state").textContent = "有未保存修改，请保存后预览。";
+  $("retention-policy-state").classList.remove("error-text");
+  invalidateRetentionPreview();
+}));
+$("retention-before").oninput = () => invalidateRetentionPreview("截至日期已变更，请重新预览。");
+$("retention-confirm").onchange = renderRetentionControls;
+$("retention-form").onsubmit = event => {
+  event.preventDefault(); retentionAction("save", async () => {
+    const days = $("retention-never").checked ? null : Number($("retention-days").value);
+    if (days !== null && (!Number.isSafeInteger(days) || days < 1 || days > 36500)) throw new Error("保留天数必须为 1 至 36500 的整数。");
+    await api("/api/retention", {method: "PUT", body: {days}});
+    model.retentionDirty = false; invalidateRetentionPreview(); await loadRetention();
+    $("retention-policy-state").textContent = "留存策略已保存；本次未执行手动清理。";
+  });
+};
+$("retention-preview").onclick = () => retentionAction("preview", async () => {
+  const payload = retentionRequest(), signature = JSON.stringify(payload);
+  invalidateRetentionPreview("正在统计待清理记录；尚未删除…");
+  const result = await api("/api/retention/preview", {method: "POST", body: payload});
+  if (JSON.stringify(retentionRequest()) !== signature) return;
+  if (result.cutoff == null) throw new Error("服务未返回清理截止时间，请指定日期后重新预览。");
+  model.retentionPreview = {signature, cutoff: result.cutoff};
+  $("retention-preview-cutoff").textContent = `删除时间早于 ${result.cutoff} 的适用记录（UTC，边界不包含）。`;
+  const countLabels = {context_windows: "上下文窗口", grounded_memory: "来源检索索引", conversations: "对话记录", jobs: "直播任务", events: "直播事件", sessions: "直播会话"};
+  describe($("retention-preview-counts"), Object.entries(result.counts || {}).map(([key, count]) => [countLabels[key] || key, count]));
+  $("retention-preview-detail").textContent = JSON.stringify(result, null, 2);
+  $("retention-preview-panel").hidden = false;
+  $("retention-cleanup-state").textContent = "预览完成，尚未删除。请核对数量和范围后确认。";
+});
+$("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
+  const preview = model.retentionPreview;
+  if (!preview || !$("retention-confirm").checked || JSON.stringify(retentionRequest()) !== preview.signature) throw new Error("请先预览当前范围并明确确认清理。");
+  const result = await api("/api/retention/cleanup", {method: "POST", body: {before: preview.cutoff, confirm: true}});
+  invalidateRetentionPreview();
+  $("retention-cleanup-state").textContent = `清理已完成，实际结果：${JSON.stringify(result.counts || result)}`;
+  await loadRetention();
+  if (model.page === "comments") await refreshComments();
 });
 $("character-image").onerror = () => { $("character-image").hidden = true; };
 window.addEventListener("hashchange", changePage);
