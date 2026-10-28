@@ -18,6 +18,8 @@
 
 最小语义接口为 LLMProvider.generate(context,constraints) → StructuredReply，TTSProvider.synthesize(text,voice,options) → AudioArtifact/AudioStream。提交草稿／TTS 前校验完整结束、字数、控制字符、情绪／动作枚举及当前源事件引用；原样复述输入不算有效角色回答。输出不能直接成为 shell、文件操作、HTTP 工具、发布或支付。
 
+Think模式通过原生chat template和reasoning_format=deepseek分离推理与正式内容；只解析message.content进入台词／摘要，不将reasoning_content播报、存入对话或当作回复JSON，不靠字符串裁掉思考标签补成功。模板默认正式输出预算1024 tokens，包含模型推理与最终JSON，台词仍受角色字数上限约束；摘要预算独立，未完整stop即失败。延迟须实测，不能从NoThink短句推断Think实时性。
+
 预录限于允许资产目录，字幕对应实际录音，不冒充动态台词。缓存还覆盖 Provider 和参考音频内容，防止同路径换文件串用。合成失败按配置退回预录／静音且显示原因，不伪造成功。音色持久语义含 ID、Provider、版本、权重、参考资产、许可和有效参数；音频、训练数据、权重及下游用途分别核对，原型允许现有内容不授额外商用权。
 
 ## Profile 选择与准入
@@ -25,7 +27,7 @@
 当前授权基线是 2B、真实至少128K和动态TTS；容量与压缩由上下文规范维护。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成1B。
 
 1. 优先评估 MiniCPM5-2B Q4_K_M 权重＋q4 KV＋128K 与 TTS 共驻。通过同一角色／摘要质量与共享内存门槛后可作为默认共驻；冷／热启动和持续运行仍按相应验收要求分别验证，不能由默认选型推断通过。
-2. 2B q8 KV／NoThink隔离配置用于质量比较；实验未完成不宣称q4 KV共驻交付。未通过直播准入时保留文本模式并显示失败，不把互斥加载冒称直播共驻。
+2. 2B按官方Think参数做质量准入，temperature=1.0、top_p=0.95、min_p=0.0；既有NoThink只算实验，不作为已通过的质量基线。实验未完成不宣称q4 KV共驻交付。未通过直播准入时保留文本模式并显示失败，不把互斥加载冒称直播共驻。
 3. 后续再评估1B质量与共驻收益，同一语义门槛通过才可考虑替换；1B不是默认兜底许可。
 
 共驻仅表示权重可同时保留，不放开生成并发。默认 active_llm_generations=1、active_tts_jobs=1，需要时串行；直播、评论和试听共享配额，直播高于离线工作。逻辑 subagent 不加载独立驻留模型。

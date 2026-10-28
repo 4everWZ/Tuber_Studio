@@ -129,7 +129,7 @@ class ProcessRunner:
                 "--cache-type-v",
                 cache,
                 "--reasoning",
-                "off",
+                "auto",
                 "--temp",
                 "1.0" if key == "llm2b" else "0.7",
                 "--top-p",

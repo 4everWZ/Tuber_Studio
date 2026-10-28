@@ -34,7 +34,10 @@ async def test_wrong_server_capacity_or_model_is_rejected_before_generation(
         await provider.close()
 
 
-async def test_structured_decoder_constrains_reply_to_current_event(settings, store):
+@pytest.mark.parametrize("thinking", [False, True])
+async def test_structured_decoder_constrains_reply_and_keeps_reasoning_separate(settings, store, thinking):
+    settings.data["llm"]["enable_thinking"] = thinking
+
     def respond(request):
         if request.url.path == "/props":
             return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 131072}})
@@ -43,6 +46,23 @@ async def test_structured_decoder_constrains_reply_to_current_event(settings, st
         if request.url.path == "/tokenize":
             return httpx.Response(200, json={"tokens": [1, 2, 3]})
         data = json.loads(request.content)
+        assert data["chat_template_kwargs"]["enable_thinking"] is thinking
+        assert data.get("reasoning_format") == ("deepseek" if thinking else None)
+        if "response_format" not in data:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "已生成草稿，尚待人工审核。",
+                                "reasoning_content": "私有推理不得进入摘要。",
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                },
+            )
         schema = data["response_format"]["schema"]
         assert schema["properties"]["reply_to"]["items"]["enum"] == ["comment:exact"]
         return httpx.Response(
@@ -51,6 +71,7 @@ async def test_structured_decoder_constrains_reply_to_current_event(settings, st
                 "choices": [
                     {
                         "message": {
+                            "reasoning_content": "内部推理内容，不应播报或进入对话历史。",
                             "content": json.dumps(
                                 {
                                     "spoken_text": "今天当然要来一碗白饭。",
@@ -58,7 +79,7 @@ async def test_structured_decoder_constrains_reply_to_current_event(settings, st
                                     "animation_id": "talk_happy",
                                     "reply_to": ["comment:exact"],
                                 }
-                            )
+                            ),
                         },
                         "finish_reason": "stop",
                     }
@@ -73,6 +94,7 @@ async def test_structured_decoder_constrains_reply_to_current_event(settings, st
         reply = await provider.generate([], store.character(), "comment:exact")
         assert reply.reply_to == ["comment:exact"]
         assert provider.last_tokens == 3
+        assert await provider.summarize([]) == "已生成草稿，尚待人工审核。"
         with pytest.raises(ValueError, match="复述了输入"):
             await provider.generate([], store.character(), "comment:exact", source_text=reply.spoken_text)
     finally:
