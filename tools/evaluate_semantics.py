@@ -82,6 +82,25 @@ async def evaluate(config_path, character_id, seed=42):
             )
         except Exception as error:
             results.append({"case": "summary_literal_facts", "passed": False, "error": public_error(error)})
+        else:
+            # Assistant facts now exist only in the model-produced summary;
+            # retaining real viewer messages alone cannot satisfy this check.
+            try:
+                messages = ContextManager.render(prefix, initial, replacement, pending, suffix)
+                reply = await provider.generate(messages, character, event["event_id"], event["text"])
+                missing = missing_groups(reply.spoken_text, cases["recall_fact_groups"])
+                results.append(
+                    {
+                        "case": "after_compaction_history",
+                        "passed": not missing,
+                        "missing": missing,
+                        "text": reply.spoken_text,
+                    }
+                )
+            except Exception as error:
+                results.append(
+                    {"case": "after_compaction_history", "passed": False, "error": public_error(error)}
+                )
         print(
             json.dumps(
                 {
