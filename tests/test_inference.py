@@ -136,7 +136,7 @@ async def test_buffered_upstream_body_holds_global_gpu_lease(tmp_path):
     finish.set()
     assert (await llm).body == b"firstlast"
     assert (await tts).body == b"wav"
-    assert control.events == [("start", "llm2b"), ("start", "tts")]
+    assert control.events == [("start", "tts"), ("start", "llm2b")]
     await broker.close()
 
 
@@ -185,7 +185,7 @@ async def test_modes_preserve_selected_pair_and_only_persist_mode(tmp_path):
     control.events.clear()
     result = await broker.switch_mode("live")
     assert result["mode"] == "live" and result["state"] == "active" and result["busy"] is False
-    assert control.events == [("stop", "llm1b"), ("start", "llm2b"), ("start", "tts")]
+    assert control.events == [("stop", "llm1b"), ("start", "tts"), ("start", "llm2b")]
     expected = json.loads(json.dumps(configuration))
     expected["inference_broker"]["mode"] = "live"
     assert json.loads(path.read_text()) == expected
@@ -194,6 +194,117 @@ async def test_modes_preserve_selected_pair_and_only_persist_mode(tmp_path):
     assert control.events == [("stop", "tts")]
     assert result["mode"] == "text" and result["providers"]["llm2b"]["running"]
     assert not list(path.parent.glob(".studio-mode-*"))
+    await broker.close()
+
+
+async def test_live_cold_switch_releases_llm_until_tts_is_fully_ready(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    await broker.initialize()
+    control.events.clear()
+    entered, ready = asyncio.Event(), asyncio.Event()
+    original_get = broker.client.get
+
+    async def loading(url, **options):
+        if url == RESOURCES["tts"].url + "/docs":
+            entered.set()
+            await ready.wait()
+        return await original_get(url, **options)
+
+    broker.client.get = loading
+    switching = asyncio.create_task(broker.switch_mode("live"))
+    await entered.wait()
+    assert control.events == [("stop", "llm2b"), ("start", "tts")]
+    assert not control.alive["llm2b"] and broker.mode == "text"
+    ready.set()
+    assert (await switching)["mode"] == "live"
+    assert control.events[-1] == ("start", "llm2b")
+    await broker.close()
+
+
+async def test_live_missing_tts_rebuilds_tts_first_and_hot_requests_keep_both(tmp_path):
+    posts = []
+
+    async def post(request, key):
+        assert control.alive["llm2b"] and control.alive["tts"]
+        posts.append(key)
+        return httpx.Response(200, content=b"done")
+
+    broker, control = setup_broker(tmp_path, post, mode="live")
+    await broker.initialize()
+    control.alive["tts"] = False
+    control.events.clear()
+    await broker.forward("llm2b", "completion", b"{}")
+    assert control.events == [("stop", "llm2b"), ("start", "tts"), ("start", "llm2b")]
+    control.events.clear()
+    await broker.forward("tts", "tts", b"{}")
+    await broker.forward("llm2b", "completion", b"{}")
+    assert control.events == [] and posts == ["llm2b", "tts", "llm2b"]
+    await broker.close()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_failed_or_cancelled_live_rebuild_restores_prior_residents(tmp_path, cancel):
+    broker, control = setup_broker(tmp_path, mode="live")
+    await broker.initialize()
+    control.alive["tts"] = False
+    entered = asyncio.Event()
+    original_get = broker.client.get
+
+    async def loading(url, **options):
+        if url == RESOURCES["tts"].url + "/docs":
+            entered.set()
+            if cancel:
+                await asyncio.Event().wait()
+            raise RuntimeError("TTS load failed")
+        return await original_get(url, **options)
+
+    broker.client.get = loading
+    work = asyncio.create_task(broker.forward("llm2b", "completion", b"{}"))
+    await entered.wait()
+    if cancel:
+        work.cancel()
+    with pytest.raises(asyncio.CancelledError if cancel else HTTPException):
+        await work
+    assert broker.mode == "live" and broker.active == "llm2b" and not broker.lock.locked()
+    assert {key for key, alive in control.alive.items() if alive} == {"llm2b"}
+    assert (await broker.observe())["state"] == "error"  # The prior pair was already incomplete.
+    await broker.close()
+
+
+async def test_live_to_text_persist_failure_restores_pair_tts_first(tmp_path, monkeypatch):
+    broker, control = setup_broker(tmp_path, mode="live")
+    await broker.initialize()
+    broker.active = "tts"
+    path = tmp_path / "runtime/studio.json"
+    original = '{"inference_broker":{"mode":"live"},"secret":"keep"}'
+    path.write_text(original)
+    control.events.clear()
+
+    def fail_replace(*args):
+        raise PermissionError("cannot persist")
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+    with pytest.raises(HTTPException):
+        await broker.switch_mode("text")
+    assert control.events == [("stop", "tts"), ("stop", "llm2b"), ("start", "tts"), ("start", "llm2b")]
+    assert broker.mode == "live" and broker.active == "tts" and path.read_text() == original
+    assert (await broker.observe())["state"] == "active"
+    await broker.close()
+
+
+async def test_health_reports_each_fixed_resource_cache_and_current_llm(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    control.kv_cache_type = "q4_0"
+    await broker.forward("llmqwen35", "completion", b"{}")
+    status = await broker.observe()
+    assert status["kv_cache_type"] == "q8_0"
+    assert status["providers"]["llm2b"]["cache_type_k"] == "q4_0"
+    assert status["providers"]["llmqwen35"]["cache_type_v"] == "q8_0"
+    assert status["providers"]["tts"]["cache_type_k"] is None
+    await broker.switch_mode("live")
+    await broker.forward("tts", "tts", b"{}")
+    status = await broker.observe()
+    assert status["active_provider"] == "tts" and status["kv_cache_type"] == "q4_0"
     await broker.close()
 
 
@@ -216,19 +327,19 @@ async def test_text_rejects_tts_and_live_rejects_other_candidates_without_mutati
     await broker.close()
 
 
-@pytest.mark.parametrize("failure", ["tts", "persist"])
+@pytest.mark.parametrize("failure", ["tts", "selected_llm", "persist"])
 async def test_mode_failure_restores_previous_candidate_and_configuration(tmp_path, failure, monkeypatch):
     broker, control = setup_broker(tmp_path)
     path = tmp_path / "runtime/studio.json"
     path.write_text('{"inference_broker":{"mode":"text"},"private":"keep"}')
     original = path.read_bytes()
     await broker.forward("llm1b", "completion", b"{}")
-    if failure == "tts":
+    if failure != "persist":
         start = control.start
 
         async def fail_start(key):
             await start(key)
-            if key == "tts":
+            if key == ("tts" if failure == "tts" else "llm2b"):
                 raise RuntimeError("failure after child creation")
 
         control.start = fail_start
@@ -275,9 +386,10 @@ async def test_cancelled_mode_load_restores_previous_live_residents_before_unloc
     await broker.initialize()
     entered, finish = asyncio.Event(), asyncio.Event()
     activate = broker._activate
+    restoring = False
 
     async def blocked_activate(key, **options):
-        if broker.state != "restoring" and key == "llm2b":
+        if not restoring and key == "llm2b":
             entered.set()
             await finish.wait()
         await activate(key, **options)
@@ -286,7 +398,8 @@ async def test_cancelled_mode_load_restores_previous_live_residents_before_unloc
     restore = broker._restore
 
     async def restore_before_unlock(*args):
-        broker.state = "restoring"
+        nonlocal restoring
+        restoring = True
         await restore(*args)
 
     broker._restore = restore_before_unlock
@@ -332,7 +445,7 @@ async def test_configured_model_and_mode_initialize_the_selected_pair(tmp_path):
     assert app.state.broker.selected == "llm1b" and app.state.broker.mode == "live"
     await app.state.broker.close()
     await broker.initialize()
-    assert control.events == [("start", "llm1b"), ("start", "tts")]
+    assert control.events == [("start", "tts"), ("start", "llm1b")]
     assert (await broker.observe())["selected_provider"] == "llm1b"
     legacy = InferenceBroker(tmp_path, mode="exclusive")
     assert legacy.mode == "text"
@@ -403,7 +516,7 @@ async def test_body_limit_rejects_before_resource_activation(tmp_path, chunked):
     await broker.close()
 
 
-@pytest.mark.parametrize("operation", ["generation", "mode"])
+@pytest.mark.parametrize("operation", ["generation", "mode", "mode_llm"])
 async def test_real_asgi_disconnect_cancels_owned_upstream_and_unlocks(tmp_path, operation):
     entered = asyncio.Event()
 
@@ -413,12 +526,16 @@ async def test_real_asgi_disconnect_cancels_owned_upstream_and_unlocks(tmp_path,
 
     broker, control = setup_broker(tmp_path, post)
     await broker.initialize()
-    if operation == "mode":
+    mode_change = operation != "generation"
+    if mode_change:
         start = control.start
+        blocked = False
 
         async def loading(key):
+            nonlocal blocked
             await start(key)
-            if key == "tts":
+            if key == ("tts" if operation == "mode" else "llm2b") and not blocked:
+                blocked = True
                 entered.set()
                 await asyncio.Event().wait()
 
@@ -426,8 +543,8 @@ async def test_real_asgi_disconnect_cancels_owned_upstream_and_unlocks(tmp_path,
     app = create_app(tmp_path, broker=broker, warm_start=False)
     token = (tmp_path / "runtime/inference-token").read_text()
     incoming, sent = asyncio.Queue(), []
-    body = b'{"mode":"live"}' if operation == "mode" else b"{}"
-    path = "/mode" if operation == "mode" else "/llm/2b/completion"
+    body = b'{"mode":"live"}' if mode_change else b"{}"
+    path = "/mode" if mode_change else "/llm/2b/completion"
     incoming.put_nowait({"type": "http.request", "body": body, "more_body": False})
 
     async def send(message):
@@ -456,7 +573,7 @@ async def test_real_asgi_disconnect_cancels_owned_upstream_and_unlocks(tmp_path,
     await asyncio.wait_for(work, 2)
     assert sent[0]["status"] == 499
     assert not broker.lock.locked()
-    assert control.alive["llm2b"] is (operation == "mode")
+    assert control.alive["llm2b"] is mode_change
     assert not control.alive["tts"] and broker.mode == "text"
     await broker.close()
 

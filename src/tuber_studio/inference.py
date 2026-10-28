@@ -41,6 +41,12 @@ RESOURCES = {
 LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
 
 
+def resource_cache_type(key: str, configured: str) -> str | None:
+    if not RESOURCES[key].model:
+        return None
+    return configured if key == "llm2b" else "q8_0"
+
+
 def native_context(path: Path, *, expected_architecture: str | None = None) -> int:
     """Read the declared language-model window, never a vision context field."""
     formats = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}
@@ -112,7 +118,7 @@ class ProcessRunner:
     def command(self, key):
         resource = RESOURCES[key]
         if resource.model:
-            cache = self.kv_cache_type if key == "llm2b" else "q8_0"
+            cache = resource_cache_type(key, self.kv_cache_type)
             command = [
                 str(self.llama_binary),
                 "-m",
@@ -380,12 +386,22 @@ class InferenceBroker:
 
     async def _apply_mode(self, mode):
         keep = {self.selected, "tts"} if mode == "live" else {self.selected}
+        await self._establish_residents(keep)
+
+    async def _establish_residents(self, residents):
         for key in RESOURCES:
-            if key not in keep:
+            if key not in residents:
                 await self.runner.stop(key)
-        await self._activate(self.selected, keep=keep)
-        if mode == "live":
-            await self._activate("tts", keep=keep)
+        if "tts" in residents:
+            if not await self.runner.running("tts"):
+                # The BERT/voice cold-load peak must not overlap resident KV.
+                # Keep an already-ready pair untouched during normal live use.
+                for key in residents:
+                    if RESOURCES[key].model:
+                        await self.runner.stop(key)
+            await self._activate("tts", keep=residents)
+        for key in sorted(residents - {"tts"}):
+            await self._activate(key, keep=residents)
 
     def _persist_mode(self, mode):
         path = self.root / "runtime/studio.json"
@@ -411,49 +427,51 @@ class InferenceBroker:
             Path(temporary).unlink(missing_ok=True)
 
     async def _restore(self, residents, active):
-        for key in RESOURCES:
-            if key not in residents:
-                await self.runner.stop(key)
-        for key in sorted(residents, key=lambda key: key == "tts"):
-            await self._activate(key, keep=residents)
+        await self._establish_residents(residents)
         self.active = active if active in residents else None
+
+    @asynccontextmanager
+    async def _residency_change(self):
+        previous_mode, previous_active = self.mode, self.active
+        residents = {key for key in RESOURCES if await self.runner.running(key)}
+        try:
+            yield
+        except BaseException as failure:
+            self.mode = previous_mode
+            rollback = asyncio.create_task(self._restore(residents, previous_active))
+            while not rollback.done():
+                try:
+                    await asyncio.shield(rollback)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            try:
+                rollback.result()
+            except BaseException:
+                self.state, self.error = (
+                    "error",
+                    "Resource transition failed; previous resources could not be restored",
+                )
+            else:
+                self.state = "active" if residents else "cold"
+                self.error = (
+                    "Resource transition cancelled"
+                    if isinstance(failure, asyncio.CancelledError)
+                    else "Resource transition failed"
+                )
+            raise
 
     async def switch_mode(self, mode):
         if mode not in {"text", "live"}:
             raise HTTPException(422, "Mode must be text or live")
         async with self.lock:
-            previous_mode, previous_active = self.mode, self.active
-            residents = {key for key in RESOURCES if await self.runner.running(key)}
             try:
-                await self._apply_mode(mode)
-                self._persist_mode(mode)
-                self.mode = mode
-            except BaseException as failure:
-                self.mode = previous_mode
-                rollback = asyncio.create_task(self._restore(residents, previous_active))
-                while not rollback.done():
-                    try:
-                        await asyncio.shield(rollback)
-                    except asyncio.CancelledError:
-                        continue
-                    except Exception:
-                        break
-                try:
-                    rollback.result()
-                except BaseException:
-                    self.state, self.error = (
-                        "error",
-                        "Mode switch failed; previous resources could not be restored",
-                    )
-                else:
-                    self.state = "active" if residents else "cold"
-                    self.error = (
-                        "Mode switch cancelled"
-                        if isinstance(failure, asyncio.CancelledError)
-                        else "Mode switch failed"
-                    )
-                if isinstance(failure, asyncio.CancelledError):
-                    raise
+                async with self._residency_change():
+                    await self._apply_mode(mode)
+                    self._persist_mode(mode)
+                    self.mode = mode
+            except Exception:
                 raise HTTPException(503, self.error) from None
         return await self.observe()
 
@@ -526,13 +544,19 @@ class InferenceBroker:
                 state, error = "error", "Unexpected concurrent inference processes"
             elif self.mode == "live" and running != allowed:
                 state, error = "error", "Live mode resources are not both ready"
+        configured_cache = getattr(self.runner, "kv_cache_type", "q8_0")
+        cache_provider = (
+            self.active
+            if self.active and observed.get(self.active) and RESOURCES[self.active].model
+            else self.selected
+        )
         return {
             "state": state,
             "active_provider": self.active if observed.get(self.active) else None,
             "error": error,
             "mode": self.mode,
             "selected_provider": self.selected,
-            "kv_cache_type": getattr(self.runner, "kv_cache_type", "q8_0"),
+            "kv_cache_type": resource_cache_type(cache_provider, configured_cache),
             "cuda_managed_memory": getattr(self.runner, "cuda_managed_memory", False),
             "busy": self.lock.locked(),
             "providers": {
@@ -541,6 +565,8 @@ class InferenceBroker:
                     "is_sleeping": not observed[key],
                     "loaded_this_boot": key in self.loaded,
                     "native_context_tokens": self.natives.get(key),
+                    "cache_type_k": resource_cache_type(key, configured_cache),
+                    "cache_type_v": resource_cache_type(key, configured_cache),
                 }
                 for key in RESOURCES
             },
@@ -569,11 +595,15 @@ class InferenceBroker:
             if self.mode == "live" and key not in {self.selected, "tts"}:
                 raise HTTPException(409, "Live mode only permits the selected LLM and TTS")
             self._target_touched = False
+            if self.mode == "live":
+                try:
+                    async with self._residency_change():
+                        await self._apply_mode("live")
+                except Exception:
+                    raise HTTPException(503, self.error) from None
+                self.active = key
             try:
-                if self.mode == "live":
-                    await self._apply_mode("live")
-                    self.active = key
-                else:
+                if self.mode != "live":
                     await self._activate(key)
                 if path == "warmup":
                     return JSONResponse(await self.read(key, "props"))
