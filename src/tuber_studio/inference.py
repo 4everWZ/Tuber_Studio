@@ -29,22 +29,20 @@ class Resource:
     ready: str
     alias: str | None = None
     model: str | None = None
-    optional: bool = False
 
 
 RESOURCES = {
     "llm2b": Resource("http://127.0.0.1:9013", "/health", "MiniCPM5-2B", "MiniCPM5-2B-Q4_K_M.gguf"),
-    "llm1b": Resource("http://127.0.0.1:9010", "/health", "MiniCPM5-1B", "MiniCPM5-1B-Q4_K_M.gguf", True),
-    "llm1bq8": Resource(
-        "http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf", True
-    ),
+    "llm1b": Resource("http://127.0.0.1:9010", "/health", "MiniCPM5-1B", "MiniCPM5-1B-Q4_K_M.gguf"),
+    "llm1bq8": Resource("http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf"),
+    "llmqwen35": Resource("http://127.0.0.1:9015", "/health", "Qwen3.5-2B", "Qwen_Qwen3.5-2B-Q4_K_M.gguf"),
     "tts": Resource("http://127.0.0.1:9011", "/docs"),
 }
 LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
 
 
-def native_context(path: Path) -> int:
-    """Read the selected GGUF's declared context without loading model tensors."""
+def native_context(path: Path, *, expected_architecture: str | None = None) -> int:
+    """Read the declared language-model window, never a vision context field."""
     formats = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}
     with path.open("rb") as source:
 
@@ -70,11 +68,23 @@ def native_context(path: Path) -> int:
         if source.read(4) != b"GGUF" or number("I") not in {2, 3}:
             raise ValueError("Invalid selected GGUF")
         number("Q")
+        architecture, contexts = None, {}
         for _ in range(number("Q")):
             key, kind = string(), number("I")
-            if key == "llama.context_length":
-                return int(number(formats[kind]))
-            skip(kind)
+            if key == "general.architecture":
+                if kind != 8:
+                    raise ValueError("Invalid GGUF architecture metadata")
+                architecture = string()
+                if expected_architecture and architecture != expected_architecture:
+                    raise ValueError("GGUF architecture does not match the selected artifact")
+            elif key.endswith(".context_length") and kind in {0, 1, 2, 3, 4, 5, 10, 11}:
+                contexts[key] = number(formats[kind])
+            else:
+                skip(kind)
+            if architecture and (context := contexts.get(architecture + ".context_length")) is not None:
+                if context <= 0:
+                    raise ValueError("Invalid native model context")
+                return context
     raise ValueError("Selected GGUF has no native context metadata")
 
 
@@ -103,7 +113,7 @@ class ProcessRunner:
         resource = RESOURCES[key]
         if resource.model:
             cache = self.kv_cache_type if key == "llm2b" else "q8_0"
-            return [
+            command = [
                 str(self.llama_binary),
                 "-m",
                 str(self.root / "runtime/models" / resource.model),
@@ -131,9 +141,9 @@ class ProcessRunner:
                 "--reasoning",
                 "auto",
                 "--temp",
-                "1.0" if key == "llm2b" else "0.7",
+                "1.0" if key in {"llm2b", "llmqwen35"} else "0.7",
                 "--top-p",
-                "0.95",
+                "1.0" if key == "llmqwen35" else "0.95",
                 "--min-p",
                 "0.0",
                 "--batch-size",
@@ -145,6 +155,25 @@ class ProcessRunner:
                 "--no-mmap",
                 "--direct-io",
             ]
+            if key == "llmqwen35":
+                command.extend(
+                    [
+                        "--top-k",
+                        "20",
+                        "--presence-penalty",
+                        "2.0",
+                        "--repeat-penalty",
+                        "1.0",
+                        # Hybrid recurrent state cannot be shifted like dense KV.
+                        # Bound host snapshots; ContextManager owns compaction.
+                        "--ctx-checkpoints",
+                        "0",
+                        "--cache-reuse",
+                        "0",
+                        "--no-context-shift",
+                    ]
+                )
+            return command
         return [
             str(self.tts_python),
             str(self.root / "tools/jetson/tts/serve.py"),
@@ -160,7 +189,9 @@ class ProcessRunner:
         profiles = {}
         for key, resource in RESOURCES.items():
             model = (self.root / "runtime/models" / resource.model).resolve() if resource.model else None
-            if model is not None and not model.is_file() and resource.optional:
+            # Only the selected/requested model must be installed. _activate
+            # rejects an absent fixed profile before changing any processes.
+            if model is not None and not model.is_file():
                 continue
             required = (
                 [model, self.llama_binary]
@@ -775,7 +806,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
 
     @app.api_route("/llm/{size}/{path:path}", methods=["GET", "POST"])
     async def llm(size: str, path: str, request: Request):
-        if size not in {"1b", "2b", "1bq8"}:
+        if size not in {"1b", "2b", "1bq8", "qwen35"}:
             raise HTTPException(404)
         return await dispatch(request, "llm" + size, path)
 

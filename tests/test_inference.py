@@ -1,8 +1,11 @@
 import asyncio
+import importlib.util
 import json
 import os
 import signal
 import struct
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -48,16 +51,28 @@ class Control:
         self.events.append(("start", key))
 
 
-def gguf(path, context=131072):
-    key = b"llama.context_length"
+def gguf(path, context=131072, architecture="llama", *, vision_context=None, architecture_last=False):
+    def string(value):
+        value = value.encode()
+        return struct.pack("<Q", len(value)) + value
+
+    arch = string("general.architecture") + struct.pack("<I", 8) + string(architecture)
+    window = string(architecture + ".context_length") + struct.pack("<II", 4, context)
+    entries = [window, arch] if architecture_last else [arch, window]
+    if vision_context is not None:
+        entries.insert(0, string("clip.context_length") + struct.pack("<II", 4, vision_context))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"GGUF" + struct.pack("<IQQQ", 3, 0, 1, len(key)) + key + struct.pack("<II", 4, context))
+    path.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 0, len(entries)) + b"".join(entries))
 
 
 def setup_broker(root, post=None, mode="text", selected="llm2b"):
     for resource in RESOURCES.values():
         if resource.model:
-            gguf(root / "runtime/models" / resource.model)
+            gguf(
+                root / "runtime/models" / resource.model,
+                262144 if resource.alias == "Qwen3.5-2B" else 131072,
+                "qwen35" if resource.alias == "Qwen3.5-2B" else "llama",
+            )
     control = Control()
 
     async def handle(request):
@@ -595,16 +610,145 @@ def test_native_window_is_read_from_actual_gguf(tmp_path):
     assert native_context(path) == 131072
 
 
-async def test_optional_1b_models_do_not_block_default_2b_prerequisites(tmp_path):
+@pytest.mark.parametrize("architecture_last", [False, True])
+def test_native_window_matches_architecture_and_ignores_vision_context(tmp_path, architecture_last):
+    path = tmp_path / "qwen35.gguf"
+    gguf(path, 262144, "qwen35", vision_context=8192, architecture_last=architecture_last)
+    assert native_context(path) == 262144
+
+
+def test_vision_window_cannot_stand_in_for_missing_language_window(tmp_path):
+    path = tmp_path / "vision-only-metadata.gguf"
+    gguf(path, 262144, "qwen35", vision_context=8192)
+    path.write_bytes(path.read_bytes().replace(b"qwen35.context_length", b"vision.context_length"))
+    with pytest.raises(ValueError, match="no native context"):
+        native_context(path)
+
+
+def test_candidate_identity_cannot_use_another_architecture_with_the_same_window(tmp_path):
+    path = tmp_path / "wrong-model.gguf"
+    gguf(path, 262144)
+    with pytest.raises(ValueError, match="architecture does not match"):
+        native_context(path, expected_architecture="qwen35")
+
+
+async def test_fixed_qwen_text_route_is_explicit_and_respects_live_selection(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
+        assert (await client.get("/llm/qwen35/health")).status_code == 200
+        assert control.events == []
+        wrong = await client.post("/llm/qwen35/completion", json={"model": "MiniCPM5-2B"})
+        assert wrong.status_code == 422 and control.events == []
+        response = await client.post("/llm/qwen35/warmup", json={})
+        assert response.status_code == 200 and response.json()["model_alias"] == "Qwen3.5-2B"
+        assert broker.natives["llmqwen35"] == 262144
+        assert not control.alive["tts"] and control.alive["llmqwen35"]
+        await broker.switch_mode("live")
+        assert (await client.post("/llm/qwen35/warmup", json={})).status_code == 409
+        assert not control.alive["llmqwen35"]
+    await broker.close()
+
+
+async def test_qwen_alias_can_be_selected_without_changing_default_configuration(tmp_path):
+    (tmp_path / "runtime").mkdir()
+    path = tmp_path / "runtime/studio.json"
+    original = json.dumps({"llm": {"model": "Qwen3.5-2B"}, "inference_broker": {"mode": "text"}})
+    path.write_text(original)
+    app = create_app(tmp_path, warm_start=False)
+    assert app.state.broker.selected == "llmqwen35"
+    assert path.read_text() == original
+    await app.state.broker.close()
+
+
+def test_qwen_profile_uses_fixed_text_weights_full_window_and_documented_sampling(tmp_path):
+    runner = ProcessRunner(tmp_path, kv_cache_type="q4_0")
+    command = runner.command("llmqwen35")
+    expected = {
+        "--alias": "Qwen3.5-2B",
+        "--port": "9015",
+        "--ctx-size": "131072",
+        "--cache-type-k": "q8_0",
+        "--cache-type-v": "q8_0",
+        "--reasoning": "auto",
+        "--temp": "1.0",
+        "--top-p": "1.0",
+        "--top-k": "20",
+        "--min-p": "0.0",
+        "--presence-penalty": "2.0",
+        "--repeat-penalty": "1.0",
+        "--cache-ram": "0",
+        "--ctx-checkpoints": "0",
+        "--cache-reuse": "0",
+    }
+    for flag, value in expected.items():
+        assert command[command.index(flag) + 1] == value
+    assert command[command.index("-m") + 1] == str(
+        tmp_path.resolve() / "runtime/models/Qwen_Qwen3.5-2B-Q4_K_M.gguf"
+    )
+    assert "--mmproj" not in command
+    assert "--no-context-shift" in command
+    assert "--ctx-checkpoints" not in runner.command("llm2b")
+
+
+@pytest.mark.parametrize("candidate,use_runtime", [(False, True), (False, False), (True, True)])
+def test_initializer_only_prepares_selected_or_explicit_candidate(
+    tmp_path, monkeypatch, candidate, use_runtime
+):
+    source = Path(__file__).resolve().parents[1] / "tools/jetson/initialize-data.py"
+    spec = importlib.util.spec_from_file_location("initialize_data", source)
+    initializer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(initializer)
+    configuration = tmp_path / ("runtime/studio.json" if use_runtime else "config/studio.example.json")
+    configuration.parent.mkdir(parents=True)
+    alias = "MiniCPM5-2B" if candidate else "Qwen3.5-2B"
+    data = {"llm": {"model": alias}, "inference_broker": {"mode": "text"}, "secret": "retained"}
+    original = json.dumps(data)
+    configuration.write_text(original)
+    events = []
+    monkeypatch.setenv("TUBER_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        sys, "argv", ["initialize-data.py", "--offline"] + (["--candidate", "qwen35"] if candidate else [])
+    )
+    monkeypatch.setattr(sys, "path", sys.path[:])
+    monkeypatch.setattr(initializer, "ensure_nltk_data", lambda *args: events.append("nltk"))
+    monkeypatch.setattr(initializer, "verify_nltk_consumers", lambda *args: None)
+    monkeypatch.setattr(initializer, "prepare_llm", lambda root, key, offline: events.append((key, offline)))
+    monkeypatch.setattr(initializer.runpy, "run_path", lambda *args, **kwargs: events.append("tts"))
+    initializer.main()
+    assert events == ([("llmqwen35", True)] if candidate else ["nltk", ("llmqwen35", True), "tts"])
+    assert configuration.read_text() == original
+    if not candidate:
+        assert json.loads((tmp_path / "runtime/studio.json").read_text()) == data
+
+
+@pytest.mark.parametrize("model_key", ["llm2b", "llmqwen35"])
+async def test_only_selected_model_is_required_on_fresh_installation(tmp_path, model_key):
     binary = tmp_path / "fake-binary"
     binary.write_bytes(b"executable placeholder")
-    gguf(tmp_path / "runtime/models" / RESOURCES["llm2b"].model)
+    gguf(
+        tmp_path / "runtime/models" / RESOURCES[model_key].model,
+        262144 if model_key == "llmqwen35" else 131072,
+        "qwen35" if model_key == "llmqwen35" else "llama",
+    )
     for relative in ("tools/jetson/tts/serve.py", "runtime/tts/tts_infer.yaml"):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("placeholder")
     runner = ProcessRunner(tmp_path, llama_binary=binary, tts_python=binary)
-    assert set(await runner.validate_all()) == {"llm2b", "tts"}
+    assert set(await runner.validate_all()) == {model_key, "tts"}
+
+
+async def test_missing_selected_model_still_fails_without_starting_another_model(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    control.alive.pop("llm2b")
+    with pytest.raises(RuntimeError, match="not installed"):
+        await broker.initialize()
+    assert control.events == []
+    await broker.close()
 
 
 async def test_selected_profile_has_one_studio_configuration_owner(tmp_path):
