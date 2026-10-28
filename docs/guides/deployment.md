@@ -22,6 +22,7 @@
 | 2B llama子进程 | 9013 | 默认质量基线的MiniCPM5-2B，真实128K，别名与窗口核查。 |
 | GPT-SoVITS子进程 | 9011 | 动态声音，按绑定权重与参考音频合成。 |
 | 可选1B诊断子进程 | 9010 | 仅用于独立质量／资源实验，不替代默认2B。 |
+| 可选Qwen 2B候选子进程 | 9015 | 受限入口/llm/qwen35，仅在显式配置该候选时驻留；不自动替换默认。 |
 
 不部署host Docker controller／独立host venv，不挂Docker.sock，也不把宿主docker组权限给业务后台。broker只允许固定进程及本项目模型路径；管理令牌、overlay凭证、runtime/inference-token三者分权。内部认证头为X-Tuber-Inference-Key，不在浏览器、日志或示例中公开其值。外部OBS／浏览器通过后台访问媒体，不直连模型子端口。
 
