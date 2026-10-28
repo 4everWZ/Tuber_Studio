@@ -18,6 +18,7 @@ import importlib.machinery
 import os
 import runpy
 import sys
+from functools import wraps
 from pathlib import Path
 
 
@@ -70,7 +71,35 @@ TRANSFORMS = {
 }
 
 
+def release_after_run(original):
+    """Release allocator caches after the upstream generator's frame is gone.
+
+    Upstream's finally executes with its local tensors still referenced. Repeating
+    its existing cache cleanup after closing that frame preserves every yielded
+    audio chunk while returning only unused allocations to the shared device.
+    """
+
+    @wraps(original)
+    def run(self, *args, **kwargs):
+        iterator = original(self, *args, **kwargs)
+        try:
+            yield from iterator
+        finally:
+            try:
+                iterator.close()
+            finally:
+                del iterator
+                self.empty_cache()
+
+    return run
+
+
 class CompatibilityLoader(importlib.machinery.SourceFileLoader):
+    def exec_module(self, module):
+        super().exec_module(module)
+        if module.__name__ in {"GPT_SoVITS.TTS_infer_pack.TTS", "TTS_infer_pack.TTS"}:
+            module.TTS.run = release_after_run(module.TTS.run)
+
     def get_code(self, fullname: str):
         # Compile in memory: never write transformed third-party source or pyc.
         source = self.get_data(self.path).decode("utf-8-sig").replace("\r\n", "\n")

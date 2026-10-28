@@ -46,6 +46,8 @@ Think模式通过原生chat template和reasoning_format=deepseek分离推理与�
 
 冷切直播时为降低TTS载入瞬间的峰值，先释放LLM、等TTS完整就绪，再加载LLM并确认两者共驻；已热驻留的请求不反复卸载。失败／取消恢复也遵守资源顺序。该内部策略允许切换延迟，不减少真实窗口或张量精度，仍须设备实测，不把策略存在当作共驻成功。
 
+TTS生成器完全关闭后再执行上游已有的缓存清理，让已结束帧的临时张量释放；音频块、驻留权重、推理精度与解码步骤保持原样。冷加载／首句峰值与热态换页分别记录，短程两句成功不等于长时稳定，也不以一次冷启动换页推断整模型不可用。
+
 ## 单容器封装与推理边界
 
 目标为从适合 Jetson 的原始 CUDA／PyTorch 镜像派生一个 tuber-studio 镜像／容器，只保留运行所需组件，统一 Python／CUDA 环境，共享项目 runtime 挂载。容器内分离业务后端、受限 broker 和按需 llama／TTS 子进程；不默认部署 host Docker controller／独立 host venv，也不挂载 Docker.sock。
