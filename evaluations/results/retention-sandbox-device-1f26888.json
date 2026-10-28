@@ -1,0 +1,296 @@
+{
+  "source": "1f26888",
+  "image": "sha256:a561ec12ed3e1fcfdcddceb59f434a9578ef137b5977a693505a56279c59cdc3",
+  "manual_rebuild": {
+    "result": {
+      "rebuilt": true,
+      "prefilled": true,
+      "source_count": 2,
+      "scope": "comments:[\"bilibili\",\"import-runtime-rebuild\",\"floor-a\"]",
+      "input_tokens": 964,
+      "compacted": false,
+      "message": "已从本楼原文重建并完成真实模型prefill"
+    },
+    "token_counts": [
+      964,
+      964
+    ],
+    "completion": {
+      "status": 200,
+      "max_tokens": 1,
+      "prompt_tokens": 964,
+      "finish_reason": "length"
+    },
+    "storage": ":memory:",
+    "business_database_accessed": false,
+    "foreign_floor_excluded": true,
+    "drafts_created": 0
+  },
+  "restoration_completed": true,
+  "speech": {
+    "live_health": {
+      "state": "active",
+      "active_provider": "llmqwen35",
+      "error": null,
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    },
+    "speech_seconds": 9.593,
+    "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+    "duration_seconds": 3.68,
+    "frames": 117760,
+    "sample_rate": 32000,
+    "channels": 1,
+    "sample_width": 2,
+    "rms_pcm16": 6407.274812918584,
+    "non_silent": true,
+    "bytes": 235564,
+    "after_health": {
+      "state": "active",
+      "active_provider": "tts",
+      "error": null,
+      "mode": "live",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    },
+    "memory": {
+      "baseline": {
+        "available_kib": 3582520,
+        "swap_used_kib": 482560,
+        "pswpin": 275609,
+        "pswpout": 736804,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 494012,
+        "swap_used_kib": 482560,
+        "pswpin": 275610,
+        "pswpout": 736804,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 493828,
+      "swapin_bytes": 4096,
+      "swapout_bytes": 0,
+      "maximum_rolling_25s_swap_bytes": 4096,
+      "oom_kill_delta": 0,
+      "samples": 71
+    },
+    "text_health": {
+      "state": "active",
+      "active_provider": "llmqwen35",
+      "error": null,
+      "mode": "text",
+      "selected_provider": "llmqwen35",
+      "kv_cache_type": "q8_0",
+      "cuda_managed_memory": false,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q4_0",
+          "cache_type_v": "q4_0"
+        },
+        "llm1b": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llm1bq8": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": false,
+          "native_context_tokens": 131072,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "llmqwen35": {
+          "running": true,
+          "is_sleeping": false,
+          "loaded_this_boot": true,
+          "native_context_tokens": 262144,
+          "cache_type_k": "q8_0",
+          "cache_type_v": "q8_0"
+        },
+        "tts": {
+          "running": false,
+          "is_sleeping": true,
+          "loaded_this_boot": true,
+          "native_context_tokens": null,
+          "cache_type_k": null,
+          "cache_type_v": null
+        }
+      }
+    }
+  },
+  "restored_health": {
+    "state": "active",
+    "active_provider": "llm2b",
+    "error": null,
+    "mode": "text",
+    "selected_provider": "llm2b",
+    "kv_cache_type": "q4_0",
+    "cuda_managed_memory": false,
+    "busy": false,
+    "providers": {
+      "llm2b": {
+        "running": true,
+        "is_sleeping": false,
+        "loaded_this_boot": true,
+        "native_context_tokens": 131072,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0"
+      },
+      "llm1b": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 131072,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "llm1bq8": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 131072,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "llmqwen35": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 262144,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "tts": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": null,
+        "cache_type_k": null,
+        "cache_type_v": null
+      }
+    }
+  },
+  "restored_verification": {
+    "actual_model_alias": "MiniCPM5-2B",
+    "actual_context_tokens": 131072,
+    "runtime_state": "stopped",
+    "auto_browse": false,
+    "auto_reply": false
+  },
+  "sandbox": {
+    "rootfs_readonly": true,
+    "network_mode": "tuber-studio-private",
+    "broker_access": "container-local127.0.0.1:9012 through docker exec"
+  },
+  "prior_cpu_tests": {
+    "passed": 307,
+    "performed_by": "main before this deployment; not re-run by this device probe"
+  },
+  "retention_policy_modified": false,
+  "default_selection_modified": false,
+  "limitations": "One real isolated source rebuild and one guarded fresh speech synthesis. No business dataset, long-input, persona-quality or Mini/TTS co-residency test was performed.",
+  "statistics": {
+    "speech_minimum_available_mib": 482.25390625,
+    "speech_maximum_rolling_25s_swap_bytes": 4096,
+    "speech_oom_kill_delta": 0
+  }
+}
