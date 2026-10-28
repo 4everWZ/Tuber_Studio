@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, Response
 
 MAX_BODY = 2 * 1024 * 1024
 HEADER = "X-Tuber-Inference-Key"
+MODEL_CACHE_SUFFIXES = {".gguf", ".bin", ".pth", ".ckpt", ".safetensors"}
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,7 @@ class ProcessRunner:
                 "--cache-ram",
                 "0",
                 "--no-mmap",
+                "--direct-io",
             ]
         return [
             str(self.tts_python),
@@ -206,11 +208,64 @@ class ProcessRunner:
         if handle := self.logs.pop(key, None):
             handle.close()
 
+    def _advise_owned_model_cache(self):
+        """Best-effort advice for unused model pages, never global cache reclaim."""
+        advise = getattr(os, "posix_fadvise", None)
+        dontneed = getattr(os, "POSIX_FADV_DONTNEED", None)
+        if advise is None or dontneed is None:
+            return 0
+        try:
+            runtime = (self.root / "runtime").resolve()
+        except (OSError, RuntimeError):
+            return 0
+        directories = []
+        for relative in ("models", "tts/weights", "tts/pretrained"):
+            try:
+                directory = (runtime / relative).resolve()
+                if directory.is_relative_to(runtime) and directory.is_dir():
+                    directories.append(directory)
+            except (OSError, RuntimeError):
+                continue
+        advised, seen = 0, set()
+        for directory in directories:
+            try:
+                for candidate in directory.rglob("*"):
+                    if candidate.suffix.lower() not in MODEL_CACHE_SUFFIXES:
+                        continue
+                    descriptor = None
+                    try:
+                        path = candidate.resolve()
+                        if (
+                            path in seen
+                            or not path.is_relative_to(runtime)
+                            or not any(path.is_relative_to(base) for base in directories)
+                            or path.suffix.lower() not in MODEL_CACHE_SUFFIXES
+                            or not path.is_file()
+                        ):
+                            continue
+                        seen.add(path)
+                        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+                        descriptor = os.open(path, flags)
+                        advise(descriptor, 0, 0, dontneed)
+                        advised += 1
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+                    finally:
+                        if descriptor is not None:
+                            try:
+                                os.close(descriptor)
+                            except OSError:
+                                pass
+            except (OSError, RuntimeError):
+                continue
+        return advised
+
     async def start(self, key):
         profiles = await self.validate_all()
         if key not in profiles:
             raise RuntimeError("Optional fixed inference profile is not installed")
         await self.stop(key)
+        self._advise_owned_model_cache()
         log = self.root / "runtime" / ("inference-" + key + ".log")
         handle = log.open("ab")
         environment = os.environ.copy()

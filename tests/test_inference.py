@@ -282,12 +282,14 @@ async def test_process_runner_owns_session_and_confirms_group_stop(tmp_path, mon
         calls.append((args, kwargs))
         return process
 
+    runner._advise_owned_model_cache = lambda: calls.append("cache_advice")
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
     monkeypatch.setattr(os, "killpg", lambda pid, sig: calls.append((pid, sig)), raising=False)
     monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
     runner.validate_all = profiles
     await runner.start("llm2b")
-    args, options = calls[0]
+    assert calls[0] == "cache_advice"
+    args, options = calls[1]
     assert args[0] == str(runner.llama_binary)
     assert options["start_new_session"] is True and "shell" not in options
     assert options["env"]["TUBER_GPT_SOVITS_ROOT"] == "/opt/GPT-SoVITS-v2"
@@ -395,6 +397,7 @@ def test_runner_commands_are_fixed_profiles(tmp_path):
     assert args[args.index("--ctx-size") + 1] == "131072"
     assert args[args.index("--cache-type-k") + 1] == "q8_0"
     assert "--no-mmap" in args
+    assert "--direct-io" in args
     with pytest.raises(KeyError):
         runner.command("arbitrary; command")
 
@@ -465,3 +468,84 @@ async def test_resource_startup_failure_keeps_authenticated_observer_available(t
             assert response.status_code == 200 and response.json()["state"] == "error"
             assert (await client.get("/llm/2b/props")).status_code == 503
             assert manager.properties == {}
+
+
+def cache_advice_support(monkeypatch, implementation):
+    monkeypatch.setattr(os, "POSIX_FADV_DONTNEED", 4, raising=False)
+    monkeypatch.setattr(os, "posix_fadvise", implementation, raising=False)
+
+
+def test_cache_advice_only_touches_fixed_model_directories_and_suffixes(tmp_path, monkeypatch):
+    wanted = {
+        "models/a.gguf",
+        "tts/weights/b.pth",
+        "tts/weights/c.ckpt",
+        "tts/pretrained/d.bin",
+        "tts/pretrained/e.safetensors",
+    }
+    ignored = {"models/config.json", "tts/ref/reference.wav", "private/other.gguf"}
+    for relative in wanted | ignored:
+        path = tmp_path / "runtime" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative)
+    seen, descriptors = [], []
+
+    def advise(descriptor, offset, length, advice):
+        assert (offset, length, advice) == (0, 0, 4)
+        seen.append(os.read(descriptor, 200).decode())
+        descriptors.append(descriptor)
+
+    cache_advice_support(monkeypatch, advise)
+    runner = ProcessRunner(tmp_path)
+    assert runner._advise_owned_model_cache() == len(wanted)
+    assert set(seen) == wanted
+    for descriptor in descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+def test_cache_advice_refuses_escaped_and_looping_links(tmp_path, monkeypatch):
+    models = tmp_path / "runtime/models"
+    models.mkdir(parents=True)
+    (models / "good.gguf").write_text("owned")
+    foreign = tmp_path / "outside.gguf"
+    foreign.write_text("foreign")
+    try:
+        (models / "escape.gguf").symlink_to(foreign)
+        (models / "loop.gguf").symlink_to("loop.gguf")
+    except OSError:
+        pytest.skip("This platform does not permit unprivileged symlinks")
+    seen = []
+    cache_advice_support(monkeypatch, lambda fd, *_: seen.append(os.read(fd, 200)))
+    assert ProcessRunner(tmp_path)._advise_owned_model_cache() == 1
+    assert seen == [b"owned"]
+
+
+def test_cache_advice_closes_file_when_hint_fails(tmp_path, monkeypatch):
+    model = tmp_path / "runtime/models/model.gguf"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"model")
+    descriptors = []
+
+    def fail(descriptor, *_):
+        descriptors.append(descriptor)
+        raise OSError("Cache hint unsupported")
+
+    cache_advice_support(monkeypatch, fail)
+    assert ProcessRunner(tmp_path)._advise_owned_model_cache() == 0
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+
+
+def test_cache_advice_ignores_open_failure(tmp_path, monkeypatch):
+    model = tmp_path / "runtime/models/model.gguf"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"model")
+    cache_advice_support(monkeypatch, lambda *_: pytest.fail("No FD was opened"))
+
+    def denied(*_):
+        raise PermissionError("Model is not readable")
+
+    monkeypatch.setattr(os, "open", denied)
+    assert ProcessRunner(tmp_path)._advise_owned_model_cache() == 0
