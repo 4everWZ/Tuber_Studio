@@ -1,0 +1,12 @@
+.git
+.venv
+runtime
+tmp
+docs
+tests
+evaluations/*
+!evaluations/semantic-cases.json
+**/__pycache__
+.pytest_cache
+.ruff_cache
+*.egg-info

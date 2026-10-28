@@ -13,7 +13,7 @@
 
 ## Jetson目标部署
 
-最终默认方向是单派生镜像、单tuber-studio容器：统一Python／CUDA环境，内部运行后台、受限broker及按需模型子进程，共享runtime挂载。该封装仍须完成构建、设备启动和恢复验收；下面是部署契约与端口约定，不宣称已有经过验证的一键命令。
+使用单派生镜像、单tuber-studio容器：统一Python／CUDA环境，后台和受限broker共享一个Python进程，llama／TTS按需作为固定子进程启动。镜像构建、持久数据初始化和设备后台启动已验证；模型质量、共驻及退出／恢复的剩余验收由当前计划维护。
 
 | 容器内组件 | 回环端口 | 职责 |
 | --- | --- | --- |
@@ -25,17 +25,24 @@
 
 不部署host Docker controller／独立host venv，不挂Docker.sock，也不把宿主docker组权限给业务后台。broker只允许固定进程及本项目模型路径；管理令牌、overlay凭证、runtime/inference-token三者分权。内部认证头为X-Tuber-Inference-Key，不在浏览器、日志或示例中公开其值。外部OBS／浏览器通过后台访问媒体，不直连模型子端口。
 
-项目路径为/home/weizheng/code/Tuber_Studio，使用ssh jetson连接；网络地址由本机SSH配置维护，不在项目规范里固定。源码、工具及配置模板在项目树；权重、TTS源码／参考模型、凭证、数据库、缓存和项目环境置runtime。仅操作本项目资源，不停止其他项目服务。
+项目路径为/home/weizheng/code/Tuber_Studio，使用ssh jetson连接；网络地址由本机SSH配置维护，不在项目规范里固定。源码、工具和配置模板进镜像；权重、参考音频、NLTK词典、凭证、数据库和缓存置runtime，容器只挂这一数据目录。TTS官方源码在镜像/opt/GPT-SoVITS-v2，应用环境在/opt/studio-venv；原生CUDA／Torch由基础镜像复用，不在宿主或runtime新建Python环境。仅操作本项目资源，不停止其他项目服务。
 
 模板的LLM入口为http://127.0.0.1:9012/llm/2b，TTS入口为http://127.0.0.1:9012/tts。当前保守模式为2B／TTS互斥；优先实验2B Q4_K_M权重＋q4 KV＋128K与TTS共驻，只有语义与共享内存验收通过后才改默认。配置共驻不放开生成并发；加载等待和错误显示在资源状态，休眠不改变已验证容量。
 
-镜像可以从已有Jetson CUDA／PyTorch或llama基础镜像派生，最终只留运行必需组件。已有ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821是候选基础，并不证明新2B／q4 KV配置兼容。源代码中的runner／入口和镜像构建必须一起验收后再形成正式启动命令。
+镜像以dustynv/pytorch:2.7-r36.4.0-cu128-24.04为基础，从ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821阶段只复制llama-server，复用原生Torch和CUDA。运行层不复制开发测试、临时文件、宿主venv或第二套CUDA；带一份维护用语义准入脚本与固定用例。
 
-### 现有分散脚本的边界
+### 构建、初始化与替换
 
-tools/jetson/start-llm.sh、tts/deploy.sh、start-studio.sh、inference-start.sh及restart-inference.sh来自分散容器／诊断路径，不能作为最终默认单容器指南。尤其旧start-llm.sh创建1B、旧restart-inference.sh按1B与TTS的启动顺序操作，不用于证明当前2B默认或q4 KV共驻。
+在Jetson项目目录执行：
 
-TTS准备工具支持下载来源／权重／参考音频配置及离线复用；其独立容器启动／替换步骤仅在相应诊断场景使用，不与最终单容器supervisor混用。最终入口仍需验证统一环境依赖、子进程身份、冷启动、取消／退出清理、重启恢复、只读模型与可写缓存路径。未完成部分在当前工作计划中协调。
+    bash tools/jetson/build-image.sh
+    bash tools/jetson/run-studio.sh
+
+已有本项目容器时，第二条改为bash tools/jetson/run-studio.sh --replace。工具先用最终镜像、当前UID初始化／检查数据，再验证归属并停止旧项目GPU容器、替换工作台；同名但挂载不属于本项目时拒绝操作。旧分散部署入口已退役，不与单容器supervisor混用。配置缺失才从模板创建，已有配置／TTS YAML属于Operator，不覆盖；从旧版本迁移时须将llm、tts入口改为上述broker地址并补inference_broker，保留其他设置、凭证和数据库。
+
+初始化直接复用已验证的权重与词典；缺少时下载官方资源，网络失败有界退出。可用最终镜像执行tools/jetson/initialize-data.py --offline验证本地前提；它会检查真实cmudict、pos_tag与g2p_en消费者，避免启动时再交互下载。runtime须由运行UID可写，词典数据自身禁止其他账号写入。运行时无需安装依赖。
+
+停止／启动使用docker stop tuber-studio和docker start tuber-studio；更新源码、角色素材或音色模板须重建镜像并--replace，runtime保留。服务启动与模型可用分开：即使资源加载失败，后台仍显示错误；检查runtime/inference-llm2b.log等资源日志，不把HTTP可达当作质量／128K验收。
 
 ## 本地访问Jetson后台
 

@@ -1,4 +1,6 @@
-"""Run official GPT-SoVITS 20240821v2 without rewriting its source files.
+"""Run GPT-SoVITS 20240821v2 with the image's shared /opt/studio-venv.
+
+No separate Python environment is created, and upstream source is not rewritten.
 
 The old release imports typing aliases implicitly from torch.nn.functional;
 torch 2.7 no longer exports all of them. Its original loading order also holds
@@ -101,7 +103,7 @@ def check_source(source_root: Path) -> None:
 
 def main() -> None:
     root = Path(os.environ.get("TUBER_ROOT", "/workspace/tuber"))
-    source_root = root / "runtime/tts/GPT-SoVITS-v2"
+    source_root = Path(os.environ.get("TUBER_GPT_SOVITS_ROOT", str(root / "runtime/tts/GPT-SoVITS-v2")))
     if sys.argv[1:] == ["--check-source"]:
         check_source(source_root)
         return

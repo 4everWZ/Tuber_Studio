@@ -67,6 +67,21 @@ def verify_dependencies(requirements: Path) -> None:
         raise RuntimeError("Dependency mismatch:\n" + "\n".join(mismatches))
 
 
+def ensure_configuration(template: Path, target: Path, root: Path, *, check_only: bool = False) -> bool:
+    """Seed a missing configuration; existing files belong to the operator."""
+    if check_only or target.exists():
+        return False
+    configuration = template.read_text(encoding="utf-8").replace("/workspace/tuber", str(root))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # Exclusive creation also preserves a config installed concurrently.
+        with target.open("x", encoding="utf-8") as stream:
+            stream.write(configuration)
+    except FileExistsError:
+        return False
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true")
@@ -76,9 +91,12 @@ def main() -> None:
     root = Path(os.environ.get("TUBER_ROOT", "/workspace/tuber"))
     tools = Path(__file__).resolve().parent
     runtime = root / "runtime/tts"
-    source = runtime / "GPT-SoVITS-v2"
+    image_source = os.environ.get("TUBER_GPT_SOVITS_ROOT")
+    source = Path(image_source) if image_source else runtime / "GPT-SoVITS-v2"
     verify_dependencies(tools / "requirements.txt")
     if not (source / "api_v2.py").is_file():
+        if image_source:
+            raise RuntimeError(f"Preinstalled GPT-SoVITS 20240821v2 source missing: {source}")
         if offline:
             raise RuntimeError(f"Offline source prerequisite missing: {source}")
         if source.exists():
@@ -110,8 +128,9 @@ def main() -> None:
             + relative
         )
         fetch(url, runtime / relative, size, offline)
-    if not args.check_only:
-        shutil.copyfile(tools / "tts_infer.yaml", runtime / "tts_infer.yaml")
+    ensure_configuration(
+        tools / "tts_infer.yaml", runtime / "tts_infer.yaml", root, check_only=args.check_only
+    )
     print("TTS prerequisites ready; voice is CC BY-NC 4.0, attribution: 尹紫鹭幻想社（Bilibili）")
 
 

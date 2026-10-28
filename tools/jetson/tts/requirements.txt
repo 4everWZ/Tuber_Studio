@@ -65,7 +65,6 @@ pytorch-lightning==2.4.0
 pytz==2026.5
 regex==2026.9.29
 rotary-embedding-torch==0.6.5
-ruff==0.17.3
 safetensors==0.8.0
 scikit-learn==1.9.1
 scipy==1.17.1

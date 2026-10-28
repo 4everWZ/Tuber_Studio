@@ -26,8 +26,10 @@ class Control:
         self.stop_gate = None
 
     async def validate_all(self):
-        return {key: {"command": ["--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--no-mmap"]}
-                for key in self.alive}
+        return {
+            key: {"command": ["--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--no-mmap"]}
+            for key in self.alive
+        }
 
     async def running(self, key):
         return self.alive.get(key, False)
@@ -60,8 +62,10 @@ def setup_broker(root, post=None, mode="exclusive"):
     async def handle(request):
         key = next(key for key, spec in RESOURCES.items() if request.url.port == httpx.URL(spec.url).port)
         if request.url.path == "/props":
-            return httpx.Response(200, json={"model_alias": RESOURCES[key].alias,
-                                           "default_generation_settings": {"n_ctx": 131072}})
+            return httpx.Response(
+                200,
+                json={"model_alias": RESOURCES[key].alias, "default_generation_settings": {"n_ctx": 131072}},
+            )
         if request.method == "POST" and post:
             return await post(request, key)
         return httpx.Response(200, json={"status": "ok"})
@@ -170,17 +174,24 @@ async def test_observers_do_not_wake_sleeping_resources_and_warmup_is_explicit(t
     await broker.close()
 
 
-@pytest.mark.parametrize("path,body", [
-    ("/llm/2b/arbitrary", {}), ("/llm/other/completion", {}),
-    ("/tts/set_gpt_weights", {}), ("/llm/2b/completion", {"model": "another-model"}),
-    ("/llm/2b/completion", {"stream": True}), ("/tts/tts", {"ref_audio_path": "/etc/passwd"}),
-])
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/llm/2b/arbitrary", {}),
+        ("/llm/other/completion", {}),
+        ("/tts/set_gpt_weights", {}),
+        ("/llm/2b/completion", {"model": "another-model"}),
+        ("/llm/2b/completion", {"stream": True}),
+        ("/tts/tts", {"ref_audio_path": "/etc/passwd"}),
+    ],
+)
 async def test_paths_models_streams_and_reference_files_are_restricted(tmp_path, path, body):
     broker, control = setup_broker(tmp_path)
     app = create_app(tmp_path, broker=broker, warm_start=False)
     token = (tmp_path / "runtime/inference-token").read_text()
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://broker",
-                                 headers={HEADER: token}) as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
         assert (await client.post(path, json=body)).status_code in {404, 422}
     assert control.events == []
     await broker.close()
@@ -197,8 +208,9 @@ async def test_body_limit_rejects_before_resource_activation(tmp_path, chunked):
         yield b"x"
 
     data = chunks() if chunked else b"x" * (MAX_BODY + 1)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://broker",
-                                 headers={HEADER: token}) as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
         assert (await client.post("/llm/2b/completion", content=data)).status_code == 413
     assert control.events == []
     await broker.close()
@@ -221,12 +233,23 @@ async def test_real_asgi_disconnect_cancels_owned_upstream_and_unlocks(tmp_path)
     async def send(message):
         sent.append(message)
 
-    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
-             "scheme": "http", "path": "/llm/2b/completion", "raw_path": b"/llm/2b/completion",
-             "query_string": b"", "headers": [(HEADER.lower().encode(), token.encode()),
-                                                (b"content-type", b"application/json"),
-                                                (b"content-length", b"2")],
-             "server": ("broker", 80), "client": ("operator", 1234)}
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/llm/2b/completion",
+        "raw_path": b"/llm/2b/completion",
+        "query_string": b"",
+        "headers": [
+            (HEADER.lower().encode(), token.encode()),
+            (b"content-type", b"application/json"),
+            (b"content-length", b"2"),
+        ],
+        "server": ("broker", 80),
+        "client": ("operator", 1234),
+    }
     work = asyncio.create_task(app(scope, incoming.get, send))
     await entered.wait()
     incoming.put_nowait({"type": "http.disconnect"})
@@ -312,28 +335,38 @@ async def test_cancel_during_spawn_acquires_and_stops_child_before_return(tmp_pa
     assert not runner.processes and not runner.logs
 
 
-@pytest.mark.parametrize("configured,location,valid_wave,expected", [
-    (True, "assets/oc/reference.wav", True, 200),
-    (True, "runtime/tts/ref/new-oc.wav", True, 200),
-    (False, "assets/oc/reference.wav", True, 422),
-    (True, "runtime/private.wav", True, 422),
-    (True, "assets/oc/reference.wav", False, 422),
-])
+@pytest.mark.parametrize(
+    "configured,location,valid_wave,expected",
+    [
+        (True, "assets/oc/reference.wav", True, 200),
+        (True, "runtime/tts/ref/new-oc.wav", True, 200),
+        (False, "assets/oc/reference.wav", True, 422),
+        (True, "runtime/private.wav", True, 422),
+        (True, "assets/oc/reference.wav", False, 422),
+    ],
+)
 async def test_tts_uses_operator_reference_whitelist_with_project_bounds(
-    tmp_path, configured, location, valid_wave, expected,
+    tmp_path,
+    configured,
+    location,
+    valid_wave,
+    expected,
 ):
     broker, control = setup_broker(tmp_path)
     reference = tmp_path / location
     reference.parent.mkdir(parents=True, exist_ok=True)
     reference.write_bytes(b"RIFF\x04\x00\x00\x00WAVE" if valid_wave else b"not audio")
     (tmp_path / "config").mkdir()
-    (tmp_path / "config/voices.json").write_text(json.dumps(
-        [{"id": "new-oc", "server_reference_path": str(reference)}] if configured else [],
-    ))
+    (tmp_path / "config/voices.json").write_text(
+        json.dumps(
+            [{"id": "new-oc", "server_reference_path": str(reference)}] if configured else [],
+        )
+    )
     app = create_app(tmp_path, broker=broker, warm_start=False)
     token = (tmp_path / "runtime/inference-token").read_text()
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://broker",
-                                 headers={HEADER: token}) as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
         response = await client.post("/tts/tts", json={"ref_audio_path": str(reference), "text": "你好"})
     assert response.status_code == expected
     assert control.alive["tts"] is (expected == 200)
@@ -386,9 +419,17 @@ async def test_optional_1b_models_do_not_block_default_2b_prerequisites(tmp_path
 
 async def test_selected_profile_has_one_studio_configuration_owner(tmp_path):
     (tmp_path / "runtime").mkdir()
-    (tmp_path / "runtime/studio.json").write_text(json.dumps({"inference_broker": {
-        "mode": "exclusive", "kv_cache_type": "q4_0", "cuda_managed_memory": False,
-    }}))
+    (tmp_path / "runtime/studio.json").write_text(
+        json.dumps(
+            {
+                "inference_broker": {
+                    "mode": "exclusive",
+                    "kv_cache_type": "q4_0",
+                    "cuda_managed_memory": False,
+                }
+            }
+        )
+    )
     app = create_app(tmp_path, warm_start=False)
     manager = app.state.broker
     args = manager.runner.command("llm2b")
@@ -417,8 +458,9 @@ async def test_resource_startup_failure_keeps_authenticated_observer_available(t
     app = create_app(tmp_path, broker=manager)
     token = (tmp_path / "runtime/inference-token").read_text()
     async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://broker",
-                                     headers={HEADER: token}) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+        ) as client:
             response = await client.get("/health")
             assert response.status_code == 200 and response.json()["state"] == "error"
             assert (await client.get("/llm/2b/props")).status_code == 503

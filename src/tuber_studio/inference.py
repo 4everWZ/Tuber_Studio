@@ -33,7 +33,9 @@ class Resource:
 RESOURCES = {
     "llm2b": Resource("http://127.0.0.1:9013", "/health", "MiniCPM5-2B", "MiniCPM5-2B-Q4_K_M.gguf"),
     "llm1b": Resource("http://127.0.0.1:9010", "/health", "MiniCPM5-1B", "MiniCPM5-1B-Q4_K_M.gguf", True),
-    "llm1bq8": Resource("http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf", True),
+    "llm1bq8": Resource(
+        "http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf", True
+    ),
     "tts": Resource("http://127.0.0.1:9011", "/docs"),
 }
 LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
@@ -43,6 +45,7 @@ def native_context(path: Path) -> int:
     """Read the selected GGUF's declared context without loading model tensors."""
     formats = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}
     with path.open("rb") as source:
+
         def number(fmt):
             return struct.unpack("<" + fmt, source.read(struct.calcsize("<" + fmt)))[0]
 
@@ -76,8 +79,15 @@ def native_context(path: Path) -> int:
 class ProcessRunner:
     """Own only fixed inference subprocess groups inside the application container."""
 
-    def __init__(self, root: Path, *, llama_binary: Path | None = None, tts_python: Path | None = None,
-                 kv_cache_type="q8_0", cuda_managed_memory=False):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        llama_binary: Path | None = None,
+        tts_python: Path | None = None,
+        kv_cache_type="q8_0",
+        cuda_managed_memory=False,
+    ):
         if kv_cache_type not in {"q8_0", "q4_0"} or type(cuda_managed_memory) is not bool:
             raise ValueError("Invalid fixed inference allocation profile")
         self.root = root.resolve()
@@ -91,15 +101,57 @@ class ProcessRunner:
         resource = RESOURCES[key]
         if resource.model:
             cache = self.kv_cache_type if key == "llm2b" else "q8_0"
-            return [str(self.llama_binary), "-m", str(self.root / "runtime/models" / resource.model),
-                    "--alias", resource.alias, "--host", "127.0.0.1", "--port", str(httpx.URL(resource.url).port),
-                    "--jinja", "--ctx-size", "131072", "--parallel", "1", "--fit", "off",
-                    "--n-gpu-layers", "99", "--flash-attn", "on", "--cache-type-k", cache,
-                    "--cache-type-v", cache, "--reasoning", "off", "--temp", "1.0" if key == "llm2b" else "0.7",
-                    "--top-p", "0.95", "--min-p", "0.0", "--batch-size", "256", "--ubatch-size", "64",
-                    "--cache-ram", "0", "--no-mmap"]
-        return [str(self.tts_python), str(self.root / "tools/jetson/tts/serve.py"),
-                "-c", str(self.root / "runtime/tts/tts_infer.yaml"), "-a", "127.0.0.1", "-p", "9011"]
+            return [
+                str(self.llama_binary),
+                "-m",
+                str(self.root / "runtime/models" / resource.model),
+                "--alias",
+                resource.alias,
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(httpx.URL(resource.url).port),
+                "--jinja",
+                "--ctx-size",
+                "131072",
+                "--parallel",
+                "1",
+                "--fit",
+                "off",
+                "--n-gpu-layers",
+                "99",
+                "--flash-attn",
+                "on",
+                "--cache-type-k",
+                cache,
+                "--cache-type-v",
+                cache,
+                "--reasoning",
+                "off",
+                "--temp",
+                "1.0" if key == "llm2b" else "0.7",
+                "--top-p",
+                "0.95",
+                "--min-p",
+                "0.0",
+                "--batch-size",
+                "256",
+                "--ubatch-size",
+                "64",
+                "--cache-ram",
+                "0",
+                "--no-mmap",
+            ]
+        return [
+            str(self.tts_python),
+            str(self.root / "tools/jetson/tts/serve.py"),
+            "-c",
+            str(self.root / "runtime/tts/tts_infer.yaml"),
+            "-a",
+            "127.0.0.1",
+            "-p",
+            "9011",
+        ]
 
     async def validate_all(self):
         profiles = {}
@@ -107,9 +159,15 @@ class ProcessRunner:
             model = (self.root / "runtime/models" / resource.model).resolve() if resource.model else None
             if model is not None and not model.is_file() and resource.optional:
                 continue
-            required = [model, self.llama_binary] if model is not None else [
-                self.tts_python, self.root / "tools/jetson/tts/serve.py", self.root / "runtime/tts/tts_infer.yaml",
-            ]
+            required = (
+                [model, self.llama_binary]
+                if model is not None
+                else [
+                    self.tts_python,
+                    self.root / "tools/jetson/tts/serve.py",
+                    self.root / "runtime/tts/tts_infer.yaml",
+                ]
+            )
             if any(path is None or not path.is_file() for path in required):
                 raise RuntimeError("Fixed inference profile prerequisite is missing")
             if model is not None and not model.is_relative_to(self.root):
@@ -160,10 +218,16 @@ class ProcessRunner:
         environment.pop("GGML_CUDA_ENABLE_UNIFIED_MEMORY", None)
         if key == "llm2b" and self.cuda_managed_memory:
             environment["GGML_CUDA_ENABLE_UNIFIED_MEMORY"] = "1"
-        launch = asyncio.create_task(asyncio.create_subprocess_exec(
-            *profiles[key]["command"], cwd=self.root, stdout=handle,
-            stderr=asyncio.subprocess.STDOUT, start_new_session=True, env=environment,
-        ))
+        launch = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                *profiles[key]["command"],
+                cwd=self.root,
+                stdout=handle,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
+                env=environment,
+            )
+        )
         try:
             process = await asyncio.shield(launch)
         except asyncio.CancelledError:
@@ -288,13 +352,20 @@ class InferenceBroker:
         if sum(running is True for running in observed.values()) > 1:
             state, error = "error", "Unexpected concurrent inference processes"
         return {
-            "state": state, "active_provider": self.active if observed.get(self.active) else None,
-            "error": error, "mode": self.mode,
+            "state": state,
+            "active_provider": self.active if observed.get(self.active) else None,
+            "error": error,
+            "mode": self.mode,
             "kv_cache_type": getattr(self.runner, "kv_cache_type", "q8_0"),
             "cuda_managed_memory": getattr(self.runner, "cuda_managed_memory", False),
-            "busy": self.lock.locked(), "providers": {
-                key: {"running": observed[key], "is_sleeping": not observed[key],
-                      "loaded_this_boot": key in self.loaded, "native_context_tokens": self.natives.get(key)}
+            "busy": self.lock.locked(),
+            "providers": {
+                key: {
+                    "running": observed[key],
+                    "is_sleeping": not observed[key],
+                    "loaded_this_boot": key in self.loaded,
+                    "native_context_tokens": self.natives.get(key),
+                }
                 for key in RESOURCES
             },
         }
@@ -308,8 +379,12 @@ class InferenceBroker:
             if key not in self.properties:
                 raise HTTPException(503, "Resource has not been loaded during this broker boot")
             return self.properties[key] | {"is_sleeping": not running, "active_provider": self.active}
-        return {"status": "ok" if key in self.loaded else "cold", "available": key in self.loaded,
-                "is_sleeping": not running, "active_provider": self.active}
+        return {
+            "status": "ok" if key in self.loaded else "cold",
+            "available": key in self.loaded,
+            "is_sleeping": not running,
+            "active_provider": self.active,
+        }
 
     async def forward(self, key, path, body):
         async with self.lock:
@@ -319,13 +394,17 @@ class InferenceBroker:
                 if path == "warmup":
                     return JSONResponse(await self.read(key, "props"))
                 response = await self.client.post(
-                    RESOURCES[key].url + "/" + path, content=body,
+                    RESOURCES[key].url + "/" + path,
+                    content=body,
                     headers={"Content-Type": "application/json"},
                 )
                 # httpx post buffers the body before returning. The GPU lease is
                 # held through this point even when the upstream sends chunked WAV.
-                return Response(response.content, status_code=response.status_code,
-                                media_type=response.headers.get("content-type", "application/octet-stream"))
+                return Response(
+                    response.content,
+                    status_code=response.status_code,
+                    media_type=response.headers.get("content-type", "application/octet-stream"),
+                )
             except asyncio.CancelledError:
                 self.state, self.error = "stopping", "Inference request was cancelled"
                 cleanup = asyncio.create_task(self.runner.stop(key)) if self._target_touched else None
@@ -374,12 +453,15 @@ def inference_token(root: Path):
 
 def allowed_tts_reference(root: Path, value) -> bool:
     """An operator-configured, existing project WAV is the only file input."""
+
     def reference(raw):
         if not isinstance(raw, str) or not raw or "://" in raw:
             return None
         path = Path(raw)
         path = (path if path.is_absolute() else root / path).resolve()
-        if not any(path.is_relative_to(base.resolve()) for base in (root / "assets", root / "runtime/tts/ref")):
+        if not any(
+            path.is_relative_to(base.resolve()) for base in (root / "assets", root / "runtime/tts/ref")
+        ):
             return None
         if path.suffix.lower() != ".wav" or not path.is_file():
             return None
@@ -394,7 +476,9 @@ def allowed_tts_reference(root: Path, value) -> bool:
         voices = json.loads((root / "config/voices.json").read_text(encoding="utf-8"))
         if not isinstance(voices, list):
             return False
-        allowed = {reference(voice.get("server_reference_path")) for voice in voices if isinstance(voice, dict)}
+        allowed = {
+            reference(voice.get("server_reference_path")) for voice in voices if isinstance(voice, dict)
+        }
         return requested in allowed
     except (OSError, ValueError, TypeError):
         return False
@@ -434,8 +518,11 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
     profile = data.get("inference_broker", {})
     if not isinstance(profile, dict):
         raise ValueError("Invalid inference broker configuration")
-    runner = ProcessRunner(root, kv_cache_type=profile.get("kv_cache_type", "q8_0"),
-                           cuda_managed_memory=profile.get("cuda_managed_memory", False))
+    runner = ProcessRunner(
+        root,
+        kv_cache_type=profile.get("kv_cache_type", "q8_0"),
+        cuda_managed_memory=profile.get("cuda_managed_memory", False),
+    )
     manager = broker or InferenceBroker(root, runner=runner, mode=profile.get("mode", "exclusive"))
     token = inference_token(root)
 
@@ -467,7 +554,9 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
             if (key.startswith("llm") and path in {"health", "props"}) or (key == "tts" and path == "docs"):
                 return await manager.read(key, path)
             raise HTTPException(404)
-        if not ((key.startswith("llm") and path in LLM_POSTS | {"warmup"}) or (key == "tts" and path == "tts")):
+        if not (
+            (key.startswith("llm") and path in LLM_POSTS | {"warmup"}) or (key == "tts" and path == "tts")
+        ):
             raise HTTPException(404)
         data = bytearray()
         async for chunk in request.stream():
@@ -485,8 +574,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         if key.startswith("llm") and body.get("model", RESOURCES[key].alias) != RESOURCES[key].alias:
             raise HTTPException(422, "Model does not match typed resource")
         if key == "tts" and (
-            not allowed_tts_reference(root, body.get("ref_audio_path"))
-            or body.get("aux_ref_audio_paths")
+            not allowed_tts_reference(root, body.get("ref_audio_path")) or body.get("aux_ref_audio_paths")
         ):
             raise HTTPException(422, "TTS reference must be the configured project voice")
 

@@ -7,7 +7,7 @@
     uv sync --python 3.12
     uv run python -m tuber_studio
 
-打开[本地工作台](http://127.0.0.1:8020)，管理令牌在runtime/admin-token。推理服务另行准备，连接／容量失败会显示错误。目标部署为单派生Docker镜像／容器，内部按需加载2B与TTS；封装与Profile准入进度见当前计划，不能把旧分散容器启动当最终交付。
+打开[本地工作台](http://127.0.0.1:8020)，管理令牌在runtime/admin-token。Jetson使用单派生Docker镜像／容器，内部按需加载2B与TTS；镜像与后台已启动验证，Profile质量／资源准入及剩余端到端验收见当前计划。连接／容量失败会显示错误。
 
 [部署与Jetson启动](docs/guides/deployment.md) · [创建OC](docs/guides/characters.md) · [规范与文档导航](docs/README.md) · [当前计划](docs/plans/p0-runtime.md)
 
