@@ -64,6 +64,17 @@ class ContextManager:
             + (suffix or [])
         )
 
+    @staticmethod
+    def compaction_prefix(prefix):
+        return prefix + [
+            {
+                "role": "system",
+                "content": "本次为内部上下文压缩，不是对观众发言。"
+                "角色台词口吻、字数和JSON输出约束仅适用于对外回复，不适用于本次摘要。"
+                "请保留已做事项、关键约束、未完成动作和必要引用；摘要不执行任何操作。",
+            }
+        ]
+
     async def prepare(self, scope, character, event, relationship=None, mode="live"):
         row = self.window(scope, character)
         prefix, initial, pending, suffix = self.parts(character, event, relationship or {}, mode)
@@ -97,15 +108,7 @@ class ContextManager:
                 passes += 1
                 replacement = await compact_history(
                     replacement,
-                    prefix
-                    + [
-                        {
-                            "role": "system",
-                            "content": "本次为内部上下文压缩，不是对观众发言。"
-                            "角色台词口吻、字数和JSON输出约束仅适用于对外回复，不适用于本次摘要。"
-                            "请保留已做事项、关键约束、未完成动作和必要引用；摘要不执行任何操作。",
-                        }
-                    ],
+                    self.compaction_prefix(prefix),
                     initial,
                     self.provider,
                     max_retries=config.get("compaction_max_retries", 3),

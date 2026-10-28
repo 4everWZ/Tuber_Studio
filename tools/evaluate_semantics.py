@@ -70,7 +70,7 @@ async def evaluate(config_path, character_id, seed=42):
         try:
             replacement = await compact_history(
                 cases["history"],
-                prefix,
+                ContextManager.compaction_prefix(prefix),
                 initial,
                 provider,
                 summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
