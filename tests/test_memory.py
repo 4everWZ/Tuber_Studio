@@ -138,6 +138,27 @@ def test_negated_future_uncertain_and_question_clauses_do_not_establish_facts(te
     assert extract_facts(text) == []
 
 
+def test_completed_clauses_before_a_future_frame_keep_original_source_spans():
+    past = "我去了风铃农场，朋友阿黎送我三份甜饼。"
+    text = past + "下次带你去河畔夜市，店主阿泽送我两盒果冻。"
+    facts = extract_facts(text)
+    assert {f["slot"]: f["value"] for f in facts} == {
+        "location": "风铃农场",
+        "person": "朋友阿黎",
+        "item": "甜饼",
+        "quantity": "三份",
+        "action": "送我",
+    }
+    for fact in facts:
+        assert text[slice(*fact["span"])] == fact["quote"]
+        assert fact["span"][1] <= len(past)
+
+
+def test_future_frame_at_start_governs_later_unmarked_gift_clauses():
+    text = "明天我去了风铃农场。朋友阿黎送我三份甜饼。"
+    assert extract_facts(text) == []
+
+
 def test_unknown_form_remains_searchable_as_original_only(memory):
     text = "银雾隧道的旋律像雨点一样。"
     save(memory, text)

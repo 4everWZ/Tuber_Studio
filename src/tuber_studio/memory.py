@@ -45,10 +45,14 @@ def extract_facts(text):
     """Return literal, source-spanned facts for unambiguous occurred clauses."""
     facts = []
     # A future frame can govern following clauses too ("明天……，店主会……").
-    if re.search(r"下次|下期|下回|明天|后天|以后|将来|计划|准备|打算|希望|如果|假如", text):
-        return facts
+    # Earlier completed clauses remain evidence; later ambiguous clauses do not.
+    future_frame = False
     for clause in CLAUSE.finditer(text):
         sentence = clause.group().strip()
+        if re.search(r"下次|下期|下回|明天|后天|以后|将来|计划|准备|打算|希望|如果|假如", sentence):
+            future_frame = True
+        if future_frame:
+            continue
         if FUTURE_OR_NEGATED.search(sentence) or re.search(r"谁|什么|哪里|哪儿|多少|几个", sentence):
             continue
         # Require first-person/direct past wording; do not index quoted stories,
