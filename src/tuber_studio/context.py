@@ -244,10 +244,12 @@ class ContextManager:
             "UPDATE context_windows SET history=?,updated_at=? WHERE key=?",
             (json.dumps(history, ensure_ascii=False), time.time(), row["key"]),
         )
-        self.memory.record(scope, character, event["event_id"], "user", event["text"])
-        self.memory.record(
-            scope, character, event["event_id"], "assistant", reply_text, kind=memory_kind or "role_story"
-        )
+        if event["text"].strip():
+            self.memory.record(scope, character, event["event_id"], "user", event["text"])
+        if reply_text.strip():
+            self.memory.record(
+                scope, character, event["event_id"], "assistant", reply_text, kind=memory_kind or "role_story"
+            )
 
     def status(self, scope=None, character=None):
         selected_key = (

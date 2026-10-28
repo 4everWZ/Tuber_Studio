@@ -88,3 +88,9 @@ def test_single_system_template_adapter_keeps_instructions_and_dialogue_intact()
         {"role": "assistant", "content": "original answer"},
     ]
     assert original[-1] == {"role": "system", "content": "format"}
+
+
+def test_nonverbal_event_does_not_fabricate_a_viewer_source(runtime, store):
+    runtime.context.record("live:sfx", runtime.character, {"event_id": "sfx:1", "text": ""}, "喵")
+    rows = store.all("SELECT role,text FROM grounded_memory WHERE event_id='sfx:1'")
+    assert rows == [{"role": "assistant", "text": "喵"}]
