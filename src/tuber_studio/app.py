@@ -31,12 +31,18 @@ def create_app(settings=None, adapter=None):
 
     @asynccontextmanager
     async def lifespan(app):
-        await runtime.open()
-        await comments.open()
-        yield
-        await comments.close()
-        await runtime.close()
-        store.close()
+        try:
+            await runtime.open()
+            await comments.open()
+            yield
+        finally:
+            try:
+                await comments.close()
+            finally:
+                try:
+                    await runtime.close()
+                finally:
+                    store.close()
 
     app = FastAPI(title="Tuber Studio", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.runtime, app.state.comments, app.state.store = runtime, comments, store
