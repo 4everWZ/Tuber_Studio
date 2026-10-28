@@ -7,6 +7,7 @@ const model = {
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, draftDirty: false, draftId: null, policy: null,
   importPreviewSignature: null, categorySaving: new Set(),
+  modeSwitch: null, modeResult: null,
 };
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
@@ -154,23 +155,77 @@ function renderStatus(status) {
   renderContext(status.context);
   renderInference(status.inference);
 }
-function inferenceLabel(inference) {
-  const models = {llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", tts: "语音模型"};
-  const prefix = inference.mode === "exclusive" ? "GPU 互斥 · " : "";
-  if (inference.switching_to) return `${prefix}正在加载 ${models[inference.switching_to] || inference.switching_to}…`;
-  if (inference.error) return `${prefix}资源切换失败`;
-  if (["loading", "switching", "starting"].includes(inference.state)) return `${prefix}模型加载中…`;
+function resourceMode(inference) {
+  if (inference?.mode === "exclusive") return "text";
+  return ["text", "live"].includes(inference?.mode) ? inference.mode : null;
+}
+function resourceName(key) {
+  return ({llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", tts: "TTS"})[key] || key;
+}
+function inferenceResidents(inference) {
+  const providers = Object.entries(inference.providers || {});
+  if (providers.length) {
+    const residents = providers.filter(([, provider]) => provider?.running === true).map(([key]) => resourceName(key));
+    if (residents.length) return `驻留：${residents.join("、")}`;
+    return providers.some(([, provider]) => provider?.running == null) ? "驻留状态待确认" : "无模型驻留";
+  }
   const active = inference.active ?? inference.active_provider;
-  return active ? `${prefix}${models[active] || active} 驻留` : `${prefix}模型已休眠`;
+  return active ? `驻留：${resourceName(active)}` : "模型已休眠";
+}
+function inferenceLabel(inference) {
+  const mode = resourceMode(inference);
+  const prefix = mode === "live" ? "直播 · " : mode === "text" ? "文本/图像 · " : inference.mode === "standalone" ? "独立Provider · " : "";
+  const residents = inferenceResidents(inference);
+  if (inference.switching_to) return `${prefix}正在加载 ${resourceName(inference.switching_to)}… · ${residents}`;
+  if (inference.error) return `${prefix}资源切换失败 · ${residents}`;
+  if (["loading", "switching", "starting"].includes(inference.state)) return `${prefix}模型加载中… · ${residents}`;
+  return `${prefix}${inference.busy ? "资源忙 · " : ""}${residents}`;
+}
+function renderModeControls(inference) {
+  const actual = resourceMode(inference), pending = model.modeSwitch;
+  const transitioning = !!inference?.switching_to || ["loading", "switching", "starting"].includes(inference?.state);
+  const selected = pending ? pending.previousMode : actual;
+  document.querySelectorAll("[data-inference-mode]").forEach(button => {
+    button.setAttribute("aria-pressed", String(button.dataset.inferenceMode === selected));
+    button.disabled = !actual || !!pending || transitioning || (button.dataset.inferenceMode === actual && !inference?.error);
+    button.setAttribute("aria-busy", String(!!pending || transitioning));
+  });
+  const feedback = $("resource-mode-feedback");
+  const result = model.modeResult?.mode === actual ? model.modeResult : null;
+  const text = pending ? `正在切换到${pending.target === "live" ? "直播" : "文本/图像"}，等待模型就绪…` :
+    inference?.mode === "standalone" ? "当前独立Provider不支持资源模式切换。" : !actual ? "等待资源模式状态。" :
+    transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${actual === "live" ? "直播" : "文本/图像"}`;
+  if (feedback.textContent !== text) feedback.textContent = text;
+  feedback.classList.toggle("error-text", !!result?.error && !pending);
 }
 function renderInference(inference) {
   $("inference-state").hidden = !inference;
+  renderModeControls(inference);
   if (!inference) { $("inference-error").hidden = true; return; }
   $("inference-state").textContent = inferenceLabel(inference);
   $("inference-state").classList.toggle("bad", !!inference.error);
   $("inference-state").title = inference.switching_to ? "资源切换期间任务等待模型加载。上下文容量验证与模型驻留状态分别记录。" : "驻留或休眠表示模型资源状态，不改变已验证的上下文容量。";
   $("inference-error").hidden = !inference.error;
   $("inference-error").textContent = inference.error ? `推理资源切换失败：${inference.error}` : "";
+}
+async function switchResourceMode(target) {
+  const previousMode = resourceMode(model.status?.inference);
+  if (!previousMode || model.modeSwitch) return;
+  model.modeSwitch = {target, previousMode}; model.modeResult = null;
+  renderModeControls(model.status.inference);
+  try {
+    const result = await api("/api/inference/mode", {method: "POST", body: {mode: target}});
+    if (resourceMode(result) !== target) throw new Error("接口返回的资源模式与请求不符，请检查实际资源状态。");
+    model.modeSwitch = null;
+    model.modeResult = {mode: target, error: false, text: `已切换到${target === "live" ? "直播" : "文本/图像"}模式。`};
+    renderStatus({...model.status, inference: result});
+    try { renderStatus(await api("/api/status")); }
+    catch (error) { notice(`模式已切换，状态刷新失败：${error.message}`, true); }
+  } catch (error) {
+    model.modeSwitch = null; model.modeResult = {mode: previousMode, error: true, text: `切换失败：${error.message}`};
+    renderModeControls(model.status?.inference);
+    try { renderStatus(await api("/api/status")); } catch { /* Keep the last confirmed state visible. */ }
+  }
 }
 function tokenCount(value) {
   if (value == null) return "未报告";
@@ -440,6 +495,9 @@ $("login-form").onsubmit = event => {
   });
 };
 $("logout").onclick = () => busy($("logout"), async () => { await api("/api/logout", {method: "POST"}); showLogin(); });
+document.querySelectorAll("[data-inference-mode]").forEach(button => {
+  button.onclick = () => switchResourceMode(button.dataset.inferenceMode);
+});
 document.querySelectorAll("[data-action]").forEach(button => {
   button.onclick = () => busy(button, async () => {
     const action = button.dataset.action;

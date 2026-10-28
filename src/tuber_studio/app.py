@@ -6,6 +6,7 @@ import secrets
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -163,6 +164,10 @@ def create_app(settings=None, adapter=None):
     @app.get("/api/status", dependencies=[Depends(require_admin)])
     async def status():
         return runtime.status() | {"comment_policy": comments.policy()}
+
+    @app.post("/api/inference/mode", dependencies=[Depends(require_admin)])
+    async def work_mode(mode: Literal["text", "live"] = Body(embed=True)):
+        return await runtime.set_work_mode(mode)
 
     @app.post("/api/live/mock-event", dependencies=[Depends(require_admin)])
     async def mock_event(event: Event):

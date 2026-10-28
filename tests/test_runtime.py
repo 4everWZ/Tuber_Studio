@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -31,6 +32,68 @@ async def prepare_play(runtime, store):
     message = next(m for m in overlay.messages if m["type"] == "play")
     ack = {"job_id": message["job_id"], "playback_token": message["playback_token"]}
     return owner, submitted, ack, overlay
+
+
+async def test_text_work_mode_cancels_playback_before_releasing_tts(runtime, store):
+    owner, submitted, ack, _ = await prepare_play(runtime, store)
+
+    async def broker(request):
+        assert request.url.path == "/mode"
+        assert runtime.state == "stopped"
+        assert store.job(submitted["job_id"])["status"] == "cancelled"
+        assert runtime.generation_lock.locked()
+        return httpx.Response(200, json={"mode": "text", "active_provider": "llm2b"})
+
+    runtime.inference_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(broker), base_url="http://broker"
+    )
+    state = await runtime.set_work_mode("text")
+    assert state["mode"] == "text"
+    assert runtime.settings.data["inference_broker"]["mode"] == "text"
+    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert not store.all("SELECT * FROM conversations")
+
+
+async def test_failed_live_residency_never_starts_the_live_worker(runtime):
+    runtime.inference_status = {"mode": "text", "active": "llm2b"}
+
+    async def broker(request):
+        if request.method == "POST":
+            return httpx.Response(503, json={"detail": "resource unavailable"})
+        return httpx.Response(200, json={"mode": "text", "active_provider": "llm2b", "state": "active"})
+
+    runtime.inference_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(broker), base_url="http://broker"
+    )
+    with pytest.raises(ValueError, match="工作模式切换失败"):
+        await runtime.control("start")
+    assert runtime.state == "stopped"
+    assert runtime.session_id is None
+    assert runtime.inference_status["mode"] == "text"
+
+
+async def test_live_start_waits_for_resident_pair_confirmation(runtime):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def broker(request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json={"mode": "live", "active_provider": "tts"})
+
+    runtime.inference_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(broker), base_url="http://broker"
+    )
+    task = asyncio.create_task(runtime.control("start"))
+    try:
+        await entered.wait()
+        assert runtime.state == "stopped" and runtime.session_id is None
+        release.set()
+        await task
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert runtime.state == "live"
+    assert runtime.inference_status["mode"] == "live"
 
 
 async def test_only_owner_started_then_ended_counts_as_delivered(runtime, store):

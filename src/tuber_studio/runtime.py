@@ -42,8 +42,21 @@ class Runtime:
         self.timings = {"llm_ms": None, "tts_ms": None}
         self.accept_times = {}
         self.last_gift = False
-        self.inference_status = {"mode": "standalone", "active": None}
+        broker = settings.data.get("inference_broker", {})
+        self.inference_client = (
+            httpx.AsyncClient(
+                base_url=broker["base_url"],
+                headers={"X-Tuber-Inference-Key": settings.inference_token},
+                timeout=httpx.Timeout(400, connect=5),
+                trust_env=False,
+            )
+            if broker.get("enabled")
+            else None
+        )
+        mode = broker.get("mode", "text") if self.inference_client else "standalone"
+        self.inference_status = {"mode": "text" if mode == "exclusive" else mode, "active": None}
         self.inference_observer = None
+        self.mode_lock = asyncio.Lock()
 
     @property
     def character(self):
@@ -69,6 +82,8 @@ class Runtime:
             await asyncio.gather(self.worker, return_exceptions=True)
         await self.llm.close()
         await self.voices.close()
+        if self.inference_client:
+            await self.inference_client.aclose()
 
     def status(self):
         memory = psutil.virtual_memory()
@@ -95,29 +110,61 @@ class Runtime:
             "inference": self.inference_status,
         }
 
+    async def refresh_inference(self):
+        if self.inference_client is None:
+            raise ValueError("当前运行方式未启用设备资源模式")
+        response = await self.inference_client.get("/health", timeout=httpx.Timeout(2, connect=1))
+        response.raise_for_status()
+        observed = response.json()
+        if observed.get("mode") == "exclusive":
+            observed["mode"] = "text"
+        observed["active"] = observed.get("active_provider")
+        self.inference_status = observed
+        if observed.get("mode") in {"text", "live"}:
+            self.settings.data["inference_broker"]["mode"] = observed["mode"]
+        return observed
+
     async def _observe_inference(self):
-        async with httpx.AsyncClient(
-            base_url=self.settings.data["inference_broker"]["base_url"],
-            headers={"X-Tuber-Inference-Key": self.settings.inference_token},
-            timeout=httpx.Timeout(2, connect=1),
-            trust_env=False,
-        ) as client:
-            while True:
+        while True:
+            try:
+                await self.refresh_inference()
+            except Exception as error:
+                self.inference_status = self.inference_status | {
+                    "state": "error",
+                    "active": None,
+                    "error": public_error(error),
+                }
+            await asyncio.sleep(2)
+
+    async def set_work_mode(self, mode):
+        if mode not in {"text", "live"}:
+            raise ValueError("工作模式应为text或live")
+        if self.inference_client is None:
+            raise ValueError("当前运行方式未启用设备资源模式")
+        async with self.mode_lock:
+            if mode == "text":
+                # Stop producers and invalidate playback before releasing TTS.
+                await self.control("stop")
+            async with self.generation_lock:
                 try:
-                    response = await client.get("/health")
+                    response = await self.inference_client.post("/mode", json={"mode": mode})
                     response.raise_for_status()
-                    self.inference_status = response.json()
-                    self.inference_status.setdefault(
-                        "mode", self.settings.data["inference_broker"].get("mode", "exclusive")
-                    )
-                    self.inference_status["active"] = self.inference_status.get("active_provider")
+                    observed = response.json()
+                    if observed.get("mode") != mode:
+                        raise ValueError("设备未确认目标工作模式")
+                    observed["active"] = observed.get("active_provider")
+                    self.inference_status = observed
+                    self.settings.data["inference_broker"]["mode"] = mode
+                    return observed
                 except Exception as error:
-                    self.inference_status = {
-                        "mode": self.settings.data["inference_broker"].get("mode", "exclusive"),
-                        "active": None,
-                        "error": public_error(error),
-                    }
-                await asyncio.sleep(2)
+                    try:
+                        await self.refresh_inference()
+                    except Exception:
+                        self.inference_status = self.inference_status | {
+                            "state": "error",
+                            "error": "工作模式结果待设备重新确认",
+                        }
+                    raise ValueError("工作模式切换失败：" + public_error(error)) from None
 
     async def send_overlay(self, message):
         if self.overlay:
@@ -165,6 +212,10 @@ class Runtime:
         self.queue.clear()
 
     async def control(self, action):
+        if action == "resume" and self.state == "stopped":
+            raise ValueError("请先启动Mock会话")
+        if action in {"start", "resume"} and self.inference_client is not None:
+            await self.set_work_mode("live")
         if action == "start":
             if self.state == "stopped":
                 self.new_session()
@@ -174,8 +225,6 @@ class Runtime:
             if self.state != "stopped":
                 self.state = "paused"
         elif action == "resume":
-            if self.state == "stopped":
-                raise ValueError("请先启动Mock会话")
             self.state = "live"
             self.error = None
         elif action == "stop":

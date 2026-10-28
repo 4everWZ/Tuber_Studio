@@ -1,4 +1,4 @@
-"""Container-local inference broker with fixed destinations and exclusive GPU ownership."""
+"""Container-local inference broker with fixed destinations and explicit work modes."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import os
 import secrets
 import signal
 import struct
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -312,9 +313,12 @@ class ProcessRunner:
 
 
 class InferenceBroker:
-    def __init__(self, root: Path, runner=None, client=None, *, mode="exclusive"):
-        if mode != "exclusive":
+    def __init__(self, root: Path, runner=None, client=None, *, mode="text", selected="llm2b"):
+        mode = "text" if mode == "exclusive" else mode
+        if mode not in {"text", "live"}:
             raise ValueError("Unknown inference resource mode")
+        if selected not in RESOURCES or not RESOURCES[selected].model:
+            raise ValueError("Unknown selected inference model")
         self.root = root.resolve()
         self.runner = runner or ProcessRunner(self.root)
         self.client = client or httpx.AsyncClient(timeout=httpx.Timeout(1200, connect=10), trust_env=False)
@@ -326,6 +330,7 @@ class InferenceBroker:
         self.natives = {}
         self.loaded = set()
         self.mode = mode
+        self.selected = selected
         self._target_touched = False
 
     async def initialize(self):
@@ -340,9 +345,88 @@ class InferenceBroker:
                     self.natives[key] = native_context(path)
                     if self.natives[key] < 131072:
                         raise RuntimeError("Selected model does not natively support 128K")
-            await self._activate("llm2b")
+            await self._apply_mode(self.mode)
 
-    async def _activate(self, key):
+    async def _apply_mode(self, mode):
+        keep = {self.selected, "tts"} if mode == "live" else {self.selected}
+        for key in RESOURCES:
+            if key not in keep:
+                await self.runner.stop(key)
+        await self._activate(self.selected, keep=keep)
+        if mode == "live":
+            await self._activate("tts", keep=keep)
+
+    def _persist_mode(self, mode):
+        path = self.root / "runtime/studio.json"
+        if path.is_symlink():
+            raise RuntimeError("Studio configuration must be a regular runtime file")
+        source = path if path.exists() else self.root / "config/studio.example.json"
+        data = json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
+        profile = data.setdefault("inference_broker", {})
+        if not isinstance(profile, dict):
+            raise ValueError("Invalid inference broker configuration")
+        profile["mode"] = mode
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix=".studio-mode-", dir=path.parent)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                if path.exists():
+                    os.chmod(temporary, path.stat().st_mode & 0o777)
+                json.dump(data, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+    async def _restore(self, residents, active):
+        for key in RESOURCES:
+            if key not in residents:
+                await self.runner.stop(key)
+        for key in sorted(residents, key=lambda key: key == "tts"):
+            await self._activate(key, keep=residents)
+        self.active = active if active in residents else None
+
+    async def switch_mode(self, mode):
+        if mode not in {"text", "live"}:
+            raise HTTPException(422, "Mode must be text or live")
+        async with self.lock:
+            previous_mode, previous_active = self.mode, self.active
+            residents = {key for key in RESOURCES if await self.runner.running(key)}
+            try:
+                await self._apply_mode(mode)
+                self._persist_mode(mode)
+                self.mode = mode
+            except BaseException as failure:
+                self.mode = previous_mode
+                rollback = asyncio.create_task(self._restore(residents, previous_active))
+                while not rollback.done():
+                    try:
+                        await asyncio.shield(rollback)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+                try:
+                    rollback.result()
+                except BaseException:
+                    self.state, self.error = (
+                        "error",
+                        "Mode switch failed; previous resources could not be restored",
+                    )
+                else:
+                    self.state = "active" if residents else "cold"
+                    self.error = (
+                        "Mode switch cancelled"
+                        if isinstance(failure, asyncio.CancelledError)
+                        else "Mode switch failed"
+                    )
+                if isinstance(failure, asyncio.CancelledError):
+                    raise
+                raise HTTPException(503, self.error) from None
+        return await self.observe()
+
+    async def _activate(self, key, *, keep=None):
         profiles = await self.runner.validate_all()
         if key not in profiles:
             raise RuntimeError("Requested fixed inference profile is not installed")
@@ -354,7 +438,7 @@ class InferenceBroker:
         # Confirm all other owned process groups have exited before starting the target.
         self.state = "switching"
         try:
-            keep = {key}
+            keep = keep if keep is not None else {key}
             for other in RESOURCES:
                 if other not in keep:
                     await self.runner.stop(other)
@@ -404,13 +488,19 @@ class InferenceBroker:
         state, error = self.state, self.error
         if not self.lock.locked() and self.active and observed[self.active] is not True:
             state, error = "error", error or "Previously active inference process exited"
-        if sum(running is True for running in observed.values()) > 1:
-            state, error = "error", "Unexpected concurrent inference processes"
+        if not self.lock.locked():
+            running = {key for key, alive in observed.items() if alive is True}
+            allowed = {self.selected, "tts"} if self.mode == "live" else running - {"tts"}
+            if not running.issubset(allowed) or (self.mode == "text" and len(running) > 1):
+                state, error = "error", "Unexpected concurrent inference processes"
+            elif self.mode == "live" and running != allowed:
+                state, error = "error", "Live mode resources are not both ready"
         return {
             "state": state,
             "active_provider": self.active if observed.get(self.active) else None,
             "error": error,
             "mode": self.mode,
+            "selected_provider": self.selected,
             "kv_cache_type": getattr(self.runner, "kv_cache_type", "q8_0"),
             "cuda_managed_memory": getattr(self.runner, "cuda_managed_memory", False),
             "busy": self.lock.locked(),
@@ -443,9 +533,17 @@ class InferenceBroker:
 
     async def forward(self, key, path, body):
         async with self.lock:
+            if key == "tts" and self.mode != "live":
+                raise HTTPException(409, "Switch to live mode before synthesizing speech")
+            if self.mode == "live" and key not in {self.selected, "tts"}:
+                raise HTTPException(409, "Live mode only permits the selected LLM and TTS")
             self._target_touched = False
             try:
-                await self._activate(key)
+                if self.mode == "live":
+                    await self._apply_mode("live")
+                    self.active = key
+                else:
+                    await self._activate(key)
                 if path == "warmup":
                     return JSONResponse(await self.read(key, "props"))
                 response = await self.client.post(
@@ -578,7 +676,11 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         kv_cache_type=profile.get("kv_cache_type", "q8_0"),
         cuda_managed_memory=profile.get("cuda_managed_memory", False),
     )
-    manager = broker or InferenceBroker(root, runner=runner, mode=profile.get("mode", "exclusive"))
+    selected_alias = data.get("llm", {}).get("model", RESOURCES["llm2b"].alias)
+    selected = next((key for key, resource in RESOURCES.items() if resource.alias == selected_alias), None)
+    manager = broker or InferenceBroker(
+        root, runner=runner, mode=profile.get("mode", "text"), selected=selected
+    )
     token = inference_token(root)
 
     @asynccontextmanager
@@ -604,15 +706,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
     async def health():
         return await manager.observe()
 
-    async def dispatch(request: Request, key: str, path: str):
-        if request.method == "GET":
-            if (key.startswith("llm") and path in {"health", "props"}) or (key == "tts" and path == "docs"):
-                return await manager.read(key, path)
-            raise HTTPException(404)
-        if not (
-            (key.startswith("llm") and path in LLM_POSTS | {"warmup"}) or (key == "tts" and path == "tts")
-        ):
-            raise HTTPException(404)
+    async def read_body(request):
         data = bytearray()
         async for chunk in request.stream():
             data.extend(chunk)
@@ -624,15 +718,9 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
             raise HTTPException(422, "JSON object required") from None
         if not isinstance(body, dict):
             raise HTTPException(422, "JSON object required")
-        if body.get("stream", False) is not False or body.get("streaming_mode", False) is not False:
-            raise HTTPException(422, "Only buffered inference is supported")
-        if key.startswith("llm") and body.get("model", RESOURCES[key].alias) != RESOURCES[key].alias:
-            raise HTTPException(422, "Model does not match typed resource")
-        if key == "tts" and (
-            not allowed_tts_reference(root, body.get("ref_audio_path")) or body.get("aux_ref_audio_paths")
-        ):
-            raise HTTPException(422, "TTS reference must be the configured project voice")
+        return body, bytes(data)
 
+    async def cancellable(request, operation):
         async def disconnected():
             # The request body has been fully consumed. Waiting on ASGI receive
             # observes the actual socket disconnect and remains cancellable;
@@ -641,7 +729,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
                 if (await request.receive())["type"] == "http.disconnect":
                     return
 
-        work = asyncio.create_task(manager.forward(key, path, bytes(data)))
+        work = asyncio.create_task(operation)
         watcher = asyncio.create_task(disconnected())
         try:
             done, _ = await asyncio.wait({work, watcher}, return_when=asyncio.FIRST_COMPLETED)
@@ -657,6 +745,33 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         finally:
             watcher.cancel()
             await asyncio.gather(watcher, return_exceptions=True)
+
+    @app.post("/mode")
+    async def change_mode(request: Request):
+        body, _ = await read_body(request)
+        if set(body) != {"mode"} or body["mode"] not in ("text", "live"):
+            raise HTTPException(422, "Mode must be text or live")
+        return await cancellable(request, manager.switch_mode(body["mode"]))
+
+    async def dispatch(request: Request, key: str, path: str):
+        if request.method == "GET":
+            if (key.startswith("llm") and path in {"health", "props"}) or (key == "tts" and path == "docs"):
+                return await manager.read(key, path)
+            raise HTTPException(404)
+        if not (
+            (key.startswith("llm") and path in LLM_POSTS | {"warmup"}) or (key == "tts" and path == "tts")
+        ):
+            raise HTTPException(404)
+        body, data = await read_body(request)
+        if body.get("stream", False) is not False or body.get("streaming_mode", False) is not False:
+            raise HTTPException(422, "Only buffered inference is supported")
+        if key.startswith("llm") and body.get("model", RESOURCES[key].alias) != RESOURCES[key].alias:
+            raise HTTPException(422, "Model does not match typed resource")
+        if key == "tts" and (
+            not allowed_tts_reference(root, body.get("ref_audio_path")) or body.get("aux_ref_audio_paths")
+        ):
+            raise HTTPException(422, "TTS reference must be the configured project voice")
+        return await cancellable(request, manager.forward(key, path, data))
 
     @app.api_route("/llm/{size}/{path:path}", methods=["GET", "POST"])
     async def llm(size: str, path: str, request: Request):

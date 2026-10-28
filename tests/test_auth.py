@@ -17,9 +17,18 @@ def client(settings):
 
 def test_admin_api_requires_auth_and_cross_origin_writes_are_rejected(client, settings):
     assert client.get("/api/status").status_code == 401
+    assert client.post("/api/inference/mode", json={"mode": "live"}).status_code == 401
     assert client.post("/api/auth", json={"token": settings.admin_token}).status_code == 200
     assert client.get("/api/status").status_code == 200
     assert client.post("/api/live/start", headers={"Origin": "https://other.example"}).status_code == 403
+    assert (
+        client.post(
+            "/api/inference/mode", json={"mode": "live"}, headers={"Origin": "https://other.example"}
+        ).status_code
+        == 403
+    )
+    assert client.post("/api/inference/mode", json={"mode": "arbitrary"}).status_code == 422
+    assert client.post("/api/inference/mode", json={"mode": "live"}).status_code == 400
     assert client.post("/api/live/start").status_code == 200
     client.post("/api/logout")
     assert client.get("/api/status").status_code == 401
