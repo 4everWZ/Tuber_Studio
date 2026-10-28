@@ -176,21 +176,29 @@ function tokenCount(value) {
   if (value == null) return "未报告";
   return typeof value === "number" && Number.isFinite(value) ? `${value.toLocaleString("zh-CN")} tokens` : display(value);
 }
+function occupancyText(context) {
+  const value = context.occupancy_percent;
+  return typeof value === "number" && Number.isFinite(value) ? `约 ${value.toFixed(2)}%` : "未报告";
+}
 function renderContext(context) {
   if (!context) return;
   const configured = Number(context.configured_tokens || 0), server = Number(context.server_tokens || 0), native = Number(context.native_tokens || 0);
   const mismatch = (configured > 0 && server > 0 && server < configured) || (configured > 0 && native > 0 && native < configured);
   const unavailable = !!context.profile_error || mismatch;
   const verified = !!context.verified && !unavailable;
-  const concise = verified ? `${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.server_tokens)} · 压缩 ${context.compact_count ?? 0} 次` : unavailable ? "上下文配置不可用" : "上下文能力待验证";
+  const rounds = `累计 ${context.compact_count ?? 0} 轮 · 最近 ${context.compaction_passes_last ?? 0} 轮`;
+  const concise = verified ? `${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)} · ${occupancyText(context)} · ${rounds}` : unavailable ? "上下文配置不可用" : "上下文能力待验证";
   $("context-state").textContent = concise; $("context-state").classList.toggle("bad", unavailable);
   const error = context.profile_error || (mismatch ? `上下文配置未满足：目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，模型原生 ${tokenCount(context.native_tokens)}。` : "");
   const errors = [error, context.last_compaction_error ? `最近压缩失败：${context.last_compaction_error}` : ""].filter(Boolean);
   $("context-error").hidden = !errors.length; $("context-error").textContent = errors.join(" ");
-  $("comment-context-state").textContent = verified ? `真实上下文占用 ${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.server_tokens)}；已压缩 ${context.compact_count ?? 0} 次。` : error || `上下文目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，尚未验证。`;
+  const warning = context.last_compaction_warning ? `压缩提示：${context.last_compaction_warning}` : "";
+  $("context-warning").hidden = !warning;
+  if ($("context-warning").textContent !== warning) $("context-warning").textContent = warning;
+  $("comment-context-state").textContent = verified ? `真实完整输入占用 ${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}）；压缩${rounds}。` : error || `上下文目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，尚未验证。`;
   $("context-verified").textContent = verified ? "实际服务已验证" : unavailable ? "配置不可用" : "待验证";
   $("context-verified").className = `badge ${verified ? "good" : unavailable ? "bad" : ""}`;
-  describe($("context-details"), [["配置目标", tokenCount(context.configured_tokens)], ["实际服务容量", tokenCount(context.server_tokens)], ["模型原生容量", tokenCount(context.native_tokens)], ["当前占用", tokenCount(context.active_tokens ?? 0)], ["压缩次数", context.compact_count ?? 0], ["最近压缩错误", context.last_compaction_error || "无"]]);
+  describe($("context-details"), [["配置目标", tokenCount(context.configured_tokens)], ["实际服务容量", tokenCount(context.server_tokens)], ["模型原生容量", tokenCount(context.native_tokens)], ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`], ["累计已安装压缩轮数", context.compact_count ?? 0], ["最近操作尝试轮数", context.compaction_passes_last ?? 0], ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`], ["最近压缩提示", context.last_compaction_warning || "无"], ["最近压缩错误", context.last_compaction_error || "无"]]);
   $("context-profile-note").textContent = error || "模型原生能力、运行服务容量及配置目标分别显示；修改配置后需重启并重新验证。";
   const generate = $("generate-drafts");
   if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !verified;

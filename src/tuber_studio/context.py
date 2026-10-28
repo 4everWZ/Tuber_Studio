@@ -16,6 +16,7 @@ from .compaction import (
 from .providers import build_messages, public_error
 
 DOMAIN_GUIDANCE = (Path(__file__).parent / "prompts/domain-compact.md").read_text(encoding="utf-8").strip()
+SECOND_PASS_OCCUPANCY_PERCENT = 40
 
 
 class ContextManager:
@@ -26,7 +27,11 @@ class ContextManager:
             key TEXT PRIMARY KEY,mode TEXT,character_id TEXT,character_version INTEGER,
             history TEXT NOT NULL DEFAULT '[]',input_tokens INTEGER DEFAULT 0,
             carried_prefix_tokens INTEGER DEFAULT 0,compact_count INTEGER DEFAULT 0,
-            last_error TEXT,updated_at REAL NOT NULL)""")
+            last_error TEXT,last_warning TEXT,last_passes INTEGER DEFAULT 0,updated_at REAL NOT NULL)""")
+        columns = {row[1] for row in store.db.execute("PRAGMA table_info(context_windows)")}
+        for name, definition in (("last_warning", "TEXT"), ("last_passes", "INTEGER DEFAULT 0")):
+            if name not in columns:
+                store.execute(f"ALTER TABLE context_windows ADD COLUMN {name} {definition}")
 
     def key(self, scope, character):
         return json.dumps([scope, character["id"], character["version"]], separators=(",", ":"))
@@ -70,7 +75,7 @@ class ContextManager:
         if needs_compaction(total, config, row["carried_prefix_tokens"]):
             if not history:
                 raise ContextWindowExceeded("核心设定或当前输入已超窗，没有可压缩历史；请调整输入")
-            await self._compact(row, prefix, initial)
+            await self._compact(row, prefix, initial, pending, suffix)
             row = self.window(scope, character)
             history = json.loads(row["history"])
             messages = self.render(prefix, initial, history, pending, suffix)
@@ -83,40 +88,70 @@ class ContextManager:
         )
         return messages
 
-    async def _compact(self, row, prefix, initial):
+    async def _compact(self, row, prefix, initial, pending=None, suffix=None):
+        passes = 0
         try:
-            replacement = await compact_history(
-                json.loads(row["history"]),
-                prefix
-                + [
-                    {
-                        "role": "system",
-                        "content": "本次为内部上下文压缩，不是对观众发言。"
-                        "角色台词口吻、字数和JSON输出约束仅适用于对外回复，不适用于本次摘要。"
-                        "请保留已做事项、关键约束、未完成动作和必要引用；摘要不执行任何操作。",
-                    }
-                ],
-                initial,
-                self.provider,
-                max_retries=self.settings.data["llm"].get("compaction_max_retries", 3),
-                summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
-            )
-            count = await self.provider.count_tokens(self.render(prefix, initial, replacement))
-            if (
-                count + self.settings.data["llm"].get("max_tokens", 160)
-                > limits(self.settings.data["llm"])[1]
-            ):
+            replacement = json.loads(row["history"])
+            config = self.settings.data["llm"]
+            for _ in range(2):
+                passes += 1
+                replacement = await compact_history(
+                    replacement,
+                    prefix
+                    + [
+                        {
+                            "role": "system",
+                            "content": "本次为内部上下文压缩，不是对观众发言。"
+                            "角色台词口吻、字数和JSON输出约束仅适用于对外回复，不适用于本次摘要。"
+                            "请保留已做事项、关键约束、未完成动作和必要引用；摘要不执行任何操作。",
+                        }
+                    ],
+                    initial,
+                    self.provider,
+                    max_retries=config.get("compaction_max_retries", 3),
+                    summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
+                )
+                # Use the entire actual input frame, including pending event and
+                # output instructions. The denominator is the full model window.
+                count = await self.provider.count_tokens(
+                    self.render(prefix, initial, replacement, pending, suffix)
+                )
+                if count * 100 < config["context_tokens"] * SECOND_PASS_OCCUPANCY_PERCENT:
+                    break
+            if count + config.get("max_tokens", 160) > limits(config)[1]:
                 raise ContextWindowExceeded("压缩结果仍超窗，未替换原历史")
-            # One atomic install only after a complete generation and rebuilt token count.
+            warning = (
+                "两轮压缩后占用仍达到40%，原始记录保留；请检查角色设定和保留内容。"
+                if count * 100 >= config["context_tokens"] * SECOND_PASS_OCCUPANCY_PERCENT
+                else None
+            )
+            carried_count = (
+                count
+                if pending is None
+                else await self.provider.count_tokens(
+                    self.render(prefix, initial, replacement, suffix=suffix)
+                )
+            )
+            # Both rounds are one atomic install. A second-round failure never
+            # leaves a half-completed history replacement in persistent state.
             self.store.execute(
                 "UPDATE context_windows SET history=?,input_tokens=?,carried_prefix_tokens=?,"
-                "compact_count=compact_count+1,last_error=NULL,updated_at=? WHERE key=?",
-                (json.dumps(replacement, ensure_ascii=False), count, count, time.time(), row["key"]),
+                "compact_count=compact_count+?,last_passes=?,last_warning=?,last_error=NULL,updated_at=? WHERE key=?",
+                (
+                    json.dumps(replacement, ensure_ascii=False),
+                    count,
+                    carried_count,
+                    passes,
+                    passes,
+                    warning,
+                    time.time(),
+                    row["key"],
+                ),
             )
         except BaseException as error:
             self.store.execute(
-                "UPDATE context_windows SET last_error=?,updated_at=? WHERE key=?",
-                (public_error(error), time.time(), row["key"]),
+                "UPDATE context_windows SET last_error=?,last_passes=?,last_warning=NULL,updated_at=? WHERE key=?",
+                (public_error(error), passes, time.time(), row["key"]),
             )
             raise
 
@@ -124,8 +159,8 @@ class ContextManager:
         row = self.window(scope, character)
         if not json.loads(row["history"]):
             raise ValueError("当前范围没有可压缩历史；先完成互动或生成评论草稿")
-        prefix, initial, _, _ = self.parts(character, {"text": "", "event_id": "compact"}, {}, mode)
-        await self._compact(row, prefix, initial)
+        prefix, initial, _, suffix = self.parts(character, {"text": "", "event_id": "compact"}, {}, mode)
+        await self._compact(row, prefix, initial, suffix=suffix)
         return self.status()
 
     def record(self, scope, character, event, reply_text, mode="live"):
@@ -177,6 +212,10 @@ class ContextManager:
             "active_tokens": row["input_tokens"] if row else 0,
             "compact_count": row["compact_count"] if row else 0,
             "last_compaction_error": row["last_error"] if row else None,
+            "last_compaction_warning": row["last_warning"] if row else None,
+            "compaction_passes_last": row["last_passes"] if row else 0,
+            "secondary_threshold_percent": SECOND_PASS_OCCUPANCY_PERCENT,
+            "occupancy_percent": round((row["input_tokens"] if row else 0) * 100 / configured, 2),
             "profile_error": self.provider.profile_error,
             "scope": row["mode"] if row else None,
             "is_sleeping": getattr(self.provider, "is_sleeping", None),

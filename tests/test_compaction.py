@@ -186,3 +186,76 @@ async def test_install_commit_failure_rolls_back_before_recording_compaction_err
     assert row["compact_count"] == 0
     assert row["last_error"]
     assert store.all("SELECT * FROM guard_child") == []
+
+
+class TokenCountSummarizer(Summarizer):
+    def __init__(self, responses, counts):
+        super().__init__(responses)
+        self.counts = iter(counts)
+        self.counted_frames = []
+
+    async def count_tokens(self, messages):
+        self.counted_frames.append(copy.deepcopy(messages))
+        return next(self.counts)
+
+
+@pytest.mark.parametrize("counts,rounds", [([52428], 1), ([52429, 45000], 2)])
+async def test_40_percent_threshold_runs_second_full_core_round_only_when_reached(
+    settings, store, counts, rounds
+):
+    provider = TokenCountSummarizer(["first", "second"], counts)
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    manager.record("comments:video", character, {"event_id": "c1", "text": "鱼鱼好"}, "欢迎")
+    result = await manager.compact("comments:video", character)
+    assert len(provider.inputs) == rounds
+    assert result["compaction_passes_last"] == rounds
+    assert result["compact_count"] == rounds
+    assert result["last_compaction_warning"] is None
+    if rounds == 2:
+        assert any(m["content"] == SUMMARY_PREFIX + "\nfirst" for m in provider.inputs[1])
+
+
+async def test_second_round_still_above_40_percent_is_visible_and_bounded(settings, store):
+    provider = TokenCountSummarizer(["first", "second"], [60000, 55000])
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    manager.record("comments:video", character, {"event_id": "c1", "text": "鱼鱼好"}, "欢迎")
+    result = await manager.compact("comments:video", character)
+    assert len(provider.inputs) == 2
+    assert result["occupancy_percent"] >= 40
+    assert result["last_compaction_warning"]
+    assert result["last_compaction_error"] is None
+
+
+async def test_second_round_failure_preserves_entire_pre_operation_window(settings, store):
+    provider = TokenCountSummarizer(["first", IncompleteCompaction("partial second pass")], [60000])
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    manager.record("comments:video", character, {"event_id": "c1", "text": "鱼鱼好"}, "欢迎")
+    before = manager.window("comments:video", character)["history"]
+    with pytest.raises(IncompleteCompaction):
+        await manager.compact("comments:video", character)
+    row = manager.window("comments:video", character)
+    assert row["history"] == before
+    assert row["compact_count"] == 0
+    assert row["last_passes"] == 2
+    assert row["last_error"]
+
+
+async def test_second_round_ratio_counts_pending_input_but_does_not_persist_it(settings, store):
+    provider = TokenCountSummarizer(["first", "second"], [60000, 45000, 44000])
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    manager.record("comments:video", character, {"event_id": "old", "text": "旧问题"}, "旧回复")
+    row = manager.window("comments:video", character)
+    prefix, initial, pending, suffix = manager.parts(
+        character, {"event_id": "pending", "text": "新问题"}, {}, "live"
+    )
+    await manager._compact(row, prefix, initial, pending, suffix)
+    row = manager.window("comments:video", character)
+    assert row["input_tokens"] == 45000
+    assert row["carried_prefix_tokens"] == 44000
+    assert "pending" not in row["history"]
+    assert all(any("新问题" in m["content"] for m in frame) for frame in provider.counted_frames[:2])
+    assert not any("新问题" in m["content"] for m in provider.counted_frames[-1])
