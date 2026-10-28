@@ -93,6 +93,18 @@ class LlamaCppProvider:
         self.profile_error = None
         self.is_sleeping = None
 
+    def sampling(self, *, summary=False):
+        return {
+            "temperature": self.config.get(
+                "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7
+            ),
+            "top_p": self.config.get("top_p", 0.95),
+            "min_p": self.config.get("min_p", 0.0),
+            "top_k": self.config.get("top_k", 40),
+            "presence_penalty": self.config.get("presence_penalty", 0.0),
+            "repeat_penalty": self.config.get("repeat_penalty", 1.0),
+        }
+
     async def close(self):
         await self.client.aclose()
 
@@ -160,9 +172,7 @@ class LlamaCppProvider:
             json={
                 "model": self.config.get("model", "local"),
                 "messages": messages,
-                "temperature": self.config.get("summary_temperature", 0.2),
-                "top_p": 0.95,
-                "min_p": 0.0,
+                **self.sampling(summary=True),
                 "max_tokens": max_tokens,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
                 **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),
@@ -196,9 +206,7 @@ class LlamaCppProvider:
             json={
                 "model": self.config.get("model", "local"),
                 "messages": messages,
-                "temperature": self.config.get("temperature", 0.7),
-                "top_p": 0.95,
-                "min_p": 0.0,
+                **self.sampling(),
                 "max_tokens": output_budget,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
                 **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),

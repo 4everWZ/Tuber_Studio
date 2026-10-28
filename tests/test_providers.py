@@ -37,6 +37,7 @@ async def test_wrong_server_capacity_or_model_is_rejected_before_generation(
 @pytest.mark.parametrize("thinking", [False, True])
 async def test_structured_decoder_constrains_reply_and_keeps_reasoning_separate(settings, store, thinking):
     settings.data["llm"]["enable_thinking"] = thinking
+    settings.data["llm"].update(top_p=1.0, min_p=0.0, top_k=20, presence_penalty=2.0, repeat_penalty=1.0)
 
     def respond(request):
         if request.url.path == "/props":
@@ -48,6 +49,15 @@ async def test_structured_decoder_constrains_reply_and_keeps_reasoning_separate(
         data = json.loads(request.content)
         assert data["chat_template_kwargs"]["enable_thinking"] is thinking
         assert data.get("reasoning_format") == ("deepseek" if thinking else None)
+        assert {
+            key: data[key] for key in ("top_p", "min_p", "top_k", "presence_penalty", "repeat_penalty")
+        } == {
+            "top_p": 1.0,
+            "min_p": 0.0,
+            "top_k": 20,
+            "presence_penalty": 2.0,
+            "repeat_penalty": 1.0,
+        }
         if "response_format" not in data:
             return httpx.Response(
                 200,
