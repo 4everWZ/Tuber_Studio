@@ -1,0 +1,9 @@
+{
+  "llm": {"kind": "llama_cpp", "base_url": "http://127.0.0.1:9010", "model": "MiniCPM5-1B", "context_tokens": 3072, "max_tokens": 160, "timeout_seconds": 40},
+  "tts": {"kind": "prerecorded", "base_url": "http://127.0.0.1:9011", "timeout_seconds": 45},
+  "queue_limit": 40,
+  "event_ttl_seconds": 90,
+  "playback_wait_seconds": 45,
+  "commercial_mode": false,
+  "event_retention_days": 7
+}

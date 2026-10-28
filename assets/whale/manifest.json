@@ -1,0 +1,95 @@
+{
+  "attribution": {
+    "images": {
+      "note": "GIF assets remain author property; noncommercial sharing with author attribution only. Talking tag uses a waving GIF, not lip sync.",
+      "website": "https://kiriyuki.com",
+      "license_url": "https://github.com/Loping151/dsh-nekowhale-stickers/blob/main/LICENSE-ASSETS",
+      "author": "可以叫我云大人 / 雾雪",
+      "design_sources": [
+        "ZipZipPipe https://space.bilibili.com/4168597",
+        "上善无形 https://space.bilibili.com/4456176"
+      ],
+      "author_url": "https://space.bilibili.com/103739"
+    },
+    "voice": {
+      "dataset": "https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh",
+      "version": "GPT-SoVITS v2 (v2final)",
+      "note": "Original reference and synthesized publisher sample downloaded unchanged. Weights are external and not bundled.",
+      "model": "https://www.modelscope.cn/datasets/sirmn6/da-fei-yu-gpt-sovits",
+      "author": "尹紫鹭幻想社（Bilibili）",
+      "gpt_weights": "weights/da_fei_yu-e12.ckpt",
+      "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+      "sovits_weights": "weights/da_fei_yu_e15_s300.pth",
+      "license": "CC BY-NC 4.0"
+    }
+  },
+  "character_id": "whale",
+  "entries": [
+    {
+      "source": "https://kiriyuki.com/meme/kit/nekowhale/showcase/3N05.gif",
+      "character_id": "whale",
+      "id": "idle",
+      "tag": "idle",
+      "path": "assets/whale/idle.gif",
+      "license_status": "noncommercial_attribution_required"
+    },
+    {
+      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/13N11_ciallo.gif",
+      "character_id": "whale",
+      "id": "talking",
+      "tag": "talking",
+      "path": "assets/whale/talking.gif",
+      "license_status": "noncommercial_attribution_required"
+    },
+    {
+      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/10N01_%E7%8C%AB%E7%8C%AB%E6%90%93%E6%89%8B.gif",
+      "character_id": "whale",
+      "id": "cheerful",
+      "tag": "cheerful",
+      "path": "assets/whale/cheerful.gif",
+      "license_status": "noncommercial_attribution_required"
+    },
+    {
+      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/12N06_%E9%94%A4.gif",
+      "character_id": "whale",
+      "id": "angry",
+      "tag": "angry",
+      "path": "assets/whale/angry.gif",
+      "license_status": "noncommercial_attribution_required"
+    },
+    {
+      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/11N06_%E5%B0%8F%E9%97%AE%E5%8F%B7.gif",
+      "character_id": "whale",
+      "id": "confused",
+      "tag": "confused",
+      "path": "assets/whale/confused.gif",
+      "license_status": "noncommercial_attribution_required"
+    },
+    {
+      "source": "https://kiriyuki.com/meme/kit/nekowhale/showcase/TT02.gif",
+      "character_id": "whale",
+      "id": "gift",
+      "tag": "gift",
+      "path": "assets/whale/gift.gif",
+      "license_status": "noncommercial_attribution_required"
+    },
+    {
+      "source": "https://www.modelscope.cn/api/v1/datasets/sirmn6/da-fei-yu-gpt-sovits/repo?Revision=master&FilePath=samples/sample1.wav",
+      "text": "你好呀，我是大肥鱼。今天也想和你说说话。",
+      "character_id": "whale",
+      "id": "sample1",
+      "tag": "greeting",
+      "path": "assets/whale/sample1.wav",
+      "license_status": "cc-by-nc-4.0"
+    },
+    {
+      "source": "https://www.modelscope.cn/api/v1/datasets/sirmn6/da-fei-yu-gpt-sovits/repo?Revision=master&FilePath=ref/dafeiyu_ref.wav",
+      "text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+      "character_id": "whale",
+      "id": "ref",
+      "tag": "voice_reference",
+      "path": "assets/whale/ref.wav",
+      "license_status": "cc-by-nc-4.0"
+    }
+  ]
+}
