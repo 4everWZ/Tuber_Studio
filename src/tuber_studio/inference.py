@@ -18,6 +18,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
+from .inference_validation import project_wav, validate_llm_request, validate_speech_request
+
 MAX_BODY = 2 * 1024 * 1024
 HEADER = "X-Tuber-Inference-Key"
 MODEL_CACHE_SUFFIXES = {".gguf", ".bin", ".pth", ".ckpt", ".safetensors"}
@@ -669,19 +671,10 @@ def allowed_tts_reference(root: Path, value) -> bool:
     """An operator-configured, existing project WAV is the only file input."""
 
     def reference(raw):
-        if not isinstance(raw, str) or not raw or "://" in raw:
+        try:
+            return project_wav(root, raw)
+        except (OSError, ValueError, RuntimeError):
             return None
-        path = Path(raw)
-        path = (path if path.is_absolute() else root / path).resolve()
-        if not any(
-            path.is_relative_to(base.resolve()) for base in (root / "assets", root / "runtime/tts/ref")
-        ):
-            return None
-        if path.suffix.lower() != ".wav" or not path.is_file():
-            return None
-        with path.open("rb") as audio:
-            header = audio.read(12)
-        return path if header[:4] in {b"RIFF", b"RF64"} and header[8:12] == b"WAVE" else None
 
     try:
         requested = reference(value)
@@ -694,7 +687,7 @@ def allowed_tts_reference(root: Path, value) -> bool:
             reference(voice.get("server_reference_path")) for voice in voices if isinstance(voice, dict)
         }
         return requested in allowed
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RuntimeError):
         return False
 
 
@@ -824,6 +817,13 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         ):
             raise HTTPException(404)
         body, data = await read_body(request)
+        try:
+            if key.startswith("llm"):
+                validate_llm_request(path, body)
+            else:
+                validate_speech_request(body)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
         if body.get("stream", False) is not False or body.get("streaming_mode", False) is not False:
             raise HTTPException(422, "Only buffered inference is supported")
         if key.startswith("llm") and body.get("model", RESOURCES[key].alias) != RESOURCES[key].alias:
@@ -832,6 +832,9 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
             not allowed_tts_reference(root, body.get("ref_audio_path")) or body.get("aux_ref_audio_paths")
         ):
             raise HTTPException(422, "TTS reference must be the configured project voice")
+        if key == "tts":
+            body["ref_audio_path"] = str(project_wav(root, body["ref_audio_path"]))
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         return await cancellable(request, manager.forward(key, path, data))
 
     @app.api_route("/llm/{size}/{path:path}", methods=["GET", "POST"])

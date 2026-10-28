@@ -79,7 +79,7 @@ async def serve(stopped=None):
         web = StackServer(
             uvicorn.Config(
                 web_app,
-                host="127.0.0.1",
+                host="0.0.0.0",
                 port=9020,
                 ws="wsproto",
                 lifespan="off",

@@ -58,6 +58,8 @@ ENV PATH=/opt/studio-venv/bin:/opt/llama/bin:$PATH \
     TORCH_HOME=/workspace/tuber/runtime/cache/torch \
     GRADIO_TEMP_DIR=/workspace/tuber/runtime/tmp \
     GRADIO_ANALYTICS_ENABLED=False \
+    DO_NOT_TRACK=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 \
     TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
@@ -65,4 +67,7 @@ ENV PATH=/opt/studio-venv/bin:/opt/llama/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 EXPOSE 9020
+# Normal deployment overrides this with the host project owner's numeric UID/GID.
+# A direct image launch must not silently inherit the CUDA base image's root user.
+USER 65532:65532
 ENTRYPOINT ["/opt/studio-venv/bin/python", "-m", "tuber_studio.stack"]

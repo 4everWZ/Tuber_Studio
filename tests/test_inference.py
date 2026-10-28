@@ -694,6 +694,31 @@ async def test_tts_uses_operator_reference_whitelist_with_project_bounds(
     await broker.close()
 
 
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/llm/2b/v1/chat/completions", {"tools": [{"function": {"name": "shell"}}]}),
+        ("/llm/2b/completion", {"prompt": {"path": "/etc/passwd"}}),
+        ("/llm/2b/apply-template", {"messages": [{"role": "tool", "content": "anything"}]}),
+        ("/llm/2b/warmup", {"model_path": "/tmp/foreign.gguf"}),
+        ("/tts/tts", {"weights_path": "/tmp/foreign.ckpt"}),
+        ("/tts/control", {"command": "restart"}),
+    ],
+)
+async def test_unsafe_inference_shapes_are_rejected_before_any_child_is_started(tmp_path, path, body):
+    broker, control = setup_broker(tmp_path)
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
+        response = await client.post(path, json=body)
+    assert response.status_code in {404, 422}
+    assert control.events == [] and not any(control.alive.values())
+    assert "/etc/passwd" not in response.text and "/tmp/foreign" not in response.text
+    await broker.close()
+
+
 async def test_model_symlink_outside_project_is_rejected(tmp_path):
     runner = ProcessRunner(tmp_path)
     model = tmp_path / "runtime/models" / RESOURCES["llm2b"].model
