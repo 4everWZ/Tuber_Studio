@@ -1,0 +1,8 @@
+custom:
+  bert_base_path: /workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large
+  cnhuhbert_base_path: /workspace/tuber/runtime/tts/pretrained/chinese-hubert-base
+  device: cuda
+  is_half: true
+  t2s_weights_path: /workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt
+  version: v2
+  vits_weights_path: /workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth

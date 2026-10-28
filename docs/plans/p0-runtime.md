@@ -1,15 +1,19 @@
 # P0 直播原型
 
-目标：依据 [当前契约](../specs/tuber-studio.md) 跑通大肥鱼 Mock → MiniCPM → 语音／预录 → overlay → WebUI，Jetson 正常使用。
+目标：依据 [当前契约](../specs/tuber-studio.md) 跑通大肥鱼 B站评论浏览／草稿／审核与可选自动回复，以及 Mock → MiniCPM → 语音／预录 → overlay → WebUI，Jetson 正常使用。
 
-输入：`tmp/GIFTuber_Studio_SRS_v0.1.md`；用户补充原型先使用 DeepSeek 鲸鱼娘／大肥鱼，后续再替换相似内容。
+输入：`docs/inputs/giftuber-studio-srs-v0.1.md`；用户补充原型先使用 DeepSeek 鲸鱼娘／大肥鱼，后续再替换相似内容。
 
 | 工作 | 输入需求 | 当前状态／下一步 |
 | --- | --- | --- |
-| 项目与持久化／角色版本 | CHAR-01/02/03, MEM-01/02 | 实现 SQLite 与角色卡 |
-| 事件与播放状态 | LIVE-01/03/04/08, AUDIO-02/06 | 实现有界队列、幂等、取消、播放确认 |
-| 实际模型与声音 | AUDIO-01/03 | Jetson SSH 可用、镜像已存在；获取候选权重并验证 |
-| UI／素材／overlay | MEDIA-01/02, UI-01/02/04 | 实现独立播放器与管理操作 |
-| 验证与部署说明 | P0, NFR-07/08/09/10/12 | 聚焦回归、浏览器、真实设备短句；完成后同步未验边界 |
+| 项目与持久化／角色版本 | CHAR-01/02/03, MEM-01/02 | 已实现，正在回归验证 |
+| 事件与播放状态 | LIVE-01/03/04/08, AUDIO-02/06 | 已实现有界队列、幂等、取消、播放确认 |
+| 评论首版与回复模式 | OPS-01/02/03/04/05/06、用户提前授权 | 真实匿名读取成功，审核／自动策略已实现，发布仅隔离测试 |
+| 实际模型与声音 | AUDIO-01/03 | 128K MiniCPM与动态GPT-SoVITS共驻可运行；角色回复回声待根因修复 |
+| 128K及Codex压缩 | 用户追加硬要求 | 服务131072，120000真实tokens无截断；算法回归通过，真实摘要语义待域适配验证 |
+| UI／素材／overlay | MEDIA-01/02, UI-01/02/04 | 评论读取／审核／复制、OC版本、上下文UI已验证；最终动态语音浏览器确认待做 |
+| 验证与部署说明 | 首版, NFR-07/08/09/10/12 | 93项回归通过；Jetson后台9020、模型9010、TTS9011可用；补最终Git提交与清理 |
 
-Jetson 独立目录 `/home/weizheng/code/Tuber_Studio`，使用新端口；不得改动既有 videoanalyze-app、jetson-research 服务。P1/P2 不在本次闭环完成声明内。
+Jetson 独立目录 `/home/weizheng/code/Tuber_Studio`，使用新端口；不得改动既有 videoanalyze-app、jetson-research 服务。真实B站／抖音直播后置。无账号凭证，真实发评论不能宣称已验；默认审核／自动浏览／自动回复开关均不主动开启。
+
+下一步：区分MiniCPM角色回声的消息结构／模型原因，验证本地化摘要保留真实对话；完成动态overlay确认，再同步最终代码到Jetson与Git。长输入预填充约339秒且存在少量换页，未验长期稳定和长文召回，不据已加载窗口推断这些指标。

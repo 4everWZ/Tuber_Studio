@@ -1,0 +1,13 @@
+Codex
+Copyright 2025 OpenAI
+
+This product includes software developed by OpenAI (https://openai.com/).
+
+Tuber Studio adaptations:
+- Python text-only port of the public local compaction selection, UTF-8 truncation,
+  retry/overflow and reconstruction flow from openai/codex revision
+  f021168bde5357009fceb0477835ad90bd54c17c (2026-10-28 inspection).
+- Original compact prompt and summary prefix retained under src/tuber_studio/prompts.
+- Local llama.cpp transport, actual model token counting, SQLite persistence and
+  character/session/operations integration are project-specific modifications.
+- The OpenAI remote encrypted compaction service is not included or reimplemented.
