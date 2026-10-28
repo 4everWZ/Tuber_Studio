@@ -6,6 +6,7 @@ import io
 import json
 import re
 import time
+from collections import deque
 from uuid import uuid4
 
 from .bilibili import BilibiliAdapter, PublishUncertain
@@ -20,6 +21,7 @@ DEFAULT_POLICY = {
     "max_replies_per_day": 20,
 }
 CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
+THREAD_WORKERS = 4
 
 
 def category(text):
@@ -54,6 +56,7 @@ class Comments:
         self.last_browse_error = None
         self.last_browse_at = None
         self.active_task_id = None
+        self.thread_tasks = set()
         self.closed = False
 
     async def open(self):
@@ -66,6 +69,13 @@ class Comments:
             if task:
                 task.cancel()
         await asyncio.gather(*(t for t in (self.worker, self.browser) if t), return_exceptions=True)
+        while not self.queue.empty():
+            task_id, *_ = self.queue.get_nowait()
+            self.store.execute(
+                "UPDATE comment_tasks SET status='cancelled',error='服务停止',updated_at=? WHERE id=?",
+                (time.time(), task_id),
+            )
+            self.queue.task_done()
         await self.adapter.close()
 
     def policy(self):
@@ -132,7 +142,16 @@ class Comments:
         if not isinstance(items, list) or not 1 <= len(items) <= 1000:
             raise ValueError("每批导入1到1000条评论")
         normalized = []
-        fields = {"comment_id", "platform_user_id", "display_name", "content", "like_count", "created_at"}
+        fields = {
+            "comment_id",
+            "platform_user_id",
+            "display_name",
+            "content",
+            "like_count",
+            "created_at",
+            "thread_id",
+            "parent_comment_id",
+        }
         mapping = {} if field_mapping is None else field_mapping
         if (
             not isinstance(mapping, dict)
@@ -149,6 +168,8 @@ class Comments:
             cid, content = str(item.get("comment_id") or ""), item.get("content")
             if not cid or len(cid) > 100 or not isinstance(content, str) or not 1 <= len(content) <= 4000:
                 raise ValueError("每条评论需要comment_id与1到4000字content")
+            thread_id = self._thread_identifier(item.get("thread_id"), cid)
+            parent_id = self._thread_identifier(item.get("parent_comment_id"))
             uid = str(item["platform_user_id"])[:100] if item["platform_user_id"] is not None else None
             uid = uid or None
             name = str(item.get("display_name") or "匿名观众")[:80]
@@ -158,6 +179,8 @@ class Comments:
                 {
                     "video_id": video_id,
                     "comment_id": cid,
+                    "thread_id": thread_id,
+                    "parent_comment_id": parent_id,
                     "platform_user_id": uid,
                     "display_name": name,
                     "content": content,
@@ -174,6 +197,8 @@ class Comments:
             (
                 r["video_id"],
                 r["comment_id"],
+                r["thread_id"],
+                r["parent_comment_id"],
                 r["platform_user_id"],
                 r["display_name"],
                 r["content"],
@@ -187,8 +212,8 @@ class Comments:
         before = self.store.one("SELECT COUNT(*) AS n FROM comments")["n"]
         with self.store.db:
             self.store.db.executemany(
-                "INSERT OR IGNORE INTO comments(video_id,comment_id,platform_user_id,display_name,"
-                "content,category,like_count,created_at,imported_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO comments(video_id,comment_id,thread_id,parent_comment_id,platform_user_id,"
+                "display_name,content,category,like_count,created_at,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 normalized,
             )
         after = self.store.one("SELECT COUNT(*) AS n FROM comments")["n"]
@@ -207,7 +232,33 @@ class Comments:
             return {"imported": 0, "duplicates": 0, "video_id": data["video_id"], "detail": "未读到评论"}
         return self.import_items(data["video_id"], data["items"]) | {"title": data.get("title")}
 
-    def list_comments(self, video_id=None, category_filter=None, status=None, limit=200):
+    @staticmethod
+    def _thread_identifier(value, fallback=None):
+        if value is None or value == "" or value == "0" or (type(value) is int and value == 0):
+            return fallback
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise ValueError("楼ID和父评论ID须为1到100字的字符串或整数")
+        value = str(value).strip()
+        if not value or len(value) > 100:
+            raise ValueError("楼ID和父评论ID须为1到100字")
+        return value
+
+    @staticmethod
+    def context_scope(video_id, thread_id, platform="bilibili"):
+        if (
+            not isinstance(video_id, str)
+            or not 1 <= len(video_id) <= 100
+            or not isinstance(thread_id, str)
+            or not 1 <= len(thread_id) <= 100
+            or not isinstance(platform, str)
+            or not re.fullmatch(r"[a-z0-9_-]{1,32}", platform)
+        ):
+            raise ValueError("评论上下文需要有效的平台、视频和楼ID")
+        return "comments:" + json.dumps(
+            [platform, video_id, thread_id], ensure_ascii=False, separators=(",", ":")
+        )
+
+    def list_comments(self, video_id=None, category_filter=None, status=None, limit=200, *, thread_id=None):
         conditions, args = [], []
         if video_id:
             conditions.append("c.video_id=?")
@@ -218,6 +269,9 @@ class Comments:
         if status:
             conditions.append("d.status=?")
             args.append(status)
+        if thread_id:
+            conditions.append("c.thread_id=?")
+            args.append(thread_id)
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         rows = self.store.all(
             "SELECT c.* FROM comments c LEFT JOIN drafts d ON d.comment_id=c.id"
@@ -227,6 +281,8 @@ class Comments:
         )
         for row in rows:
             row["draft"] = self.store.one("SELECT * FROM drafts WHERE comment_id=?", (row["id"],))
+            if row["draft"] and row["draft"].get("answer_check"):
+                row["draft"]["answer_check"] = json.loads(row["draft"]["answer_check"])
         return rows
 
     def analyze(self, video_id=None):
@@ -254,6 +310,8 @@ class Comments:
         return self.store.one("SELECT * FROM comments WHERE id=?", (comment_id,))
 
     def enqueue(self, ids, automatic=False):
+        if self.closed:
+            raise ValueError("评论任务服务已停止")
         if not isinstance(ids, list) or not 1 <= len(ids) <= 1000 or any(not isinstance(i, int) for i in ids):
             raise ValueError("选择1到1000条评论")
         ids = list(dict.fromkeys(ids))
@@ -274,81 +332,130 @@ class Comments:
         while True:
             task_id, ids, character, automatic = await self.queue.get()
             self.active_task_id = task_id
+            children = []
             self.store.execute(
                 "UPDATE comment_tasks SET status='running',updated_at=? WHERE id=?", (time.time(), task_id)
             )
             try:
+                threads = {}
                 for cid in ids:
-                    while self.runtime.state in {"live", "paused"} and (
-                        self.runtime.queue or self.runtime.current_id
-                    ):
-                        await asyncio.sleep(0.2)
                     row = self.store.one("SELECT * FROM comments WHERE id=?", (cid,))
-                    draft = self.store.one("SELECT * FROM drafts WHERE comment_id=?", (cid,))
-                    # Existing reviewed/sent/uncertain drafts cannot be overwritten by another batch.
-                    if draft:
-                        self._task_progress(task_id)
+                    if row is None:
+                        self._task_progress(task_id, "来源评论不存在")
                         continue
-                    try:
-                        if row["category"] == "spam":
-                            self._task_progress(task_id)
-                            continue
-                        event = {
-                            "event_id": f"comment:{cid}",
-                            "text": row["content"],
-                            "display_name": row["display_name"],
-                            "platform_user_id": row["platform_user_id"],
-                        }
-                        async with self.runtime.generation_lock:
-                            messages = await self.runtime.context.prepare(
-                                "comments:" + row["video_id"], character, event, mode="comment_draft"
-                            )
-                            reply = await self.runtime.llm.generate(
-                                messages, character, event["event_id"], event["text"]
-                            )
-                        cursor = self.store.execute(
-                            "INSERT INTO drafts(comment_id,text,status,character_id,"
-                            "character_version,model,input_summary,created_at,updated_at) "
-                            "VALUES(?,?,'pending_review',?,?,?,?,?,?)",
-                            (
-                                cid,
-                                reply.spoken_text,
-                                character["id"],
-                                character["version"],
-                                self.settings.data["llm"].get("model", "demo"),
-                                json.dumps(event, ensure_ascii=False),
-                                time.time(),
-                                time.time(),
-                            ),
-                        )
-                        self.runtime.context.record(
-                            "comments:" + row["video_id"],
-                            character,
-                            event,
-                            reply.spoken_text,
-                            mode="comment_draft",
-                        )
-                        # Only newly generated drafts from an explicit automatic browsing pass are auto-sent.
-                        # Manual batches remain reviewable even if the global automatic mode is on.
-                        if automatic and self.policy()["auto_reply"]:
-                            await self.publish(cursor.lastrowid, automatic=True)
-                        self._task_progress(task_id)
-                    except Exception as error:
-                        self._task_progress(task_id, public_error(error))
+                    scope = self.context_scope(row["video_id"], row["thread_id"], row["platform"])
+                    threads.setdefault(scope, []).append(row)
+                pending = deque(threads.values())
+                # Only four workflows exist at a time. A thread's comments remain
+                # ordered, and batches themselves preserve queue order.
+                async with asyncio.TaskGroup() as group:
+                    for _ in range(min(THREAD_WORKERS, len(pending))):
+                        child = group.create_task(self._thread_worker(task_id, pending, character, automatic))
+                        children.append(child)
+                        self.thread_tasks.add(child)
                 self.store.execute(
                     "UPDATE comment_tasks SET status=CASE WHEN errors>0 THEN 'partial' ELSE "
                     "'completed' END,updated_at=? WHERE id=?",
                     (time.time(), task_id),
                 )
             except asyncio.CancelledError:
+                # TaskGroup has cancelled and collected every child, including
+                # one-shot publish reconciliation, before reaching this branch.
                 self.store.execute(
                     "UPDATE comment_tasks SET status='cancelled',error='服务停止',updated_at=? WHERE id=?",
                     (time.time(), task_id),
                 )
                 raise
+            except Exception as error:
+                self.store.execute(
+                    "UPDATE comment_tasks SET status='failed',error=?,updated_at=? WHERE id=?",
+                    (public_error(error), time.time(), task_id),
+                )
             finally:
+                self.thread_tasks.difference_update(children)
                 self.active_task_id = None
                 self.queue.task_done()
+
+    async def _thread_worker(self, task_id, pending, character, automatic):
+        while pending:
+            rows = pending.popleft()
+            await self._process_thread(task_id, rows, character, automatic)
+
+    async def _process_thread(self, task_id, rows, character, automatic):
+        for row in rows:
+            try:
+                await self._process_comment(row, character, automatic)
+                self._task_progress(task_id)
+            except Exception as error:
+                self._task_progress(task_id, public_error(error))
+
+    def _live_pending(self):
+        return self.runtime.state in {"live", "paused"} and (self.runtime.queue or self.runtime.current_id)
+
+    async def _process_comment(self, row, character, automatic):
+        cid = row["id"]
+        row = self.store.one("SELECT * FROM comments WHERE id=?", (cid,))
+        if row is None:
+            raise ValueError("来源评论不存在")
+        if row["category"] == "spam" or self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
+            return
+        event = {
+            "event_id": f"comment:{cid}",
+            "text": row["content"],
+            "display_name": row["display_name"],
+            "platform_user_id": row["platform_user_id"],
+            "platform": row["platform"],
+            "video_id": row["video_id"],
+            "thread_id": row["thread_id"],
+            "parent_comment_id": row["parent_comment_id"],
+            "platform_comment_id": row["comment_id"],
+        }
+        scope = self.context_scope(row["video_id"], row["thread_id"], row["platform"])
+        while True:
+            while self._live_pending():
+                await asyncio.sleep(0.2)
+            async with self.runtime.generation_lock:
+                if self._live_pending():
+                    continue
+                # Recheck after waiting for the GPU: another request may already
+                # have produced a draft. Reviewed/published drafts are immutable here.
+                if self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
+                    return
+                reply, check = await self.runtime.generate_reply(
+                    scope, character, event, mode="comment_draft"
+                )
+                cursor = self.store.execute(
+                    "INSERT OR IGNORE INTO drafts(comment_id,text,status,character_id,"
+                    "character_version,model,input_summary,answer_check,created_at,updated_at) "
+                    "VALUES(?,?,'pending_review',?,?,?,?,?,?,?)",
+                    (
+                        cid,
+                        reply.spoken_text,
+                        character["id"],
+                        character["version"],
+                        self.settings.data["llm"].get("model", "demo"),
+                        json.dumps(event, ensure_ascii=False),
+                        json.dumps(check, ensure_ascii=False),
+                        time.time(),
+                        time.time(),
+                    ),
+                )
+                if not cursor.rowcount:
+                    return
+                draft_id = cursor.lastrowid
+                self.runtime.context.record(
+                    scope,
+                    character,
+                    event,
+                    reply.spoken_text,
+                    mode="comment_draft",
+                    memory_kind=check.get("memory_kind"),
+                )
+                break
+        # Independent threads may prepare/publish concurrently; all model calls
+        # above stay serialized, and publish() owns its one-shot write lock.
+        if automatic and self.policy()["auto_reply"]:
+            await self.publish(draft_id, automatic=True)
 
     def _task_progress(self, task_id, error=None):
         self.store.execute(
@@ -397,7 +504,7 @@ class Comments:
             if not policy["credentials_configured"]:
                 raise ValueError("未配置B站账号写入凭证；草稿可人工审核复制")
             row = self.store.one(
-                "SELECT d.*,c.video_id,c.comment_id AS platform_comment_id FROM drafts d "
+                "SELECT d.*,c.video_id,c.thread_id,c.comment_id AS platform_comment_id FROM drafts d "
                 "JOIN comments c ON c.id=d.comment_id WHERE d.id=?",
                 (draft_id,),
             )
@@ -422,7 +529,12 @@ class Comments:
                 "UPDATE drafts SET status='publishing',updated_at=? WHERE id=?", (time.time(), draft_id)
             )
             try:
-                receipt = await self.adapter.publish(row["video_id"], row["platform_comment_id"], row["text"])
+                options = (
+                    {"thread_id": row["thread_id"]} if row["thread_id"] != row["platform_comment_id"] else {}
+                )
+                receipt = await self.adapter.publish(
+                    row["video_id"], row["platform_comment_id"], row["text"], **options
+                )
             except (PublishUncertain, asyncio.CancelledError) as error:
                 message = "发布结果不确定，请先核对平台，禁止自动重试"
                 self.store.execute(

@@ -8,6 +8,7 @@ const model = {
   commentId: null, draftDirty: false, draftId: null, policy: null,
   importPreviewSignature: null, categorySaving: new Set(),
   modeSwitch: null, modeResult: null,
+  threadContextPending: null,
 };
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
@@ -160,7 +161,7 @@ function resourceMode(inference) {
   return ["text", "live"].includes(inference?.mode) ? inference.mode : null;
 }
 function resourceName(key) {
-  return ({llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", tts: "TTS"})[key] || key;
+  return ({llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", llmqwen35: "Qwen3.5-2B", qwen35: "Qwen3.5-2B", tts: "TTS"})[key] || key;
 }
 function inferenceResidents(inference) {
   const providers = Object.entries(inference.providers || {});
@@ -253,7 +254,7 @@ function renderContext(context) {
   $("comment-context-state").textContent = verified ? `真实完整输入占用 ${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}）；压缩${rounds}。` : error || `上下文目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，尚未验证。`;
   $("context-verified").textContent = verified ? "实际服务已验证" : unavailable ? "配置不可用" : "待验证";
   $("context-verified").className = `badge ${verified ? "good" : unavailable ? "bad" : ""}`;
-  describe($("context-details"), [["配置目标", tokenCount(context.configured_tokens)], ["实际服务容量", tokenCount(context.server_tokens)], ["模型原生容量", tokenCount(context.native_tokens)], ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`], ["累计已安装压缩轮数", context.compact_count ?? 0], ["最近操作尝试轮数", context.compaction_passes_last ?? 0], ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`], ["最近压缩提示", context.last_compaction_warning || "无"], ["最近压缩错误", context.last_compaction_error || "无"]]);
+  describe($("context-details"), [["活动范围", context.scope || "暂无活动历史"], ["配置目标", tokenCount(context.configured_tokens)], ["实际服务容量", tokenCount(context.server_tokens)], ["模型原生容量", tokenCount(context.native_tokens)], ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`], ["累计已安装压缩轮数", context.compact_count ?? 0], ["最近操作尝试轮数", context.compaction_passes_last ?? 0], ["最近摘要预算", (context.summary_budgets_last || []).map(value => `${value} tokens`).join(" / ") || "尚未压缩"], ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`], ["最近压缩提示", context.last_compaction_warning || "无"], ["最近压缩错误", context.last_compaction_error || "无"]]);
   $("context-profile-note").textContent = error || "模型原生能力、运行服务容量及配置目标分别显示；修改配置后需重启并重新验证。";
   const generate = $("generate-drafts");
   if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !verified;
@@ -360,12 +361,39 @@ async function loadSettings() {
 }
 function commentQuery() {
   const params = new URLSearchParams();
-  [["video_id", "filter-video"], ["category", "filter-category"], ["status", "filter-status"]].forEach(([key, id]) => { if ($(id).value.trim()) params.set(key, $(id).value.trim()); });
+  [["video_id", "filter-video"], ["thread_id", "filter-thread"], ["category", "filter-category"], ["status", "filter-status"]].forEach(([key, id]) => { if ($(id).value.trim()) params.set(key, $(id).value.trim()); });
   return params.toString();
 }
 async function refreshComments() {
   const [comments, tasks] = await Promise.all([api(`/api/comments?${commentQuery()}`), api("/api/comment-tasks")]);
   model.comments = list(comments); renderComments(); renderCommentTasks(list(tasks));
+  await refreshThreadContext();
+}
+function selectedThread() {
+  const selected = model.comments.find(item => item.id === model.commentId);
+  let videoId = $("filter-video").value.trim(), threadId = $("filter-thread").value.trim();
+  if ((!videoId || !threadId) && selected) {
+    const selectedId = selected.thread_id || selected.comment_id;
+    if ((!videoId || videoId === selected.video_id) && (!threadId || threadId === selectedId)) {
+      videoId = selected.video_id; threadId = selectedId;
+    }
+  }
+  return videoId && threadId ? {videoId, threadId, key: JSON.stringify([videoId, threadId])} : null;
+}
+async function refreshThreadContext() {
+  const target = selectedThread();
+  if (!target) { $("thread-context-state").textContent = "选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。"; return; }
+  if (model.threadContextPending === target.key) return;
+  model.threadContextPending = target.key;
+  $("thread-context-state").textContent = `正在读取 ${target.videoId} / 楼 ${target.threadId} 的上下文…`;
+  try {
+    const query = new URLSearchParams({video_id: target.videoId, thread_id: target.threadId});
+    const context = await api(`/api/context/status?${query}`);
+    if (selectedThread()?.key !== target.key) return;
+    $("thread-context-state").textContent = `所选楼 ${target.videoId} / ${target.threadId}：${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}），累计压缩 ${context.compact_count ?? 0} 轮、最近 ${context.compaction_passes_last ?? 0} 轮。${context.last_compaction_warning || ""}`;
+  } catch (error) {
+    if (selectedThread()?.key === target.key) $("thread-context-state").textContent = `所选楼上下文读取失败：${error.message}`;
+  } finally { if (model.threadContextPending === target.key) model.threadContextPending = null; }
 }
 function renderComments() {
   const tbody = $("comments"); $("comment-count").textContent = `(${model.comments.length})`;
@@ -381,7 +409,16 @@ function renderComments() {
       const check = document.createElement("input"); check.type = "checkbox"; check.checked = model.selectedComments.has(comment.id); check.setAttribute("aria-label", `选择 ${comment.display_name || "观众"} 的评论`);
       check.onchange = () => { check.checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id); updateCommentSelection(); }; cell(row, check);
       const text = node("button", comment.content, "comment-link"); text.onclick = () => selectComment(comment.id);
-      cell(row, text, `${comment.display_name || "匿名观众"} · ${comment.platform_user_id || "未知 ID"} · ${comment.video_id || ""}${comment.like_count != null ? ` · ${comment.like_count} 赞` : ""}`);
+      const contentCell = cell(row, text, `${comment.display_name || "匿名观众"} · ${comment.platform_user_id || "未知 ID"} · ${comment.video_id || ""}${comment.like_count != null ? ` · ${comment.like_count} 赞` : ""}`);
+      const threadButton = node("button", `楼 ${comment.thread_id || comment.comment_id}`, "thread-link");
+      threadButton.title = "只查看此楼，并将压缩操作限定到该楼";
+      threadButton.onclick = () => busy(threadButton, async () => {
+        $("filter-video").value = comment.video_id; $("filter-thread").value = comment.thread_id || comment.comment_id;
+        $("compact-video-id").value = comment.video_id; $("compact-thread-id").value = comment.thread_id || comment.comment_id;
+        await refreshComments();
+      });
+      contentCell.append(threadButton);
+      if (comment.parent_comment_id) contentCell.append(node("small", `父评论 ${comment.parent_comment_id}`, "cell-sub"));
       const categorySelect = node("select", null, "category-select");
       categorySelect.setAttribute("aria-label", `评论 ${comment.comment_id} 的分类`);
       ["question", "suggestion", "interaction", "spam", "general"].forEach(value => {
@@ -417,20 +454,37 @@ function updateCommentSelection() {
 }
 function selectComment(id) {
   if (model.draftDirty && !confirm("回复有未保存修改。放弃修改并查看其他评论？")) return;
-  model.commentId = id; model.draftDirty = false; model.draftId = null; renderComments();
+  model.commentId = id; model.draftDirty = false; model.draftId = null;
+  const comment = model.comments.find(item => item.id === id);
+  if (comment) { $("compact-video-id").value = comment.video_id; $("compact-thread-id").value = comment.thread_id || comment.comment_id; }
+  renderComments();
+  refreshThreadContext();
+}
+function renderAnswerCheck(draft) {
+  let check = draft?.answer_check;
+  if (!check) { $("draft-answer-check").textContent = "暂无来源与完整性检查记录。"; return; }
+  if (typeof check === "string") {
+    try { check = JSON.parse(check); } catch { $("draft-answer-check").textContent = "检查记录格式异常，无法展示证据。"; return; }
+  }
+  if (!check || typeof check !== "object" || Array.isArray(check)) { $("draft-answer-check").textContent = "检查记录格式异常，无法展示证据。"; return; }
+  const evidence = {};
+  ["sources", "required_slots", "missing", "retried", "warning"].forEach(key => { if (Object.hasOwn(check, key)) evidence[key] = check[key]; });
+  $("draft-answer-check").textContent = Object.keys(evidence).length ? JSON.stringify(evidence, null, 2) : "检查记录未提供来源、缺项、重试或提示字段。";
 }
 function renderDraft(force = false) {
   const comment = model.comments.find(item => item.id === model.commentId);
   if (!comment) {
     if (model.draftDirty) return;
+    renderAnswerCheck(null);
     $("draft-source").textContent = "选择列表中的评论，查看角色草稿及来源。";
     $("draft-text").value = ""; $("draft-text").disabled = true; $("draft-status").textContent = "选择评论";
     describe($("draft-meta"), []); ["approve-draft", "reject-draft", "copy-draft", "publish-draft"].forEach(id => { $(id).disabled = true; }); return;
   }
   const draft = comment.draft;
+  renderAnswerCheck(draft);
   $("draft-source").textContent = `${comment.display_name || "匿名观众"}：${comment.content}`;
   setBadge($("draft-status"), draft?.status || "未生成");
-  describe($("draft-meta"), [["来源评论", `${comment.video_id} / ${comment.comment_id}`], ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"], ["模型", draft?.model || "—"], ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])]);
+  describe($("draft-meta"), [["来源评论", `${comment.video_id} / ${comment.comment_id}`], ["楼ID", comment.thread_id || comment.comment_id], ["父评论ID", comment.parent_comment_id || "顶层"], ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"], ["模型", draft?.model || "—"], ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])]);
   if (force || !model.draftDirty || model.draftId !== draft?.id) { $("draft-text").value = draft?.text || ""; model.draftId = draft?.id || null; model.draftDirty = false; }
   const locked = draft && ["published", "publishing", "publish_uncertain"].includes(draft.status);
   $("draft-text").disabled = !draft || locked;
@@ -588,7 +642,7 @@ function readImportPayload() {
   if (mapping) {
     try { payload.field_mapping = JSON.parse(mapping); } catch (error) { throw new Error(`字段映射 JSON 格式错误：${error.message}`); }
     if (!payload.field_mapping || typeof payload.field_mapping !== "object" || Array.isArray(payload.field_mapping)) throw new Error("字段映射必须是 JSON 对象");
-    const targets = ["comment_id", "platform_user_id", "display_name", "content", "like_count", "created_at"];
+    const targets = ["comment_id", "platform_user_id", "display_name", "content", "like_count", "created_at", "thread_id", "parent_comment_id"];
     Object.entries(payload.field_mapping).forEach(([target, source]) => {
       if (!targets.includes(target)) throw new Error(`不支持的目标字段：${target}`);
       if (typeof source !== "string" || !source.trim()) throw new Error(`${target} 的来源字段名必须是非空字符串`);
@@ -610,9 +664,9 @@ $("preview-import").onclick = () => busy($("preview-import"), async () => {
     let stillCurrent = false; try { stillCurrent = JSON.stringify(readImportPayload()) === signature; } catch { /* Input changed while previewing. */ }
     if (!stillCurrent) { invalidateImportPreview(); return; }
     const items = list(result); const tbody = $("import-preview-rows"); tbody.replaceChildren();
-    if (!items.length) empty(tbody, 5, "没有可预览的数据。");
+    if (!items.length) empty(tbody, 7, "没有可预览的数据。");
     else items.slice(0, 10).forEach(item => {
-      const row = node("tr"); cell(row, item.comment_id); cell(row, item.platform_user_id || "未知 ID", item.display_name || "匿名观众");
+      const row = node("tr"); cell(row, item.comment_id); cell(row, item.thread_id || item.comment_id); cell(row, item.parent_comment_id || "—"); cell(row, item.platform_user_id || "未知 ID", item.display_name || "匿名观众");
       cell(row, item.content); cell(row, item.like_count ?? 0); cell(row, item.created_at || "—"); tbody.append(row);
     });
     $("import-preview").hidden = false;
@@ -671,9 +725,9 @@ $("comment-policy-form").onsubmit = event => {
 $("stop-auto-reply").onclick = () => busy($("stop-auto-reply"), async () => {
   await api("/api/comments/policy", {method: "PUT", body: {auto_reply: false}}); await loadPolicy(); notice("自动回复已停止。已提交给平台的请求以回执为准。");
 });
-async function compactContext(scope, videoId) {
-  if (scope === "comments" && !videoId) throw new Error("请先填写要压缩的评论视频 ID 或导入批次。");
-  const payload = {scope, ...(scope === "comments" ? {video_id: videoId} : {})};
+async function compactContext(scope, videoId, threadId) {
+  if (scope === "comments" && (!videoId || !threadId)) throw new Error("请先选择要压缩的视频与单个楼ID；不同楼上下文不会合并。");
+  const payload = {scope, ...(scope === "comments" ? {video_id: videoId, thread_id: threadId} : {})};
   $("compaction-result").textContent = "正在使用本地模型压缩上下文…";
   notice("上下文压缩已开始，请等待本地模型返回。");
   try {
@@ -681,11 +735,15 @@ async function compactContext(scope, videoId) {
     const message = result.message || result.detail || (result.compacted === false ? "没有可压缩的历史。" : "压缩请求已完成，请查看实际上下文占用与压缩次数。");
     $("compaction-result").textContent = message; notice(message);
     renderStatus(await api("/api/status"));
+    if (scope === "comments") await refreshThreadContext();
   } catch (error) { $("compaction-result").textContent = `压缩失败：${error.message}`; throw error; }
 }
 $("compact-live").onclick = () => busy($("compact-live"), () => compactContext("live"));
-$("compact-comments-settings").onclick = () => busy($("compact-comments-settings"), () => compactContext("comments", $("compact-video-id").value.trim()));
-$("compact-comments").onclick = () => busy($("compact-comments"), () => compactContext("comments", $("filter-video").value.trim()));
+$("compact-comments-settings").onclick = () => busy($("compact-comments-settings"), () => compactContext("comments", $("compact-video-id").value.trim(), $("compact-thread-id").value.trim()));
+$("compact-comments").onclick = () => busy($("compact-comments"), () => {
+  const target = selectedThread();
+  return compactContext("comments", target?.videoId, target?.threadId);
+});
 $("character-image").onerror = () => { $("character-image").hidden = true; };
 window.addEventListener("hashchange", changePage);
 window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty) { event.preventDefault(); event.returnValue = ""; } });

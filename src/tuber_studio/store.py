@@ -39,19 +39,19 @@ class Store:
                 id TEXT PRIMARY KEY,event_id INTEGER,session_id TEXT,character_id TEXT,
                 character_version INTEGER,status TEXT NOT NULL,text TEXT,emotion TEXT,
                 animation_id TEXT,audio_ref TEXT,error TEXT,llm_ms REAL,tts_ms REAL,
-                playback_token TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL);
+                playback_token TEXT,answer_check TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS conversations(
                 id INTEGER PRIMARY KEY,session_id TEXT,character_id TEXT,user_id INTEGER,
                 event_text TEXT,reply_text TEXT,job_id TEXT UNIQUE,created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS comments(
                 id INTEGER PRIMARY KEY,platform TEXT DEFAULT 'bilibili',video_id TEXT,
-                comment_id TEXT,platform_user_id TEXT,display_name TEXT,content TEXT,
+                comment_id TEXT,thread_id TEXT,parent_comment_id TEXT,platform_user_id TEXT,display_name TEXT,content TEXT,
                 category TEXT DEFAULT 'general',category_source TEXT DEFAULT 'auto',like_count INTEGER DEFAULT 0,created_at TEXT,
                 imported_at REAL,UNIQUE(platform,video_id,comment_id));
             CREATE TABLE IF NOT EXISTS drafts(
                 id INTEGER PRIMARY KEY,comment_id INTEGER UNIQUE NOT NULL,text TEXT NOT NULL,
                 status TEXT NOT NULL,character_id TEXT,character_version INTEGER,model TEXT,
-                input_summary TEXT,error TEXT,receipt TEXT,created_at REAL,updated_at REAL);
+                input_summary TEXT,answer_check TEXT,error TEXT,receipt TEXT,created_at REAL,updated_at REAL);
             CREATE TABLE IF NOT EXISTS comment_tasks(
                 id TEXT PRIMARY KEY,status TEXT,total INTEGER,done INTEGER DEFAULT 0,
                 errors INTEGER DEFAULT 0,error TEXT,character_id TEXT,created_at REAL,updated_at REAL);
@@ -61,6 +61,16 @@ class Store:
         columns = {row[1] for row in self.db.execute("PRAGMA table_info(comments)")}
         if "category_source" not in columns:
             self.db.execute("ALTER TABLE comments ADD COLUMN category_source TEXT DEFAULT 'auto'")
+        for column in ("thread_id", "parent_comment_id"):
+            if column not in columns:
+                self.db.execute(f"ALTER TABLE comments ADD COLUMN {column} TEXT")
+        self.db.execute("UPDATE comments SET thread_id=comment_id WHERE thread_id IS NULL OR thread_id=''")
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS comments_thread ON comments(platform,video_id,thread_id,id)"
+        )
+        for table in ("jobs", "drafts"):
+            if "answer_check" not in {row[1] for row in self.db.execute(f"PRAGMA table_info({table})")}:
+                self.db.execute(f"ALTER TABLE {table} ADD COLUMN answer_check TEXT")
         self.db.execute(
             "UPDATE jobs SET status='cancelled',error='服务重启，取消遗留任务' "
             "WHERE status NOT IN ('completed','failed','cancelled','expired')"
@@ -206,9 +216,12 @@ class Store:
             "llm_ms",
             "tts_ms",
             "playback_token",
+            "answer_check",
         }
         if not fields.keys() <= allowed:
             raise ValueError("未知任务字段")
+        if isinstance(fields.get("answer_check"), (dict, list)):
+            fields["answer_check"] = dump(fields["answer_check"])
         fields["updated_at"] = time.time()
         self.execute(
             "UPDATE jobs SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",

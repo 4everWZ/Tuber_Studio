@@ -149,6 +149,53 @@ async def test_pagination_deduplicates_comments_without_merging_same_nickname(ad
     assert {item["display_name"] for item in result["items"]} == {"同名观众"}
 
 
+async def test_reply_previews_keep_thread_root_parent_and_deduplicate_across_pages(adapter_factory):
+    def handle(request):
+        if request.url.path == "/x/web-interface/view":
+            return video_response()
+        root = comment(11, 1001)
+        root.update(root=0, parent=0)
+        if request.url.params["pn"] == "1":
+            direct = comment(12, 1002) | {"root": 11, "parent": 11}
+            nested = comment(13, 1003) | {"root": 11, "parent": 12}
+            root["replies"] = [direct, nested]
+        else:
+            # A repeated root can expose a new preview. An absent child root
+            # inherits the explicit containing thread, not a whole-video scope.
+            root["replies"] = [comment(12, 1002), comment(14, 1004)]
+        return httpx.Response(200, json={"code": 0, "data": {"replies": [root], "page": {"count": 100}}})
+
+    adapter = await adapter_factory(handle)
+    items = (await adapter.fetch(BV, max_pages=2))["items"]
+    assert [item["comment_id"] for item in items] == ["11", "12", "13", "14"]
+    assert {item["thread_id"] for item in items} == {"11"}
+    assert [item["parent_comment_id"] for item in items] == [None, "11", "12", "11"]
+
+
+async def test_flat_root_metadata_and_missing_top_level_root_stay_separate(adapter_factory):
+    def handle(request):
+        if request.url.path == "/x/web-interface/view":
+            return video_response()
+        replies = [comment(21, 1001), comment(22, 1002) | {"root": 11, "parent": 12}]
+        return httpx.Response(200, json={"code": 0, "data": {"replies": replies}})
+
+    adapter = await adapter_factory(handle)
+    items = (await adapter.fetch(BV))["items"]
+    assert [(item["thread_id"], item["parent_comment_id"]) for item in items] == [("21", None), ("11", "12")]
+
+
+async def test_inconsistent_nested_thread_metadata_is_rejected(adapter_factory):
+    def handle(request):
+        if request.url.path == "/x/web-interface/view":
+            return video_response()
+        root = comment(11, 1001) | {"replies": [comment(12, 1002) | {"root": 99, "parent": 11}]}
+        return httpx.Response(200, json={"code": 0, "data": {"replies": [root]}})
+
+    adapter = await adapter_factory(handle)
+    with pytest.raises(ValueError, match="评论数据格式无效"):
+        await adapter.fetch(BV)
+
+
 async def test_popular_uses_read_only_fixed_endpoint(adapter_factory):
     def handle(request):
         assert request.method == "GET"
@@ -278,4 +325,21 @@ async def test_publish_sends_once_and_distinguishes_rejection_uncertainty_and_re
             await adapter.publish(BV, "11", "你好")
         assert isinstance(caught.value, PublishUncertain) is uncertain
         assert_no_secrets(caught.value)
+    assert len(posts) == 1
+
+
+async def test_publish_reply_inside_thread_uses_root_and_immediate_target(adapter_factory):
+    posts = []
+
+    def handle(request):
+        if request.method == "GET":
+            return video_response()
+        posts.append(request)
+        form = parse_qs(request.content.decode())
+        assert form["root"] == ["11"] and form["parent"] == ["13"]
+        return httpx.Response(200, json={"code": 0, "data": {"rpid": 99}})
+
+    adapter = await adapter_factory(handle, SECRETS)
+    receipt = await adapter.publish(BV, "13", "收到你的楼内补充啦", thread_id="11")
+    assert receipt["root"] == "11" and receipt["parent"] == "13"
     assert len(posts) == 1

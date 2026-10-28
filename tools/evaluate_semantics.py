@@ -7,17 +7,79 @@ These cases detect echoes and lost literal facts, not broad persona/summary qual
 import argparse
 import asyncio
 import json
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from tuber_studio.compaction import SUMMARIZATION_PROMPT, compact_history
 from tuber_studio.context import DOMAIN_GUIDANCE, ContextManager
 from tuber_studio.providers import LlamaCppProvider, public_error
+from tuber_studio.runtime import Runtime
+from tuber_studio.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def missing_groups(text, groups):
     return [group for group in groups if not any(candidate in text for candidate in group)]
+
+
+async def evaluate_grounded(config_path, character_id, seed=42):
+    """Exercise real compression + source retrieval + one repair in isolated RAM-only state."""
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["llm"]["seed"] = seed
+    characters = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
+    cases = json.loads((ROOT / "evaluations/semantic-cases.json").read_text(encoding="utf-8"))
+    token = (
+        (ROOT / "runtime/inference-token").read_text().strip()
+        if config.get("inference_broker", {}).get("enabled")
+        else None
+    )
+    store = Store(":memory:", characters)
+    runtime = Runtime(SimpleNamespace(data=config, inference_token=token), store)
+    character = store.character(character_id)
+    scope = "evaluation:source-backed"
+    started = time.monotonic()
+    try:
+        await runtime.llm.health()
+        history = cases["history"]
+        for user, answer in zip(history[::2], history[1::2], strict=True):
+            runtime.context.record(
+                scope,
+                character,
+                {"event_id": user["source_event_id"], "text": user["content"]},
+                answer["content"],
+                "comment_draft",
+            )
+        await runtime.context.compact(scope, character, "comment_draft")
+        async with runtime.generation_lock:
+            reply, audit = await runtime.generate_reply(
+                scope,
+                character,
+                {"event_id": "evaluation:grounded-recall", "text": cases["recall_question"]},
+                mode="comment_draft",
+            )
+        print(
+            json.dumps(
+                {
+                    "model": config["llm"]["model"],
+                    "seed": seed,
+                    "server_tokens": runtime.llm.server_tokens,
+                    "elapsed_seconds": round(time.monotonic() - started, 3),
+                    "case": "source_backed_after_compaction",
+                    "text": reply.spoken_text,
+                    "answer_check": audit,
+                    "context": runtime.context.status(),
+                    "policy": "Per-case diagnostic; isolated memory only, no publishing or automatic model rejection.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return not audit["missing"]
+    finally:
+        await runtime.close()
+        store.close()
 
 
 async def evaluate(config_path, character_id, seed=42):
@@ -123,5 +185,9 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, default=ROOT / "runtime/studio.json")
     parser.add_argument("--character", default="whale")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--grounded", action="store_true", help="Only the integrated source-backed recall case"
+    )
     arguments = parser.parse_args()
-    raise SystemExit(0 if asyncio.run(evaluate(arguments.config, arguments.character, arguments.seed)) else 1)
+    runner = evaluate_grounded if arguments.grounded else evaluate
+    raise SystemExit(0 if asyncio.run(runner(arguments.config, arguments.character, arguments.seed)) else 1)

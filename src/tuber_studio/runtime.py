@@ -1,6 +1,7 @@
 """One bounded live worker; only the current overlay owner can confirm playback."""
 
 import asyncio
+import json
 import secrets
 import time
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ import httpx
 import psutil
 
 from .context import ContextManager
+from .memory import missing_slots
 from .providers import DemoProvider, LlamaCppProvider, VoiceService, public_error
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
@@ -165,6 +167,44 @@ class Runtime:
                             "error": "工作模式结果待设备重新确认",
                         }
                     raise ValueError("工作模式切换失败：" + public_error(error)) from None
+
+    async def generate_reply(self, scope, character, event, relationship=None, mode="live"):
+        """Caller owns generation_lock; evidence and one repair remain in its lease."""
+        evidence = self.context.memory.retrieve(scope, character, event["text"])
+        messages = await self.context.prepare(scope, character, event, relationship, mode, evidence=evidence)
+        reply = await self.llm.generate(messages, character, event["event_id"], event["text"])
+        missing = missing_slots(reply.spoken_text, evidence)
+        audit = {
+            "sources": evidence["evidence"],
+            "required_slots": evidence["required_slots"],
+            "missing": missing,
+            "retried": False,
+            "warning": None,
+            "memory_kind": "derived_reply" if evidence["evidence"] else "role_story",
+        }
+        if missing:
+            audit["retried"] = True
+            repair = messages + [
+                {
+                    "role": "system",
+                    "content": "上一次回答没有完整回应当前明确问题。只根据已补回的带来源原句补齐这些所问字段："
+                    + ", ".join(missing)
+                    + "。不要新增没有原句依据的细节，不需要复述问题未问的全部事实；仍按原JSON结构和字数回答。",
+                }
+            ]
+            try:
+                revised = await self.llm.generate(repair, character, event["event_id"], event["text"])
+                remaining = missing_slots(revised.spoken_text, evidence)
+                if len(remaining) < len(missing):
+                    reply, missing = revised, remaining
+                audit["missing"] = missing
+            except Exception as error:
+                audit["warning"] = "证据补答未完成：" + public_error(error)
+        if missing:
+            labels = {"location": "地点", "person": "人物", "item": "物品", "quantity": "数量"}
+            warning = "回答可能仍遗漏所问的" + "、".join(labels.get(slot, slot) for slot in missing)
+            audit["warning"] = "; ".join(filter(None, [audit["warning"], warning]))
+        return reply, audit
 
     async def send_overlay(self, message):
         if self.overlay:
@@ -366,14 +406,13 @@ class Runtime:
                     emotion, animation = "cheerful", "gift"
                 else:
                     self.store.update_job(job_id, status="generating")
-                    messages = await self.context.prepare(
+                    started = time.perf_counter()
+                    reply, answer_check = await self.generate_reply(
                         "live:" + self.session_id,
                         character,
                         event,
                         self.store.relationship(character["id"], row["user_id"]),
                     )
-                    started = time.perf_counter()
-                    reply = await self.llm.generate(messages, character, event["event_id"], event["text"])
                     self.timings["llm_ms"] = round((time.perf_counter() - started) * 1000)
                     self.store.update_job(
                         job_id,
@@ -382,6 +421,7 @@ class Runtime:
                         emotion=reply.emotion,
                         animation_id=reply.animation_id,
                         llm_ms=self.timings["llm_ms"],
+                        answer_check=answer_check,
                     )
                     started = time.perf_counter()
                     audio = await self.voices.synthesize(
@@ -393,6 +433,10 @@ class Runtime:
             # Preserve model suggestion separately in error when prerecorded text differs.
             suggestion = self.store.job(job_id)["text"]
             warning = audio.warning
+            check = self.store.job(job_id).get("answer_check")
+            if check:
+                check = json.loads(check) if isinstance(check, str) else check
+                warning = "; ".join(filter(None, [warning, check.get("warning")])) or None
             if warning and suggestion != audio.text:
                 warning += f"；模型候选：{suggestion}"
             self.store.update_job(
@@ -474,7 +518,14 @@ class Runtime:
         if data.get("type") == "ended" and self.store.complete(job["id"]):
             event = self.store.event(job["event_id"])["payload"]
             character = self.store.character(job["character_id"], job["character_version"])
-            self.context.record("live:" + job["session_id"], character, event, job["text"])
+            check = json.loads(job["answer_check"]) if job.get("answer_check") else {}
+            self.context.record(
+                "live:" + job["session_id"],
+                character,
+                event,
+                job["text"],
+                memory_kind=check.get("memory_kind"),
+            )
             self.last_played = self.store.job(job["id"])
             self.playback_done.set()
             return True

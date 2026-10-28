@@ -103,7 +103,7 @@ class Summarizer:
         self.responses = list(responses)
         self.inputs = []
 
-    async def summarize(self, messages):
+    async def summarize(self, messages, *, max_tokens=None):
         self.inputs.append(copy.deepcopy(messages))
         response = self.responses.pop(0)
         if isinstance(response, BaseException):

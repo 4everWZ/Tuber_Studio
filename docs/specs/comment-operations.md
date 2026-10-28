@@ -35,6 +35,12 @@ auto_browse和auto_reply均默认false，可在前端显式开启。关注BV列�
 
 ## 子任务与资源
 
+首版按conversation thread调度：平台＋视频＋顶层楼ID形成独立scope，同楼保持入队相对顺序，每批最多4个楼的异步工作流并发；token计量、模型生成和来源记录仍经过唯一GPU锁。不是把全视频塞进一个子任务，也不为每个逻辑thread加载独立模型。取消收齐所有楼子任务后再结束批次，待批次可取消；草稿与单次发布防重不因并发放宽。
+
+comments保存thread_id／parent_comment_id；B站root标识楼、parent标识目标评论，顶层自身comment_id作楼ID，导入可映射两字段，旧顶层行回填自身ID。只读取公开返回中已有的楼内预览，不声称已抓完全部楼内分页。压缩与占用查询须指定单楼；旧整视频窗口保留但不混入新楼。楼内发布使用对应root和parent，不能改成另一个回复对象。
+
+草稿保留生成版本及answer_check：来源原句、fictional标记、所问字段、缺项、是否已补答与warning，供审核判断；warning不伪装为已拒绝／已发布。偶发遗漏可以作为首版限制，明确问题仍须如实标记不完整，闲聊不强求所有旧事实。
+
 完整OPS批处理按 map → reduce：有界读取／CPU预处理、有限LLMWorker、合并／去重和审核。生命周期 pending → running → completed/failed/cancelled → merged/archived；每项有受限评论集、任务说明、deadline、取消信号、进度及错误，输出引用来源评论ID。主调度器控制资源并合并，子任务不能直接改角色核心或绕过发布策略。
 
 直播生成、待播和当前播放优先；离线模型任务不抢占语音。网络／CPU并发不意味着多份GPU权重，详细模型驻留和全局锁由资源规范维护。评论与直播的短期上下文隔离，经确认长期信息按记忆权限共享。

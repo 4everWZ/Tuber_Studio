@@ -2,7 +2,8 @@
 
 Endpoint and root/parent semantics were checked against bilibili-api-python
 17.4.2 and c1overzz/dsh-bili-scroll/vendor/bilibili-mcp/mcp_server.py.
-Only top-level video comments are imported, so replies use root=parent=rpid.
+Top-level comments and embedded reply previews retain stable root/parent IDs.
+Fetching previews does not claim to exhaust every reply page in a thread.
 No fingerprint generation, challenge solving, or permission fallback is used.
 """
 
@@ -160,6 +161,29 @@ class BilibiliAdapter:
         data["aid"] = int(_positive_id(data.get("aid")))
         return data
 
+    @staticmethod
+    def _comment(reply, *, thread_id=None, parent_comment_id=None):
+        cid = _positive_id(reply.get("rpid_str") or reply["rpid"])
+        root = reply.get("root_str") or reply.get("root")
+        parent = reply.get("parent_str") or reply.get("parent")
+        if isinstance(root, bool) or isinstance(parent, bool):
+            raise ValueError("评论楼标识无效")
+        root = _positive_id(root) if root not in (None, 0, "0", "") else thread_id or cid
+        parent = _positive_id(parent) if parent not in (None, 0, "0", "") else parent_comment_id
+        if thread_id is not None and root != thread_id:
+            raise ValueError("评论楼标识不一致")
+        member, content = reply["member"], reply["content"]
+        return {
+            "comment_id": cid,
+            "thread_id": root,
+            "parent_comment_id": parent,
+            "platform_user_id": _positive_id(member["mid"]),
+            "display_name": str(member["uname"]),
+            "content": str(content["message"]),
+            "like_count": max(0, int(reply.get("like", 0))),
+            "created_at": str(int(reply.get("ctime", 0))),
+        }
+
     async def fetch(self, video: str, max_pages: int = 1) -> dict:
         if type(max_pages) is not int or not 1 <= max_pages <= 10:
             raise ValueError("每次读取页数须为 1 到 10")
@@ -183,21 +207,22 @@ class BilibiliAdapter:
                 raise ValueError("B 站评论列表格式无效")
             for reply in replies:
                 try:
-                    comment_id = _positive_id(reply["rpid"])
-                    if comment_id in seen:
-                        continue
-                    member, content = reply["member"], reply["content"]
-                    items.append(
-                        {
-                            "comment_id": comment_id,
-                            "platform_user_id": _positive_id(member["mid"]),
-                            "display_name": str(member["uname"]),
-                            "content": str(content["message"]),
-                            "like_count": max(0, int(reply.get("like", 0))),
-                            "created_at": str(int(reply.get("ctime", 0))),
-                        }
-                    )
-                    seen.add(comment_id)
+                    root = self._comment(reply)
+                    previews = reply.get("replies") or []
+                    if not isinstance(previews, list):
+                        raise ValueError
+                    normalized = [root] + [
+                        self._comment(
+                            child, thread_id=root["thread_id"], parent_comment_id=root["comment_id"]
+                        )
+                        for child in previews
+                    ]
+                    for item in normalized:
+                        if item["comment_id"] not in seen:
+                            if len(items) >= 1000:
+                                raise ValueError("读取评论超过单批上限")
+                            items.append(item)
+                            seen.add(item["comment_id"])
                 except (KeyError, TypeError, AttributeError, ValueError):
                     raise ValueError("B 站评论数据格式无效") from None
             page_info = data.get("page") or {}
@@ -213,12 +238,15 @@ class BilibiliAdapter:
             "aid": info["aid"],
         }
 
-    async def publish(self, video_id: str, comment_id: str, text: str) -> dict:
+    async def publish(
+        self, video_id: str, comment_id: str, text: str, *, thread_id: str | None = None
+    ) -> dict:
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要配置 SESSDATA 和 CSRF；当前仅可生成或复制草稿")
         if not isinstance(text, str) or not text.strip() or len(text) > 1000:
             raise ValueError("回复须为 1 到 1000 字")
         parent = _positive_id(comment_id)
+        root = _positive_id(thread_id) if thread_id is not None else parent
         info = await self._video(video_id)
         try:
             response = await self.client.post(
@@ -226,7 +254,7 @@ class BilibiliAdapter:
                 data={
                     "oid": info["aid"],
                     "type": 1,
-                    "root": parent,
+                    "root": root,
                     "parent": parent,
                     "message": text,
                     "plat": 1,
@@ -257,6 +285,6 @@ class BilibiliAdapter:
             "rpid": rpid,
             "video_id": info["bvid"],
             "aid": info["aid"],
-            "root": parent,
+            "root": root,
             "parent": parent,
         }

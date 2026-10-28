@@ -21,6 +21,13 @@ SYSTEM_RULES = (
 )
 
 
+def single_system_messages(messages):
+    """Keep all system instructions, in order, ahead of unchanged dialogue."""
+    instructions = [item["content"] for item in messages if item["role"] == "system"]
+    dialogue = [dict(item) for item in messages if item["role"] != "system"]
+    return ([{"role": "system", "content": "\n\n".join(instructions)}] if instructions else []) + dialogue
+
+
 def build_messages(character, event, relationship, mode="live"):
     fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
     messages = [
@@ -73,7 +80,7 @@ class LLMProvider(Protocol):
         self, messages: list[dict], character: dict, event_id: str, source_text: str | None = None
     ) -> Reply: ...
     async def count_tokens(self, messages: list[dict]) -> int: ...
-    async def summarize(self, messages: list[dict]) -> str: ...
+    async def summarize(self, messages: list[dict], *, max_tokens: int | None = None) -> str: ...
     async def health(self) -> dict: ...
     async def close(self) -> None: ...
 
@@ -147,7 +154,7 @@ class LlamaCppProvider:
         response = await self.client.post(
             "/apply-template",
             json={
-                "messages": messages,
+                "messages": single_system_messages(messages),
                 "add_generation_prompt": True,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
             },
@@ -161,9 +168,9 @@ class LlamaCppProvider:
     async def count_tokens(self, messages):
         return await self._token_count(messages)
 
-    async def summarize(self, messages):
+    async def summarize(self, messages, *, max_tokens=None):
         await self.ensure_capacity()
-        max_tokens = self.config.get("compaction_max_tokens", 2048)
+        max_tokens = self.config.get("compaction_max_tokens", 2048) if max_tokens is None else max_tokens
         tokens = await self.count_tokens(messages)
         if tokens + max_tokens > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("压缩输入超窗")
@@ -171,7 +178,7 @@ class LlamaCppProvider:
             "/v1/chat/completions",
             json={
                 "model": self.config.get("model", "local"),
-                "messages": messages,
+                "messages": single_system_messages(messages),
                 **self.sampling(summary=True),
                 "max_tokens": max_tokens,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
@@ -190,7 +197,7 @@ class LlamaCppProvider:
 
     async def generate(self, messages, character, event_id, source_text=None):
         await self.ensure_capacity()
-        messages = [dict(m) for m in messages]
+        messages = single_system_messages(messages)
         output_budget = self.config.get("max_tokens", 160)
         budget = self.config["context_tokens"] * 95 // 100 - output_budget
         self.last_tokens = await self._token_count(messages)
@@ -253,7 +260,7 @@ class DemoProvider:
     async def count_tokens(self, messages):
         return sum(approx_token_count(m["content"]) + 8 for m in messages)
 
-    async def summarize(self, messages):
+    async def summarize(self, messages, *, max_tokens=None):
         raise ValueError("离线诊断Provider没有模型摘要能力，请连接真实LLM")
 
     async def generate(self, messages, character, event_id, source_text=None):

@@ -276,7 +276,11 @@ def create_app(settings=None, adapter=None):
         return {"llm": llm, "tts": tts}
 
     @app.get("/api/context/status", dependencies=[Depends(require_admin)])
-    async def context_status():
+    async def context_status(video_id: str | None = None, thread_id: str | None = None):
+        if video_id is not None or thread_id is not None:
+            if not video_id or not thread_id:
+                raise ValueError("请同时指定视频与对话楼ID")
+            return runtime.context.status(comments.context_scope(video_id, thread_id), runtime.character)
         return runtime.context.status()
 
     @app.post("/api/context/compact", dependencies=[Depends(require_admin)])
@@ -289,7 +293,10 @@ def create_app(settings=None, adapter=None):
             video_id = data.get("video_id", "")
             if not isinstance(video_id, str) or not 1 <= len(video_id) <= 100:
                 raise ValueError("请指定评论视频ID")
-            scope, mode = "comments:" + video_id, "comment_draft"
+            thread_id = data.get("thread_id")
+            if not isinstance(thread_id, str) or not 1 <= len(thread_id) <= 200:
+                raise ValueError("请指定单个对话楼ID，不将整个视频的评论合并压缩")
+            scope, mode = comments.context_scope(video_id, thread_id), "comment_draft"
         else:
             raise ValueError("scope应为live或comments")
         async with runtime.generation_lock:
@@ -337,11 +344,12 @@ def create_app(settings=None, adapter=None):
     @app.get("/api/comments", dependencies=[Depends(require_admin)])
     async def list_comments(
         video_id: str | None = None,
+        thread_id: str | None = None,
         category: str | None = None,
         status: str | None = None,
         limit: int = Query(200, ge=1, le=1000),
     ):
-        return comments.list_comments(video_id, category, status, limit)
+        return comments.list_comments(video_id, category, status, limit, thread_id=thread_id)
 
     @app.post("/api/comments/analyze", dependencies=[Depends(require_admin)])
     async def analyze(data: dict = Body(default={})):
