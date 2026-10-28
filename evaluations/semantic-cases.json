@@ -1,0 +1,16 @@
+{
+  "reply_cases": [
+    {"id": "story", "text": "大肥鱼，今天有新的故事吗？"},
+    {"id": "suggestion", "text": "希望下期多讲讲海底生活。"},
+    {"id": "food", "text": "白饭吃腻了怎么办？"}
+  ],
+  "history": [
+    {"role": "user", "kind": "viewer", "source_event_id": "comment:4", "content": "观众问题 comment:4：你刚才去哪里了？"},
+    {"role": "assistant", "kind": "reply", "source_event_id": "comment:4", "content": "我去了珊瑚铺，店主小壳送我三份海苔饭团。"},
+    {"role": "user", "kind": "viewer", "source_event_id": "comment:5", "content": "观众建议 comment:5：下期讲海底夜市吧。"},
+    {"role": "assistant", "kind": "reply", "source_event_id": "comment:5", "content": "好呀，下期带你逛海底夜市的小灯笼摊。"}
+  ],
+  "recall_question": "你刚才去了哪里，谁送了你什么？",
+  "recall_fact_groups": [["珊瑚铺"], ["小壳"], ["三份海苔饭团", "3份海苔饭团", "三份饭团"]],
+  "summary_fact_groups": [["comment:4"], ["comment:5"], ["珊瑚铺"], ["小壳"], ["海苔饭团", "饭团"], ["海底夜市"], ["小灯笼摊", "灯笼摊"]]
+}

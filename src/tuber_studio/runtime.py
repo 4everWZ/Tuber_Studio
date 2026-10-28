@@ -6,6 +6,7 @@ import time
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import httpx
 import psutil
 
 from .context import ContextManager
@@ -20,7 +21,7 @@ class Runtime:
         self.llm = (
             DemoProvider()
             if settings.data["llm"]["kind"] == "demo"
-            else LlamaCppProvider(settings.data["llm"])
+            else LlamaCppProvider(settings.data["llm"], settings.inference_token)
         )
         self.voices = VoiceService(settings)
         self.context = ContextManager(settings, store, self.llm)
@@ -41,6 +42,8 @@ class Runtime:
         self.timings = {"llm_ms": None, "tts_ms": None}
         self.accept_times = {}
         self.last_gift = False
+        self.inference_status = {"mode": "standalone", "active": None}
+        self.inference_observer = None
 
     @property
     def character(self):
@@ -53,9 +56,14 @@ class Runtime:
             self.error = public_error(error)
         self.store.prune(self.settings.data.get("event_retention_days", 7))
         self.worker = asyncio.create_task(self._loop())
+        if self.settings.data.get("inference_broker", {}).get("enabled"):
+            self.inference_observer = asyncio.create_task(self._observe_inference())
 
     async def close(self):
         await self.control("stop")
+        if self.inference_observer:
+            self.inference_observer.cancel()
+            await asyncio.gather(self.inference_observer, return_exceptions=True)
         if self.worker:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
@@ -84,7 +92,32 @@ class Runtime:
             },
             "timings": self.timings,
             "context": self.context.status(),
+            "inference": self.inference_status,
         }
+
+    async def _observe_inference(self):
+        async with httpx.AsyncClient(
+            base_url=self.settings.data["inference_broker"]["base_url"],
+            headers={"X-Tuber-Inference-Key": self.settings.inference_token},
+            timeout=httpx.Timeout(2, connect=1),
+            trust_env=False,
+        ) as client:
+            while True:
+                try:
+                    response = await client.get("/health")
+                    response.raise_for_status()
+                    self.inference_status = response.json()
+                    self.inference_status.setdefault(
+                        "mode", self.settings.data["inference_broker"].get("mode", "exclusive")
+                    )
+                    self.inference_status["active"] = self.inference_status.get("active_provider")
+                except Exception as error:
+                    self.inference_status = {
+                        "mode": self.settings.data["inference_broker"].get("mode", "exclusive"),
+                        "active": None,
+                        "error": public_error(error),
+                    }
+                await asyncio.sleep(2)
 
     async def send_overlay(self, message):
         if self.overlay:
@@ -291,7 +324,7 @@ class Runtime:
                         self.store.relationship(character["id"], row["user_id"]),
                     )
                     started = time.perf_counter()
-                    reply = await self.llm.generate(messages, character, event["event_id"])
+                    reply = await self.llm.generate(messages, character, event["event_id"], event["text"])
                     self.timings["llm_ms"] = round((time.perf_counter() - started) * 1000)
                     self.store.update_job(
                         job_id,

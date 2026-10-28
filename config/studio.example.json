@@ -1,6 +1,7 @@
 {
-  "llm": {"kind": "llama_cpp", "base_url": "http://127.0.0.1:9010", "model": "MiniCPM5-1B", "context_tokens": 131072, "native_context_tokens": 131072, "max_tokens": 160, "timeout_seconds": 40, "auto_compact_token_limit": 117964, "auto_compact_token_limit_scope": "total", "effective_context_window_percent": 95, "compaction_max_tokens": 2048, "compaction_max_retries": 3, "compaction_timeout_seconds": 600},
-  "tts": {"kind": "gpt_sovits", "base_url": "http://127.0.0.1:9011", "timeout_seconds": 45},
+  "inference_broker": {"enabled": true, "base_url": "http://127.0.0.1:9012", "mode": "exclusive"},
+  "llm": {"kind": "llama_cpp", "base_url": "http://127.0.0.1:9012/llm/2b", "model": "MiniCPM5-2B", "context_tokens": 131072, "native_context_tokens": 131072, "max_tokens": 256, "temperature": 1.0, "summary_temperature": 1.0, "enable_thinking": false, "timeout_seconds": 40, "prefill_timeout_seconds": 1200, "auto_compact_token_limit": 117964, "auto_compact_token_limit_scope": "total", "effective_context_window_percent": 95, "compaction_max_tokens": 2048, "compaction_max_retries": 3, "compaction_timeout_seconds": 1200},
+  "tts": {"kind": "gpt_sovits", "base_url": "http://127.0.0.1:9012/tts", "timeout_seconds": 90},
   "queue_limit": 40,
   "event_ttl_seconds": 90,
   "playback_wait_seconds": 45,

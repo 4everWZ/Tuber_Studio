@@ -6,18 +6,27 @@ import pytest
 from tuber_studio.providers import LlamaCppProvider
 
 
-async def test_server_with_small_real_window_is_rejected_before_generation(settings, store):
+@pytest.mark.parametrize(
+    "properties,reason",
+    [
+        ({"default_generation_settings": {"n_ctx": 3072}}, "小于配置"),
+        ({"default_generation_settings": {"n_ctx": 131072}, "model_alias": "other-model"}, "别名不一致"),
+    ],
+)
+async def test_wrong_server_capacity_or_model_is_rejected_before_generation(
+    settings, store, properties, reason
+):
     requests = []
 
     def respond(request):
         requests.append(request.url.path)
-        return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 3072}})
+        return httpx.Response(200, json=properties)
 
     provider = LlamaCppProvider(settings.data["llm"])
     await provider.client.aclose()
     provider.client = httpx.AsyncClient(base_url="http://model", transport=httpx.MockTransport(respond))
     try:
-        with pytest.raises(ValueError, match="小于配置"):
+        with pytest.raises(ValueError, match=reason):
             await provider.generate([], store.character(), "event")
         assert requests == ["/props"]
         assert provider.profile_error
@@ -50,7 +59,8 @@ async def test_structured_decoder_constrains_reply_to_current_event(settings, st
                                     "reply_to": ["comment:exact"],
                                 }
                             )
-                        }
+                        },
+                        "finish_reason": "stop",
                     }
                 ]
             },
@@ -63,5 +73,7 @@ async def test_structured_decoder_constrains_reply_to_current_event(settings, st
         reply = await provider.generate([], store.character(), "comment:exact")
         assert reply.reply_to == ["comment:exact"]
         assert provider.last_tokens == 3
+        with pytest.raises(ValueError, match="复述了输入"):
+            await provider.generate([], store.character(), "comment:exact", source_text=reply.spoken_text)
     finally:
         await provider.close()

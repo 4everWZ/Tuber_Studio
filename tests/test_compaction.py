@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import sqlite3
 
 import httpx
 import pytest
@@ -164,3 +165,24 @@ async def test_successful_window_is_persisted_and_modes_and_ocs_do_not_mix(setti
     assert "开播啦" not in row["history"]
     assert restored.window("live:session", character)["compact_count"] == 0
     assert restored.window("comments:BV1d8pU6xEZX", character | {"id": "another_oc"})["history"] == "[]"
+
+
+async def test_install_commit_failure_rolls_back_before_recording_compaction_error(settings, store):
+    provider = Summarizer(["已完成草稿，等待审核。"])
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    manager.record("comments:video", character, {"event_id": "x", "text": "你好鱼鱼"}, "你好呀")
+    original = manager.window("comments:video", character)["history"]
+    store.db.executescript("""
+        CREATE TABLE guard_parent(id INTEGER PRIMARY KEY);
+        CREATE TABLE guard_child(parent_id INTEGER REFERENCES guard_parent(id) DEFERRABLE INITIALLY DEFERRED);
+        CREATE TRIGGER fail_context_commit AFTER UPDATE OF compact_count ON context_windows
+        WHEN NEW.compact_count > OLD.compact_count BEGIN INSERT INTO guard_child VALUES(999); END;
+    """)
+    with pytest.raises(sqlite3.IntegrityError):
+        await manager.compact("comments:video", character)
+    row = manager.window("comments:video", character)
+    assert row["history"] == original
+    assert row["compact_count"] == 0
+    assert row["last_error"]
+    assert store.all("SELECT * FROM guard_child") == []

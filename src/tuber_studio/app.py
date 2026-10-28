@@ -308,7 +308,20 @@ def create_app(settings=None, adapter=None):
 
     @app.post("/api/comments/import", dependencies=[Depends(require_admin)])
     async def import_comments(data: dict = Body(...)):
-        return comments.import_items(data.get("video_id", ""), data.get("items"), data.get("csv_text"))
+        return comments.import_items(
+            data.get("video_id", ""), data.get("items"), data.get("csv_text"), data.get("field_mapping")
+        )
+
+    @app.post("/api/comments/import/preview", dependencies=[Depends(require_admin)])
+    async def preview_import(data: dict = Body(...)):
+        prepared = comments.prepare_import(
+            data.get("video_id", ""), data.get("items"), data.get("csv_text"), data.get("field_mapping")
+        )
+        return {"video_id": data.get("video_id"), "total": len(prepared), "items": prepared[:10]}
+
+    @app.put("/api/comments/{comment_id}/category", dependencies=[Depends(require_admin)])
+    async def edit_category(comment_id: int, data: dict = Body(...)):
+        return comments.set_category(comment_id, data.get("category"))
 
     @app.get("/api/comments", dependencies=[Depends(require_admin)])
     async def list_comments(

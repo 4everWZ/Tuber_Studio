@@ -2,8 +2,10 @@
 
 import json
 import time
+from pathlib import Path
 
 from .compaction import (
+    SUMMARIZATION_PROMPT,
     ContextWindowExceeded,
     compact_history,
     insert_initial_context_before_last_real_user_or_summary,
@@ -12,6 +14,8 @@ from .compaction import (
     wire_messages,
 )
 from .providers import build_messages, public_error
+
+DOMAIN_GUIDANCE = (Path(__file__).parent / "prompts/domain-compact.md").read_text(encoding="utf-8").strip()
 
 
 class ContextManager:
@@ -39,7 +43,7 @@ class ContextManager:
 
     @staticmethod
     def parts(character, event, relationship, mode):
-        scaffold = build_messages(character, event, relationship, "", [], mode)
+        scaffold = build_messages(character, event, relationship, mode)
         prefix = scaffold[:2]
         initial_context = [dict(scaffold[2], kind="context")]
         pending = dict(scaffold[3], kind="viewer", source_event_id=event["event_id"], source_complete=True)
@@ -95,6 +99,7 @@ class ContextManager:
                 initial,
                 self.provider,
                 max_retries=self.settings.data["llm"].get("compaction_max_retries", 3),
+                summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
             )
             count = await self.provider.count_tokens(self.render(prefix, initial, replacement))
             if (
@@ -163,10 +168,16 @@ class ContextManager:
             "configured_tokens": configured,
             "server_tokens": server,
             "native_tokens": native,
-            "verified": bool(server and server >= configured >= 131072 and native >= configured),
+            "verified": bool(
+                server
+                and server >= configured >= 131072
+                and native >= configured
+                and not self.provider.profile_error
+            ),
             "active_tokens": row["input_tokens"] if row else 0,
             "compact_count": row["compact_count"] if row else 0,
             "last_compaction_error": row["last_error"] if row else None,
             "profile_error": self.provider.profile_error,
             "scope": row["mode"] if row else None,
+            "is_sleeping": getattr(self.provider, "is_sleeping", None),
         }

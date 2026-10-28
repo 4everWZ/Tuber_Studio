@@ -46,7 +46,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS comments(
                 id INTEGER PRIMARY KEY,platform TEXT DEFAULT 'bilibili',video_id TEXT,
                 comment_id TEXT,platform_user_id TEXT,display_name TEXT,content TEXT,
-                category TEXT DEFAULT 'general',like_count INTEGER DEFAULT 0,created_at TEXT,
+                category TEXT DEFAULT 'general',category_source TEXT DEFAULT 'auto',like_count INTEGER DEFAULT 0,created_at TEXT,
                 imported_at REAL,UNIQUE(platform,video_id,comment_id));
             CREATE TABLE IF NOT EXISTS drafts(
                 id INTEGER PRIMARY KEY,comment_id INTEGER UNIQUE NOT NULL,text TEXT NOT NULL,
@@ -58,6 +58,9 @@ class Store:
             CREATE TABLE IF NOT EXISTS publish_attempts(
                 id INTEGER PRIMARY KEY,draft_id INTEGER,started_at REAL,status TEXT,receipt TEXT,error TEXT);
         """)
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(comments)")}
+        if "category_source" not in columns:
+            self.db.execute("ALTER TABLE comments ADD COLUMN category_source TEXT DEFAULT 'auto'")
         self.db.execute(
             "UPDATE jobs SET status='cancelled',error='服务重启，取消遗留任务' "
             "WHERE status NOT IN ('completed','failed','cancelled','expired')"

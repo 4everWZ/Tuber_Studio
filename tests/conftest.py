@@ -11,6 +11,7 @@ from tuber_studio.store import Store
 def settings(tmp_path):
     config = Settings(runtime=tmp_path)
     config.data["llm"]["kind"] = "demo"
+    config.data["inference_broker"]["enabled"] = False
     config.data["tts"]["kind"] = "prerecorded"
     config.data["queue_limit"] = 3
     config.data["playback_wait_seconds"] = 0.15

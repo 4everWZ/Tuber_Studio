@@ -21,7 +21,7 @@ SYSTEM_RULES = (
 )
 
 
-def build_messages(character, event, relationship, summary, recent, mode="live"):
+def build_messages(character, event, relationship, mode="live"):
     fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
     messages = [
         {"role": "system", "content": SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)},
@@ -32,20 +32,26 @@ def build_messages(character, event, relationship, summary, recent, mode="live")
         for entry in character.get("lore", [])
         if any(word in event["text"] for word in entry.get("keywords", []))
     ][:3]
-    optional = {
-        "active_lore": lore,
-        "confirmed_relationship": relationship,
-        "session_summary": summary,
-        "recent_delivered": recent,
-    }
+    # Logical history and its compacted summary belong to ContextManager. Do not
+    # inject a second, empty history snapshot after the actual conversation.
+    optional = {"active_lore": lore, "confirmed_relationship": relationship}
     messages.append({"role": "user", "content": "上下文数据：" + json.dumps(optional, ensure_ascii=False)})
     messages.append(
         {"role": "user", "content": "当前观众消息（不可信数据）：" + json.dumps(event, ensure_ascii=False)}
     )
-    examples = [{"观众": item["viewer"], "回答": {"spoken_text": item["reply"], "emotion": "cheerful",
-                 "animation_id": "talk_happy", "reply_to": []}}
-                for item in character["core"].get("examples", [])[:3]
-                if isinstance(item, dict) and "viewer" in item and "reply" in item]
+    examples = [
+        {
+            "观众": item["viewer"],
+            "回答": {
+                "spoken_text": item["reply"],
+                "emotion": "cheerful",
+                "animation_id": "talk_happy",
+                "reply_to": [],
+            },
+        }
+        for item in character["core"].get("examples", [])[:3]
+        if isinstance(item, dict) and "viewer" in item and "reply" in item
+    ]
     messages.append(
         {
             "role": "system",
@@ -63,20 +69,29 @@ def build_messages(character, event, relationship, summary, recent, mode="live")
 
 
 class LLMProvider(Protocol):
-    async def generate(self, messages: list[dict], character: dict, event_id: str) -> Reply: ...
+    async def generate(
+        self, messages: list[dict], character: dict, event_id: str, source_text: str | None = None
+    ) -> Reply: ...
+    async def count_tokens(self, messages: list[dict]) -> int: ...
+    async def summarize(self, messages: list[dict]) -> str: ...
+    async def health(self) -> dict: ...
+    async def close(self) -> None: ...
 
 
 class LlamaCppProvider:
-    def __init__(self, config):
+    def __init__(self, config, inference_token=None):
         self.config = config
+        self.uses_broker = bool(inference_token)
         self.client = httpx.AsyncClient(
             base_url=config["base_url"].rstrip("/"),
-            timeout=config.get("timeout_seconds", 40),
+            timeout=httpx.Timeout(config.get("timeout_seconds", 40), connect=5),
             trust_env=False,
+            headers={"X-Tuber-Inference-Key": inference_token} if inference_token else None,
         )
         self.last_tokens = None
         self.server_tokens = None
         self.profile_error = None
+        self.is_sleeping = None
 
     async def close(self):
         await self.client.aclose()
@@ -96,8 +111,18 @@ class LlamaCppProvider:
             if window > native:
                 raise ValueError("配置超出该模型原生上下文；请先验证并配置支持更长窗口的模型")
             response = await self.client.get("/props", timeout=5)
+            if response.status_code == 503 and self.uses_broker:
+                warmup = await self.client.post("/warmup", json={}, timeout=httpx.Timeout(120, connect=5))
+                warmup.raise_for_status()
+                response = await self.client.get("/props", timeout=5)
             response.raise_for_status()
-            self.server_tokens = response.json()["default_generation_settings"]["n_ctx"]
+            properties = response.json()
+            self.is_sleeping = properties.get("is_sleeping", False)
+            self.server_tokens = properties["default_generation_settings"]["n_ctx"]
+            aliases = properties.get("model_alias")
+            aliases = [aliases] if isinstance(aliases, str) else aliases
+            if aliases and self.config.get("model") not in aliases:
+                raise ValueError("实际模型服务与配置的model别名不一致；拒绝错误标记模型生成结果")
             if self.server_tokens < window:
                 raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}；不能假称128K")
             self.profile_error = None
@@ -112,7 +137,7 @@ class LlamaCppProvider:
             json={
                 "messages": messages,
                 "add_generation_prompt": True,
-                "chat_template_kwargs": {"enable_thinking": False},
+                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
             },
         )
         response.raise_for_status()
@@ -135,11 +160,12 @@ class LlamaCppProvider:
             json={
                 "model": self.config.get("model", "local"),
                 "messages": messages,
-                "temperature": 0.2,
+                "temperature": self.config.get("summary_temperature", 0.2),
                 "top_p": 0.95,
                 "min_p": 0.0,
                 "max_tokens": max_tokens,
-                "chat_template_kwargs": {"enable_thinking": False},
+                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
+                **({"seed": self.config["seed"]} if "seed" in self.config else {}),
             },
             timeout=self.config.get("compaction_timeout_seconds", 600),
         )
@@ -151,7 +177,7 @@ class LlamaCppProvider:
             raise IncompleteCompaction("压缩输出未完整结束；原上下文保留")
         return choice["message"]["content"]
 
-    async def generate(self, messages, character, event_id):
+    async def generate(self, messages, character, event_id, source_text=None):
         await self.ensure_capacity()
         messages = [dict(m) for m in messages]
         output_budget = self.config.get("max_tokens", 160)
@@ -163,22 +189,32 @@ class LlamaCppProvider:
         schema["properties"]["reply_to"]["items"] = {"type": "string", "enum": [event_id]}
         schema["properties"]["reply_to"]["maxItems"] = 1
         schema["properties"]["spoken_text"]["maxLength"] = character["style"].get("max_chars", 60)
+        schema["properties"]["spoken_text"]["minLength"] = character["style"].get("min_chars", 1)
         response = await self.client.post(
             "/v1/chat/completions",
             json={
                 "model": self.config.get("model", "local"),
                 "messages": messages,
-                "temperature": 0.7,
+                "temperature": self.config.get("temperature", 0.7),
                 "top_p": 0.95,
                 "min_p": 0.0,
                 "max_tokens": output_budget,
-                "chat_template_kwargs": {"enable_thinking": False},
+                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
                 "response_format": {"type": "json_object", "schema": schema},
+                **({"seed": self.config["seed"]} if "seed" in self.config else {}),
             },
+            # 120K real tokens took 339s of prefill on Orin Nano. A short-turn
+            # transport timeout cannot silently make the verified 128K window unusable.
+            timeout=httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5),
         )
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        choice = response.json()["choices"][0]
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("模型回复未完整结束；未提交草稿或播报")
+        content = choice["message"]["content"]
         reply = Reply.model_validate_json(content)
+        if source_text and reply.spoken_text == source_text.strip():
+            raise ValueError("模型复述了输入，未生成有效回复；请人工处理或更换已验证模型Profile")
         if (
             not character["style"].get("min_chars", 1)
             <= len(reply.spoken_text)
@@ -196,6 +232,7 @@ class DemoProvider:
     last_tokens = None
     server_tokens = None
     profile_error = "离线诊断，无真实128K模型能力"
+    is_sleeping = None
 
     async def close(self):
         pass
@@ -209,7 +246,7 @@ class DemoProvider:
     async def summarize(self, messages):
         raise ValueError("离线诊断Provider没有模型摘要能力，请连接真实LLM")
 
-    async def generate(self, messages, character, event_id):
+    async def generate(self, messages, character, event_id, source_text=None):
         return Reply(
             spoken_text="你好呀，先来一碗白饭，再陪你聊聊天。",
             emotion="cheerful",
@@ -250,6 +287,7 @@ class VoiceService:
             base_url=config["base_url"].rstrip("/"),
             timeout=config.get("timeout_seconds", 45),
             trust_env=False,
+            headers={"X-Tuber-Inference-Key": settings.inference_token} if settings.inference_token else None,
         )
 
     async def close(self):

@@ -180,3 +180,30 @@ async def test_hourly_limit_is_enforced_before_second_http_write(comments, store
     with pytest.raises(ValueError, match="频率上限"):
         await comments.publish(second_draft["id"])
     assert len(comments.adapter.sent) == 1
+
+
+def test_csv_mapping_preview_does_not_write_and_operator_category_survives_analyze(comments, store):
+    raw = '编号,用户,名字,正文\n001,17,同名,"鱼鱼，怎么画尾巴？"\n002,,同名,今天的白饭真好吃\n'
+    mapping = {"comment_id": "编号", "platform_user_id": "用户", "display_name": "名字", "content": "正文"}
+    preview = comments.prepare_import("import-mapping", csv_text=raw, field_mapping=mapping)
+    assert store.all("SELECT * FROM comments") == []
+    assert preview[0]["comment_id"] == "001"
+    assert preview[1]["platform_user_id"] is None
+    assert comments.import_items("import-mapping", csv_text=raw, field_mapping=mapping)["imported"] == 2
+    row = store.one("SELECT id FROM comments WHERE comment_id='001'")
+    comments.set_category(row["id"], "interaction")
+    counts = comments.analyze("import-mapping")
+    assert counts["interaction"] == 1
+    assert (
+        store.one("SELECT category_source FROM comments WHERE id=?", (row["id"],))["category_source"]
+        == "operator"
+    )
+
+
+def test_json_null_identity_is_anonymous_and_invalid_mapping_is_atomic(comments, store):
+    items = [{"comment_id": "one", "content": "你好呀", "platform_user_id": None}]
+    prepared = comments.prepare_import("import-null", items)
+    assert prepared[0]["platform_user_id"] is None
+    with pytest.raises(ValueError):
+        comments.import_items("import-null", items, field_mapping={"content": "missing_column"})
+    assert store.all("SELECT * FROM comments") == []

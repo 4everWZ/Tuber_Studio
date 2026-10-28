@@ -117,7 +117,7 @@ class Comments:
         self.policy_changed.set()
         return self.policy()
 
-    def import_items(self, video_id, items=None, csv_text=None):
+    def prepare_import(self, video_id, items=None, csv_text=None, field_mapping=None):
         if not isinstance(video_id, str) or not re.fullmatch(
             r"(?:BV[0-9A-Za-z]{10}|av[0-9]+|import-[\w-]{1,60})", video_id
         ):
@@ -125,23 +125,65 @@ class Comments:
         if csv_text is not None:
             if not isinstance(csv_text, str) or len(csv_text) > 2_000_000:
                 raise ValueError("CSV大小超限")
-            items = list(csv.DictReader(io.StringIO(csv_text)))
+            reader = csv.DictReader(io.StringIO(csv_text))
+            if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
+                raise ValueError("CSV表头为空或字段重复")
+            items = list(reader)
         if not isinstance(items, list) or not 1 <= len(items) <= 1000:
             raise ValueError("每批导入1到1000条评论")
         normalized = []
+        fields = {"comment_id", "platform_user_id", "display_name", "content", "like_count", "created_at"}
+        mapping = {} if field_mapping is None else field_mapping
+        if (
+            not isinstance(mapping, dict)
+            or not set(mapping) <= fields
+            or any(not isinstance(v, str) or not 1 <= len(v) <= 100 for v in mapping.values())
+        ):
+            raise ValueError("字段映射必须为目标字段到源列名的对象")
         for item in items:
             if not isinstance(item, dict):
                 raise ValueError("评论必须是对象")
-            cid, content = str(item.get("comment_id", "")), item.get("content", "")
+            if None in item:
+                raise ValueError("CSV行字段数与表头不一致")
+            item = {field: item.get(mapping.get(field, field)) for field in fields}
+            cid, content = str(item.get("comment_id") or ""), item.get("content")
             if not cid or len(cid) > 100 or not isinstance(content, str) or not 1 <= len(content) <= 4000:
                 raise ValueError("每条评论需要comment_id与1到4000字content")
-            uid = str(item.get("platform_user_id", ""))[:100] or None
-            name = str(item.get("display_name", "匿名观众"))[:80]
+            uid = str(item["platform_user_id"])[:100] if item["platform_user_id"] is not None else None
+            uid = uid or None
+            name = str(item.get("display_name") or "匿名观众")[:80]
             likes = max(0, int(item.get("like_count", 0) or 0))
-            created = str(item.get("created_at", ""))[:80]
+            created = str(item.get("created_at") or "")[:80]
             normalized.append(
-                (video_id, cid, uid, name, content, category(content), likes, created, time.time())
+                {
+                    "video_id": video_id,
+                    "comment_id": cid,
+                    "platform_user_id": uid,
+                    "display_name": name,
+                    "content": content,
+                    "category": category(content),
+                    "like_count": likes,
+                    "created_at": created,
+                }
             )
+        return normalized
+
+    def import_items(self, video_id, items=None, csv_text=None, field_mapping=None):
+        prepared = self.prepare_import(video_id, items, csv_text, field_mapping)
+        normalized = [
+            (
+                r["video_id"],
+                r["comment_id"],
+                r["platform_user_id"],
+                r["display_name"],
+                r["content"],
+                r["category"],
+                r["like_count"],
+                r["created_at"],
+                time.time(),
+            )
+            for r in prepared
+        ]
         before = self.store.one("SELECT COUNT(*) AS n FROM comments")["n"]
         with self.store.db:
             self.store.db.executemany(
@@ -150,7 +192,11 @@ class Comments:
                 normalized,
             )
         after = self.store.one("SELECT COUNT(*) AS n FROM comments")["n"]
-        return {"imported": after - before, "duplicates": len(items) - (after - before), "video_id": video_id}
+        return {
+            "imported": after - before,
+            "duplicates": len(prepared) - (after - before),
+            "video_id": video_id,
+        }
 
     async def fetch(self, video, max_pages=1):
         if not isinstance(max_pages, int) or not 1 <= max_pages <= 5:
@@ -185,14 +231,27 @@ class Comments:
 
     def analyze(self, video_id=None):
         where, args = (" WHERE video_id=?", (video_id,)) if video_id else ("", ())
-        rows = self.store.all("SELECT id,content FROM comments" + where, args)
+        rows = self.store.all("SELECT id,content,category,category_source FROM comments" + where, args)
         counts = {c: 0 for c in CATEGORIES}
         with self.store.db:
             for row in rows:
-                value = category(row["content"])
+                value = row["category"] if row["category_source"] == "operator" else category(row["content"])
                 counts[value] += 1
-                self.store.db.execute("UPDATE comments SET category=? WHERE id=?", (value, row["id"]))
+                if row["category_source"] != "operator":
+                    self.store.db.execute("UPDATE comments SET category=? WHERE id=?", (value, row["id"]))
         return counts
+
+    def set_category(self, comment_id, value):
+        if (
+            not isinstance(value, str)
+            or value not in CATEGORIES
+            or not self.store.one("SELECT id FROM comments WHERE id=?", (comment_id,))
+        ):
+            raise ValueError("评论不存在或分类无效")
+        self.store.execute(
+            "UPDATE comments SET category=?,category_source='operator' WHERE id=?", (value, comment_id)
+        )
+        return self.store.one("SELECT * FROM comments WHERE id=?", (comment_id,))
 
     def enqueue(self, ids, automatic=False):
         if not isinstance(ids, list) or not 1 <= len(ids) <= 1000 or any(not isinstance(i, int) for i in ids):
@@ -244,7 +303,9 @@ class Comments:
                             messages = await self.runtime.context.prepare(
                                 "comments:" + row["video_id"], character, event, mode="comment_draft"
                             )
-                            reply = await self.runtime.llm.generate(messages, character, event["event_id"])
+                            reply = await self.runtime.llm.generate(
+                                messages, character, event["event_id"], event["text"]
+                            )
                         cursor = self.store.execute(
                             "INSERT INTO drafts(comment_id,text,status,character_id,"
                             "character_version,model,input_summary,created_at,updated_at) "

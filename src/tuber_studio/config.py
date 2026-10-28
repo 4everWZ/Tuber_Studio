@@ -22,6 +22,9 @@ class Settings:
         self.path = path
         self.admin_token = os.getenv("TUBER_ADMIN_TOKEN") or self._secret("admin-token")
         self.overlay_token = self._secret("overlay-token")
+        self.inference_token = (
+            self._secret("inference-token") if self.data.get("inference_broker", {}).get("enabled") else None
+        )
 
     def _validate(self):
         llm, tts = self.data["llm"], self.data["tts"]
