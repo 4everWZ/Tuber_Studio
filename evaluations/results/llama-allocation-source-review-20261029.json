@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "review_date": "2026-10-29",
+  "kind": "static_source_review",
+  "hardware_experiment_performed": false,
+  "scope": "Model loading and allocation paths in the upstream revision associated with reported llama.cpp b9438/d749821db. This review does not certify a binary's build flags or any device outcome.",
+  "upstream": {
+    "repository": "https://github.com/ggml-org/llama.cpp",
+    "commit": "d749821db3bd587932d1ed57d43626cd552c9909",
+    "commit_date_utc": "2026-05-30T21:49:31Z",
+    "commit_url": "https://github.com/ggml-org/llama.cpp/commit/d749821db3bd587932d1ed57d43626cd552c9909",
+    "resolution_source": "https://api.github.com/repos/ggml-org/llama.cpp/commits/d749821db",
+    "method": "Read official files at the resolved full commit; no model launch, runtime configuration mutation, global cache operation, or allocator experiment in this review. Full source copies remain task-only and are not part of this result."
+  },
+  "source_facts": [
+    {
+      "id": "load_before_context",
+      "classification": "source_fact",
+      "statement": "The common initialization path completes llama_model_load_from_file before calling llama_init_from_model for context creation. Model upload staging is scoped to the earlier model-loading call.",
+      "references": [
+        {
+          "path": "common/common.cpp",
+          "lines": [1200, 1280],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/common/common.cpp#L1200-L1280"
+        },
+        {
+          "path": "src/llama.cpp",
+          "lines": [277, 333],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama.cpp#L277-L333"
+        }
+      ],
+      "boundary": "This establishes source ownership/order, not the precise driver or OS reclamation latency on a device."
+    },
+    {
+      "id": "direct_io_staging",
+      "classification": "source_fact",
+      "statement": "The eligible asynchronous upload path allocates four host buffers. If file read alignment is not one, each buffer is 64 MiB plus twice the alignment; otherwise each is 1 MiB. The direct-I/O case therefore has approximately 256 MiB of temporary staging, conditional on successful setup.",
+      "buffer_count": 4,
+      "aligned_buffer_size_expression": "64 * 1024 * 1024 + 2 * alignment",
+      "references": [
+        {
+          "path": "src/llama-model-loader.cpp",
+          "lines": [1423, 1492],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model-loader.cpp#L1423-L1492"
+        }
+      ],
+      "boundary": "The legacy comment mentions 1 MiB; the allocation expression, not that comment, controls the aligned case. This is not a measured peak or a full-model staging copy."
+    },
+    {
+      "id": "staging_cleanup",
+      "classification": "source_fact",
+      "statement": "At the end of load_all_data, upload events are synchronized and freed, host buffers are freed, and the upload backend is freed. CUDA host-buffer destruction calls cudaFreeHost. These explicit cleanup calls precede subsequent context/KV creation.",
+      "references": [
+        {
+          "path": "src/llama-model-loader.cpp",
+          "lines": [1644, 1652],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model-loader.cpp#L1644-L1652"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [1490, 1492],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L1490-L1492"
+        }
+      ],
+      "boundary": "No source evidence here supports retaining an entire CPU copy of all GPU weights as upload staging through the later KV allocation. A driver's physical-memory behavior still requires separate evidence."
+    },
+    {
+      "id": "synchronous_tensor_copy",
+      "classification": "source_fact",
+      "statement": "The synchronous fallback resizes a host read buffer to the current tensor, then uploads it. Direct-I/O read_raw also creates and frees an aligned temporary for that individual read. Destinations and the aligned copy may overlap in lifetime; this is per tensor/read, not an obligatory whole-model duplicate.",
+      "references": [
+        {
+          "path": "src/llama-model-loader.cpp",
+          "lines": [1629, 1637],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model-loader.cpp#L1629-L1637"
+        },
+        {
+          "path": "src/llama-mmap.cpp",
+          "lines": [319, 347],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-mmap.cpp#L319-L347"
+        }
+      ],
+      "boundary": "The largest tensor size, selected upload path, allocator behavior, and peak RSS were not measured by this review."
+    },
+    {
+      "id": "direct_io_fallback",
+      "classification": "source_fact",
+      "statement": "O_DIRECT open failure can fall back to buffered I/O. A later direct read returning EFAULT or EINVAL closes the direct descriptor, resets alignment, reopens the file for fread, and continues from its current offset. Initial direct_io=true selection alone does not establish that every weight read remained direct.",
+      "log_markers": [
+        "Falling back to buffered I/O",
+        "Falling back to buffered IO due to"
+      ],
+      "references": [
+        {
+          "path": "src/llama-mmap.cpp",
+          "lines": [183, 203],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-mmap.cpp#L183-L203"
+        },
+        {
+          "path": "src/llama-mmap.cpp",
+          "lines": [286, 301],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-mmap.cpp#L286-L301"
+        }
+      ],
+      "boundary": "Whether this fallback occurred on the failing Jetson run must be established from its own log or I/O tracing. It is not asserted here."
+    },
+    {
+      "id": "direct_io_mmap_interaction",
+      "classification": "source_fact",
+      "statement": "When both mmap and direct I/O are requested, a successful direct-I/O open disables mmap. If direct I/O is unavailable, the loader instead reopens for mmap. CUDA additionally reports buffer_from_host_ptr=false in this revision, so mmap must not be assumed to provide zero-copy GPU model storage.",
+      "references": [
+        {
+          "path": "src/llama-model-loader.cpp",
+          "lines": [554, 568],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model-loader.cpp#L554-L568"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [5023, 5028],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L5023-L5028"
+        }
+      ]
+    },
+    {
+      "id": "uma_banner",
+      "classification": "source_fact",
+      "statement": "The device_info banner calls backend memory reporting. On Linux integrated CUDA devices, that implementation first calls cudaMemGetInfo but replaces free with /proc/meminfo MemAvailable when the UMA query succeeds.",
+      "references": [
+        {
+          "path": "common/common.cpp",
+          "lines": [388, 393],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/common/common.cpp#L388-L393"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [4937, 4944],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L4937-L4944"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [4966, 4993],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L4966-L4993"
+        }
+      ],
+      "boundary": "The banner is not a successful-allocation guarantee. This does not prove that the proprietary allocator consults only MemFree, or identify CMA, contiguity, fragmentation, or driver mismatch as the cause of an allocation failure."
+    },
+    {
+      "id": "kv_buffer_allocation",
+      "classification": "source_fact",
+      "statement": "The KV implementation groups same-backend tensors in a context and allocates its backend buffer before clearing it. The CUDA buffer interface has no smaller max-size override; the generic allocator groups eligible tensors up to that backend maximum. Allocation can therefore be one combined buffer rather than per-layer malloc calls.",
+      "references": [
+        {
+          "path": "src/llama-kv-cache.cpp",
+          "lines": [190, 211],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-kv-cache.cpp#L190-L211"
+        },
+        {
+          "path": "src/llama-kv-cache.cpp",
+          "lines": [254, 272],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-kv-cache.cpp#L254-L272"
+        },
+        {
+          "path": "ggml/src/ggml-alloc.c",
+          "lines": [1167, 1227],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-alloc.c#L1167-L1227"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [819, 825],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L819-L825"
+        }
+      ],
+      "boundary": "No new KV size or successful 128K allocation was measured by this review."
+    },
+    {
+      "id": "no_host",
+      "classification": "source_fact",
+      "statement": "--no-host removes GPU host-buffer types from the CPU tensor buffer preference list. CPU extra/default buffers remain candidates, and the input layer remains assigned to CPU. This flag does not disable the loader's explicit asynchronous host staging allocation.",
+      "references": [
+        {
+          "path": "common/arg.cpp",
+          "lines": [2042, 2049],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/common/arg.cpp#L2042-L2049"
+        },
+        {
+          "path": "src/llama-model.cpp",
+          "lines": [823, 881],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model.cpp#L823-L881"
+        },
+        {
+          "path": "src/llama-model.cpp",
+          "lines": [1243, 1244],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model.cpp#L1243-L1244"
+        }
+      ],
+      "boundary": "Permanent CPU tensor placement and transfer behavior can change. A smaller physical peak is a hypothesis, not a source guarantee."
+    },
+    {
+      "id": "no_pinned",
+      "classification": "source_fact",
+      "statement": "Presence of GGML_CUDA_NO_PINNED makes CUDA host allocation return no pinned allocation and fall back to a CPU buffer. It also reports host_buffer capability false, making the loader reject its asynchronous pinned upload path. Synchronous per-tensor and direct-I/O alignment buffers still exist.",
+      "references": [
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [1494, 1520],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L1494-L1520"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [5016, 5028],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L5016-L5028"
+        },
+        {
+          "path": "src/llama-model-loader.cpp",
+          "lines": [1466, 1471],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/src/llama-model-loader.cpp#L1466-L1471"
+        }
+      ],
+      "boundary": "This changes more of the loading policy than --no-host. Upload throughput and pageable/pinned pressure need measurement; total staging is not guaranteed to shrink."
+    },
+    {
+      "id": "managed_allocation",
+      "classification": "source_fact",
+      "statement": "Presence of GGML_CUDA_ENABLE_UNIFIED_MEMORY selects cudaMallocManaged instead of cudaMalloc in the device-allocation helper. The helper is used for ordinary device backend buffers and applicable CUDA pool allocations. It does not replace cudaMallocHost. On the CUDA build, the shown helper adds no prefetch, new quantization, or alternative arithmetic kernel.",
+      "references": [
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [125, 153],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L125-L153"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [436, 444],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L436-L444"
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "lines": [780, 790],
+          "url": "https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-cuda/ggml-cuda.cu#L780-L790"
+        }
+      ],
+      "boundary": "The variable is checked by presence, so setting its value to 0 still selects the branch. The generic allocation error still says cudaMalloc failed for a managed allocation. Numeric intent is unchanged; output equality, allocation success, and runtime latency are not certified here."
+    }
+  ],
+  "platform_documentation": [
+    {
+      "id": "tegra_shared_dram_and_coherency",
+      "classification": "documented_platform_behavior",
+      "url": "https://docs.nvidia.com/cuda/archive/12.8.1/cuda-for-tegra-appnote/index.html#memory-management",
+      "location": "CUDA for Tegra 12.8, Memory Management; Effective Usage of Unified Memory on Tegra",
+      "statement": "Tegra host/device/managed allocations share physical DRAM. Managed memory has coherence/cache-maintenance costs and may affect latency.",
+      "boundary": "Managed allocation does not create more physical RAM or establish an acceptable hot latency."
+    },
+    {
+      "id": "managed_runtime_capabilities",
+      "classification": "documented_api_contract",
+      "url": "https://docs.nvidia.com/cuda/archive/12.8.1/cuda-runtime-api/group__CUDART__MEMORY.html",
+      "location": "cudaMallocManaged description: cudaDevAttrManagedMemory support query; oversubscription conditional on cudaDevAttrConcurrentManagedAccess",
+      "statement": "Support and oversubscription are capability-dependent, and allocation can fail. Query the actual device attributes during an idle, controlled experiment.",
+      "unqueried_device_attributes": ["cudaDevAttrManagedMemory", "cudaDevAttrConcurrentManagedAccess", "cudaDevAttrPageableMemoryAccess"],
+      "boundary": "No attribute values were measured in this review; successful virtual allocation alone is not the acceptance criterion."
+    },
+    {
+      "id": "orin_thor_distinction",
+      "classification": "documented_architecture_boundary",
+      "url": "https://docs.nvidia.com/cuda/cuda-for-tegra-appnote/index.html#memory-selection",
+      "document_version_at_review": "13.4",
+      "location": "Memory Selection, Unified Memory where concurrentManagedAccess is 1",
+      "statement": "The newer documentation limits its concurrent managed-access/page-fault discussion to Thor-or-later L4T devices.",
+      "boundary": "This newer guide is architectural context, not evidence that CUDA 13.4 is installed. Do not apply Thor capabilities to Orin or treat managed memory as unlimited/swap-backed capacity."
+    }
+  ],
+  "hypotheses_to_verify": [
+    {
+      "id": "buffered_io_reintroduced_file_cache",
+      "classification": "unverified_hypothesis",
+      "claim": "A direct-I/O fallback may have reintroduced GGUF page-cache pressure during a failing load.",
+      "next_discriminating_check": "Inspect that run's existing log for the source-defined fallback warnings before another GPU experiment.",
+      "not_established": "This review does not assert that any particular load fell back."
+    },
+    {
+      "id": "managed_allocator_control",
+      "classification": "unverified_hypothesis",
+      "claim": "Changing only the MiniCPM process to managed allocation may change the failing allocation boundary without changing the model's intended numeric computation.",
+      "controls_to_preserve": ["same image", "same weights", "131072 context", "same KV quantization", "same GPU layers", "same decoding parameters", "same memory/swap guards"],
+      "acceptance_evidence_needed": ["actual loaded alias/context and completed allocation", "real short generation", "hot latency and memory/swap observations", "no reliance on persistent swapping"],
+      "not_established": "No managed allocator hardware result, capacity increase, sustained stability, or speedup is claimed."
+    },
+    {
+      "id": "host_pinning_control",
+      "classification": "unverified_hypothesis",
+      "claim": "Pinned host-weight placement or upload pinning may affect load pressure. --no-host and GGML_CUDA_NO_PINNED test different scopes.",
+      "next_discriminating_check": "If needed, test one policy at a time after the active acceptance workload; do not combine it with the managed-memory control.",
+      "not_established": "The proprietary allocator's failure cause and the net peak-memory benefit remain unknown."
+    }
+  ],
+  "excluded_claims": [
+    "A full-model CPU upload clone remains live through the KV allocation.",
+    "The free-memory banner guarantees cudaMalloc success.",
+    "CUDA allocation depends only on MemFree.",
+    "CMA, physical contiguity, fragmentation, or a driver mismatch has been identified as the cause.",
+    "Managed memory adds physical capacity or permits accepting sustained swap.",
+    "Source inspection proves any hardware trial succeeded or provides a long-duration stability result."
+  ]
+}
