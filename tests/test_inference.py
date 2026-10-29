@@ -242,6 +242,33 @@ async def test_live_missing_tts_rebuilds_tts_first_and_hot_requests_keep_both(tm
     await broker.close()
 
 
+@pytest.mark.parametrize("failed", ["tts", "llm2b"])
+async def test_live_server_failure_retires_worker_before_a_following_request(tmp_path, failed):
+    first = True
+
+    async def post(request, key):
+        nonlocal first
+        if first:
+            first = False
+            return httpx.Response(500, json={"detail": "CUDA inference failed"})
+        return httpx.Response(200, content=b"fresh result")
+
+    broker, control = setup_broker(tmp_path, post, mode="live")
+    await broker.initialize()
+    control.events.clear()
+    response = await broker.forward(failed, "tts" if failed == "tts" else "completion", b"{}")
+    assert response.status_code == 500
+    assert not control.alive[failed] and broker.active is None and broker.state == "error"
+    control.events.clear()
+    response = await broker.forward("llm2b", "completion", b"{}")
+    assert response.status_code == 200
+    assert control.events == (
+        [("stop", "llm2b"), ("start", "tts"), ("start", "llm2b")] if failed == "tts" else [("start", "llm2b")]
+    )
+    assert control.alive["tts"] and control.alive["llm2b"]
+    await broker.close()
+
+
 @pytest.mark.parametrize("cancel", [False, True])
 async def test_failed_or_cancelled_live_rebuild_restores_prior_residents(tmp_path, cancel):
     broker, control = setup_broker(tmp_path, mode="live")
@@ -742,6 +769,9 @@ def test_runner_commands_are_fixed_profiles(tmp_path):
     assert args[args.index("--cache-type-k") + 1] == "q8_0"
     assert "--no-mmap" in args
     assert "--direct-io" in args
+    speech = runner.command("tts")
+    assert speech[1] == str(tmp_path.resolve() / "tools/jetson/tts/server.py")
+    assert speech[2:] == ["-a", "127.0.0.1", "-p", "9011"]
     with pytest.raises(KeyError):
         runner.command("arbitrary; command")
 
@@ -876,7 +906,12 @@ async def test_only_selected_model_is_required_on_fresh_installation(tmp_path, m
         262144 if model_key == "llmqwen35" else 131072,
         "qwen35" if model_key == "llmqwen35" else "llama",
     )
-    for relative in ("tools/jetson/tts/serve.py", "runtime/tts/tts_infer.yaml"):
+    for relative in (
+        "tools/jetson/tts/server.py",
+        "tools/jetson/tts/compact.py",
+        "tools/jetson/tts/serve.py",
+        "runtime/tts/tts_infer.yaml",
+    ):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("placeholder")

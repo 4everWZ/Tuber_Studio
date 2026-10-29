@@ -184,3 +184,78 @@ def test_compute_reference_uses_existing_pipeline_without_loading_another(compac
     monkeypatch.setattr(compact, "_upstream", lambda root: pytest.fail("Must not import/load models"))
     assert compact.compute_reference(tmp_path, pipeline) == {"saved": True}
     assert calls == [("compute", pipeline, identity), ("save", pipeline, tmp_path, identity)]
+
+
+def test_stale_reference_is_prepared_once_in_a_short_lived_shared_group_child(compact, tmp_path, monkeypatch):
+    results, calls = [ValueError("old cache"), ({"valid": True}, {})], []
+    monkeypatch.setattr(compact, "_settings", lambda root, voice: (tmp_path, tmp_path, None, {}))
+
+    def read(*args):
+        value = results.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(compact, "_read_bundle", read)
+    monkeypatch.setattr(compact.subprocess, "run", lambda argv, **kwargs: calls.append((argv, kwargs)))
+    assert compact.ensure_reference(tmp_path) == {"valid": True}
+    assert len(calls) == 1
+    argv, options = calls[0]
+    assert argv[-3:] == ["--prepare-reference", "--voice-id", "whale_sovits_v2"]
+    assert options["check"] and options["start_new_session"] is False
+    assert options["env"]["TUBER_ROOT"] == str(tmp_path)
+    assert "shell" not in options
+
+
+def test_valid_cache_does_not_start_a_reference_worker(compact, tmp_path, monkeypatch):
+    monkeypatch.setattr(compact, "_settings", lambda root, voice: (tmp_path, tmp_path, None, {}))
+    monkeypatch.setattr(compact, "_read_bundle", lambda *args: ({"valid": True}, {}))
+    monkeypatch.setattr(
+        compact.subprocess, "run", lambda *a, **k: pytest.fail("Unexpected full-model worker")
+    )
+    assert compact.ensure_reference(tmp_path) == {"valid": True}
+    assert compact.validate_reference(tmp_path) == {"valid": True}
+
+
+def test_invalid_worker_result_is_not_retried_or_used_as_resident_fallback(compact, tmp_path, monkeypatch):
+    monkeypatch.setattr(compact, "_settings", lambda root, voice: (tmp_path, tmp_path, None, {}))
+    monkeypatch.setattr(
+        compact, "_read_bundle", lambda *args: (_ for _ in ()).throw(ValueError("still invalid"))
+    )
+    calls = []
+    monkeypatch.setattr(compact.subprocess, "run", lambda *a, **k: calls.append("prepare"))
+    with pytest.raises(ValueError, match="still invalid"):
+        compact.ensure_reference(tmp_path)
+    assert calls == ["prepare"]
+
+
+def test_live_signature_ignores_mode_but_catches_voice_reference_and_weight_changes(
+    compact, tmp_path, monkeypatch
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "runtime/tts/weights").mkdir(parents=True)
+    (tmp_path / "config/voices.json").write_text(
+        json.dumps([{"id": "oc", "provider": "gpt_sovits", "reference_text": "hello"}])
+    )
+    config = tmp_path / "runtime/studio.json"
+    config.write_text(json.dumps({"tts": {"voice_id": "oc"}, "inference_broker": {"mode": "text"}}))
+    (tmp_path / "runtime/tts/tts_infer.yaml").write_text("fixed settings")
+    reference = tmp_path / "runtime/tts/ref.wav"
+    reference.write_bytes(b"fixed audio")
+    weight = tmp_path / "runtime/tts/weights/model.bin"
+    weight.write_bytes(b"fixed weights")
+    metadata = {"identity": {"paths": {"reference": str(reference), "weights": str(weight)}}}
+    digest, hashed = compact._digest, []
+    monkeypatch.setattr(compact, "_digest", lambda path: hashed.append(path) or digest(path))
+    before = compact.reference_signature(tmp_path, voice_id="oc", metadata=metadata)
+    assert weight not in hashed
+    config.write_text(json.dumps({"tts": {"voice_id": "oc"}, "inference_broker": {"mode": "live"}}))
+    assert compact.reference_signature(tmp_path, voice_id="oc", metadata=metadata) == before
+    reference.write_bytes(b"other audio")
+    assert compact.reference_signature(tmp_path, voice_id="oc", metadata=metadata) != before
+    reference.write_bytes(b"fixed audio")
+    current = compact.reference_signature(tmp_path, voice_id="oc", metadata=metadata)
+    replacement = weight.with_suffix(".replacement")
+    replacement.write_bytes(weight.read_bytes())
+    replacement.replace(weight)
+    assert compact.reference_signature(tmp_path, voice_id="oc", metadata=metadata) != current

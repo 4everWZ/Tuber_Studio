@@ -184,9 +184,7 @@ class ProcessRunner:
             return command
         return [
             str(self.tts_python),
-            str(self.root / "tools/jetson/tts/serve.py"),
-            "-c",
-            str(self.root / "runtime/tts/tts_infer.yaml"),
+            str(self.root / "tools/jetson/tts/server.py"),
             "-a",
             "127.0.0.1",
             "-p",
@@ -206,6 +204,8 @@ class ProcessRunner:
                 if model is not None
                 else [
                     self.tts_python,
+                    self.root / "tools/jetson/tts/server.py",
+                    self.root / "tools/jetson/tts/compact.py",
                     self.root / "tools/jetson/tts/serve.py",
                     self.root / "runtime/tts/tts_infer.yaml",
                 ]
@@ -616,6 +616,12 @@ class InferenceBroker:
                 )
                 # httpx post buffers the body before returning. The GPU lease is
                 # held through this point even when the upstream sends chunked WAV.
+                if response.status_code >= 500:
+                    # A failed CUDA worker must not remain advertised as ready.
+                    # A subsequent live request rebuilds TTS first when required.
+                    await self.runner.stop(key)
+                    self.active, self.state = None, "error"
+                    self.error = "Inference worker failed; the next request must reload it"
                 return Response(
                     response.content,
                     status_code=response.status_code,

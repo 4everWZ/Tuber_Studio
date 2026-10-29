@@ -1,4 +1,4 @@
-"""Evaluation-only fixed-reference v2 pipeline; never selects a production profile.
+"""Fixed-reference v2 pipeline, also callable by the baseline evaluation harness.
 
 The cache is plain NPZ plus checked JSON, not pickle. Target text still uses the
 original Chinese frontend and the original 22-layer BERT feature representation;
@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import types
@@ -23,6 +24,20 @@ from pathlib import Path
 FORMAT = 1
 MAX_CACHE_BYTES = 16 * 1024 * 1024
 ARRAYS = {"prompt_semantic", "reference_spec", "reference_phones", "reference_bert"}
+
+
+def selected_voice_id(root, override=None):
+    root = Path(root).resolve()
+    voices = json.loads((root / "config/voices.json").read_text(encoding="utf-8"))
+    configured = {v["id"]: v for v in voices if v.get("provider") == "gpt_sovits"}
+    path = root / "runtime/studio.json"
+    settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    selected = override if override is not None else settings.get("tts", {}).get("voice_id")
+    if selected is None:
+        selected = next(iter(configured), None)
+    if not isinstance(selected, str) or selected not in configured:
+        raise ValueError("Select one configured GPT-SoVITS voice")
+    return selected
 
 
 def _file(root, raw, bases):
@@ -93,7 +108,7 @@ def _settings(root, voice_id):
     data = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     config = data["custom"]
     if config.get("version") != "v2":
-        raise ValueError("This candidate only supports the existing v2 voice")
+        raise ValueError("This fixed-reference backend supports GPT-SoVITS v2 voices")
     reference = _file(root, voice["server_reference_path"], ("runtime/tts/ref", "assets"))
     paths = {
         "reference": reference,
@@ -109,7 +124,7 @@ def _settings(root, voice_id):
                 paths[name + "/" + candidate.name] = _file(root, candidate, ("runtime/tts/pretrained",))
     bert = json.loads(paths["bert/config.json"].read_text(encoding="utf-8"))
     if (bert.get("model_type"), bert.get("num_hidden_layers"), bert.get("hidden_size")) != ("bert", 24, 1024):
-        raise ValueError("The candidate requires the verified 24-layer BERT architecture")
+        raise ValueError("The fixed-reference backend requires the verified 24-layer BERT architecture")
     language = voice.get("params", {}).get("prompt_lang", "zh")
     identity = {
         "upstream": "20240821v2",
@@ -315,9 +330,82 @@ def compute_reference(root, pipeline, *, voice_id="whale_sovits_v2"):
     return _save_reference(pipeline, directory, identity)
 
 
-def create_pipeline(root, *, voice_id="whale_sovits_v2"):
+def validate_reference(root, *, voice_id="whale_sovits_v2"):
+    """Validate source identity and safe tensor cache without loading models."""
+    _, directory, _, identity = _settings(root, voice_id)
+    metadata, _ = _read_bundle(directory, identity)
+    return metadata
+
+
+def _ensure_bundle(root, directory, identity, voice_id):
+    try:
+        return _read_bundle(directory, identity)
+    except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile):
+        # A separate process owns every full-reference/HuBERT allocation. Do not
+        # start a new session: the broker's process group must also own this child.
+        environment = os.environ.copy()
+        environment["TUBER_ROOT"] = str(root)
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("server.py")),
+                "--prepare-reference",
+                "--voice-id",
+                voice_id,
+            ],
+            check=True,
+            timeout=180,
+            env=environment,
+            start_new_session=False,
+        )
+        # One preparation attempt only. Identity drift or an invalid artifact
+        # fails closed instead of falling back to a full resident model.
+        return _read_bundle(directory, identity)
+
+
+def ensure_reference(root, *, voice_id="whale_sovits_v2"):
+    """Prepare missing/stale features in a short-lived subprocess, then verify."""
+    root, directory, _, identity = _settings(root, voice_id)
+    metadata, _ = _ensure_bundle(root, directory, identity, voice_id)
+    return metadata
+
+
+def reference_signature(root, *, voice_id, metadata):
+    """Cheap live asset guard: content for small inputs, stat for large weights.
+
+    Full content identity is checked at process startup. Device/inode/size and
+    nanosecond mtime/ctime catch same-path replacement during the process lifetime.
+    Ordinary resource-mode writes to studio.json do not invalidate the voice.
+    """
+    root = Path(root).resolve()
+    identity = metadata["identity"]
+    voices = json.loads((root / "config/voices.json").read_text(encoding="utf-8"))
+    voice = next((v for v in voices if v.get("id") == voice_id), None)
+    paths = [Path(p) for p in identity["paths"].values()]
+    paths += [root / "runtime/tts/tts_infer.yaml", root / "config/voices.json"]
+    stamps = {}
+    for path in paths:
+        if path.is_symlink():
+            raise ValueError("Live voice asset links are disabled")
+        stat = path.stat()
+        stamps[str(path)] = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    return {
+        "voice": voice,
+        "selected_voice": selected_voice_id(root),
+        "tts_config_sha256": _digest(root / "runtime/tts/tts_infer.yaml"),
+        "reference_sha256": _digest(Path(identity["paths"]["reference"])),
+        "stamps": stamps,
+    }
+
+
+def create_pipeline(root, *, voice_id="whale_sovits_v2", prepare_if_needed=False):
     root, directory, config, identity = _settings(root, voice_id)
-    metadata, arrays = _read_bundle(directory, identity)
+    metadata, arrays = (
+        _ensure_bundle(root, directory, identity, voice_id)
+        if prepare_if_needed
+        else _read_bundle(directory, identity)
+    )
+    signature = reference_signature(root, voice_id=voice_id, metadata=metadata)
     upstream = _upstream(root)
     import torch
 
@@ -341,7 +429,7 @@ def create_pipeline(root, *, voice_id="whale_sovits_v2"):
 
         def set_ref_audio(self, path):
             if str(_file(root, path, ("runtime/tts/ref", "assets"))) != identity["paths"]["reference"]:
-                raise ValueError("This evaluation pipeline has one fixed reference")
+                raise ValueError("This speech pipeline has one fixed configured reference")
 
         def run(self, inputs):
             self.set_ref_audio(inputs.get("ref_audio_path", ""))
@@ -377,6 +465,10 @@ def create_pipeline(root, *, voice_id="whale_sovits_v2"):
         return torch.cat([result[i].repeat(word2ph[i], 1) for i in range(len(word2ph))], dim=0).T
 
     pipeline.text_preprocessor.get_bert_feature = types.MethodType(feature, pipeline.text_preprocessor)
+    if reference_signature(root, voice_id=voice_id, metadata=metadata) != signature:
+        raise ValueError("Voice assets changed while loading the pipeline")
+    pipeline.fixed_reference_metadata = metadata
+    pipeline.fixed_reference_signature = signature
     return pipeline
 
 
