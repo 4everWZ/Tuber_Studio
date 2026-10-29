@@ -505,6 +505,41 @@ async def test_observers_do_not_wake_sleeping_resources_and_warmup_is_explicit(t
     await broker.close()
 
 
+async def test_speech_observer_preserves_actual_backend_identity_without_starting_workers(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    calls = []
+    state = {"ready": True}
+
+    async def get(url, **kwargs):
+        calls.append(str(url))
+        return httpx.Response(
+            200 if state["ready"] else 503,
+            request=httpx.Request("GET", url),
+            json={
+                "status": "ready",
+                "backend": "genie_onnx_int8",
+                "voice_id": "whale_sovits_v2",
+                "bundle_identity": "a" * 64,
+                "ignored_untrusted_field": "never forwarded",
+            },
+        )
+
+    broker.client.get = get
+    assert (await broker.read("tts", "docs"))["status"] == "cold"
+    assert calls == [] and control.events == []
+    control.alive["tts"] = True
+    body = await broker.read("tts", "docs")
+    assert body["backend"] == "genie_onnx_int8" and body["bundle_identity"] == "a" * 64
+    assert body["status"] == "ready" and not body["is_sleeping"]
+    assert "ignored_untrusted_field" not in body
+    state["ready"] = False
+    with pytest.raises(HTTPException) as error:
+        await broker.read("tts", "docs")
+    assert error.value.status_code == 503
+    assert control.events == []
+    await broker.close()
+
+
 @pytest.mark.parametrize(
     "path,body",
     [

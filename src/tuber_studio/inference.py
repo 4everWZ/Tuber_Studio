@@ -699,6 +699,27 @@ class InferenceBroker:
             if key not in self.properties:
                 raise HTTPException(503, "Resource has not been loaded during this broker boot")
             return self.properties[key] | {"is_sleeping": not running, "active_provider": self.active}
+        if key == "tts" and path == "docs" and running:
+            try:
+                response = await self.client.get(RESOURCES[key].url + "/docs", timeout=5)
+                response.raise_for_status()
+                if len(response.content) > 65_536:
+                    raise ValueError("Oversized fixed speech health response")
+                body = response.json()
+                if not isinstance(body, dict) or body.get("status") not in {"ready", "ok"}:
+                    raise ValueError("Speech is not ready")
+                metadata = {
+                    name: body[name]
+                    for name in ("status", "backend", "voice_id", "bundle_identity")
+                    if name in body
+                }
+                if any(not isinstance(value, str) or len(value) > 128 for value in metadata.values()):
+                    raise ValueError("Invalid fixed speech health metadata")
+            except (httpx.HTTPError, ValueError):
+                raise HTTPException(
+                    503, "The resident speech worker is not ready; check its assets and restart"
+                ) from None
+            return metadata | {"available": True, "is_sleeping": False, "active_provider": self.active}
         return {
             "status": "ok" if key in self.loaded else "cold",
             "available": key in self.loaded,
