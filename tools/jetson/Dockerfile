@@ -45,7 +45,11 @@ COPY tools/evaluate_tts_memory.py ./tools/evaluate_tts_memory.py
 COPY tools/evaluate_live.py ./tools/evaluate_live.py
 COPY tools/jetson/tts/serve.py tools/jetson/tts/server.py tools/jetson/tts/compact.py tools/jetson/tts/inference_only.py tools/jetson/tts/prepare.py tools/jetson/tts/requirements.txt tools/jetson/tts/tts_infer.yaml ./tools/jetson/tts/
 COPY tools/jetson/initialize-data.py ./tools/jetson/initialize-data.py
-RUN /opt/studio-venv/bin/python -m pip install --index-url "${PYPI_INDEX}" --no-deps -e . \
+# Dependencies were already installed from the locked export. This image owns a
+# read-only source tree; preserve the same import path without rebuilding an
+# editable wheel (and downloading build backends) on every source update.
+RUN /opt/studio-venv/bin/python -c "from pathlib import Path; import sysconfig; Path(sysconfig.get_path('purelib'), 'tuber-studio-source.pth').write_text('/workspace/tuber/src' + chr(10))" \
+    && /opt/studio-venv/bin/python -c "from pathlib import Path; from tuber_studio.config import ROOT; assert ROOT == Path('/workspace/tuber')" \
     && rm -rf /tmp/uv-cache /root/.cache/pip
 
 ENV PATH=/opt/studio-venv/bin:/opt/llama/bin:$PATH \

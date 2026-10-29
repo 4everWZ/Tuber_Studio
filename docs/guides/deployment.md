@@ -32,7 +32,7 @@
 
 优先实验2B Q4_K_M权重＋q4 KV＋128K与TTS共驻，只有语义与共享内存验收通过后才认定该Profile合格。直播模式不放开生成并发；加载等待和错误显示在资源状态，休眠不改变已验证容量。图像仅为资源工作模式的命名，当前不能据此宣称新增图像模型工作流。
 
-镜像以dustynv/pytorch:2.7-r36.4.0-cu128-24.04为基础，从ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821阶段只复制llama-server，复用原生Torch和CUDA。运行层不复制开发测试、临时文件、宿主venv或第二套CUDA；带一份维护用语义准入脚本与固定用例。
+镜像以dustynv/pytorch:2.7-r36.4.0-cu128-24.04为基础，从ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821阶段只复制llama-server，复用原生Torch和CUDA。锁定依赖安装到项目容器环境，固定只读源码通过同一环境的.pth加载，不在每次源码更新时联网重建editable包；构建时核验模块根仍为/workspace/tuber。运行层不复制开发测试、临时文件、宿主venv或第二套CUDA；带维护用准入／资源评估脚本与固定用例。
 
 ### 构建、初始化与替换
 
