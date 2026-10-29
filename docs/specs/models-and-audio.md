@@ -32,11 +32,11 @@ Think模式通过原生chat template和reasoning_format=deepseek分离推理与�
 2. 2B按官方Think参数做质量准入，temperature=1.0、top_p=0.95、min_p=0.0；既有NoThink只算实验，不作为已通过的质量基线。实验未完成不宣称q4 KV共驻交付。未通过直播准入时保留文本模式并显示失败，不把互斥加载冒称直播共驻。
 3. 后续再评估1B质量与共驻收益，同一语义门槛通过才可考虑替换；1B不是默认兜底许可。
 
-当前默认保留MiniCPM5-2B Q4_K_M权重、q4 KV和131072窗口。Qwen3.5-2B已作候选比较：Bartowski社区Q4_K_M量化、q8 KV，官方原生262144，本项目实际配置131072；不附带视觉encoder／mmproj，不由模型名称推断已有图像工作流。固定用例中它的短句更快，但回忆／摘要出现更明显事实错配，尚不替换默认；参数、Think与模板条件不同，不能当纯模型因果比较。证据见[候选结果](../../evaluations/results/qwen35-2b-single-system-seed42.json)。
+当前已确认继续采用MiniCPM5-2B Q4_K_M权重、q4 KV和131072窗口，Qwen保留为比较候选。Qwen3.5-2B已作候选比较：Bartowski社区Q4_K_M量化、q8 KV，官方原生262144，本项目实际配置131072；不附带视觉encoder／mmproj，不由模型名称推断已有图像工作流。固定用例中它的短句更快，但回忆／摘要出现更明显事实错配，不替换默认；参数、Think与模板条件不同，不能当纯模型因果比较。证据见[候选结果](../../evaluations/results/qwen35-2b-single-system-seed42.json)。
 
 同题集成来源检索后，两者都答全：MiniCPM使用一次补答约70秒，Qwen无需补答约32秒；原始摘要中的事实错配仍存在，这证明外围证据层能补该例，不证明模型原始记忆已改善。见[MiniCPM结果](../../evaluations/results/grounded-minicpm5-2b-seed42.json)、[Qwen结果](../../evaluations/results/grounded-qwen35-2b-seed42.json)。Qwen已通过一次128K配置下的LLM／TTS共驻和两条非静音动态合成，短程观测不代表长输入或长时稳定；MiniCPM共驻合成仍有明显换页及CUDA分配失败，不能当作稳定直播Profile。见[Qwen资源结果](../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json)。这些测量中其他两个项目服务均已停止，不外推为与其他服务同时运行的结果。
 
-Qwen候选在实际131072窗口、TTS已合成预热且同进程驻留时，约207秒完整接收120000输入tokens并输出4 tokens，未截断；最低可用内存约180MiB，有少量换页，无系统OOM。正常容器重启可恢复live及两进程。见[长输入与恢复结果](../../evaluations/results/qwen35-2b-live-context-f35d061.json)。独立浏览器闭环也已实际completed：短句LLM约4.0秒、动态TTS约5.0秒、非静音播放2.58秒；首轮观察脚本错误取消了生成，broker自动清理并重载LLM，修正观察器后的有效播放使用原TTS及重载LLM，不能拼接为同LLM进程长输入后的连续热态证明。见[播放结果](../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)。两项证明容量接收及一次短句闭环，不证明长文召回或持续稳定；RAM余量紧，默认仍待取舍确认。
+Qwen候选在实际131072窗口、TTS已合成预热且同进程驻留时，约207秒完整接收120000输入tokens并输出4 tokens，未截断；最低可用内存约180MiB，有少量换页，无系统OOM。正常容器重启可恢复live及两进程。见[长输入与恢复结果](../../evaluations/results/qwen35-2b-live-context-f35d061.json)。独立浏览器闭环也已实际completed：短句LLM约4.0秒、动态TTS约5.0秒、非静音播放2.58秒；首轮观察脚本错误取消了生成，broker自动清理并重载LLM，修正观察器后的有效播放使用原TTS及重载LLM，不能拼接为同LLM进程长输入后的连续热态证明。见[播放结果](../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)。两项证明容量接收及一次短句闭环，不证明长文召回或持续稳定，也不转移为MiniCPM的共驻证据。
 
 候选源模型为[Qwen固定版本](https://huggingface.co/Qwen/Qwen3.5-2B/tree/15852e8c16360a2fea060d615a32b45270f8a8fc)，量化来自[Bartowski固定版本](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF/tree/7d26695454df6de5fbcce2e58681e62dae06ce43)，不能冒称Qwen官方GGUF。下载按固定revision、大小、SHA256及真实GGUF架构／窗口验证，默认初始化只取所选模型；可显式准备候选而不切默认。
 
@@ -51,6 +51,10 @@ Qwen候选在实际131072窗口、TTS已合成预热且同进程驻留时，约2
 冷切直播时为降低TTS载入瞬间的峰值，先释放LLM、等TTS完整就绪，再加载LLM并确认两者共驻；已热驻留的请求不反复卸载。失败／取消恢复也遵守资源顺序。该内部策略允许切换延迟，不减少真实窗口或张量精度，仍须设备实测，不把策略存在当作共驻成功。
 
 TTS生成器完全关闭后再执行上游已有的缓存清理，让已结束帧的临时张量释放；音频块、驻留权重、推理精度与解码步骤保持原样。冷加载／首句峰值与热态换页分别记录，短程两句成功不等于长时稳定，也不以一次冷启动换页推断整模型不可用。
+
+语音减内存按固定参考特征预计算、精简推理后端、局部INT8的顺序评估。保持当前v2声音、动态中文BERT特征和原采样／解码条件，先验证不改变数值的精简；不能以关闭BERT、换音色或减少LLM真实窗口冒充相同质量下的优化。参考特征缓存绑定音色版本、参考音频／文本／语言、模型权重、前端与实现版本，任何不匹配须拒绝复用，新OC各自建立缓存。
+
+优化收益以整机共享RAM为主：相同外部服务状态、模型／KV／窗口和台词下，分别记录冷启动、首句、热态合成的最低MemAvailable及总RAM减可用量、进程RSS、换页与OOM；加载和预计算峰值也要计入，预计算单独标示一次性成本。CUDA张量／reserved和权重文件体积只作解释指标，CPU搬运不等于Jetson整机节省。相同种子下的特征／PCM一致可支持数值保持，量化或其他数值改变仍须试听和稳定性验收，不以文件压缩率推断可共驻。
 
 ## 单容器封装与推理边界
 

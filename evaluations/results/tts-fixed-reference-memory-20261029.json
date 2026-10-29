@@ -1,0 +1,940 @@
+{
+  "date": "2026-10-29",
+  "kind": "guarded_jetson_fixed_reference_v2_memory_evaluation",
+  "production_image": "sha256:a561ec12ed3e1fcfdcddceb59f434a9578ef137b5977a693505a56279c59cdc3",
+  "production_backend_replaced": false,
+  "candidate": "fixed NPZ reference features; no HuBERT load; 22-layer BERT backbone initialized at existing FP16 precision; unchanged phonemes/T2S/VITS/sampling",
+  "method": {
+    "sample_period_seconds": 0.5,
+    "peak_metric": "/proc/meminfo MemTotal minus minimum MemAvailable; sampling, not instantaneous physical high-water mark",
+    "guards": {
+      "minimum_available_mib": 160,
+      "maximum_swap_25s_mib": 64,
+      "deadline_seconds": 180
+    },
+    "seed": 42,
+    "voice_id": "whale_sovits_v2",
+    "top_k": 5,
+    "top_p": 1,
+    "temperature": 1,
+    "speed_factor": 1,
+    "batch_size": 1,
+    "split": "cut5",
+    "other_project_services_running": false,
+    "other_services_modified": false,
+    "prefill_and_quality_scope": "MiniCPM5 actual n_ctx=131072, but only short four-token LLM execution was tested in this evaluation; not 120000-token prefill or recall."
+  },
+  "summary": {
+    "isolated_peak_reduction_kib": 316616,
+    "isolated_pcm_bit_identical": true,
+    "coexistence_pcm_matches_isolated_original": {
+      "compact_llm_first_short_success": true,
+      "compact_tts_first_interleaved": true
+    },
+    "cold_load_order_matters": true,
+    "stable_production_profile_proven": false,
+    "no_int8_installed_or_tested": true,
+    "recommendation": "Prefer fixed reference + compact same-precision inference and TTS-first startup. Preserve failed LLM-first cold results; do not infer sustained or long-context live stability from three sentences and two four-token LLM calls."
+  },
+  "experiments": {
+    "baseline_llm_first_guarded": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "actual_context": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          27
+        ]
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "actual_context": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          27
+        ]
+      },
+      "variants": [
+        {
+          "variant": "baseline",
+          "completed": false,
+          "returncode": -15,
+          "guard_reason": "Swap traffic above 64 MiB over the rolling 25-second interval",
+          "memory": {
+            "baseline": {
+              "available_kib": 3010464,
+              "swap_used_kib": 379392,
+              "pswpin": 276599,
+              "pswpout": 736804,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 1176916,
+              "swap_used_kib": 741376,
+              "pswpin": 276828,
+              "pswpout": 827555,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 654776,
+            "swapin_bytes": 937984,
+            "swapout_bytes": 371716096,
+            "maximum_rolling_25s_swap_bytes": 372654080,
+            "oom_kill_delta": 0,
+            "samples": 51
+          },
+          "total_ram_kib": 7802708,
+          "peak_machine_total_minus_available_kib": 7147932,
+          "sampled_peak_child_rss_bytes": 3056148480,
+          "sampled_phases": {
+            "loading": {
+              "minimum_available_kib": 654776
+            },
+            "reference_precompute": {
+              "minimum_available_kib": 1060236
+            }
+          },
+          "events": [
+            {
+              "stage": "loading",
+              "variant": "baseline"
+            },
+            {
+              "stage": "loaded",
+              "seconds": 18.931
+            },
+            {
+              "stage": "weights",
+              "parameter_bytes": {
+                "t2s_model": 155212804,
+                "vits_model": 81631488,
+                "bert_model": 651091216,
+                "cnhuhbert_model": 188743424
+              }
+            },
+            {
+              "stage": "ar_storage",
+              "result": {
+                "registered_bytes": 155212804,
+                "script_bytes": 151314432,
+                "shared_bytes": 151314432,
+                "script_only_bytes": 0
+              }
+            },
+            {
+              "stage": "start_reference_precompute"
+            }
+          ],
+          "failure_details": {
+            "cuda_allocation_failure_logged": false,
+            "cuda_allocator_assert_logged": false,
+            "silent_fallback_rejected": false
+          }
+        }
+      ],
+      "bit_identical_fixed_seed_pcm": null,
+      "sampling_seconds": 0.5,
+      "limitations": "LLM already resident before TTS cold load; no concurrent LLM generation, long input, listening assessment or sustained-live claim. Whole-machine peak uses sampled total minus available, not weight sizes or exact instantaneous hardware high-water mark."
+    },
+    "isolated_pcm_comparison": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": false,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": []
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": false,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": []
+      },
+      "variants": [
+        {
+          "variant": "baseline",
+          "completed": true,
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5828664,
+              "swap_used_kib": 508416,
+              "pswpin": 281362,
+              "pswpout": 827555,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5784660,
+              "swap_used_kib": 485888,
+              "pswpin": 286918,
+              "pswpout": 827555,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3360424,
+            "swapin_bytes": 22757376,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 22212608,
+            "oom_kill_delta": 0,
+            "samples": 97
+          },
+          "total_ram_kib": 7802708,
+          "peak_machine_total_minus_available_kib": 4442284,
+          "sampled_peak_child_rss_bytes": 3657248768,
+          "sampled_phases": {
+            "loading": {
+              "minimum_available_kib": 3660488
+            },
+            "reference_precompute": {
+              "minimum_available_kib": 3767032
+            },
+            "speech_0": {
+              "minimum_available_kib": 3360712
+            },
+            "speech_1": {
+              "minimum_available_kib": 3364092
+            },
+            "speech_2": {
+              "minimum_available_kib": 3360424
+            }
+          },
+          "events": [
+            {
+              "stage": "loading",
+              "variant": "baseline"
+            },
+            {
+              "stage": "loaded",
+              "seconds": 18.62
+            },
+            {
+              "stage": "weights",
+              "parameter_bytes": {
+                "t2s_model": 155212804,
+                "vits_model": 81631488,
+                "bert_model": 651091216,
+                "cnhuhbert_model": 188743424
+              }
+            },
+            {
+              "stage": "ar_storage",
+              "result": {
+                "registered_bytes": 155212804,
+                "script_bytes": 151314432,
+                "shared_bytes": 151314432,
+                "script_only_bytes": 0
+              }
+            },
+            {
+              "stage": "start_reference_precompute"
+            },
+            {
+              "stage": "reference_saved",
+              "seconds": 4.465,
+              "result": {
+                "format": 1,
+                "voice_id": "whale_sovits_v2",
+                "precision": "float16",
+                "arrays": {
+                  "prompt_semantic": {
+                    "dtype": "int64",
+                    "shape": [
+                      123
+                    ]
+                  },
+                  "reference_spec": {
+                    "dtype": "float16",
+                    "shape": [
+                      1,
+                      1025,
+                      217
+                    ]
+                  },
+                  "reference_phones": {
+                    "dtype": "int64",
+                    "shape": [
+                      41
+                    ]
+                  },
+                  "reference_bert": {
+                    "dtype": "float16",
+                    "shape": [
+                      1024,
+                      41
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "stage": "start_speech",
+              "index": 0
+            },
+            {
+              "stage": "speech",
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 6.268,
+              "duration_seconds": 3.68,
+              "sample_rate": 32000,
+              "frames": 117760,
+              "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+              "rms_pcm16": 6407.274812918584,
+              "cuda_peak_allocated_bytes": 1171988480,
+              "cuda_peak_reserved_bytes": 1214251008
+            },
+            {
+              "stage": "start_speech",
+              "index": 1
+            },
+            {
+              "stage": "speech",
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.172,
+              "duration_seconds": 4.16,
+              "sample_rate": 32000,
+              "frames": 133120,
+              "pcm_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+              "rms_pcm16": 6758.080633259381,
+              "cuda_peak_allocated_bytes": 1174484480,
+              "cuda_peak_reserved_bytes": 1210056704
+            },
+            {
+              "stage": "start_speech",
+              "index": 2
+            },
+            {
+              "stage": "speech",
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.692,
+              "duration_seconds": 3.24,
+              "sample_rate": 32000,
+              "frames": 103680,
+              "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+              "rms_pcm16": 5657.080354865595,
+              "cuda_peak_allocated_bytes": 1172842496,
+              "cuda_peak_reserved_bytes": 1207959552
+            },
+            {
+              "stage": "completed",
+              "variant": "baseline"
+            }
+          ]
+        },
+        {
+          "variant": "compact",
+          "completed": true,
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5784624,
+              "swap_used_kib": 485888,
+              "pswpin": 286919,
+              "pswpout": 827555,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5770344,
+              "swap_used_kib": 485888,
+              "pswpin": 286922,
+              "pswpout": 827555,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3677040,
+            "swapin_bytes": 12288,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 12288,
+            "oom_kill_delta": 0,
+            "samples": 85
+          },
+          "total_ram_kib": 7802708,
+          "peak_machine_total_minus_available_kib": 4125668,
+          "sampled_peak_child_rss_bytes": 3298082816,
+          "sampled_phases": {
+            "loading": {
+              "minimum_available_kib": 4538476
+            },
+            "speech_0": {
+              "minimum_available_kib": 3690172
+            },
+            "speech_1": {
+              "minimum_available_kib": 3688128
+            },
+            "speech_2": {
+              "minimum_available_kib": 3677040
+            }
+          },
+          "events": [
+            {
+              "stage": "loading",
+              "variant": "compact"
+            },
+            {
+              "stage": "loaded",
+              "seconds": 17.108
+            },
+            {
+              "stage": "weights",
+              "parameter_bytes": {
+                "t2s_model": 155212804,
+                "vits_model": 81631488,
+                "bert_model": 598560768,
+                "cnhuhbert_model": 0
+              }
+            },
+            {
+              "stage": "ar_storage",
+              "result": {
+                "registered_bytes": 155212804,
+                "script_bytes": 151314432,
+                "shared_bytes": 151314432,
+                "script_only_bytes": 0
+              }
+            },
+            {
+              "stage": "start_speech",
+              "index": 0
+            },
+            {
+              "stage": "speech",
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 7.448,
+              "duration_seconds": 3.68,
+              "sample_rate": 32000,
+              "frames": 117760,
+              "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+              "rms_pcm16": 6407.274812918584,
+              "cuda_peak_allocated_bytes": 923088384,
+              "cuda_peak_reserved_bytes": 960495616
+            },
+            {
+              "stage": "start_speech",
+              "index": 1
+            },
+            {
+              "stage": "speech",
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.044,
+              "duration_seconds": 4.16,
+              "sample_rate": 32000,
+              "frames": 133120,
+              "pcm_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+              "rms_pcm16": 6758.080633259381,
+              "cuda_peak_allocated_bytes": 923765760,
+              "cuda_peak_reserved_bytes": 962592768
+            },
+            {
+              "stage": "start_speech",
+              "index": 2
+            },
+            {
+              "stage": "speech",
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.594,
+              "duration_seconds": 3.24,
+              "sample_rate": 32000,
+              "frames": 103680,
+              "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+              "rms_pcm16": 5657.080354865595,
+              "cuda_peak_allocated_bytes": 922978816,
+              "cuda_peak_reserved_bytes": 962592768
+            },
+            {
+              "stage": "completed",
+              "variant": "compact"
+            }
+          ]
+        }
+      ],
+      "bit_identical_fixed_seed_pcm": true,
+      "sampling_seconds": 0.5,
+      "limitations": "LLM residency is explicit in profile_before. Isolated precomputation/PCM results are not coexistence evidence. No concurrent LLM generation, long input, listening assessment or sustained-live claim. Whole-machine peak uses sampled total minus available, not weight sizes or exact instantaneous hardware high-water mark."
+    },
+    "compact_llm_first_short_success": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          239
+        ]
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          239
+        ]
+      },
+      "variants": [
+        {
+          "variant": "compact",
+          "completed": true,
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 3041092,
+              "swap_used_kib": 485120,
+              "pswpin": 287146,
+              "pswpout": 827555,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 2409300,
+              "swap_used_kib": 502016,
+              "pswpin": 288126,
+              "pswpout": 832787,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 562368,
+            "swapin_bytes": 4014080,
+            "swapout_bytes": 21430272,
+            "maximum_rolling_25s_swap_bytes": 25423872,
+            "oom_kill_delta": 0,
+            "samples": 87
+          },
+          "total_ram_kib": 7802708,
+          "peak_machine_total_minus_available_kib": 7240340,
+          "sampled_peak_child_rss_bytes": 3194757120,
+          "sampled_phases": {
+            "loading": {
+              "minimum_available_kib": 1310960
+            },
+            "speech_0": {
+              "minimum_available_kib": 575400
+            },
+            "speech_1": {
+              "minimum_available_kib": 570548
+            },
+            "speech_2": {
+              "minimum_available_kib": 562368
+            }
+          },
+          "events": [
+            {
+              "stage": "loading",
+              "variant": "compact"
+            },
+            {
+              "stage": "loaded",
+              "seconds": 16.871
+            },
+            {
+              "stage": "weights",
+              "parameter_bytes": {
+                "t2s_model": 155212804,
+                "vits_model": 81631488,
+                "bert_model": 598560768,
+                "cnhuhbert_model": 0
+              }
+            },
+            {
+              "stage": "ar_storage",
+              "result": {
+                "registered_bytes": 155212804,
+                "script_bytes": 151314432,
+                "shared_bytes": 151314432,
+                "script_only_bytes": 0
+              }
+            },
+            {
+              "stage": "start_speech",
+              "index": 0
+            },
+            {
+              "stage": "speech",
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 8.383,
+              "duration_seconds": 3.68,
+              "sample_rate": 32000,
+              "frames": 117760,
+              "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+              "rms_pcm16": 6407.274812918584,
+              "cuda_peak_allocated_bytes": 923088384,
+              "cuda_peak_reserved_bytes": 960495616
+            },
+            {
+              "stage": "start_speech",
+              "index": 1
+            },
+            {
+              "stage": "speech",
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.158,
+              "duration_seconds": 4.16,
+              "sample_rate": 32000,
+              "frames": 133120,
+              "pcm_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+              "rms_pcm16": 6758.080633259381,
+              "cuda_peak_allocated_bytes": 923765760,
+              "cuda_peak_reserved_bytes": 962592768
+            },
+            {
+              "stage": "start_speech",
+              "index": 2
+            },
+            {
+              "stage": "speech",
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.685,
+              "duration_seconds": 3.24,
+              "sample_rate": 32000,
+              "frames": 103680,
+              "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+              "rms_pcm16": 5657.080354865595,
+              "cuda_peak_allocated_bytes": 922978816,
+              "cuda_peak_reserved_bytes": 962592768
+            },
+            {
+              "stage": "completed",
+              "variant": "compact"
+            }
+          ]
+        }
+      ],
+      "bit_identical_fixed_seed_pcm": null,
+      "sampling_seconds": 0.5,
+      "limitations": "LLM residency is explicit in profile_before. Isolated precomputation/PCM results are not coexistence evidence. No concurrent LLM generation, long input, listening assessment or sustained-live claim. Whole-machine peak uses sampled total minus available, not weight sizes or exact instantaneous hardware high-water mark."
+    },
+    "compact_llm_first_repeat_failure": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          239
+        ]
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          239
+        ]
+      },
+      "variants": [
+        {
+          "variant": "compact",
+          "completed": false,
+          "returncode": -15,
+          "guard_reason": "Swap traffic above 64 MiB over the rolling 25-second interval",
+          "memory": {
+            "baseline": {
+              "available_kib": 2430392,
+              "swap_used_kib": 500992,
+              "pswpin": 288537,
+              "pswpout": 832787,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 1031832,
+              "swap_used_kib": 568064,
+              "pswpin": 288595,
+              "pswpout": 849600,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 1031832,
+            "swapin_bytes": 237568,
+            "swapout_bytes": 68866048,
+            "maximum_rolling_25s_swap_bytes": 69103616,
+            "oom_kill_delta": 0,
+            "samples": 51
+          },
+          "total_ram_kib": 7802708,
+          "peak_machine_total_minus_available_kib": 6770876,
+          "sampled_peak_child_rss_bytes": 2672025600,
+          "sampled_phases": {
+            "loading": {
+              "minimum_available_kib": 1288004
+            },
+            "speech_0": {
+              "minimum_available_kib": 1031928
+            }
+          },
+          "events": [
+            {
+              "stage": "loading",
+              "variant": "compact"
+            },
+            {
+              "stage": "loaded",
+              "seconds": 17.926
+            },
+            {
+              "stage": "weights",
+              "parameter_bytes": {
+                "t2s_model": 155212804,
+                "vits_model": 81631488,
+                "bert_model": 598560768,
+                "cnhuhbert_model": 0
+              }
+            },
+            {
+              "stage": "ar_storage",
+              "result": {
+                "registered_bytes": 155212804,
+                "script_bytes": 151314432,
+                "shared_bytes": 151314432,
+                "script_only_bytes": 0
+              }
+            },
+            {
+              "stage": "start_speech",
+              "index": 0
+            }
+          ],
+          "failure_details": {
+            "cuda_allocation_failure_logged": true,
+            "cuda_allocator_assert_logged": true,
+            "silent_fallback_rejected": true
+          }
+        }
+      ],
+      "bit_identical_fixed_seed_pcm": null,
+      "interleaved_llm_execution": true,
+      "sampling_seconds": 0.5,
+      "limitations": "LLM residency and optional four-token interleaving are explicit. Isolated precomputation/PCM results are not coexistence evidence. No simultaneous generation, long input, listening assessment or sustained-live claim. Whole-machine peak uses sampled total minus available, not weight sizes or exact instantaneous hardware high-water mark."
+    },
+    "compact_tts_first_interleaved": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": false,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": []
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          340
+        ]
+      },
+      "load_order": "tts-first",
+      "variants": [
+        {
+          "variant": "compact",
+          "completed": true,
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5765876,
+              "swap_used_kib": 498944,
+              "pswpin": 290718,
+              "pswpout": 849600,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 2396268,
+              "swap_used_kib": 498176,
+              "pswpin": 290749,
+              "pswpout": 849600,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 404812,
+            "swapin_bytes": 126976,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 114688,
+            "oom_kill_delta": 0,
+            "samples": 97
+          },
+          "total_ram_kib": 7802708,
+          "peak_machine_total_minus_available_kib": 7397896,
+          "sampled_peak_child_rss_bytes": 3161120768,
+          "sampled_phases": {
+            "loading": {
+              "minimum_available_kib": 4655852
+            },
+            "llm_load_with_tts_resident": {
+              "minimum_available_kib": 973964
+            },
+            "speech_0": {
+              "minimum_available_kib": 473932
+            },
+            "llm_after_0": {
+              "minimum_available_kib": 473584
+            },
+            "speech_1": {
+              "minimum_available_kib": 404812
+            },
+            "llm_after_1": {
+              "minimum_available_kib": 463736
+            },
+            "speech_2": {
+              "minimum_available_kib": 462620
+            }
+          },
+          "events": [
+            {
+              "stage": "loading",
+              "variant": "compact"
+            },
+            {
+              "stage": "loaded",
+              "seconds": 17.286
+            },
+            {
+              "stage": "weights",
+              "parameter_bytes": {
+                "t2s_model": 155212804,
+                "vits_model": 81631488,
+                "bert_model": 598560768,
+                "cnhuhbert_model": 0
+              }
+            },
+            {
+              "stage": "ar_storage",
+              "result": {
+                "registered_bytes": 155212804,
+                "script_bytes": 151314432,
+                "shared_bytes": 151314432,
+                "script_only_bytes": 0
+              }
+            },
+            {
+              "stage": "start_llm_load"
+            },
+            {
+              "stage": "llm_loaded",
+              "seconds": 3.213,
+              "profile": {
+                "model": "MiniCPM5-2B",
+                "resident_llm": true,
+                "context_when_resident": 131072,
+                "kv": "q4_0",
+                "llm_pids": [
+                  340
+                ]
+              }
+            },
+            {
+              "stage": "start_speech",
+              "index": 0
+            },
+            {
+              "stage": "speech",
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 8.217,
+              "duration_seconds": 3.68,
+              "sample_rate": 32000,
+              "frames": 117760,
+              "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+              "rms_pcm16": 6407.274812918584,
+              "cuda_peak_allocated_bytes": 923088384,
+              "cuda_peak_reserved_bytes": 960495616
+            },
+            {
+              "stage": "start_llm",
+              "after_speech": 0
+            },
+            {
+              "stage": "llm",
+              "after_speech": 0,
+              "seconds": 0.4,
+              "input_tokens": 6,
+              "output_tokens": 4,
+              "truncated": false
+            },
+            {
+              "stage": "start_speech",
+              "index": 1
+            },
+            {
+              "stage": "speech",
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.117,
+              "duration_seconds": 4.16,
+              "sample_rate": 32000,
+              "frames": 133120,
+              "pcm_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+              "rms_pcm16": 6758.080633259381,
+              "cuda_peak_allocated_bytes": 923765760,
+              "cuda_peak_reserved_bytes": 962592768
+            },
+            {
+              "stage": "start_llm",
+              "after_speech": 1
+            },
+            {
+              "stage": "llm",
+              "after_speech": 1,
+              "seconds": 0.351,
+              "input_tokens": 6,
+              "output_tokens": 4,
+              "truncated": false
+            },
+            {
+              "stage": "start_speech",
+              "index": 2
+            },
+            {
+              "stage": "speech",
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.587,
+              "duration_seconds": 3.24,
+              "sample_rate": 32000,
+              "frames": 103680,
+              "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+              "rms_pcm16": 5657.080354865595,
+              "cuda_peak_allocated_bytes": 922978816,
+              "cuda_peak_reserved_bytes": 962592768
+            },
+            {
+              "stage": "completed",
+              "variant": "compact"
+            }
+          ]
+        }
+      ],
+      "bit_identical_fixed_seed_pcm": null,
+      "interleaved_llm_execution": true,
+      "sampling_seconds": 0.5,
+      "limitations": "LLM residency and optional four-token interleaving are explicit. Isolated precomputation/PCM results are not coexistence evidence. No simultaneous generation, long input, listening assessment or sustained-live claim. Whole-machine peak uses sampled total minus available, not weight sizes or exact instantaneous hardware high-water mark."
+    }
+  },
+  "restoration": {
+    "original_profile": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        310
+      ]
+    },
+    "tts_first_exit": 0,
+    "restored_profile": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        340
+      ]
+    },
+    "production_config_unchanged": true,
+    "production_tts_config_unchanged": true
+  }
+}

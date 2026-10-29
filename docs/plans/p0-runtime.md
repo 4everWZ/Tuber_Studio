@@ -6,10 +6,12 @@
 
 | 工作 | 要求与证据边界 | 下一步 |
 | --- | --- | --- |
-| 默认Profile取舍 | 同题来源路径两者都答全，MiniCPM约70秒且补答一次，Qwen约32秒且无需补答；Qwen原始回忆／摘要错配更多，但短程共驻资源更好。默认仍保留MiniCPM5-2B/q4/131072。 | 用户取舍尚待答复，不自动改默认。若选Qwen，只持久化已验证的候选配置并确认服务；若保留MiniCPM，直播TTS合成的换页／CUDA分配失败仍须解决，不能以互斥加载冒称共驻。 |
+| MiniCPM语音共驻 | 用户已确认继续MiniCPM5-2B/q4/131072，Qwen不切默认。固定参考＋22层BERT候选已有实机证据：单独TTS整机峰值约4.24→3.93GiB，三句PCM一致；TTS先加载后，MiniCPM共驻三句及两次短LLM执行成功，最低可用约395MiB。LLM先加载的另一轮仍发生CUDA分配／换页失败。 | 候选仅用于评估，生产后端及镜像尚未替换。下一步接入受限TTS服务、失效／新OC重建和模式生命周期，再测最终Profile的长输入与持续运行；不能把短测当稳定直播准入。结果见[设备比较](../../evaluations/results/tts-fixed-reference-memory-20261029.json)。 |
 | 最终Profile边界 | 单派生镜像已部署，模式切换、启动取消和全静音拒绝有回归；Qwen已过正常容器重启恢复、TTS同进程共驻下120000输入及实际短句播放。浏览器首轮观察器取消导致LLM重载，结果未冒称同LLM进程连续热态。 | 所选最终Profile保留128K、默认审核和自动关闭；MiniCPM的窗口元数据不替代其自身长输入实测，Qwen结果也不直接转移给MiniCPM。长期稳定按下方P1边界单独验。 |
 
 Codex核心保持，来源事实／按题检索／一次补答和自适应2048摘要预算已接入；40%二轮原子规则保留，评论按楼隔离并发、GPU串行。质量比较复用evaluations/semantic-cases.json与tools/evaluate_semantics.py，不据小集合推断广泛人格或长文召回。设备证据与边界见[模型规范](../specs/models-and-audio.md)和evaluations/results；计划只维护剩余取舍，不追加运行日志。
+
+语音优化按参考预计算／精简后端优先、局部INT8后置；[候选研究](../../evaluations/results/tts-backend-candidates-20261029.json)区分官方Accel的AR局部INT8、Lite默认关闭BERT、ONNX／TRT的兼容与内存口径。尚未安装或实测INT8，未以作者其他GPU的VRAM数字替代Jetson整机结果。评估工具与候选模块已纳入Dockerfile后续构建，不新增第二个常驻环境。
 
 ## 后续验收边界
 

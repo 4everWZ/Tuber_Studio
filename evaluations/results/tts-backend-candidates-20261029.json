@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "kind": "primary_source_candidate_review_not_local_benchmark",
+  "review_date": "2026-10-29",
+  "timezone": "Asia/Taipei",
+  "scope": "GPT-SoVITS inference residency, reference preprocessing, acceleration and quantization candidates that may preserve an existing v2 fine-tuned voice.",
+  "baseline": {
+    "user_selected_default_llm": "MiniCPM5-2B",
+    "default_selection_unchanged": true,
+    "existing_tts": "GPT-SoVITS v2 custom fine-tuned GPT/SoVITS checkpoints",
+    "target_environment": {
+      "architecture": "aarch64",
+      "platform": "Jetson",
+      "cuda": "12.8",
+      "torch": "2.7"
+    },
+    "compatibility_requirement": "Keep the existing voice checkpoints, reference audio/text and Chinese conditioning; a different base model or disabled BERT is not an equivalent voice-preserving optimization.",
+    "reference_baseline_tag": "20240821v2",
+    "reference_baseline_source": "https://github.com/RVC-Boss/GPT-SoVITS/blob/20240821v2/GPT_SoVITS/TTS_infer_pack/TTS.py",
+    "reference_baseline_observations": [
+      "TTS already has prompt_cache and set_ref_audio: reference semantic tokens and spectrogram are reused.",
+      "Unchanged reference text also reuses phones and BERT features; warm reference caching is not a newly discovered capability absent from v2.",
+      "The model initializer still loads GPT, SoVITS, BERT and CNHuBERT. Cache reuse alone does not establish lower resident model memory.",
+      "The release tag is a comparison reference, not a claim that deployed local patches are identical to the tag."
+    ]
+  },
+  "research_actions": {
+    "gpu_runs": 0,
+    "dependency_installations": 0,
+    "remote_runtime_changes": 0,
+    "source_code_changes": 0,
+    "candidate_jetson_verification_performed": false
+  },
+  "sources": {
+    "official_release_v2": "https://github.com/RVC-Boss/GPT-SoVITS/releases/tag/20240821v2",
+    "official_reference_cache_v2": "https://github.com/RVC-Boss/GPT-SoVITS/blob/20240821v2/GPT_SoVITS/TTS_infer_pack/TTS.py",
+    "official_main_tts": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/TTS_infer_pack/TTS.py",
+    "official_accel_readme": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/Accel/README.md",
+    "official_accel_selector": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/tools/acceleration.py",
+    "official_accel_adapter": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/Accel/adapter.py",
+    "official_ar_quantization": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/Accel/PyTorch/AR/t2s_model_abc.py#L539-L559",
+    "official_ar_decoder_loader": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/Accel/PyTorch/AR/t2s_engine.py#L338-L367",
+    "official_quantization_availability": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/Accel/PyTorch/__init__.py",
+    "official_onnx_export": "https://github.com/RVC-Boss/GPT-SoVITS/blob/b4570b876f5c086819ba84e3215472733c6a7b70/GPT_SoVITS/onnx_export.py",
+    "official_version_comparison": "https://github.com/RVC-Boss/GPT-SoVITS/wiki/GPT%E2%80%90SoVITS%E2%80%90v2pro%E2%80%90features",
+    "lite_readme": "https://github.com/chinokikiss/GSV-TTS-Lite/blob/6c049397142f4c9147a85f86b6ba37546e93a188/README.md",
+    "lite_loader": "https://github.com/chinokikiss/GSV-TTS-Lite/blob/6c049397142f4c9147a85f86b6ba37546e93a188/gsv_tts/Loader.py",
+    "lite_tts": "https://github.com/chinokikiss/GSV-TTS-Lite/blob/6c049397142f4c9147a85f86b6ba37546e93a188/gsv_tts/TTS.py",
+    "lite_package_metadata": "https://github.com/chinokikiss/GSV-TTS-Lite/blob/6c049397142f4c9147a85f86b6ba37546e93a188/pyproject.toml",
+    "minimal_readme": "https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference/blob/6916eb2e9c227aeb28468ce6fa86ad5b17ead532/README.md",
+    "minimal_requirements": "https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference/blob/6916eb2e9c227aeb28468ce6fa86ad5b17ead532/requirements.txt",
+    "minimal_export": "https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference/blob/6916eb2e9c227aeb28468ce6fa86ad5b17ead532/export_onnx.py",
+    "torchao_release_notes": "https://github.com/pytorch/ao/releases",
+    "torchao_legacy_int8_config": "https://github.com/pytorch/ao/blob/v0.11.0/torchao/quantization/quant_api.py",
+    "nvidia_tegra_memory": "https://docs.nvidia.com/cuda/cuda-for-tegra-appnote/index.html#memory-management",
+    "onnxruntime_cuda_requirements": "https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html"
+  },
+  "candidates": [
+    {
+      "id": "existing_v2_cached_reference_and_explicit_auxiliary_release",
+      "ownership": "Official inference implementation; explicit residency changes would be a local adaptation.",
+      "version": "20240821v2 reference behavior, also present in reviewed official main b4570b876f5c086819ba84e3215472733c6a7b70",
+      "source_ids": [
+        "official_reference_cache_v2",
+        "official_main_tts"
+      ],
+      "capabilities": [
+        "Reuse reference semantic tokens, reference spectrogram, reference phones and reference BERT features.",
+        "A fixed-voice deployment can investigate retaining derived tensors while actually releasing an unneeded reference encoder."
+      ],
+      "v2_checkpoint_compatibility": "Preserves existing checkpoint architecture; no voice retraining is inherently required for feature reuse.",
+      "limitations": [
+        "Explicit encoder release and reload-on-reference-change are not established by ordinary prompt_cache reuse.",
+        "Arbitrary new Chinese output text still needs its own frontend/BERT features; caching the reference cannot precompute unknown future text.",
+        "Cache invalidation must include model/checkpoint, reference contents, reference language/text, preprocessing and precision.",
+        "Cold reference extraction may still dominate peak memory even if warm residency decreases."
+      ],
+      "torch27_cuda128_fit": "Most direct route within the existing Torch runtime; no new execution-provider stack is required for reuse alone.",
+      "jetson_verified": false,
+      "memory_saving_measured_locally": false
+    },
+    {
+      "id": "official_accel_torch_graph_sdpa",
+      "ownership": "RVC-Boss/GPT-SoVITS official repository",
+      "version": "main b4570b876f5c086819ba84e3215472733c6a7b70, commit date 2026-10-19",
+      "source_ids": [
+        "official_accel_readme",
+        "official_accel_selector",
+        "official_accel_adapter"
+      ],
+      "capabilities": [
+        "Native Torch SDPA with CUDA Graph; optional external FlashAttention; ordinary inference fallback when an acceleration capability is unavailable.",
+        "Serial bs=1 and parallel inference are distinct paths."
+      ],
+      "v2_checkpoint_compatibility": "The maintenance note reports v2 TTS execution; the adapter loads existing GPT weights. This is not an automatic upgrade of a v2 voice to a new SoVITS generation.",
+      "author_validation": {
+        "hardware": "RTX 3090",
+        "platform": "Windows portable runtimes",
+        "torch_cuda_examples": [
+          "Torch 2.7.1/CUDA 12.8",
+          "Torch 2.7.0/CUDA 12.8"
+        ],
+        "reported_tests": "Graph/parallel combinations and fallback cases produced audio.",
+        "explicitly_not_established": [
+          "Linux/Jetson support",
+          "all model versions",
+          "listening quality or numerical/output equivalence"
+        ]
+      },
+      "limitations": [
+        "CUDA Graph and static KV buffers may trade memory for latency; speed improvement does not establish lower peak RAM.",
+        "The integrated accelerator can coexist with the original TTS model object; inspect duplicate resident AR weights before claiming savings.",
+        "Windows FlashAttention wheels and bundled DLL handling do not transfer to Linux aarch64.",
+        "Keep a genuine bs=1 capacity and validate real checkpoint behavior instead of copying a large parallel batch default."
+      ],
+      "torch27_cuda128_fit": "Pure Torch SDPA/Graph is the closest acceleration candidate to the existing runtime; extra FlashAttention is optional and not assumed available.",
+      "jetson_verified": false,
+      "memory_saving_measured_locally": false
+    },
+    {
+      "id": "official_accel_ar_int8_weight_only",
+      "ownership": "RVC-Boss/GPT-SoVITS official repository",
+      "version": "main b4570b876f5c086819ba84e3215472733c6a7b70",
+      "source_ids": [
+        "official_ar_quantization",
+        "official_ar_decoder_loader",
+        "official_quantization_availability",
+        "official_accel_adapter",
+        "torchao_release_notes",
+        "torchao_legacy_int8_config"
+      ],
+      "capabilities": [
+        "T2SEngine.load_decoder accepts quantize_mode.",
+        "Int8 quantization calls torchao.quantization.quantize_(self.h, Int8WeightOnlyConfig(32))."
+      ],
+      "quantized_scope": "AR Transformer self.h only; this is not all GPT-SoVITS components, activations or a complete INT8 TTS distribution.",
+      "v2_checkpoint_compatibility": "Conversion starts from loaded GPT checkpoint weights, so the voice checkpoint need not be replaced; pronunciation, prosody and output validity still need comparison.",
+      "limitations": [
+        "Ordinary AccelInference and create_acceleration do not expose/pass quantize_mode in the reviewed integration; this is not an existing API toggle.",
+        "BERT, CNHuBERT, SoVITS, KV/Graph buffers and runtime workspaces are outside the demonstrated INT8 scope.",
+        "No measured MiB saving is claimed: the actually quantized parameter set, scales, duplicate weights and runtime peak have not been measured.",
+        "Current TorchAO releases have raised minimum PyTorch requirements; do not install an unpinned latest TorchAO into Torch 2.7.",
+        "A legacy TorchAO version with the required Int8WeightOnlyConfig interface exists, but exact Torch 2.7/CUDA12.8/aarch64 binary or source-build compatibility remains unverified.",
+        "FP8 alternatives have additional hardware gates and are not established as a Jetson fallback."
+      ],
+      "jetson_verified": false,
+      "memory_saving_measured_locally": false
+    },
+    {
+      "id": "official_v1_v2_onnx_export",
+      "ownership": "RVC-Boss/GPT-SoVITS official repository",
+      "version": "main b4570b876f5c086819ba84e3215472733c6a7b70",
+      "source_ids": [
+        "official_onnx_export",
+        "onnxruntime_cuda_requirements"
+      ],
+      "capabilities": [
+        "Detects v1/v2 SoVITS embeddings and exports GPT encoder/decoder stages and VITS ONNX graphs."
+      ],
+      "v2_checkpoint_compatibility": "Exporter consumes custom GPT/SoVITS checkpoint paths; a v2 conversion route exists without changing to a different TTS family.",
+      "limitations": [
+        "Export code is not proof of a maintained end-to-end INT8 or TensorRT release.",
+        "No Jetson quality, dynamic-shape, latency or peak-RAM result was collected.",
+        "Aarch64 ONNX Runtime GPU/TensorRT execution-provider availability must be checked against the actual CUDA/cuDNN/JetPack environment.",
+        "ONNX file size is distinct from session weights, buffers, execution-provider workspaces and cold conversion/build peaks."
+      ],
+      "jetson_verified": false,
+      "memory_saving_measured_locally": false
+    },
+    {
+      "id": "gsv_tts_lite",
+      "ownership": "Independent implementation maintained by chinokikiss/mahir0; not represented here as an official RVC-Boss release.",
+      "version": "0.4.7; commit 6c049397142f4c9147a85f86b6ba37546e93a188, commit date 2026-07-26",
+      "source_ids": [
+        "lite_readme",
+        "lite_loader",
+        "lite_tts",
+        "lite_package_metadata"
+      ],
+      "capabilities": [
+        "Advertises v2/v2Pro/v2ProPlus support and Chinese/Japanese/English.",
+        "Loader directly reads existing .ckpt and .pth checkpoints.",
+        "cache_prompt_audio caches prompt features and normally sets CNHuBERT to None afterward.",
+        "cache_spk_audio normally releases the SV model after caching.",
+        "Native Torch CUDA path, optional FlashAttention, CUDA Graph and cached runtime buffers."
+      ],
+      "v2_checkpoint_compatibility": "A concrete loader path exists for original v2 checkpoints; that does not establish audio equivalence with this project’s custom voice.",
+      "author_measurements": {
+        "environment": "NVIDIA GeForce RTX 3050 Laptop",
+        "precision": "Not specified for the table",
+        "units_as_reported": "GB VRAM",
+        "original": {
+          "vram_gb": 1.6,
+          "first_packet_ms": 436,
+          "rtf": 0.381,
+          "setting": "streaming_mode=3"
+        },
+        "lite_no_flash": {
+          "vram_gb": 0.8,
+          "first_packet_ms": 150,
+          "rtf": 0.125
+        },
+        "lite_flash": {
+          "vram_gb": 0.8,
+          "first_packet_ms": 133,
+          "rtf": 0.108
+        },
+        "measurement_boundary": "Author-reported GPU VRAM, not verified whole-machine peak RSS/RAM; cold reference extraction, exact BERT setting and measurement method are not fully specified in the comparison table."
+      },
+      "limitations": [
+        "Constructor defaults use_bert=False. An equivalent Chinese comparison must explicitly retain BERT rather than silently changing conditioning.",
+        "Default checkpoint paths are newer base models; explicitly load the existing v2 voice instead.",
+        "SDK defaults disentangle speaker/style conditioning; preserve the same reference inputs when evaluating voice compatibility.",
+        "Its CPU BERT branch uses an INT8 ONNX frontend; this is not evidence of a fully INT8 CUDA TTS model.",
+        "No upstream aarch64/Jetson validation was found in the reviewed material.",
+        "Additional package/ONNX Runtime dependencies need an isolated compatibility check; do not replace the existing Torch installation."
+      ],
+      "torch27_cuda128_fit": "Worth a controlled native-Torch trial with BERT enabled and FlashAttention optional; existing-runtime compatibility is a hypothesis, not a passed result.",
+      "jetson_verified": false,
+      "memory_saving_measured_locally": false
+    },
+    {
+      "id": "minimal_inference_onnx_tensorrt",
+      "ownership": "Independent GPT-SoVITS-Devel implementation; not represented here as an official RVC-Boss release.",
+      "version": "master HEAD 6916eb2e9c227aeb28468ce6fa86ad5b17ead532 observed during review",
+      "source_ids": [
+        "minimal_readme",
+        "minimal_requirements",
+        "minimal_export"
+      ],
+      "capabilities": [
+        "ONNX and TensorRT FP16 routes, preallocated KV buffers and bounded shape profiles.",
+        "Export consumes original custom GPT/SoVITS checkpoint paths; examples target v2ProPlus and version detection includes v2."
+      ],
+      "v2_checkpoint_compatibility": "A v2-family conversion path is present, but current custom-v2 voice behavior has not been validated locally; do not substitute its demonstration voice.",
+      "author_measurements": {
+        "environment": "Intel i7-12700 / RTX 2080Ti 22GB / CUDA12.9 / FP16",
+        "units_as_reported": "G VRAM",
+        "original_pytorch": 3.0,
+        "refactored_pytorch": 2.8,
+        "onnx": 3.9,
+        "onnx_stream": 4.5,
+        "tensorrt_fitted": 3.4,
+        "measurement_boundary": "Author VRAM table does not establish Jetson shared-DRAM peak memory. In the table ONNX/TRT use more VRAM than original PyTorch despite speed improvements."
+      },
+      "limitations": [
+        "TensorRT engines must be built for the actual hardware/CUDA/TensorRT combination; do not reuse a desktop serialized engine.",
+        "Small/fitted profiles limit maximum per-segment shapes/audio; changing them must preserve intended utterance support rather than truncate output.",
+        "requirements.txt installs onnxruntime on aarch64/arm64 and onnxruntime-gpu only on x86_64/AMD64; stock installation does not establish GPU ONNX execution on Jetson.",
+        "Exporter requires additional frontend/SV assets and uses newer ONNX opsets; export success and runtime parser support need validation.",
+        "No current-v2 Jetson/Torch2.7/CUDA12.8 complete benchmark or ready full-chain INT8 release was established."
+      ],
+      "jetson_verified": false,
+      "memory_saving_measured_locally": false
+    }
+  ],
+  "version_boundaries": {
+    "source_ids": [
+      "official_version_comparison"
+    ],
+    "v2": "Existing fine-tuned voice baseline. Its reference frontend and synthesis architecture should remain explicit in comparisons.",
+    "v2pro_and_v2proplus": "Add SV conditioning and larger acoustic models; these are not intrinsically lighter than v2 and are not interchangeable v2 fine-tuned checkpoints.",
+    "v3_and_v4": "Use a different CFM-DiT acoustic path and additional vocoder requirements. Switching to them is not a drop-in compression of an existing v2 voice.",
+    "other_tts_families": "A smaller alternative TTS model cannot directly consume the current GPT-SoVITS v2 voice checkpoints; treat any switch as a voice/quality migration, not a transparent optimization."
+  },
+  "measurement_rules": [
+    "Keep checkpoint identity, reference audio/text, Chinese BERT conditioning and utterance set fixed when claiming a voice-preserving improvement.",
+    "Record artifact weight size separately from process resident memory, Torch allocated/reserved memory, runtime/engine workspaces and whole-machine available RAM.",
+    "On Jetson, CPU and iGPU share physical SoC DRAM. Moving a model from CUDA to CPU alone does not demonstrate a lower whole-machine memory footprint.",
+    "Measure cold model/reference load, first complete non-silent utterance, warm repeated utterances and LLM-plus-TTS co-residency separately.",
+    "CUDA Graph/static KV allocation, compilation and TensorRT build workspace can offset smaller weights; report peaks rather than only post-warm steady allocation.",
+    "Validate complete non-silent WAV, actual browser playback and voice/pronunciation quality; an HTTP 200, smaller file or faster first packet is insufficient."
+  ],
+  "recommended_order": [
+    {
+      "rank": 1,
+      "candidate": "existing_v2_cached_reference_and_explicit_auxiliary_release",
+      "reason": "First check what is already cached; investigate actual CNHuBERT release after fixed-reference preprocessing while retaining the original voice and Chinese frontend."
+    },
+    {
+      "rank": 2,
+      "candidate": "gsv_tts_lite",
+      "reason": "Concrete direct checkpoint loader and auxiliary-model release make it worth comparing, with BERT explicitly enabled and original reference conditioning."
+    },
+    {
+      "rank": 3,
+      "candidate": "official_accel_torch_graph_sdpa",
+      "reason": "Native Torch candidate for latency, using bs=1; independently inspect duplicate residency and graph-buffer peak before treating it as a memory fix."
+    },
+    {
+      "rank": 4,
+      "candidate": "official_accel_ar_int8_weight_only",
+      "reason": "Evaluate only after confirming a compatible pinned TorchAO on the existing runtime; quantify its limited AR-only benefit and voice quality."
+    },
+    {
+      "rank": 5,
+      "candidate": "official_v1_v2_onnx_export / minimal_inference_onnx_tensorrt",
+      "reason": "Defer conversion/engine integration until execution-provider compatibility and memory budgets are known; available author numbers do not show automatic memory reduction."
+    }
+  ],
+  "decision": "Research candidates only. Keep user-selected MiniCPM5-2B and the existing v2 voice/runtime unchanged. No candidate has passed a Jetson validation in this review."
+}

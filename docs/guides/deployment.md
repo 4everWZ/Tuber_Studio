@@ -81,4 +81,10 @@
 
 Linux设备的真实长输入接收探针为docker exec tuber-studio python tools/evaluate_context.py --tokens 120000 --deadline 900。它验证真实alias／窗口、精确输入token数、未截断和实际处理计数，输出小型JSON并守护可用内存／换页／OOM；不打印全部填充文本。合成填充接收成功不证明长文召回、人格或长期稳定性，取消后先检查实际资源状态再继续业务。
 
+语音内存比较使用tools/evaluate_tts_memory.py和tools/jetson/tts/compact.py，均为维护评估入口，不改变生产TTS选择。新构建的同一镜像包含这两个文件，无额外常驻环境。必须先停止业务、清空待执行任务并关闭评论自动策略。输出指定在项目runtime内，包含音频和各阶段整机采样；保护阈值沿用可用160MiB、25秒换页64MiB和有界超时。
+
+--load-order isolated比较单独TTS的原实现与候选（默认--variant both），原实现会生成固定参考特征；--load-order tts-first --variant compact --exercise-llm在候选驻留后加载MiniCPM，并于三句语音间执行两次四token请求。两者都要求维护监督器已受控卸载本项目LLM，并在finally恢复；工具不自行停止其他进程或更改生产模式。--load-order llm-first要求MiniCPM已驻留，是独立的冷加载压力条件，不与TTS先加载的结果混称。同一进程要完成该轮所有语音；单独一轮没有PCM比较时输出null，不将缺少比较写成质量失败。
+
+候选保留当前v2权重、动态中文特征及原精度／解码，参考缓存位于runtime/tts/reference_features/<voice_id>，包含受校验的NPZ和JSON，不反序列化外来pickle。参考、文字、语言、模型、前端或兼容实现改变会拒绝复用，需要在独立预计算阶段重建；新OC各有自己的voice_id及缓存。当前候选还没有生产HTTP、模式与错误恢复接线，其设备结果不表示已经部署或通过持续直播。
+
 它覆盖回声、部分字面事实和摘要遗漏，不证明完整人格、长文召回或长期稳定性。比较须记录真实模型、采样、Think、模板适配和证据层条件，不能把旧2B NoThink实验当官方质量基线。另测冷／热启动、峰值共享RAM、换页、TTS共驻／交替、长输入及持续运行；不能从旧1B容量推断新2B Profile已验收，也不能靠增加等待或降到128K以下掩盖瓶颈。
