@@ -29,6 +29,7 @@ class Settings:
         self.data.setdefault("vision", {"kind": "disabled", "location": "local", "base_url": "", "model": ""})
         self.data["tts"].setdefault("model", "")
         self.data["tts"].setdefault("voice", "")
+        self.data["tts"].setdefault("local_backend", "compact")
         self._validate()
         self.path = path
         self.admin_token = os.getenv("TUBER_ADMIN_TOKEN") or self._secret("admin-token")
@@ -73,6 +74,8 @@ class Settings:
                 raise ValueError("请填写模型ID")
         if tts["kind"] != "prerecorded":
             endpoint(tts["base_url"])
+        if tts.get("local_backend", "compact") not in {"compact", "genie_onnx_int8"}:
+            raise ValueError("未知固定本地语音引擎")
         if tts["kind"] == "openai_compatible" and any(
             not isinstance(tts.get(key), str) or not tts[key].strip() for key in ("model", "voice")
         ):

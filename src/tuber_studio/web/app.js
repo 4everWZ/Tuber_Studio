@@ -128,12 +128,37 @@ function renderControls() {
       action === "stop" ? status.state === "stopped" :
       action === "mute" ? !!status.muted : action === "unmute" ? !status.muted :
       action === "skip" ? !status.current_job : action === "clear" ? !status.queue_length : false;
+    if (["start", "resume"].includes(action) && resourcesTransitioning()) button.disabled = true;
   });
-  $("event-form").querySelectorAll("input, select, textarea, button").forEach(input => { if (input.getAttribute("aria-busy") !== "true") input.disabled = !liveEnabled(); });
+  $("event-form").querySelectorAll("input, select, textarea, button").forEach(input => { if (input.getAttribute("aria-busy") !== "true") input.disabled = !liveEnabled() || resourcesTransitioning(); });
   if ($("compact-live").getAttribute("aria-busy") !== "true") $("compact-live").disabled = !liveEnabled();
-  $("live-feature-notice").hidden = liveEnabled();
+  renderLiveFeatures();
 }
 function liveEnabled() { return model.settings?.features?.live_enabled === true; }
+function resourcesTransitioning() {
+  const inference = model.status?.inference;
+  return !!model.modeSwitch || !!inference?.switching_to || ["loading", "switching", "starting"].includes(inference?.state);
+}
+function localVoiceId() {
+  return model.settings?.tts?.voice_id || model.voices.find(voice => (voice.provider || voice.kind) === "gpt_sovits")?.id;
+}
+function localEngineLabel() {
+  const backend = model.settings?.tts?.local_backend;
+  return backend === "genie_onnx_int8" ? "Genie ONNX INT8" : backend || "compact（兼容配置，未准入）";
+}
+function renderLiveFeatures() {
+  const enabled = liveEnabled();
+  $("live-nav-label").textContent = enabled ? "Mock 直播" : "直播（后续）";
+  document.querySelector('[data-inference-mode="live"]').textContent = enabled ? "直播模式" : "直播（后续）";
+  $("live-feature-notice").textContent = enabled ? "本地 Mock 直播已开放：启动会加载直播资源；仅处理手动注入事件，不连接 B站或抖音。停止直播后，切回文本模式才会卸载 TTS。" : "直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。";
+  $("live-feature-notice").hidden = false;
+  $("overlay-heading").textContent = enabled ? "OBS / Mock 播放器配置" : "OBS 播放器配置（直播后续）";
+  $("overlay-help").textContent = enabled ? "手动打开播放器后，在 Mock 直播中注入事件即可播报。仅一个 overlay 页面获得播放权，第二个页面进入待机；不会连接真实直播平台。" : "直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。";
+  const localOption = $("tts-kind").querySelector('option[value="gpt_sovits"]');
+  localOption.textContent = enabled ? "本地 GPT-SoVITS 音色" : "本地 GPT-SoVITS（后续）";
+  $("tts-local-engine").textContent = model.settings ? `已保存本地引擎：${localEngineLabel()} · 音色：${localVoiceId() || "未配置"}。${model.settings.tts?.kind !== "gpt_sovits" ? "当前语音来源未使用此引擎。" : !enabled ? "本地动态语音尚未启用。" : model.settings.tts?.local_backend !== "genie_onnx_int8" ? "此后端未准入本地试听。" : "需手动进入直播模式；引擎与音色由服务配置，只读展示。"}` : "本地引擎：正在读取已保存配置。";
+  $("tts-settings-help").textContent = enabled ? "外部 API 使用 external_api 音色；本地 Genie 仅使用服务选定音色。试听不会切换资源模式或替换角色音色。" : "配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。";
+}
 function renderStatus(status) {
   if (!status) return; model.status = status;
   setBadge($("live-state"), status.state);
@@ -163,13 +188,14 @@ function renderStatus(status) {
   describe($("provider-summary"), [["平台", "Mock · 真实直播接入后置"], ["LLM", display(providers.llm)], ["TTS", display(providers.tts)], ...(status.inference ? [["推理资源", inferenceLabel(status.inference)]] : []), ["播放器", status.overlay_connected ? "已连接" : "未连接"], ["会话", status.session_id || "未启动"]]);
   renderCharacterImage(); renderControls();
   renderContext(status.context);
-  renderInference(status.inference);
+  renderInference(status.inference); renderVoicePreview();
 }
 function resourceMode(inference) {
   if (inference?.mode === "exclusive") return "text";
   return ["text", "live"].includes(inference?.mode) ? inference.mode : null;
 }
 function resourceName(key) {
+  if (key === "tts" && model.settings?.tts?.local_backend === "genie_onnx_int8") return "Genie TTS";
   return ({llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", llmqwen35: "Qwen3.5-2B", qwen35: "Qwen3.5-2B", tts: "TTS"})[key] || key;
 }
 function inferenceResidents(inference) {
@@ -180,7 +206,8 @@ function inferenceResidents(inference) {
   const providers = Object.entries(inference.providers || {});
   if (providers.length) {
     const residents = providers.filter(([, provider]) => provider?.running === true).map(([key]) => resourceName(key));
-    if (residents.length) return `驻留：${residents.join("、")}`;
+    const sleeping = providers.filter(([key, provider]) => key === "tts" && provider?.is_sleeping === true && provider?.running !== true).map(([key]) => resourceName(key));
+    if (residents.length) return `驻留：${residents.join("、")}${sleeping.length ? ` · ${sleeping.join("、")}休眠` : ""}`;
     return providers.some(([, provider]) => provider?.running == null) ? "驻留状态待确认" : "无模型驻留";
   }
   const active = inference.active ?? inference.active_provider;
@@ -207,11 +234,11 @@ function renderModeControls(inference) {
   const feedback = $("resource-mode-feedback");
   const result = model.modeResult?.mode === actual ? model.modeResult : null;
   $("resource-mode-help").textContent = liveEnabled() ? "切回文本会停止当前直播并卸载TTS；直播模式预加载并共驻LLM与TTS。" : "首版以评论与文本为主；直播和本地动态语音后续开放。默认 MiniCPM 模型只处理文本。";
-  const text = pending ? `正在切换到${pending.target === "live" ? "直播" : "文本"}，等待模型就绪…` :
+  const text = pending ? `正在切换到${pending.target === "live" ? "直播" : "文本"}，等待模型就绪…` : inference?.error ? `资源错误：${inference.error}` :
     inference?.mode === "standalone" ? "当前独立Provider不支持资源模式切换。" : !actual ? "等待资源模式状态。" :
     transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${actual === "live" ? "直播" : "文本"}`;
   if (feedback.textContent !== text) feedback.textContent = text;
-  feedback.classList.toggle("error-text", !!result?.error && !pending);
+  feedback.classList.toggle("error-text", !!(result?.error || inference?.error) && !pending);
 }
 function renderInference(inference) {
   $("inference-state").hidden = !inference;
@@ -228,7 +255,7 @@ async function switchResourceMode(target) {
   const previousMode = resourceMode(model.status?.inference);
   if (!previousMode || model.modeSwitch) return;
   model.modeSwitch = {target, previousMode}; model.modeResult = null;
-  renderModeControls(model.status.inference);
+  renderModeControls(model.status.inference); renderControls(); renderVoicePreview();
   try {
     const result = await api("/api/inference/mode", {method: "POST", body: {mode: target}});
     if (resourceMode(result) !== target) throw new Error("接口返回的资源模式与请求不符，请检查实际资源状态。");
@@ -241,6 +268,8 @@ async function switchResourceMode(target) {
     model.modeSwitch = null; model.modeResult = {mode: previousMode, error: true, text: `切换失败：${error.message}`};
     renderModeControls(model.status?.inference);
     try { renderStatus(await api("/api/status")); } catch { /* Keep the last confirmed state visible. */ }
+  } finally {
+    renderControls(); renderVoicePreview();
   }
 }
 function tokenCount(value) {
@@ -431,6 +460,7 @@ function renderProviderForm() {
   ["llm", "tts", "vision"].forEach(kind => {
     $(`${kind}-key-state`).textContent = model.settings?.provider_credentials?.[kind] ? "已有保存密钥（不回显）" : "未保存密钥";
   });
+  renderLiveFeatures();
 }
 function applySettings(settings, fillForm = false) {
   model.settings = {...model.settings, ...settings}; settings = model.settings;
@@ -467,8 +497,22 @@ function readProviderPayload() {
 }
 function voiceAvailability(voice) {
   const provider = voice?.provider || voice?.kind;
-  if (provider === "gpt_sovits" && !liveEnabled()) return "本地动态语音后续开放";
+  if (provider === "gpt_sovits") {
+    const tts = model.settings?.tts;
+    if (!liveEnabled()) return "本地动态语音后续开放";
+    if (tts?.kind !== "gpt_sovits") return "当前语音来源未使用本地引擎";
+    if (tts.local_backend !== "genie_onnx_int8") return "当前本地后端未准入，请使用服务配置的 Genie ONNX INT8";
+    if (voice.id !== localVoiceId()) return "此音色未由当前 Genie 服务选用，不能串用";
+    if (resourcesTransitioning()) return "直播资源正在加载，请等待模型就绪";
+    if (model.status?.inference?.error) return `本地语音资源错误：${model.status.inference.error}`;
+    if (resourceMode(model.status?.inference) !== "live") return "本地试听需先手动切换顶部「直播模式」；不会自动切换";
+    const provider = model.status.inference.providers?.tts;
+    if (provider?.error) return `本地语音资源错误：${provider.error}`;
+    if (["loading", "switching", "starting"].includes(provider?.state)) return "本地 TTS 正在加载，请等待模型就绪";
+    if (model.status.inference.providers?.tts?.running !== true) return "本地 TTS 尚未驻留，请检查直播资源状态";
+  }
   if (provider === "openai_compatible" && (model.settings?.tts?.kind !== "openai_compatible" || !model.settings?.tts?.model || !model.settings?.tts?.voice)) return "请先配置外部语音 API 的模型和 Voice ID";
+  if (!["gpt_sovits", "openai_compatible", "prerecorded"].includes(provider)) return "此语音 Provider 尚未准入";
   return "";
 }
 function renderVoicePreview() {
@@ -481,7 +525,7 @@ function renderVoicePreview() {
   const reason = selected ? voiceAvailability(selected) : "暂无可用音色";
   const button = $("preview-submit");
   if (button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
-  $("voice-preview-help").textContent = reason || "预录和已配置的外部语音 API 可试听；本地 GPT-SoVITS 后续开放。试听不会启动直播，也不会替换角色音色。";
+  $("voice-preview-help").textContent = reason || ((selected?.provider || selected?.kind) === "gpt_sovits" ? `本地引擎：${localEngineLabel()}，仅使用服务选定音色。点击生成后再播放；不会启动直播或切换资源模式。` : "预录和已配置的外部语音 API 可独立试听；不会启动直播、切换资源模式或替换角色音色。");
 }
 async function checkProviderConnections(output) {
   $(output).hidden = false; $(output).textContent = "检查已保存配置的连接中…";

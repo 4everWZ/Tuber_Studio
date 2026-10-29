@@ -27,7 +27,7 @@ from .inference_validation import (
 
 MAX_BODY = 2 * 1024 * 1024
 HEADER = "X-Tuber-Inference-Key"
-MODEL_CACHE_SUFFIXES = {".gguf", ".bin", ".pth", ".ckpt", ".safetensors"}
+MODEL_CACHE_SUFFIXES = {".gguf", ".bin", ".pth", ".ckpt", ".safetensors", ".onnx", ".data"}
 
 
 @dataclass(frozen=True)
@@ -200,6 +200,9 @@ class ProcessRunner:
 
     async def validate_all(self):
         profiles = {}
+        configuration = self.root / "runtime/studio.json"
+        settings = json.loads(configuration.read_text()) if configuration.is_file() else {}
+        genie = settings.get("tts", {}).get("local_backend", "compact") == "genie_onnx_int8"
         for key, resource in RESOURCES.items():
             model = (self.root / "runtime/models" / resource.model).resolve() if resource.model else None
             # Only the selected/requested model must be installed. _activate
@@ -218,6 +221,11 @@ class ProcessRunner:
                     self.root / "runtime/tts/tts_infer.yaml",
                 ]
             )
+            if key == "tts" and genie:
+                required.extend(
+                    self.root / "tools/jetson/tts" / name
+                    for name in ("genie_backend.py", "genie_bundle.py", "genie_sampling.py", "genie_bert.py")
+                )
             if any(path is None or not path.is_file() for path in required):
                 raise RuntimeError("Fixed inference profile prerequisite is missing")
             if model is not None and not model.is_relative_to(self.root):
@@ -267,7 +275,7 @@ class ProcessRunner:
         except (OSError, RuntimeError):
             return 0
         directories = []
-        for relative in ("models", "tts/weights", "tts/pretrained"):
+        for relative in ("models", "tts/weights", "tts/pretrained", "tts/genie"):
             try:
                 directory = (runtime / relative).resolve()
                 if directory.is_relative_to(runtime) and directory.is_dir():

@@ -371,10 +371,31 @@ class VoiceService:
         if self.settings.data["tts"]["kind"] == "openai_compatible":
             return await models_health(self.client, self.settings.data["tts"]["model"])
         if not self.settings.data.get("features", {}).get("live_enabled", False):
-            return {"available": False, "detail": "本地TTS与直播已延期，代码和音色配置保留"}
+            return {"available": False, "detail": "本地TTS与直播尚未启用；预录与语音API可独立使用"}
+        if self.settings.data["tts"].get("local_backend") == "genie_onnx_int8":
+            await self._genie_identity()
+            return {"available": True, "detail": "Genie ONNX INT8已就绪；音质与持续运行按独立验收记录"}
         response = await self.client.get("/docs", timeout=5)
         response.raise_for_status()
         return {"available": True, "detail": "GPT-SoVITS HTTP 可达；不代表已完成合成"}
+
+    async def _genie_identity(self, voice=None):
+        """Ask the fixed worker to check its own assets before cached playback."""
+        response = await self.client.get("/docs", timeout=5)
+        response.raise_for_status()
+        if len(response.content) > 65_536:
+            raise ValueError("本地语音健康响应过大")
+        body = response.json()
+        if (
+            not isinstance(body, dict)
+            or body.get("status") != "ready"
+            or body.get("backend") != "genie_onnx_int8"
+            or not isinstance(body.get("bundle_identity"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", body["bundle_identity"]) is None
+            or (voice is not None and body.get("voice_id") != voice["id"])
+        ):
+            raise ValueError("Genie引擎、音色或权重身份未就绪，请检查资源模式与声音配置")
+        return body["bundle_identity"]
 
     async def prerecorded(self, relative, text):
         source = self.settings.asset_path(relative)
@@ -398,7 +419,7 @@ class VoiceService:
         if voice["provider"] != "gpt_sovits":
             raise ValueError("不支持的语音Provider")
         if not self.settings.data.get("features", {}).get("live_enabled", False):
-            raise ValueError("本地动态TTS已延期；可选择预录或配置外部语音API")
+            raise ValueError("本地动态TTS尚未启用；可选择预录或配置外部语音API")
         params = voice.get("params", {})
         identity = {
             "provider": voice["provider"],
@@ -410,7 +431,10 @@ class VoiceService:
             "text": text,
             "params": params,
             "endpoint": self.settings.data["tts"]["base_url"],
+            "local_backend": self.settings.data["tts"].get("local_backend", "compact"),
         }
+        if identity["local_backend"] == "genie_onnx_int8":
+            identity["bundle_identity"] = await self._genie_identity(voice)
         reference = self.settings.asset_path(voice["reference_asset"])
         identity["reference_bytes"] = hashlib.sha256(
             await asyncio.to_thread(reference.read_bytes)

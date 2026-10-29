@@ -1,0 +1,3523 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "timezone": "Asia/Taipei",
+  "kind": "genie_whole_machine_ram_optimization_and_native128k_live_admission",
+  "status": "experimental_native128k_resident_pair_passed_formal_backend_acceptance_pending",
+  "scope": {
+    "primary_objective": "reduce sampled whole-machine peak RAM",
+    "constraints": [
+      "MiniCPM5-2B Q4_K_M, actual131072, q4_0 K/V",
+      "same v2 voice and fixed reference; unknown target Chinese dynamic22-layer conditioning",
+      "voice quality>=90% and generation speed>=90% of original production compact CUDA backend",
+      "no system/kernel/service changes; no platform publishing; production business and automatic policies remain stopped"
+    ]
+  },
+  "environment": {
+    "application_base_revision": "3148873",
+    "deployed_code_revision": "a4f9437",
+    "deployed_image": "sha256:afdcfbc00db8fedeb09633dd5340d09c167703bff7c669508b0f0912fec0beb4",
+    "l4t": "R36.4.7",
+    "kernel": "5.15.148-tegra",
+    "mem_total_kib": 7802716,
+    "ort": "1.22.1 CPU",
+    "original_cuda_torch_reused": true,
+    "new_dependency_installations": 0,
+    "genie_revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828"
+  },
+  "sources": {
+    "genie": "https://github.com/High-Logic/Genie-TTS/tree/d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+    "ort_memory": "https://onnxruntime.ai/docs/get-started/with-c.html#features",
+    "ort_shared_allocator_example": "https://github.com/microsoft/onnxruntime/blob/v1.22.1/onnxruntime/test/python/onnxruntime_test_python.py",
+    "ort_quantization": "https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html",
+    "nvidia_allocation_limitation": "https://forums.developer.nvidia.com/t/intermittent-nvmapmemalloc-error-12-and-cuda-allocator-crash-during-pytorch-inference-on-jetson-orin-nano/349752",
+    "original_sampling": "https://github.com/RVC-Boss/GPT-SoVITS/blob/a7e38f93f1ad8d263093ca26ce0dea3fb7080ea2/GPT_SoVITS/AR/models/utils.py#L103",
+    "onnx_random_normal": "https://onnx.ai/onnx/operators/onnx__RandomNormalLike.html#randomnormallike-1"
+  },
+  "guard": {
+    "sample_interval_seconds": 0.5,
+    "available_floor_mib": 160,
+    "rolling_swap_limit_mib": 64,
+    "rolling_window_seconds": 25,
+    "oom_kill_increase_aborts": true,
+    "deadlines_seconds": {
+      "synthesis": 270,
+      "prepare": 180
+    }
+  },
+  "baseline": {
+    "voice": "whale_sovits_v2",
+    "reference_identity": {
+      "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+      "config_sha256": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+      "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+      "paths": {
+        "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+        "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+        "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+        "reference": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+        "t2s": "/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt",
+        "vits": "/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth"
+      },
+      "precision": "float16",
+      "prompt_lang": "zh",
+      "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+      "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+      "sha256": {
+        "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+        "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+        "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+        "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+        "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+        "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+        "reference": "ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b",
+        "t2s": "415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3",
+        "vits": "1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb"
+      },
+      "source_sha256": {
+        "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+        "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+        "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+        "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+        "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+        "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+      },
+      "upstream": "20240821v2",
+      "voice_id": "whale_sovits_v2",
+      "voice_version": "sirmn6-v1",
+      "weights_version": "da_fei_yu-v2-e12-e15"
+    },
+    "warmup": {
+      "text_lang": "zh",
+      "prompt_lang": "zh",
+      "text_split_method": "cut5",
+      "speed_factor": 1.0,
+      "text": "海底的小灯亮起来了。",
+      "seed": 42,
+      "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+      "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+      "media_type": "wav",
+      "streaming_mode": false,
+      "batch_size": 1
+    },
+    "execution_owner_thread": true,
+    "speech": [
+      {
+        "index": 0,
+        "repeat": 0,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "seconds": 5.277718154999093,
+        "audio_seconds": 3.68,
+        "rtf": 1.4341625421193187,
+        "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252"
+      },
+      {
+        "index": 0,
+        "repeat": 1,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "seconds": 4.396399057999588,
+        "audio_seconds": 3.68,
+        "rtf": 1.1946736570651053,
+        "pcm_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4"
+      },
+      {
+        "index": 1,
+        "repeat": 0,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "seconds": 5.3586280699983035,
+        "audio_seconds": 4.16,
+        "rtf": 1.288131747595746,
+        "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c"
+      },
+      {
+        "index": 1,
+        "repeat": 1,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "seconds": 4.874091322000822,
+        "audio_seconds": 4.16,
+        "rtf": 1.1716565677886592,
+        "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c"
+      },
+      {
+        "index": 2,
+        "repeat": 0,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "seconds": 4.226217250001355,
+        "audio_seconds": 3.24,
+        "rtf": 1.3043880401238748,
+        "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd"
+      },
+      {
+        "index": 2,
+        "repeat": 1,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "seconds": 3.923136710000108,
+        "audio_seconds": 3.24,
+        "rtf": 1.21084466358028,
+        "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd"
+      }
+    ],
+    "memory": {
+      "baseline": {
+        "available_kib": 5701912,
+        "swap_used_kib": 2304,
+        "pswpin": 108,
+        "pswpout": 624,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 5687844,
+        "swap_used_kib": 2304,
+        "pswpin": 108,
+        "pswpout": 624,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 4003616,
+      "swapin_bytes": 0,
+      "swapout_bytes": 0,
+      "maximum_rolling_25s_swap_bytes": 0,
+      "oom_kill_delta": 0,
+      "samples": 103
+    },
+    "sampled_peak_machine_kib": 3799100,
+    "receipt": "/workspace/tuber/runtime/evaluations/genie-live-20261029-baseline/compact-original/compact-result.json",
+    "restored": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        89
+      ]
+    },
+    "config_unchanged": true
+  },
+  "screens": [
+    {
+      "receipt": "\\workspace\\tuber\\runtime\\evaluations\\genie-live-20261029-screen2\\controller-result.json",
+      "status": "completed",
+      "jobs": [
+        {
+          "name": "shared-fp32",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-fp32",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "4",
+            "--intra-op-threads",
+            "4",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child"
+          ],
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5701284,
+              "swap_used_kib": 5888,
+              "pswpin": 108,
+              "pswpout": 1407,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6393072,
+              "swap_used_kib": 5888,
+              "pswpin": 108,
+              "pswpout": 1407,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3273960,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 114
+          },
+          "peak_machine_total_minus_available_kib": 4528756,
+          "peak_child_rss_bytes": 3452899328,
+          "options": {
+            "variant": "shared",
+            "bert_mode": "fp32",
+            "seed": 42,
+            "torch_threads": 4,
+            "intra_op_threads": 4,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": false,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2
+          },
+          "speech": [
+            {
+              "stage": "speech",
+              "elapsed_seconds": 26.031890976000795,
+              "repetition": 0,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 5.522401661000913,
+              "dynamic_frontend_seconds": 0.7594580189997941,
+              "audio_seconds": 3.52,
+              "rtf": 1.5688641082388957,
+              "peak": 0.8860279321670532,
+              "rms": 0.20762184262275696,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 31.20282637300079,
+              "repetition": 1,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 5.163574537999011,
+              "dynamic_frontend_seconds": 0.7705142019985942,
+              "audio_seconds": 3.2,
+              "rtf": 1.613617043124691,
+              "peak": 0.8961224555969238,
+              "rms": 0.20291317999362946,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 37.73998495700107,
+              "repetition": 0,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.528327390000413,
+              "dynamic_frontend_seconds": 0.8297919470005581,
+              "audio_seconds": 4.32,
+              "rtf": 1.511186895833429,
+              "peak": 0.9571214318275452,
+              "rms": 0.22084198892116547,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 44.33960621299957,
+              "repetition": 1,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.591596222999215,
+              "dynamic_frontend_seconds": 0.8339702609991946,
+              "audio_seconds": 4.36,
+              "rtf": 1.5118339961007372,
+              "peak": 0.9226130843162537,
+              "rms": 0.21299885213375092,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 49.03638656400108,
+              "repetition": 0,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.689687752999816,
+              "dynamic_frontend_seconds": 0.7291051789998164,
+              "audio_seconds": 2.84,
+              "rtf": 1.6512985045774002,
+              "peak": 0.8701472282409668,
+              "rms": 0.19848822057247162,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 54.321539283000675,
+              "repetition": 1,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 5.2775039819989615,
+              "dynamic_frontend_seconds": 0.7206800519998069,
+              "audio_seconds": 3.36,
+              "rtf": 1.5706857089282624,
+              "peak": 0.9298440217971802,
+              "rms": 0.2013346254825592,
+              "valid_non_silent": true
+            }
+          ],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 20.5014771139995,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 5.248645142000896,
+            "dynamic_frontend_seconds": 2.9620353690006596,
+            "audio_seconds": 1.6,
+            "rtf": 3.28040321375056,
+            "peak": 0.7587338089942932,
+            "rms": 0.20598047971725464,
+            "valid_non_silent": true
+          },
+          "median_seconds": 5.399952821499937,
+          "median_rtf": 1.569774908583579,
+          "paired_speed_ratios": [
+            {
+              "index": 0,
+              "baseline_over_candidate_latency": 0.9053096350620787,
+              "baseline_over_candidate_rtf": 0.8260335487165591
+            },
+            {
+              "index": 1,
+              "baseline_over_candidate_latency": 0.7799374214237216,
+              "baseline_over_candidate_rtf": 0.8136855163480535
+            },
+            {
+              "index": 2,
+              "baseline_over_candidate_latency": 0.8176178583367506,
+              "baseline_over_candidate_rtf": 0.7806471220935838
+            }
+          ]
+        },
+        {
+          "name": "shared-arena-fp32",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-fp32",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "4",
+            "--intra-op-threads",
+            "4",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child",
+            "--shared-cpu-arena"
+          ],
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 6393072,
+              "swap_used_kib": 5888,
+              "pswpin": 108,
+              "pswpout": 1407,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6388372,
+              "swap_used_kib": 5888,
+              "pswpin": 108,
+              "pswpout": 1407,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3600536,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 112
+          },
+          "peak_machine_total_minus_available_kib": 4202180,
+          "peak_child_rss_bytes": 3096727552,
+          "options": {
+            "variant": "shared",
+            "bert_mode": "fp32",
+            "seed": 42,
+            "torch_threads": 4,
+            "intra_op_threads": 4,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": true,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2
+          },
+          "speech": [
+            {
+              "stage": "speech",
+              "elapsed_seconds": 25.16325471900018,
+              "repetition": 0,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 5.505477036000229,
+              "dynamic_frontend_seconds": 0.7861095009993733,
+              "audio_seconds": 3.52,
+              "rtf": 1.5640559761364288,
+              "peak": 0.8860279321670532,
+              "rms": 0.20762184262275696,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 30.32024644500052,
+              "repetition": 1,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 5.1494883989998925,
+              "dynamic_frontend_seconds": 0.7639999240000179,
+              "audio_seconds": 3.2,
+              "rtf": 1.6092151246874664,
+              "peak": 0.8961224555969238,
+              "rms": 0.20291317999362946,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 36.81209191800008,
+              "repetition": 0,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.4836880510010815,
+              "dynamic_frontend_seconds": 0.822380282001177,
+              "audio_seconds": 4.32,
+              "rtf": 1.5008537155095094,
+              "peak": 0.9571214318275452,
+              "rms": 0.22084198892116547,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 43.38656093499958,
+              "repetition": 1,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.566210537001098,
+              "dynamic_frontend_seconds": 0.841343035999671,
+              "audio_seconds": 4.36,
+              "rtf": 1.5060115910552976,
+              "peak": 0.9226130843162537,
+              "rms": 0.21299885213375092,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 48.04947861599976,
+              "repetition": 0,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.655495154000164,
+              "dynamic_frontend_seconds": 0.7065588349996688,
+              "audio_seconds": 2.84,
+              "rtf": 1.6392588570423112,
+              "peak": 0.8701472282409668,
+              "rms": 0.19848822057247162,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 53.378557867999916,
+              "repetition": 1,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 5.321393264001017,
+              "dynamic_frontend_seconds": 0.7652548160003789,
+              "audio_seconds": 3.36,
+              "rtf": 1.583747995238398,
+              "peak": 0.9298440217971802,
+              "rms": 0.2013346254825592,
+              "valid_non_silent": true
+            }
+          ],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 19.650006189000123,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 5.143694323000091,
+            "dynamic_frontend_seconds": 2.948821398000291,
+            "audio_seconds": 1.6,
+            "rtf": 3.2148089518750567,
+            "peak": 0.7587338089942932,
+            "rms": 0.20598047971725464,
+            "valid_non_silent": true
+          },
+          "median_seconds": 5.413435150000623,
+          "median_rtf": 1.5739019856874132,
+          "paired_speed_ratios": [
+            {
+              "index": 0,
+              "baseline_over_candidate_latency": 0.907944495175978,
+              "baseline_over_candidate_rtf": 0.8284310150815302
+            },
+            {
+              "index": 1,
+              "baseline_over_candidate_latency": 0.784122521948706,
+              "baseline_over_candidate_rtf": 0.8180573669242905
+            },
+            {
+              "index": 2,
+              "baseline_over_candidate_latency": 0.8168232036451045,
+              "baseline_over_candidate_rtf": 0.7803994279206359
+            }
+          ]
+        },
+        {
+          "name": "shared-arena-int8",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-int8",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "4",
+            "--intra-op-threads",
+            "4",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child",
+            "--shared-cpu-arena",
+            "--bert-mode",
+            "qnnpack-int8"
+          ],
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 6388372,
+              "swap_used_kib": 5888,
+              "pswpin": 108,
+              "pswpout": 1407,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6562352,
+              "swap_used_kib": 5888,
+              "pswpin": 108,
+              "pswpout": 1407,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3506504,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 112
+          },
+          "peak_machine_total_minus_available_kib": 4296212,
+          "peak_child_rss_bytes": 3295379456,
+          "options": {
+            "variant": "shared",
+            "bert_mode": "qnnpack-int8",
+            "seed": 42,
+            "torch_threads": 4,
+            "intra_op_threads": 4,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": true,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2
+          },
+          "speech": [
+            {
+              "stage": "speech",
+              "elapsed_seconds": 26.875546061999557,
+              "repetition": 0,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 5.303505745998336,
+              "dynamic_frontend_seconds": 0.5074248769997212,
+              "audio_seconds": 3.4,
+              "rtf": 1.5598546311759813,
+              "peak": 0.9022111892700195,
+              "rms": 0.20482410490512848,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 31.716027526999824,
+              "repetition": 1,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 4.83285771699957,
+              "dynamic_frontend_seconds": 0.5326327519996994,
+              "audio_seconds": 3.12,
+              "rtf": 1.5489928580126826,
+              "peak": 0.8804571628570557,
+              "rms": 0.20348939299583435,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 37.10566799600019,
+              "repetition": 0,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 5.382234901999254,
+              "dynamic_frontend_seconds": 0.5331027529991843,
+              "audio_seconds": 3.56,
+              "rtf": 1.5118637365166445,
+              "peak": 0.8483829498291016,
+              "rms": 0.2199905961751938,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 43.48471953099943,
+              "repetition": 1,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.370908064000105,
+              "dynamic_frontend_seconds": 0.5274118540000927,
+              "audio_seconds": 4.48,
+              "rtf": 1.4220776928571661,
+              "peak": 0.8952997326850891,
+              "rms": 0.21022523939609528,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 47.87253189599869,
+              "repetition": 0,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.380565489000219,
+              "dynamic_frontend_seconds": 0.42147502900115796,
+              "audio_seconds": 2.84,
+              "rtf": 1.542452636971908,
+              "peak": 0.9162822365760803,
+              "rms": 0.19178706407546997,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 53.03582512899993,
+              "repetition": 1,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 5.155590091999329,
+              "dynamic_frontend_seconds": 0.4193245240003307,
+              "audio_seconds": 3.52,
+              "rtf": 1.464656276136173,
+              "peak": 0.9037526249885559,
+              "rms": 0.18750183284282684,
+              "valid_non_silent": true
+            }
+          ],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 21.564286005999747,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 6.380900972000745,
+            "dynamic_frontend_seconds": 3.9097220709991234,
+            "audio_seconds": 1.8,
+            "rtf": 3.544944984444858,
+            "peak": 0.7824892401695251,
+            "rms": 0.1970202475786209,
+            "valid_non_silent": true
+          },
+          "median_seconds": 5.229547918998833,
+          "median_rtf": 1.5271581867442763,
+          "paired_speed_ratios": [
+            {
+              "index": 0,
+              "baseline_over_candidate_latency": 0.9543972301618205,
+              "baseline_over_candidate_rtf": 0.8455983152362643
+            },
+            {
+              "index": 1,
+              "baseline_over_candidate_latency": 0.8706368519128319,
+              "baseline_over_candidate_rtf": 0.8383903955129045
+            },
+            {
+              "index": 2,
+              "baseline_over_candidate_latency": 0.8545743503009495,
+              "baseline_over_candidate_rtf": 0.8364288678538303
+            }
+          ]
+        }
+      ],
+      "restored": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          219
+        ]
+      },
+      "config_unchanged": true
+    },
+    {
+      "receipt": "\\workspace\\tuber\\runtime\\evaluations\\genie-live-20261029-threads\\controller-result.json",
+      "status": "completed",
+      "jobs": [
+        {
+          "name": "int8-arena-threads2",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads2",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "2",
+            "--intra-op-threads",
+            "2",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child",
+            "--shared-cpu-arena",
+            "--bert-mode",
+            "qnnpack-int8"
+          ],
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5733816,
+              "swap_used_kib": 44288,
+              "pswpin": 113,
+              "pswpout": 10972,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6445712,
+              "swap_used_kib": 44032,
+              "pswpin": 784,
+              "pswpout": 11569,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3426104,
+            "swapin_bytes": 2748416,
+            "swapout_bytes": 2445312,
+            "maximum_rolling_25s_swap_bytes": 3911680,
+            "oom_kill_delta": 0,
+            "samples": 154
+          },
+          "peak_machine_total_minus_available_kib": 4376612,
+          "peak_child_rss_bytes": 3291860992,
+          "phase_minimum_available_kib": {
+            "imports": 5505280,
+            "protocol": 5490768,
+            "bert_loading": 4153960,
+            "session_loading_vits_fp32.onnx": 3993052,
+            "session_loading_t2s_first_stage_decoder_fp32.onnx": 3726812,
+            "session_loading_t2s_stage_decoder_fp32.onnx": 3517448,
+            "start_speech_-1_-1": 3426104,
+            "start_speech_0_0": 3753448,
+            "start_speech_0_1": 3763972,
+            "start_speech_1_0": 3763932,
+            "start_speech_1_1": 3763696,
+            "start_speech_2_0": 3761668,
+            "start_speech_2_1": 3761488,
+            "completed": 3761700
+          },
+          "options": {
+            "variant": "shared",
+            "bert_mode": "qnnpack-int8",
+            "seed": 42,
+            "torch_threads": 2,
+            "intra_op_threads": 2,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": true,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2
+          },
+          "speech": [
+            {
+              "stage": "speech",
+              "elapsed_seconds": 32.71076491900021,
+              "repetition": 0,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 8.229499007999038,
+              "dynamic_frontend_seconds": 0.7830447819997062,
+              "audio_seconds": 3.4,
+              "rtf": 2.4204408847055996,
+              "peak": 0.9022111892700195,
+              "rms": 0.20482410490512848,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 40.4225575370001,
+              "repetition": 1,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 7.704495818999931,
+              "dynamic_frontend_seconds": 0.7828195090005465,
+              "audio_seconds": 3.12,
+              "rtf": 2.4693896855769006,
+              "peak": 0.8804571628570557,
+              "rms": 0.20348939299583435,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 48.99510138899859,
+              "repetition": 0,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 8.565011590999347,
+              "dynamic_frontend_seconds": 0.7919073989996832,
+              "audio_seconds": 3.56,
+              "rtf": 2.4059021323031873,
+              "peak": 0.8483829498291016,
+              "rms": 0.2199905961751938,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 59.21431712199956,
+              "repetition": 1,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 10.21070956299991,
+              "dynamic_frontend_seconds": 0.7918987079992803,
+              "audio_seconds": 4.48,
+              "rtf": 2.279176241741051,
+              "peak": 0.8952997326850891,
+              "rms": 0.21022523939609528,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 66.24631739299912,
+              "repetition": 0,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 7.024266247000924,
+              "dynamic_frontend_seconds": 0.610018728999421,
+              "audio_seconds": 2.84,
+              "rtf": 2.4733331855637055,
+              "peak": 0.9162822365760803,
+              "rms": 0.19178706407546997,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 74.48229185699893,
+              "repetition": 1,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 8.227983569999196,
+              "dynamic_frontend_seconds": 0.6102549030001683,
+              "audio_seconds": 3.52,
+              "rtf": 2.337495332386135,
+              "peak": 0.9037526249885559,
+              "rms": 0.18750183284282684,
+              "valid_non_silent": true
+            }
+          ],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 24.47364769900014,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 8.135223449000478,
+            "dynamic_frontend_seconds": 4.140316549999625,
+            "audio_seconds": 1.8,
+            "rtf": 4.519568582778043,
+            "peak": 0.7824892401695251,
+            "rms": 0.1970202475786209,
+            "valid_non_silent": true
+          },
+          "median_seconds": 8.228741288999117,
+          "median_rtf": 2.4131715085043934,
+          "paired_speed_ratios": [
+            {
+              "index": 0,
+              "baseline_over_candidate_latency": 0.6071369620759892,
+              "baseline_over_candidate_rtf": 0.5376129420845247
+            },
+            {
+              "index": 1,
+              "baseline_over_candidate_latency": 0.5449974095838945,
+              "baseline_over_candidate_rtf": 0.5250260761936998
+            },
+            {
+              "index": 2,
+              "baseline_over_candidate_latency": 0.5343050407500022,
+              "baseline_over_candidate_rtf": 0.5228273455018169
+            }
+          ]
+        },
+        {
+          "name": "int8-arena-threads6",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads6",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "6",
+            "--intra-op-threads",
+            "6",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child",
+            "--shared-cpu-arena",
+            "--bert-mode",
+            "qnnpack-int8"
+          ],
+          "returncode": 0,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 6445712,
+              "swap_used_kib": 44032,
+              "pswpin": 784,
+              "pswpout": 11569,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6561464,
+              "swap_used_kib": 48896,
+              "pswpin": 808,
+              "pswpout": 12754,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3522656,
+            "swapin_bytes": 98304,
+            "swapout_bytes": 4853760,
+            "maximum_rolling_25s_swap_bytes": 4902912,
+            "oom_kill_delta": 0,
+            "samples": 111
+          },
+          "peak_machine_total_minus_available_kib": 4280060,
+          "peak_child_rss_bytes": 3288088576,
+          "phase_minimum_available_kib": {
+            "imports": 6218472,
+            "protocol": 6207416,
+            "bert_loading": 4760948,
+            "bert_storage": 4603112,
+            "session_loading_vits_fp32.onnx": 4362108,
+            "session_loading_t2s_first_stage_decoder_fp32.onnx": 3856744,
+            "session_loading_t2s_stage_decoder_fp32.onnx": 3602260,
+            "start_speech_-1_-1": 3522656,
+            "start_speech_0_0": 3880104,
+            "start_speech_0_1": 3866436,
+            "start_speech_1_0": 3874192,
+            "start_speech_1_1": 3869692,
+            "start_speech_2_0": 3845020,
+            "start_speech_2_1": 3869968,
+            "completed": 3870140
+          },
+          "options": {
+            "variant": "shared",
+            "bert_mode": "qnnpack-int8",
+            "seed": 42,
+            "torch_threads": 6,
+            "intra_op_threads": 6,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": true,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2
+          },
+          "speech": [
+            {
+              "stage": "speech",
+              "elapsed_seconds": 27.14133387400034,
+              "repetition": 0,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 4.743111623000004,
+              "dynamic_frontend_seconds": 0.46429104399976495,
+              "audio_seconds": 3.4,
+              "rtf": 1.395032830294119,
+              "peak": 0.9022111892700195,
+              "rms": 0.20482410490512848,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 31.9726976740003,
+              "repetition": 1,
+              "index": 0,
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "seconds": 4.824129594000624,
+              "dynamic_frontend_seconds": 0.513245910000478,
+              "audio_seconds": 3.12,
+              "rtf": 1.5461953826925077,
+              "peak": 0.8804571628570557,
+              "rms": 0.20348939299583435,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 37.04984756400154,
+              "repetition": 0,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 5.069493753999268,
+              "dynamic_frontend_seconds": 0.5129835719999392,
+              "audio_seconds": 3.56,
+              "rtf": 1.4240150994379965,
+              "peak": 0.8483829498291016,
+              "rms": 0.2199905961751938,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 43.266424712001026,
+              "repetition": 1,
+              "index": 1,
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "seconds": 6.208575694001411,
+              "dynamic_frontend_seconds": 0.4998605380005756,
+              "audio_seconds": 4.48,
+              "rtf": 1.3858427888396005,
+              "peak": 0.8952997326850891,
+              "rms": 0.21022523939609528,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 47.61605598100141,
+              "repetition": 0,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 4.342498440999407,
+              "dynamic_frontend_seconds": 0.4247036329998082,
+              "audio_seconds": 2.84,
+              "rtf": 1.5290487468307772,
+              "peak": 0.9162822365760803,
+              "rms": 0.19178706407546997,
+              "valid_non_silent": true
+            },
+            {
+              "stage": "speech",
+              "elapsed_seconds": 52.73168467100004,
+              "repetition": 1,
+              "index": 2,
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "seconds": 5.107944808998582,
+              "dynamic_frontend_seconds": 0.41894661500009533,
+              "audio_seconds": 3.52,
+              "rtf": 1.4511206843745972,
+              "peak": 0.9037526249885559,
+              "rms": 0.18750183284282684,
+              "valid_non_silent": true
+            }
+          ],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 22.39067933500155,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 6.304637762001221,
+            "dynamic_frontend_seconds": 4.021029614999861,
+            "audio_seconds": 1.8,
+            "rtf": 3.5025765344451227,
+            "peak": 0.7824892401695251,
+            "rms": 0.1970202475786209,
+            "valid_non_silent": true
+          },
+          "median_seconds": 4.946811673999946,
+          "median_rtf": 1.4375678919062969,
+          "paired_speed_ratios": [
+            {
+              "index": 0,
+              "baseline_over_candidate_latency": 1.0111710359939643,
+              "baseline_over_candidate_rtf": 0.8937885838226104
+            },
+            {
+              "index": 1,
+              "baseline_over_candidate_latency": 0.907311259181254,
+              "baseline_over_candidate_rtf": 0.8754137800514248
+            },
+            {
+              "index": 2,
+              "baseline_over_candidate_latency": 0.8623250512618228,
+              "baseline_over_candidate_rtf": 0.8439898340567942
+            }
+          ]
+        }
+      ],
+      "restored": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          300
+        ]
+      },
+      "config_unchanged": true
+    }
+  ],
+  "coexistence_attempts": [
+    {
+      "status": "candidate_failed",
+      "load_order": "tts-first",
+      "receipt": "\\workspace\\tuber\\runtime\\evaluations\\genie-live-20261029-coexist1\\controller-result.json",
+      "jobs": [
+        {
+          "name": "int8-arena-threads6-native128k",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/int8-arena-threads6-native128k",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "6",
+            "--intra-op-threads",
+            "6",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child",
+            "--shared-cpu-arena",
+            "--bert-mode",
+            "qnnpack-int8",
+            "--load-llm-after-warmup"
+          ],
+          "returncode": 1,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5720188,
+              "swap_used_kib": 48896,
+              "pswpin": 1070,
+              "pswpout": 13036,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6638832,
+              "swap_used_kib": 56064,
+              "pswpin": 1155,
+              "pswpout": 14889,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3456640,
+            "swapin_bytes": 348160,
+            "swapout_bytes": 7589888,
+            "maximum_rolling_25s_swap_bytes": 7938048,
+            "oom_kill_delta": 0,
+            "samples": 54
+          },
+          "peak_machine_total_minus_available_kib": 4346076,
+          "peak_child_rss_bytes": 3288731648,
+          "phase_minimum_available_kib": {
+            "imports": 5486876,
+            "protocol": 5470356,
+            "bert_loading": 4122296,
+            "session_loading_vits_fp32.onnx": 4022964,
+            "session_loading_t2s_first_stage_decoder_fp32.onnx": 3762888,
+            "session_loading_t2s_stage_decoder_fp32.onnx": 3541540,
+            "start_speech_-1_-1": 3456640,
+            "start_llm_load": 3491032
+          },
+          "options": {
+            "variant": "shared",
+            "bert_mode": "qnnpack-int8",
+            "seed": 42,
+            "torch_threads": 6,
+            "intra_op_threads": 6,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": true,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2,
+            "load_llm_after_warmup": true
+          },
+          "speech": [],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 22.483909210001002,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 6.530700146000527,
+            "dynamic_frontend_seconds": 3.9746237250001286,
+            "audio_seconds": 1.8,
+            "rtf": 3.6281667477780704,
+            "peak": 0.7824892401695251,
+            "rms": 0.1970202475786209,
+            "valid_non_silent": true
+          }
+        }
+      ],
+      "result": "TTS warmed; typed Mini load returned503; NvMap error12/cudaMalloc1340.64MiB failure. No successful resident pair.",
+      "restored": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          368
+        ]
+      },
+      "owned_cache_advice": null,
+      "config_unchanged": true
+    },
+    {
+      "status": "candidate_failed",
+      "load_order": "tts-first",
+      "receipt": "\\workspace\\tuber\\runtime\\evaluations\\genie-live-20261029-coexist-cache\\controller-result.json",
+      "jobs": [
+        {
+          "name": "int8-arena-threads6-native128k",
+          "argv": [
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/evaluate_genie_tts.py",
+            "--root",
+            "/workspace/tuber",
+            "--source",
+            "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+            "--models",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models",
+            "--output",
+            "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/int8-arena-threads6-native128k",
+            "--action",
+            "run",
+            "--variant",
+            "shared",
+            "--seed",
+            "42",
+            "--warmup-text",
+            "海底的小灯亮起来了。",
+            "--case-order",
+            "text-first",
+            "--torch-threads",
+            "6",
+            "--intra-op-threads",
+            "6",
+            "--inter-op-threads",
+            "1",
+            "--execute",
+            "--child",
+            "--shared-cpu-arena",
+            "--bert-mode",
+            "qnnpack-int8",
+            "--load-llm-after-warmup",
+            "--advise-converted-cache-before-llm"
+          ],
+          "returncode": 1,
+          "guard_reason": null,
+          "memory": {
+            "baseline": {
+              "available_kib": 5711096,
+              "swap_used_kib": 53760,
+              "pswpin": 1741,
+              "pswpout": 14889,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5719476,
+              "swap_used_kib": 55808,
+              "pswpin": 1741,
+              "pswpout": 15420,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 1946008,
+            "swapin_bytes": 0,
+            "swapout_bytes": 2174976,
+            "maximum_rolling_25s_swap_bytes": 2174976,
+            "oom_kill_delta": 0,
+            "samples": 57
+          },
+          "peak_machine_total_minus_available_kib": 5856708,
+          "peak_child_rss_bytes": 3293691904,
+          "phase_minimum_available_kib": {
+            "imports": 5490268,
+            "protocol": 5463260,
+            "bert_loading": 3924444,
+            "session_loading_vits_fp32.onnx": 3530540,
+            "session_loading_t2s_first_stage_decoder_fp32.onnx": 3256652,
+            "session_loading_t2s_stage_decoder_fp32.onnx": 3090096,
+            "start_speech_-1_-1": 3028260,
+            "start_llm_load": 1946008
+          },
+          "options": {
+            "variant": "shared",
+            "bert_mode": "qnnpack-int8",
+            "seed": 42,
+            "torch_threads": 6,
+            "intra_op_threads": 6,
+            "inter_op_threads": 1,
+            "cpu_arena": "default",
+            "memory_pattern": "default",
+            "disable_prepacking": false,
+            "shared_cpu_arena": true,
+            "arena_extend_strategy": "default",
+            "warmup_text": "海底的小灯亮起来了。",
+            "case_order": "text-first",
+            "repetitions": 2,
+            "load_llm_after_warmup": true,
+            "advise_converted_cache_before_llm": true
+          },
+          "speech": [],
+          "warmup": {
+            "stage": "warmup",
+            "elapsed_seconds": 22.08786667200002,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 6.230830878999768,
+            "dynamic_frontend_seconds": 3.947352534998572,
+            "audio_seconds": 1.8,
+            "rtf": 3.461572710555427,
+            "peak": 0.7824892401695251,
+            "rms": 0.1970202475786209,
+            "valid_non_silent": true
+          }
+        }
+      ],
+      "result": "TTS warmed; typed Mini load returned503; NvMap error12/cudaMalloc1340.64MiB failure. No successful resident pair.",
+      "restored": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          442
+        ]
+      },
+      "owned_cache_advice": [
+        {
+          "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models",
+          "files": 10
+        },
+        {
+          "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models",
+          "files": 10
+        },
+        {
+          "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models",
+          "files": 10
+        },
+        {
+          "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models",
+          "files": 10
+        }
+      ],
+      "config_unchanged": true
+    }
+  ],
+  "quality": {
+    "listening_completed": false,
+    "claimed_quality_percent": null,
+    "non_silence_is_not_quality": true
+  },
+  "sampling_findings": {
+    "legacy_genie_ar_distribution": "standard RandomNormalLike noise in probabilities/noise ArgMax; not original Exp(1)",
+    "legacy_genie_top_k": 15,
+    "original_production_top_k": 5,
+    "legacy_vits_noise": "normal retained",
+    "legacy_stop": "500-step loop does not raise on non-EOS; idx0 slice can return prompt",
+    "policy": "Legacy candidates are resource screens only. Restore original sampling/EOS semantics and rerun before a quality/default promotion claim."
+  },
+  "setup_failures": [
+    {
+      "bundle": "runtime/evaluations/genie-live-20261029-screen1",
+      "failure": "Wrong historical venv (root path rather than successful attempt2) lacked ORT; corrected after import preflight added. No inference result; Mini restored."
+    }
+  ],
+  "additional_preparation_failures": [
+    {
+      "bundle": "runtime/evaluations/genie-live-20261029-ar-int8",
+      "failure": "Quantizer materialized/externalized a constant without numerical change; exact storage-protobuf guard initially rejected. Corrected guard normalizes explicit DEFAULT only and still rejects actual byte changes. First pass covered24 matrices; later exact constant-Transpose folding covers97. No guard/OOM, Mini restored."
+    }
+  ],
+  "restored_sampler_screen": {
+    "jobs": [
+      {
+        "name": "restored-exp-topk5-int8-bert",
+        "argv": [
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/evaluate_genie_tts.py",
+          "--root",
+          "/workspace/tuber",
+          "--source",
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+          "--models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models",
+          "--output",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/restored-exp-topk5-int8-bert",
+          "--action",
+          "run",
+          "--variant",
+          "shared",
+          "--seed",
+          "42",
+          "--warmup-text",
+          "海底的小灯亮起来了。",
+          "--case-order",
+          "text-first",
+          "--torch-threads",
+          "6",
+          "--intra-op-threads",
+          "6",
+          "--inter-op-threads",
+          "1",
+          "--execute",
+          "--child",
+          "--shared-cpu-arena",
+          "--bert-mode",
+          "qnnpack-int8",
+          "--sampling-mode",
+          "reference"
+        ],
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 5788324,
+            "swap_used_kib": 170752,
+            "pswpin": 24985,
+            "pswpout": 173972,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 6125560,
+            "swap_used_kib": 170752,
+            "pswpin": 24987,
+            "pswpout": 173972,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3094388,
+          "swapin_bytes": 8192,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 8192,
+          "oom_kill_delta": 0,
+          "samples": 107
+        },
+        "peak_machine_total_minus_available_kib": 4708328,
+        "peak_child_rss_bytes": 3293859840,
+        "phase_minimum_available_kib": {
+          "imports": 5550300,
+          "protocol": 5540936,
+          "bert_loading": 4024616,
+          "session_loading_text_encoder_cached_reference.onnx": 3897660,
+          "session_loading_vits_fp32.restored-exp-topk5-int8-bert.reference.onnx": 3683752,
+          "session_loading_t2s_first_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx": 3298240,
+          "session_loading_t2s_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx": 3163152,
+          "start_speech_-1_-1": 3094388,
+          "start_speech_0_0": 3436868,
+          "start_speech_0_1": 3423436,
+          "start_speech_1_0": 3423716,
+          "start_speech_1_1": 3409412,
+          "start_speech_2_0": 3419484,
+          "start_speech_2_1": 3419652,
+          "completed": 3516176
+        },
+        "events": [
+          {
+            "stage": "protocol",
+            "elapsed_seconds": 3.1610615360004886,
+            "options": {
+              "variant": "shared",
+              "bert_mode": "qnnpack-int8",
+              "seed": 42,
+              "torch_threads": 6,
+              "intra_op_threads": 6,
+              "inter_op_threads": 1,
+              "cpu_arena": "default",
+              "memory_pattern": "default",
+              "disable_prepacking": false,
+              "shared_cpu_arena": true,
+              "arena_extend_strategy": "default",
+              "warmup_text": "海底的小灯亮起来了。",
+              "case_order": "text-first",
+              "repetitions": 2,
+              "load_llm_after_warmup": false,
+              "advise_converted_cache_before_llm": false,
+              "sampling_mode": "reference",
+              "ar_mode": "fp32"
+            },
+            "onnxruntime": "1.22.1",
+            "torch": "2.7.0",
+            "seed_scope": "Set once before sessions: Python/NumPy/Torch/ORT. ONNX node seed attributes override ORT global seed; absent attributes use global seed plus node index. Existing session RNG advances across calls; no per-utterance reset or Torch/ORT equivalence is claimed.",
+            "target_features_precomputed": false
+          },
+          {
+            "stage": "bert_storage",
+            "elapsed_seconds": 10.729533278999952,
+            "mode": "qnnpack-int8",
+            "layers": 22,
+            "fp32_parameter_bytes_before_quantization": 1197121536,
+            "remaining_parameter_bytes": 89014272,
+            "unpacked_qint8_weight_bytes": 276824064,
+            "quantized_linears": 132,
+            "integer_operator_dispatch_verified": false,
+            "note": "Logical tensor bytes, not physical RSS or backend packed allocation size; no profiler in formal run"
+          },
+          {
+            "stage": "sampling_restored",
+            "elapsed_seconds": 11.090089774999797,
+            "kind": "vits",
+            "revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+            "official_template_sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a",
+            "source_sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a",
+            "output": "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+            "output_sha256": "278bf7f294e384cdb336522311e783fab91ea51546c118e9bebe5e7b4510918e",
+            "external_files": [
+              "vits_fp32.bin"
+            ],
+            "noise_input": "tuber_normal_noise",
+            "sampling": "standard normal; original 0.5 VITS scale",
+            "first_eos_suppressed": false
+          },
+          {
+            "stage": "sampling_restored",
+            "elapsed_seconds": 13.418195362000915,
+            "kind": "first",
+            "revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+            "official_template_sha256": "ee7ddd22f27247f49b028c5ae8911f1f8b9ce97538c612dbb9f96057799da4c2",
+            "source_sha256": "868f395999508905128c5325c5db4f4b37b2e70e04d6e2719fec64cbb60ee7f9",
+            "output": "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+            "output_sha256": "e6e8cd94efd32b986ee78501230949705e2953d3c23e56cd882b8f814bf9ea34",
+            "external_files": [
+              "t2s_shared_fp32.bin"
+            ],
+            "noise_input": "tuber_exp_noise",
+            "sampling": "Exp(1), top_k=5, top_p=1, temperature=1, repetition_penalty=1.35",
+            "first_eos_suppressed": true
+          },
+          {
+            "stage": "sampling_restored",
+            "elapsed_seconds": 15.62399842600098,
+            "kind": "stage",
+            "revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+            "official_template_sha256": "de6189e17efbad95479be95ca3691f19e7c69bdaaf63b171aa27283e41660dea",
+            "source_sha256": "3f02881c517423deb610f86d5441bd9825937c5069f3887cacefa1e9dc403b0d",
+            "output": "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+            "output_sha256": "a6632e16c1d6281cbff6c1ac22fd7103fbd9ee9517137747051894075a8eed22",
+            "external_files": [
+              "t2s_shared_fp32.bin"
+            ],
+            "noise_input": "tuber_exp_noise",
+            "sampling": "Exp(1), top_k=5, top_p=1, temperature=1, repetition_penalty=1.35",
+            "first_eos_suppressed": false
+          },
+          {
+            "stage": "loaded",
+            "elapsed_seconds": 16.906974330000594,
+            "seconds": 11.783611051001571,
+            "providers": [
+              "CPUExecutionProvider"
+            ],
+            "dynamic_bert_resident": true,
+            "variant": "shared"
+          },
+          {
+            "stage": "warmup",
+            "elapsed_seconds": 23.207145289001346,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 6.28862537400164,
+            "dynamic_frontend_seconds": 4.131483815001047,
+            "semantic_seconds": 1.488326643999244,
+            "vocoder_seconds": 0.66711511199901,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 1.68,
+            "rtf": 3.743229389286691,
+            "peak": 0.90641850233078,
+            "rms": 0.2057909220457077,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 27.75345761400058,
+            "repetition": 0,
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 4.53909770700011,
+            "dynamic_frontend_seconds": 0.4897407240005123,
+            "semantic_seconds": 2.7800703619996057,
+            "vocoder_seconds": 1.2680270579985518,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 15,
+                "stage_steps": 35,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 35,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 19,
+                "stage_steps": 45,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 45,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.2,
+            "rtf": 1.4184680334375344,
+            "peak": 0.9082078337669373,
+            "rms": 0.20654642581939697,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 32.582399750999684,
+            "repetition": 1,
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 4.821678268999676,
+            "dynamic_frontend_seconds": 0.479012697998769,
+            "semantic_seconds": 3.055229646000953,
+            "vocoder_seconds": 1.2861749210005655,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 15,
+                "stage_steps": 35,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 35,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 19,
+                "stage_steps": 45,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 45,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.2,
+            "rtf": 1.5067744590623988,
+            "peak": 0.9082078337669373,
+            "rms": 0.20654642581939697,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 37.64848108099977,
+            "repetition": 0,
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 5.058189473998937,
+            "dynamic_frontend_seconds": 0.48507508199872973,
+            "semantic_seconds": 3.158676098999422,
+            "vocoder_seconds": 1.4131730979988788,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 21,
+                "stage_steps": 43,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 43,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 23,
+                "stage_steps": 48,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 48,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.64,
+            "rtf": 1.3896124928568507,
+            "peak": 0.91996169090271,
+            "rms": 0.22036515176296234,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 42.91820648000066,
+            "repetition": 1,
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 5.262239956000485,
+            "dynamic_frontend_seconds": 0.4816281090006669,
+            "semantic_seconds": 3.3860184099994513,
+            "vocoder_seconds": 1.3932987680000224,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 21,
+                "stage_steps": 43,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 43,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 23,
+                "stage_steps": 48,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 48,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.64,
+            "rtf": 1.4456703175825507,
+            "peak": 0.91996169090271,
+            "rms": 0.22036515176296234,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 46.82293760700122,
+            "repetition": 0,
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 3.8976685169982375,
+            "dynamic_frontend_seconds": 0.4348421419999795,
+            "semantic_seconds": 2.4031093479989067,
+            "vocoder_seconds": 1.0585028730001795,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 9,
+                "stage_steps": 24,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 24,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 2.64,
+            "rtf": 1.4763895897720596,
+            "peak": 0.9526870846748352,
+            "rms": 0.20553265511989594,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 50.63620613900093,
+            "repetition": 1,
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 3.806249025999932,
+            "dynamic_frontend_seconds": 0.43253099600042333,
+            "semantic_seconds": 2.3454910719992768,
+            "vocoder_seconds": 1.0269875880003383,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 9,
+                "stage_steps": 24,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 24,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 2.64,
+            "rtf": 1.4417609946969439,
+            "peak": 0.9526870846748352,
+            "rms": 0.20553265511989594,
+            "valid_non_silent": true
+          }
+        ],
+        "llm_identities": []
+      }
+    ],
+    "audio_protocol": "Restored AR/EOS/VITS-noise only; still legacy float-WAV concat without original trailing gaps/PCM conversion. Resource/latency screen, not matching audio postprocessing or quality admission."
+  },
+  "ort_int8_screen": {
+    "jobs": [
+      {
+        "name": "original-features-ort-int8",
+        "argv": [
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/evaluate_genie_tts.py",
+          "--root",
+          "/workspace/tuber",
+          "--source",
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+          "--models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models",
+          "--output",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/original-features-ort-int8",
+          "--action",
+          "run",
+          "--variant",
+          "shared",
+          "--seed",
+          "42",
+          "--warmup-text",
+          "海底的小灯亮起来了。",
+          "--case-order",
+          "text-first",
+          "--torch-threads",
+          "6",
+          "--intra-op-threads",
+          "6",
+          "--inter-op-threads",
+          "1",
+          "--execute",
+          "--child",
+          "--shared-cpu-arena",
+          "--bert-mode",
+          "onnx-int8",
+          "--sampling-mode",
+          "reference",
+          "--bert-models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert",
+          "--ar-mode",
+          "int8",
+          "--ar-models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized"
+        ],
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 5805184,
+            "swap_used_kib": 190464,
+            "pswpin": 30359,
+            "pswpout": 184545,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5789872,
+            "swap_used_kib": 190464,
+            "pswpin": 30368,
+            "pswpout": 184545,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 4682112,
+          "swapin_bytes": 36864,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 36864,
+          "oom_kill_delta": 0,
+          "samples": 74
+        },
+        "peak_machine_total_minus_available_kib": 3120604,
+        "peak_child_rss_bytes": 1338351616,
+        "phase_minimum_available_kib": {
+          "imports": 5564244,
+          "protocol": 5563388,
+          "bert_loading": 5243476,
+          "session_loading_text_encoder_cached_reference.onnx": 4948468,
+          "session_loading_vits_fp32.original-features-ort-int8.reference.onnx": 4898664,
+          "session_loading_t2s_first_stage_decoder_int8.onnx": 4799888,
+          "session_loading_t2s_stage_decoder_int8.onnx": 4799544,
+          "start_speech_-1_-1": 4699640,
+          "start_speech_0_0": 4682112,
+          "start_speech_0_1": 4696000,
+          "start_speech_1_0": 4696224,
+          "start_speech_1_1": 4683968,
+          "start_speech_2_0": 4695956,
+          "start_speech_2_1": 4693960,
+          "completed": 4698436
+        },
+        "events": [
+          {
+            "stage": "protocol",
+            "elapsed_seconds": 2.924223960000745,
+            "options": {
+              "variant": "shared",
+              "bert_mode": "onnx-int8",
+              "seed": 42,
+              "torch_threads": 6,
+              "intra_op_threads": 6,
+              "inter_op_threads": 1,
+              "cpu_arena": "default",
+              "memory_pattern": "default",
+              "disable_prepacking": false,
+              "shared_cpu_arena": true,
+              "arena_extend_strategy": "default",
+              "warmup_text": "海底的小灯亮起来了。",
+              "case_order": "text-first",
+              "repetitions": 2,
+              "load_llm_after_warmup": false,
+              "advise_converted_cache_before_llm": false,
+              "sampling_mode": "reference",
+              "ar_mode": "int8"
+            },
+            "onnxruntime": "1.22.1",
+            "torch": "2.7.0",
+            "seed_scope": "Reference mode: per-utterance PCG64 seed with separate segment/AR/VITS substreams; repeat requests reset owned noise. Not Torch seed-sequence equivalence.",
+            "target_features_precomputed": false
+          },
+          {
+            "stage": "bert_storage",
+            "elapsed_seconds": 8.665891022999858,
+            "mode": "onnx-int8",
+            "layers": 22,
+            "resident_pytorch_bert": false,
+            "bundle": "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert",
+            "integer_operator_dispatch_verified": false
+          },
+          {
+            "stage": "sampling_restored",
+            "elapsed_seconds": 9.353547832999539,
+            "kind": "vits",
+            "revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+            "official_template_sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a",
+            "source_sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a",
+            "output": "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.original-features-ort-int8.reference.onnx",
+            "output_sha256": "278bf7f294e384cdb336522311e783fab91ea51546c118e9bebe5e7b4510918e",
+            "external_files": [
+              "vits_fp32.bin"
+            ],
+            "noise_input": "tuber_normal_noise",
+            "sampling": "standard normal; original 0.5 VITS scale",
+            "first_eos_suppressed": false
+          },
+          {
+            "stage": "ar_quantized",
+            "elapsed_seconds": 12.463308383999902,
+            "preparation_path": "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/receipt.json",
+            "graphs": [
+              {
+                "output": "t2s_first_stage_decoder_int8.onnx",
+                "matmul_integer_nodes": 97,
+                "int8_logical_bytes": 76133889
+              },
+              {
+                "output": "t2s_stage_decoder_int8.onnx",
+                "matmul_integer_nodes": 97,
+                "int8_logical_bytes": 76133889
+              }
+            ],
+            "configuration": {
+              "onnxruntime": "1.22.1",
+              "op_types_to_quantize": [
+                "MatMul"
+              ],
+              "constant_initializer_B_only": true,
+              "per_channel": true,
+              "weight_type": "QInt8",
+              "reduce_range": false,
+              "use_external_data_format": true,
+              "embedding_sampling_vits_changed": false,
+              "runtime_integer_execution_verified": false,
+              "constant_projection_transpose_folding": true,
+              "protected_node_comparison": "Exact protobuf after clearing only optional TensorProto DEFAULT storage presence; all tensor bytes/shape/dtype retained"
+            }
+          },
+          {
+            "stage": "loaded",
+            "elapsed_seconds": 12.46351693500037,
+            "seconds": 7.582955269999729,
+            "providers": [
+              "CPUExecutionProvider"
+            ],
+            "dynamic_bert_resident": true,
+            "variant": "shared"
+          },
+          {
+            "stage": "warmup",
+            "elapsed_seconds": 15.381175376000101,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 2.909233860000313,
+            "dynamic_frontend_seconds": 1.2503791510007431,
+            "semantic_seconds": 0.9906065960003616,
+            "vocoder_seconds": 0.667258514000423,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 1.68,
+            "rtf": 1.731686821428758,
+            "peak": 0.8431978225708008,
+            "rms": 0.2054101973772049,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 18.87032064699997,
+            "repetition": 0,
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 3.4797792219997064,
+            "dynamic_frontend_seconds": 0.14190288200006762,
+            "semantic_seconds": 2.0448547639989556,
+            "vocoder_seconds": 1.2917727999993076,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 15,
+                "stage_steps": 35,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 35,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 19,
+                "stage_steps": 45,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 45,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.2,
+            "rtf": 1.0874310068749082,
+            "peak": 0.9121195077896118,
+            "rms": 0.21149620413780212,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 21.97012065600029,
+            "repetition": 1,
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 3.09179457800019,
+            "dynamic_frontend_seconds": 0.12587259099927905,
+            "semantic_seconds": 1.7109028019986,
+            "vocoder_seconds": 1.2537771309980599,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 15,
+                "stage_steps": 35,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 35,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 19,
+                "stage_steps": 45,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 45,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.2,
+            "rtf": 0.9661858056250594,
+            "peak": 0.9121195077896118,
+            "rms": 0.21149620413780212,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 25.44992120200004,
+            "repetition": 0,
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 3.4722350960000767,
+            "dynamic_frontend_seconds": 0.14683624300050724,
+            "semantic_seconds": 1.940399150000303,
+            "vocoder_seconds": 1.383724016000997,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 21,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 23,
+                "stage_steps": 48,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 48,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.6,
+            "rtf": 0.9645097488889102,
+            "peak": 0.9209729433059692,
+            "rms": 0.22235992550849915,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 29.195511408999664,
+            "repetition": 1,
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 3.737807600000451,
+            "dynamic_frontend_seconds": 0.13096835800024564,
+            "semantic_seconds": 1.9456497539995325,
+            "vocoder_seconds": 1.6599291920010728,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 21,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 23,
+                "stage_steps": 48,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 48,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.6,
+            "rtf": 1.0382798888890141,
+            "peak": 0.9209729433059692,
+            "rms": 0.22235992550849915,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 31.920986240000275,
+            "repetition": 0,
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 2.7184807590001583,
+            "dynamic_frontend_seconds": 0.16951472400069179,
+            "semantic_seconds": 1.488840533000257,
+            "vocoder_seconds": 1.0588609200003702,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 9,
+                "stage_steps": 25,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 25,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 2.68,
+            "rtf": 1.0143584921642381,
+            "peak": 0.9415908455848694,
+            "rms": 0.19996419548988342,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 34.605412647000776,
+            "repetition": 1,
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 2.67749976199957,
+            "dynamic_frontend_seconds": 0.13045355199938058,
+            "semantic_seconds": 1.4826718650001567,
+            "vocoder_seconds": 1.063174949000313,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 9,
+                "stage_steps": 25,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 25,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 2.68,
+            "rtf": 0.9990670753729739,
+            "peak": 0.9415908455848694,
+            "rms": 0.19996419548988342,
+            "valid_non_silent": true
+          }
+        ],
+        "llm_identities": []
+      }
+    ],
+    "audio_protocol": "Same resource-only, no-gap float-WAV path; formal backend restores postprocessing separately."
+  },
+  "ort_int8_physical_coexistence": {
+    "receipt": "runtime/evaluations/genie-live-20261029-ort-int8-coexist/controller-result.json",
+    "status": "completed",
+    "jobs": [
+      {
+        "name": "ort-int8-native128k",
+        "argv": [
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/evaluate_genie_tts.py",
+          "--root",
+          "/workspace/tuber",
+          "--source",
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/source",
+          "--models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models",
+          "--output",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/ort-int8-native128k",
+          "--action",
+          "run",
+          "--variant",
+          "shared",
+          "--seed",
+          "42",
+          "--warmup-text",
+          "海底的小灯亮起来了。",
+          "--case-order",
+          "text-first",
+          "--torch-threads",
+          "6",
+          "--intra-op-threads",
+          "6",
+          "--inter-op-threads",
+          "1",
+          "--execute",
+          "--child",
+          "--shared-cpu-arena",
+          "--bert-mode",
+          "onnx-int8",
+          "--sampling-mode",
+          "reference",
+          "--bert-models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert",
+          "--ar-mode",
+          "int8",
+          "--ar-models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized",
+          "--load-llm-after-warmup",
+          "--advise-converted-cache-before-llm"
+        ],
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 5815968,
+            "swap_used_kib": 202496,
+            "pswpin": 30549,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 3249804,
+            "swap_used_kib": 202496,
+            "pswpin": 30550,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 2137844,
+          "swapin_bytes": 4096,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 4096,
+          "oom_kill_delta": 0,
+          "samples": 80
+        },
+        "peak_machine_total_minus_available_kib": 5664872,
+        "peak_child_rss_bytes": 1344995328,
+        "phase_minimum_available_kib": {
+          "imports": 5580704,
+          "protocol": 5564392,
+          "bert_loading": 5409544,
+          "session_loading_text_encoder_cached_reference.onnx": 5124568,
+          "session_loading_vits_fp32.ort-int8-native128k.reference.onnx": 4916004,
+          "session_loading_t2s_first_stage_decoder_int8.onnx": 4877072,
+          "session_loading_t2s_stage_decoder_int8.onnx": 4877740,
+          "start_speech_-1_-1": 4718900,
+          "warmup": 4715108,
+          "start_llm_load": 2156440,
+          "start_speech_0_0": 2158952,
+          "start_speech_0_1": 2145800,
+          "start_speech_1_0": 2146660,
+          "start_speech_1_1": 2137844,
+          "start_speech_2_0": 2144444,
+          "start_speech_2_1": 2138384,
+          "completed": 2140608
+        },
+        "events": [
+          {
+            "stage": "protocol",
+            "elapsed_seconds": 2.835811107999689,
+            "options": {
+              "variant": "shared",
+              "bert_mode": "onnx-int8",
+              "seed": 42,
+              "torch_threads": 6,
+              "intra_op_threads": 6,
+              "inter_op_threads": 1,
+              "cpu_arena": "default",
+              "memory_pattern": "default",
+              "disable_prepacking": false,
+              "shared_cpu_arena": true,
+              "arena_extend_strategy": "default",
+              "warmup_text": "海底的小灯亮起来了。",
+              "case_order": "text-first",
+              "repetitions": 2,
+              "load_llm_after_warmup": true,
+              "advise_converted_cache_before_llm": true,
+              "sampling_mode": "reference",
+              "ar_mode": "int8"
+            },
+            "onnxruntime": "1.22.1",
+            "torch": "2.7.0",
+            "seed_scope": "Reference mode: per-utterance PCG64 seed with separate segment/AR/VITS substreams; repeat requests reset owned noise. Not Torch seed-sequence equivalence.",
+            "target_features_precomputed": false
+          },
+          {
+            "stage": "bert_storage",
+            "elapsed_seconds": 8.356539594999049,
+            "mode": "onnx-int8",
+            "layers": 22,
+            "resident_pytorch_bert": false,
+            "bundle": "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert",
+            "integer_operator_dispatch_verified": false
+          },
+          {
+            "stage": "sampling_restored",
+            "elapsed_seconds": 9.036329069998828,
+            "kind": "vits",
+            "revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+            "official_template_sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a",
+            "source_sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a",
+            "output": "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.ort-int8-native128k.reference.onnx",
+            "output_sha256": "278bf7f294e384cdb336522311e783fab91ea51546c118e9bebe5e7b4510918e",
+            "external_files": [
+              "vits_fp32.bin"
+            ],
+            "noise_input": "tuber_normal_noise",
+            "sampling": "standard normal; original 0.5 VITS scale",
+            "first_eos_suppressed": false
+          },
+          {
+            "stage": "ar_quantized",
+            "elapsed_seconds": 12.20568416399874,
+            "preparation_path": "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/receipt.json",
+            "graphs": [
+              {
+                "output": "t2s_first_stage_decoder_int8.onnx",
+                "matmul_integer_nodes": 97,
+                "int8_logical_bytes": 76133889
+              },
+              {
+                "output": "t2s_stage_decoder_int8.onnx",
+                "matmul_integer_nodes": 97,
+                "int8_logical_bytes": 76133889
+              }
+            ],
+            "configuration": {
+              "onnxruntime": "1.22.1",
+              "op_types_to_quantize": [
+                "MatMul"
+              ],
+              "constant_initializer_B_only": true,
+              "per_channel": true,
+              "weight_type": "QInt8",
+              "reduce_range": false,
+              "use_external_data_format": true,
+              "embedding_sampling_vits_changed": false,
+              "runtime_integer_execution_verified": false,
+              "constant_projection_transpose_folding": true,
+              "protected_node_comparison": "Exact protobuf after clearing only optional TensorProto DEFAULT storage presence; all tensor bytes/shape/dtype retained"
+            }
+          },
+          {
+            "stage": "loaded",
+            "elapsed_seconds": 12.205896939000013,
+            "seconds": 7.374408822000987,
+            "providers": [
+              "CPUExecutionProvider"
+            ],
+            "dynamic_bert_resident": true,
+            "variant": "shared"
+          },
+          {
+            "stage": "warmup",
+            "elapsed_seconds": 15.082284897998761,
+            "repetition": -1,
+            "index": -1,
+            "text": "海底的小灯亮起来了。",
+            "seconds": 2.868466988998989,
+            "dynamic_frontend_seconds": 1.2401794769994012,
+            "semantic_seconds": 0.9704251719995227,
+            "vocoder_seconds": 0.6571891030016559,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 1.68,
+            "rtf": 1.7074208267851125,
+            "peak": 0.8431978225708008,
+            "rms": 0.2054101973772049,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "converted_cache_advice",
+            "elapsed_seconds": 15.581295841999236,
+            "directories": [
+              {
+                "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized",
+                "files": 4
+              },
+              {
+                "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert",
+                "files": 4
+              },
+              {
+                "directory": "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models",
+                "files": 11
+              }
+            ],
+            "global_cache_reclaim": false
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 21.93546364699978,
+            "repetition": 0,
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 3.2026482010005566,
+            "dynamic_frontend_seconds": 0.16212432000065746,
+            "semantic_seconds": 1.7523281240009965,
+            "vocoder_seconds": 1.2868657019989769,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 15,
+                "stage_steps": 35,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 35,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 19,
+                "stage_steps": 45,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 45,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.2,
+            "rtf": 1.000827562812674,
+            "peak": 0.9121195077896118,
+            "rms": 0.21149620413780212,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 25.077975582998988,
+            "repetition": 1,
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 3.1351078129991947,
+            "dynamic_frontend_seconds": 0.15758315899984154,
+            "semantic_seconds": 1.7206857830005902,
+            "vocoder_seconds": 1.2556802130002325,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 15,
+                "stage_steps": 35,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 35,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 19,
+                "stage_steps": 45,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 45,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.2,
+            "rtf": 0.9797211915622484,
+            "peak": 0.9121195077896118,
+            "rms": 0.21149620413780212,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 28.56031827699917,
+            "repetition": 0,
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 3.4747144370012393,
+            "dynamic_frontend_seconds": 0.1701904090004973,
+            "semantic_seconds": 1.9040257959986775,
+            "vocoder_seconds": 1.3993071879976924,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 21,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 23,
+                "stage_steps": 48,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 48,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.6,
+            "rtf": 0.9651984547225665,
+            "peak": 0.9209729433059692,
+            "rms": 0.22235992550849915,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 32.32340907199978,
+            "repetition": 1,
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 3.7554066000011517,
+            "dynamic_frontend_seconds": 0.16095454800051812,
+            "semantic_seconds": 2.2066539660008857,
+            "vocoder_seconds": 1.3866047709998384,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 21,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 23,
+                "stage_steps": 48,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 48,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 3.6,
+            "rtf": 1.04316850000032,
+            "peak": 0.9209729433059692,
+            "rms": 0.22235992550849915,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 35.01168969799983,
+            "repetition": 0,
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 2.681317732000025,
+            "dynamic_frontend_seconds": 0.1609210719998373,
+            "semantic_seconds": 1.4645980959994631,
+            "vocoder_seconds": 1.0546109129991237,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 9,
+                "stage_steps": 25,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 25,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 2.68,
+            "rtf": 1.0004916910447854,
+            "peak": 0.9415908455848694,
+            "rms": 0.19996419548988342,
+            "valid_non_silent": true
+          },
+          {
+            "stage": "speech",
+            "elapsed_seconds": 37.71219067899983,
+            "repetition": 1,
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 2.6935169669995958,
+            "dynamic_frontend_seconds": 0.1523977470005775,
+            "semantic_seconds": 1.4808496599980572,
+            "vocoder_seconds": 1.0590619090016844,
+            "segment_diagnostics": [
+              {
+                "segment_index": 0,
+                "phone_count": 19,
+                "stage_steps": 42,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "greedy_eos",
+                "semantic_tokens": 42,
+                "limit_exhausted": false
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 9,
+                "stage_steps": 25,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 123,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 25,
+                "limit_exhausted": false
+              }
+            ],
+            "audio_seconds": 2.68,
+            "rtf": 1.0050436444028341,
+            "peak": 0.9415908455848694,
+            "rms": 0.19996419548988342,
+            "valid_non_silent": true
+          }
+        ],
+        "llm_identities": [
+          {
+            "stage": "llm_loaded",
+            "identity": {
+              "pid": 730,
+              "uid": 1001,
+              "create_time": 1793280798.07,
+              "argv": [
+                "/opt/llama/bin/llama-server",
+                "-m",
+                "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+                "--alias",
+                "MiniCPM5-2B",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "9013",
+                "--jinja",
+                "--ctx-size",
+                "131072",
+                "--parallel",
+                "1",
+                "--fit",
+                "off",
+                "--n-gpu-layers",
+                "99",
+                "--flash-attn",
+                "on",
+                "--cache-type-k",
+                "q4_0",
+                "--cache-type-v",
+                "q4_0",
+                "--reasoning",
+                "auto",
+                "--temp",
+                "1.0",
+                "--top-p",
+                "0.95",
+                "--min-p",
+                "0.0",
+                "--batch-size",
+                "256",
+                "--ubatch-size",
+                "64",
+                "--cache-ram",
+                "0",
+                "--no-mmap",
+                "--direct-io"
+              ]
+            },
+            "configured_context": 131072,
+            "broker_mode": "text",
+            "actual_native": 131072
+          },
+          {
+            "stage": "llm_identity_verified",
+            "identity": {
+              "pid": 730,
+              "uid": 1001,
+              "create_time": 1793280798.07,
+              "argv": [
+                "/opt/llama/bin/llama-server",
+                "-m",
+                "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+                "--alias",
+                "MiniCPM5-2B",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "9013",
+                "--jinja",
+                "--ctx-size",
+                "131072",
+                "--parallel",
+                "1",
+                "--fit",
+                "off",
+                "--n-gpu-layers",
+                "99",
+                "--flash-attn",
+                "on",
+                "--cache-type-k",
+                "q4_0",
+                "--cache-type-v",
+                "q4_0",
+                "--reasoning",
+                "auto",
+                "--temp",
+                "1.0",
+                "--top-p",
+                "0.95",
+                "--min-p",
+                "0.0",
+                "--batch-size",
+                "256",
+                "--ubatch-size",
+                "64",
+                "--cache-ram",
+                "0",
+                "--no-mmap",
+                "--direct-io"
+              ]
+            },
+            "configured_context": 131072,
+            "broker_mode": "text",
+            "actual_native": 131072
+          }
+        ]
+      }
+    ],
+    "restored": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        730
+      ]
+    },
+    "config_unchanged": true,
+    "formal_broker_live_mode": false,
+    "input_capacity_tested_in_this_run": false,
+    "audio_quality_percent": null
+  },
+  "offline_preparation": {
+    "receipt": "runtime/evaluations/genie-live-20261029-offline/controller-result.json",
+    "status": "completed",
+    "jobs": [
+      {
+        "name": "prepare-ar",
+        "argv": [
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/genie_quantize.py",
+          "--models",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models",
+          "--output",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized",
+          "--execute"
+        ],
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 5777592,
+            "swap_used_kib": 170496,
+            "pswpin": 25028,
+            "pswpout": 173972,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 6026000,
+            "swap_used_kib": 170496,
+            "pswpin": 25032,
+            "pswpout": 173972,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3095404,
+          "swapin_bytes": 16384,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 16384,
+          "oom_kill_delta": 0,
+          "samples": 99
+        },
+        "peak_machine_total_minus_available_kib": 4707312,
+        "peak_child_rss_bytes": 2896592896,
+        "phase_minimum_available_kib": {
+          "imports": 3095404
+        },
+        "events": [],
+        "llm_identities": []
+      },
+      {
+        "name": "prepare-bert",
+        "argv": [
+          "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/bin/python",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/genie_bert.py",
+          "--root",
+          "/workspace/tuber",
+          "--output",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert",
+          "--threads",
+          "4",
+          "--execute"
+        ],
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 6026000,
+            "swap_used_kib": 170496,
+            "pswpin": 25032,
+            "pswpout": 173972,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 6777248,
+            "swap_used_kib": 212736,
+            "pswpin": 25088,
+            "pswpout": 184545,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 1691804,
+          "swapin_bytes": 229376,
+          "swapout_bytes": 43307008,
+          "maximum_rolling_25s_swap_bytes": 43356160,
+          "oom_kill_delta": 0,
+          "samples": 164
+        },
+        "peak_machine_total_minus_available_kib": 6110912,
+        "peak_child_rss_bytes": 5343862784,
+        "phase_minimum_available_kib": {
+          "imports": 1691804
+        },
+        "events": [],
+        "llm_identities": []
+      }
+    ],
+    "restored": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        607
+      ]
+    },
+    "config_unchanged": true,
+    "ar": {
+      "completed": true,
+      "configuration": {
+        "onnxruntime": "1.22.1",
+        "op_types_to_quantize": [
+          "MatMul"
+        ],
+        "constant_initializer_B_only": true,
+        "per_channel": true,
+        "weight_type": "QInt8",
+        "reduce_range": false,
+        "use_external_data_format": true,
+        "embedding_sampling_vits_changed": false,
+        "runtime_integer_execution_verified": false,
+        "constant_projection_transpose_folding": true,
+        "protected_node_comparison": "Exact protobuf after clearing only optional TensorProto DEFAULT storage presence; all tensor bytes/shape/dtype retained"
+      },
+      "elapsed_seconds": 47.77758135099975,
+      "process_peak_rss_kib": 3061556,
+      "graphs": [
+        {
+          "source": "t2s_first_stage_decoder_fp32.onnx",
+          "output": "t2s_first_stage_decoder_int8.onnx",
+          "matmul_integer_nodes": 97,
+          "int8_logical_bytes": 76133889,
+          "artifacts": {
+            "t2s_first_stage_decoder_int8.onnx": {
+              "bytes": 1257274,
+              "sha256": "30e51f90a1d91498c0f8a7ac975ce878fb3da963d2261c4a64e84cb249d7933c"
+            },
+            "t2s_first_stage_decoder_int8.onnx.data": {
+              "bytes": 78761472,
+              "sha256": "0a333771df75a46f7bab4dc5ea0f9f15d243b6f87198ba6a696d856e947fe936"
+            }
+          },
+          "non_target_node_protobufs_unchanged": 1654
+        },
+        {
+          "source": "t2s_stage_decoder_fp32.onnx",
+          "output": "t2s_stage_decoder_int8.onnx",
+          "matmul_integer_nodes": 97,
+          "int8_logical_bytes": 76133889,
+          "artifacts": {
+            "t2s_stage_decoder_int8.onnx": {
+              "bytes": 1258055,
+              "sha256": "9f363f53b74ba7c1b090d69c0da3ed22c5c80328b5ab1ccc8e462624913b8817"
+            },
+            "t2s_stage_decoder_int8.onnx.data": {
+              "bytes": 78761472,
+              "sha256": "0a333771df75a46f7bab4dc5ea0f9f15d243b6f87198ba6a696d856e947fe936"
+            }
+          },
+          "non_target_node_protobufs_unchanged": 1652
+        }
+      ]
+    },
+    "bert": {
+      "kind": "original_chinese_bert_22_layer_dynamic_int8",
+      "completed": true,
+      "threads": 4,
+      "configuration": {
+        "cpu_float32_export": true,
+        "dynamo": false,
+        "opset": 20,
+        "dynamic_token_length": true,
+        "per_channel": true,
+        "weight_type": "QInt8",
+        "constant_b_matmul_only": true,
+        "source_checkpoint_modified": false,
+        "runtime_torch_model_required": false,
+        "speech_quality_or_speed_verified": false
+      },
+      "versions": {
+        "torch": "2.7.0",
+        "transformers": "4.44.2",
+        "onnx": "1.17.0",
+        "onnxruntime": "1.22.1"
+      },
+      "original_layers": 24,
+      "effective_layers": 22,
+      "source_hidden_state": "original hidden_states[-3], i.e. layer 22 output",
+      "load_seconds": 0.7476449430014327,
+      "export_seconds": 14.043112119001307,
+      "externalize_seconds": 3.260387365000497,
+      "fp32_node_counts": {
+        "Shape": 177,
+        "Constant": 538,
+        "Gather": 180,
+        "Unsqueeze": 179,
+        "Slice": 1,
+        "Add": 200,
+        "LayerNormalization": 45,
+        "Cast": 1,
+        "Sub": 1,
+        "Mul": 1,
+        "MatMul": 176,
+        "Concat": 88,
+        "Reshape": 88,
+        "Transpose": 88,
+        "Div": 22,
+        "Softmax": 22,
+        "Gelu": 22
+      },
+      "selected_constant_b_matmuls": 132,
+      "quantize_seconds": 39.11027146500055,
+      "int8_node_counts": {
+        "Constant": 538,
+        "Shape": 177,
+        "Gather": 180,
+        "Unsqueeze": 179,
+        "Add": 200,
+        "Cast": 133,
+        "Slice": 1,
+        "Sub": 1,
+        "Mul": 265,
+        "LayerNormalization": 45,
+        "DynamicQuantizeLinear": 88,
+        "MatMulInteger": 132,
+        "Concat": 88,
+        "Reshape": 88,
+        "Transpose": 88,
+        "MatMul": 44,
+        "Div": 22,
+        "Softmax": 22,
+        "Gelu": 22
+      },
+      "int8_initializers": 264,
+      "comparisons": [
+        {
+          "index": 0,
+          "canonical_speech": true,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "torch_hot_seconds": 0.5050828450002882,
+          "token_count": 20,
+          "onnx_fp32": {
+            "cosine_similarity": 0.9999999999996778,
+            "max_absolute_error": 1.52587890625e-05,
+            "mean_absolute_error": 5.443829008910938e-07,
+            "rmse": 7.613830118511816e-07,
+            "hot_seconds": [
+              0.16956245399887848,
+              0.16969112799961295,
+              0.1686298460008402
+            ],
+            "hot_median_seconds": 0.16956245399887848
+          },
+          "onnx_int8": {
+            "cosine_similarity": 0.9904109037042828,
+            "max_absolute_error": 1.0691947937011719,
+            "mean_absolute_error": 0.1008819972603372,
+            "rmse": 0.13292257273833163,
+            "hot_seconds": [
+              0.05642297600024904,
+              0.05401986099968781,
+              0.05404754099981801
+            ],
+            "hot_median_seconds": 0.05404754099981801
+          }
+        },
+        {
+          "index": 1,
+          "canonical_speech": true,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "torch_hot_seconds": 0.538086986000053,
+          "token_count": 25,
+          "onnx_fp32": {
+            "cosine_similarity": 0.9999999999996699,
+            "max_absolute_error": 1.71661376953125e-05,
+            "mean_absolute_error": 5.664046931741495e-07,
+            "rmse": 7.724809130186711e-07,
+            "hot_seconds": [
+              0.2029541709998739,
+              0.2021720649991039,
+              0.1981770909987972
+            ],
+            "hot_median_seconds": 0.2021720649991039
+          },
+          "onnx_int8": {
+            "cosine_similarity": 0.9636817839765428,
+            "max_absolute_error": 21.893339157104492,
+            "mean_absolute_error": 0.12291145163922124,
+            "rmse": 0.25914960176227264,
+            "hot_seconds": [
+              0.06634610800028895,
+              0.06620530300097016,
+              0.06637151699942478
+            ],
+            "hot_median_seconds": 0.06634610800028895
+          }
+        },
+        {
+          "index": 2,
+          "canonical_speech": true,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "torch_hot_seconds": 0.4440979779992631,
+          "token_count": 17,
+          "onnx_fp32": {
+            "cosine_similarity": 0.9999999999997122,
+            "max_absolute_error": 1.1444091796875e-05,
+            "mean_absolute_error": 4.965650963881404e-07,
+            "rmse": 7.147505487565344e-07,
+            "hot_seconds": [
+              0.167602388000887,
+              0.15839633500036143,
+              0.15786239800036128
+            ],
+            "hot_median_seconds": 0.15839633500036143
+          },
+          "onnx_int8": {
+            "cosine_similarity": 0.9914186943295968,
+            "max_absolute_error": 1.2181282043457031,
+            "mean_absolute_error": 0.09133039511876759,
+            "rmse": 0.12401531047469302,
+            "hot_seconds": [
+              0.0507817409998097,
+              0.050419330000295304,
+              0.05040284899951075
+            ],
+            "hot_median_seconds": 0.050419330000295304
+          }
+        },
+        {
+          "index": 3,
+          "canonical_speech": false,
+          "text": "你好。",
+          "torch_hot_seconds": 0.3270712640005513,
+          "token_count": 5,
+          "onnx_fp32": {
+            "cosine_similarity": 0.9999999999996463,
+            "max_absolute_error": 9.5367431640625e-06,
+            "mean_absolute_error": 4.097655548207513e-07,
+            "rmse": 6.544123090010344e-07,
+            "hot_seconds": [
+              0.08984321000025375,
+              0.09062803500091832,
+              0.08842044399898441
+            ],
+            "hot_median_seconds": 0.08984321000025375
+          },
+          "onnx_int8": {
+            "cosine_similarity": 0.9919616146759879,
+            "max_absolute_error": 0.493385910987854,
+            "mean_absolute_error": 0.06464654509146399,
+            "rmse": 0.09853227807288943,
+            "hot_seconds": [
+              0.029660046000572038,
+              0.029289313999470323,
+              0.02918383900032495
+            ],
+            "hot_median_seconds": 0.029289313999470323
+          }
+        },
+        {
+          "index": 4,
+          "canonical_speech": false,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。收到三份海苔饭团啦，谢谢小壳！",
+          "torch_hot_seconds": 0.9165260509998916,
+          "token_count": 58,
+          "onnx_fp32": {
+            "cosine_similarity": 0.9999999999996124,
+            "max_absolute_error": 1.811981201171875e-05,
+            "mean_absolute_error": 6.189878470322661e-07,
+            "rmse": 8.362501273567904e-07,
+            "hot_seconds": [
+              0.38243158899967966,
+              0.38088968100055354,
+              0.3819528830008494
+            ],
+            "hot_median_seconds": 0.3819528830008494
+          },
+          "onnx_int8": {
+            "cosine_similarity": 0.9906716082288035,
+            "max_absolute_error": 1.3747329711914062,
+            "mean_absolute_error": 0.10214743022248213,
+            "rmse": 0.1327626045140776,
+            "hot_seconds": [
+              0.13318883899955836,
+              0.13307699500001036,
+              0.13252894600009313
+            ],
+            "hot_median_seconds": 0.13307699500001036
+          }
+        },
+        {
+          "index": 5,
+          "canonical_speech": false,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "torch_hot_seconds": 1.3433417169999302,
+          "token_count": 94,
+          "onnx_fp32": {
+            "cosine_similarity": 0.9999999999995154,
+            "max_absolute_error": 1.9073486328125e-05,
+            "mean_absolute_error": 6.771907136609306e-07,
+            "rmse": 8.946638023205089e-07,
+            "hot_seconds": [
+              0.5818017629990209,
+              0.5796060760003456,
+              0.5808903980014293
+            ],
+            "hot_median_seconds": 0.5808903980014293
+          },
+          "onnx_int8": {
+            "cosine_similarity": 0.9896169017243289,
+            "max_absolute_error": 2.3150854110717773,
+            "mean_absolute_error": 0.10561789624796372,
+            "rmse": 0.13588088976300144,
+            "hot_seconds": [
+              0.20014213300055417,
+              0.2002264219991048,
+              0.19862553999882948
+            ],
+            "hot_median_seconds": 0.20014213300055417
+          }
+        }
+      ],
+      "onnx_fp32_load_seconds": 3.2374998070008587,
+      "onnx_fp32_warmup_seconds": 0.2217176809990633,
+      "onnx_int8_load_seconds": 0.8298888029985392,
+      "onnx_int8_warmup_seconds": 0.07916526799999701,
+      "files": {
+        "bert_int8.onnx.data": {
+          "bytes": 366653440,
+          "sha256": "abf85a9a7720043b78bb2765701e7e51cfbabb167987bdc1ea1d21d1c749b9ae"
+        },
+        "bert_int8.onnx": {
+          "bytes": 1739880,
+          "sha256": "c04d0f912beaac82af0b2a6420223b2a3490a574d6a7b3cd4eec2de2858b7b22"
+        },
+        "bert_fp32.onnx.data": {
+          "bytes": 1197121536,
+          "sha256": "2002f76fbf57b0c28923b6f1018369b5c122b7dc82a4742d6a515548b7d96670"
+        },
+        "bert_fp32.onnx": {
+          "bytes": 407647,
+          "sha256": "575371815f81abe2ed517b5d967b43cf5fac2e07814a54efc0f763a0f29d9485"
+        }
+      },
+      "total_seconds": 79.33676980600103
+    }
+  },
+  "current_deployment": {
+    "code": "a4f9437",
+    "backend": "compact_retained_TTS_off",
+    "mode": "text",
+    "features_live_enabled": false,
+    "experimental_admission_is_not_deployment": true
+  },
+  "verification": {
+    "local_full_suite": {
+      "passed": 451,
+      "skipped": 2,
+      "note": "NumPy/ONNX modules separately checked in isolated tool environment; not added to application dependencies"
+    },
+    "standalone_numerical_contracts": {
+      "sampling": 12,
+      "backend": 28,
+      "bundle": 12
+    },
+    "hardware_formal_backend": "pending",
+    "quality_listening": "pending",
+    "long_input_with_new_backend": "pending",
+    "two_hours_100_speech": "pending"
+  }
+}

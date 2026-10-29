@@ -30,7 +30,7 @@
 
 模板的LLM入口为http://127.0.0.1:9012/llm/2b，保留的本地TTS入口为http://127.0.0.1:9012/tts。当前features.live_enabled默认false、资源保持text，直播／Mock启动和本地动态TTS试听标为后续；已有停止／清理控制仍可用。预录与已配置语音API可独立试听，不加载本地TTS或切live。导航不隐式改变资源模式。
 
-默认继续2B Q4_K_M权重＋q4 KV＋131072文本窗口；本地TTS共驻实验与直播验收延期，不阻塞评论工作。MiniCPM5-2B没有视觉编码器，本地／API视觉接口默认disabled，不下载新视觉模型或从资源模式名称宣称已能看图。
+默认继续2B Q4_K_M权重＋q4 KV＋131072窗口；当前恢复Genie本地声音与Mock直播资源开发，评论工作不依赖这项准入。MiniCPM5-2B没有视觉编码器，本地／API视觉接口默认disabled，不下载新视觉模型或从资源模式名称宣称已能看图。
 
 镜像以dustynv/pytorch:2.7-r36.4.0-cu128-24.04为基础，从ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821阶段只复制llama-server，复用原生Torch和CUDA。锁定依赖安装到项目容器环境，固定只读源码通过同一环境的.pth加载，不在每次源码更新时联网重建editable包；构建时核验模块根仍为/workspace/tuber。运行层不复制开发测试、临时文件、宿主venv或第二套CUDA；带维护用准入／资源评估脚本与固定用例。
 
@@ -109,6 +109,14 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 候选诊断与正式测量分进程：先验证实际算子／INT8底层存储，再用同配置诊断凭证执行无profiler的合成测量。INT8权重存储配合浮点矩阵乘法不标成INT8计算；Lite须开启BERT，原24层前端和新SDK的差异作为候选条件保留。--speech-cases evaluations/speech-cases.json可生成25句对照音频，未实际完成的条数不计通过。tts-first／isolated均由维护监督器受控卸载本项目LLM并在finally恢复，不与正式模型或别的实验抢GPU；加载、参考缓存、预热及Mini共驻开销都计入整机峰值。
 
-独立Genie实验使用tools/evaluate_genie_tts.py，在runtime/evaluations自己的环境／固定源码和模型转换目录运行；默认不装入生产依赖，也不替换正式TTS。外层维护owner卸载Mini并在finally恢复，原MemoryWatch阈值不变，目标中文每次真实执行原前端及22层BERT，不能预计算测试台词后冒称动态下限。实际参数、冷峰值、热态局限及工具用法见[Genie结果](../../evaluations/results/gpt-sovits-inference-floor-20261029.json)。
+Genie历史独立实验使用tools/evaluate_genie_tts.py及单独环境；它不等于正式服务或质量准入，旧结果见[初筛](../../evaluations/results/gpt-sovits-inference-floor-20261029.json)。当前模型／分配／量化比较见[优化证据](../../evaluations/results/genie-live-optimization-20261029.json)。外层维护owner卸载Mini并在finally恢复，原MemoryWatch阈值不变；目标中文每次动态执行原前端及22层BERT，不能预计算测试台词后冒称下限。legacy采样／无gap实验与恢复原采样／后处理的正式后端分开报告。
+
+Genie正式依赖作为原镜像的小层安装进同一`/opt/studio-venv`，锁定CPU ORT1.22.1与少量依赖，保留原CUDA Torch／Audio／Vision、Transformers和NumPy版本及路径；不另起TTS容器或第二套Torch。镜像只携带固定Genie v2转换／模板子集及MIT许可，不装公共Genie服务器、播放器或额外语言资源。
+
+永久Genie音色包须先离线准备：复用原v2权重／固定参考、固定模板转换结果；用`genie_sampling.patch_graph`先恢复AR采样，再由`tools/jetson/tts/genie_quantize.py --models <恢复后FP32目录> --output <新AR目录> --execute`量化两个AR图；`tools/jetson/tts/genie_bert.py --root /workspace/tuber --output <新BERT目录> --execute`从原checkpoint准备一次22层动态BERT。上述输出放项目`runtime/evaluations`，全程必须有单一维护owner和内存守护，不能与常驻Mini同时导出。首次转换及准备峰值单列，不从直播峰值中消失。
+
+安装命令为`python tools/jetson/tts/genie_bundle.py --root /workspace/tuber --voice whale_sovits_v2 --models <原转换且已展开FP32的目录> --ar-bundle <恢复采样后的INT8目录> --bert-bundle <BERT目录> --execute`。它核对原checkpoint逐tensor内容、采样／量化来源链和全部运行产物，原子创建`runtime/tts/genie/<voice_id>`，不覆盖已有包。新OC按自己的voice与参考重复安装；缺包／身份失效会要求显式准备，常驻服务不临时导出、不读取实验目录或静默换回compact。重建先停止相关资源，保留现有包供回退，由Operator显式更换，安装器不自动删除旧包。
+
+完成准入后配置`tts.local_backend=genie_onnx_int8`、选定`tts.voice_id`并显式启用`features.live_enabled`；引擎选择属启动配置，手改后重启。保持MiniCPM5-2B／131072／q4_0，手动切live时仍先完成Genie冷载和完整暖机，再加载Mini。前端只读显示引擎，text下动态试听提示先手动切live，不隐式加载；仅允许所选固定音色。`/docs`实际backend／voice／bundle身份和小stat检查通过后，工作台才能复用相应音频缓存。真实平台和评论自动策略不因启用Mock而开启。
 
 语义检查覆盖回声、部分字面事实和摘要遗漏，不证明完整人格、长文召回或长期稳定性。比较须记录真实模型、采样、Think、模板适配和证据层条件，不能把旧2B NoThink实验当官方质量基线。后续另测声音冷／热启动、峰值共享RAM、换页、共驻／交替和持续运行；不同窗口的结果分开，低窗口测量不冒称默认128K，不从旧Profile直接外推新配置。

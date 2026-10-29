@@ -294,3 +294,86 @@ def test_reference_prepare_cli_never_starts_http_and_default_seed_is_preserved(
     monkeypatch.setattr(server, "create_app", lambda *a, **k: pytest.fail("Preparation must not start HTTP"))
     server.main()
     assert calls == [(tmp_path, {"voice_id": "oc"})]
+
+
+def test_genie_factory_uses_selected_backend_and_retains_complete_startup_warmup(
+    backend, tmp_path, monkeypatch
+):
+    server, _, pipeline, _, calls = backend
+    (tmp_path / "runtime").mkdir()
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"local_backend": "genie_onnx_int8"}}))
+    pipeline.backend = "genie_onnx_int8"
+    pipeline.backend_identity = "a" * 64
+    selected = []
+
+    def load(root, voice_id):
+        selected.append((root, voice_id))
+        return pipeline
+
+    monkeypatch.setattr(server, "_genie_pipeline", load)
+    monkeypatch.setattr(server.compact, "create_pipeline", lambda *a, **k: pytest.fail("Wrong backend"))
+    engine = server.SpeechEngine.load(tmp_path, "oc")
+    assert selected == [(tmp_path, "oc")]
+    assert engine.backend == "genie_onnx_int8" and engine.bundle_identity == "a" * 64
+    assert len(calls) == 1 and calls[0]["text"] == "海底的小灯亮起来了。" and calls[0]["seed"] == 42
+
+
+async def test_genie_health_exposes_identity_and_checks_bundle_before_cache_hits(backend, tmp_path):
+    server, _, pipeline, _, calls = backend
+    (tmp_path / "runtime").mkdir()
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"local_backend": "genie_onnx_int8"}}))
+    pipeline.backend, pipeline.backend_identity = "genie_onnx_int8", "b" * 64
+    changed, checks = False, []
+
+    def verify():
+        checks.append(True)
+        if changed:
+            raise ValueError("private bundle path changed")
+
+    pipeline.verify_assets = verify
+    engine = server.SpeechEngine(tmp_path, "oc", pipeline)
+    async with client_for(server, engine, tmp_path) as client:
+        result = await client.get("/docs")
+        assert result.status_code == 200
+        assert result.json()["backend"] == "genie_onnx_int8"
+        assert result.json()["bundle_identity"] == "b" * 64
+        changed = True
+        failed = await client.get("/docs")
+        assert failed.status_code == 503 and engine.failed
+        assert "private bundle" not in failed.text
+        assert (await client.post("/tts", json={"text": "你好"})).status_code == 503
+    assert len(checks) == 2 and calls == []
+
+
+async def test_backend_parameter_rejection_is_422_without_poisoning_worker(backend, tmp_path):
+    server, engine, pipeline, _, calls = backend
+
+    def validate(params):
+        if params.get("top_k", 5) != 5:
+            raise ValueError("Genie backend requires top_k=5")
+
+    pipeline.validate_params = validate
+    async with client_for(server, engine, tmp_path) as client:
+        assert (await client.post("/tts", json={"text": "你好", "top_k": 15})).status_code == 422
+        assert (await client.get("/docs")).status_code == 200
+    assert not engine.failed and calls == []
+
+
+async def test_changing_backend_requires_restart_before_speech_or_health(backend, tmp_path):
+    server, engine, _, _, calls = backend
+    (tmp_path / "runtime").mkdir()
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"local_backend": "genie_onnx_int8"}}))
+    async with client_for(server, engine, tmp_path) as client:
+        assert (await client.get("/docs")).status_code == 503
+        assert (await client.post("/tts", json={"text": "你好"})).status_code == 503
+    assert engine.failed and calls == []
+
+
+def test_unknown_local_backend_never_falls_back_to_compact(backend, tmp_path, monkeypatch):
+    server, _, _, _, calls = backend
+    (tmp_path / "runtime").mkdir()
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"local_backend": "unknown"}}))
+    monkeypatch.setattr(server.compact, "create_pipeline", lambda *a, **k: pytest.fail("Silent fallback"))
+    with pytest.raises(ValueError, match="Unknown configured"):
+        server.SpeechEngine.load(tmp_path, "oc")
+    assert calls == []

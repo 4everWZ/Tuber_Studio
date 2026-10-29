@@ -41,7 +41,7 @@ def process_ids():
     return {key: sorted(value) for key, value in result.items()}
 
 
-async def check_profile(client):
+async def check_profile(client, backend, *, expected_identity=None):
     response = await client.get("/health", timeout=10)
     response.raise_for_status()
     health = response.json()
@@ -52,8 +52,9 @@ async def check_profile(client):
         or health["error"]
         or not health["providers"]["tts"]["running"]
         or not health["providers"]["llm2b"]["running"]
+        or health["kv_cache_type"] != "q4_0"
     ):
-        raise RuntimeError("Requires idle MiniCPM5-2B + formal compact TTS in live mode")
+        raise RuntimeError("Requires idle MiniCPM5-2B/q4_0 + the configured local TTS in live mode")
     response = await client.get("/llm/2b/props", timeout=10)
     response.raise_for_status()
     props = response.json()
@@ -62,7 +63,29 @@ async def check_profile(client):
     processes = process_ids()
     if len(processes["llm"]) != 1 or len(processes["tts"]) != 1:
         raise RuntimeError("Expected one formal TTS and one LLM process")
-    return {"model": "MiniCPM5-2B", "context": 131072, "kv": health["kv_cache_type"], "pids": processes}
+    response = await client.get("/tts/docs", timeout=10)
+    response.raise_for_status()
+    speech = response.json()
+    if speech.get("status") != "ready" or speech.get("backend") != backend:
+        raise RuntimeError("The actual TTS backend is not the configured, ready backend")
+    identity = speech.get("bundle_identity")
+    if backend == "genie_onnx_int8" and (
+        not isinstance(identity, str)
+        or len(identity) != 64
+        or any(letter not in "0123456789abcdef" for letter in identity)
+        or expected_identity is not None
+        and identity != expected_identity
+    ):
+        raise RuntimeError("Genie bundle identity is missing or changed during the workload")
+    return {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": health["kv_cache_type"],
+        "pids": processes,
+        "tts_backend": backend,
+        "bundle_identity": identity,
+        "voice_id": speech.get("voice_id"),
+    }
 
 
 async def evaluate(args):
@@ -101,7 +124,12 @@ async def evaluate(args):
             or status["comment_policy"]["auto_reply"]
         ):
             raise RuntimeError("Stop production and automatic comment jobs before endurance evaluation")
-        profile = await check_profile(client)
+        backend = (
+            "genie_onnx_int8"
+            if config["tts"].get("local_backend") == "genie_onnx_int8"
+            else "gpt_sovits_v2_compact"
+        )
+        profile = await check_profile(client, backend)
 
         async def monitor():
             next_report = time.monotonic() + 30
@@ -187,7 +215,7 @@ async def evaluate(args):
                     remaining = args.seconds - (time.monotonic() - watch.started)
                     if remaining > 0:
                         await asyncio.sleep(min(args.interval, remaining))
-            return await check_profile(client)
+            return await check_profile(client, backend, expected_identity=profile["bundle_identity"])
 
         work = asyncio.create_task(workload())
         guard = asyncio.create_task(monitor())

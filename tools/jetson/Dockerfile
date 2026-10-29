@@ -11,6 +11,8 @@ FROM ${CUDA_IMAGE}
 # Reuse the original CUDA/PyTorch image; do not copy a second CUDA stack.
 COPY --from=llama /opt/llama.cpp/bin/llama-server /opt/llama/bin/llama-server
 COPY --from=tts-source /opt/GPT-SoVITS-v2 /opt/GPT-SoVITS-v2
+# Only the original v2 conversion code/templates are needed; no public Genie
+# server, playback backend, additional voices or language frontend is installed.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -33,10 +35,17 @@ RUN /opt/venv/bin/uv venv --seed --system-site-packages --python /usr/bin/python
     && /opt/studio-venv/bin/python -c 'from importlib.metadata import distribution; assert str(distribution("torch").locate_file("")).startswith("/opt/venv/"), "Original CUDA torch must be reused"' \
     && rm -rf /tmp/uv-cache /tmp/studio-app.txt /tmp/native-torch.txt /tmp/tts-requirements.txt
 
+COPY third_party/Genie-TTS /opt/Genie-TTS
+COPY tools/jetson/tts/genie-requirements.txt /tmp/genie-requirements.txt
+RUN /opt/studio-venv/bin/python -c "import importlib.metadata as m,json; from pathlib import Path; Path('/tmp/speech-origin.json').write_text(json.dumps({n:[m.version(n),str(m.distribution(n).locate_file(''))] for n in ('torch','torchaudio','torchvision','transformers','numpy')}))" \
+    && /opt/studio-venv/bin/python -m pip install --no-deps --index-url "${PYPI_INDEX}" -r /tmp/genie-requirements.txt \
+    && /opt/studio-venv/bin/python -c "import importlib.metadata as m,json,onnxruntime as o; from pathlib import Path; assert json.loads(Path('/tmp/speech-origin.json').read_text())=={n:[m.version(n),str(m.distribution(n).locate_file(''))] for n in ('torch','torchaudio','torchvision','transformers','numpy')}; assert o.__version__=='1.22.1' and 'CPUExecutionProvider' in o.get_available_providers()" \
+    && rm -f /tmp/genie-requirements.txt /tmp/speech-origin.json
+
 COPY src ./src
 COPY config ./config
 COPY assets ./assets
-COPY third_party ./third_party
+COPY third_party/openai-codex ./third_party/openai-codex
 COPY evaluations/semantic-cases.json ./evaluations/semantic-cases.json
 COPY evaluations/speech-cases.json ./evaluations/speech-cases.json
 COPY tools/evaluate_semantics.py ./tools/evaluate_semantics.py
@@ -47,6 +56,7 @@ COPY tools/evaluate_tts_parity.py ./tools/evaluate_tts_parity.py
 COPY tools/evaluate_genie_tts.py ./tools/evaluate_genie_tts.py
 COPY tools/evaluate_live.py ./tools/evaluate_live.py
 COPY tools/jetson/tts/serve.py tools/jetson/tts/server.py tools/jetson/tts/compact.py tools/jetson/tts/inference_only.py tools/jetson/tts/prepare.py tools/jetson/tts/requirements.txt tools/jetson/tts/tts_infer.yaml ./tools/jetson/tts/
+COPY tools/jetson/tts/genie_sampling.py tools/jetson/tts/genie_quantize.py tools/jetson/tts/genie_bert.py tools/jetson/tts/genie_backend.py tools/jetson/tts/genie_bundle.py ./tools/jetson/tts/
 COPY tools/jetson/initialize-data.py ./tools/jetson/initialize-data.py
 COPY tools/jetson/tts/install-candidates.py ./tools/jetson/tts/install-candidates.py
 # Dependencies were already installed from the locked export. This image owns a
@@ -62,6 +72,7 @@ RUN /opt/studio-venv/bin/python -c "from pathlib import Path; import sysconfig; 
 ENV PATH=/opt/studio-venv/bin:/opt/llama/bin:$PATH \
     TUBER_ROOT=/workspace/tuber \
     TUBER_GPT_SOVITS_ROOT=/opt/GPT-SoVITS-v2 \
+    TUBER_GENIE_ROOT=/opt/Genie-TTS \
     NLTK_DATA=/workspace/tuber/runtime/nltk_data \
     HOME=/workspace/tuber/runtime \
     USER=tuber \

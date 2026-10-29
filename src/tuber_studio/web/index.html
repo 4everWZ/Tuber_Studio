@@ -20,7 +20,7 @@
       <nav aria-label="功能区">
         <a href="#comments" data-page="comments"><span aria-hidden="true">▤</span>评论工作台</a>
         <a href="#overview" data-page="overview"><span aria-hidden="true">◫</span>总览</a>
-        <a href="#live" data-page="live"><span aria-hidden="true">◉</span>直播（后续）</a>
+        <a href="#live" data-page="live"><span aria-hidden="true">◉</span><span id="live-nav-label">直播（后续）</span></a>
         <a href="#characters" data-page="characters"><span aria-hidden="true">♧</span>角色</a>
         <a href="#voices" data-page="voices"><span aria-hidden="true">♫</span>语音</a>
         <a href="#assets" data-page="assets"><span aria-hidden="true">▧</span>素材</a>
@@ -91,6 +91,7 @@
                 <div id="tts-api-fields"><label>语音 API Base URL<input id="tts-base-url" type="url" placeholder="服务提供的 Base URL（通常包含 /v1）" autocomplete="off"></label><div class="form-grid"><label>模型 ID<input id="tts-model" placeholder="填写语音服务的实际模型 ID" autocomplete="off"></label><label>Voice ID<input id="tts-voice" placeholder="填写服务支持的 Voice ID" autocomplete="off"></label></div></div>
                 <div class="provider-credential"><label>API Key（可选）<input id="tts-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label><span id="tts-key-state" class="hint">密钥状态待读取</span><label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存密钥</label></div>
                 <p id="tts-settings-help" class="hint">配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。</p>
+                <p id="tts-local-engine" class="hint" role="status">本地引擎：正在读取已保存配置。</p>
               </fieldset>
               <details class="provider-group"><summary>多模态接口（高级，默认关闭）</summary><p class="hint">当前 MiniCPM5-2B 为文本模型，不支持看图。此处仅保存独立兼容端点的接入配置；本版不提供图片上传或看图工作流，也不下载视觉模型。</p><div class="form-grid"><label>多模态接口<select id="vision-kind"><option value="disabled">关闭</option><option value="openai_compatible">OpenAI 兼容 API</option></select></label><label>服务位置<select id="vision-location"><option value="local">本地端点</option><option value="remote">外部 API</option></select></label></div><div id="vision-api-fields"><label>多模态 Base URL<input id="vision-base-url" type="url" placeholder="独立的多模态兼容端点" autocomplete="off"></label><label>模型 ID<input id="vision-model" placeholder="实际支持多模态的模型 ID" autocomplete="off"></label></div><div class="provider-credential"><label>API Key（可选）<input id="vision-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label><span id="vision-key-state" class="hint">密钥状态待读取</span><label class="check-field"><input id="vision-clear-key" type="checkbox">清除已保存密钥</label></div><p id="vision-settings-state" class="hint" role="status">多模态接口未启用。</p></details>
             </fieldset><div class="actions"><button id="save-providers" class="primary" type="submit" disabled>保存并应用</button><button id="reset-providers" type="button" disabled>恢复已保存配置</button><button id="check-providers-settings" type="button">检查当前连接</button></div><p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p><pre id="providers-check-result" class="code-small" hidden></pre></form>
@@ -103,7 +104,7 @@
               <div id="retention-preview-panel" class="retention-preview" hidden><p id="retention-preview-cutoff" class="hint"></p><dl id="retention-preview-counts" class="description-list"></dl><details><summary>完整预览结果</summary><pre id="retention-preview-detail" class="code-small"></pre></details><label class="check-field"><input id="retention-confirm" type="checkbox" disabled>我已核对以上范围与数量，确认永久清理这些记录</label><button id="retention-cleanup" class="danger" type="button" disabled>确认清理预览范围</button></div><p id="retention-cleanup-state" class="hint" role="status">请先预览待清理范围，再明确确认。</p>
             </div>
           </article>
-          <details class="panel"><summary>OBS 播放器配置（直播后续）</summary><p class="muted">直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
+          <details class="panel"><summary id="overlay-heading">OBS 播放器配置（直播后续）</summary><p id="overlay-help" class="muted">直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
           <details class="panel"><summary>当前已保存配置（脱敏，只读）</summary><p class="hint">API Key 不会回显；上方表单的未保存修改不会出现在此处。</p><pre id="settings-json" class="code-small"></pre></details>
         </section>
       </main>

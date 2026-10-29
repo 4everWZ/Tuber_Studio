@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import io
 import json
 import logging
@@ -36,16 +37,41 @@ def select_voice(root, override=None):
     return compact.selected_voice_id(root, override)
 
 
+def selected_backend(root):
+    path = Path(root) / "runtime/studio.json"
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    backend = data.get("tts", {}).get("local_backend", "compact")
+    if backend not in ("compact", "genie_onnx_int8"):
+        raise ValueError("Unknown configured local speech backend")
+    return backend
+
+
+def _genie_pipeline(root, voice_id):
+    spec = importlib.util.spec_from_file_location(
+        "_tuber_genie_backend", Path(__file__).with_name("genie_backend.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.create_pipeline(root, voice_id=voice_id)
+
+
 class SpeechEngine:
     def __init__(self, root, voice_id, pipeline):
         self.root, self.voice_id, self.pipeline = root, voice_id, pipeline
         self.metadata = pipeline.fixed_reference_metadata
         self.signature = pipeline.fixed_reference_signature
+        self.backend = getattr(pipeline, "backend", "gpt_sovits_v2_compact")
+        self.bundle_identity = getattr(pipeline, "backend_identity", None)
+        self.configured_backend = "genie_onnx_int8" if self.backend == "genie_onnx_int8" else "compact"
         self.failed = False
 
     @classmethod
     def load(cls, root, voice_id):
-        pipeline = compact.create_pipeline(root, voice_id=voice_id, prepare_if_needed=True)
+        pipeline = (
+            _genie_pipeline(root, voice_id)
+            if selected_backend(root) == "genie_onnx_int8"
+            else compact.create_pipeline(root, voice_id=voice_id, prepare_if_needed=True)
+        )
         engine = cls(root, voice_id, pipeline)
         # The broker keeps the LLM unloaded until this server is ready. Exercise
         # the complete dynamic Chinese frontend/AR/VITS path now, rather than
@@ -54,18 +80,24 @@ class SpeechEngine:
         engine.synthesize(engine.request({"text": "海底的小灯亮起来了。", "text_lang": "zh", "seed": 42}))
         return engine
 
-    def request(self, body):
+    def verify_assets(self):
         if self.failed:
             raise VoiceAssetsChanged("Speech service needs a clean restart")
         try:
             current = compact.reference_signature(self.root, voice_id=self.voice_id, metadata=self.metadata)
-        except (OSError, ValueError, KeyError):
-            current = None
-        if current != self.signature:
+            if current != self.signature or selected_backend(self.root) != self.configured_backend:
+                raise ValueError("Configured voice or backend changed")
+            verify = getattr(self.pipeline, "verify_assets", None)
+            if verify is not None:
+                verify()
+        except (OSError, ValueError, KeyError, RuntimeError):
             self.failed = True
             raise VoiceAssetsChanged(
                 "Voice assets changed; restart speech to refresh their verified features"
-            )
+            ) from None
+
+    def request(self, body):
+        self.verify_assets()
         voice = self.signature["voice"]
         params = {**voice.get("params", {}), **body}
         validate_speech_request(params)
@@ -90,6 +122,9 @@ class SpeechEngine:
         params.setdefault("streaming_mode", False)
         params.setdefault("batch_size", 1)
         params.setdefault("seed", -1)
+        validate = getattr(self.pipeline, "validate_params", None)
+        if validate is not None:
+            validate(params)
         return params
 
     def synthesize(self, params):
@@ -157,13 +192,21 @@ def create_app(root=None, *, voice_id=None, engine=None):
     @app.get("/docs")
     async def health():
         active = getattr(app.state, "engine", None)
+        if active is not None:
+            try:
+                active.verify_assets()
+            except VoiceAssetsChanged:
+                pass
         ready = active is not None and not active.failed
+        fields = {
+            "status": "ready" if ready else "unavailable",
+            "backend": active.backend if active is not None else None,
+            "voice_id": selected,
+        }
+        if active is not None and active.bundle_identity is not None:
+            fields["bundle_identity"] = active.bundle_identity
         return JSONResponse(
-            {
-                "status": "ready" if ready else "unavailable",
-                "backend": "gpt_sovits_v2_compact",
-                "voice_id": selected,
-            },
+            fields,
             status_code=200 if ready else 503,
             headers={"Cache-Control": "no-store"},
         )
