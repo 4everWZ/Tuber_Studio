@@ -3,7 +3,7 @@
   "date": "2026-10-29",
   "timezone": "Asia/Taipei",
   "kind": "genie_whole_machine_ram_optimization_and_native128k_live_admission",
-  "status": "formal_backend_browser_and_actual120k_passed_endurance_in_progress",
+  "status": "resource_checks_passed_for_user_limited_100_speech_current_voice_replacement_requested",
   "scope": {
     "primary_objective": "reduce sampled whole-machine peak RAM",
     "constraints": [
@@ -1538,7 +1538,71 @@
     },
     "claimed_universal_quality_percent": null,
     "automatic_execution_coverage": "25 distinct speech-case texts including English mixes,28 complete calls; not25 paired human scores",
-    "non_silence_is_not_quality": true
+    "non_silence_is_not_quality": true,
+    "latest_user_feedback": {
+      "instruction": "这个数据集不行，电音太严重了",
+      "target_style": "清亮柔软、略带奶气的普通话少女音",
+      "action": "Keep historical3-pair>=90% acceptance as a comparison to the original voice, but current voice is not the desired final timbre. Research alternative clean game-dialogue sources and compatible candidate voices for user listening before replacement.",
+      "cause_not_established": "User-observed electrical/metallic sound; no causal attribution to source data versus checkpoint, reference, inference engine or quantization has been established.",
+      "default_voice_replaced": false
+    },
+    "voice_source_candidates": {
+      "kind": "original Mandarin dialogue listening, not synthesized candidate models",
+      "status": "user selected yaoyao; isolated synthesized audition preparation in progress, default unchanged",
+      "audio_downloaded": false,
+      "entries": [
+        {
+          "id": "barbara",
+          "name": "芭芭拉",
+          "line_title": "早上好",
+          "audio_seconds": 2.1505,
+          "original_audio_url": "https://patchwiki.biligame.com/images/ys/a/ae/i7f38u7c7go7zp5p4qmostrdqxukck4.ogg",
+          "source_page": "https://wiki.biligame.com/ys/芭芭拉语音",
+          "browser_playback": "actual trusted playing then ended in isolated session",
+          "synthesized_quality_tested": false
+        },
+        {
+          "id": "sigewinne",
+          "name": "希格雯",
+          "line_title": "早上好",
+          "audio_seconds": 9.829333,
+          "original_audio_url": "https://patchwiki.biligame.com/images/ys/e/e5/1awxqdlb5ev7dfz9trdvup0mv7m5pu2.mp3",
+          "source_page": "https://wiki.biligame.com/ys/希格雯语音",
+          "browser_playback": "actual trusted playing then ended in isolated session",
+          "synthesized_quality_tested": false
+        },
+        {
+          "id": "yaoyao",
+          "name": "瑶瑶",
+          "line_title": "早上好",
+          "audio_seconds": 17.794667,
+          "original_audio_url": "https://patchwiki.biligame.com/images/ys/1/19/8htm0sqaegb0ypl0f2m6hkq9tukcajl.mp3",
+          "source_page": "https://wiki.biligame.com/ys/瑶瑶语音",
+          "browser_playback": "actual trusted playing then ended in isolated session",
+          "synthesized_quality_tested": false
+        },
+        {
+          "id": "nahida",
+          "name": "纳西妲",
+          "line_title": "早上好",
+          "audio_seconds": 6.622667,
+          "original_audio_url": "https://patchwiki.biligame.com/images/ys/5/56/7pxus6ga385e6him2gmx14ditkqtrz6.mp3",
+          "source_page": "https://wiki.biligame.com/ys/纳西妲语音",
+          "browser_playback": "actual trusted playing then ended in isolated session",
+          "synthesized_quality_tested": false
+        }
+      ],
+      "model_compatibility_findings": {
+        "current_author_collection": "https://res.acgnai.top/",
+        "author_v2_release": "https://www.ai-hobbyist.com/thread-830-1-1.html",
+        "current_zh_zip_inspection": "Read only16KiB ZIP directory metadata forBarbara/Yaoyao/Sigewinne/Kokomi: rootv4/, *_l32.pth. No weight payload download, no files installed. Not compatible with current fixedv2 bundle.",
+        "old_v2_chinese_bundle": "Not obtained or verified. Old post requires login/reply access; no messages/posts sent or access bypassed.",
+        "ai_hobbyist_hf_v2_genshin": "EN/JA only; README character list does not establish available Mandarin weights.",
+        "genie_official_feibi": "v2ProPlus preset; unverified for current fixedv2/d347 converter, no silent compatibility claim."
+      },
+      "selected": "yaoyao",
+      "selection_source": "explicit in-chat answer: 瑶瑶：先比较偏幼的软糯感"
+    }
   },
   "sampling_findings": {
     "legacy_genie_ar_distribution": "standard RandomNormalLike noise in probabilities/noise ArgMax; not original Exp(1)",
@@ -3557,7 +3621,8 @@
     "hardware_formal_backend": "28/28 passed samepids zeroOOM/zeroSwap",
     "quality_listening": "user accepted3 paired Chinese cases>=90%",
     "long_input_with_new_backend": "passed exact120000 input, actual/native131072, no truncation, stable Mini61/TTS20, postcontextTTS passed",
-    "two_hours_100_speech": "in_progress: seconds7200 minimumspeech100 interval60, detached guarded production evaluator"
+    "two_hours_100_speech": "not_verified; user explicitly limited this round to100 speech; intentionally stopped after114 completed requests, not an inference failure",
+    "at_least_100_speech": "passed114 complete non-silent speech calls,22 real structured LLM replies,0invalid,stable pids until operator cancellation,0OOM"
   },
   "formal_backend_attempts": [
     {
@@ -5545,5 +5610,1466 @@
     "genie_int8_tts_only_resource_screen_peak_gib": 2.9760398864746094,
     "formal_live_peak_gib": 5.707836151123047,
     "scope": "TTS-only resource screen uses earlier no-gap WAV protocol; formal production restores original PCM16/gaps. No matched stable original compact+Mini128K peak exists, so no percentage reduction claimed for formal co-resident production."
+  },
+  "formal_live_endurance": {
+    "authorized_scope_change": {
+      "source": "user explicit in-chat instruction",
+      "instruction": "先暂时测100句就可以了",
+      "minimum_complete_speech": 100,
+      "two_hour_requirement_for_this_round": false
+    },
+    "unmodified_evaluator_result": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            61
+          ],
+          "tts": [
+            20
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      },
+      "profile_after": null,
+      "requested_seconds": 7200,
+      "minimum_speech": 100,
+      "elapsed_seconds": 1505.131,
+      "speech_completed": 114,
+      "last_stage": "cycle_115",
+      "llm_calls": 22,
+      "invalid_llm_replies": 0,
+      "post_burst_interval_seconds": 60.0,
+      "memory": {
+        "baseline": {
+          "available_kib": 1818688,
+          "swap_used_kib": 139776,
+          "pswpin": 40138,
+          "pswpout": 190758,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 1513856,
+          "swap_used_kib": 140032,
+          "pswpin": 40185,
+          "pswpout": 190783,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1505948,
+        "swapin_bytes": 192512,
+        "swapout_bytes": 102400,
+        "maximum_rolling_25s_swap_bytes": 135168,
+        "oom_kill_delta": 0,
+        "samples": 2999
+      },
+      "total_ram_kib": 7802716,
+      "peak_machine_total_minus_available_kib": 6296768,
+      "completed_duration_and_count": false,
+      "all_llm_reply_schemas_valid": true,
+      "verified_two_hours_and_100": false,
+      "reason": "CancelledError，详见服务运行环境",
+      "limitations": "Defined synthetic mixed workload; no platform publishing, playback or arbitrary arrival-rate claim. Audio non-silence and valid structured replies do not replace human voice-quality listening."
+    },
+    "completed_cycles": [
+      {
+        "cycle": 1,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 3.579,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "15220c8120518f861abec86819bae7a2ab49937c42f91a22905d5f9169175225",
+        "total_seconds": 3.579
+      },
+      {
+        "cycle": 2,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 3.839,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d812f9702be0eb8af7ecaf2f69598730fe6c0ee37a9675873e5cf1e107df2b9c",
+        "total_seconds": 3.84
+      },
+      {
+        "cycle": 3,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 3.271,
+        "audio_seconds": 3.28,
+        "bytes": 209964,
+        "wav_sha256": "156cd45b79e9e1869a9da59e1f37b982177f4db636013c13228e0de72148d56e",
+        "total_seconds": 3.271
+      },
+      {
+        "cycle": 4,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 4.334,
+        "audio_seconds": 4.76,
+        "bytes": 304684,
+        "wav_sha256": "1132bff93d0c2b315ee63e395fb531dca9ac439d7ae9c6c2e7c8195ea8fc9404",
+        "total_seconds": 4.335
+      },
+      {
+        "cycle": 5,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 4.255
+        },
+        "text": "欢迎新朋友，这里是直播间，我们一起聊深海思考。",
+        "fixture": null,
+        "speech_seconds": 4.553,
+        "audio_seconds": 4.98,
+        "bytes": 318764,
+        "wav_sha256": "61c7fea15ad13323f4cc0764edfd53b4552a5f9c12ea042b8b99795964cc5dd5",
+        "total_seconds": 8.808
+      },
+      {
+        "cycle": 6,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.526,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "b9b473b83102e99bca25dcc765bb9e0cf3d3e1ab11f901cb2319dc9f9ba12192",
+        "total_seconds": 3.526
+      },
+      {
+        "cycle": 7,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 3.869,
+        "audio_seconds": 4.3,
+        "bytes": 275244,
+        "wav_sha256": "1559f585435740bc08c92b15f7b45db532913979163ce3f45c1e8f6364a9898f",
+        "total_seconds": 3.869
+      },
+      {
+        "cycle": 8,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.549,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "8ba9642b35ddfd4e4957bb252f5f5ab41e8f00c28ff2a83aed99bc80e393eab2",
+        "total_seconds": 4.549
+      },
+      {
+        "cycle": 9,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 3.707,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "1a5c4bebbbf09c50462afaff2f9dae3c363e6461671866c0f0123ce93d47f510",
+        "total_seconds": 3.707
+      },
+      {
+        "cycle": 10,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 6.079
+        },
+        "text": "来，我们一起伸个懒腰，好好歇一会儿。",
+        "fixture": null,
+        "speech_seconds": 3.514,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "504fc762e192d43b7a4ee0389397d0e70efe3d8f839bfa070d564c51095f979b",
+        "total_seconds": 9.594
+      },
+      {
+        "cycle": 11,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.478,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "029a9ff21c780313b4962170ef76bd2f1015c03cc138e6f6f4a4c1f57622363d",
+        "total_seconds": 3.479
+      },
+      {
+        "cycle": 12,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.39,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "5829b6e380cb2fb92e97168d2e196682ce4e9cfd98e8df3cc2414e78ec15d468",
+        "total_seconds": 4.39
+      },
+      {
+        "cycle": 13,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.48,
+        "audio_seconds": 3.68,
+        "bytes": 235564,
+        "wav_sha256": "22b10d33a87f507a93d20e0e9977eca70968e625fa7c6c77693821e3af302094",
+        "total_seconds": 3.481
+      },
+      {
+        "cycle": 14,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 4.54,
+        "audio_seconds": 4.88,
+        "bytes": 312364,
+        "wav_sha256": "3ce754228d42802d0a1bc746ec8b0d5b807bfb3fc3ec41e2eea7b8995a4f98a5",
+        "total_seconds": 4.541
+      },
+      {
+        "cycle": 15,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 5.111
+        },
+        "text": "啥嘛！深海思考可是真功夫，再来碗白饭！",
+        "fixture": null,
+        "speech_seconds": 4.126,
+        "audio_seconds": 4.72,
+        "bytes": 302124,
+        "wav_sha256": "e787137b894532c53f815d0246b898c70a49ebf4d815085e9b2c4832cbd1e0fb",
+        "total_seconds": 9.237
+      },
+      {
+        "cycle": 16,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 2.877,
+        "audio_seconds": 3.04,
+        "bytes": 194604,
+        "wav_sha256": "c644301c1d38fa99153b620c0c0866d209aa5aed577b4225e2e9e647bfd29e8c",
+        "total_seconds": 2.877
+      },
+      {
+        "cycle": 17,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 4.208,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "d9d8219b3c14ef8a950e2e25b7cf54c35d3c88316a3a4f3b5830895388ab0165",
+        "total_seconds": 4.209
+      },
+      {
+        "cycle": 18,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.719,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "e6f7a51aaddbda4123280d0607617277e62f6791ce3788b5670daac8360a5cae",
+        "total_seconds": 3.719
+      },
+      {
+        "cycle": 19,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 3.784,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "8118eaba7791b3dd5505fd0d7138e8127cc824e8ed5308b30a6b2bd7b975863b",
+        "total_seconds": 3.784
+      },
+      {
+        "cycle": 20,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 5.774
+        },
+        "text": "当然啦，大家休息一下，喝点水保健康呢！",
+        "fixture": null,
+        "speech_seconds": 4.514,
+        "audio_seconds": 4.76,
+        "bytes": 304684,
+        "wav_sha256": "cc25a13f6cde15199cf50d943a71e930e5962db5fbc5a45d7444311955706e3a",
+        "total_seconds": 10.288
+      },
+      {
+        "cycle": 21,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.403,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "82e5c80cc1d7138279a0f40efbc6537dd353b7153bb8d7b3d5d51f4dcbfb6a49",
+        "total_seconds": 3.404
+      },
+      {
+        "cycle": 22,
+        "llm": null,
+        "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+        "fixture": 17,
+        "speech_seconds": 3.985,
+        "audio_seconds": 4.5,
+        "bytes": 288044,
+        "wav_sha256": "ea8c919774d94da395d15407eddf7bb44d0424f1c8968c6692e7b6677f00ca6a",
+        "total_seconds": 3.986
+      },
+      {
+        "cycle": 23,
+        "llm": null,
+        "text": "DeepSeek 是名字，白饭才是今天的主题。",
+        "fixture": 18,
+        "speech_seconds": 11.393,
+        "audio_seconds": 3.44,
+        "bytes": 220204,
+        "wav_sha256": "36742b3982e1f25f88449240d7f98055a81b3361e71d3a9835806bf76829d515",
+        "total_seconds": 11.393
+      },
+      {
+        "cycle": 24,
+        "llm": null,
+        "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+        "fixture": 19,
+        "speech_seconds": 3.759,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "fb6a6f17c66f9b8822c8d72bfbed95087fa47fd8e258b36b84ae184657cc5e05",
+        "total_seconds": 3.759
+      },
+      {
+        "cycle": 25,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 3.638
+        },
+        "text": "完成小目标很棒，再坚持一下！",
+        "fixture": null,
+        "speech_seconds": 3.56,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "7ba0a1019c712f6e73088c9d163cce67a47065c8d569da3f8fb08014403bc113",
+        "total_seconds": 7.198
+      },
+      {
+        "cycle": 26,
+        "llm": null,
+        "text": "Thank you，今天也谢谢大家陪我聊天。",
+        "fixture": 20,
+        "speech_seconds": 3.434,
+        "audio_seconds": 3.32,
+        "bytes": 212524,
+        "wav_sha256": "b57b624d435ed41813e22047818b63fd8315353a7b80007c748284b66bc7085d",
+        "total_seconds": 3.434
+      },
+      {
+        "cycle": 27,
+        "llm": null,
+        "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+        "fixture": 21,
+        "speech_seconds": 3.742,
+        "audio_seconds": 4.12,
+        "bytes": 263724,
+        "wav_sha256": "f2f5def504988f795ede21a9b3196135a78f0c642293d24498189576c0ca11c5",
+        "total_seconds": 3.742
+      },
+      {
+        "cycle": 28,
+        "llm": null,
+        "text": "真的？原来是这样！让我再看一眼。",
+        "fixture": 22,
+        "speech_seconds": 3.305,
+        "audio_seconds": 3.56,
+        "bytes": 227884,
+        "wav_sha256": "0812d72fec9d2397483a9462961d04bba8f9b24652d1322e03df710920ab6920",
+        "total_seconds": 3.305
+      },
+      {
+        "cycle": 29,
+        "llm": null,
+        "text": "嗯……这件事情，要从昨天的海底集市说起。",
+        "fixture": 23,
+        "speech_seconds": 4.412,
+        "audio_seconds": 4.52,
+        "bytes": 289324,
+        "wav_sha256": "159c1f6df0185eceb16626c9275db2131922c89b0c93d103b4f069b1ce0969fb",
+        "total_seconds": 4.412
+      },
+      {
+        "cycle": 30,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 4.903
+        },
+        "text": "欢迎来啦，再来碗白饭！",
+        "fixture": null,
+        "speech_seconds": 2.27,
+        "audio_seconds": 2.56,
+        "bytes": 163884,
+        "wav_sha256": "5d310f872892ad9e1f293a779583ca953e811b791e05cec350cd151dbcfd58b0",
+        "total_seconds": 7.174
+      },
+      {
+        "cycle": 31,
+        "llm": null,
+        "text": "再来一碗白饭，不过这次记得加上海苔。",
+        "fixture": 24,
+        "speech_seconds": 3.542,
+        "audio_seconds": 3.52,
+        "bytes": 225324,
+        "wav_sha256": "1761ee0087904ab4fca500427dd98dd13b5499af7d30ded411eefaaeeeb68e13",
+        "total_seconds": 3.542
+      },
+      {
+        "cycle": 32,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 3.505,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "15220c8120518f861abec86819bae7a2ab49937c42f91a22905d5f9169175225",
+        "total_seconds": 3.506
+      },
+      {
+        "cycle": 33,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 3.783,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d812f9702be0eb8af7ecaf2f69598730fe6c0ee37a9675873e5cf1e107df2b9c",
+        "total_seconds": 3.783
+      },
+      {
+        "cycle": 34,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 3.147,
+        "audio_seconds": 3.28,
+        "bytes": 209964,
+        "wav_sha256": "156cd45b79e9e1869a9da59e1f37b982177f4db636013c13228e0de72148d56e",
+        "total_seconds": 3.148
+      },
+      {
+        "cycle": 35,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 11.206
+        },
+        "text": "当然啦，我们一起来歇会儿，鲸鱼尾巴也放松一下。",
+        "fixture": null,
+        "speech_seconds": 4.411,
+        "audio_seconds": 5.0,
+        "bytes": 320044,
+        "wav_sha256": "7e2513921d6e073eb983e191e910a06c9f1d5539a68f1103ff4995b33c5bc63f",
+        "total_seconds": 15.618
+      },
+      {
+        "cycle": 36,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 4.749,
+        "audio_seconds": 4.76,
+        "bytes": 304684,
+        "wav_sha256": "1132bff93d0c2b315ee63e395fb531dca9ac439d7ae9c6c2e7c8195ea8fc9404",
+        "total_seconds": 4.75
+      },
+      {
+        "cycle": 37,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.488,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "b9b473b83102e99bca25dcc765bb9e0cf3d3e1ab11f901cb2319dc9f9ba12192",
+        "total_seconds": 3.488
+      },
+      {
+        "cycle": 38,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 3.93,
+        "audio_seconds": 4.3,
+        "bytes": 275244,
+        "wav_sha256": "1559f585435740bc08c92b15f7b45db532913979163ce3f45c1e8f6364a9898f",
+        "total_seconds": 3.93
+      },
+      {
+        "cycle": 39,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.587,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "8ba9642b35ddfd4e4957bb252f5f5ab41e8f00c28ff2a83aed99bc80e393eab2",
+        "total_seconds": 4.588
+      },
+      {
+        "cycle": 40,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 18.401
+        },
+        "text": "没问题，我就再加一碗白饭！",
+        "fixture": null,
+        "speech_seconds": 3.591,
+        "audio_seconds": 3.74,
+        "bytes": 239404,
+        "wav_sha256": "82469903b567b13608226de66450ab3bbf6ec0b84c9eb73ff4db83f162c60fbf",
+        "total_seconds": 21.992
+      },
+      {
+        "cycle": 41,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 3.596,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "1a5c4bebbbf09c50462afaff2f9dae3c363e6461671866c0f0123ce93d47f510",
+        "total_seconds": 3.596
+      },
+      {
+        "cycle": 42,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.511,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "029a9ff21c780313b4962170ef76bd2f1015c03cc138e6f6f4a4c1f57622363d",
+        "total_seconds": 3.512
+      },
+      {
+        "cycle": 43,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.355,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "5829b6e380cb2fb92e97168d2e196682ce4e9cfd98e8df3cc2414e78ec15d468",
+        "total_seconds": 4.355
+      },
+      {
+        "cycle": 44,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.281,
+        "audio_seconds": 3.68,
+        "bytes": 235564,
+        "wav_sha256": "22b10d33a87f507a93d20e0e9977eca70968e625fa7c6c77693821e3af302094",
+        "total_seconds": 3.281
+      },
+      {
+        "cycle": 45,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 3.3
+        },
+        "text": "休息一下吧，记得多喝水，健康最重要！",
+        "fixture": null,
+        "speech_seconds": 3.944,
+        "audio_seconds": 4.14,
+        "bytes": 265004,
+        "wav_sha256": "bbe3420cee99243966d6ef049dbda0413d3db87bd78632be5d235afb08fa9a97",
+        "total_seconds": 7.245
+      },
+      {
+        "cycle": 46,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 4.408,
+        "audio_seconds": 4.88,
+        "bytes": 312364,
+        "wav_sha256": "3ce754228d42802d0a1bc746ec8b0d5b807bfb3fc3ec41e2eea7b8995a4f98a5",
+        "total_seconds": 4.408
+      },
+      {
+        "cycle": 47,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 2.905,
+        "audio_seconds": 3.04,
+        "bytes": 194604,
+        "wav_sha256": "c644301c1d38fa99153b620c0c0866d209aa5aed577b4225e2e9e647bfd29e8c",
+        "total_seconds": 2.906
+      },
+      {
+        "cycle": 48,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 4.352,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "d9d8219b3c14ef8a950e2e25b7cf54c35d3c88316a3a4f3b5830895388ab0165",
+        "total_seconds": 4.353
+      },
+      {
+        "cycle": 49,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.72,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "e6f7a51aaddbda4123280d0607617277e62f6791ce3788b5670daac8360a5cae",
+        "total_seconds": 3.721
+      },
+      {
+        "cycle": 50,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 9.96
+        },
+        "text": "完成小目标就是最大的奖励，继续加油！",
+        "fixture": null,
+        "speech_seconds": 4.314,
+        "audio_seconds": 4.64,
+        "bytes": 297004,
+        "wav_sha256": "8b495efefd70002afb18e4f90ee1cc34e5408d1c5de2b0a9f74863c1562225a1",
+        "total_seconds": 14.275
+      },
+      {
+        "cycle": 51,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 3.725,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "8118eaba7791b3dd5505fd0d7138e8127cc824e8ed5308b30a6b2bd7b975863b",
+        "total_seconds": 3.725
+      },
+      {
+        "cycle": 52,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.462,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "82e5c80cc1d7138279a0f40efbc6537dd353b7153bb8d7b3d5d51f4dcbfb6a49",
+        "total_seconds": 3.462
+      },
+      {
+        "cycle": 53,
+        "llm": null,
+        "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+        "fixture": 17,
+        "speech_seconds": 4.283,
+        "audio_seconds": 4.5,
+        "bytes": 288044,
+        "wav_sha256": "ea8c919774d94da395d15407eddf7bb44d0424f1c8968c6692e7b6677f00ca6a",
+        "total_seconds": 4.284
+      },
+      {
+        "cycle": 54,
+        "llm": null,
+        "text": "DeepSeek 是名字，白饭才是今天的主题。",
+        "fixture": 18,
+        "speech_seconds": 3.209,
+        "audio_seconds": 3.44,
+        "bytes": 220204,
+        "wav_sha256": "36742b3982e1f25f88449240d7f98055a81b3361e71d3a9835806bf76829d515",
+        "total_seconds": 3.209
+      },
+      {
+        "cycle": 55,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 7.301
+        },
+        "text": "什么嘛，新来的朋友先欢迎一声呢！",
+        "fixture": null,
+        "speech_seconds": 2.991,
+        "audio_seconds": 3.38,
+        "bytes": 216364,
+        "wav_sha256": "3a91053539bd73ddc67a22c70225399ec672363dd48e110c5a5edf340c677829",
+        "total_seconds": 10.292
+      },
+      {
+        "cycle": 56,
+        "llm": null,
+        "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+        "fixture": 19,
+        "speech_seconds": 3.492,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "fb6a6f17c66f9b8822c8d72bfbed95087fa47fd8e258b36b84ae184657cc5e05",
+        "total_seconds": 3.492
+      },
+      {
+        "cycle": 57,
+        "llm": null,
+        "text": "Thank you，今天也谢谢大家陪我聊天。",
+        "fixture": 20,
+        "speech_seconds": 2.99,
+        "audio_seconds": 3.32,
+        "bytes": 212524,
+        "wav_sha256": "b57b624d435ed41813e22047818b63fd8315353a7b80007c748284b66bc7085d",
+        "total_seconds": 2.991
+      },
+      {
+        "cycle": 58,
+        "llm": null,
+        "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+        "fixture": 21,
+        "speech_seconds": 4.012,
+        "audio_seconds": 4.12,
+        "bytes": 263724,
+        "wav_sha256": "f2f5def504988f795ede21a9b3196135a78f0c642293d24498189576c0ca11c5",
+        "total_seconds": 4.012
+      },
+      {
+        "cycle": 59,
+        "llm": null,
+        "text": "真的？原来是这样！让我再看一眼。",
+        "fixture": 22,
+        "speech_seconds": 3.209,
+        "audio_seconds": 3.56,
+        "bytes": 227884,
+        "wav_sha256": "0812d72fec9d2397483a9462961d04bba8f9b24652d1322e03df710920ab6920",
+        "total_seconds": 3.209
+      },
+      {
+        "cycle": 60,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 6.913
+        },
+        "text": "哎呀，累是累的，但先深呼吸，我们还能继续聊。",
+        "fixture": null,
+        "speech_seconds": 4.589,
+        "audio_seconds": 5.26,
+        "bytes": 336684,
+        "wav_sha256": "a0e33ad65c4d11f3018dc9180ee7dc4f0c688ce57051a8e4d585bf3ffd1173de",
+        "total_seconds": 11.503
+      },
+      {
+        "cycle": 61,
+        "llm": null,
+        "text": "嗯……这件事情，要从昨天的海底集市说起。",
+        "fixture": 23,
+        "speech_seconds": 4.434,
+        "audio_seconds": 4.52,
+        "bytes": 289324,
+        "wav_sha256": "159c1f6df0185eceb16626c9275db2131922c89b0c93d103b4f069b1ce0969fb",
+        "total_seconds": 4.434
+      },
+      {
+        "cycle": 62,
+        "llm": null,
+        "text": "再来一碗白饭，不过这次记得加上海苔。",
+        "fixture": 24,
+        "speech_seconds": 3.205,
+        "audio_seconds": 3.52,
+        "bytes": 225324,
+        "wav_sha256": "1761ee0087904ab4fca500427dd98dd13b5499af7d30ded411eefaaeeeb68e13",
+        "total_seconds": 3.205
+      },
+      {
+        "cycle": 63,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 3.448,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "15220c8120518f861abec86819bae7a2ab49937c42f91a22905d5f9169175225",
+        "total_seconds": 3.448
+      },
+      {
+        "cycle": 64,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 4.252,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d812f9702be0eb8af7ecaf2f69598730fe6c0ee37a9675873e5cf1e107df2b9c",
+        "total_seconds": 4.253
+      },
+      {
+        "cycle": 65,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 10.139
+        },
+        "text": "胡说，我只是在进行深海思考。",
+        "fixture": null,
+        "speech_seconds": 3.042,
+        "audio_seconds": 3.18,
+        "bytes": 203564,
+        "wav_sha256": "a043628e89fa3d2249c2911502454c599a865f2bc205899e5b5083daaf687cb4",
+        "total_seconds": 13.182
+      },
+      {
+        "cycle": 66,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 2.973,
+        "audio_seconds": 3.28,
+        "bytes": 209964,
+        "wav_sha256": "156cd45b79e9e1869a9da59e1f37b982177f4db636013c13228e0de72148d56e",
+        "total_seconds": 2.973
+      },
+      {
+        "cycle": 67,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 4.355,
+        "audio_seconds": 4.76,
+        "bytes": 304684,
+        "wav_sha256": "1132bff93d0c2b315ee63e395fb531dca9ac439d7ae9c6c2e7c8195ea8fc9404",
+        "total_seconds": 4.356
+      },
+      {
+        "cycle": 68,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.695,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "b9b473b83102e99bca25dcc765bb9e0cf3d3e1ab11f901cb2319dc9f9ba12192",
+        "total_seconds": 3.696
+      },
+      {
+        "cycle": 69,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 4.068,
+        "audio_seconds": 4.3,
+        "bytes": 275244,
+        "wav_sha256": "1559f585435740bc08c92b15f7b45db532913979163ce3f45c1e8f6364a9898f",
+        "total_seconds": 4.068
+      },
+      {
+        "cycle": 70,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 9.063
+        },
+        "text": "来碗白饭，先歇会儿，再来！",
+        "fixture": null,
+        "speech_seconds": 2.378,
+        "audio_seconds": 2.76,
+        "bytes": 176684,
+        "wav_sha256": "8212b4d67b2341553241a780e7d943c33cb9dc6089a6bf9522301f79f48eb83f",
+        "total_seconds": 11.442
+      },
+      {
+        "cycle": 71,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.453,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "8ba9642b35ddfd4e4957bb252f5f5ab41e8f00c28ff2a83aed99bc80e393eab2",
+        "total_seconds": 4.453
+      },
+      {
+        "cycle": 72,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 3.593,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "1a5c4bebbbf09c50462afaff2f9dae3c363e6461671866c0f0123ce93d47f510",
+        "total_seconds": 3.593
+      },
+      {
+        "cycle": 73,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.44,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "029a9ff21c780313b4962170ef76bd2f1015c03cc138e6f6f4a4c1f57622363d",
+        "total_seconds": 3.44
+      },
+      {
+        "cycle": 74,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.272,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "5829b6e380cb2fb92e97168d2e196682ce4e9cfd98e8df3cc2414e78ec15d468",
+        "total_seconds": 4.272
+      },
+      {
+        "cycle": 75,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 7.049
+        },
+        "text": "坚持就是胜利，每一步都是你的成长哦！",
+        "fixture": null,
+        "speech_seconds": 3.453,
+        "audio_seconds": 3.76,
+        "bytes": 240684,
+        "wav_sha256": "59ef48cac3415326d3aeb39dbe35b4a7d5e3dcaa097d7243ff2486c0b681b1ec",
+        "total_seconds": 10.503
+      },
+      {
+        "cycle": 76,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.314,
+        "audio_seconds": 3.68,
+        "bytes": 235564,
+        "wav_sha256": "22b10d33a87f507a93d20e0e9977eca70968e625fa7c6c77693821e3af302094",
+        "total_seconds": 3.314
+      },
+      {
+        "cycle": 77,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 4.398,
+        "audio_seconds": 4.88,
+        "bytes": 312364,
+        "wav_sha256": "3ce754228d42802d0a1bc746ec8b0d5b807bfb3fc3ec41e2eea7b8995a4f98a5",
+        "total_seconds": 4.399
+      },
+      {
+        "cycle": 78,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 2.943,
+        "audio_seconds": 3.04,
+        "bytes": 194604,
+        "wav_sha256": "c644301c1d38fa99153b620c0c0866d209aa5aed577b4225e2e9e647bfd29e8c",
+        "total_seconds": 2.943
+      },
+      {
+        "cycle": 79,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 3.984,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "d9d8219b3c14ef8a950e2e25b7cf54c35d3c88316a3a4f3b5830895388ab0165",
+        "total_seconds": 3.984
+      },
+      {
+        "cycle": 80,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 3.741
+        },
+        "text": "大家好，欢迎来到我的直播间！",
+        "fixture": null,
+        "speech_seconds": 2.647,
+        "audio_seconds": 2.7,
+        "bytes": 172844,
+        "wav_sha256": "f872034d36612597caa1c2d6bf8d0747a62d6170e1c3e8093b25eaedca793f29",
+        "total_seconds": 6.388
+      },
+      {
+        "cycle": 81,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.691,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "e6f7a51aaddbda4123280d0607617277e62f6791ce3788b5670daac8360a5cae",
+        "total_seconds": 3.692
+      },
+      {
+        "cycle": 82,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 3.468,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "8118eaba7791b3dd5505fd0d7138e8127cc824e8ed5308b30a6b2bd7b975863b",
+        "total_seconds": 3.469
+      },
+      {
+        "cycle": 83,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.733,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "82e5c80cc1d7138279a0f40efbc6537dd353b7153bb8d7b3d5d51f4dcbfb6a49",
+        "total_seconds": 3.734
+      },
+      {
+        "cycle": 84,
+        "llm": null,
+        "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+        "fixture": 17,
+        "speech_seconds": 4.033,
+        "audio_seconds": 4.5,
+        "bytes": 288044,
+        "wav_sha256": "ea8c919774d94da395d15407eddf7bb44d0424f1c8968c6692e7b6677f00ca6a",
+        "total_seconds": 4.033
+      },
+      {
+        "cycle": 85,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 6.533
+        },
+        "text": "累了就歇一歇，我在这儿陪你。",
+        "fixture": null,
+        "speech_seconds": 2.469,
+        "audio_seconds": 2.88,
+        "bytes": 184364,
+        "wav_sha256": "dd92e6c9e41aaa3c3d75b614fb5048a3c47fa1554adda23530229a0fa4690a08",
+        "total_seconds": 9.003
+      },
+      {
+        "cycle": 86,
+        "llm": null,
+        "text": "DeepSeek 是名字，白饭才是今天的主题。",
+        "fixture": 18,
+        "speech_seconds": 3.084,
+        "audio_seconds": 3.44,
+        "bytes": 220204,
+        "wav_sha256": "36742b3982e1f25f88449240d7f98055a81b3361e71d3a9835806bf76829d515",
+        "total_seconds": 3.084
+      },
+      {
+        "cycle": 87,
+        "llm": null,
+        "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+        "fixture": 19,
+        "speech_seconds": 3.469,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "fb6a6f17c66f9b8822c8d72bfbed95087fa47fd8e258b36b84ae184657cc5e05",
+        "total_seconds": 3.469
+      },
+      {
+        "cycle": 88,
+        "llm": null,
+        "text": "Thank you，今天也谢谢大家陪我聊天。",
+        "fixture": 20,
+        "speech_seconds": 3.197,
+        "audio_seconds": 3.32,
+        "bytes": 212524,
+        "wav_sha256": "b57b624d435ed41813e22047818b63fd8315353a7b80007c748284b66bc7085d",
+        "total_seconds": 3.197
+      },
+      {
+        "cycle": 89,
+        "llm": null,
+        "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+        "fixture": 21,
+        "speech_seconds": 3.733,
+        "audio_seconds": 4.12,
+        "bytes": 263724,
+        "wav_sha256": "f2f5def504988f795ede21a9b3196135a78f0c642293d24498189576c0ca11c5",
+        "total_seconds": 3.733
+      },
+      {
+        "cycle": 90,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 7.26
+        },
+        "text": "胡说，我只是在进行深海思考。",
+        "fixture": null,
+        "speech_seconds": 2.746,
+        "audio_seconds": 3.18,
+        "bytes": 203564,
+        "wav_sha256": "a043628e89fa3d2249c2911502454c599a865f2bc205899e5b5083daaf687cb4",
+        "total_seconds": 10.006
+      },
+      {
+        "cycle": 91,
+        "llm": null,
+        "text": "真的？原来是这样！让我再看一眼。",
+        "fixture": 22,
+        "speech_seconds": 3.114,
+        "audio_seconds": 3.56,
+        "bytes": 227884,
+        "wav_sha256": "0812d72fec9d2397483a9462961d04bba8f9b24652d1322e03df710920ab6920",
+        "total_seconds": 3.115
+      },
+      {
+        "cycle": 92,
+        "llm": null,
+        "text": "嗯……这件事情，要从昨天的海底集市说起。",
+        "fixture": 23,
+        "speech_seconds": 4.309,
+        "audio_seconds": 4.52,
+        "bytes": 289324,
+        "wav_sha256": "159c1f6df0185eceb16626c9275db2131922c89b0c93d103b4f069b1ce0969fb",
+        "total_seconds": 4.309
+      },
+      {
+        "cycle": 93,
+        "llm": null,
+        "text": "再来一碗白饭，不过这次记得加上海苔。",
+        "fixture": 24,
+        "speech_seconds": 3.305,
+        "audio_seconds": 3.52,
+        "bytes": 225324,
+        "wav_sha256": "1761ee0087904ab4fca500427dd98dd13b5499af7d30ded411eefaaeeeb68e13",
+        "total_seconds": 3.305
+      },
+      {
+        "cycle": 94,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 3.437,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "15220c8120518f861abec86819bae7a2ab49937c42f91a22905d5f9169175225",
+        "total_seconds": 3.437
+      },
+      {
+        "cycle": 95,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 9.319
+        },
+        "text": "深潜时刻，记得深呼吸和补充能量呀！",
+        "fixture": null,
+        "speech_seconds": 3.408,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "1840946908a3017681c02002c10b9bca629ed544935b450f2468b55e7d46053d",
+        "total_seconds": 12.727
+      },
+      {
+        "cycle": 96,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 3.974,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d812f9702be0eb8af7ecaf2f69598730fe6c0ee37a9675873e5cf1e107df2b9c",
+        "total_seconds": 3.975
+      },
+      {
+        "cycle": 97,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 2.988,
+        "audio_seconds": 3.28,
+        "bytes": 209964,
+        "wav_sha256": "156cd45b79e9e1869a9da59e1f37b982177f4db636013c13228e0de72148d56e",
+        "total_seconds": 2.989
+      },
+      {
+        "cycle": 98,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 4.422,
+        "audio_seconds": 4.76,
+        "bytes": 304684,
+        "wav_sha256": "1132bff93d0c2b315ee63e395fb531dca9ac439d7ae9c6c2e7c8195ea8fc9404",
+        "total_seconds": 4.423
+      },
+      {
+        "cycle": 99,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.586,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "b9b473b83102e99bca25dcc765bb9e0cf3d3e1ab11f901cb2319dc9f9ba12192",
+        "total_seconds": 3.586
+      },
+      {
+        "cycle": 100,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 9.959
+        },
+        "text": "坚持就是胜利呀，再给我加勺白饭！",
+        "fixture": null,
+        "speech_seconds": 2.963,
+        "audio_seconds": 3.4,
+        "bytes": 217644,
+        "wav_sha256": "ea083e80bd03358d60621ccf5731abb5534246100badd3f529e78c8cba1e5af5",
+        "total_seconds": 12.923
+      },
+      {
+        "cycle": 101,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 3.978,
+        "audio_seconds": 4.3,
+        "bytes": 275244,
+        "wav_sha256": "1559f585435740bc08c92b15f7b45db532913979163ce3f45c1e8f6364a9898f",
+        "total_seconds": 3.979
+      },
+      {
+        "cycle": 102,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.289,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "8ba9642b35ddfd4e4957bb252f5f5ab41e8f00c28ff2a83aed99bc80e393eab2",
+        "total_seconds": 4.289
+      },
+      {
+        "cycle": 103,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 3.662,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "1a5c4bebbbf09c50462afaff2f9dae3c363e6461671866c0f0123ce93d47f510",
+        "total_seconds": 3.663
+      },
+      {
+        "cycle": 104,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.507,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "029a9ff21c780313b4962170ef76bd2f1015c03cc138e6f6f4a4c1f57622363d",
+        "total_seconds": 3.508
+      },
+      {
+        "cycle": 105,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 20.707
+        },
+        "text": "欢迎新朋友，鲸鱼娘来啦！",
+        "fixture": null,
+        "speech_seconds": 2.855,
+        "audio_seconds": 2.84,
+        "bytes": 181804,
+        "wav_sha256": "8366394e2338b08eaa61d3efeba718c122270fe73a9f040d2c8f1b0602c0b136",
+        "total_seconds": 23.563
+      },
+      {
+        "cycle": 106,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.122,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "5829b6e380cb2fb92e97168d2e196682ce4e9cfd98e8df3cc2414e78ec15d468",
+        "total_seconds": 4.122
+      },
+      {
+        "cycle": 107,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.807,
+        "audio_seconds": 3.68,
+        "bytes": 235564,
+        "wav_sha256": "22b10d33a87f507a93d20e0e9977eca70968e625fa7c6c77693821e3af302094",
+        "total_seconds": 3.807
+      },
+      {
+        "cycle": 108,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 4.657,
+        "audio_seconds": 4.88,
+        "bytes": 312364,
+        "wav_sha256": "3ce754228d42802d0a1bc746ec8b0d5b807bfb3fc3ec41e2eea7b8995a4f98a5",
+        "total_seconds": 4.658
+      },
+      {
+        "cycle": 109,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 2.793,
+        "audio_seconds": 3.04,
+        "bytes": 194604,
+        "wav_sha256": "c644301c1d38fa99153b620c0c0866d209aa5aed577b4225e2e9e647bfd29e8c",
+        "total_seconds": 2.793
+      },
+      {
+        "cycle": 110,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 4.861
+        },
+        "text": "嗯，今天也觉得身心都累了，但随时在这里陪你歇歇。",
+        "fixture": null,
+        "speech_seconds": 4.701,
+        "audio_seconds": 5.36,
+        "bytes": 343084,
+        "wav_sha256": "ecd4b605eff89e57fd1206070aa7affbd12150805ee1f0f95688f0d3012c63f7",
+        "total_seconds": 9.563
+      },
+      {
+        "cycle": 111,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 4.448,
+        "audio_seconds": 4.48,
+        "bytes": 286764,
+        "wav_sha256": "d9d8219b3c14ef8a950e2e25b7cf54c35d3c88316a3a4f3b5830895388ab0165",
+        "total_seconds": 4.448
+      },
+      {
+        "cycle": 112,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.732,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "e6f7a51aaddbda4123280d0607617277e62f6791ce3788b5670daac8360a5cae",
+        "total_seconds": 3.733
+      },
+      {
+        "cycle": 113,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 3.566,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "8118eaba7791b3dd5505fd0d7138e8127cc824e8ed5308b30a6b2bd7b975863b",
+        "total_seconds": 3.567
+      },
+      {
+        "cycle": 114,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.48,
+        "audio_seconds": 3.84,
+        "bytes": 245804,
+        "wav_sha256": "82e5c80cc1d7138279a0f40efbc6537dd353b7153bb8d7b3d5d51f4dcbfb6a49",
+        "total_seconds": 3.48
+      }
+    ],
+    "observed_gate": {
+      "passed": true,
+      "speech": 114,
+      "llm_calls": 22,
+      "invalid_llm_replies": 0,
+      "tts_median_seconds": 3.6765,
+      "first100_tts_median_seconds": 3.5945,
+      "peak_machine_gib": 6.00506591796875,
+      "minimum_available_gib": 1.4361839294433594
+    },
+    "termination": "Operator stopped the7200s workload during next cycle115 after114 complete cycles. Cancellation cleaned up the active LLM request and unloaded Mini61 as designed; incomplete115 is not a success or a spontaneous model failure. The duration/count result remains false in raw output because it refers to the original7200s protocol.",
+    "post_stop": {
+      "profile": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            122
+          ],
+          "tts": [
+            20
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "comment_policy": {
+          "auto_browse": false,
+          "auto_reply": false,
+          "watch_videos": [],
+          "browse_interval_seconds": 300,
+          "max_replies_per_hour": 5,
+          "max_replies_per_day": 20,
+          "credentials_configured": false,
+          "last_browse_error": null,
+          "last_browse_at": null
+        }
+      },
+      "rss_kib": {
+        "llm": 3421132,
+        "tts": 1757788
+      },
+      "evaluator_running": false,
+      "restoration_after_operator_cancel": null
+    },
+    "restoration": "After inspecting live with sleeping LLM and still-ready TTS20, explicitly restored live through normal admin mode API in3.514s; Mini122/TTS20 ready, original131072/q4_0/bundle retained. No swap or OOM during restoration. This reload is not continuous-residency proof for the preceding run.",
+    "raw_directory": "runtime/evaluations/genie-live-20261029-production/endurance-final"
   }
 }

@@ -2,7 +2,9 @@
 
 本规范维护 Provider、声音身份／缓存、设备 Profile 和推理封装；具体设备测量及准入记录由证据文件维护。
 
-非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。已接受的本地声音配置为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，包含动态语音、用户试听和浏览器实际播放ACK准入；真实长输入接收后两进程保持同一身份且仍可合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。模板仍默认text且关闭直播，设备由Operator显式启用；真实平台接入与持续运行须独立验收。完整条件和测量见[Genie正式准入证据](../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
+非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。本地资源配置为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，已验证动态语音、浏览器实际播放ACK及真实长输入接收后同进程继续合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。模板仍默认text且关闭直播，设备由Operator显式启用；真实平台接入与持续运行须独立验收。完整条件和测量见[Genie资源与声音对照](../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
+
+初始大肥鱼的目标声线为清亮柔软、略带奶气的普通话少女音，避免明显电音／金属感。旧声线与原版的相对试听通过不等于已满足该音色目标。候选原素材先供用户试听，选定后分别核验训练模型版本、干净参考、来源和运行包身份；声音替换重新验证质量、速度与整机RAM，不能沿用旧声线的准入结论，也不以强行升调代替声音选择。
 
 ## Provider 与声音
 
@@ -10,7 +12,7 @@
 | --- | --- | --- |
 | AUDIO-01 | 当前 | MUST 可替换 LLMProvider，支持本地 GGUF＋llama.cpp 和操作者配置的 OpenAI-compatible API，业务接口不绑定模型名。 |
 | AUDIO-02 | 当前 | MUST 校验模型 schema，仅接受 spoken_text、有限 emotion、有限 animation_id、可选 reply_to，非法字段无工具权。 |
-| AUDIO-03 | 声音接入 | MUST 保留 TTSProvider 与预录路径；外部 API 使用独立声音配置；本地固定 Genie 音色已准入，新音色、引擎或 Profile 须分别验证。 |
+| AUDIO-03 | 声音接入 | MUST 保留 TTSProvider 与预录路径；外部 API 使用独立声音配置；本地 Genie 推理已接入，新音色、引擎或 Profile 须分别验证。 |
 | AUDIO-04 | 声音接入 | MUST voice_profile 绑定 Provider、模型／权重版本、参考资产或 API voice 及许可；切角色不串声线／缓存。 |
 | AUDIO-05 | 本地 TTS | MUST 预计算固定参考特征并精简推理后端，键含模型、音色版本、参考音频／文字／语言及实现身份，修改失效；SHOULD 缓存固定台词。 |
 | AUDIO-06 | 播放启用时 | MUST 预制叫声、感谢等音效直通播放，不调 LLM／TTS。 |
