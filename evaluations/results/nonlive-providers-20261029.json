@@ -1,0 +1,368 @@
+{
+  "date": "2026-10-29",
+  "scope": "non-live provider interfaces, configurable context and guarded device acceptance",
+  "code_source": "a4f9437",
+  "checks": {
+    "pytest_passed": 441,
+    "ruff": "passed",
+    "browser": "real local HTTP/SQLite/clipboard; model and speech are explicit protocol fixtures",
+    "device": "actual MiniCPM5-2B q4/131072, 64K switch/native rejection/default restoration and isolated real reply"
+  },
+  "device": {
+    "deployment": {
+      "source": "a4f9437",
+      "started_epoch": 1793270084.970809,
+      "finished": true,
+      "previous_image": "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5",
+      "running_containers": [
+        "tuber-studio"
+      ],
+      "stage": "verify",
+      "image": "sha256:afdcfbc00db8fedeb09633dd5340d09c167703bff7c669508b0f0912fec0beb4",
+      "passed": true,
+      "config_unchanged": true,
+      "finished_epoch": 1793270108.8283474
+    },
+    "deployment_verification_log": "{\"file\": \"evaluate_tts_candidates.py\", \"sha256\": \"d984553225a918b99888b8b49a27d3315392a3e40eddf8cd798d26cce4e23241\"}\n{\"file\": \"evaluate_tts_parity.py\", \"sha256\": \"e2fee01570a1c1b8a344141e52afd63083adba7da00f88e8f4b28cdd43bb8bc0\"}\n{\"file\": \"jetson/tts/install-candidates.py\", \"sha256\": \"7dbaff09febe4939ea59c45df06cf8da477a0069570bebc347f2db0b71473f1c\"}\n{\"profile\": {\"model\": \"MiniCPM5-2B\", \"resident_llm\": true, \"context_when_resident\": 131072, \"kv\": \"q4_0\", \"llm_pids\": [26]}}\n",
+    "device_probe": {
+      "source": "a4f9437",
+      "started_epoch": 1793270343.1243646,
+      "finished": true,
+      "publishing_exercised": false,
+      "cases": [
+        {
+          "case": "apply_64k",
+          "passed": true,
+          "state": {
+            "window": 65536,
+            "actual_window": 65536,
+            "native": 131072,
+            "pids": [
+              42
+            ],
+            "tts_running": false,
+            "live_enabled": false,
+            "auto_browse": false,
+            "auto_reply": false,
+            "credentials_configured": {
+              "llm": false,
+              "tts": false,
+              "vision": false
+            },
+            "retention_days": 30
+          }
+        },
+        {
+          "case": "reject_unverified_256k",
+          "passed": true,
+          "status": 422,
+          "state": {
+            "window": 65536,
+            "actual_window": 65536,
+            "native": 131072,
+            "pids": [
+              42
+            ],
+            "tts_running": false,
+            "live_enabled": false,
+            "auto_browse": false,
+            "auto_reply": false,
+            "credentials_configured": {
+              "llm": false,
+              "tts": false,
+              "vision": false
+            },
+            "retention_days": 30
+          },
+          "configuration_bytes_unchanged": true
+        }
+      ],
+      "before": {
+        "window": 131072,
+        "actual_window": 131072,
+        "native": 131072,
+        "pids": [
+          26
+        ],
+        "tts_running": false,
+        "live_enabled": false,
+        "auto_browse": false,
+        "auto_reply": false,
+        "credentials_configured": {
+          "llm": false,
+          "tts": false,
+          "vision": false
+        },
+        "retention_days": 30
+      },
+      "restored_default": {
+        "window": 131072,
+        "actual_window": 131072,
+        "native": 131072,
+        "pids": [
+          52
+        ],
+        "tts_running": false,
+        "live_enabled": false,
+        "auto_browse": false,
+        "auto_reply": false,
+        "credentials_configured": {
+          "llm": false,
+          "tts": false,
+          "vision": false
+        },
+        "retention_days": 30
+      },
+      "credential_file_mode": "0o600",
+      "real_comment_reply": {
+        "reply": {
+          "spoken_text": "再来一碗白饭，再夸夸！",
+          "emotion": "cheerful",
+          "animation_id": "talk_happy",
+          "reply_to": [
+            "acceptance:nonlive"
+          ]
+        },
+        "audit": {
+          "sources": [],
+          "required_slots": [],
+          "missing": [],
+          "retried": false,
+          "warning": null,
+          "memory_kind": "role_story"
+        },
+        "seconds": 9.76993875900007,
+        "actual_prompt_tokens": 766,
+        "scope": "Real default MiniCPM on isolated in-memory Store; no production dataset/draft or platform writes"
+      },
+      "passed": true,
+      "memory": {
+        "baseline": {
+          "available_kib": 3279472,
+          "swap_used_kib": 2304,
+          "pswpin": 108,
+          "pswpout": 624,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 3248396,
+          "swap_used_kib": 2304,
+          "pswpin": 108,
+          "pswpout": 624,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 3247940,
+        "swapin_bytes": 0,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 0,
+        "oom_kill_delta": 0,
+        "samples": 34
+      },
+      "last_stage": "real_mini_comment_reply",
+      "final_state": {
+        "window": 131072,
+        "actual_window": 131072,
+        "native": 131072,
+        "pids": [
+          52
+        ],
+        "tts_running": false,
+        "live_enabled": false,
+        "auto_browse": false,
+        "auto_reply": false,
+        "credentials_configured": {
+          "llm": false,
+          "tts": false,
+          "vision": false
+        },
+        "retention_days": 30
+      },
+      "finished_epoch": 1793270359.768771
+    },
+    "container": {
+      "image": "sha256:afdcfbc00db8fedeb09633dd5340d09c167703bff7c669508b0f0912fec0beb4",
+      "user": "1001:1001",
+      "read_only_root": true,
+      "privileged": false,
+      "cap_drop": [
+        "ALL"
+      ],
+      "network": "tuber-studio-private",
+      "ports": {
+        "9020/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "9020"
+          }
+        ]
+      },
+      "security_options": [
+        "no-new-privileges=true"
+      ]
+    }
+  },
+  "browser_protocol_fixture": {
+    "date": "2026-10-29",
+    "scope": "real local HTTP/SQLite browser integration; OpenAI provider is an explicit loopback protocol fixture, not AI or voice-quality evidence",
+    "application_url": "http://127.0.0.1:8039",
+    "test_runtime": "tmp/nonlive-api-ui-20261029",
+    "phases": {
+      "login": {
+        "authenticated": true,
+        "realHttp": true,
+        "initialPage": "评论工作台 · Tuber Studio",
+        "initialLlm": "demo",
+        "contextTokens": 131072,
+        "vision": "disabled",
+        "liveEnabled": false,
+        "autoBrowse": false,
+        "autoReply": false
+      },
+      "save": {
+        "scope": "real local HTTP/SQLite; loopback provider fixture, not model quality",
+        "invalidEndpointStatus": 400,
+        "errorKeepsInputs": true,
+        "contextSaved": 65536,
+        "keyNeverEchoed": true,
+        "emptyKeyPreserved": true,
+        "explicitClear": true,
+        "visionInterfaceSavedThenDisabled": true,
+        "checkOnlyModels": true,
+        "characterVoiceUnchanged": true,
+        "mobile": {
+          "viewport": 390,
+          "width": 390
+        },
+        "pageErrors": []
+      },
+      "voice": {
+        "scope": "real local HTTP; external provider returns explicit synthetic fixture tone, no voice-quality claim",
+        "externalPreviewStatus": 200,
+        "returnedDuration": 0.6,
+        "wavBytes": 19244,
+        "actualBrowserPlayback": {
+          "duration": 0.6,
+          "ended": true,
+          "currentTime": 0.6,
+          "readyState": 4
+        },
+        "prerecordedPreviewStatus": 200,
+        "prerecordedActualTextVisible": true,
+        "localTtsDisabled": true,
+        "resourceModeCalls": 0,
+        "state": "stopped",
+        "autoBrowse": false,
+        "autoReply": false
+      },
+      "comments": {
+        "scope": "real HTTP/SQLite and clipboard with loopback fixed-reply provider; not AI-quality evidence",
+        "videoId": "import-ui-providers-20261029",
+        "imported": 2,
+        "threads": 2,
+        "draftGenerated": true,
+        "actualBusyStatus": 409,
+        "busyKeepsEdit": true,
+        "approvedThenCopied": true,
+        "clipboardMatches": true,
+        "onlySelectedThreadHasDraft": true,
+        "publishCalls": 0,
+        "resourceModeCalls": 0,
+        "autoBrowse": false,
+        "autoReply": false,
+        "mobile": {
+          "viewport": 390,
+          "width": 390
+        }
+      },
+      "restoration": {
+        "restoredIndependentTestRuntime": true,
+        "llm": "demo",
+        "contextTokens": 131072,
+        "tts": "prerecorded",
+        "vision": "disabled",
+        "allFixtureKeysCleared": true,
+        "state": "stopped",
+        "autoBrowse": false,
+        "autoReply": false,
+        "brokerEnabled": false
+      },
+      "final_dom": {
+        "residencyLabelTruthful": true,
+        "allSecretInputsEmpty": true,
+        "defaultContext": "131072"
+      }
+    },
+    "fixture_http": {
+      "one_token_probes": 1,
+      "structured_llm_replies": 1,
+      "audio_api_calls": 1,
+      "health_models_gets": 1,
+      "own_fixture_server_stopped": true
+    },
+    "platform_publish_calls": 0,
+    "jetson_or_local_gpu_calls": 0,
+    "static_checks": {
+      "node_check": true,
+      "dom_id_references": true,
+      "duplicate_ids": false,
+      "git_diff_check": true
+    },
+    "ui_followups_validated": {
+      "standalone_api_not_described_as_sleeping": true,
+      "prerecorded_actual_transcript_and_warning_visible": true,
+      "preview_maxlength_120": true,
+      "put_preserves_get_only_overlay_metadata": true
+    },
+    "task_only_visual_snapshots": {
+      "captured_for_visual_review": true,
+      "retained_in_git": false,
+      "disposition": "Temporary QA images; structured observations retained here."
+    },
+    "test_data_at_end_of_browser_run": {
+      "video_id": "import-ui-providers-20261029",
+      "comment_ids": [
+        "ui-settings-1",
+        "ui-settings-2"
+      ],
+      "drafts": 1,
+      "draft_status": "copied"
+    },
+    "temporary_fixture_disposition": "Removed after evidence capture; no production database or datasets were modified by the browser fixture."
+  },
+  "final_browser_smoke": {
+    "scope": "final restarted backend smoke only; earlier full local workflow remains separate evidence",
+    "newBrowserSession": true,
+    "login": true,
+    "defaultContext": 131072,
+    "liveDeferred": true,
+    "apiKeySavedThenCleared": true,
+    "getAndUiNeverEchoKey": true,
+    "apiResidencyLabel": "独立Provider · API 模型驻留由服务方管理",
+    "apiCapacityOperatorDeclared": true,
+    "restoredDemoPrerecordedVisionDisabled": true,
+    "allTestKeysCleared": true,
+    "pageErrors": [],
+    "commentOrAudioWorkflowRepeated": false,
+    "platformPublishing": false,
+    "autoBrowse": false,
+    "autoReply": false,
+    "backend_pid": 100868,
+    "backend_restarted_after_previous_full_workflow": true,
+    "own_stub_closed": true,
+    "fixture_model_or_audio_requests": 0,
+    "own_browser_session_closed": true
+  },
+  "limitations": [
+    "No real external provider account or paid API call was used; compatibility and voice quality are not proved for every service.",
+    "No real platform publishing; review/copy is distinct from published.",
+    "MiniCPM5-2B is text-only. Local/API vision interface is reserved and disabled; no vision model was downloaded.",
+    "Live/TTS co-residency and two-hour speech endurance remain deferred by the user.",
+    "A single real structured reply and historical 120K acceptance do not prove broad persona/recall quality."
+  ],
+  "local_access_check": {
+    "url": "http://127.0.0.1:8021",
+    "status": 200,
+    "provider_settings_form_present": true,
+    "transport": "SSH loopback forwarding to Jetson host 127.0.0.1:9020"
+  }
+}
