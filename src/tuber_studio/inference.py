@@ -206,6 +206,7 @@ class ProcessRunner:
                     self.tts_python,
                     self.root / "tools/jetson/tts/server.py",
                     self.root / "tools/jetson/tts/compact.py",
+                    self.root / "tools/jetson/tts/inference_only.py",
                     self.root / "tools/jetson/tts/serve.py",
                     self.root / "runtime/tts/tts_infer.yaml",
                 ]

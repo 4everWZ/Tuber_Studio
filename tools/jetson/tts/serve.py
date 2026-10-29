@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.abc
 import importlib.machinery
+import importlib.util
 import os
 import runpy
 import sys
@@ -101,37 +102,79 @@ def release_after_run(original):
 
 
 class CompatibilityLoader(importlib.machinery.SourceFileLoader):
+    def __init__(self, fullname, path, transforms, inference_only=False):
+        super().__init__(fullname, path)
+        self.transforms, self.inference_only = transforms, inference_only
+
     def exec_module(self, module):
         super().exec_module(module)
+        module._tuber_inference_only = self.inference_only
         if module.__name__ in {"GPT_SoVITS.TTS_infer_pack.TTS", "TTS_infer_pack.TTS"}:
             module.TTS.run = release_after_run(module.TTS.run)
 
     def get_code(self, fullname: str):
         # Compile in memory: never write transformed third-party source or pyc.
         source = self.get_data(self.path).decode("utf-8-sig").replace("\r\n", "\n")
-        return compile(TRANSFORMS[fullname](source), self.path, "exec")
+        return compile(self.transforms[fullname](source), self.path, "exec")
 
 
 class CompatibilityFinder(importlib.abc.MetaPathFinder):
+    def __init__(self, inference_only=False):
+        self.inference_only = inference_only
+        self.transforms = dict(TRANSFORMS)
+        if inference_only:
+            spec = importlib.util.spec_from_file_location(
+                "_tuber_inference_only", Path(__file__).with_name("inference_only.py")
+            )
+            adapter = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(adapter)
+            self.transforms.update(
+                {
+                    "AR.models.t2s_lightning_module": adapter.transform_lightning,
+                    "AR.models.t2s_model": adapter.transform_decoder,
+                }
+            )
+        elif any(
+            getattr(sys.modules.get(name), "_tuber_inference_only", False)
+            for name in (
+                "GPT_SoVITS.TTS_infer_pack.TTS",
+                "TTS_infer_pack.TTS",
+                "AR.models.t2s_model",
+                "AR.models.t2s_lightning_module",
+            )
+        ):
+            raise RuntimeError("Baseline and compact backends require separate processes")
+
     def find_spec(self, fullname, path=None, target=None):
-        if fullname not in TRANSFORMS:
+        if fullname not in self.transforms:
             return None
         spec = importlib.machinery.PathFinder.find_spec(fullname, path)
         if spec is None or spec.origin is None:
             return None
-        spec.loader = CompatibilityLoader(fullname, spec.origin)
+        spec.loader = CompatibilityLoader(fullname, spec.origin, self.transforms, self.inference_only)
         return spec
 
 
-def check_source(source_root: Path) -> None:
+def check_source(source_root: Path, *, inference_only=False) -> None:
     paths = {
         "TTS_infer_pack.TTS": source_root / "GPT_SoVITS/TTS_infer_pack/TTS.py",
         "AR.modules.patched_mha_with_cache": source_root / "GPT_SoVITS/AR/modules/patched_mha_with_cache.py",
     }
+    finder = CompatibilityFinder(inference_only=inference_only)
+    if inference_only:
+        paths.update(
+            {
+                "AR.models.t2s_lightning_module": source_root
+                / "GPT_SoVITS/AR/models/t2s_lightning_module.py",
+                "AR.models.t2s_model": source_root / "GPT_SoVITS/AR/models/t2s_model.py",
+            }
+        )
     for name, path in paths.items():
         source = path.read_text(encoding="utf-8-sig")
-        transformed = TRANSFORMS[name](source)
-        assert TRANSFORMS[name](transformed) == transformed, "Compatibility transforms must be idempotent"
+        transformed = finder.transforms[name](source)
+        assert finder.transforms[name](transformed) == transformed, (
+            "Compatibility transforms must be idempotent"
+        )
         compile(transformed, str(path), "exec")
     print("GPT-SoVITS v2 compatibility source checks passed")
 

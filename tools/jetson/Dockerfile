@@ -43,7 +43,7 @@ COPY tools/evaluate_semantics.py ./tools/evaluate_semantics.py
 COPY tools/evaluate_context.py ./tools/evaluate_context.py
 COPY tools/evaluate_tts_memory.py ./tools/evaluate_tts_memory.py
 COPY tools/evaluate_live.py ./tools/evaluate_live.py
-COPY tools/jetson/tts/serve.py tools/jetson/tts/server.py tools/jetson/tts/compact.py tools/jetson/tts/prepare.py tools/jetson/tts/requirements.txt tools/jetson/tts/tts_infer.yaml ./tools/jetson/tts/
+COPY tools/jetson/tts/serve.py tools/jetson/tts/server.py tools/jetson/tts/compact.py tools/jetson/tts/inference_only.py tools/jetson/tts/prepare.py tools/jetson/tts/requirements.txt tools/jetson/tts/tts_infer.yaml ./tools/jetson/tts/
 COPY tools/jetson/initialize-data.py ./tools/jetson/initialize-data.py
 RUN /opt/studio-venv/bin/python -m pip install --index-url "${PYPI_INDEX}" --no-deps -e . \
     && rm -rf /tmp/uv-cache /root/.cache/pip

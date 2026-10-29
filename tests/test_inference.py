@@ -909,6 +909,7 @@ async def test_only_selected_model_is_required_on_fresh_installation(tmp_path, m
     for relative in (
         "tools/jetson/tts/server.py",
         "tools/jetson/tts/compact.py",
+        "tools/jetson/tts/inference_only.py",
         "tools/jetson/tts/serve.py",
         "runtime/tts/tts_infer.yaml",
     ):

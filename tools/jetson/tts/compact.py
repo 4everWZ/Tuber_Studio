@@ -136,6 +136,7 @@ def _settings(root, voice_id):
         "prompt_text": _normal_prompt(voice["reference_text"], language),
         "config_sha256": _digest(config_file),
         "compatibility_sha256": _digest(root / "tools/jetson/tts/serve.py"),
+        "inference_adapter_sha256": _digest(root / "tools/jetson/tts/inference_only.py"),
         "paths": {key: str(path) for key, path in paths.items()},
         "sha256": {key: _digest(path) for key, path in paths.items()},
         "source_sha256": {
@@ -273,17 +274,28 @@ def _read_bundle(directory, identity):
 
 
 def _upstream(root):
+    for name in (
+        "GPT_SoVITS.TTS_infer_pack.TTS",
+        "TTS_infer_pack.TTS",
+        "AR.models.t2s_lightning_module",
+        "AR.models.t2s_model",
+    ):
+        if name in sys.modules and not getattr(sys.modules[name], "_tuber_inference_only", False):
+            raise RuntimeError("Baseline and compact backends require separate processes")
+    finders = [f for f in sys.meta_path if type(f).__name__ == "CompatibilityFinder"]
+    if any(not getattr(f, "inference_only", False) for f in finders):
+        raise RuntimeError("Baseline and compact backends require separate processes")
     source = _source()
     os.chdir(source)
     sys.path[:0] = [str(source), str(source / "GPT_SoVITS")]
-    if not any(type(f).__name__ == "CompatibilityFinder" for f in sys.meta_path):
+    if not finders:
         spec = importlib.util.spec_from_file_location(
             "_compact_v2_compat", root / "tools/jetson/tts/serve.py"
         )
         compat = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(compat)
-        compat.check_source(source)
-        sys.meta_path.insert(0, compat.CompatibilityFinder())
+        compat.check_source(source, inference_only=True)
+        sys.meta_path.insert(0, compat.CompatibilityFinder(inference_only=True))
     return importlib.import_module("GPT_SoVITS.TTS_infer_pack.TTS")
 
 
