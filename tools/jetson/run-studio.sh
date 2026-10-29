@@ -31,7 +31,7 @@ runtime_root=$(realpath -e -- "$studio_root/runtime")
 if [[ "$runtime_root" != "$studio_root/runtime" ]]; then
   echo 'Runtime must be the real directory inside this project.' >&2; exit 1
 fi
-readonly_data=(models tts/weights tts/pretrained tts/ref nltk_data)
+readonly_data=(models tts/weights tts/pretrained tts/ref tts/genie nltk_data)
 for relative in "${readonly_data[@]}"; do
   target="$runtime_root/$relative"
   # Reject escaping/symlinked parents before creating any directory.
