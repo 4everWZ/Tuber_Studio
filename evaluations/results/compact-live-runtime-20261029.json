@@ -1,0 +1,3230 @@
+{
+  "date": "2026-10-29",
+  "kind": "formal_compact_TTS_integration_and_guarded_hardware_validation",
+  "source_images": {
+    "3c8b796": "sha256:bb33edc9c45607c0d28baacba77652986f7587aeb8a761e18dbb4c5e45d6dfd4",
+    "767d9d4": "sha256:903bd9c51fa8aacba3c4d67d4e987d77e3316182e662724d1aa1b47355527ad8",
+    "f7aa386": "sha256:90b92ac2a275f8c55bffbe97b8cf5702acf6e7ee32f2a441d41838f2ad70fda9",
+    "c6d8dd3": "sha256:cb9b83333552292e6574cbb2fd36cd85f1c94cf62799a25398e0b322024d1a3c"
+  },
+  "configuration": {
+    "model": "MiniCPM5-2B",
+    "context_tokens": 131072,
+    "kv_cache": "q4_0",
+    "auto_browse": false,
+    "auto_reply": false,
+    "publishing_exercised": false
+  },
+  "method": {
+    "sample_seconds": 0.5,
+    "guards": {
+      "minimum_available_mib": 160,
+      "maximum_swap_25s_mib": 64
+    },
+    "whole_machine_metric": "MemTotal minus minimum MemAvailable; sampled, not exact instantaneous high-water mark"
+  },
+  "formal_startup_cases": {
+    "3c8b796": {
+      "source": "3c8b796",
+      "forced_missing_cache": true,
+      "live_switch_seconds": 53.528,
+      "live_health": {
+        "state": "active",
+        "active_provider": "llm2b",
+        "error": null,
+        "mode": "live",
+        "selected_provider": "llm2b",
+        "kv_cache_type": "q4_0",
+        "cuda_managed_memory": false,
+        "busy": false,
+        "providers": {
+          "llm2b": {
+            "running": true,
+            "is_sleeping": false,
+            "loaded_this_boot": true,
+            "native_context_tokens": 131072,
+            "cache_type_k": "q4_0",
+            "cache_type_v": "q4_0"
+          },
+          "tts": {
+            "running": true,
+            "is_sleeping": false,
+            "loaded_this_boot": true,
+            "native_context_tokens": null,
+            "cache_type_k": null,
+            "cache_type_v": null
+          }
+        },
+        "other_models_running": false
+      },
+      "cache_regenerated": true,
+      "profile": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            75
+          ],
+          "tts": [
+            36
+          ]
+        }
+      },
+      "tts_health": {
+        "status": "ok",
+        "available": true,
+        "is_sleeping": false,
+        "active_provider": "llm2b"
+      },
+      "completed": false,
+      "error": "Swap traffic above 64 MiB over the rolling 25-second interval",
+      "memory": {
+        "baseline": {
+          "available_kib": 3281920,
+          "swap_used_kib": 435968,
+          "pswpin": 302817,
+          "pswpout": 849600,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 612212,
+          "swap_used_kib": 547072,
+          "pswpin": 303010,
+          "pswpout": 877539,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 602864,
+        "swapin_bytes": 790528,
+        "swapout_bytes": 114438144,
+        "maximum_rolling_25s_swap_bytes": 115228672,
+        "oom_kill_delta": 0,
+        "samples": 116
+      }
+    },
+    "767d9d4": {
+      "source": "767d9d4",
+      "forced_missing_cache": false,
+      "completed": false,
+      "error": "Server error '503 Service Unavailable' for url 'http://127.0.0.1:9012/mode'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
+      "memory": {
+        "baseline": {
+          "available_kib": 3258848,
+          "swap_used_kib": 448000,
+          "pswpin": 330011,
+          "pswpout": 899267,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 3128112,
+          "swap_used_kib": 452096,
+          "pswpin": 330023,
+          "pswpout": 900353,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 934320,
+        "swapin_bytes": 49152,
+        "swapout_bytes": 4448256,
+        "maximum_rolling_25s_swap_bytes": 4472832,
+        "oom_kill_delta": 0,
+        "samples": 72
+      }
+    },
+    "767d9d4-managed": {
+      "source": "767d9d4-managed",
+      "forced_missing_cache": false,
+      "completed": false,
+      "error": "Server error '503 Service Unavailable' for url 'http://127.0.0.1:9012/mode'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
+      "memory": {
+        "baseline": {
+          "available_kib": 3024928,
+          "swap_used_kib": 436736,
+          "pswpin": 330310,
+          "pswpout": 900353,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 3193452,
+          "swap_used_kib": 439040,
+          "pswpin": 330320,
+          "pswpout": 900918,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1552244,
+        "swapin_bytes": 40960,
+        "swapout_bytes": 2314240,
+        "maximum_rolling_25s_swap_bytes": 2355200,
+        "oom_kill_delta": 0,
+        "samples": 65
+      }
+    },
+    "f7aa386": {
+      "source": "f7aa386",
+      "forced_missing_cache": false,
+      "completed": false,
+      "error": "Server error '503 Service Unavailable' for url 'http://127.0.0.1:9012/mode'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
+      "memory": {
+        "baseline": {
+          "available_kib": 3204428,
+          "swap_used_kib": 416000,
+          "pswpin": 332029,
+          "pswpout": 900918,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 3144076,
+          "swap_used_kib": 449280,
+          "pswpin": 333821,
+          "pswpout": 910958,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1232740,
+        "swapin_bytes": 7340032,
+        "swapout_bytes": 41123840,
+        "maximum_rolling_25s_swap_bytes": 48463872,
+        "oom_kill_delta": 0,
+        "samples": 115
+      }
+    },
+    "c6d8dd3": {
+      "source": "c6d8dd3",
+      "forced_missing_cache": false,
+      "completed": false,
+      "error": "Server error '503 Service Unavailable' for url 'http://127.0.0.1:9012/mode'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
+      "memory": {
+        "baseline": {
+          "available_kib": 3103208,
+          "swap_used_kib": 433664,
+          "pswpin": 338046,
+          "pswpout": 910958,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 3101964,
+          "swap_used_kib": 435712,
+          "pswpin": 338098,
+          "pswpout": 911454,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1481724,
+        "swapin_bytes": 212992,
+        "swapout_bytes": 2031616,
+        "maximum_rolling_25s_swap_bytes": 2158592,
+        "oom_kill_delta": 0,
+        "samples": 96
+      }
+    }
+  },
+  "native_text_120000_input": {
+    "result": {
+      "event": "summary",
+      "accepted_requested_tokens": true,
+      "verified_120k_input": true,
+      "requested_tokens": 120000,
+      "deadline_seconds": 900,
+      "probe_elapsed_seconds": 660.979,
+      "elapsed_seconds": 660.981,
+      "reason": null,
+      "profile": {
+        "warmed_up": false,
+        "model": "MiniCPM5-2B",
+        "configured_context": 131072,
+        "configured_native_context": 131072,
+        "actual_context": 131072,
+        "actual_native_context": 131072,
+        "native_source": "broker GGUF metadata",
+        "mode": "text",
+        "markers": {
+          "HEAD": "HEAD_07705f98cb40",
+          "MIDDLE": "MIDDLE_07705f98cb40",
+          "TAIL": "TAIL_07705f98cb40"
+        },
+        "middle_token_offset": 59993,
+        "tail_token_offset": 119989
+      },
+      "evidence": {
+        "input_counts": {
+          "tokens_evaluated": 120000,
+          "timings.prompt_n": 120000
+        },
+        "output_counts": {
+          "tokens_predicted": 4,
+          "timings.predicted_n": 4
+        },
+        "truncated": false,
+        "cache_n": 0,
+        "prompt_ms": 659646.671,
+        "predicted_ms": 967.616,
+        "generated_text": "Synthetic capacity filler"
+      },
+      "memory": {
+        "baseline": {
+          "available_kib": 2997856,
+          "swap_used_kib": 436736,
+          "pswpin": 330248,
+          "pswpout": 900353,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 2926776,
+          "swap_used_kib": 436736,
+          "pswpin": 330264,
+          "pswpout": 900353,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 2918348,
+        "swapin_bytes": 65536,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 12288,
+        "oom_kill_delta": 0,
+        "samples": 1318
+      },
+      "broker_cleanup": null,
+      "limitation": "Synthetic input acceptance only; not a test of long-text recall, factual accuracy or persona quality."
+    },
+    "receipt": {
+      "task": "context",
+      "pid": 147,
+      "started_epoch": 1793258037.7103522,
+      "finished": true,
+      "source": "767d9d4-text",
+      "exitcode": 0,
+      "finished_epoch": 1793258698.943789
+    },
+    "tts_resident": false,
+    "limitation": "Not a co-resident/live result, recall test, or role-quality proof."
+  },
+  "heap_diagnostics": {
+    "heap-probe-767d9d4": {
+      "probe": {
+        "probe": "same-process glibc unused heap only",
+        "glibc": "2.39",
+        "pid": 84,
+        "intervention": "malloc_trim(0), exactly once; no explicit extra gc or CUDA cache call",
+        "snapshots": [
+          {
+            "label": "before_load",
+            "elapsed_seconds": 0.019,
+            "smaps_kib": {
+              "Rss": 355056,
+              "Pss": 347945,
+              "Private_Dirty": 233288,
+              "Private_Clean": 110636,
+              "Anonymous": 233288,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 5499040,
+              "MemFree": 4744420,
+              "Cached": 915564,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852444
+            },
+            "vmstat": {
+              "pswpin": 330152,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 100610048,
+              "uordblks": 100369840,
+              "fordblks": 240208,
+              "hblkhd": 4415488,
+              "fsmblks": 0,
+              "keepcost": 122336
+            },
+            "cuda_bytes": {
+              "allocated": 0,
+              "reserved": 0,
+              "peak_allocated": 0,
+              "peak_reserved": 0
+            }
+          },
+          {
+            "label": "loaded_after_startup_warmup",
+            "elapsed_seconds": 22.7945,
+            "smaps_kib": {
+              "Rss": 2157636,
+              "Pss": 2140677,
+              "Private_Dirty": 1780772,
+              "Private_Clean": 346220,
+              "Anonymous": 1780768,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3875052,
+              "MemFree": 2254100,
+              "Cached": 1780836,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852700
+            },
+            "vmstat": {
+              "pswpin": 330214,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1280929792,
+              "uordblks": 1232727616,
+              "fordblks": 48202176,
+              "hblkhd": 215064576,
+              "fsmblks": 0,
+              "keepcost": 66352
+            },
+            "cuda_bytes": {
+              "allocated": 909243392,
+              "reserved": 926941184,
+              "peak_allocated": 920863232,
+              "peak_reserved": 926941184
+            }
+          },
+          {
+            "label": "before_trim",
+            "elapsed_seconds": 25.8719,
+            "smaps_kib": {
+              "Rss": 2157948,
+              "Pss": 2140983,
+              "Private_Dirty": 1781072,
+              "Private_Clean": 346220,
+              "Anonymous": 1781068,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3859492,
+              "MemFree": 2238308,
+              "Cached": 1781116,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852700
+            },
+            "vmstat": {
+              "pswpin": 330215,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1280929792,
+              "uordblks": 1232765408,
+              "fordblks": 48164384,
+              "hblkhd": 215064576,
+              "fsmblks": 0,
+              "keepcost": 66352
+            },
+            "cuda_bytes": {
+              "allocated": 908719104,
+              "reserved": 931135488,
+              "peak_allocated": 922923008,
+              "peak_reserved": 941621248
+            }
+          },
+          {
+            "label": "after_trim",
+            "elapsed_seconds": 26.1273,
+            "smaps_kib": {
+              "Rss": 2112256,
+              "Pss": 2095291,
+              "Private_Dirty": 1735380,
+              "Private_Clean": 346220,
+              "Anonymous": 1735376,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3897864,
+              "MemFree": 2276640,
+              "Cached": 1781180,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852700
+            },
+            "vmstat": {
+              "pswpin": 330215,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1280864256,
+              "uordblks": 1232774768,
+              "fordblks": 48089488,
+              "hblkhd": 215064576,
+              "fsmblks": 0,
+              "keepcost": 816
+            },
+            "cuda_bytes": {
+              "allocated": 908719104,
+              "reserved": 931135488,
+              "peak_allocated": 922923008,
+              "peak_reserved": 941621248
+            }
+          },
+          {
+            "label": "after_same_seed_verification",
+            "elapsed_seconds": 29.2136,
+            "smaps_kib": {
+              "Rss": 2112968,
+              "Pss": 2095991,
+              "Private_Dirty": 1736068,
+              "Private_Clean": 346220,
+              "Anonymous": 1736064,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3876108,
+              "MemFree": 2254704,
+              "Cached": 1781272,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852700
+            },
+            "vmstat": {
+              "pswpin": 330215,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1280864256,
+              "uordblks": 1232795072,
+              "fordblks": 48069184,
+              "hblkhd": 215064576,
+              "fsmblks": 0,
+              "keepcost": 816
+            },
+            "cuda_bytes": {
+              "allocated": 908850176,
+              "reserved": 933232640,
+              "peak_allocated": 922923008,
+              "peak_reserved": 962592768
+            }
+          }
+        ],
+        "wav_checks": [
+          {
+            "label": "before_trim",
+            "seed": 42,
+            "text": "海底的小灯亮起来了。",
+            "duration_seconds": 1.86,
+            "sample_rate": 32000,
+            "sample_width": 2,
+            "channels": 1,
+            "pcm_sha256": "8b1bf24e1c2d81b0d56614b5696df5e588726f3c2507cf9b059ab5d913775bcf",
+            "wave_sha256": "de129da02b2d735c28a177985c91cc2481cd297ad0a8cee9b07f1857c8136809",
+            "pcm_bytes": 119040,
+            "elapsed_seconds": 3.0248
+          },
+          {
+            "label": "after_trim",
+            "seed": 42,
+            "text": "海底的小灯亮起来了。",
+            "duration_seconds": 1.86,
+            "sample_rate": 32000,
+            "sample_width": 2,
+            "channels": 1,
+            "pcm_sha256": "8b1bf24e1c2d81b0d56614b5696df5e588726f3c2507cf9b059ab5d913775bcf",
+            "wave_sha256": "de129da02b2d735c28a177985c91cc2481cd297ad0a8cee9b07f1857c8136809",
+            "pcm_bytes": 119040,
+            "elapsed_seconds": 3.0346
+          }
+        ],
+        "voice_id": "whale_sovits_v2",
+        "malloc_trim": {
+          "return": 1,
+          "elapsed_seconds": 0.00327
+        },
+        "comparison": {
+          "rss_reclaimed_bytes": 46788608,
+          "private_dirty_reclaimed_bytes": 46788608,
+          "host_available_delta_bytes": 39292928,
+          "cuda_allocated_unchanged": true,
+          "cuda_reserved_unchanged": true,
+          "same_pcm": true,
+          "rss_reclaimed_at_least_300_mib": false,
+          "rss_rebound_after_verification_bytes": 729088
+        },
+        "completed": true,
+        "elapsed_seconds": 29.2148
+      },
+      "supervision": {
+        "stage": "finished",
+        "pid": 78,
+        "probe_exit": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5729700,
+            "swap_used_kib": 437504,
+            "pswpin": 330152,
+            "pswpout": 900353,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5758336,
+            "swap_used_kib": 437248,
+            "pswpin": 330215,
+            "pswpout": 900353,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3859492,
+          "swapin_bytes": 258048,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 258048,
+          "oom_kill_delta": 0,
+          "samples": 74
+        },
+        "restored_profile": {
+          "model": "MiniCPM5-2B",
+          "resident_llm": true,
+          "context_when_resident": 131072,
+          "kv": "q4_0",
+          "llm_pids": [
+            98
+          ]
+        },
+        "config_unchanged": true
+      }
+    },
+    "heap-probe-worker-767d9d4": {
+      "probe": {
+        "probe": "same-process glibc unused heap only",
+        "glibc": "2.39",
+        "pid": 114,
+        "worker_thread_mode": true,
+        "main_thread": {
+          "ident": 281473209526048,
+          "native_id": 114
+        },
+        "torch_imported_before_load": false,
+        "intervention": "malloc_trim(0), exactly once; no explicit extra gc or CUDA cache call",
+        "snapshots": [
+          {
+            "label": "before_load",
+            "thread": {
+              "ident": 281473209526048,
+              "native_id": 114
+            },
+            "torch_imported": false,
+            "elapsed_seconds": 0.0039,
+            "smaps_kib": {
+              "Rss": 39584,
+              "Pss": 32426,
+              "Private_Dirty": 28148,
+              "Private_Clean": 200,
+              "Anonymous": 28148,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 5709348,
+              "MemFree": 4863016,
+              "Cached": 1004940,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852956
+            },
+            "vmstat": {
+              "pswpin": 330231,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 9682944,
+              "uordblks": 9066480,
+              "fordblks": 616464,
+              "hblkhd": 819200,
+              "fsmblks": 0,
+              "keepcost": 221760
+            },
+            "cuda_bytes": {
+              "allocated": 0,
+              "reserved": 0,
+              "peak_allocated": 0,
+              "peak_reserved": 0
+            }
+          },
+          {
+            "label": "loaded_after_startup_warmup",
+            "thread": {
+              "ident": 281473169420672,
+              "native_id": 115
+            },
+            "torch_imported": true,
+            "elapsed_seconds": 24.4126,
+            "smaps_kib": {
+              "Rss": 2195592,
+              "Pss": 2178591,
+              "Private_Dirty": 1813192,
+              "Private_Clean": 351668,
+              "Anonymous": 1813188,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3775208,
+              "MemFree": 2178084,
+              "Cached": 1759260,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852956
+            },
+            "vmstat": {
+              "pswpin": 330231,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1418366976,
+              "uordblks": 1369492016,
+              "fordblks": 48874960,
+              "hblkhd": 78012416,
+              "fsmblks": 48,
+              "keepcost": 221760
+            },
+            "cuda_bytes": {
+              "allocated": 909243392,
+              "reserved": 926941184,
+              "peak_allocated": 920863232,
+              "peak_reserved": 926941184
+            }
+          },
+          {
+            "label": "before_trim",
+            "thread": {
+              "ident": 281473169420672,
+              "native_id": 115
+            },
+            "torch_imported": true,
+            "elapsed_seconds": 27.5204,
+            "smaps_kib": {
+              "Rss": 2195836,
+              "Pss": 2178829,
+              "Private_Dirty": 1813424,
+              "Private_Clean": 351668,
+              "Anonymous": 1813420,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3759792,
+              "MemFree": 2162528,
+              "Cached": 1759388,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852956
+            },
+            "vmstat": {
+              "pswpin": 330231,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1418366976,
+              "uordblks": 1369528704,
+              "fordblks": 48838272,
+              "hblkhd": 78012416,
+              "fsmblks": 48,
+              "keepcost": 221760
+            },
+            "cuda_bytes": {
+              "allocated": 908719104,
+              "reserved": 931135488,
+              "peak_allocated": 922923008,
+              "peak_reserved": 941621248
+            }
+          },
+          {
+            "label": "after_trim",
+            "thread": {
+              "ident": 281473169420672,
+              "native_id": 115
+            },
+            "torch_imported": true,
+            "elapsed_seconds": 27.7851,
+            "smaps_kib": {
+              "Rss": 2149676,
+              "Pss": 2132669,
+              "Private_Dirty": 1767264,
+              "Private_Clean": 351668,
+              "Anonymous": 1767260,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3798880,
+              "MemFree": 2201616,
+              "Cached": 1759372,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852956
+            },
+            "vmstat": {
+              "pswpin": 330231,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1418145792,
+              "uordblks": 1369536864,
+              "fordblks": 48608928,
+              "hblkhd": 78012416,
+              "fsmblks": 0,
+              "keepcost": 576
+            },
+            "cuda_bytes": {
+              "allocated": 908719104,
+              "reserved": 931135488,
+              "peak_allocated": 922923008,
+              "peak_reserved": 941621248
+            }
+          },
+          {
+            "label": "after_same_seed_verification",
+            "thread": {
+              "ident": 281473169420672,
+              "native_id": 115
+            },
+            "torch_imported": true,
+            "elapsed_seconds": 30.8924,
+            "smaps_kib": {
+              "Rss": 2150388,
+              "Pss": 2133369,
+              "Private_Dirty": 1767952,
+              "Private_Clean": 351668,
+              "Anonymous": 1767948,
+              "Swap": 0
+            },
+            "host_kib": {
+              "MemAvailable": 3761836,
+              "MemFree": 2162840,
+              "Cached": 1760944,
+              "SwapTotal": 12289948,
+              "SwapFree": 11852956
+            },
+            "vmstat": {
+              "pswpin": 330231,
+              "pswpout": 900353,
+              "oom_kill": 0
+            },
+            "mallinfo2_bytes": {
+              "arena": 1418145792,
+              "uordblks": 1369556784,
+              "fordblks": 48589008,
+              "hblkhd": 78012416,
+              "fsmblks": 0,
+              "keepcost": 576
+            },
+            "cuda_bytes": {
+              "allocated": 908850176,
+              "reserved": 933232640,
+              "peak_allocated": 922923008,
+              "peak_reserved": 962592768
+            }
+          }
+        ],
+        "wav_checks": [
+          {
+            "label": "before_trim",
+            "thread": {
+              "ident": 281473169420672,
+              "native_id": 115
+            },
+            "seed": 42,
+            "text": "海底的小灯亮起来了。",
+            "duration_seconds": 1.86,
+            "sample_rate": 32000,
+            "sample_width": 2,
+            "channels": 1,
+            "pcm_sha256": "8b1bf24e1c2d81b0d56614b5696df5e588726f3c2507cf9b059ab5d913775bcf",
+            "wave_sha256": "de129da02b2d735c28a177985c91cc2481cd297ad0a8cee9b07f1857c8136809",
+            "pcm_bytes": 119040,
+            "elapsed_seconds": 3.0479
+          },
+          {
+            "label": "after_trim",
+            "thread": {
+              "ident": 281473169420672,
+              "native_id": 115
+            },
+            "seed": 42,
+            "text": "海底的小灯亮起来了。",
+            "duration_seconds": 1.86,
+            "sample_rate": 32000,
+            "sample_width": 2,
+            "channels": 1,
+            "pcm_sha256": "8b1bf24e1c2d81b0d56614b5696df5e588726f3c2507cf9b059ab5d913775bcf",
+            "wave_sha256": "de129da02b2d735c28a177985c91cc2481cd297ad0a8cee9b07f1857c8136809",
+            "pcm_bytes": 119040,
+            "elapsed_seconds": 3.0473
+          }
+        ],
+        "voice_id": "whale_sovits_v2",
+        "load_thread": {
+          "ident": 281473169420672,
+          "native_id": 115
+        },
+        "torch_imported_before_owner_load": false,
+        "malloc_trim": {
+          "return": 1,
+          "thread": {
+            "ident": 281473209526048,
+            "native_id": 114
+          },
+          "elapsed_seconds": 0.005
+        },
+        "comparison": {
+          "rss_reclaimed_bytes": 47267840,
+          "private_dirty_reclaimed_bytes": 47267840,
+          "host_available_delta_bytes": 40026112,
+          "cuda_allocated_unchanged": true,
+          "cuda_reserved_unchanged": true,
+          "same_pcm": true,
+          "rss_reclaimed_at_least_300_mib": false,
+          "rss_rebound_after_verification_bytes": 729088
+        },
+        "completed": true,
+        "elapsed_seconds": 30.8941
+      },
+      "supervision": {
+        "stage": "finished",
+        "pid": 108,
+        "probe_exit": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5737556,
+            "swap_used_kib": 436992,
+            "pswpin": 330231,
+            "pswpout": 900353,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5735444,
+            "swap_used_kib": 436992,
+            "pswpin": 330231,
+            "pswpout": 900353,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3760032,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 71
+        },
+        "restored_profile": {
+          "model": "MiniCPM5-2B",
+          "resident_llm": true,
+          "context_when_resident": 131072,
+          "kv": "q4_0",
+          "llm_pids": [
+            129
+          ]
+        },
+        "config_unchanged": true
+      }
+    }
+  },
+  "latest_campaign": {
+    "source": "c6d8dd3",
+    "pid": 30,
+    "started_epoch": 1793261735.9687517,
+    "finished": true,
+    "phases": [
+      {
+        "task": "formal",
+        "exitcode": 1,
+        "seconds": 48.842
+      }
+    ],
+    "stage": "formal",
+    "error": "formal did not complete successfully; preserve its result and stop later phases",
+    "restored_mode": "text",
+    "restored_managed_memory": false,
+    "tts_off_after": true,
+    "finished_epoch": 1793261784.96692
+  },
+  "no_pinned_allocation_trial": {
+    "scope": "manual ProcessRunner isolated allocator experiment; not production live acceptance",
+    "other_project_services_running": false,
+    "other_services_modified": false,
+    "guard": {
+      "available_min_mib": 160,
+      "rolling_swap_25s_max_mib": 64,
+      "deadline_seconds": 180
+    },
+    "golden_source": "evaluations/results/tts-fixed-reference-memory-20261029.json",
+    "managed_memory": false,
+    "actor_uid": 1001,
+    "config_sha256_before": "29846c7fd3e1c1452bf8426b9da383b3621a3e074edae10881b9127a564e720b",
+    "manual_short_probe_passed": false,
+    "profile_before": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        93
+      ]
+    },
+    "original_mini": {
+      "pid": 93,
+      "uid": 1001,
+      "created": 1793261780.81,
+      "exe": "/opt/llama/bin/llama-server",
+      "cwd": "/workspace/tuber",
+      "argv": [
+        "/opt/llama/bin/llama-server",
+        "-m",
+        "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+        "--alias",
+        "MiniCPM5-2B",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "9013",
+        "--jinja",
+        "--ctx-size",
+        "131072",
+        "--parallel",
+        "1",
+        "--fit",
+        "off",
+        "--n-gpu-layers",
+        "99",
+        "--flash-attn",
+        "on",
+        "--cache-type-k",
+        "q4_0",
+        "--cache-type-v",
+        "q4_0",
+        "--reasoning",
+        "auto",
+        "--temp",
+        "1.0",
+        "--top-p",
+        "0.95",
+        "--min-p",
+        "0.0",
+        "--batch-size",
+        "256",
+        "--ubatch-size",
+        "64",
+        "--cache-ram",
+        "0",
+        "--no-mmap",
+        "--direct-io"
+      ],
+      "pgid": 93
+    },
+    "original_stop_attempted": true,
+    "original_stopped": true,
+    "tts_environment": {
+      "pid": 109,
+      "uid": 1001,
+      "NO_PINNED": null
+    },
+    "tts_ready": {
+      "status": "ready",
+      "backend": "gpt_sovits_v2_compact",
+      "voice_id": "whale_sovits_v2"
+    },
+    "tts_only_golden": [
+      {
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "seed": 42,
+        "elapsed_seconds": 5.157,
+        "frames": 117760,
+        "sample_rate": 32000,
+        "duration_seconds": 3.68,
+        "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+        "golden_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+        "matches": true
+      },
+      {
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "seed": 42,
+        "elapsed_seconds": 5.154,
+        "frames": 133120,
+        "sample_rate": 32000,
+        "duration_seconds": 4.16,
+        "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+        "golden_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+        "matches": false
+      }
+    ],
+    "failure": {
+      "type": "RuntimeError",
+      "message": "Golden PCM mismatch in tts_only_golden sentence 1"
+    },
+    "memory": {
+      "baseline": {
+        "available_kib": 3121464,
+        "swap_used_kib": 433152,
+        "pswpin": 338601,
+        "pswpout": 911454,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 3971724,
+        "swap_used_kib": 433152,
+        "pswpin": 338601,
+        "pswpout": 911454,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 3121464,
+      "swapin_bytes": 0,
+      "swapout_bytes": 0,
+      "maximum_rolling_25s_swap_bytes": 0,
+      "oom_kill_delta": 0,
+      "samples": 58
+    },
+    "cleanup_errors": [],
+    "owned_workers_stopped": true,
+    "config_unchanged_before_restore": true,
+    "restored_profile": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        123
+      ]
+    },
+    "restore_health": {
+      "mode": "text",
+      "selected_provider": "llm2b",
+      "cuda_managed_memory": false,
+      "kv_cache_type": "q4_0"
+    },
+    "config_unchanged_final": true
+  },
+  "no_pinned_resource_trial": {
+    "scope": "manual ProcessRunner isolated allocator-only experiment; not production live acceptance",
+    "other_project_services_running": false,
+    "other_services_modified": false,
+    "guard": {
+      "available_min_mib": 160,
+      "rolling_swap_25s_max_mib": 64,
+      "deadline_seconds": 180
+    },
+    "golden_source": "evaluations/results/tts-fixed-reference-memory-20261029.json",
+    "managed_memory": false,
+    "actor_uid": 1001,
+    "config_sha256_before": "29846c7fd3e1c1452bf8426b9da383b3621a3e074edae10881b9127a564e720b",
+    "manual_short_probe_passed": false,
+    "profile_before": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        206
+      ]
+    },
+    "original_mini": {
+      "pid": 206,
+      "uid": 1001,
+      "created": 1793263729.75,
+      "exe": "/opt/llama/bin/llama-server",
+      "cwd": "/workspace/tuber",
+      "argv": [
+        "/opt/llama/bin/llama-server",
+        "-m",
+        "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+        "--alias",
+        "MiniCPM5-2B",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "9013",
+        "--jinja",
+        "--ctx-size",
+        "131072",
+        "--parallel",
+        "1",
+        "--fit",
+        "off",
+        "--n-gpu-layers",
+        "99",
+        "--flash-attn",
+        "on",
+        "--cache-type-k",
+        "q4_0",
+        "--cache-type-v",
+        "q4_0",
+        "--reasoning",
+        "auto",
+        "--temp",
+        "1.0",
+        "--top-p",
+        "0.95",
+        "--min-p",
+        "0.0",
+        "--batch-size",
+        "256",
+        "--ubatch-size",
+        "64",
+        "--cache-ram",
+        "0",
+        "--no-mmap",
+        "--direct-io"
+      ],
+      "pgid": 206
+    },
+    "numerical_evidence": {
+      "report": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/result.json",
+      "report_sha256": "87754d35675cb32cb71be71573c40c74d256996704a363898d974728a6a20363",
+      "matched_baseline_compact_bit_identical_pairs": 6,
+      "scope": "Same warmup, owner thread and params; three sentences each repeated twice",
+      "old_golden_unchanged": true,
+      "old_golden_used_as_gate": false,
+      "limitation": "Repeated calls may differ within one backend; this resource trial is not a new numerical parity test"
+    },
+    "old_golden_gate_applied": false,
+    "original_stop_attempted": true,
+    "original_stopped": true,
+    "tts_environment": {
+      "pid": 222,
+      "uid": 1001,
+      "NO_PINNED": null
+    },
+    "tts_ready": {
+      "status": "ready",
+      "backend": "gpt_sovits_v2_compact",
+      "voice_id": "whale_sovits_v2"
+    },
+    "tts_only_golden": [
+      {
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "request_params": {
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "text_lang": "zh",
+          "seed": 42,
+          "batch_size": 1
+        },
+        "seed": 42,
+        "elapsed_seconds": 5.259,
+        "frames": 117760,
+        "sample_rate": 32000,
+        "duration_seconds": 3.68,
+        "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+        "nonzero_pcm": true,
+        "numerical_parity_decision": "not evaluated here; see numerical_evidence",
+        "old_golden_used_as_gate": false
+      },
+      {
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "request_params": {
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "text_lang": "zh",
+          "seed": 42,
+          "batch_size": 1
+        },
+        "seed": 42,
+        "elapsed_seconds": 5.28,
+        "frames": 133120,
+        "sample_rate": 32000,
+        "duration_seconds": 4.16,
+        "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+        "nonzero_pcm": true,
+        "numerical_parity_decision": "not evaluated here; see numerical_evidence",
+        "old_golden_used_as_gate": false
+      },
+      {
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "request_params": {
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "text_lang": "zh",
+          "seed": 42,
+          "batch_size": 1
+        },
+        "seed": 42,
+        "elapsed_seconds": 4.179,
+        "frames": 103680,
+        "sample_rate": 32000,
+        "duration_seconds": 3.24,
+        "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+        "nonzero_pcm": true,
+        "numerical_parity_decision": "not evaluated here; see numerical_evidence",
+        "old_golden_used_as_gate": false
+      }
+    ],
+    "mini_environment": {
+      "pid": 236,
+      "uid": 1001,
+      "NO_PINNED": "1"
+    },
+    "failure": {
+      "type": "RuntimeError",
+      "message": "Manual llm2b exited before ready (code -11)"
+    },
+    "memory": {
+      "baseline": {
+        "available_kib": 3031948,
+        "swap_used_kib": 420864,
+        "pswpin": 338746,
+        "pswpout": 911454,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 2366380,
+        "swap_used_kib": 429824,
+        "pswpin": 338746,
+        "pswpout": 913718,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 1100820,
+      "swapin_bytes": 0,
+      "swapout_bytes": 9273344,
+      "maximum_rolling_25s_swap_bytes": 9273344,
+      "oom_kill_delta": 0,
+      "samples": 76
+    },
+    "cleanup_errors": [],
+    "owned_workers_stopped": true,
+    "config_unchanged_before_restore": true,
+    "restored_profile": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        246
+      ]
+    },
+    "restore_health": {
+      "mode": "text",
+      "selected_provider": "llm2b",
+      "cuda_managed_memory": false,
+      "kv_cache_type": "q4_0"
+    },
+    "config_unchanged_final": true
+  },
+  "matched_pcm_protocol": {
+    "supervision": {
+      "started_epoch": 1793263614.0149076,
+      "finished": true,
+      "resource_touched": true,
+      "before": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          123
+        ],
+        "identity": {
+          "pid": 123,
+          "created_at": 1793262742.05,
+          "uid": 1001,
+          "argv": [
+            "/opt/llama/bin/llama-server",
+            "-m",
+            "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+            "--alias",
+            "MiniCPM5-2B",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9013",
+            "--jinja",
+            "--ctx-size",
+            "131072",
+            "--parallel",
+            "1",
+            "--fit",
+            "off",
+            "--n-gpu-layers",
+            "99",
+            "--flash-attn",
+            "on",
+            "--cache-type-k",
+            "q4_0",
+            "--cache-type-v",
+            "q4_0",
+            "--reasoning",
+            "auto",
+            "--temp",
+            "1.0",
+            "--top-p",
+            "0.95",
+            "--min-p",
+            "0.0",
+            "--batch-size",
+            "256",
+            "--ubatch-size",
+            "64",
+            "--cache-ram",
+            "0",
+            "--no-mmap",
+            "--direct-io"
+          ],
+          "ppid": 1
+        }
+      },
+      "measurement": {
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 5647120,
+            "swap_used_kib": 421376,
+            "pswpin": 338649,
+            "pswpout": 911454,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5650904,
+            "swap_used_kib": 421376,
+            "pswpin": 338651,
+            "pswpout": 911454,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3373724,
+          "swapin_bytes": 8192,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 8192,
+          "oom_kill_delta": 0,
+          "samples": 230
+        },
+        "total_ram_kib": 7802708,
+        "peak_machine_total_minus_available_kib": 4428984
+      },
+      "restoration": {
+        "returncode": 0,
+        "guard_reason": null,
+        "memory": {
+          "baseline": {
+            "available_kib": 5650904,
+            "swap_used_kib": 421376,
+            "pswpin": 338651,
+            "pswpout": 911454,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 3022868,
+            "swap_used_kib": 421376,
+            "pswpin": 338651,
+            "pswpout": 911454,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 2990984,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 11
+        },
+        "total_ram_kib": 7802708,
+        "peak_machine_total_minus_available_kib": 4811724
+      },
+      "after": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          206
+        ],
+        "identity": {
+          "pid": 206,
+          "created_at": 1793263729.75,
+          "uid": 1001,
+          "argv": [
+            "/opt/llama/bin/llama-server",
+            "-m",
+            "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+            "--alias",
+            "MiniCPM5-2B",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9013",
+            "--jinja",
+            "--ctx-size",
+            "131072",
+            "--parallel",
+            "1",
+            "--fit",
+            "off",
+            "--n-gpu-layers",
+            "99",
+            "--flash-attn",
+            "on",
+            "--cache-type-k",
+            "q4_0",
+            "--cache-type-v",
+            "q4_0",
+            "--reasoning",
+            "auto",
+            "--temp",
+            "1.0",
+            "--top-p",
+            "0.95",
+            "--min-p",
+            "0.0",
+            "--batch-size",
+            "256",
+            "--ubatch-size",
+            "64",
+            "--cache-ram",
+            "0",
+            "--no-mmap",
+            "--direct-io"
+          ],
+          "ppid": 1
+        }
+      },
+      "config_unchanged": true,
+      "finished_epoch": 1793263734.881327
+    },
+    "measurement": {
+      "scope": "matched protocol PCM diagnostic; no tolerance or golden change",
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": false,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": []
+      },
+      "variants": {
+        "baseline": {
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5620664,
+              "swap_used_kib": 421376,
+              "pswpin": 338649,
+              "pswpout": 911454,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5631452,
+              "swap_used_kib": 421376,
+              "pswpin": 338651,
+              "pswpout": 911454,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3373724,
+            "swapin_bytes": 8192,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 8192,
+            "oom_kill_delta": 0,
+            "samples": 125
+          }
+        },
+        "compact": {
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5631452,
+              "swap_used_kib": 421376,
+              "pswpin": 338651,
+              "pswpout": 911454,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5621052,
+              "swap_used_kib": 421376,
+              "pswpin": 338651,
+              "pswpout": 911454,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3893132,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 102
+          }
+        }
+      },
+      "comparisons": [
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-0-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-0-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "left_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "right_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+          "same_shape": true,
+          "bit_identical": false,
+          "changed_samples": 73155,
+          "samples": 117760,
+          "max_abs_pcm16": 320,
+          "mse_pcm16": 202.81246603260868,
+          "rms_difference_pcm16": 14.24122417605343,
+          "mean_abs_pcm16": 6.406114130434783
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-0-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-0-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "left_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "right_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+          "same_shape": true,
+          "bit_identical": false,
+          "changed_samples": 73155,
+          "samples": 117760,
+          "max_abs_pcm16": 320,
+          "mse_pcm16": 202.81246603260868,
+          "rms_difference_pcm16": 14.24122417605343,
+          "mean_abs_pcm16": 6.406114130434783
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-0-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-0-r0.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "left_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "right_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 117760,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-0-r1.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-0-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "left_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+          "right_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 117760,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-0-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-memory-20261029-isolated/baseline-0.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "left_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "right_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 117760,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-0-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-memory-20261029-isolated/baseline-0.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            117760
+          ],
+          "left_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "right_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 117760,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-1-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-1-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "left_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "right_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 133120,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-1-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-1-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "left_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "right_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 133120,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-1-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-1-r0.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "left_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "right_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 133120,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-1-r1.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-1-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "left_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "right_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 133120,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-1-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-memory-20261029-isolated/baseline-1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "left_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "right_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+          "same_shape": true,
+          "bit_identical": false,
+          "changed_samples": 41745,
+          "samples": 133120,
+          "max_abs_pcm16": 224,
+          "mse_pcm16": 143.43880709134615,
+          "rms_difference_pcm16": 11.97659413570261,
+          "mean_abs_pcm16": 4.038852163461539
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-1-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-memory-20261029-isolated/baseline-1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            133120
+          ],
+          "left_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+          "right_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+          "same_shape": true,
+          "bit_identical": false,
+          "changed_samples": 41745,
+          "samples": 133120,
+          "max_abs_pcm16": 224,
+          "mse_pcm16": 143.43880709134615,
+          "rms_difference_pcm16": 11.97659413570261,
+          "mean_abs_pcm16": 4.038852163461539
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-2-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-2-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "left_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "right_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 103680,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-2-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-2-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "left_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "right_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 103680,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-2-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-2-r0.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "left_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "right_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 103680,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-2-r1.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-2-r1.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "left_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "right_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 103680,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/baseline-2-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-memory-20261029-isolated/baseline-2.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "left_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "right_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 103680,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        },
+        {
+          "left": "/workspace/tuber/runtime/tmp/tts-matched-c6d8dd3/measurement/compact-2-r0.wav",
+          "right": "/workspace/tuber/runtime/tmp/tts-memory-20261029-isolated/baseline-2.wav",
+          "left_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "right_shape": [
+            1,
+            2,
+            32000,
+            103680
+          ],
+          "left_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "right_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+          "same_shape": true,
+          "bit_identical": true,
+          "changed_samples": 0,
+          "samples": 103680,
+          "max_abs_pcm16": 0,
+          "mse_pcm16": 0.0,
+          "rms_difference_pcm16": 0.0,
+          "mean_abs_pcm16": 0.0
+        }
+      ],
+      "production_config_unchanged": true,
+      "reference_cache_unchanged": true
+    },
+    "per_variant": {
+      "baseline": {
+        "variant": "baseline",
+        "main_native_thread": 158,
+        "speech": [
+          {
+            "index": 0,
+            "repeat": 0,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 159,
+            "elapsed_seconds": 5.702588111977093,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              117760
+            ],
+            "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+            "old_golden": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+            "old_golden_matches": true
+          },
+          {
+            "index": 0,
+            "repeat": 1,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 159,
+            "elapsed_seconds": 4.801077270996757,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              117760
+            ],
+            "pcm_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+            "old_golden": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+            "old_golden_matches": false
+          },
+          {
+            "index": 1,
+            "repeat": 0,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 159,
+            "elapsed_seconds": 5.771956330980174,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              133120
+            ],
+            "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+            "old_golden": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+            "old_golden_matches": false
+          },
+          {
+            "index": 1,
+            "repeat": 1,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 159,
+            "elapsed_seconds": 5.295136320986785,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              133120
+            ],
+            "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+            "old_golden": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+            "old_golden_matches": false
+          },
+          {
+            "index": 2,
+            "repeat": 0,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 159,
+            "elapsed_seconds": 4.6534733939915895,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              103680
+            ],
+            "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden_matches": true
+          },
+          {
+            "index": 2,
+            "repeat": 1,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 159,
+            "elapsed_seconds": 4.369797137915157,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              103680
+            ],
+            "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden_matches": true
+          }
+        ],
+        "owner_native_thread": 159,
+        "voice": "whale_sovits_v2",
+        "torch": {
+          "version": "2.7.0",
+          "cuda": "12.8",
+          "cudnn": 90800
+        },
+        "warmup_params": {
+          "text_lang": "zh",
+          "prompt_lang": "zh",
+          "text_split_method": "cut5",
+          "speed_factor": 1.0,
+          "text": "海底的小灯亮起来了。",
+          "seed": 42,
+          "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+          "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+          "media_type": "wav",
+          "streaming_mode": false,
+          "batch_size": 1
+        },
+        "warmup_complete": true,
+        "backend_flags_after_run": {
+          "cudnn_deterministic": false,
+          "cudnn_benchmark": false,
+          "cuda_matmul_tf32": false,
+          "cudnn_tf32": false,
+          "deterministic_algorithms": false
+        },
+        "complete": true
+      },
+      "compact": {
+        "variant": "compact",
+        "main_native_thread": 191,
+        "speech": [
+          {
+            "index": 0,
+            "repeat": 0,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 192,
+            "elapsed_seconds": 5.251983238966204,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              117760
+            ],
+            "pcm_sha256": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+            "old_golden": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+            "old_golden_matches": true
+          },
+          {
+            "index": 0,
+            "repeat": 1,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 192,
+            "elapsed_seconds": 4.392100778059103,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              117760
+            ],
+            "pcm_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+            "old_golden": "bbb66b8abb945bb9bd11481b145b040d49fe439a17d4f182b95f9a641f948252",
+            "old_golden_matches": false
+          },
+          {
+            "index": 1,
+            "repeat": 0,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 192,
+            "elapsed_seconds": 5.33950265403837,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              133120
+            ],
+            "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+            "old_golden": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+            "old_golden_matches": false
+          },
+          {
+            "index": 1,
+            "repeat": 1,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 192,
+            "elapsed_seconds": 4.879626890993677,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              133120
+            ],
+            "pcm_sha256": "23156d0e7535d66943d52eb3fa782d6e5fd5559294f4d6fbaabbd12f7e6ce75c",
+            "old_golden": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+            "old_golden_matches": false
+          },
+          {
+            "index": 2,
+            "repeat": 0,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 192,
+            "elapsed_seconds": 4.215126996976323,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              103680
+            ],
+            "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden_matches": true
+          },
+          {
+            "index": 2,
+            "repeat": 1,
+            "params": {
+              "aux_ref_audio_paths": [],
+              "top_k": 5,
+              "top_p": 1,
+              "temperature": 1,
+              "text_split_method": "cut5",
+              "batch_size": 1,
+              "batch_threshold": 0.75,
+              "speed_factor": 1.0,
+              "split_bucket": true,
+              "return_fragment": false,
+              "fragment_interval": 0.3,
+              "seed": 42,
+              "parallel_infer": true,
+              "repetition_penalty": 1.35,
+              "text_lang": "zh",
+              "prompt_lang": "zh",
+              "text": "收到三份海苔饭团啦，谢谢小壳！",
+              "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "media_type": "wav",
+              "streaming_mode": false
+            },
+            "native_thread": 192,
+            "elapsed_seconds": 3.9699683940270916,
+            "wave_shape": [
+              1,
+              2,
+              32000,
+              103680
+            ],
+            "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "old_golden_matches": true
+          }
+        ],
+        "owner_native_thread": 192,
+        "voice": "whale_sovits_v2",
+        "torch": {
+          "version": "2.7.0",
+          "cuda": "12.8",
+          "cudnn": 90800
+        },
+        "warmup_params": {
+          "text_lang": "zh",
+          "prompt_lang": "zh",
+          "text_split_method": "cut5",
+          "speed_factor": 1.0,
+          "text": "海底的小灯亮起来了。",
+          "seed": 42,
+          "ref_audio_path": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+          "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+          "media_type": "wav",
+          "streaming_mode": false,
+          "batch_size": 1
+        },
+        "warmup_complete": true,
+        "backend_flags_after_run": {
+          "cudnn_deterministic": false,
+          "cudnn_benchmark": false,
+          "cuda_matmul_tf32": false,
+          "cudnn_tf32": false,
+          "deterministic_algorithms": false
+        },
+        "complete": true
+      }
+    },
+    "interpretation": "Compare baseline and compact at the same warmup, thread ownership and call order. Within-backend repetition differences remain recorded; no archived golden or tolerance was changed.",
+    "connectivity_observation": {
+      "collector": "PC standard-library ICMP probes every 5 seconds; same PC gateway control",
+      "interval_epoch": [
+        1793263614.0149076,
+        1793263734.881327
+      ],
+      "samples": [
+        {
+          "epoch": 1793263617.690318,
+          "utc": "2026-10-29T08:46:57.690318+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.046,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.625,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.062,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263622.6913064,
+          "utc": "2026-10-29T08:47:02.691306+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.062,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.625,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.046,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263627.6922326,
+          "utc": "2026-10-29T08:47:07.692233+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.625,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.625,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.046,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263632.6922946,
+          "utc": "2026-10-29T08:47:12.692295+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.625,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.625,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.046,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263637.6931117,
+          "utc": "2026-10-29T08:47:17.693112+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263642.693796,
+          "utc": "2026-10-29T08:47:22.693796+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263647.6946242,
+          "utc": "2026-10-29T08:47:27.694624+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.031,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263652.6971467,
+          "utc": "2026-10-29T08:47:32.697147+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.469,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263657.6980968,
+          "utc": "2026-10-29T08:47:37.698097+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263662.7033703,
+          "utc": "2026-10-29T08:47:42.703370+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263667.7071958,
+          "utc": "2026-10-29T08:47:47.707196+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.61,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263672.7114892,
+          "utc": "2026-10-29T08:47:52.711489+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.109,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.594,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263677.715184,
+          "utc": "2026-10-29T08:47:57.715184+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.594,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263682.7193847,
+          "utc": "2026-10-29T08:48:02.719385+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.062,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.594,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263687.722485,
+          "utc": "2026-10-29T08:48:07.722485+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.062,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.594,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.062,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263692.7256532,
+          "utc": "2026-10-29T08:48:12.725653+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.579,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.579,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.079,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263697.7307396,
+          "utc": "2026-10-29T08:48:17.730740+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263702.7314863,
+          "utc": "2026-10-29T08:48:22.731486+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.579,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": false,
+              "elapsed_seconds": 0.579,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263707.7359045,
+          "utc": "2026-10-29T08:48:27.735904+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263712.7372332,
+          "utc": "2026-10-29T08:48:32.737233+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263717.7375352,
+          "utc": "2026-10-29T08:48:37.737535+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.297,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.297,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263722.7391245,
+          "utc": "2026-10-29T08:48:42.739125+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.079,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263727.7402081,
+          "utc": "2026-10-29T08:48:47.740208+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.078,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            }
+          ]
+        },
+        {
+          "epoch": 1793263732.7403007,
+          "utc": "2026-10-29T08:48:52.740301+00:00",
+          "observations": [
+            {
+              "address": "192.168.1.182",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.047,
+              "error": null
+            },
+            {
+              "address": "100.95.31.18",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            },
+            {
+              "address": "192.168.1.1",
+              "kind": "icmp",
+              "success": true,
+              "elapsed_seconds": 0.063,
+              "error": null
+            }
+          ]
+        }
+      ],
+      "counts": {
+        "192.168.1.182": {
+          "count": 24,
+          "failed": 6
+        },
+        "100.95.31.18": {
+          "count": 24,
+          "failed": 16
+        },
+        "192.168.1.1": {
+          "count": 24,
+          "failed": 0
+        }
+      },
+      "interpretation": "Lost device ICMP responses occurred while the guarded PCM comparison had minimum MemAvailable 3373724 KiB, no swap-out and no OOM; gateway responses all succeeded. This does not support RAM exhaustion as the sole explanation, and does not identify a NIC/router/SSH cause or exclude sub-sample transients.",
+      "pressure_boundary": "Kernel /proc/pressure/memory absent. The first task-only pressure collector stopped that optional snapshot on FileNotFoundError; independent MemoryWatch counters remained active. Later candidate telemetry reads meminfo and vmstat independently of optional PSI."
+    }
+  },
+  "managed_allocator_trial": {
+    "supervision": {
+      "started_epoch": 1793258892.972814,
+      "pid": 2406469,
+      "finished": true,
+      "source": "767d9d4",
+      "only_changed_field": "inference_broker.cuda_managed_memory",
+      "stage": "restoring_original_text",
+      "trial_exit": 1,
+      "original_config_restored": true,
+      "passed": false,
+      "finished_epoch": 1793258937.165301
+    },
+    "activation_boundary": "The host supervisor changed the existing runtime configuration and restarted the same image. Actual worker environment was not separately captured before restoration; do not infer numeric/latency properties from this failed startup."
+  },
+  "latest_observed_mode": "text",
+  "latest_managed_memory": false,
+  "summary": {
+    "text_120k_verified": true,
+    "stable_live_profile_proven": false,
+    "two_hour_endurance_proven": false,
+    "note": "Update only after actual completed experiments; failed cold/allocator cases remain recorded.",
+    "matched_same_order_pcm_pairs": {
+      "verified": 6,
+      "requested": 6,
+      "cross_protocol_repeat_determinism_claimed": false
+    }
+  }
+}

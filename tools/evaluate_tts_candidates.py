@@ -1,8 +1,10 @@
 """Isolated v2 TTS candidates; inspect does not import Torch or probe CUDA.
 
 Run inspect in the existing project interpreter first. Dependencies belong in a
-separate runtime evaluation venv that reuses /opt/venv's Torch; this tool never
-installs packages, changes a production profile, or warms/unloads broker models.
+separate runtime evaluation venv that reuses /opt/venv's Torch. This tool never
+installs packages or changes a production profile. In tts-first mode it requests
+typed Mini warmup after TTS is ready; the maintenance controller owns unloading
+the original Mini beforehand and restoring it after the candidate exits.
 Actual execution requires --execute and an explicit GPU ownership handoff.
 CPU BERT INT8 changes numerics; Lite also changes the text frontend. Neither is
 an output-equivalent replacement until voice/quality comparisons are completed.

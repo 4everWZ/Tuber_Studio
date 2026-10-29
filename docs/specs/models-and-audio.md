@@ -34,6 +34,8 @@ Think模式通过原生chat template和reasoning_format=deepseek分离推理与�
 
 当前已确认继续采用MiniCPM5-2B Q4_K_M权重、q4 KV和131072窗口，Qwen保留为比较候选。Qwen3.5-2B已作候选比较：Bartowski社区Q4_K_M量化、q8 KV，官方原生262144，本项目实际配置131072；不附带视觉encoder／mmproj，不由模型名称推断已有图像工作流。固定用例中它的短句更快，但回忆／摘要出现更明显事实错配，不替换默认；参数、Think与模板条件不同，不能当纯模型因果比较。证据见[候选结果](../../evaluations/results/qwen35-2b-single-system-seed42.json)。
 
+MiniCPM自身已在文本模式、TTS不驻留时通过精确120000输入tokens／4输出、131072窗口及未截断核验，约661秒；这只验证输入容量。正式精简TTS虽已完成冷预热，当前设备的live冷加载仍在Mini KV分配失败，后续live长输入和两小时／100句未开始，不能宣称稳定共驻；失败与恢复记录见[正式链路设备证据](../../evaluations/results/compact-live-runtime-20261029.json)。
+
 同题集成来源检索后，两者都答全：MiniCPM使用一次补答约70秒，Qwen无需补答约32秒；原始摘要中的事实错配仍存在，这证明外围证据层能补该例，不证明模型原始记忆已改善。见[MiniCPM结果](../../evaluations/results/grounded-minicpm5-2b-seed42.json)、[Qwen结果](../../evaluations/results/grounded-qwen35-2b-seed42.json)。Qwen已通过一次128K配置下的LLM／TTS共驻和两条非静音动态合成，短程观测不代表长输入或长时稳定；MiniCPM共驻合成仍有明显换页及CUDA分配失败，不能当作稳定直播Profile。见[Qwen资源结果](../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json)。这些测量中其他两个项目服务均已停止，不外推为与其他服务同时运行的结果。
 
 Qwen候选在实际131072窗口、TTS已合成预热且同进程驻留时，约207秒完整接收120000输入tokens并输出4 tokens，未截断；最低可用内存约180MiB，有少量换页，无系统OOM。正常容器重启可恢复live及两进程。见[长输入与恢复结果](../../evaluations/results/qwen35-2b-live-context-f35d061.json)。独立浏览器闭环也已实际completed：短句LLM约4.0秒、动态TTS约5.0秒、非静音播放2.58秒；首轮观察脚本错误取消了生成，broker自动清理并重载LLM，修正观察器后的有效播放使用原TTS及重载LLM，不能拼接为同LLM进程长输入后的连续热态证明。见[播放结果](../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)。两项证明容量接收及一次短句闭环，不证明长文召回或持续稳定，也不转移为MiniCPM的共驻证据。
@@ -59,6 +61,8 @@ TTS生成器完全关闭后再执行上游已有的缓存清理，让已结束�
 TTS报告就绪前，须在同进程中完成一条固定短中文、显式种子的完整非静音预热合成并结束清理，让动态中文前端及AR／VITS首次初始化发生在LLM未驻留阶段。预热结果丢弃，不产生台词／播放／对话记录，不改变外部请求的默认随机种子；预热失败不就绪。短句预热不替代更长／混语形状和整机峰值验证。
 
 正式精简路径以nn.Module包装同一原生Text2SemanticDecoder，保留config、top_k和完整model.*权重键，严格加载而不忽略缺失／额外权重；不导入Lightning及未用于推理的准确率指标。删除仅限已核实的训练包装／训练指标初始化，不改变任何推理、注意力、采样或声学解码方法。旧版对照保持原包装，两个导入模式不得在同一进程混用；必须以真实权重、固定种子PCM及整机资源测量验证等价与收益。
+
+当前正式精简实现与原版在相同暖机、单工作线程和调用顺序下，三句各两遍共6组PCM逐样本一致。原版自身重复也出现过不同hash，且旧评估未暖机、线程条件不同；保留这些差异，不改旧golden或由此保证跨协议／任意重复都bitwise确定。具体条件、逐样本差和资源数据见[同条件设备对照](../../evaluations/results/compact-live-runtime-20261029.json)。
 
 参考专用的HuBERT、librosa、音频解码和频谱依赖仅在原参考函数中按需导入，已有缓存的常驻路径不主动加载这些组件；音频读取工具仅保留逐字相同的load_audio／clean_path及必要依赖，不由此引入Gradio／Pandas界面和数据表框架。原参考运算与音频解码不改，缓存身份同时覆盖参考处理源文件，不能以绕过参考提取或改特征来省内存。
 

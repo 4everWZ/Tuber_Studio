@@ -6,12 +6,12 @@
 
 | 工作 | 要求与证据边界 | 下一步 |
 | --- | --- | --- |
-| MiniCPM语音共驻 | 用户已确认将固定参考＋精简推理接入正式后端，继续MiniCPM5-2B/q4/131072、直播TTS先加载。既有候选单独TTS整机峰值约4.24→3.93GiB，三句PCM一致；TTS先加载的短程共驻成功，LLM先加载另轮失败，见[设备比较](../../evaluations/results/tts-fixed-reference-memory-20261029.json)。 | 接入受限HTTP、缓存失效／短命预计算／新OC配置，更新单容器并验证模式恢复；随后真实120000输入及至少100句／两小时混合运行，记录整机峰值、换页、音频与同进程连续性。原阈值不变，失败也保留。 |
-| 最终Profile边界 | 单派生镜像已部署，模式切换、启动取消和全静音拒绝有回归；Qwen已过正常容器重启恢复、TTS同进程共驻下120000输入及实际短句播放。浏览器首轮观察器取消导致LLM重载，结果未冒称同LLM进程连续热态。 | 所选最终Profile保留128K、默认审核和自动关闭；MiniCPM的窗口元数据不替代其自身长输入实测，Qwen结果也不直接转移给MiniCPM。长期稳定按下方P1边界单独验。 |
+| MiniCPM语音共驻 | 固定参考＋精简HTTP后端已接入单容器，短命预计算、缓存失效、新OC选择、完整TTS预热和TTS先加载已实现。c6d8dd3冷加载仍在Mini的1512MiB KV分配失败；managed分配及NO_PINNED隔离对照也未建立就绪共驻，不作为新默认。同暖机／线程／调用顺序下，原版与精简版三句各两遍共6组PCM逐样本一致；旧协议hash差异及原版自身重复差异仍保留。均已恢复文本模式，见[本轮设备证据](../../evaluations/results/compact-live-runtime-20261029.json)。 | 实测已隔离安装的轻量／局部INT8候选。共驻成功后才能进入live下120000输入及至少100句／两小时混合运行；原阈值不变，早期短程结果不替代当前正式链路，未开始阶段不记为通过。 |
+| 最终Profile边界 | MiniCPM5-2B/q4/131072已在文本模式完整接收120000输入tokens并输出4 tokens，未截断，约661秒；TTS不驻留。Qwen既有共驻长输入／播放证据只属于该候选，不能转移给MiniCPM。 | 保留MiniCPM默认、128K、默认审核和自动关闭；继续区分文本容量、live共驻、长文召回与持续运行。当前Mini正式live长输入和两小时／100句仍未验收。 |
 
 Codex核心保持，来源事实／按题检索／一次补答和自适应2048摘要预算已接入；40%二轮原子规则保留，评论按楼隔离并发、GPU串行。质量比较复用evaluations/semantic-cases.json与tools/evaluate_semantics.py，不据小集合推断广泛人格或长文召回。设备证据与边界见[模型规范](../specs/models-and-audio.md)和evaluations/results；计划只维护剩余取舍，不追加运行日志。
 
-语音优化按参考预计算／精简后端优先、局部INT8后置；[候选研究](../../evaluations/results/tts-backend-candidates-20261029.json)区分官方Accel的AR局部INT8、Lite默认关闭BERT、ONNX／TRT的兼容与内存口径。完成正式后端验证后实测Lite（开启BERT）与可在当前设备运行的局部INT8，候选依赖隔离并复用原生Torch，不升级生产环境或凭文件体积／作者VRAM数字判定更省；未通过同声线质量和资源比较不替换默认。
+语音优化按参考预计算／精简后端优先、局部INT8后置；[候选研究](../../evaluations/results/tts-backend-candidates-20261029.json)区分官方Accel的AR局部INT8、Lite默认关闭BERT、ONNX／TRT的兼容与内存口径。Lite（开启BERT）及局部INT8工具、离线资产和独立候选环境已准备，安装前后249项生产依赖的版本／路径一致；安装不算模型执行或质量通过。候选复用原生Torch，不升级生产环境或凭文件体积／作者VRAM数字判定更省；未通过同声线质量和资源比较不替换默认。
 
 ## 后续验收边界
 
