@@ -2,7 +2,7 @@
 
 No database writes, platform requests, publishing, playback ACKs or mode changes.
 The operator establishes live mode first. Default: an unpaced initial 100 speech
-requests, then one cycle per minute until two hours; every fifth cycle generates
+requests, then 60 seconds between completed cycles until two hours; every fifth cycle generates
 the speech through the unchanged character/LLM provider. This is a defined mixed
 workload, not a claim about every arrival rate or maximum GPU throughput.
 """
@@ -136,14 +136,14 @@ async def evaluate(args):
                         reply = await provider.generate(messages, character, event["event_id"], question)
                         text = reply.spoken_text
                         row["llm"] = {
-                            "valid": True,
+                            "schema_valid": True,
                             "input_tokens": provider.last_tokens,
                             "seconds": round(time.monotonic() - llm_started, 3),
                         }
                     except ValueError as failure:
                         # Preserve schema/role failures in the denominator; continue
                         # testing residency with a fixture, never call this success.
-                        row["llm"] = {"valid": False, "error": public_error(failure)}
+                        row["llm"] = {"schema_valid": False, "error": public_error(failure)}
                 fixture = None
                 if text is None:
                     fixture = fixture_index % len(cases["texts"])
@@ -205,21 +205,26 @@ async def evaluate(args):
             guard.cancel()
             await asyncio.gather(work, guard, return_exceptions=True)
             await provider.close()
-        invalid = sum(row["llm"] is not None and not row["llm"]["valid"] for row in records)
+        invalid = sum(row["llm"] is not None and not row["llm"]["schema_valid"] for row in records)
+        elapsed = time.monotonic() - watch.started
+        total_ram_kib = psutil.virtual_memory().total // 1024
         report = {
             "profile_before": profile,
             "profile_after": final_profile,
             "requested_seconds": args.seconds,
             "minimum_speech": args.minimum_speech,
-            "elapsed_seconds": round(time.monotonic() - watch.started, 3),
+            "elapsed_seconds": round(elapsed, 3),
             "speech_completed": len(records),
             "last_stage": watch.stage,
             "llm_calls": sum(row["llm"] is not None for row in records),
             "invalid_llm_replies": invalid,
             "post_burst_interval_seconds": args.interval,
             "memory": watch.summary(),
+            "total_ram_kib": total_ram_kib,
+            "peak_machine_total_minus_available_kib": total_ram_kib - watch.minimum_available_kib,
             "completed_duration_and_count": error is None and len(records) >= args.minimum_speech,
-            "all_llm_replies_valid": invalid == 0,
+            "all_llm_reply_schemas_valid": invalid == 0,
+            "verified_two_hours_and_100": error is None and elapsed >= 7200 and len(records) >= 100,
             "reason": error,
             "limitations": "Defined synthetic mixed workload; no platform publishing, playback or arbitrary arrival-rate claim. Audio non-silence and valid structured replies do not replace human voice-quality listening.",
         }
