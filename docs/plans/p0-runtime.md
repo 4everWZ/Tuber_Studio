@@ -7,20 +7,11 @@
 | 工作 | 当前边界 | 下一步 |
 | --- | --- | --- |
 | 外部服务与账号 | 非直播代码a4f9437已构建部署；441测试、真实本地HTTP／SQLite／浏览器替身、Jetson 64K切换／越native拒绝／128K恢复及一条真实Mini回复均通过，见[验收证据](../../evaluations/results/nonlive-providers-20261029.json)。未调用真实外部账号或发布评论。 | Operator配置真实服务后按其模型、配额及声音条款核验；真实平台写入须明确授权和回执，不能把替身结果当账号／质量准入。 |
-| Genie 声音与直播资源 | 永久bundle／只读挂载、28次正式语音、浏览器Mock播放及真实120000-token输入已通过。用户将本轮持续测试改为100句：实际完成114句／22次真实LLM回复、0无效结构／OOM，整机峰6.005GiB；依指令取消后恢复live。未跑满两小时，不作为两小时通过。详见[优化证据](../../evaluations/results/genie-live-optimization-20261029.json)。 | 本轮资源测试结束，不继续延长。用户反馈现有声线电音严重，按清亮柔软、略带奶气的普通话少女音筛选干净二游原台词及兼容模型，先试听选择，再替换音色、建立独立bundle并复测；不得把电音原因直接归为数据或量化。 |
+| Genie 声音与直播资源 | 永久bundle／只读挂载、28次正式语音、浏览器Mock播放及真实120000-token输入已通过。用户将本轮持续测试改为100句：实际完成114句／22次真实LLM回复、0无效结构／OOM，整机峰6.005GiB；依指令取消后恢复live。未跑满两小时，不作为两小时通过。详见[优化证据](../../evaluations/results/genie-live-optimization-20261029.json)。 | 旧声线本轮测试已结束。已接受瑶瑶v2三组配对，正在正式安装独立声音包并为whale创建新角色版本，保留旧voice与版本；接着验证实际128K共驻100句、工作台预览及Mock播放。不得把旧电音原因直接归为数据或量化。 |
 
 Codex公开local核心、40%后二次完整压缩、带来源事实／按题检索／最多一次补答继续保留。窗口缩小时仅按比例适配保留预算，原评论数据集不删；留存仍默认30天清会话、保留原评论。规范由[上下文](../specs/context-and-compaction.md)及[运行时数据](../specs/runtime-and-characters.md)维护。
 
-用户已选瑶瑶作为首个合成试听方向。以下中文日常原台词播放入口已实际播完；原声选择不等于新合成模型已通过：
-
-| 候选 | 本轮比较方向 | 原声入口 |
-| --- | --- | --- |
-| 芭芭拉 | 清亮少女感、柔软程度 | [早上好，2.15秒](https://patchwiki.biligame.com/images/ys/a/ae/i7f38u7c7go7zp5p4qmostrdqxukck4.ogg) |
-| 希格雯 | 柔软、奶气是否适度 | [早上好，9.83秒](https://patchwiki.biligame.com/images/ys/e/e5/1awxqdlb5ev7dfz9trdvup0mv7m5pu2.mp3) |
-| 瑶瑶 | 软糯、是否过幼 | [早上好，17.79秒](https://patchwiki.biligame.com/images/ys/1/19/8htm0sqaegb0ypl0f2m6hkq9tukcajl.mp3) |
-| 纳西妲 | 轻柔平静的对照 | [早上好，6.62秒](https://patchwiki.biligame.com/images/ys/5/56/7pxus6ga385e6him2gmx14ditkqtrz6.mp3) |
-
-现成模型的版本仍需单独核验：[作者现行资源库](https://res.acgnai.top/)的芭芭拉／瑶瑶／希格雯中文ZIP目录实为v4，不能直接用于当前固定v2／Genie；[旧V2发布帖](https://www.ai-hobbyist.com/thread-830-1-1.html)未取得并验证中文旧包。Genie官方菲比属于v2ProPlus，也不是当前v2包的直接替换。优先取得干净原台词，再核对正确v2模型或基础模型短参考路线；当前保持默认声线；先做瑶瑶候选的独立合成试听，经用户接受后再替换。
+瑶瑶v2三组实际合成的原版／Genie配对已获用户确认：音色符合目标，Genie音质至少保留90%。来源、模型版本、转换与原件／32k工作参考、失败检查及对照条件由[瑶瑶声音证据](../../evaluations/results/yaoyao-v2-voice-20261030.json)维护；其他原声试听入口保留在历史优化证据中。当前接入新voice和角色版本，随后只跑新声音100句及真实工作台播放，不延长两小时。
 
 ## 声音优化的验收边界
 

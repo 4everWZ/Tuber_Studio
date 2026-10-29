@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from .http_api import endpoint
+from .inference_validation import project_wav
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -134,6 +135,17 @@ class Settings:
         if not path.is_relative_to(self.root / "assets") or not path.is_file():
             raise ValueError("素材不存在或路径越界")
         return path
+
+    def voice_reference_path(self, voice: dict) -> Path:
+        """Read only a configured local voice's project-relative reference WAV."""
+        if not isinstance(voice, dict) or voice != self.voice(voice.get("id")):
+            raise ValueError("参考音频须属于已配置的本地音色")
+        relative = voice.get("reference_asset")
+        if voice.get("provider") != "gpt_sovits" or not isinstance(relative, str) or not relative:
+            raise ValueError("参考音频须属于已配置的本地音色")
+        if Path(relative).anchor:
+            raise ValueError("参考音频须使用项目相对路径")
+        return project_wav(self.root, relative)
 
     def voices(self) -> list[dict]:
         return json.loads((self.root / "config/voices.json").read_text(encoding="utf-8"))

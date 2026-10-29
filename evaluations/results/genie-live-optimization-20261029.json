@@ -1548,7 +1548,7 @@
     },
     "voice_source_candidates": {
       "kind": "original Mandarin dialogue listening, not synthesized candidate models",
-      "status": "user selected yaoyao; isolated synthesized audition preparation in progress, default unchanged",
+      "status": "yaoyao three generated pairs accepted by user; production promotion in progress",
       "audio_downloaded": false,
       "entries": [
         {
@@ -1601,7 +1601,8 @@
         "genie_official_feibi": "v2ProPlus preset; unverified for current fixedv2/d347 converter, no silent compatibility claim."
       },
       "selected": "yaoyao",
-      "selection_source": "explicit in-chat answer: 瑶瑶：先比较偏幼的软糯感"
+      "selection_source": "explicit in-chat answer: 瑶瑶：先比较偏幼的软糯感",
+      "synthesized_audition_result": "evaluations/results/yaoyao-v2-voice-20261030.json"
     }
   },
   "sampling_findings": {

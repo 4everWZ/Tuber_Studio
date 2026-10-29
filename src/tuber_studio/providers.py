@@ -435,7 +435,7 @@ class VoiceService:
         }
         if identity["local_backend"] == "genie_onnx_int8":
             identity["bundle_identity"] = await self._genie_identity(voice)
-        reference = self.settings.asset_path(voice["reference_asset"])
+        reference = self.settings.voice_reference_path(voice)
         identity["reference_bytes"] = hashlib.sha256(
             await asyncio.to_thread(reference.read_bytes)
         ).hexdigest()

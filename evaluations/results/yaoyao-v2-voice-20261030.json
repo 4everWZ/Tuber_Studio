@@ -1,0 +1,1068 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "timezone": "Asia/Taipei",
+  "kind": "yaoyao_v2_voice_paired_audition_and_production_admission",
+  "status": "paired_audition_user_accepted_production_promotion_in_progress",
+  "selected_source": {
+    "repository": "UnlimitedBurst/GPT-SoVITS",
+    "revision": "c649dfd4077c9a7c818775cc871590a10a688db9",
+    "original_author": "白菜工厂1145号员工",
+    "hosting": "UnlimitedBurst third-party mirror, not author hosting",
+    "source_receipt": [
+      {
+        "file": "gpt-original.ckpt",
+        "source_url": "https://huggingface.co/UnlimitedBurst/GPT-SoVITS/resolve/c649dfd4077c9a7c818775cc871590a10a688db9/%E5%8E%9F%E7%A5%9E%EF%BC%88%E5%B7%B2%E6%9B%B4%E6%96%B04.8%EF%BC%89/%E7%91%B6%E7%91%B6/%E7%91%B6%E7%91%B6-e10.ckpt?download=true",
+        "bytes": 155312205,
+        "sha256": "c1d31f76a9a9344a13fc09e0cb7df3e4dd60d92884839e4e06c60576b3df7382",
+        "seconds": 80.17099999997299
+      },
+      {
+        "file": "sovits-original.pth",
+        "source_url": "https://huggingface.co/UnlimitedBurst/GPT-SoVITS/resolve/c649dfd4077c9a7c818775cc871590a10a688db9/%E5%8E%9F%E7%A5%9E%EF%BC%88%E5%B7%B2%E6%9B%B4%E6%96%B04.8%EF%BC%89/%E7%91%B6%E7%91%B6/%E7%91%B6%E7%91%B6_e10_s200.pth?download=true",
+        "bytes": 85007424,
+        "sha256": "325ee1359f0281868bda4c6b5462c52f3e6d5c8bd22708f297019e16961193d7",
+        "seconds": 39.60899999999674
+      },
+      {
+        "file": "reference-original.wav",
+        "source_url": "https://huggingface.co/UnlimitedBurst/GPT-SoVITS/resolve/c649dfd4077c9a7c818775cc871590a10a688db9/%E5%8E%9F%E7%A5%9E%EF%BC%88%E5%B7%B2%E6%9B%B4%E6%96%B04.8%EF%BC%89/%E7%91%B6%E7%91%B6/%E7%94%98%E9%9B%A8%E5%A7%90%E5%A7%90%EF%BC%8C%E4%BD%A0%E6%B2%A1%E4%BA%8B%E5%90%A7%EF%BC%9F%E8%A6%81%E4%B8%8D%E8%A6%81%E5%96%9D%E7%82%B9%E6%B0%B4%EF%BC%8C%E6%88%96%E8%80%85%E5%90%83%E7%82%B9%E5%88%AB%E7%9A%84%E4%BB%80%E4%B9%88%E8%B0%83%E8%8A%82%E4%B8%80%E4%B8%8B%EF%BC%9F.wav?download=true",
+        "bytes": 551980,
+        "sha256": "bcce2b972263eb68e94eeed5fd99261f64729c8a6ac9eee4fd6f33db1b8b9c64",
+        "seconds": 3.1560000000172295
+      }
+    ],
+    "version_evidence": "Source SoVITS data.pkl statically examined with pickletools:config.version/model.version=v2,32000Hz/25Hz semantic frames,v2 embedding. Then actual sanitized checkpoints strictly shape-checked and source tensor contents verified by pinned v2 bundle installer.",
+    "original_reference_seconds": 5.749333333333333,
+    "working_reference": {
+      "stage": "resample",
+      "voice": "yaoyao_v2_audition",
+      "backend": "genie_onnx_int8",
+      "completed": true,
+      "pid": 20,
+      "started_utc": "2026-10-29T16:02:58Z",
+      "result": {
+        "original": {
+          "path": "/workspace/tuber/runtime/tts/ref/reference-original.wav",
+          "bytes": 551980,
+          "sha256": "bcce2b972263eb68e94eeed5fd99261f64729c8a6ac9eee4fd6f33db1b8b9c64"
+        },
+        "working": {
+          "path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+          "bytes": 368036,
+          "sha256": "95335007648d2cb1ce896e11bf312de971f9852a00280527fb623ae5b9999aab"
+        },
+        "operation": "explicit ffmpeg48k-to32k monoPCM16 resampling; no pitch, time, denoise or loudness changes",
+        "original_seconds": 5.749333333333333
+      },
+      "elapsed_seconds": 0.6951233529980527,
+      "configuration_bytes_unchanged": true
+    },
+    "safe_checkpoint_compatibility": "weights_only=True with only audited utils.HParams mapped to a local inert data shell then normalized to plain dictionaries; no untrusted utils execution, unsafe fallback, network or production credentials in candidate container."
+  },
+  "human_review": {
+    "source": "explicit in-chat response after three paired generated examples",
+    "decision": "音色合适，Genie音质也至少90%",
+    "scope": "same3 Mandarin sentences, candidate original compact CUDA versus Genie INT8; not universal perceptual score",
+    "target": "清亮柔软、略带奶气的普通话少女音"
+  },
+  "paired_protocol": {
+    "voice": "yaoyao_v2_audition",
+    "seed": 42,
+    "warmup": "production literal/seed42 before measured utterances",
+    "reference": "same explicit offline48k->32k monoPCM16 working copy and matching text for both backends",
+    "postprocess": "original per-fragment conditional normalization and trailing gaps/PCM16",
+    "conditioning": "same original22-layer reference representation, target Chinese computed dynamically; Genie target22layerBERT INT8,AR projection INT8,VITS FP32",
+    "seed_stream_difference": "PyTorch baseline and PCG64 Genie streams are not bitwise equivalent",
+    "mode": "isolated TTS, production application stopped, no local LLM resident during audition"
+  },
+  "baseline": {
+    "stage": "synth",
+    "voice": "yaoyao_v2_audition",
+    "backend": "compact",
+    "completed": true,
+    "pid": 67,
+    "started_utc": "2026-10-29T16:03:50Z",
+    "result": {
+      "backend": "gpt_sovits_v2_compact",
+      "bundle_identity": null,
+      "voice": "yaoyao_v2_audition",
+      "reference_identity": {
+        "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+        "config_sha256": "442d63c5587f4f06c748cb3488109f0b332bb4cb1623e95a027a3ef8299b225a",
+        "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+        "paths": {
+          "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+          "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+          "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+          "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+          "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+          "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+          "reference": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+          "t2s": "/workspace/tuber/runtime/tts/weights/yaoyao-s1-sanitized.ckpt",
+          "vits": "/workspace/tuber/runtime/tts/weights/yaoyao-s2-sanitized.pth"
+        },
+        "precision": "float16",
+        "prompt_lang": "zh",
+        "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+        "reference_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+        "sha256": {
+          "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+          "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+          "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+          "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+          "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+          "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+          "reference": "95335007648d2cb1ce896e11bf312de971f9852a00280527fb623ae5b9999aab",
+          "t2s": "7a15e08319507891a957a3c5aa6c7f59019861e8f7709725f0267b6c7615dc56",
+          "vits": "4f1483f376b6794cf66a349e2819fc81e0d794a6c8bc19e37dd90be33fa3bcca"
+        },
+        "source_sha256": {
+          "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+          "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+          "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+          "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+          "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+          "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+        },
+        "upstream": "20240821v2",
+        "voice_id": "yaoyao_v2_audition",
+        "voice_version": "UnlimitedBurst-c649dfd-v2-e10",
+        "weights_version": "yaoyao-e10-e10s200"
+      },
+      "speech": [
+        {
+          "index": 0,
+          "text": "你好呀，今天也要记得好好吃饭。",
+          "seed": 42,
+          "seconds": 3.930350315000396,
+          "frames": 90240,
+          "sample_rate": 32000,
+          "audio_seconds": 2.82,
+          "pcm_sha256": "3ceb4531d5399b015157024e22b17dccf9b958047423b56262ad056c40f700dc",
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-offline/speech-compact/0.wav",
+          "params": {
+            "text_lang": "zh",
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "speed_factor": 1.0,
+            "text": "你好呀，今天也要记得好好吃饭。",
+            "seed": 42,
+            "ref_audio_path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+            "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+            "media_type": "wav",
+            "streaming_mode": false,
+            "batch_size": 1
+          },
+          "diagnostics": null
+        },
+        {
+          "index": 1,
+          "text": "路上小心，累了就坐下来休息一会儿吧。",
+          "seed": 42,
+          "seconds": 5.205082337000931,
+          "frames": 116480,
+          "sample_rate": 32000,
+          "audio_seconds": 3.64,
+          "pcm_sha256": "c59c84c8ace75cd82d880354c8eabfa5366b377528a3abb93da549e663eef325",
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-offline/speech-compact/1.wav",
+          "params": {
+            "text_lang": "zh",
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "speed_factor": 1.0,
+            "text": "路上小心，累了就坐下来休息一会儿吧。",
+            "seed": 42,
+            "ref_audio_path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+            "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+            "media_type": "wav",
+            "streaming_mode": false,
+            "batch_size": 1
+          },
+          "diagnostics": null
+        },
+        {
+          "index": 2,
+          "text": "谢谢你的陪伴，我们下次再见。",
+          "seed": 42,
+          "seconds": 3.946672550002404,
+          "frames": 87040,
+          "sample_rate": 32000,
+          "audio_seconds": 2.72,
+          "pcm_sha256": "10c73340708981817c170c47a4c849d7a05b389ace8622fe083f11401e6acdfb",
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-offline/speech-compact/2.wav",
+          "params": {
+            "text_lang": "zh",
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "speed_factor": 1.0,
+            "text": "谢谢你的陪伴，我们下次再见。",
+            "seed": 42,
+            "ref_audio_path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+            "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+            "media_type": "wav",
+            "streaming_mode": false,
+            "batch_size": 1
+          },
+          "diagnostics": null
+        }
+      ],
+      "warmup": "production literal/seed42 completed before the first measured sentence",
+      "quality_claim": "none; candidate original-reference and synthesized samples require listening"
+    },
+    "elapsed_seconds": 32.276725866999186,
+    "configuration_bytes_unchanged": true
+  },
+  "genie": {
+    "stage": "synth",
+    "voice": "yaoyao_v2_audition",
+    "backend": "genie_onnx_int8",
+    "completed": true,
+    "pid": 79,
+    "started_utc": "2026-10-29T16:04:25Z",
+    "result": {
+      "backend": "genie_onnx_int8",
+      "bundle_identity": "f6929fcdcdfc91a2685450e2d04c4990ec375e36b526f82b6e0da6a93b034825",
+      "voice": "yaoyao_v2_audition",
+      "reference_identity": {
+        "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+        "config_sha256": "442d63c5587f4f06c748cb3488109f0b332bb4cb1623e95a027a3ef8299b225a",
+        "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+        "paths": {
+          "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+          "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+          "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+          "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+          "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+          "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+          "reference": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+          "t2s": "/workspace/tuber/runtime/tts/weights/yaoyao-s1-sanitized.ckpt",
+          "vits": "/workspace/tuber/runtime/tts/weights/yaoyao-s2-sanitized.pth"
+        },
+        "precision": "float16",
+        "prompt_lang": "zh",
+        "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+        "reference_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+        "sha256": {
+          "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+          "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+          "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+          "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+          "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+          "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+          "reference": "95335007648d2cb1ce896e11bf312de971f9852a00280527fb623ae5b9999aab",
+          "t2s": "7a15e08319507891a957a3c5aa6c7f59019861e8f7709725f0267b6c7615dc56",
+          "vits": "4f1483f376b6794cf66a349e2819fc81e0d794a6c8bc19e37dd90be33fa3bcca"
+        },
+        "source_sha256": {
+          "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+          "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+          "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+          "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+          "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+          "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+        },
+        "upstream": "20240821v2",
+        "voice_id": "yaoyao_v2_audition",
+        "voice_version": "UnlimitedBurst-c649dfd-v2-e10",
+        "weights_version": "yaoyao-e10-e10s200"
+      },
+      "speech": [
+        {
+          "index": 0,
+          "text": "你好呀，今天也要记得好好吃饭。",
+          "seed": 42,
+          "seconds": 3.0058610439991753,
+          "frames": 92800,
+          "sample_rate": 32000,
+          "audio_seconds": 2.9,
+          "pcm_sha256": "9b93568800dcf19ce1e66089eb7e56b126b6113347f6328f7f8ae72a4804b4ee",
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-offline/speech-genie_onnx_int8/0.wav",
+          "params": {
+            "text_lang": "zh",
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "speed_factor": 1.0,
+            "text": "你好呀，今天也要记得好好吃饭。",
+            "seed": 42,
+            "ref_audio_path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+            "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+            "media_type": "wav",
+            "streaming_mode": false,
+            "batch_size": 1
+          },
+          "diagnostics": {
+            "backend": "genie_onnx_int8",
+            "bundle_identity": "f6929fcdcdfc91a2685450e2d04c4990ec375e36b526f82b6e0da6a93b034825",
+            "complete": true,
+            "seed": 42,
+            "sampling_entropy": 42,
+            "segments": [
+              {
+                "segment_index": 0,
+                "phone_count": 28,
+                "stage_steps": 65,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 158,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 65,
+                "limit_exhausted": false,
+                "raw_frames": 83200,
+                "text_feature_kind": "han"
+              }
+            ],
+            "seconds": 3.001488846999564,
+            "segment_count": 1,
+            "raw_frames": 83200,
+            "output_frames": 92800,
+            "fragment_interval": 0.3,
+            "postprocess": "original_v2_peak_per_fragment_gap_after_each_pcm16"
+          }
+        },
+        {
+          "index": 1,
+          "text": "路上小心，累了就坐下来休息一会儿吧。",
+          "seed": 42,
+          "seconds": 3.87421652500052,
+          "frames": 126720,
+          "sample_rate": 32000,
+          "audio_seconds": 3.96,
+          "pcm_sha256": "a5d192be03eb50fd4c5667f5dc3e915219c754d99a180a03f21c955ac01401d4",
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-offline/speech-genie_onnx_int8/1.wav",
+          "params": {
+            "text_lang": "zh",
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "speed_factor": 1.0,
+            "text": "路上小心，累了就坐下来休息一会儿吧。",
+            "seed": 42,
+            "ref_audio_path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+            "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+            "media_type": "wav",
+            "streaming_mode": false,
+            "batch_size": 1
+          },
+          "diagnostics": {
+            "backend": "genie_onnx_int8",
+            "bundle_identity": "f6929fcdcdfc91a2685450e2d04c4990ec375e36b526f82b6e0da6a93b034825",
+            "complete": true,
+            "seed": 42,
+            "sampling_entropy": 42,
+            "segments": [
+              {
+                "segment_index": 0,
+                "phone_count": 9,
+                "stage_steps": 21,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 158,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 21,
+                "limit_exhausted": false,
+                "raw_frames": 26880,
+                "text_feature_kind": "han"
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 25,
+                "stage_steps": 63,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 158,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 63,
+                "limit_exhausted": false,
+                "raw_frames": 80640,
+                "text_feature_kind": "han"
+              }
+            ],
+            "seconds": 3.869648733001668,
+            "segment_count": 2,
+            "raw_frames": 107520,
+            "output_frames": 126720,
+            "fragment_interval": 0.3,
+            "postprocess": "original_v2_peak_per_fragment_gap_after_each_pcm16"
+          }
+        },
+        {
+          "index": 2,
+          "text": "谢谢你的陪伴，我们下次再见。",
+          "seed": 42,
+          "seconds": 2.676745128002949,
+          "frames": 88320,
+          "sample_rate": 32000,
+          "audio_seconds": 2.76,
+          "pcm_sha256": "84583a3e2bd6c15964388a5128ed6310dd4177ffef2b7e32a97dea945b751942",
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-offline/speech-genie_onnx_int8/2.wav",
+          "params": {
+            "text_lang": "zh",
+            "prompt_lang": "zh",
+            "text_split_method": "cut5",
+            "speed_factor": 1.0,
+            "text": "谢谢你的陪伴，我们下次再见。",
+            "seed": 42,
+            "ref_audio_path": "/workspace/tuber/runtime/tts/ref/reference-working.wav",
+            "prompt_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+            "media_type": "wav",
+            "streaming_mode": false,
+            "batch_size": 1
+          },
+          "diagnostics": {
+            "backend": "genie_onnx_int8",
+            "bundle_identity": "f6929fcdcdfc91a2685450e2d04c4990ec375e36b526f82b6e0da6a93b034825",
+            "complete": true,
+            "seed": 42,
+            "sampling_entropy": 42,
+            "segments": [
+              {
+                "segment_index": 0,
+                "phone_count": 13,
+                "stage_steps": 28,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 158,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 28,
+                "limit_exhausted": false,
+                "raw_frames": 35840,
+                "text_feature_kind": "han"
+              },
+              {
+                "segment_index": 1,
+                "phone_count": 13,
+                "stage_steps": 26,
+                "step_limit": 500,
+                "complete": true,
+                "prefix_tokens": 158,
+                "stop_reason": "sampled_eos",
+                "semantic_tokens": 26,
+                "limit_exhausted": false,
+                "raw_frames": 33280,
+                "text_feature_kind": "han"
+              }
+            ],
+            "seconds": 2.6723222410000744,
+            "segment_count": 2,
+            "raw_frames": 69120,
+            "output_frames": 88320,
+            "fragment_interval": 0.3,
+            "postprocess": "original_v2_peak_per_fragment_gap_after_each_pcm16"
+          }
+        }
+      ],
+      "warmup": "production literal/seed42 completed before the first measured sentence",
+      "quality_claim": "none; candidate original-reference and synthesized samples require listening"
+    },
+    "elapsed_seconds": 25.775228512000467,
+    "configuration_bytes_unchanged": true
+  },
+  "paired_measures": {
+    "original_median_seconds": 3.946672550002404,
+    "genie_median_seconds": 3.0058610439991753,
+    "generation_throughput_ratio": 1.3129923480266796,
+    "all_three_generation_ratios_at_least_90pct": true,
+    "sampled_machine_peak_gib_by_final_stage": {
+      "resample": 2.076465606689453,
+      "reference": 4.371273040771484,
+      "install": 2.5495986938476562,
+      "synth-compact": 3.7434844970703125,
+      "synth-genie": 3.203845977783203
+    },
+    "interpretation": "Three warm matched speech calls only; different generated durations reported individually. These TTS-only peaks are not Mini128K co-resident RAM and not long-term stability."
+  },
+  "candidate_controller": {
+    "stages": [
+      {
+        "stage": "resample",
+        "deadline": 30,
+        "returncode": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5633452,
+            "swap_used_kib": 144640,
+            "pswpin": 44030,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5629172,
+            "swap_used_kib": 144640,
+            "pswpin": 44030,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 5625384,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 3
+        }
+      },
+      {
+        "stage": "reference",
+        "deadline": 180,
+        "returncode": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5629172,
+            "swap_used_kib": 144640,
+            "pswpin": 44030,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5611452,
+            "swap_used_kib": 144640,
+            "pswpin": 44030,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3219104,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 54
+        }
+      },
+      {
+        "stage": "install",
+        "deadline": 180,
+        "returncode": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5611452,
+            "swap_used_kib": 144640,
+            "pswpin": 44030,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5602564,
+            "swap_used_kib": 144640,
+            "pswpin": 44031,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 5129268,
+          "swapin_bytes": 4096,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 4096,
+          "oom_kill_delta": 0,
+          "samples": 50
+        }
+      },
+      {
+        "stage": "synth-compact",
+        "deadline": 180,
+        "returncode": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5602564,
+            "swap_used_kib": 144640,
+            "pswpin": 44031,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5729776,
+            "swap_used_kib": 144640,
+            "pswpin": 44032,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3877388,
+          "swapin_bytes": 4096,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 4096,
+          "oom_kill_delta": 0,
+          "samples": 71
+        }
+      },
+      {
+        "stage": "synth-genie",
+        "deadline": 180,
+        "returncode": 0,
+        "memory": {
+          "baseline": {
+            "available_kib": 5729776,
+            "swap_used_kib": 144640,
+            "pswpin": 44032,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 5706224,
+            "swap_used_kib": 144640,
+            "pswpin": 44032,
+            "pswpout": 197262,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 4443240,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 56
+        }
+      }
+    ],
+    "completed": true
+  },
+  "candidate_host": {
+    "started_utc": "2026-10-29T16:02:54Z",
+    "production_config_before": {
+      "runtime/studio.json": "2532699b8720a07cc8d535053508f0d46a93ddc25088095d1f595ee5d1eba8c9",
+      "runtime/tts/tts_infer.yaml": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+      "config/voices.json": "bf3773ea03d58d594b285b6dd4cd6a89d5a122692664f782cdd34d96cbd36395"
+    },
+    "candidate_returncode": 0,
+    "status": "candidate_completed",
+    "production_config_unchanged": true,
+    "finished_utc": "2026-10-29T16:04:53Z"
+  },
+  "setup_findings": {
+    "host_python_compat": {
+      "started_utc": "2026-10-29T15:48:38Z",
+      "status": "host_failed",
+      "error": "AttributeError: module 'hashlib' has no attribute 'file_digest'",
+      "finished_utc": "2026-10-29T15:48:38Z"
+    },
+    "base_image_weights_load_flags": {
+      "stages": [
+        {
+          "stage": "sanitize",
+          "deadline": 90,
+          "returncode": 1,
+          "memory": {
+            "baseline": {
+              "available_kib": 5722144,
+              "swap_used_kib": 134400,
+              "pswpin": 40214,
+              "pswpout": 190791,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5714836,
+              "swap_used_kib": 134400,
+              "pswpin": 40214,
+              "pswpout": 190791,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 5489828,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 9
+          }
+        }
+      ],
+      "completed": false,
+      "error": "RuntimeError: Candidate stage failed: sanitize"
+    },
+    "old_HParams_safe_load": {
+      "stages": [
+        {
+          "stage": "sanitize",
+          "deadline": 90,
+          "returncode": 1,
+          "memory": {
+            "baseline": {
+              "available_kib": 5719900,
+              "swap_used_kib": 134400,
+              "pswpin": 40215,
+              "pswpout": 190791,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5712720,
+              "swap_used_kib": 134400,
+              "pswpin": 40215,
+              "pswpout": 190791,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 5325920,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 12
+          }
+        }
+      ],
+      "completed": false,
+      "error": "RuntimeError: Candidate stage failed: sanitize"
+    },
+    "original48k_reference_blocked": {
+      "stages": [
+        {
+          "stage": "sanitize",
+          "deadline": 90,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5650268,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5645296,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 5273304,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 14
+          }
+        },
+        {
+          "stage": "reference",
+          "deadline": 180,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5645296,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5716628,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3707680,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 101
+          }
+        },
+        {
+          "stage": "convert",
+          "deadline": 120,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5716628,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5701628,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 5239480,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 13
+          }
+        },
+        {
+          "stage": "expand",
+          "deadline": 60,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5701628,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5705040,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 5350192,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 10
+          }
+        },
+        {
+          "stage": "quantize",
+          "deadline": 240,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5705040,
+              "swap_used_kib": 134400,
+              "pswpin": 40216,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6582696,
+              "swap_used_kib": 134400,
+              "pswpin": 40217,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3535968,
+            "swapin_bytes": 4096,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 4096,
+            "oom_kill_delta": 0,
+            "samples": 108
+          }
+        },
+        {
+          "stage": "install",
+          "deadline": 180,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 6582696,
+              "swap_used_kib": 134400,
+              "pswpin": 40217,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 6590608,
+              "swap_used_kib": 134400,
+              "pswpin": 40219,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 6109900,
+            "swapin_bytes": 8192,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 8192,
+            "oom_kill_delta": 0,
+            "samples": 49
+          }
+        },
+        {
+          "stage": "synth-compact",
+          "deadline": 180,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 6590356,
+              "swap_used_kib": 134400,
+              "pswpin": 40219,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5693836,
+              "swap_used_kib": 134400,
+              "pswpin": 40219,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 4028408,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 72
+          }
+        },
+        {
+          "stage": "synth-genie",
+          "deadline": 180,
+          "returncode": 1,
+          "memory": {
+            "baseline": {
+              "available_kib": 5693836,
+              "swap_used_kib": 134400,
+              "pswpin": 40219,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5691176,
+              "swap_used_kib": 134400,
+              "pswpin": 40219,
+              "pswpout": 190797,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 4557088,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 32
+          }
+        }
+      ],
+      "completed": false,
+      "error": "RuntimeError: Candidate stage failed: synth-genie"
+    },
+    "resolution": "Retained raw sources and failed receipts; fixed task helper hostPython digest and conflicting inheritedTorch env; audited data-only HParams mapping; created explicit32k working reference and recomputed both paired outputs without weakening runtime validation."
+  },
+  "original_production_restored_after_audition": {
+    "profile": {
+      "model": "MiniCPM5-2B",
+      "context": 131072,
+      "kv": "q4_0",
+      "pids": {
+        "llm": [
+          175
+        ],
+        "tts": [
+          134
+        ]
+      },
+      "tts_backend": "genie_onnx_int8",
+      "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+      "voice_id": "whale_sovits_v2"
+    },
+    "business": {
+      "state": "stopped",
+      "queue_length": 0,
+      "current_job": null,
+      "comment_policy": {
+        "auto_browse": false,
+        "auto_reply": false,
+        "watch_videos": [],
+        "browse_interval_seconds": 300,
+        "max_replies_per_hour": 5,
+        "max_replies_per_day": 20,
+        "credentials_configured": false,
+        "last_browse_error": null,
+        "last_browse_at": null
+      }
+    },
+    "rss_kib": {
+      "llm": 3422660,
+      "tts": 1359752
+    },
+    "evaluator_running": false,
+    "restoration_after_operator_cancel": {
+      "seconds": 21.069205181000143,
+      "response": {
+        "state": "active",
+        "active_provider": "llm2b",
+        "error": null,
+        "mode": "live",
+        "selected_provider": "llm2b",
+        "requested_context_tokens": 131072,
+        "kv_cache_type": "q4_0",
+        "cuda_managed_memory": false,
+        "busy": false,
+        "providers": {
+          "llm2b": {
+            "running": true,
+            "is_sleeping": false,
+            "loaded_this_boot": true,
+            "native_context_tokens": 131072,
+            "context_tokens": 131072,
+            "cache_type_k": "q4_0",
+            "cache_type_v": "q4_0"
+          },
+          "llm1b": {
+            "running": false,
+            "is_sleeping": true,
+            "loaded_this_boot": false,
+            "native_context_tokens": 131072,
+            "context_tokens": null,
+            "cache_type_k": "q8_0",
+            "cache_type_v": "q8_0"
+          },
+          "llm1bq8": {
+            "running": false,
+            "is_sleeping": true,
+            "loaded_this_boot": false,
+            "native_context_tokens": 131072,
+            "context_tokens": null,
+            "cache_type_k": "q8_0",
+            "cache_type_v": "q8_0"
+          },
+          "llmqwen35": {
+            "running": false,
+            "is_sleeping": true,
+            "loaded_this_boot": false,
+            "native_context_tokens": 262144,
+            "context_tokens": null,
+            "cache_type_k": "q8_0",
+            "cache_type_v": "q8_0"
+          },
+          "tts": {
+            "running": true,
+            "is_sleeping": false,
+            "loaded_this_boot": true,
+            "native_context_tokens": null,
+            "context_tokens": null,
+            "cache_type_k": null,
+            "cache_type_v": null
+          }
+        },
+        "active": "llm2b"
+      },
+      "memory": {
+        "baseline": {
+          "available_kib": 5636272,
+          "swap_used_kib": 156672,
+          "pswpin": 44269,
+          "pswpout": 200614,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 2105796,
+          "swap_used_kib": 161792,
+          "pswpin": 44293,
+          "pswpout": 201924,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 2105796,
+        "swapin_bytes": 98304,
+        "swapout_bytes": 5365760,
+        "maximum_rolling_25s_swap_bytes": 5464064,
+        "oom_kill_delta": 0,
+        "samples": 42
+      }
+    }
+  },
+  "production_admission": {
+    "status": "in_progress",
+    "voice_id": "yaoyao_sovits_v2",
+    "required_count": 100,
+    "two_hour_run_required_this_round": false,
+    "new_voice_120k_input_retested": false
+  },
+  "raw_directory": "runtime/evaluations/yaoyao-v2-audition-20261029",
+  "local_review_directory": "tmp/yaoyao-review/yaoyao-offline",
+  "limitations": [
+    "No platform publishing or OBS test.",
+    "Three-pair human acceptance does not replace full future15-30sentence P1 coverage.",
+    "No claim that original electrical sound was caused solely by data versus model/inference."
+  ],
+  "verification": {
+    "full_suite": {
+      "passed": 481,
+      "skipped": 2,
+      "scope": "voice registry, new controlled runtime reference reader, existing business suite; unchanged numerical ONNX/sampling modules separately verified in prior optimization evidence"
+    },
+    "new_reference_boundary": "assets or runtime/tts/ref configured local voice WAV only; generalasset_path remains assets-only"
+  }
+}

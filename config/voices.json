@@ -41,6 +41,26 @@
     }
   },
   {
+    "id": "yaoyao_sovits_v2",
+    "name": "大肥鱼 · 清亮软糯（瑶瑶 v2）",
+    "provider": "gpt_sovits",
+    "version": "UnlimitedBurst-c649dfd-v2-e10",
+    "weights_version": "yaoyao-v2-e10-e10s200",
+    "reference_asset": "runtime/tts/ref/yaoyao-reference32k.wav",
+    "server_reference_path": "/workspace/tuber/runtime/tts/ref/yaoyao-reference32k.wav",
+    "reference_text": "甘雨姐姐，你没事吧？要不要喝点水，或者吃点别的什么调节一下？",
+    "source": "https://huggingface.co/UnlimitedBurst/GPT-SoVITS/tree/c649dfd4077c9a7c818775cc871590a10a688db9/%E5%8E%9F%E7%A5%9E%EF%BC%88%E5%B7%B2%E6%9B%B4%E6%96%B04.8%EF%BC%89/%E7%91%B6%E7%91%B6",
+    "attribution": "模型作者：白菜工厂1145号员工；UnlimitedBurst为镜像分享者。原神角色、声音及素材权利归原权利人；用途以来源条款为准。",
+    "license_status": "noncommercial_source_terms_pending",
+    "commercial_allowed": false,
+    "params": {
+      "text_lang": "zh",
+      "prompt_lang": "zh",
+      "text_split_method": "cut5",
+      "speed_factor": 1.0
+    }
+  },
+  {
     "id": "external_api",
     "name": "外部语音 API（按设置）",
     "provider": "openai_compatible",
