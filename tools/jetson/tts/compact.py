@@ -145,6 +145,9 @@ def _settings(root, voice_id):
                 "GPT_SoVITS/TTS_infer_pack/TTS.py",
                 "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py",
                 "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py",
+                "tools/my_utils.py",
+                "GPT_SoVITS/feature_extractor/cnhubert.py",
+                "GPT_SoVITS/module/mel_processing.py",
             )
         },
         "precision": "float16" if config["is_half"] and str(config["device"]) != "cpu" else "float32",
@@ -279,6 +282,7 @@ def _upstream(root):
         "TTS_infer_pack.TTS",
         "AR.models.t2s_lightning_module",
         "AR.models.t2s_model",
+        "tools.my_utils",
     ):
         if name in sys.modules and not getattr(sys.modules[name], "_tuber_inference_only", False):
             raise RuntimeError("Baseline and compact backends require separate processes")

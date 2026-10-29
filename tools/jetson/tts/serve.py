@@ -132,6 +132,13 @@ class CompatibilityFinder(importlib.abc.MetaPathFinder):
                 {
                     "AR.models.t2s_lightning_module": adapter.transform_lightning,
                     "AR.models.t2s_model": adapter.transform_decoder,
+                    "tools.my_utils": adapter.transform_audio_utilities,
+                    "GPT_SoVITS.TTS_infer_pack.TTS": lambda source: adapter.transform_reference_imports(
+                        transform_tts(source)
+                    ),
+                    "TTS_infer_pack.TTS": lambda source: adapter.transform_reference_imports(
+                        transform_tts(source)
+                    ),
                 }
             )
         elif any(
@@ -141,6 +148,7 @@ class CompatibilityFinder(importlib.abc.MetaPathFinder):
                 "TTS_infer_pack.TTS",
                 "AR.models.t2s_model",
                 "AR.models.t2s_lightning_module",
+                "tools.my_utils",
             )
         ):
             raise RuntimeError("Baseline and compact backends require separate processes")
@@ -167,6 +175,7 @@ def check_source(source_root: Path, *, inference_only=False) -> None:
                 "AR.models.t2s_lightning_module": source_root
                 / "GPT_SoVITS/AR/models/t2s_lightning_module.py",
                 "AR.models.t2s_model": source_root / "GPT_SoVITS/AR/models/t2s_model.py",
+                "tools.my_utils": source_root / "tools/my_utils.py",
             }
         )
     for name, path in paths.items():

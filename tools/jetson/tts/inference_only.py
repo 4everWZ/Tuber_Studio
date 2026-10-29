@@ -24,6 +24,8 @@ Text2SemanticLightningModule = Text2SemanticInferenceModule
 '''
 
 DECODER_MARKER = "# Tuber v2 inference-only: unused training metric removed.\n"
+UTILITIES_MARKER = "# Tuber v2 inference-only: original audio utilities without UI imports.\n"
+REFERENCE_MARKER = "# Tuber v2 inference-only: reference-only dependencies are lazy.\n"
 
 
 def _class(tree, name):
@@ -115,3 +117,106 @@ def transform_decoder(source):
     lines = source.splitlines(keepends=True)
     removed = {i for node in imports + constructors for i in range(node.lineno - 1, node.end_lineno)}
     return DECODER_MARKER + "".join(line for i, line in enumerate(lines) if i not in removed)
+
+
+def transform_audio_utilities(source):
+    """Keep original decode/path functions; discard unrelated UI-only helpers."""
+    tree = ast.parse(source)
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    if not {"load_audio", "clean_path"}.issubset(functions):
+        raise RuntimeError("Expected original v2 audio/path utilities")
+    originals = []
+    allowed_globals = {
+        "os",
+        "traceback",
+        "ffmpeg",
+        "np",
+        "i18n",
+        "clean_path",
+        "Exception",
+        "RuntimeError",
+        "str",
+    }
+    for name, arguments in (("load_audio", ["file", "sr"]), ("clean_path", ["path_str"])):
+        function = functions[name]
+        if [arg.arg for arg in function.args.args] != arguments or function.decorator_list:
+            raise RuntimeError("Original audio utility signature changed")
+        local = set(arguments) | {
+            node.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+        }
+        local |= {
+            node.name for node in ast.walk(function) if isinstance(node, ast.ExceptHandler) and node.name
+        }
+        dependencies = {
+            node.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        } - local
+        if dependencies - allowed_globals:
+            raise RuntimeError("Original audio utility acquired an unsupported dependency")
+        originals.append(ast.get_source_segment(source, function))
+    initializers = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "i18n" for t in node.targets)
+    ]
+    if len(initializers) != 1 or not _same(
+        initializers[0], "i18n = I18nAuto(language=os.environ.get('language', 'Auto'))"
+    ):
+        raise RuntimeError("Original audio translation initialization changed")
+    output = (
+        UTILITIES_MARKER
+        + "import os, traceback\nimport ffmpeg\nimport numpy as np\nfrom tools.i18n.i18n import I18nAuto\n"
+    )
+    output += ast.get_source_segment(source, initializers[0]) + "\n\n" + "\n\n".join(originals) + "\n"
+    return output
+
+
+def transform_reference_imports(source):
+    """Move only reference extraction imports; do not rewrite its operations."""
+    imports = {
+        "CNHubert": ("from feature_extractor.cnhubert import CNHubert", {"init_cnhuhbert_weights"}),
+        "librosa": ("import librosa", {"_set_prompt_semantic"}),
+        "load_audio": ("from tools.my_utils import load_audio", {"_get_ref_spec"}),
+        "spectrogram_torch": ("from module.mel_processing import spectrogram_torch", {"_get_ref_spec"}),
+    }
+    tree = ast.parse(source)
+    pipeline = _class(tree, "TTS")
+    functions = {n.name: n for n in pipeline.body if isinstance(n, ast.FunctionDef)}
+    for binding, (_, allowed) in imports.items():
+        if not allowed.issubset(functions):
+            raise RuntimeError("Original reference extraction methods changed")
+        for function in functions.values():
+            names = [n for n in ast.walk(function) if isinstance(n, ast.Name) and n.id == binding]
+            if function.name == "__init__" and binding == "CNHubert":
+                annotations = {id(n.annotation) for n in ast.walk(function) if isinstance(n, ast.AnnAssign)}
+                names = [n for n in names if id(n) not in annotations]
+            if names and function.name not in allowed:
+                raise RuntimeError("A reference-only dependency became part of dynamic synthesis")
+    if source.startswith(REFERENCE_MARKER):
+        if any(_same(node, text) for node in tree.body for text, _ in imports.values()):
+            raise RuntimeError("Inconsistent lazy reference import marker")
+        return source
+    removed, insertions = set(), {}
+    for _, (text, methods) in imports.items():
+        nodes = [node for node in tree.body if _same(node, text)]
+        if len(nodes) != 1:
+            raise RuntimeError("Expected pinned reference import exactly once")
+        removed.update(range(nodes[0].lineno - 1, nodes[0].end_lineno))
+        for name in methods:
+            function = functions[name]
+            first = function.body[0]
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                first = function.body[1]
+            insertions.setdefault(first.lineno - 1, []).append(" " * first.col_offset + text + "\n")
+    lines = source.splitlines(keepends=True)
+    return REFERENCE_MARKER + "".join(
+        "".join(insertions.get(i, [])) + (line if i not in removed else "") for i, line in enumerate(lines)
+    )
