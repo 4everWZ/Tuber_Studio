@@ -7,7 +7,7 @@
 | 工作 | 当前边界 | 下一步 |
 | --- | --- | --- |
 | 外部服务与账号 | 非直播代码a4f9437已构建部署；441测试、真实本地HTTP／SQLite／浏览器替身、Jetson 64K切换／越native拒绝／128K恢复及一条真实Mini回复均通过，见[验收证据](../../evaluations/results/nonlive-providers-20261029.json)。未调用真实外部账号或发布评论。 | Operator配置真实服务后按其模型、配额及声音条款核验；真实平台写入须明确授权和回执，不能把替身结果当账号／质量准入。 |
-| Genie 声音与直播资源 | 原22层BERT／AR离线INT8候选已完成真实Mini128K共驻6/6：整机采样峰5.402GiB、最低可用2.039GiB、同Mini进程、零OOM／换出；属于实验物理共驻，见[优化证据](../../evaluations/results/genie-live-optimization-20261029.json)。正式接口／永久bundle／原后处理已接入，尚待新镜像设备验收。 | 冷安装／加载、正式语音配对试听与速度门槛、浏览器Mock播放、真实长输入及持续运行；未验证部分不写成已通过。 |
+| Genie 声音与直播资源 | 正式永久bundle／只读挂载已部署，28次语音调用和真实浏览器Mock播放完成；用户接受三组配对试听≥90%，已测六次生成满足速度门槛。实际131072窗口下120000-token输入不截断、前后Mini／TTS进程不变，后续语音正常。条件及比较边界见[优化证据](../../evaluations/results/genie-live-optimization-20261029.json)。 | 正在同一正式live驻留下运行两小时／至少100句混合LLM与TTS验证；保留内存／换页／OOM保护，完成后才声明持续运行通过。 |
 
 Codex公开local核心、40%后二次完整压缩、带来源事实／按题检索／最多一次补答继续保留。窗口缩小时仅按比例适配保留预算，原评论数据集不删；留存仍默认30天清会话、保留原评论。规范由[上下文](../specs/context-and-compaction.md)及[运行时数据](../specs/runtime-and-characters.md)维护。
 

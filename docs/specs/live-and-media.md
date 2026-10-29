@@ -1,6 +1,6 @@
 # 直播、演出与音乐契约
 
-非直播工作台继续可用；当前恢复本地声音与Mock直播资源开发，以 MiniCPM5-2B／真实128K 与 Genie TTS 共驻为目标，内存和质量准入由[资源规范](models-and-audio.md)维护。B站／抖音真实直播接入仍后置，默认入口须等待资源准入；已有实现、素材和实验保留。以下标签保留原优先级；既有Mock连接和基础礼物轮流不等于完整直播策略已验收。
+非直播工作台与本地Mock直播均可用。MiniCPM5-2B／真实128K与Genie TTS已完成共驻、声音与浏览器真实播放ACK准入，停止、text卸载TTS及回live已验证；资源条件和持续运行边界由[资源规范](models-and-audio.md)维护，证据见[正式准入结果](../../evaluations/results/genie-live-optimization-20261029.json)。模板仍默认text且关闭直播，设备须由Operator显式启用Mock／live，导航不自动切换。B站／抖音真实直播接入仍后置；Mock播放不代表授权Adapter、完整调度策略、音乐或OBS本体已验收。以下标签保留原优先级，不表示全部条目已完成。
 
 ## 接入与调度
 

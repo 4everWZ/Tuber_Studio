@@ -3,7 +3,7 @@
   "date": "2026-10-29",
   "timezone": "Asia/Taipei",
   "kind": "genie_whole_machine_ram_optimization_and_native128k_live_admission",
-  "status": "experimental_native128k_resident_pair_passed_formal_backend_acceptance_pending",
+  "status": "formal_backend_browser_and_actual120k_passed_endurance_in_progress",
   "scope": {
     "primary_objective": "reduce sampled whole-machine peak RAM",
     "constraints": [
@@ -23,7 +23,8 @@
     "ort": "1.22.1 CPU",
     "original_cuda_torch_reused": true,
     "new_dependency_installations": 0,
-    "genie_revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828"
+    "genie_revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+    "scope": "Baseline and experimental screens before the final derived production image; final environment is current_deployment."
   },
   "sources": {
     "genie": "https://github.com/High-Logic/Genie-TTS/tree/d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
@@ -1512,8 +1513,31 @@
     }
   ],
   "quality": {
-    "listening_completed": false,
-    "claimed_quality_percent": null,
+    "human_review": {
+      "reviewer": "user",
+      "scope": "three paired Chinese screening texts",
+      "decision": "达到至少90%，可以接受",
+      "source": "explicit in-chat listening response",
+      "samples": [
+        {
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "pcm_sha256": "a9712843138684f3ce76def653a07462c1d504b90458c1b24346f40608c2f383"
+        },
+        {
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "pcm_sha256": "efe264d45524e23d641b429dad2406cd856848ff236107b919dc8a116560b56a"
+        },
+        {
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "pcm_sha256": "2aa83186c6f7d0f295857491316263d3dc527ba16ffb81175c561dc0b82f8635"
+        }
+      ]
+    },
+    "claimed_universal_quality_percent": null,
+    "automatic_execution_coverage": "25 distinct speech-case texts including English mixes,28 complete calls; not25 paired human scores",
     "non_silence_is_not_quality": true
   },
   "sampling_findings": {
@@ -3498,26 +3522,2028 @@
     }
   },
   "current_deployment": {
-    "code": "a4f9437",
-    "backend": "compact_retained_TTS_off",
-    "mode": "text",
-    "features_live_enabled": false,
-    "experimental_admission_is_not_deployment": true
+    "source_revision": "e644b49",
+    "engine_revision": "445df03",
+    "image": "sha256:6b3b348c116320e8045b9ebf93ae1201fa5150dc9b50ec19dc68178d7a9861f2",
+    "tts_local_backend": "genie_onnx_int8",
+    "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+    "features_live_enabled": true,
+    "model": "MiniCPM5-2B",
+    "window": 131072,
+    "kv": "q4_0",
+    "business": "stopped",
+    "automatic_browse_reply": false,
+    "network": "private bridge, only127.0.0.1:9020",
+    "user": "1001:1001",
+    "rootfs_readonly": true,
+    "cap_drop": [
+      "ALL"
+    ],
+    "no_new_privileges": true,
+    "genie_weights_mount_readonly": true,
+    "external_provider_accounts_exercised": false
   },
   "verification": {
     "local_full_suite": {
-      "passed": 451,
+      "passed": 464,
       "skipped": 2,
-      "note": "NumPy/ONNX modules separately checked in isolated tool environment; not added to application dependencies"
+      "separate_numerical_modules": "sampling12/backend46 passed in isolated NumPy/ONNX environment"
     },
     "standalone_numerical_contracts": {
       "sampling": 12,
-      "backend": 28,
+      "backend": 46,
       "bundle": 12
     },
-    "hardware_formal_backend": "pending",
-    "quality_listening": "pending",
-    "long_input_with_new_backend": "pending",
-    "two_hours_100_speech": "pending"
+    "hardware_formal_backend": "28/28 passed samepids zeroOOM/zeroSwap",
+    "quality_listening": "user accepted3 paired Chinese cases>=90%",
+    "long_input_with_new_backend": "passed exact120000 input, actual/native131072, no truncation, stable Mini61/TTS20, postcontextTTS passed",
+    "two_hours_100_speech": "in_progress: seconds7200 minimumspeech100 interval60, detached guarded production evaluator"
+  },
+  "formal_backend_attempts": [
+    {
+      "attempt": 1,
+      "revision": "ffeddb5",
+      "result": {
+        "backend": "genie_onnx_int8",
+        "protocol": "original_v2_per_fragment_normalization_gap_after_each_pcm16",
+        "speech": [],
+        "completed": false,
+        "error": "HTTPStatusError: Client error '400 Bad Request' for url 'http://127.0.0.1:9020/api/inference/mode'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "cleanup_text_status": 200,
+        "memory": {
+          "baseline": {
+            "available_kib": 3310076,
+            "swap_used_kib": 154112,
+            "pswpin": 40007,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 3193968,
+            "swap_used_kib": 154112,
+            "pswpin": 40007,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 3064060,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 48
+        },
+        "elapsed_seconds": 23.85715439699925,
+        "peak_machine_total_minus_available_kib": 4738656
+      },
+      "diagnosis": "Resident Genie became ready; Mini1512.02MiB CUDA KV allocation returnedNvMaperror12 despite MemAvailable headroom. No systemOOM/swap; text rollback. KnownR36.4.7 class; cause not uniquely proved."
+    },
+    {
+      "attempt": 2,
+      "revision": "ffeddb5",
+      "result": {
+        "backend": "genie_onnx_int8",
+        "protocol": "original_v2_per_fragment_normalization_gap_after_each_pcm16",
+        "speech": [],
+        "owned_evaluation_cache_advice": [
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads6/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads2/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.ort-int8-native128k.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/ort-int8-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-fp32/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-fp32/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-int8/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ar-int8/prepare/quantized/t2s_first_stage_decoder_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ar-int8/prepare/quantized/t2s_first_stage_decoder_int8.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.original-features-ort-int8.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/original-features-ort-int8/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/restored-exp-topk5-int8-bert/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_int8.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_fp32.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_stage_decoder_int8.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_stage_decoder_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_first_stage_decoder_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_first_stage_decoder_int8.onnx"
+        ],
+        "mode_response": {
+          "status": 200,
+          "body": {
+            "state": "active",
+            "active_provider": "llm2b",
+            "error": null,
+            "mode": "live",
+            "selected_provider": "llm2b",
+            "requested_context_tokens": 131072,
+            "kv_cache_type": "q4_0",
+            "cuda_managed_memory": false,
+            "busy": false,
+            "providers": {
+              "llm2b": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": 131072,
+                "context_tokens": 131072,
+                "cache_type_k": "q4_0",
+                "cache_type_v": "q4_0"
+              },
+              "llm1b": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llm1bq8": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llmqwen35": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 262144,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "tts": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": null,
+                "context_tokens": null,
+                "cache_type_k": null,
+                "cache_type_v": null
+              }
+            },
+            "active": "llm2b"
+          }
+        },
+        "cold_mode_seconds": 20.332262864001677,
+        "completed": false,
+        "error": "RuntimeError: The actual TTS backend is not the configured, ready backend",
+        "cleanup_text_status": 200,
+        "memory": {
+          "baseline": {
+            "available_kib": 3179984,
+            "swap_used_kib": 154112,
+            "pswpin": 40015,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 3203860,
+            "swap_used_kib": 154112,
+            "pswpin": 40015,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 2005308,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 42
+        },
+        "elapsed_seconds": 20.960233729998436,
+        "peak_machine_total_minus_available_kib": 5797408
+      },
+      "diagnosis": "Mode switch and resident pair succeeded after explicit advice on owned clean experiment cache. Observer rejected because broker returned generic historical health rather than actual backend identity; fixed3f966f0."
+    },
+    {
+      "attempt": 3,
+      "revision": "3f966f0",
+      "result": {
+        "backend": "genie_onnx_int8",
+        "protocol": "original_v2_per_fragment_normalization_gap_after_each_pcm16",
+        "speech": [
+          {
+            "index": 0,
+            "repeat": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 3.3160637129985844,
+            "audio_seconds": 3.8,
+            "rtf": 0.8726483455259433,
+            "frames": 121600,
+            "rms_pcm16": 6359.365890103393,
+            "pcm_sha256": "a9712843138684f3ce76def653a07462c1d504b90458c1b24346f40608c2f383"
+          },
+          {
+            "index": 0,
+            "repeat": 1,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 3.2858890679999604,
+            "audio_seconds": 3.8,
+            "rtf": 0.8647076494736738,
+            "frames": 121600,
+            "rms_pcm16": 6359.365890103393,
+            "pcm_sha256": "a9712843138684f3ce76def653a07462c1d504b90458c1b24346f40608c2f383"
+          },
+          {
+            "index": 1,
+            "repeat": 0,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 3.919635949001531,
+            "audio_seconds": 4.2,
+            "rtf": 0.933246654524174,
+            "frames": 134400,
+            "rms_pcm16": 6745.459301328411,
+            "pcm_sha256": "efe264d45524e23d641b429dad2406cd856848ff236107b919dc8a116560b56a"
+          },
+          {
+            "index": 1,
+            "repeat": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 3.546372042001167,
+            "audio_seconds": 4.2,
+            "rtf": 0.8443742957145635,
+            "frames": 134400,
+            "rms_pcm16": 6745.459301328411,
+            "pcm_sha256": "efe264d45524e23d641b429dad2406cd856848ff236107b919dc8a116560b56a"
+          },
+          {
+            "index": 2,
+            "repeat": 0,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 2.713156871999672,
+            "audio_seconds": 3.28,
+            "rtf": 0.8271819731706318,
+            "frames": 104960,
+            "rms_pcm16": 5922.574056900451,
+            "pcm_sha256": "2aa83186c6f7d0f295857491316263d3dc527ba16ffb81175c561dc0b82f8635"
+          },
+          {
+            "index": 2,
+            "repeat": 1,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 2.7397355809989676,
+            "audio_seconds": 3.28,
+            "rtf": 0.8352852381094414,
+            "frames": 104960,
+            "rms_pcm16": 5922.574056900451,
+            "pcm_sha256": "2aa83186c6f7d0f295857491316263d3dc527ba16ffb81175c561dc0b82f8635"
+          },
+          {
+            "index": 3,
+            "repeat": 0,
+            "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+            "seconds": 4.311178402000223,
+            "audio_seconds": 4.76,
+            "rtf": 0.9057097483193747,
+            "frames": 152320,
+            "rms_pcm16": 6368.898823059027,
+            "pcm_sha256": "d816e8ac69cf59872261a90b08c7c553932a9a0dc1ff5cf3f763b700008f55c6"
+          },
+          {
+            "index": 4,
+            "repeat": 0,
+            "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+            "seconds": 3.2378512140021485,
+            "audio_seconds": 3.8,
+            "rtf": 0.8520661089479339,
+            "frames": 121600,
+            "rms_pcm16": 6096.658105432801,
+            "pcm_sha256": "4fe74f27a442f5efca09a08fe3732d1be0ae0fb3e3317bf0ec6b7cf970afca77"
+          },
+          {
+            "index": 5,
+            "repeat": 0,
+            "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+            "seconds": 3.5945322689985915,
+            "audio_seconds": 4.3,
+            "rtf": 0.8359377369764166,
+            "frames": 137600,
+            "rms_pcm16": 6170.978122369742,
+            "pcm_sha256": "45173e4a1d83e13c187342489cb6f1d829dbeab7049ba5d6c9457e6c10a0fa8f"
+          },
+          {
+            "index": 6,
+            "repeat": 0,
+            "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+            "seconds": 4.1550282379976125,
+            "audio_seconds": 4.68,
+            "rtf": 0.8878265465806865,
+            "frames": 149760,
+            "rms_pcm16": 6523.609133195341,
+            "pcm_sha256": "52151690b8d5199191cbd50d53f4964a56cac74d3745436883ccce834cbd267c"
+          },
+          {
+            "index": 7,
+            "repeat": 0,
+            "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+            "seconds": 3.444222701000399,
+            "audio_seconds": 4.0,
+            "rtf": 0.8610556752500997,
+            "frames": 128000,
+            "rms_pcm16": 6299.20740475972,
+            "pcm_sha256": "af0d9150ccb20c459e6a4c53290cd09a239c6f81aba72cc66b416070f09c6583"
+          },
+          {
+            "index": 8,
+            "repeat": 0,
+            "text": "这条评论我看到了，等我想清楚再认真回答。",
+            "seconds": 3.3165400129983027,
+            "audio_seconds": 3.84,
+            "rtf": 0.8636822950516414,
+            "frames": 122880,
+            "rms_pcm16": 6293.012159464519,
+            "pcm_sha256": "aad9f9db6131556408ceae54b2e09ef9672c663b9dcff45b87d61261a0346613"
+          },
+          {
+            "index": 9,
+            "repeat": 0,
+            "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+            "seconds": 4.115769956002623,
+            "audio_seconds": 4.48,
+            "rtf": 0.9186986508934426,
+            "frames": 143360,
+            "rms_pcm16": 6549.038435339421,
+            "pcm_sha256": "49a08fbd90535a3cef53e2c4054ed2e55ac4eb3c12a93f747f884b88bed0108c"
+          },
+          {
+            "index": 10,
+            "repeat": 0,
+            "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+            "seconds": 3.144706735998625,
+            "audio_seconds": 3.68,
+            "rtf": 0.8545398739126698,
+            "frames": 117760,
+            "rms_pcm16": 6512.188239894794,
+            "pcm_sha256": "4cecaf9c4750b3c0cb6be18a9df566d85033f000dadc96c0ef877c2a241c1ea0"
+          },
+          {
+            "index": 11,
+            "repeat": 0,
+            "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+            "seconds": 4.100771202000033,
+            "audio_seconds": 4.88,
+            "rtf": 0.8403219676229575,
+            "frames": 156160,
+            "rms_pcm16": 6461.814137118258,
+            "pcm_sha256": "ae9eec978dc8531f7f2d93539a1780f442f07812b96f718d9bd96432320ea2e6"
+          },
+          {
+            "index": 12,
+            "repeat": 0,
+            "text": "明天也来聊聊吧，记得早点休息。",
+            "seconds": 2.7792121870006667,
+            "audio_seconds": 3.04,
+            "rtf": 0.9142145351975878,
+            "frames": 97280,
+            "rms_pcm16": 6094.500556900057,
+            "pcm_sha256": "85b4e43688680d8cb9c3fb1366a23621ee70a86eb1e3d1a511a354d1714a72ee"
+          },
+          {
+            "index": 13,
+            "repeat": 0,
+            "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+            "seconds": 3.8354090159991756,
+            "audio_seconds": 4.48,
+            "rtf": 0.8561180839283873,
+            "frames": 143360,
+            "rms_pcm16": 6278.07294198789,
+            "pcm_sha256": "543b6d3e5bd71061386646e48a596fca51bb87e22dcf163ce01c6adc4b384108"
+          },
+          {
+            "index": 14,
+            "repeat": 0,
+            "text": "这个梗有点冷，海水都快结冰了。",
+            "seconds": 3.490351319000183,
+            "audio_seconds": 4.08,
+            "rtf": 0.8554782644608292,
+            "frames": 130560,
+            "rms_pcm16": 6878.818617885269,
+            "pcm_sha256": "1a2966203fd32d7517d0ac8bda039b998cef9c45b7e1b4bebc1ea9317b1dcbe1"
+          },
+          {
+            "index": 15,
+            "repeat": 0,
+            "text": "三个人分六个饭团，每个人可以拿到两个。",
+            "seconds": 3.548751705999166,
+            "audio_seconds": 3.88,
+            "rtf": 0.9146267283503006,
+            "frames": 124160,
+            "rms_pcm16": 6703.544818507498,
+            "pcm_sha256": "8597218544d0ffb8d0e4b4bce5aaa69ceda337557c3ad33ba9fedadec330254f"
+          },
+          {
+            "index": 16,
+            "repeat": 0,
+            "text": "现在是晚上八点半，先休息五分钟再继续。",
+            "seconds": 3.2801136170019163,
+            "audio_seconds": 3.84,
+            "rtf": 0.8541962544275824,
+            "frames": 122880,
+            "rms_pcm16": 6079.4745750262255,
+            "pcm_sha256": "46f8cd199697b311f1fb93c04d9b55899ae3f48ac78f88ce11fb5f459470e0e4"
+          },
+          {
+            "index": 17,
+            "repeat": 0,
+            "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+            "seconds": 3.7535386689996812,
+            "audio_seconds": 4.5,
+            "rtf": 0.8341197042221514,
+            "frames": 144000,
+            "rms_pcm16": 5772.980737829222,
+            "pcm_sha256": "5e2d97b445221f783c90bbe3631591f9a88fbf0078923808e46d736474097a02"
+          },
+          {
+            "index": 18,
+            "repeat": 0,
+            "text": "DeepSeek 是名字，白饭才是今天的主题。",
+            "seconds": 11.16366603500137,
+            "audio_seconds": 3.44,
+            "rtf": 3.245251754360863,
+            "frames": 110080,
+            "rms_pcm16": 5695.175001534315,
+            "pcm_sha256": "ba5e6bc7e3cce6c3095365b0ce4b884e2bfbfc228d8ea077c0b824c52e5f8b1e"
+          }
+        ],
+        "owned_evaluation_cache_advice": [
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads6/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads2/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.ort-int8-native128k.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/ort-int8-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-fp32/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-fp32/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-int8/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ar-int8/prepare/quantized/t2s_first_stage_decoder_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ar-int8/prepare/quantized/t2s_first_stage_decoder_int8.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.original-features-ort-int8.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/original-features-ort-int8/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_encoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_encoder_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_shared_fp16.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/restored-exp-topk5-int8-bert/text_encoder_cached_reference.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_shared_fp32.bin",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_first_stage_decoder_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_int8.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_fp32.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_fp32.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_stage_decoder_int8.onnx",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_stage_decoder_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_first_stage_decoder_int8.onnx.data",
+          "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_first_stage_decoder_int8.onnx"
+        ],
+        "mode_response": {
+          "status": 200,
+          "body": {
+            "state": "active",
+            "active_provider": "llm2b",
+            "error": null,
+            "mode": "live",
+            "selected_provider": "llm2b",
+            "requested_context_tokens": 131072,
+            "kv_cache_type": "q4_0",
+            "cuda_managed_memory": false,
+            "busy": false,
+            "providers": {
+              "llm2b": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": 131072,
+                "context_tokens": 131072,
+                "cache_type_k": "q4_0",
+                "cache_type_v": "q4_0"
+              },
+              "llm1b": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llm1bq8": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llmqwen35": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 262144,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "tts": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": null,
+                "context_tokens": null,
+                "cache_type_k": null,
+                "cache_type_v": null
+              }
+            },
+            "active": "llm2b"
+          }
+        },
+        "cold_mode_seconds": 19.750790602000052,
+        "profile_before": {
+          "model": "MiniCPM5-2B",
+          "context": 131072,
+          "kv": "q4_0",
+          "pids": {
+            "llm": [
+              84
+            ],
+            "tts": [
+              43
+            ]
+          },
+          "tts_backend": "genie_onnx_int8",
+          "bundle_identity": "4170d25bcc0c42d86dd44b16e427597e07e49f8b806ebcbf13b3bbd90077e8a2",
+          "voice_id": "whale_sovits_v2"
+        },
+        "completed": false,
+        "error": "HTTPStatusError: Server error '503 Service Unavailable' for url 'http://127.0.0.1:9012/tts/tts'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
+        "cleanup_text_status": 200,
+        "memory": {
+          "baseline": {
+            "available_kib": 3298108,
+            "swap_used_kib": 140544,
+            "pswpin": 40035,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "final": {
+            "available_kib": 1701944,
+            "swap_used_kib": 140544,
+            "pswpin": 40035,
+            "pswpout": 190754,
+            "oom_kill": 0
+          },
+          "minimum_available_kib": 1701820,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 210
+        },
+        "elapsed_seconds": 105.50030565999987,
+        "peak_machine_total_minus_available_kib": 6100896
+      },
+      "diagnosis": "22 complete syntheses then Hello mixed-language English span legitimately had zero BERT and was incorrectly rejected by Chinese guard. Fixed445df03; preserve failure in denominator."
+    }
+  ],
+  "formal_backend_acceptance": {
+    "image_source": "445df03",
+    "protocol": "same original v2 per-fragment peak normalization,0.3s trailing silence on EVERY fragment, multiply32768 andcastint16; end-to-end local HTTP synthesis timing",
+    "result": {
+      "backend": "genie_onnx_int8",
+      "protocol": "original_v2_per_fragment_normalization_gap_after_each_pcm16",
+      "speech": [
+        {
+          "index": 0,
+          "repeat": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "seconds": 3.287451365002198,
+          "audio_seconds": 3.8,
+          "rtf": 0.8651187802637363,
+          "frames": 121600,
+          "rms_pcm16": 6359.365890103393,
+          "pcm_sha256": "a9712843138684f3ce76def653a07462c1d504b90458c1b24346f40608c2f383"
+        },
+        {
+          "index": 0,
+          "repeat": 1,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "seconds": 3.6359490680006274,
+          "audio_seconds": 3.8,
+          "rtf": 0.9568287021054284,
+          "frames": 121600,
+          "rms_pcm16": 6359.365890103393,
+          "pcm_sha256": "a9712843138684f3ce76def653a07462c1d504b90458c1b24346f40608c2f383"
+        },
+        {
+          "index": 1,
+          "repeat": 0,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "seconds": 3.6002283509988047,
+          "audio_seconds": 4.2,
+          "rtf": 0.8571972264282868,
+          "frames": 134400,
+          "rms_pcm16": 6745.459301328411,
+          "pcm_sha256": "efe264d45524e23d641b429dad2406cd856848ff236107b919dc8a116560b56a"
+        },
+        {
+          "index": 1,
+          "repeat": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "seconds": 3.512359844000457,
+          "audio_seconds": 4.2,
+          "rtf": 0.8362761533334421,
+          "frames": 134400,
+          "rms_pcm16": 6745.459301328411,
+          "pcm_sha256": "efe264d45524e23d641b429dad2406cd856848ff236107b919dc8a116560b56a"
+        },
+        {
+          "index": 2,
+          "repeat": 0,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "seconds": 3.1114964469998085,
+          "audio_seconds": 3.28,
+          "rtf": 0.9486269655487222,
+          "frames": 104960,
+          "rms_pcm16": 5922.574056900451,
+          "pcm_sha256": "2aa83186c6f7d0f295857491316263d3dc527ba16ffb81175c561dc0b82f8635"
+        },
+        {
+          "index": 2,
+          "repeat": 1,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "seconds": 2.776920626998617,
+          "audio_seconds": 3.28,
+          "rtf": 0.8466221423776272,
+          "frames": 104960,
+          "rms_pcm16": 5922.574056900451,
+          "pcm_sha256": "2aa83186c6f7d0f295857491316263d3dc527ba16ffb81175c561dc0b82f8635"
+        },
+        {
+          "index": 3,
+          "repeat": 0,
+          "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+          "seconds": 4.102869721002207,
+          "audio_seconds": 4.76,
+          "rtf": 0.861947420378615,
+          "frames": 152320,
+          "rms_pcm16": 6368.898823059027,
+          "pcm_sha256": "d816e8ac69cf59872261a90b08c7c553932a9a0dc1ff5cf3f763b700008f55c6"
+        },
+        {
+          "index": 4,
+          "repeat": 0,
+          "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+          "seconds": 3.481247694002377,
+          "audio_seconds": 3.8,
+          "rtf": 0.9161178142111519,
+          "frames": 121600,
+          "rms_pcm16": 6096.658105432801,
+          "pcm_sha256": "4fe74f27a442f5efca09a08fe3732d1be0ae0fb3e3317bf0ec6b7cf970afca77"
+        },
+        {
+          "index": 5,
+          "repeat": 0,
+          "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+          "seconds": 3.6697793929997715,
+          "audio_seconds": 4.3,
+          "rtf": 0.8534370681394818,
+          "frames": 137600,
+          "rms_pcm16": 6170.978122369742,
+          "pcm_sha256": "45173e4a1d83e13c187342489cb6f1d829dbeab7049ba5d6c9457e6c10a0fa8f"
+        },
+        {
+          "index": 6,
+          "repeat": 0,
+          "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+          "seconds": 3.9863021290002507,
+          "audio_seconds": 4.68,
+          "rtf": 0.8517739591880878,
+          "frames": 149760,
+          "rms_pcm16": 6523.609133195341,
+          "pcm_sha256": "52151690b8d5199191cbd50d53f4964a56cac74d3745436883ccce834cbd267c"
+        },
+        {
+          "index": 7,
+          "repeat": 0,
+          "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+          "seconds": 3.744153441999515,
+          "audio_seconds": 4.0,
+          "rtf": 0.9360383604998788,
+          "frames": 128000,
+          "rms_pcm16": 6299.20740475972,
+          "pcm_sha256": "af0d9150ccb20c459e6a4c53290cd09a239c6f81aba72cc66b416070f09c6583"
+        },
+        {
+          "index": 8,
+          "repeat": 0,
+          "text": "这条评论我看到了，等我想清楚再认真回答。",
+          "seconds": 3.311899562999315,
+          "audio_seconds": 3.84,
+          "rtf": 0.8624738445310717,
+          "frames": 122880,
+          "rms_pcm16": 6293.012159464519,
+          "pcm_sha256": "aad9f9db6131556408ceae54b2e09ef9672c663b9dcff45b87d61261a0346613"
+        },
+        {
+          "index": 9,
+          "repeat": 0,
+          "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+          "seconds": 3.8566559989994857,
+          "audio_seconds": 4.48,
+          "rtf": 0.8608607140623852,
+          "frames": 143360,
+          "rms_pcm16": 6549.038435339421,
+          "pcm_sha256": "49a08fbd90535a3cef53e2c4054ed2e55ac4eb3c12a93f747f884b88bed0108c"
+        },
+        {
+          "index": 10,
+          "repeat": 0,
+          "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+          "seconds": 3.4265475170032005,
+          "audio_seconds": 3.68,
+          "rtf": 0.9311270426639131,
+          "frames": 117760,
+          "rms_pcm16": 6512.188239894794,
+          "pcm_sha256": "4cecaf9c4750b3c0cb6be18a9df566d85033f000dadc96c0ef877c2a241c1ea0"
+        },
+        {
+          "index": 11,
+          "repeat": 0,
+          "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+          "seconds": 4.132372805001069,
+          "audio_seconds": 4.88,
+          "rtf": 0.846797705942842,
+          "frames": 156160,
+          "rms_pcm16": 6461.814137118258,
+          "pcm_sha256": "ae9eec978dc8531f7f2d93539a1780f442f07812b96f718d9bd96432320ea2e6"
+        },
+        {
+          "index": 12,
+          "repeat": 0,
+          "text": "明天也来聊聊吧，记得早点休息。",
+          "seconds": 2.6506705549982144,
+          "audio_seconds": 3.04,
+          "rtf": 0.8719311036178337,
+          "frames": 97280,
+          "rms_pcm16": 6094.500556900057,
+          "pcm_sha256": "85b4e43688680d8cb9c3fb1366a23621ee70a86eb1e3d1a511a354d1714a72ee"
+        },
+        {
+          "index": 13,
+          "repeat": 0,
+          "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+          "seconds": 4.126544004997413,
+          "audio_seconds": 4.48,
+          "rtf": 0.9211035725440654,
+          "frames": 143360,
+          "rms_pcm16": 6278.07294198789,
+          "pcm_sha256": "543b6d3e5bd71061386646e48a596fca51bb87e22dcf163ce01c6adc4b384108"
+        },
+        {
+          "index": 14,
+          "repeat": 0,
+          "text": "这个梗有点冷，海水都快结冰了。",
+          "seconds": 3.4119612280010188,
+          "audio_seconds": 4.08,
+          "rtf": 0.8362650068629948,
+          "frames": 130560,
+          "rms_pcm16": 6878.818617885269,
+          "pcm_sha256": "1a2966203fd32d7517d0ac8bda039b998cef9c45b7e1b4bebc1ea9317b1dcbe1"
+        },
+        {
+          "index": 15,
+          "repeat": 0,
+          "text": "三个人分六个饭团，每个人可以拿到两个。",
+          "seconds": 3.257846153999708,
+          "audio_seconds": 3.88,
+          "rtf": 0.8396510706184814,
+          "frames": 124160,
+          "rms_pcm16": 6703.544818507498,
+          "pcm_sha256": "8597218544d0ffb8d0e4b4bce5aaa69ceda337557c3ad33ba9fedadec330254f"
+        },
+        {
+          "index": 16,
+          "repeat": 0,
+          "text": "现在是晚上八点半，先休息五分钟再继续。",
+          "seconds": 3.501071589998901,
+          "audio_seconds": 3.84,
+          "rtf": 0.9117373932288805,
+          "frames": 122880,
+          "rms_pcm16": 6079.4745750262255,
+          "pcm_sha256": "46f8cd199697b311f1fb93c04d9b55899ae3f48ac78f88ce11fb5f459470e0e4"
+        },
+        {
+          "index": 17,
+          "repeat": 0,
+          "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+          "seconds": 3.8531508819978626,
+          "audio_seconds": 4.5,
+          "rtf": 0.8562557515550806,
+          "frames": 144000,
+          "rms_pcm16": 5772.980737829222,
+          "pcm_sha256": "5e2d97b445221f783c90bbe3631591f9a88fbf0078923808e46d736474097a02"
+        },
+        {
+          "index": 18,
+          "repeat": 0,
+          "text": "DeepSeek 是名字，白饭才是今天的主题。",
+          "seconds": 10.948535733001336,
+          "audio_seconds": 3.44,
+          "rtf": 3.1827138758724813,
+          "frames": 110080,
+          "rms_pcm16": 5695.175001534315,
+          "pcm_sha256": "ba5e6bc7e3cce6c3095365b0ce4b884e2bfbfc228d8ea077c0b824c52e5f8b1e"
+        },
+        {
+          "index": 19,
+          "repeat": 0,
+          "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+          "seconds": 3.346789732000616,
+          "audio_seconds": 3.88,
+          "rtf": 0.8625746731960351,
+          "frames": 124160,
+          "rms_pcm16": 6900.04288339594,
+          "pcm_sha256": "d48090c1922c8feff92ee337edde8c92893aed1d2084551fd12ced80fae7fa49"
+        },
+        {
+          "index": 20,
+          "repeat": 0,
+          "text": "Thank you，今天也谢谢大家陪我聊天。",
+          "seconds": 3.0742234739991545,
+          "audio_seconds": 3.32,
+          "rtf": 0.9259709259033598,
+          "frames": 106240,
+          "rms_pcm16": 6037.728492541075,
+          "pcm_sha256": "115c3fe196ac0962a414924637b7bfa5060fe18add487a032758389e78a878c0"
+        },
+        {
+          "index": 21,
+          "repeat": 0,
+          "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+          "seconds": 3.6844163879977714,
+          "audio_seconds": 4.12,
+          "rtf": 0.8942758223295562,
+          "frames": 131840,
+          "rms_pcm16": 6070.04464096143,
+          "pcm_sha256": "a5dc3bc7eef2b317382b5dc46677c9e73260e5e6f1683b0788e85aef1f474e9e"
+        },
+        {
+          "index": 22,
+          "repeat": 0,
+          "text": "真的？原来是这样！让我再看一眼。",
+          "seconds": 3.0614110579990665,
+          "audio_seconds": 3.56,
+          "rtf": 0.8599469264042322,
+          "frames": 113920,
+          "rms_pcm16": 6101.034083543719,
+          "pcm_sha256": "fb0d6f5d44eb291c7e644f4fd199f9a4f04bead5d05ad8ea476306500a912235"
+        },
+        {
+          "index": 23,
+          "repeat": 0,
+          "text": "嗯……这件事情，要从昨天的海底集市说起。",
+          "seconds": 4.100768041000265,
+          "audio_seconds": 4.52,
+          "rtf": 0.9072495665929791,
+          "frames": 144640,
+          "rms_pcm16": 6207.314345329545,
+          "pcm_sha256": "9b20edb01ea76e7ff6a3864abf18302887151f398446c4c41ba988883a2f73aa"
+        },
+        {
+          "index": 24,
+          "repeat": 0,
+          "text": "再来一碗白饭，不过这次记得加上海苔。",
+          "seconds": 3.097210930001893,
+          "audio_seconds": 3.52,
+          "rtf": 0.8798894687505378,
+          "frames": 112640,
+          "rms_pcm16": 5977.164240323101,
+          "pcm_sha256": "bf30b0c76c0faa3ac3f324e1d0a8bd696bfe7ab6f49486d22e8fd73781a42947"
+        }
+      ],
+      "owned_evaluation_cache_advice": [
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads6/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-threads/int8-arena-threads2/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.ort-int8-native128k.reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-coexist/ort-int8-native128k/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist1/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen1/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-llm-first/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-fp32/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-fp32/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-screen2/shared-arena-int8/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ar-int8/prepare/quantized/t2s_first_stage_decoder_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ar-int8/prepare/quantized/t2s_first_stage_decoder_int8.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/encoder.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/vits/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/vits/vits.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/bert/bert_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/bert/bert_int8.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/ar/t2s_stage_decoder_int8.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/ar/t2s_stage_decoder_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/ar/t2s_first_stage_decoder_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-production/bundle-before-mixed/ar/t2s_first_stage_decoder_int8.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/int8-arena-threads6-native128k/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-coexist-cache/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.original-features-ort-int8.reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-ort-int8-screen/original-features-ort-int8/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_encoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/vits_fp32.restored-exp-topk5-int8-bert.reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_encoder_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_shared_fp16.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-reference/restored-exp-topk5-int8-bert/text_encoder_cached_reference.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_shared_fp32.bin",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/models/t2s_first_stage_decoder_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_int8.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_fp32.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-bert/bert/bert_fp32.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_stage_decoder_int8.onnx",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_stage_decoder_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_first_stage_decoder_int8.onnx.data",
+        "/workspace/tuber/runtime/evaluations/genie-live-20261029-offline/prepare-ar/quantized/t2s_first_stage_decoder_int8.onnx"
+      ],
+      "mode_response": {
+        "status": 200,
+        "body": {
+          "state": "active",
+          "active_provider": "llm2b",
+          "error": null,
+          "mode": "live",
+          "selected_provider": "llm2b",
+          "requested_context_tokens": 131072,
+          "kv_cache_type": "q4_0",
+          "cuda_managed_memory": false,
+          "busy": false,
+          "providers": {
+            "llm2b": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": 131072,
+              "context_tokens": 131072,
+              "cache_type_k": "q4_0",
+              "cache_type_v": "q4_0"
+            },
+            "llm1b": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llm1bq8": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llmqwen35": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 262144,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "tts": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": null,
+              "context_tokens": null,
+              "cache_type_k": null,
+              "cache_type_v": null
+            }
+          },
+          "active": "llm2b"
+        }
+      },
+      "cold_mode_seconds": 20.32321130499986,
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            83
+          ],
+          "tts": [
+            42
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            83
+          ],
+          "tts": [
+            42
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      },
+      "completed": true,
+      "memory": {
+        "baseline": {
+          "available_kib": 3218924,
+          "swap_used_kib": 139776,
+          "pswpin": 40087,
+          "pswpout": 190754,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 1820764,
+          "swap_used_kib": 139776,
+          "pswpin": 40087,
+          "pswpout": 190754,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1817616,
+        "swapin_bytes": 0,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 0,
+        "oom_kill_delta": 0,
+        "samples": 254
+      },
+      "elapsed_seconds": 126.81489557000168,
+      "peak_machine_total_minus_available_kib": 5985100
+    },
+    "common6_median_seconds": 3.3999056045013276,
+    "all28_median_seconds": 3.506715716999679,
+    "accepted_pcm_unchanged_after_english_fix": true
+  },
+  "ui_browser_acceptance": {
+    "phases": [
+      {
+        "phase": "login_preflight",
+        "auth_http": 200,
+        "default_page": "comments",
+        "engine": "已保存本地引擎：Genie ONNX INT8 · 音色：whale_sovits_v2。需手动进入直播模式；引擎与音色由服务配置，只读展示。",
+        "context": {
+          "configured_tokens": 131072,
+          "server_tokens": 131072,
+          "native_tokens": 131072,
+          "verified": true,
+          "capacity_source": "server_verified",
+          "token_accounting": "server_tokenizer",
+          "retained_user_token_budget": 20000,
+          "active_tokens": 0,
+          "compact_count": 0,
+          "last_compaction_error": null,
+          "last_compaction_warning": null,
+          "compaction_passes_last": 0,
+          "secondary_threshold_percent": 40,
+          "summary_budgets_last": [],
+          "occupancy_percent": 0,
+          "profile_error": null,
+          "scope": null,
+          "oldest_source_at": null,
+          "is_sleeping": false
+        },
+        "inference": {
+          "state": "active",
+          "active_provider": "tts",
+          "error": null,
+          "mode": "live",
+          "selected_provider": "llm2b",
+          "requested_context_tokens": 131072,
+          "kv_cache_type": "q4_0",
+          "cuda_managed_memory": false,
+          "busy": false,
+          "providers": {
+            "llm2b": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": 131072,
+              "context_tokens": 131072,
+              "cache_type_k": "q4_0",
+              "cache_type_v": "q4_0"
+            },
+            "llm1b": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llm1bq8": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llmqwen35": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 262144,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "tts": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": null,
+              "context_tokens": null,
+              "cache_type_k": null,
+              "cache_type_v": null
+            }
+          },
+          "active": "tts"
+        },
+        "state": "stopped",
+        "queue_length": 0,
+        "policy": {
+          "auto_browse": false,
+          "auto_reply": false
+        },
+        "pid_evidence": "Not exposed by authenticated status API; root may correlate independent read-only process evidence."
+      },
+      {
+        "phase": "local_genie_preview",
+        "passed": true,
+        "text": "小鲸鱼把蓝色贝壳放回桌上，今天的问候送给认真听歌的你。",
+        "voice_id": "whale_sovits_v2",
+        "http": 200,
+        "audio": {
+          "http": 206,
+          "bytes": 345644,
+          "duration": 5.4,
+          "peak": 0.8717601299285889,
+          "rms": 0.2052349270034989,
+          "samples": 238140,
+          "byte_measurement_note": "Read from same existing WAV before decoding; prior diagnostic read-after-decode was detached and reported zero. No synthesis retry."
+        },
+        "events": [
+          {
+            "type": "playing",
+            "trusted": true,
+            "currentTime": 0,
+            "duration": 5.4,
+            "muted": false,
+            "volume": 1,
+            "error": null
+          },
+          {
+            "type": "ended",
+            "trusted": true,
+            "currentTime": 5.4,
+            "duration": 5.4,
+            "muted": false,
+            "volume": 1,
+            "error": null
+          }
+        ]
+      },
+      {
+        "phase": "mock_reply_playback",
+        "passed": true,
+        "live_start_http": 200,
+        "mock_http": 200,
+        "event_id": "genie-ui-mock-1793284582255",
+        "platform": "mock",
+        "event_type": "chat",
+        "input": "大肥鱼，你为什么喜欢蓝色贝壳？请简短回答。",
+        "job": {
+          "id": "c7b8bb36-d7cb-4d75-815a-b47780d3853f",
+          "status": "completed",
+          "text": "因为蓝色贝壳是深海的味道，喂饱了冒险的心。",
+          "llm_ms": 9313,
+          "tts_ms": 3548,
+          "character_id": "whale",
+          "character_version": 1,
+          "error": null,
+          "answer_check": "{\"sources\": [], \"required_slots\": [], \"missing\": [], \"retried\": false, \"warning\": null, \"memory_kind\": \"role_story\"}"
+        },
+        "transitions": [
+          {
+            "status": "generating",
+            "epoch_ms": 1793284582557
+          },
+          {
+            "status": "synthesizing",
+            "epoch_ms": 1793284591811
+          },
+          {
+            "status": "playing",
+            "epoch_ms": 1793284595442
+          },
+          {
+            "status": "completed",
+            "epoch_ms": 1793284599956
+          }
+        ],
+        "acknowledgements": [
+          {
+            "type": "started",
+            "job_id": "c7b8bb36-d7cb-4d75-815a-b47780d3853f",
+            "error": null
+          },
+          {
+            "type": "ended",
+            "job_id": "c7b8bb36-d7cb-4d75-815a-b47780d3853f",
+            "error": null
+          }
+        ],
+        "native": [
+          {
+            "type": "playing",
+            "trusted": true,
+            "currentTime": 0,
+            "duration": 4.12,
+            "muted": false,
+            "volume": 1,
+            "error": null
+          },
+          {
+            "type": "ended",
+            "trusted": true,
+            "currentTime": 4.12,
+            "duration": 4.12,
+            "muted": false,
+            "volume": 1,
+            "error": null
+          }
+        ],
+        "audio": {
+          "http": 206,
+          "bytes": 263724,
+          "duration": 4.12,
+          "peak": 0.889785647392273,
+          "rms": 0.19898837058364335,
+          "samples": 181692
+        },
+        "overlay_errors": []
+      },
+      {
+        "phase": "stop_then_text",
+        "passed": true,
+        "stop_http": 200,
+        "mode_http": 200,
+        "inference": {
+          "state": "active",
+          "active_provider": "llm2b",
+          "error": null,
+          "mode": "text",
+          "selected_provider": "llm2b",
+          "requested_context_tokens": 131072,
+          "kv_cache_type": "q4_0",
+          "cuda_managed_memory": false,
+          "busy": false,
+          "providers": {
+            "llm2b": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": 131072,
+              "context_tokens": 131072,
+              "cache_type_k": "q4_0",
+              "cache_type_v": "q4_0"
+            },
+            "llm1b": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llm1bq8": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llmqwen35": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 262144,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "tts": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": true,
+              "native_context_tokens": null,
+              "context_tokens": null,
+              "cache_type_k": null,
+              "cache_type_v": null
+            }
+          },
+          "active": "llm2b"
+        },
+        "context": {
+          "configured_tokens": 131072,
+          "server_tokens": 131072,
+          "native_tokens": 131072,
+          "verified": true,
+          "capacity_source": "server_verified",
+          "token_accounting": "server_tokenizer",
+          "retained_user_token_budget": 20000,
+          "active_tokens": 838,
+          "compact_count": 0,
+          "last_compaction_error": null,
+          "last_compaction_warning": null,
+          "compaction_passes_last": 0,
+          "secondary_threshold_percent": 40,
+          "summary_budgets_last": [],
+          "occupancy_percent": 0.64,
+          "profile_error": null,
+          "scope": "live:9489e645-cdb3-41cd-ac55-5eddb36fb7bc",
+          "oldest_source_at": 1793284580.5279093,
+          "is_sleeping": false
+        },
+        "state": "stopped",
+        "queue_length": 0,
+        "local_preview_disabled": true,
+        "disabled_reason": "本地试听需先手动切换顶部「直播模式」；不会自动切换",
+        "mobile": {
+          "viewport": 390,
+          "document": 390,
+          "body": 390
+        }
+      },
+      {
+        "phase": "live_reentry_and_release_overlay",
+        "passed": true,
+        "mode_http": 200,
+        "inference": {
+          "state": "active",
+          "active_provider": "llm2b",
+          "error": null,
+          "mode": "live",
+          "selected_provider": "llm2b",
+          "requested_context_tokens": 131072,
+          "kv_cache_type": "q4_0",
+          "cuda_managed_memory": false,
+          "busy": false,
+          "providers": {
+            "llm2b": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": 131072,
+              "context_tokens": 131072,
+              "cache_type_k": "q4_0",
+              "cache_type_v": "q4_0"
+            },
+            "llm1b": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llm1bq8": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 131072,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "llmqwen35": {
+              "running": false,
+              "is_sleeping": true,
+              "loaded_this_boot": false,
+              "native_context_tokens": 262144,
+              "context_tokens": null,
+              "cache_type_k": "q8_0",
+              "cache_type_v": "q8_0"
+            },
+            "tts": {
+              "running": true,
+              "is_sleeping": false,
+              "loaded_this_boot": true,
+              "native_context_tokens": null,
+              "context_tokens": null,
+              "cache_type_k": null,
+              "cache_type_v": null
+            }
+          },
+          "active": "llm2b"
+        },
+        "context": {
+          "configured_tokens": 131072,
+          "server_tokens": 131072,
+          "native_tokens": 131072,
+          "verified": true,
+          "capacity_source": "server_verified",
+          "token_accounting": "server_tokenizer",
+          "retained_user_token_budget": 20000,
+          "active_tokens": 838,
+          "compact_count": 0,
+          "last_compaction_error": null,
+          "last_compaction_warning": null,
+          "compaction_passes_last": 0,
+          "secondary_threshold_percent": 40,
+          "summary_budgets_last": [],
+          "occupancy_percent": 0.64,
+          "profile_error": null,
+          "scope": "live:9489e645-cdb3-41cd-ac55-5eddb36fb7bc",
+          "oldest_source_at": 1793284580.5279093,
+          "is_sleeping": false
+        },
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "overlay_connected": false,
+        "local_preview_enabled": true,
+        "policy": {
+          "auto_browse": false,
+          "auto_reply": false
+        }
+      }
+    ],
+    "http": [
+      {
+        "method": "POST",
+        "path": "/api/tts/preview",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/live/start",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/live/mock-event",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/live/stop",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/inference/mode",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/api/inference/mode",
+        "status": 200
+      }
+    ],
+    "errors": [],
+    "passed": true,
+    "completed_at": "2026-10-29T14:39:35.615Z",
+    "boundaries": {
+      "real_platform_actions": false,
+      "automatic_comments": false,
+      "synthetic_acknowledgements": false,
+      "synthesis_retries": 0,
+      "model_quality_or_ram_claim": "Browser proves actual playback, provider residency and workflow only; owner hardware/quality evidence remains separate.",
+      "process_pids": "Not exposed in authenticated browser API; not inferred from provider running flags.",
+      "credentials": "Admin and overlay credentials excluded from results, URLs and screenshots.",
+      "initial_network": "First navigation had connection refused before login; tunnel recovered before any inference request."
+    },
+    "console": {
+      "warnings": 0,
+      "expected_before_login": {
+        "description": "Initial unauthenticated status probe before successful login",
+        "path": "/api/status",
+        "status": 401
+      },
+      "total_messages": 4,
+      "errors": 1,
+      "post_login_page_errors": 0
+    },
+    "findings": [
+      {
+        "id": "mobile_live_navigation_label",
+        "status": "fixed_e644b49_and_deployed_git_blob_verified",
+        "severity": "visual",
+        "detail": "Two nav icon selectors narrowed to span[aria-hidden]. Actual HTML/JS plus local CSS route passed 390px/1280px; no inference or mode request. Separate evidence ui-genie-css-result.json."
+      }
+    ],
+    "owner_post_ui_process_snapshot": {
+      "limitation": "Post-UI snapshot only, not per-step PID continuity evidence",
+      "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+      "context_tokens": 131072,
+      "llm_pid": 146,
+      "kv_cache_type": "q4_0",
+      "tts_pid": 105,
+      "mode": "live",
+      "source": "root independent CPU-only read-only sample after UI steps"
+    }
+  },
+  "ui_css_fix": {
+    "revision": "e644b49",
+    "local_renderer_result": {
+      "passed": true,
+      "scope": "Actual deployed HTML/JS with only local corrected CSS response; read-only navigation after login.",
+      "auth_http": 200,
+      "mobile": {
+        "text": "Mock 直播",
+        "display": "block",
+        "width": 52.71875,
+        "height": 17.046875,
+        "font_size": "11px",
+        "icon_display": "none",
+        "viewport": 390,
+        "document_width": 390
+      },
+      "desktop": {
+        "width": 62.296875,
+        "font_size": "13px",
+        "icon_width": 17,
+        "viewport": 1280,
+        "document_width": 1280
+      },
+      "writes": [
+        {
+          "method": "POST",
+          "path": "/api/auth"
+        }
+      ],
+      "inference_requests": 0,
+      "mode_requests": 0,
+      "mock_injections": 0
+    },
+    "deployed_identical_bytes": true,
+    "css_sha256": "c596820fcac90ea38d6f1c0e4e49da1b8ec4c2375d1bbf3d661f468dc9f391cf"
+  },
+  "formal_live_long_context": {
+    "profile_continuity": {
+      "requested_input_tokens": 120000,
+      "completed": true,
+      "before": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            61
+          ],
+          "tts": [
+            20
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      },
+      "accepted": true,
+      "after": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            61
+          ],
+          "tts": [
+            20
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      },
+      "post_context_speech": {
+        "seconds": 3.7649277199998323,
+        "audio_seconds": 4.12,
+        "bytes": 263724
+      },
+      "final": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            61
+          ],
+          "tts": [
+            20
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "223e0141c3b3501e5ee1ff99f85052522a950a21e94019ef2725b84072c4abf2",
+        "voice_id": "whale_sovits_v2"
+      }
+    },
+    "capacity": {
+      "event": "summary",
+      "accepted_requested_tokens": true,
+      "verified_120k_input": true,
+      "requested_tokens": 120000,
+      "deadline_seconds": 900,
+      "probe_elapsed_seconds": 661.824,
+      "elapsed_seconds": 661.826,
+      "reason": null,
+      "profile": {
+        "warmed_up": false,
+        "model": "MiniCPM5-2B",
+        "configured_context": 131072,
+        "configured_native_context": 131072,
+        "actual_context": 131072,
+        "actual_native_context": 131072,
+        "native_source": "broker GGUF metadata",
+        "mode": "live",
+        "markers": {
+          "HEAD": "HEAD_872a165b2509",
+          "MIDDLE": "MIDDLE_872a165b2509",
+          "TAIL": "TAIL_872a165b2509"
+        },
+        "middle_token_offset": 59993,
+        "tail_token_offset": 119989
+      },
+      "evidence": {
+        "input_counts": {
+          "tokens_evaluated": 120000,
+          "timings.prompt_n": 120000
+        },
+        "output_counts": {
+          "tokens_predicted": 4,
+          "timings.predicted_n": 4
+        },
+        "truncated": false,
+        "cache_n": 0,
+        "prompt_ms": 660426.724,
+        "predicted_ms": 967.278,
+        "generated_text": "Synthetic capacity filler"
+      },
+      "memory": {
+        "baseline": {
+          "available_kib": 1984916,
+          "swap_used_kib": 139776,
+          "pswpin": 40097,
+          "pswpout": 190758,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 1786320,
+          "swap_used_kib": 139776,
+          "pswpin": 40138,
+          "pswpout": 190758,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1786320,
+        "swapin_bytes": 167936,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 53248,
+        "oom_kill_delta": 0,
+        "samples": 1320
+      },
+      "broker_cleanup": null,
+      "limitation": "Synthetic input acceptance only; not a test of long-text recall, factual accuracy or persona quality."
+    },
+    "raw_directory": "runtime/evaluations/genie-live-20261029-production/context-final",
+    "raw_log": "runtime/evaluations/genie-live-20261029-production/long-context.log",
+    "source_revision": "e644b49",
+    "limitation": "Exact input acceptance and process continuity only, not long-context recall or persona-quality accuracy."
+  },
+  "matched_speed_comparison": {
+    "baseline": "original production compact CUDA, warmup then same3 texts twice",
+    "candidate": "formal genie_onnx_int8 original PCM16 postprocessing, same3 texts twice with Mini128K resident",
+    "baseline_median_seconds": 4.635245190000205,
+    "candidate_median_seconds": 3.3999056045013276,
+    "elapsed_time_reduction_percent": 26.65100841189424,
+    "generation_throughput_ratio": 1.363345259898787,
+    "minimum_required_throughput_ratio": 0.9,
+    "passed_for_measured_pairs": true,
+    "audio_seconds_baseline": [
+      3.68,
+      3.68,
+      4.16,
+      4.16,
+      3.24,
+      3.24
+    ],
+    "audio_seconds_candidate": [
+      3.8,
+      3.8,
+      4.2,
+      4.2,
+      3.28,
+      3.28
+    ],
+    "limitation": "Small paired sample; production compact baseline is TTS-only because stable compact+Mini128K residency was unavailable. Different samples/engine precision/seed streams can change audio duration. Not a claim of every request or English cold-start speed."
+  },
+  "ram_comparison_boundary": {
+    "metric": "sampled whole-machine MemTotal minus MemAvailable, not model file size or CUDA-only allocation",
+    "original_compact_tts_only_peak_gib": 3.6231040954589844,
+    "genie_int8_tts_only_resource_screen_peak_gib": 2.9760398864746094,
+    "formal_live_peak_gib": 5.707836151123047,
+    "scope": "TTS-only resource screen uses earlier no-gap WAV protocol; formal production restores original PCM16/gaps. No matched stable original compact+Mini128K peak exists, so no percentage reduction claimed for formal co-resident production."
   }
 }
