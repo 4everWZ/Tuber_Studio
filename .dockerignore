@@ -6,6 +6,7 @@ docs
 tests
 evaluations/*
 !evaluations/semantic-cases.json
+!evaluations/speech-cases.json
 **/__pycache__
 .pytest_cache
 .ruff_cache
