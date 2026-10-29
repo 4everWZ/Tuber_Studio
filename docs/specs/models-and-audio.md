@@ -94,7 +94,7 @@ Genie 优化的速度门槛以原正式compact GPT-SoVITS CUDA后端为基线，
 
 `tts.kind=gpt_sovits`继续表示既有v2音色格式；受限的`tts.local_backend`只接受`compact`或`genie_onnx_int8`，不是可执行路径。Genie复用原音色ID、权重和固定参考，新OC使用自己的音色与bundle；兼容API／预录保持各自路径，不以外部Provider绕开本地资源锁。旧compact保留作对照，Genie准备或推理失败不静默切回它。
 
-Genie常驻路径仅加载CPU ORT：原checkpoint的22层中文BERT有效输出使用离线INT8图（132个常量投影整数MatMul），AR首步／续步各97个常量投影整数MatMul，动态注意力仍为浮点，VITS保持FP32。原tokenizer、文字规范化、word2ph与每条未知中文的动态特征保留；只导入Torch前端工具，不构造Torch BERT或驻留HuBERT。ORT session共享CPU arena，固定单请求和受控线程；转换／量化不在直播进程执行，准备成本与常驻冷峰分别记录。
+Genie常驻路径仅加载CPU ORT：原checkpoint的22层中文BERT有效输出使用离线INT8图（132个常量投影整数MatMul），AR首步／续步各97个常量投影整数MatMul，动态注意力仍为浮点，VITS保持FP32。原tokenizer、文字规范化、word2ph与每条未知中文的动态特征保留；纯英文片段沿用原前端合法的零BERT，逐片段验证规范文本、音素、形状与有限值，含汉字的片段仍须动态非零特征。只导入Torch前端工具，不构造Torch BERT或驻留HuBERT。ORT session共享CPU arena，固定单请求和受控线程；转换／量化不在直播进程执行，准备成本与常驻冷峰分别记录。
 
 固定上游Genie模板的AR正态随机采样与原GPT-SoVITS不等价；本地适配恢复Exp(1)、top_k=5、top_p=1、temperature=1、repetition_penalty=1.35、首步EOS屏蔽，以及罚分后greedy EOS检查。每请求seed控制独立PCG64分段／AR／VITS子流；VITS保留标准正态噪声与原0.5系数，不宣称等于Torch同seed序列或跨后端PCM一致。只支持已实现的固定图参数，其他值明确422；seed、原分段间隔可配置。每段至多500步，无停止标志耗尽、取消、空语义或非法token必须失败，不能把参考语义或半条WAV当完成。
 

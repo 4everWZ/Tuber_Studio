@@ -138,7 +138,11 @@ def pipeline(backend, tmp_path, monkeypatch):
     sampler = SimpleNamespace(SamplingSessions=Sampler, decode_segment=decode, IncompleteSynthesis=Incomplete)
     helpers = {"genie_sampling": sampler, "genie_bundle": SimpleNamespace(verify_unchanged=unchanged)}
     monkeypatch.setattr(backend, "_sibling", lambda name: helpers[name])
-    frontend = SimpleNamespace(preprocess=lambda *args: [{"phones": [1, 2], "bert_features": Feature()}] * 2)
+    frontend = SimpleNamespace(
+        preprocess=lambda *args: (
+            [{"phones": [1, 2], "bert_features": Feature(), "norm_text": "规范中文。"}] * 2
+        )
+    )
     instance = backend.GeniePipeline(
         tmp_path,
         "oc",
@@ -195,6 +199,67 @@ def test_bundle_change_and_incomplete_decode_never_yield_wav(pipeline):
 def test_only_fixed_sibling_helpers_can_be_imported(backend):
     with pytest.raises(ValueError, match="Unknown fixed"):
         backend._sibling("../../runtime/untrusted")
+
+
+def frontend_item(text, *, phones=None, values=None):
+    class Feature:
+        @property
+        def T(self):
+            return self
+
+        def contiguous(self):
+            return self
+
+        def numpy(self):
+            return np.zeros((2, 1024), dtype=np.float32) if values is None else values
+
+    return {"norm_text": text, "phones": [1, 2] if phones is None else phones, "bert_features": Feature()}
+
+
+def test_mixed_request_preserves_english_zero_features_and_dynamic_chinese_features(pipeline):
+    instance, calls, _, _ = pipeline
+    instance.frontend.preprocess = lambda *args: [
+        frontend_item("Hello,"),
+        frontend_item("欢迎来到海底厨房。", values=np.ones((2, 1024), dtype=np.float32)),
+    ]
+    output = list(instance.run({"text": "Hello，欢迎来到海底厨房。", "seed": 42}))
+    decoded = [value for name, value in calls if name == "decode"]
+    assert len(output) == 1 and len(decoded) == 2
+    assert not decoded[0]["text_bert"].any() and decoded[1]["text_bert"].any()
+    assert [item["text_feature_kind"] for item in instance.last_diagnostics["segments"]] == ["latin", "han"]
+
+
+@pytest.mark.parametrize("text", ["中文。", "Hello中文。", "\U00020000。", "\U00031350。"])
+def test_any_han_segment_cannot_fall_back_to_zero_bert(backend, text):
+    with pytest.raises(RuntimeError, match="BERT"):
+        backend._item_features(frontend_item(text))
+    phones, bert, kind = backend._item_features(
+        frontend_item(text, values=np.ones((2, 1024), dtype=np.float32))
+    )
+    assert phones.shape == (1, 2) and bert.shape == (2, 1024) and kind == "han"
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        frontend_item(""),
+        frontend_item("   "),
+        frontend_item("!!!"),
+        frontend_item("123"),
+        frontend_item("Привет"),
+        frontend_item("こんにちは"),
+        frontend_item("Hello🙂"),
+        frontend_item("Hello", phones=[]),
+        frontend_item("Hello", phones=[-1, 2]),
+        frontend_item("Hello", phones=[True, False]),
+        frontend_item("Hello", phones=[1.5, 2.5]),
+        frontend_item("Hello", values=np.zeros((1, 1024), dtype=np.float32)),
+        frontend_item("Hello", values=np.full((2, 1024), np.nan, dtype=np.float32)),
+    ],
+)
+def test_empty_unknown_script_and_invalid_phone_or_feature_results_are_rejected(backend, item):
+    with pytest.raises(RuntimeError):
+        backend._item_features(item)
 
 
 @pytest.mark.parametrize("location", ["vits_fp32.bin", "../outside.bin"])

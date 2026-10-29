@@ -12,6 +12,7 @@ import math
 import sys
 import time
 import types
+import unicodedata
 from pathlib import Path
 
 import compact
@@ -133,6 +134,7 @@ def _session(path, ort, *, held=None):
 
 
 def _frontend(root, tokenizer_path, bert_directory, ort):
+    import numpy as np
     import torch
     from transformers import AutoTokenizer
 
@@ -146,13 +148,72 @@ def _frontend(root, tokenizer_path, bert_directory, ort):
 
     def feature(self, text, word2ph):
         hidden = helper.feature(self.bert_model, self.tokenizer(text, return_tensors="np"))[0][1:-1]
-        if len(word2ph) != len(text) or hidden.shape != (len(text), 1024):
+        if len(word2ph) != len(text) or hidden.shape != (len(text), 1024) or not np.any(hidden):
             raise RuntimeError("Invalid dynamic original-tokenizer ONNX BERT features")
         hidden = torch.from_numpy(hidden)
         return torch.cat([hidden[index].repeat(count, 1) for index, count in enumerate(word2ph)]).T
 
     frontend.get_bert_feature = types.MethodType(feature, frontend)
     return frontend
+
+
+def _is_han(character):
+    # Include supplementary Han even when Python's Unicode database predates
+    # their names. The fixed zh frontend treats Han as Chinese, including kanji.
+    point = ord(character)
+    return point == 0x3007 or any(
+        low <= point <= high
+        for low, high in (
+            (0x3400, 0x4DBF),
+            (0x4E00, 0x9FFF),
+            (0xF900, 0xFAFF),
+            (0x20000, 0x2A6DF),
+            (0x2A700, 0x2B73F),
+            (0x2B740, 0x2B81F),
+            (0x2B820, 0x2CEAF),
+            (0x2CEB0, 0x2EBEF),
+            (0x2EBF0, 0x2EE5F),
+            (0x2F800, 0x2FA1F),
+            (0x30000, 0x3134F),
+            (0x31350, 0x323AF),
+        )
+    )
+
+
+def _item_features(item):
+    """Validate one original frontend result, not the whole requested text.
+
+    Upstream returns phones/bert_features/norm_text without language labels.
+    In zh mode its LangSegment English spans receive zero BERT; Chinese spans
+    call get_bert_feature. Only a normalized Latin result with actual G2P phones
+    can take that zero-feature path. Other scripts or empty results fail closed.
+    """
+    import numpy as np
+
+    normalized = item.get("norm_text")
+    if not isinstance(normalized, str) or not normalized.strip():
+        raise RuntimeError("Frontend returned no normalized speech text")
+    han, latin = False, False
+    for character in normalized:
+        category = unicodedata.category(character)
+        if _is_han(character):
+            han = True
+        elif category.startswith("L") and unicodedata.name(character, "").startswith("LATIN "):
+            latin = True
+        elif not (character.isspace() or category.startswith("P") or category == "Nd"):
+            raise RuntimeError("Frontend returned an unsupported normalized speech script")
+    if not (han or latin):
+        raise RuntimeError("Frontend returned no Chinese or Latin speech text")
+    phones = np.asarray(item.get("phones"))
+    if phones.ndim != 1 or not phones.size or not np.issubdtype(phones.dtype, np.integer):
+        raise RuntimeError("Frontend returned invalid phonemes")
+    phones = phones.astype(np.int64)
+    if (phones < 0).any():
+        raise RuntimeError("Frontend returned invalid phonemes")
+    bert = item["bert_features"].T.contiguous().numpy().astype(np.float32)
+    if bert.shape != (phones.size, 1024) or not np.isfinite(bert).all() or (han and not np.any(bert)):
+        raise RuntimeError("Invalid dynamic phoneme/BERT features")
+    return phones[None, :], bert, "han" if han else "latin"
 
 
 class GeniePipeline:
@@ -209,10 +270,7 @@ class GeniePipeline:
         total_frames = 0
         diagnostics.update(seed=seed, sampling_entropy=int(sampler.entropy), segments=segment_diagnostics)
         for index, item in enumerate(items):
-            phones = np.asarray([item["phones"]], dtype=np.int64)
-            bert = item["bert_features"].T.contiguous().numpy().astype(np.float32)
-            if not phones.size or not np.any(bert) or not np.isfinite(bert).all():
-                raise RuntimeError("Invalid dynamic Chinese phoneme/BERT features")
+            phones, bert, feature_kind = _item_features(item)
             selected = sampler.segment(index)
             try:
                 semantic, segment = sampling.decode_segment(
@@ -238,7 +296,9 @@ class GeniePipeline:
             total_frames += int(wave.size) + gap
             if total_frames > MAX_SAMPLES:
                 raise RuntimeError("Speech exceeded the buffered audio budget")
-            segment_diagnostics.append({**segment, "raw_frames": int(wave.size)})
+            segment_diagnostics.append(
+                {**segment, "raw_frames": int(wave.size), "text_feature_kind": feature_kind}
+            )
             outputs.append(wave)
         interval = max(params.get("fragment_interval", 0.3), 0.01)
         pcm = postprocess(outputs, fragment_interval=interval)
