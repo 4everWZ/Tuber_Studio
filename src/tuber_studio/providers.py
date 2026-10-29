@@ -12,6 +12,7 @@ from typing import Protocol
 import httpx
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
+from .http_api import api_client, models_health, response_bytes
 from .models import Reply
 
 SYSTEM_RULES = (
@@ -126,8 +127,8 @@ class LlamaCppProvider:
         try:
             window = self.config["context_tokens"]
             native = self.config.get("native_context_tokens", 131072)
-            if window < 131072:
-                raise ValueError("实际使用上下文不得低于128K（131072 tokens）")
+            if type(window) is not int or window < 4096:
+                raise ValueError("上下文至少4096 tokens")
             if window > native:
                 raise ValueError("配置超出该模型原生上下文；请先验证并配置支持更长窗口的模型")
             response = await self.client.get("/props", timeout=5)
@@ -144,7 +145,7 @@ class LlamaCppProvider:
             if aliases and self.config.get("model") not in aliases:
                 raise ValueError("实际模型服务与配置的model别名不一致；拒绝错误标记模型生成结果")
             if self.server_tokens < window:
-                raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}；不能假称128K")
+                raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}")
             self.profile_error = None
         except Exception as error:
             self.profile_error = public_error(error)
@@ -262,18 +263,25 @@ class LlamaCppProvider:
         if choice.get("finish_reason") != "stop":
             raise ValueError("模型回复未完整结束；未提交草稿或播报")
         content = choice["message"]["content"]
+        return validate_reply(content, character, event_id, source_text)
+
+
+def validate_reply(content, character, event_id, source_text=None):
+    try:
         reply = Reply.model_validate_json(content)
-        if source_text and reply.spoken_text == source_text.strip():
-            raise ValueError("模型复述了输入，未生成有效回复；请人工处理或更换已验证模型Profile")
-        if (
-            not character["style"].get("min_chars", 1)
-            <= len(reply.spoken_text)
-            <= character["style"].get("max_chars", 60)
-        ):
-            raise ValueError("模型台词超出角色长度约束")
-        if any(value != event_id for value in reply.reply_to):
-            raise ValueError("模型引用了其他事件")
-        return reply
+    except ValueError:
+        raise ValueError("模型回复不符合角色JSON结构；未提交草稿") from None
+    if source_text and reply.spoken_text == source_text.strip():
+        raise ValueError("模型复述了输入，未生成有效回复；请人工处理或更换已验证模型Profile")
+    if (
+        not character["style"].get("min_chars", 1)
+        <= len(reply.spoken_text)
+        <= character["style"].get("max_chars", 60)
+    ):
+        raise ValueError("模型台词超出角色长度约束")
+    if any(value != event_id for value in reply.reply_to):
+        raise ValueError("模型引用了其他事件")
+    return reply
 
 
 class DemoProvider:
@@ -341,11 +349,17 @@ class VoiceService:
     def __init__(self, settings):
         self.settings = settings
         config = settings.data["tts"]
-        self.client = httpx.AsyncClient(
-            base_url=config["base_url"].rstrip("/"),
-            timeout=config.get("timeout_seconds", 45),
-            trust_env=False,
-            headers={"X-Tuber-Inference-Key": settings.inference_token} if settings.inference_token else None,
+        self.client = (
+            api_client(config, settings.provider_key("tts"))
+            if config["kind"] == "openai_compatible"
+            else httpx.AsyncClient(
+                base_url=config["base_url"].rstrip("/"),
+                timeout=config.get("timeout_seconds", 45),
+                trust_env=False,
+                headers={"X-Tuber-Inference-Key": settings.broker_key_for(config["base_url"])}
+                if settings.broker_key_for(config["base_url"])
+                else None,
+            )
         )
 
     async def close(self):
@@ -354,6 +368,10 @@ class VoiceService:
     async def health(self):
         if self.settings.data["tts"]["kind"] == "prerecorded":
             return {"available": True, "detail": "预录路径；动态 TTS 尚未启用"}
+        if self.settings.data["tts"]["kind"] == "openai_compatible":
+            return await models_health(self.client, self.settings.data["tts"]["model"])
+        if not self.settings.data.get("features", {}).get("live_enabled", False):
+            return {"available": False, "detail": "本地TTS与直播已延期，代码和音色配置保留"}
         response = await self.client.get("/docs", timeout=5)
         response.raise_for_status()
         return {"available": True, "detail": "GPT-SoVITS HTTP 可达；不代表已完成合成"}
@@ -373,10 +391,14 @@ class VoiceService:
             audio = await self.prerecorded(voice["sample_asset"], voice["sample_text"])
             audio.warning = "当前为预录原型；字幕按实际录音台词显示，模型候选台词保留在任务详情"
             return audio
+        if self.settings.data["tts"]["kind"] == "openai_compatible":
+            return await self._api_speech(text, voice)
         if self.settings.data["tts"]["kind"] != "gpt_sovits":
             raise ValueError("动态TTS尚未配置，选择预录音色或启用GPT-SoVITS")
         if voice["provider"] != "gpt_sovits":
             raise ValueError("不支持的语音Provider")
+        if not self.settings.data.get("features", {}).get("live_enabled", False):
+            raise ValueError("本地动态TTS已延期；可选择预录或配置外部语音API")
         params = voice.get("params", {})
         identity = {
             "provider": voice["provider"],
@@ -421,6 +443,54 @@ class VoiceService:
         try:
             await asyncio.to_thread(temporary.write_bytes, response.content)
             duration = await asyncio.to_thread(wav_duration, temporary, require_speech=True)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return Audio(path, duration, text)
+
+    async def _api_speech(self, text, voice):
+        if voice["provider"] != "openai_compatible":
+            raise ValueError("当前音色属于本地模型；试听API请选择外部API音色，不会自动替换角色声音")
+        if not isinstance(text, str) or not 0 < len(text.strip()) <= 4096:
+            raise ValueError("API合成文本须为1到4096字")
+        config = self.settings.data["tts"]
+        identity = {
+            "provider": "openai_compatible",
+            "endpoint": config["base_url"],
+            "model": config["model"],
+            "api_voice": config["voice"],
+            "voice_profile": voice,
+            "text": text,
+            "credential_scope": hashlib.sha256(
+                (self.settings.provider_key("tts") or "").encode()
+            ).hexdigest(),
+        }
+        digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        path = self.settings.audio / (digest + ".wav")
+        if path.exists():
+            try:
+                return Audio(path, await asyncio.to_thread(wav_duration, path, require_speech=True), text)
+            except (ValueError, wave.Error):
+                path.unlink(missing_ok=True)
+        data = await response_bytes(
+            self.client,
+            "POST",
+            "audio/speech",
+            payload={
+                "model": config["model"],
+                "voice": config["voice"],
+                "input": text,
+                "response_format": "wav",
+            },
+            limit=20_000_000,
+        )
+        temporary = path.with_suffix(".part")
+        try:
+            await asyncio.to_thread(temporary.write_bytes, data)
+            try:
+                duration = await asyncio.to_thread(wav_duration, temporary, require_speech=True)
+            except wave.Error:
+                raise ValueError("语音API须返回有效WAV；未缓存不兼容格式") from None
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)

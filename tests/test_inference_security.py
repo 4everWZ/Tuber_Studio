@@ -76,6 +76,17 @@ def test_native_capacity_probe_and_tokenization_stay_data_only():
         validate_llm_request("warmup", {"command": "anything"})
 
 
+@pytest.mark.parametrize("window,budget", [(4096, 4096), (65536, 65536), (262144, 200000)])
+def test_output_budget_uses_requested_context_and_preserves_data_only_boundary(window, budget):
+    validate_llm_request("completion", {"prompt": "hello", "n_predict": budget}, context_tokens=window)
+    with pytest.raises(ValueError, match="configured context"):
+        validate_llm_request(
+            "completion", {"prompt": "hello", "n_predict": window + 1}, context_tokens=window
+        )
+    with pytest.raises(ValueError):
+        validate_llm_request("v1/chat/completions", {"tools": [{"name": "shell"}]}, context_tokens=window)
+
+
 def test_output_schema_can_describe_url_text_but_has_no_remote_resolver():
     schema = {
         "$defs": {"reply": {"type": "string", "description": "Discuss file:///etc/passwd as text"}},

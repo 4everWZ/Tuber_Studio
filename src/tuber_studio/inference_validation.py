@@ -65,7 +65,15 @@ def _plain_messages(messages):
             raise ValueError("Only plain system, user and assistant text is supported")
 
 
-def validate_llm_request(path, body):
+def validate_context_tokens(value):
+    """Validate a requested size; the loaded GGUF supplies its real upper bound."""
+    if type(value) is not int or value < 4096:
+        raise ValueError("Requested context must be an integer of at least 4096 tokens")
+    return value
+
+
+def validate_llm_request(path, body, *, context_tokens=131072):
+    context_tokens = validate_context_tokens(context_tokens)
     if path == "warmup":
         allowed = set()
     elif path == "tokenize":
@@ -108,8 +116,8 @@ def validate_llm_request(path, body):
             if key in response:
                 _local_schema(response[key])
     for key in ("max_tokens", "n_predict"):
-        if key in body and (type(body[key]) is not int or not 1 <= body[key] <= 131072):
-            raise ValueError("Output token budget must fit the fixed context window")
+        if key in body and (type(body[key]) is not int or not 1 <= body[key] <= context_tokens):
+            raise ValueError("Output token budget must fit the configured context window")
     _finite_numbers(body)
 
 

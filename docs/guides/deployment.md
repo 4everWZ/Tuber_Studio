@@ -7,7 +7,7 @@
     uv sync --python 3.12
     uv run python -m tuber_studio --port 8020
 
-打开本地8020，管理令牌从runtime/admin-token读取，不放URL。配置读取runtime/studio.json，不存在时用config/studio.example.json；更换Provider／模型Profile后重启。业务服务启动不代表模型／TTS已经加载或通过容量验证。
+打开本地8020，管理令牌从runtime/admin-token读取，不放URL。配置读取runtime/studio.json，不存在时用config/studio.example.json；Provider／API／窗口可在设置页保存并应用，手工编辑配置文件后才需要重启。业务服务启动不代表模型／TTS已经加载或通过容量验证。
 
 离线诊断可用llm.kind=demo、tts.kind=prerecorded并选预录音色；界面必须标明固定台词／预录，不能冒称真实推理、动态配音或128K能力。
 
@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 管理后台 | 9020 | 认证管理API／WS、WebUI、overlay、SQLite与业务调度；宿主仅发布回环。 |
 | 受限broker | 9012 | 固定推理路径与固定子进程runner、全局生成锁、按Profile加载／休眠；内部token认证。 |
-| 2B llama子进程 | 9013 | 默认质量基线的MiniCPM5-2B，真实128K，别名与窗口核查。 |
+| 2B llama子进程 | 9013 | 默认MiniCPM5-2B，默认128K、可在真实native范围调节；别名与实际窗口核查。 |
 | GPT-SoVITS子进程 | 9011 | 动态声音，按绑定权重与参考音频合成。 |
 | 可选1B诊断子进程 | 9010 | 仅用于独立质量／资源实验，不替代默认2B。 |
 | 可选Qwen 2B候选子进程 | 9015 | 受限入口/llm/qwen35，仅在显式配置该候选时驻留；不自动替换默认。 |
@@ -28,9 +28,9 @@
 
 项目路径为/home/weizheng/code/Tuber_Studio，使用ssh jetson连接；网络地址由本机SSH配置维护，不在项目规范里固定。源码、工具和配置模板进镜像；权重、参考音频、NLTK词典、凭证、数据库和缓存置runtime，容器只挂这一数据目录。TTS官方源码在镜像/opt/GPT-SoVITS-v2，应用环境在/opt/studio-venv；原生CUDA／Torch由基础镜像复用，不在宿主或runtime新建Python环境。仅操作本项目资源，不停止其他项目服务。
 
-模板的LLM入口为http://127.0.0.1:9012/llm/2b，TTS入口为http://127.0.0.1:9012/tts，inference_broker.mode默认text。工作台顶部显式选择「文本/图像」或「直播」；前者停播并卸载TTS，后者须LLM与TTS共驻就绪才成功。开始／恢复直播会先请求直播资源模式，导航页面不改变模式。文本模式的动态TTS合成会要求先切直播；预录播放无需加载TTS。模式成功后持久保存，失败显示实际资源状态并恢复原模式。
+模板的LLM入口为http://127.0.0.1:9012/llm/2b，保留的本地TTS入口为http://127.0.0.1:9012/tts。当前features.live_enabled默认false、资源保持text，直播／Mock启动和本地动态TTS试听标为后续；已有停止／清理控制仍可用。预录与已配置语音API可独立试听，不加载本地TTS或切live。导航不隐式改变资源模式。
 
-优先实验2B Q4_K_M权重＋q4 KV＋128K与TTS共驻，只有语义与共享内存验收通过后才认定该Profile合格。直播模式不放开生成并发；加载等待和错误显示在资源状态，休眠不改变已验证容量。图像仅为资源工作模式的命名，当前不能据此宣称新增图像模型工作流。
+默认继续2B Q4_K_M权重＋q4 KV＋131072文本窗口；本地TTS共驻实验与直播验收延期，不阻塞评论工作。MiniCPM5-2B没有视觉编码器，本地／API视觉接口默认disabled，不下载新视觉模型或从资源模式名称宣称已能看图。
 
 镜像以dustynv/pytorch:2.7-r36.4.0-cu128-24.04为基础，从ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821阶段只复制llama-server，复用原生Torch和CUDA。锁定依赖安装到项目容器环境，固定只读源码通过同一环境的.pth加载，不在每次源码更新时联网重建editable包；构建时核验模块根仍为/workspace/tuber。运行层不复制开发测试、临时文件、宿主venv或第二套CUDA；带维护用准入／资源评估脚本与固定用例。
 
@@ -65,11 +65,23 @@
 4. Mock／语音验收时先打开独立overlay，再注入事件；只有一个播放页拥有播放权。浏览器禁止自动播放时按提示启用，再注入新事件，不重放失败任务。
 5. 暂停阻止后续任务；静音／停止取消当前播报。看真实平台回执区分审核、复制、发布和不确定结果。
 
+第4／5项的Mock／直播流程为保留的后续功能，首版默认不启用；评论审核／复制不需要播放器。
+
 评论以楼ID隔离上下文，筛选或选择单楼后再看占用／压缩；同批可并发调度4楼，GPU仍串行。审核时可展开来源与完整性检查：它只对有证据的明确问题提示缺项并最多补答一次，日常闲聊不会被要求背诵旧事实。缺项warning不表示已发布或模型整体不可用。
 
 设置页可保存对话留存天数（默认30天）或选择不自动清理，策略保存在SQLite；旧event_retention_days不再控制会话清理。手动清理先预览，再勾选确认；可指定UTC截至日期，按该日结束的排他时间边界提交。原始评论数据集／草稿／发布回执独立保留，清理不是全库删除。楼上下文失效后，下次生成会按本地原文重建，也可点“重建上下文”；已有非空窗口不覆盖。无原文时重新读取或导入，不从已清理摘要／旧草稿复活故事。Demo显示未真实prefill。
 
 设备容器使用独立bridge网络，只有宿主127.0.0.1:9020映射后台；容器内后台监听0.0.0.0:9020，broker／LLM／TTS仍只监听容器回环，不发布到宿主。非root、只读根目录、drop ALL capabilities、no-new-privileges及默认seccomp由固定启动工具设置；runtime持久写入，权重／参考素材／词典只读覆盖，临时目录限额。不提供任意宿主挂载或命令执行接口，不能通过模型台词执行系统指令。没有Landlock／AppArmor或每子进程独立文件沙箱的保证，边界详见[权限规范](../specs/tuber-studio.md#系统与权限边界)。
+
+## Provider与上下文设置
+
+设置页分别选择本地llama、兼容LLM API、预录／保留的GPT-SoVITS／兼容语音API。API Base URL包含服务自己的版本前缀，例如https://服务域名/v1；公网用HTTPS，本地端点可用HTTP。LLM兼容Chat Completions、max_tokens、JSON对象输出及usage.prompt_tokens；语音兼容audio/speech并返回WAV。模型ID与voice ID由服务提供，不把任意API都当同一模型。
+
+Key只写入runtime/provider-credentials.json（设备0600），设置响应／配置JSON不返回其值。空输入保留已有Key，单独勾选清除才删除；更换API地址时必须重新填写或清除对应Key，避免把旧凭证发到新服务。内部broker token不发给外部服务。语音API使用独立external_api音色；已有角色不会自动换声线，需显式选择对应音色。接口测试替身通过不代表真实账号、声音许可或服务商质量已验证。
+
+窗口默认131072，可显式调整为4096起的整数。当前Mini真实native131072；本地保存会受控重载并核对实际窗口，失败或取消恢复原资源／配置。外部窗口由Operator依据服务能力声明，不能标作本机verified；计数通过一token请求的实际usage，可能额外计费，同输入缓存计数摘要。检查连接只查健康／模型列表，不生成文本。Provider切换不删除现有楼历史，下次生成按新Provider重新计数／压缩；小窗口的保留预算按比例适配，原评论数据集仍保留。
+
+兼容API会收到任务上下文，本地留存清理不控制服务商留存。默认Mini为文本模型，视觉高级配置仅保留本地／外部兼容端点；默认disabled，未配置时明确拒绝图片请求。认证的/api/vision/describe仅接收prompt、image_base64、mime_type，不接受系统路径或URL，不把输出自动写成历史事实。当前管理API总请求上限2.1MB，图片签名／MIME检查不代表本地视觉模型已部署。
 
 ## Profile验收
 
@@ -97,4 +109,6 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 候选诊断与正式测量分进程：先验证实际算子／INT8底层存储，再用同配置诊断凭证执行无profiler的合成测量。INT8权重存储配合浮点矩阵乘法不标成INT8计算；Lite须开启BERT，原24层前端和新SDK的差异作为候选条件保留。--speech-cases evaluations/speech-cases.json可生成25句对照音频，未实际完成的条数不计通过。tts-first／isolated均由维护监督器受控卸载本项目LLM并在finally恢复，不与正式模型或别的实验抢GPU；加载、参考缓存、预热及Mini共驻开销都计入整机峰值。
 
-它覆盖回声、部分字面事实和摘要遗漏，不证明完整人格、长文召回或长期稳定性。比较须记录真实模型、采样、Think、模板适配和证据层条件，不能把旧2B NoThink实验当官方质量基线。另测冷／热启动、峰值共享RAM、换页、TTS共驻／交替、长输入及持续运行；不能从旧1B容量推断新2B Profile已验收，也不能靠增加等待或降到128K以下掩盖瓶颈。
+独立Genie实验使用tools/evaluate_genie_tts.py，在runtime/evaluations自己的环境／固定源码和模型转换目录运行；默认不装入生产依赖，也不替换正式TTS。外层维护owner卸载Mini并在finally恢复，原MemoryWatch阈值不变，目标中文每次真实执行原前端及22层BERT，不能预计算测试台词后冒称动态下限。实际参数、冷峰值、热态局限及工具用法见[Genie结果](../../evaluations/results/gpt-sovits-inference-floor-20261029.json)。
+
+语义检查覆盖回声、部分字面事实和摘要遗漏，不证明完整人格、长文召回或长期稳定性。比较须记录真实模型、采样、Think、模板适配和证据层条件，不能把旧2B NoThink实验当官方质量基线。后续另测声音冷／热启动、峰值共享RAM、换页、共驻／交替和持续运行；不同窗口的结果分开，低窗口测量不冒称默认128K，不从旧Profile直接外推新配置。

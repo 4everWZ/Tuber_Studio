@@ -13,6 +13,8 @@ def settings(tmp_path):
     config.data["llm"]["kind"] = "demo"
     config.data["inference_broker"]["enabled"] = False
     config.data["tts"]["kind"] = "prerecorded"
+    # These legacy worker tests explicitly exercise the retained live subsystem.
+    config.data["features"]["live_enabled"] = True
     config.data["queue_limit"] = 3
     config.data["playback_wait_seconds"] = 0.15
     return config

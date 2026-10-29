@@ -18,7 +18,12 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-from .inference_validation import project_wav, validate_llm_request, validate_speech_request
+from .inference_validation import (
+    project_wav,
+    validate_context_tokens,
+    validate_llm_request,
+    validate_speech_request,
+)
 
 MAX_BODY = 2 * 1024 * 1024
 HEADER = "X-Tuber-Inference-Key"
@@ -107,6 +112,7 @@ class ProcessRunner:
         tts_python: Path | None = None,
         kv_cache_type="q8_0",
         cuda_managed_memory=False,
+        context_tokens=131072,
     ):
         if kv_cache_type not in {"q8_0", "q4_0"} or type(cuda_managed_memory) is not bool:
             raise ValueError("Invalid fixed inference allocation profile")
@@ -116,6 +122,7 @@ class ProcessRunner:
         self.processes = {}
         self.logs = {}
         self.kv_cache_type, self.cuda_managed_memory = kv_cache_type, cuda_managed_memory
+        self.context_tokens = validate_context_tokens(context_tokens)
 
     def command(self, key):
         resource = RESOURCES[key]
@@ -133,7 +140,7 @@ class ProcessRunner:
                 str(httpx.URL(resource.url).port),
                 "--jinja",
                 "--ctx-size",
-                "131072",
+                str(self.context_tokens),
                 "--parallel",
                 "1",
                 "--fit",
@@ -305,6 +312,12 @@ class ProcessRunner:
         profiles = await self.validate_all()
         if key not in profiles:
             raise RuntimeError("Optional fixed inference profile is not installed")
+        resource = RESOURCES[key]
+        if (
+            resource.model
+            and native_context(self.root / "runtime/models" / resource.model) < self.context_tokens
+        ):
+            raise RuntimeError("Selected model does not natively support the requested context")
         await self.stop(key)
         self._advise_owned_model_cache()
         log = self.root / "runtime" / ("inference-" + key + ".log")
@@ -361,6 +374,7 @@ class InferenceBroker:
             raise ValueError("Unknown selected inference model")
         self.root = root.resolve()
         self.runner = runner or ProcessRunner(self.root)
+        self.context_tokens = validate_context_tokens(getattr(self.runner, "context_tokens", 131072))
         self.client = client or httpx.AsyncClient(timeout=httpx.Timeout(1200, connect=10), trust_env=False)
         self.lock = asyncio.Lock()
         self.active = None
@@ -383,9 +397,16 @@ class InferenceBroker:
                     if not path.is_relative_to(self.root):
                         raise RuntimeError("Selected model path is outside project")
                     self.natives[key] = native_context(path)
-                    if self.natives[key] < 131072:
-                        raise RuntimeError("Selected model does not natively support 128K")
+            self._validate_context(self.selected)
             await self._apply_mode(self.mode)
+
+    def _validate_context(self, key):
+        if not RESOURCES[key].model:
+            return
+        if key not in self.natives:
+            self.natives[key] = native_context(self.root / "runtime/models" / RESOURCES[key].model)
+        if self.natives[key] < self.context_tokens:
+            raise RuntimeError("Selected model does not natively support the requested context")
 
     async def _apply_mode(self, mode):
         keep = {self.selected, "tts"} if mode == "live" else {self.selected}
@@ -406,16 +427,13 @@ class InferenceBroker:
         for key in sorted(residents - {"tts"}):
             await self._activate(key, keep=residents)
 
-    def _persist_mode(self, mode):
+    def _persist_configuration(self, update):
         path = self.root / "runtime/studio.json"
         if path.is_symlink():
             raise RuntimeError("Studio configuration must be a regular runtime file")
         source = path if path.exists() else self.root / "config/studio.example.json"
         data = json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
-        profile = data.setdefault("inference_broker", {})
-        if not isinstance(profile, dict):
-            raise ValueError("Invalid inference broker configuration")
-        profile["mode"] = mode
+        update(data)
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=".studio-mode-", dir=path.parent)
         try:
@@ -429,6 +447,29 @@ class InferenceBroker:
         finally:
             Path(temporary).unlink(missing_ok=True)
 
+    def _persist_mode(self, mode):
+        def update(data):
+            profile = data.setdefault("inference_broker", {})
+            if not isinstance(profile, dict):
+                raise ValueError("Invalid inference broker configuration")
+            profile["mode"] = mode
+
+        self._persist_configuration(update)
+
+    def _persist_context(self):
+        def update(data):
+            profile = data.setdefault("inference_broker", {})
+            if not isinstance(profile, dict):
+                raise ValueError("Invalid inference broker configuration")
+            profile["context_tokens"] = self.context_tokens
+            llm = data.setdefault("llm", {})
+            if not isinstance(llm, dict):
+                raise ValueError("Invalid language model configuration")
+            if llm.get("kind", "llama_cpp") == "llama_cpp":
+                llm["context_tokens"] = self.context_tokens
+
+        self._persist_configuration(update)
+
     async def _restore(self, residents, active):
         await self._establish_residents(residents)
         self.active = active if active in residents else None
@@ -436,12 +477,26 @@ class InferenceBroker:
     @asynccontextmanager
     async def _residency_change(self):
         previous_mode, previous_active = self.mode, self.active
+        previous_context, previous_properties = self.context_tokens, self.properties.copy()
         residents = {key for key in RESOURCES if await self.runner.running(key)}
         try:
             yield
         except BaseException as failure:
             self.mode = previous_mode
-            rollback = asyncio.create_task(self._restore(residents, previous_active))
+            context_changed = self.context_tokens != previous_context
+            self.context_tokens = self.runner.context_tokens = previous_context
+            self.properties = {} if context_changed else previous_properties
+
+            async def restore():
+                if context_changed:
+                    # A process with the same key may already be ready at the
+                    # failed new window. It must exit before restoring old KV.
+                    for key in RESOURCES:
+                        await self.runner.stop(key)
+                    self.properties = previous_properties
+                await self._restore(residents, previous_active)
+
+            rollback = asyncio.create_task(restore())
             while not rollback.done():
                 try:
                     await asyncio.shield(rollback)
@@ -478,15 +533,63 @@ class InferenceBroker:
                 raise HTTPException(503, self.error) from None
         return await self.observe()
 
+    def _require_idle_text(self):
+        if self.lock.locked():
+            raise HTTPException(409, "Inference is busy; retry after the current operation")
+        if self.mode != "text":
+            raise HTTPException(409, "This operation requires text mode")
+
+    async def change_context(self, requested):
+        requested = validate_context_tokens(requested)
+        self._require_idle_text()
+        async with self.lock:
+            try:
+                profiles = await self.runner.validate_all()
+                # Check the artifact itself before stopping any resident resource.
+                native = native_context(self.root / "runtime/models" / RESOURCES[self.selected].model)
+            except (OSError, RuntimeError, ValueError, KeyError, struct.error):
+                raise HTTPException(503, "Selected model capacity could not be verified") from None
+            if self.selected not in profiles:
+                raise HTTPException(503, "Selected fixed inference profile is not installed")
+            if requested > native:
+                raise HTTPException(422, "Requested context exceeds the selected model's native context")
+            self.natives[self.selected] = native
+            try:
+                async with self._residency_change():
+                    for key in RESOURCES:
+                        await self.runner.stop(key)
+                    self.active = None
+                    self.context_tokens = self.runner.context_tokens = requested
+                    # A property from an earlier window is not proof of the new one.
+                    self.properties = {}
+                    await self._activate(self.selected)
+                    result = await self.observe()
+                    self._persist_context()
+                    # No await after the atomic commit: cancellation before commit
+                    # rolls back; a committed context returns as one complete change.
+            except Exception:
+                raise HTTPException(503, self.error or "Context transition failed") from None
+        return result | {"busy": False}
+
+    async def idle(self):
+        self._require_idle_text()
+        async with self.lock:
+            try:
+                async with self._residency_change():
+                    for key in RESOURCES:
+                        await self.runner.stop(key)
+                    self.active, self.state, self.error = None, "cold", None
+                    result = await self.observe()
+            except Exception:
+                raise HTTPException(503, self.error or "Could not release inference resources") from None
+        return result | {"busy": False}
+
     async def _activate(self, key, *, keep=None):
         profiles = await self.runner.validate_all()
         if key not in profiles:
             raise RuntimeError("Requested fixed inference profile is not installed")
+        self._validate_context(key)
         self._target_touched = True
-        if RESOURCES[key].model and key not in self.natives:
-            self.natives[key] = native_context(self.root / "runtime/models" / RESOURCES[key].model)
-            if self.natives[key] < 131072:
-                raise RuntimeError("Selected model does not natively support 128K")
         # Confirm all other owned process groups have exited before starting the target.
         self.state = "switching"
         try:
@@ -518,8 +621,8 @@ class InferenceBroker:
                 aliases = [aliases] if isinstance(aliases, str) else aliases
                 if resource.alias not in (aliases or []):
                     raise RuntimeError("Loaded model alias does not match selected resource")
-                if properties["default_generation_settings"]["n_ctx"] != 131072:
-                    raise RuntimeError("Loaded model context is not 131072")
+                if properties["default_generation_settings"]["n_ctx"] != self.context_tokens:
+                    raise RuntimeError("Loaded model context does not match the requested context")
                 self.properties[key] = properties
             self.active, self.state, self.error = key, "active", None
             self.loaded.add(key)
@@ -559,6 +662,7 @@ class InferenceBroker:
             "error": error,
             "mode": self.mode,
             "selected_provider": self.selected,
+            "requested_context_tokens": self.context_tokens,
             "kv_cache_type": resource_cache_type(cache_provider, configured_cache),
             "cuda_managed_memory": getattr(self.runner, "cuda_managed_memory", False),
             "busy": self.lock.locked(),
@@ -568,6 +672,9 @@ class InferenceBroker:
                     "is_sleeping": not observed[key],
                     "loaded_this_boot": key in self.loaded,
                     "native_context_tokens": self.natives.get(key),
+                    "context_tokens": self.properties.get(key, {})
+                    .get("default_generation_settings", {})
+                    .get("n_ctx"),
                     "cache_type_k": resource_cache_type(key, configured_cache),
                     "cache_type_v": resource_cache_type(key, configured_cache),
                 }
@@ -732,22 +839,32 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
     profile = data.get("inference_broker", {})
     if not isinstance(profile, dict):
         raise ValueError("Invalid inference broker configuration")
+    llm = data.get("llm", {})
+    if not isinstance(llm, dict) or llm.get("kind", "llama_cpp") not in (
+        "llama_cpp",
+        "openai_compatible",
+        "demo",
+    ):
+        raise ValueError("Invalid language model configuration")
+    local = llm.get("kind", "llama_cpp") == "llama_cpp"
+    settings = llm if local else profile
     runner = ProcessRunner(
         root,
         kv_cache_type=profile.get("kv_cache_type", "q8_0"),
         cuda_managed_memory=profile.get("cuda_managed_memory", False),
+        context_tokens=settings.get("context_tokens", 131072),
     )
-    selected_alias = data.get("llm", {}).get("model", RESOURCES["llm2b"].alias)
+    selected_alias = settings.get("model", RESOURCES["llm2b"].alias)
     selected = next((key for key, resource in RESOURCES.items() if resource.alias == selected_alias), None)
     manager = broker or InferenceBroker(
-        root, runner=runner, mode=profile.get("mode", "text"), selected=selected
+        root, runner=runner, mode=profile.get("mode", "text") if local else "text", selected=selected
     )
     token = inference_token(root)
 
     @asynccontextmanager
     async def lifespan(app):
         try:
-            if warm_start:
+            if warm_start and local:
                 try:
                     await manager.initialize()
                 except (RuntimeError, OSError, ValueError, KeyError, httpx.HTTPError, struct.error):
@@ -814,6 +931,24 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
             raise HTTPException(422, "Mode must be text or live")
         return await cancellable(request, manager.switch_mode(body["mode"]))
 
+    @app.post("/context")
+    async def change_context(request: Request):
+        body, _ = await read_body(request)
+        if set(body) != {"context_tokens"}:
+            raise HTTPException(422, "Only context_tokens is accepted")
+        try:
+            requested = validate_context_tokens(body["context_tokens"])
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        return await cancellable(request, manager.change_context(requested))
+
+    @app.post("/idle")
+    async def idle(request: Request):
+        body, _ = await read_body(request)
+        if body:
+            raise HTTPException(422, "Idle accepts only an empty object")
+        return await cancellable(request, manager.idle())
+
     async def dispatch(request: Request, key: str, path: str):
         if request.method == "GET":
             if (key.startswith("llm") and path in {"health", "props"}) or (key == "tts" and path == "docs"):
@@ -826,7 +961,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         body, data = await read_body(request)
         try:
             if key.startswith("llm"):
-                validate_llm_request(path, body)
+                validate_llm_request(path, body, context_tokens=manager.context_tokens)
             else:
                 validate_speech_request(body)
         except ValueError as error:

@@ -129,6 +129,7 @@ async def compact_history(
     max_retries=3,
     retry_base_seconds=0.2,
     summary_prompt=SUMMARIZATION_PROMPT,
+    retained_user_tokens=COMPACT_USER_MESSAGE_MAX_TOKENS,
 ):
     """Clone → append trigger → summarize → rebuild → reinject; commit is caller-owned.
 
@@ -161,7 +162,9 @@ async def compact_history(
             await asyncio.sleep(delay_ms / 1000)
     if not isinstance(summary, str) or not summary.strip():
         raise IncompleteCompaction("模型没有返回完整压缩摘要；原上下文保留")
-    replacement = build_compacted_history(collect_user_messages(original), SUMMARY_PREFIX + "\n" + summary)
+    replacement = build_compacted_history(
+        collect_user_messages(original), SUMMARY_PREFIX + "\n" + summary, retained_user_tokens
+    )
     # The caller persists only logical history, re-rendering canonical context at
     # this exact same insertion boundary on every request, including after restart.
     return replacement

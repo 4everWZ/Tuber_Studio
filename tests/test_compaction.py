@@ -19,7 +19,49 @@ from tuber_studio.compaction import (
     needs_compaction,
     truncate_text,
 )
-from tuber_studio.context import ContextManager
+from tuber_studio.context import ContextManager, retained_user_budget
+
+
+def test_smaller_requested_window_scales_retention_without_changing_default_core_budget():
+    assert retained_user_budget({"context_tokens": 131072}) == 20000
+    assert retained_user_budget({"context_tokens": 262144}) == 20000
+    assert retained_user_budget({"context_tokens": 32768}) == 5000
+    assert retained_user_budget({"context_tokens": 4096}) == 625
+
+
+@pytest.mark.parametrize("has_history", [True, False])
+async def test_remote_counter_overflow_enters_full_compactor_or_preserves_empty_window(
+    settings, store, has_history
+):
+    class Counter(Summarizer):
+        rejected = False
+
+        async def count_tokens(self, messages):
+            if not self.rejected:
+                self.rejected = True
+                raise ContextWindowExceeded("API rejected before counting")
+            return 100
+
+    provider = Counter(["保留原始故事与待办的完整摘要。"])
+    manager = ContextManager(settings, store, provider)
+    character = store.character()
+    if has_history:
+        manager.record("comments:api", character, {"event_id": "old", "text": "之前的问题"}, "之前的回复")
+        result = await manager.prepare(
+            "comments:api", character, {"event_id": "new", "text": "现在的问题"}, {}, "comment_draft"
+        )
+        assert any("现在的问题" in m["content"] for m in result)
+        row = manager.window("comments:api", character)
+        assert row["compact_count"] == 1 and not row["last_error"]
+        assert "summary" in row["history"]
+        assert len(provider.inputs) == 1
+    else:
+        with pytest.raises(ContextWindowExceeded, match="没有可压缩历史"):
+            await manager.prepare(
+                "comments:api", character, {"event_id": "new", "text": "现在的问题"}, {}, "comment_draft"
+            )
+        assert manager.window("comments:api", character)["history"] == "[]"
+        assert not provider.inputs
 
 
 def user(text, **metadata):

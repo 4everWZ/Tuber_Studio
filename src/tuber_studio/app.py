@@ -1,6 +1,8 @@
 """Authenticated local management API and separately scoped OBS playback channel."""
 
 import asyncio
+import base64
+import binascii
 import json
 import secrets
 import time
@@ -9,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from .comments import Comments
 from .config import Settings
 from .models import Character, Event
+from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
 from .runtime import Runtime
 from .store import Store
@@ -257,11 +261,42 @@ def create_app(settings=None, adapter=None):
 
     @app.get("/api/settings", dependencies=[Depends(require_admin)])
     async def config(request: Request):
-        return settings.data | {
+        return settings.public_data() | {
             "config_path": str(settings.path),
             "overlay_url": str(request.base_url).rstrip("/") + "/overlay#token=" + settings.overlay_token,
             "platform": "Mock；B站评论已接入，B站／抖音直播后置",
-            "changes": "模型／TTS基础配置修改runtime/studio.json后重启；评论策略可直接在前端保存",
+            "changes": "模型／API／上下文设置可在此保存；直播后置，默认审核与自动关闭",
+        }
+
+    @app.put("/api/settings/providers", dependencies=[Depends(require_admin)])
+    async def provider_settings(data: dict = Body(...)):
+        try:
+            return await apply_settings(runtime, data)
+        except ProviderConfigurationError as error:
+            raise HTTPException(409, str(error)) from None
+        except RuntimeError as error:
+            raise HTTPException(409, public_error(error)) from None
+        except httpx.HTTPError as error:
+            status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else 503
+            raise HTTPException(status if status in {409, 422} else 503, public_error(error)) from None
+
+    @app.post("/api/vision/describe", dependencies=[Depends(require_admin)])
+    async def vision_description(data: dict = Body(...)):
+        if set(data) != {"prompt", "image_base64", "mime_type"} or not isinstance(data["image_base64"], str):
+            raise ValueError("视觉接口只接受prompt、image_base64和mime_type，不接受路径或URL")
+        try:
+            image = base64.b64decode(data["image_base64"], validate=True)
+        except (ValueError, binascii.Error):
+            raise ValueError("图片base64无效") from None
+        async with runtime.generation_lock:
+            try:
+                description = await runtime.vision.describe(data["prompt"], image, data["mime_type"])
+            except httpx.HTTPError as error:
+                raise HTTPException(502, public_error(error)) from None
+        return {
+            "description": description,
+            "model": settings.data["vision"].get("model"),
+            "context_installed": False,
         }
 
     @app.post("/api/providers/check", dependencies=[Depends(require_admin)])
@@ -272,8 +307,8 @@ def create_app(settings=None, adapter=None):
             except Exception as error:
                 return {"available": False, "error": public_error(error)}
 
-        llm, tts = await asyncio.gather(one(runtime.llm), one(runtime.voices))
-        return {"llm": llm, "tts": tts}
+        llm, tts, vision = await asyncio.gather(one(runtime.llm), one(runtime.voices), one(runtime.vision))
+        return {"llm": llm, "tts": tts, "vision": vision}
 
     @app.get("/api/context/status", dependencies=[Depends(require_admin)])
     async def context_status(video_id: str | None = None, thread_id: str | None = None):

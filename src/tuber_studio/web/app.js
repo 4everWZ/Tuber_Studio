@@ -10,6 +10,7 @@ const model = {
   modeSwitch: null, modeResult: null,
   threadContextPending: null,
   retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
+  providersDirty: false, providersSaving: false,
 };
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
@@ -43,7 +44,7 @@ function badge(value) {
 }
 function setBadge(element, value) { const valueNode = badge(value); element.className = valueNode.className; element.textContent = valueNode.textContent; }
 function notice(message, error = false) {
-  const element = $("notice"); element.textContent = message; element.hidden = !message;
+  const element = $("notice"); element.textContent = safeMessage(message); element.hidden = !message;
   element.classList.toggle("error", error);
 }
 function describe(element, entries) {
@@ -83,11 +84,13 @@ async function busy(button, action) {
     if (model.status) renderControls();
     if (model.status?.context) renderContext(model.status.context);
     if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
+    if (button.id === "preview-submit") renderVoicePreview();
     if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) renderDraft();
   }
 }
 function showLogin() {
   model.authenticated = false; $("workspace").hidden = true; $("login").hidden = false;
+  clearProviderSecrets();
   model.socket?.close(); model.socket = null;
 }
 async function enterWorkspace() {
@@ -118,6 +121,7 @@ function renderControls() {
   document.querySelectorAll("[data-action]").forEach(button => {
     if (button.getAttribute("aria-busy") === "true") return;
     const action = button.dataset.action;
+    if (!liveEnabled() && !(action === "stop" && status.state !== "stopped")) { button.disabled = true; return; }
     button.disabled = action === "start" ? status.state !== "stopped" :
       action === "pause" ? !["live", "degraded"].includes(status.state) :
       action === "resume" ? status.state !== "paused" :
@@ -125,7 +129,11 @@ function renderControls() {
       action === "mute" ? !!status.muted : action === "unmute" ? !status.muted :
       action === "skip" ? !status.current_job : action === "clear" ? !status.queue_length : false;
   });
+  $("event-form").querySelectorAll("input, select, textarea, button").forEach(input => { if (input.getAttribute("aria-busy") !== "true") input.disabled = !liveEnabled(); });
+  if ($("compact-live").getAttribute("aria-busy") !== "true") $("compact-live").disabled = !liveEnabled();
+  $("live-feature-notice").hidden = liveEnabled();
 }
+function liveEnabled() { return model.settings?.features?.live_enabled === true; }
 function renderStatus(status) {
   if (!status) return; model.status = status;
   setBadge($("live-state"), status.state);
@@ -147,7 +155,7 @@ function renderStatus(status) {
   setBadge($("current-status"), job?.status || "ready"); setBadge($("live-current-status"), job?.status || "ready");
   const text = job?.text || job?.spoken_text || (job ? "正在处理观众事件…" : "当前没有待播报台词。");
   $("current-text").textContent = text; $("live-current-text").textContent = text;
-  $("current-detail").textContent = job ? `任务 ${job.id} · ${job.emotion || "—"}` : status.state === "stopped" ? "启动 Mock 直播，在调试台注入事件。" : "等待下一条可回应事件。";
+  $("current-detail").textContent = job ? `任务 ${job.id} · ${job.emotion || "—"}` : !liveEnabled() ? "首版以评论与文本为主，直播与本地动态语音后续开放。" : status.state === "stopped" ? "启动 Mock 直播，在调试台注入事件。" : "等待下一条可回应事件。";
   describe($("live-current-detail"), job ? [["任务 ID", job.id], ["源事件", job.event_id], ["角色版本", `${job.character_id} · v${job.character_version}`], ["LLM / TTS", `${ms(job.llm_ms)} / ${ms(job.tts_ms)}`], ["错误", job.error || "无"]] : [["队列长度", status.queue_length ?? 0], ["会话", status.session_id || "未启动"]]);
   const last = status.last_played;
   $("last-played").textContent = last ? typeof last === "string" ? last : `${last.text || last.spoken_text || ""}${last.completed_at ? ` · ${time(last.completed_at)}` : ""}` : "暂无已确认播放记录。";
@@ -165,6 +173,10 @@ function resourceName(key) {
   return ({llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", llmqwen35: "Qwen3.5-2B", qwen35: "Qwen3.5-2B", tts: "TTS"})[key] || key;
 }
 function inferenceResidents(inference) {
+  if (inference.mode === "standalone") {
+    if (model.settings?.llm?.kind === "openai_compatible") return "API 模型驻留由服务方管理";
+    return model.settings?.llm?.kind === "demo" ? "演示模式不加载模型" : "独立端点，驻留状态未报告";
+  }
   const providers = Object.entries(inference.providers || {});
   if (providers.length) {
     const residents = providers.filter(([, provider]) => provider?.running === true).map(([key]) => resourceName(key));
@@ -176,7 +188,7 @@ function inferenceResidents(inference) {
 }
 function inferenceLabel(inference) {
   const mode = resourceMode(inference);
-  const prefix = mode === "live" ? "直播 · " : mode === "text" ? "文本/图像 · " : inference.mode === "standalone" ? "独立Provider · " : "";
+  const prefix = mode === "live" ? "直播 · " : mode === "text" ? "文本 · " : inference.mode === "standalone" ? "独立Provider · " : "";
   const residents = inferenceResidents(inference);
   if (inference.switching_to) return `${prefix}正在加载 ${resourceName(inference.switching_to)}… · ${residents}`;
   if (inference.error) return `${prefix}资源切换失败 · ${residents}`;
@@ -189,14 +201,15 @@ function renderModeControls(inference) {
   const selected = pending ? pending.previousMode : actual;
   document.querySelectorAll("[data-inference-mode]").forEach(button => {
     button.setAttribute("aria-pressed", String(button.dataset.inferenceMode === selected));
-    button.disabled = !actual || !!pending || transitioning || (button.dataset.inferenceMode === actual && !inference?.error);
+    button.disabled = !actual || !!pending || transitioning || (button.dataset.inferenceMode === "live" && !liveEnabled()) || (button.dataset.inferenceMode === actual && !inference?.error);
     button.setAttribute("aria-busy", String(!!pending || transitioning));
   });
   const feedback = $("resource-mode-feedback");
   const result = model.modeResult?.mode === actual ? model.modeResult : null;
-  const text = pending ? `正在切换到${pending.target === "live" ? "直播" : "文本/图像"}，等待模型就绪…` :
+  $("resource-mode-help").textContent = liveEnabled() ? "切回文本会停止当前直播并卸载TTS；直播模式预加载并共驻LLM与TTS。" : "首版以评论与文本为主；直播和本地动态语音后续开放。默认 MiniCPM 模型只处理文本。";
+  const text = pending ? `正在切换到${pending.target === "live" ? "直播" : "文本"}，等待模型就绪…` :
     inference?.mode === "standalone" ? "当前独立Provider不支持资源模式切换。" : !actual ? "等待资源模式状态。" :
-    transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${actual === "live" ? "直播" : "文本/图像"}`;
+    transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${actual === "live" ? "直播" : "文本"}`;
   if (feedback.textContent !== text) feedback.textContent = text;
   feedback.classList.toggle("error-text", !!result?.error && !pending);
 }
@@ -206,11 +219,12 @@ function renderInference(inference) {
   if (!inference) { $("inference-error").hidden = true; return; }
   $("inference-state").textContent = inferenceLabel(inference);
   $("inference-state").classList.toggle("bad", !!inference.error);
-  $("inference-state").title = inference.switching_to ? "资源切换期间任务等待模型加载。上下文容量验证与模型驻留状态分别记录。" : "驻留或休眠表示模型资源状态，不改变已验证的上下文容量。";
+  $("inference-state").title = inference.mode === "standalone" ? "独立 API 的模型驻留由服务方管理；容量声明与实际 token 用量分别显示。" : inference.switching_to ? "资源切换期间任务等待模型加载。上下文容量验证与模型驻留状态分别记录。" : "驻留或休眠表示模型资源状态，不改变已验证的上下文容量。";
   $("inference-error").hidden = !inference.error;
   $("inference-error").textContent = inference.error ? `推理资源切换失败：${inference.error}` : "";
 }
 async function switchResourceMode(target) {
+  if (target === "live" && !liveEnabled()) { notice("直播与本地动态语音后续开放。"); return; }
   const previousMode = resourceMode(model.status?.inference);
   if (!previousMode || model.modeSwitch) return;
   model.modeSwitch = {target, previousMode}; model.modeResult = null;
@@ -219,7 +233,7 @@ async function switchResourceMode(target) {
     const result = await api("/api/inference/mode", {method: "POST", body: {mode: target}});
     if (resourceMode(result) !== target) throw new Error("接口返回的资源模式与请求不符，请检查实际资源状态。");
     model.modeSwitch = null;
-    model.modeResult = {mode: target, error: false, text: `已切换到${target === "live" ? "直播" : "文本/图像"}模式。`};
+    model.modeResult = {mode: target, error: false, text: `已切换到${target === "live" ? "直播" : "文本"}模式。`};
     renderStatus({...model.status, inference: result});
     try { renderStatus(await api("/api/status")); }
     catch (error) { notice(`模式已切换，状态刷新失败：${error.message}`, true); }
@@ -242,9 +256,11 @@ function renderContext(context) {
   const configured = Number(context.configured_tokens || 0), server = Number(context.server_tokens || 0), native = Number(context.native_tokens || 0);
   const mismatch = (configured > 0 && server > 0 && server < configured) || (configured > 0 && native > 0 && native < configured);
   const unavailable = !!context.profile_error || mismatch;
-  const verified = !!context.verified && !unavailable;
+  const external = model.settings?.llm?.kind === "openai_compatible";
+  const verified = !!context.verified && !unavailable && !external;
+  const usable = !unavailable && (verified || (external && configured >= 4096));
   const rounds = `累计 ${context.compact_count ?? 0} 轮 · 最近 ${context.compaction_passes_last ?? 0} 轮`;
-  const concise = verified ? `${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)} · ${occupancyText(context)} · ${rounds}` : unavailable ? "上下文配置不可用" : "上下文能力待验证";
+  const concise = unavailable ? "上下文配置不可用" : external ? `API 声明 ${tokenCount(context.configured_tokens)} · ${occupancyText(context)} · ${rounds}` : verified ? `${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)} · ${occupancyText(context)} · ${rounds}` : "上下文能力待验证";
   $("context-state").textContent = concise; $("context-state").classList.toggle("bad", unavailable);
   const error = context.profile_error || (mismatch ? `上下文配置未满足：目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，模型原生 ${tokenCount(context.native_tokens)}。` : "");
   const errors = [error, context.last_compaction_error ? `最近压缩失败：${context.last_compaction_error}` : ""].filter(Boolean);
@@ -252,14 +268,14 @@ function renderContext(context) {
   const warning = context.last_compaction_warning ? `压缩提示：${context.last_compaction_warning}` : "";
   $("context-warning").hidden = !warning;
   if ($("context-warning").textContent !== warning) $("context-warning").textContent = warning;
-  $("comment-context-state").textContent = verified ? `真实完整输入占用 ${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}）；压缩${rounds}。` : error || `上下文目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，尚未验证。`;
-  $("context-verified").textContent = verified ? "实际服务已验证" : unavailable ? "配置不可用" : "待验证";
+  $("comment-context-state").textContent = error || (external ? `API 窗口由操作者声明：${tokenCount(context.configured_tokens)}；当前完整输入 ${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}），压缩${rounds}。容量未经本机验证。` : verified ? `真实完整输入占用 ${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}）；压缩${rounds}。` : `上下文目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，尚未验证。`);
+  $("context-verified").textContent = unavailable ? "配置不可用" : external ? "API 容量由操作者声明" : verified ? "实际服务已验证" : "待验证";
   $("context-verified").className = `badge ${verified ? "good" : unavailable ? "bad" : ""}`;
-  describe($("context-details"), [["活动范围", context.scope || "暂无活动历史"], ["配置目标", tokenCount(context.configured_tokens)], ["实际服务容量", tokenCount(context.server_tokens)], ["模型原生容量", tokenCount(context.native_tokens)], ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`], ["累计已安装压缩轮数", context.compact_count ?? 0], ["最近操作尝试轮数", context.compaction_passes_last ?? 0], ["最近摘要预算", (context.summary_budgets_last || []).map(value => `${value} tokens`).join(" / ") || "尚未压缩"], ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`], ["最近压缩提示", context.last_compaction_warning || "无"], ["最近压缩错误", context.last_compaction_error || "无"]]);
-  $("context-profile-note").textContent = error || "模型原生能力、运行服务容量及配置目标分别显示；修改配置后需重启并重新验证。";
+  describe($("context-details"), [["活动范围", context.scope || "暂无活动历史"], ["配置目标", tokenCount(context.configured_tokens)], [external ? "API 服务容量声明" : "实际服务容量", tokenCount(context.server_tokens)], [external ? "API 上限声明" : "模型原生容量", tokenCount(context.native_tokens)], ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`], ["累计已安装压缩轮数", context.compact_count ?? 0], ["最近操作尝试轮数", context.compaction_passes_last ?? 0], ["最近摘要预算", (context.summary_budgets_last || []).map(value => `${value} tokens`).join(" / ") || "尚未压缩"], ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`], ["最近压缩提示", context.last_compaction_warning || "无"], ["最近压缩错误", context.last_compaction_error || "无"]]);
+  $("context-profile-note").textContent = error || (external ? "外部 API 的容量来自操作者声明；可用连接、实际 token 用量与容量上限是不同证据，不能标为本机已验证 128K。" : "模型原生能力、运行服务实际容量及配置目标分别显示。上方设置保存成功后立即应用，并重新校验服务容量。");
   const generate = $("generate-drafts");
-  if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !verified;
-  generate.title = verified ? "" : error || "等待实际上下文能力验证";
+  if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !usable;
+  generate.title = usable ? "" : error || "等待实际上下文能力验证";
 }
 function renderCharacterImage() {
   const image = $("character-image"); const id = model.status?.character?.id;
@@ -345,20 +361,132 @@ async function loadAssets() {
   }); renderCharacterImage();
 }
 async function loadVoices() {
+  const previous = $("preview-voice").value;
   model.voices = list(await api("/api/voices")); const tbody = $("voices"); const select = $("preview-voice");
   tbody.replaceChildren(); select.replaceChildren();
-  if (!model.voices.length) { empty(tbody, 4, "暂无可用音色。配置声音 Provider 后刷新。"); return; }
+  if (!model.voices.length) { empty(tbody, 4, "暂无可用音色。配置声音 Provider 后刷新。"); renderVoicePreview(); return; }
   model.voices.forEach(voice => {
     const row = node("tr"); cell(row, voice.name || voice.id, voice.id); cell(row, voice.provider || voice.kind || "—", voice.weights_version || voice.version || "");
     cell(row, voice.reference_asset || voice.reference_audio || voice.params?.ref_audio_path || "—"); cell(row, voice.license_status || "待确认", voice.source || voice.source_url || ""); tbody.append(row);
     const option = node("option", voice.name || voice.id); option.value = voice.id; select.append(option);
   });
+  if (model.voices.some(voice => voice.id === previous)) select.value = previous;
+  renderVoicePreview();
 }
-async function loadSettings() {
-  model.settings = await api("/api/settings"); $("settings-json").textContent = JSON.stringify(model.settings, null, 2);
+function safeMessage(message) {
+  let text = String(message ?? "");
+  ["llm", "tts", "vision"].forEach(kind => {
+    const secret = $(`${kind}-key`)?.value;
+    if (secret) text = text.split(secret).join("[密钥已隐藏]");
+  });
+  return text;
+}
+function publicSettings(value, key = "") {
+  if (key === "credentials" && value != null) return "[已隐藏]";
+  if (typeof value === "string") {
+    if (/api[_-]?key|secret|password|authorization|(?:^|_)token$/i.test(key)) return "[已隐藏]";
+    return safeMessage(value).replace(/([#?&](?:token|key)=)[^&#\s]+/gi, "$1[已隐藏]");
+  }
+  if (Array.isArray(value)) return value.map(item => publicSettings(item, key));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
+  return value;
+}
+function clearProviderSecrets() {
+  ["llm", "tts", "vision"].forEach(kind => {
+    $(`${kind}-key`).value = ""; $(`${kind}-clear-key`).checked = false;
+  });
+}
+function providerFormFromSettings(settings) {
+  const llm = settings.llm || {}, tts = settings.tts || {}, vision = settings.vision || {};
+  const fields = {
+    "llm-kind": llm.kind || "llama_cpp", "llm-base-url": llm.base_url || "", "llm-model": llm.model || "",
+    "llm-context-tokens": llm.context_tokens ?? 131072, "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
+    "tts-kind": tts.kind || "prerecorded", "tts-base-url": tts.base_url || "", "tts-model": tts.model || "", "tts-voice": tts.voice || "",
+    "vision-kind": vision.kind || "disabled", "vision-location": vision.location || "local", "vision-base-url": vision.base_url || "", "vision-model": vision.model || "",
+  };
+  Object.entries(fields).forEach(([id, value]) => { $(id).value = String(value); });
+  clearProviderSecrets(); model.providersDirty = false;
+}
+function renderProviderForm() {
+  $("provider-fields").disabled = !model.settings || model.providersSaving;
+  $("save-providers").disabled = !model.settings || model.providersSaving;
+  $("save-providers").setAttribute("aria-busy", String(model.providersSaving));
+  $("reset-providers").disabled = !model.settings || model.providersSaving || !model.providersDirty;
+  $("check-providers-settings").disabled = model.providersSaving;
+  $("providers-dirty").textContent = model.providersSaving ? "正在保存并应用…" : model.providersDirty ? "有未保存修改" : model.settings ? "已保存配置" : "正在读取已保存配置…";
+  const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
+  ["llm-base-url", "llm-model", "llm-key"].forEach(id => { $(id).disabled = demo; });
+  $("llm-base-url").required = !demo; $("llm-model").required = !demo;
+  $("llm-probe-help").hidden = !external;
+  $("llm-capacity-help").textContent = external ? "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" : "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
+  const ttsApi = $("tts-kind").value === "openai_compatible";
+  $("tts-api-fields").hidden = !ttsApi;
+  ["tts-base-url", "tts-model", "tts-voice"].forEach(id => { $(id).required = ttsApi; $(id).disabled = !ttsApi; });
+  $("tts-key").disabled = !ttsApi;
+  const visionApi = $("vision-kind").value === "openai_compatible";
+  $("vision-api-fields").hidden = !visionApi; $("vision-location").disabled = !visionApi;
+  ["vision-base-url", "vision-model"].forEach(id => { $(id).required = visionApi; $(id).disabled = !visionApi; });
+  $("vision-key").disabled = !visionApi;
+  $("vision-settings-state").textContent = visionApi ? "已选择独立多模态接入；保存后仅应用接口配置，不会开启看图工作流。当前文本端点不代表具备视觉能力。" : "多模态接口关闭，不会向视觉服务发送请求。";
+  ["llm", "tts", "vision"].forEach(kind => {
+    $(`${kind}-key-state`).textContent = model.settings?.provider_credentials?.[kind] ? "已有保存密钥（不回显）" : "未保存密钥";
+  });
+}
+function applySettings(settings, fillForm = false) {
+  model.settings = {...model.settings, ...settings}; settings = model.settings;
+  $("settings-json").textContent = JSON.stringify(publicSettings(settings), null, 2);
+  if (fillForm || !model.providersDirty) providerFormFromSettings(settings);
+  renderProviderForm(); renderVoicePreview();
+  if (model.status) renderStatus(model.status);
   let url = model.settings.overlay_url || "/overlay";
   try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
   $("overlay-url").value = url; $("open-overlay").href = url;
+}
+async function loadSettings() { applySettings(await api("/api/settings")); }
+function readProviderPayload() {
+  const integer = (id, title) => {
+    const value = Number($(id).value);
+    if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < 4096) throw new Error(`${title}须为不小于 4096 的整数 tokens。`);
+    return value;
+  };
+  const context = integer("llm-context-tokens", "上下文窗口"), native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
+  if (context > native) throw new Error("上下文窗口不能超过模型原生 / 服务声明上限。请按实际服务能力填写。");
+  const payload = {
+    llm: {kind: $("llm-kind").value, base_url: $("llm-base-url").value.trim(), model: $("llm-model").value.trim(), context_tokens: context, native_context_tokens: native},
+    tts: {kind: $("tts-kind").value, base_url: $("tts-base-url").value.trim(), model: $("tts-model").value.trim(), voice: $("tts-voice").value.trim()},
+    vision: {kind: $("vision-kind").value, location: $("vision-location").value, base_url: $("vision-base-url").value.trim(), model: $("vision-model").value.trim()},
+    credentials: {}, clear_credentials: [],
+  };
+  ["llm", "tts", "vision"].forEach(kind => {
+    const key = $(`${kind}-key`), clear = $(`${kind}-clear-key`).checked;
+    if (!key.disabled && key.value && clear) throw new Error(`${kind.toUpperCase()} 请分别选择输入新密钥或清除已有密钥，不能同时操作。`);
+    if (clear) payload.clear_credentials.push(kind);
+    else if (!key.disabled && key.value) payload.credentials[kind] = key.value;
+  });
+  return payload;
+}
+function voiceAvailability(voice) {
+  const provider = voice?.provider || voice?.kind;
+  if (provider === "gpt_sovits" && !liveEnabled()) return "本地动态语音后续开放";
+  if (provider === "openai_compatible" && (model.settings?.tts?.kind !== "openai_compatible" || !model.settings?.tts?.model || !model.settings?.tts?.voice)) return "请先配置外部语音 API 的模型和 Voice ID";
+  return "";
+}
+function renderVoicePreview() {
+  const select = $("preview-voice");
+  [...select.options].forEach(option => {
+    const voice = model.voices.find(item => item.id === option.value), reason = voiceAvailability(voice);
+    option.disabled = !!reason; option.textContent = `${voice?.name || option.value}${reason ? "（暂不可用）" : ""}`;
+  });
+  const selected = model.voices.find(voice => voice.id === select.value);
+  const reason = selected ? voiceAvailability(selected) : "暂无可用音色";
+  const button = $("preview-submit");
+  if (button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
+  $("voice-preview-help").textContent = reason || "预录和已配置的外部语音 API 可试听；本地 GPT-SoVITS 后续开放。试听不会启动直播，也不会替换角色音色。";
+}
+async function checkProviderConnections(output) {
+  $(output).hidden = false; $(output).textContent = "检查已保存配置的连接中…";
+  try { $(output).textContent = JSON.stringify(publicSettings(await api("/api/providers/check", {method: "POST"})), null, 2); }
+  catch (error) { $(output).textContent = safeMessage(error.message); throw error; }
 }
 function dateTime(value) {
   if (value == null) return "—";
@@ -641,10 +769,35 @@ $("event-form").onsubmit = event => {
 };
 $("refresh-live").onclick = () => busy($("refresh-live"), refreshLive);
 $("check-providers").onclick = () => busy($("check-providers"), async () => {
-  $("provider-check").hidden = false; $("provider-check").textContent = "检查中…";
-  try { $("provider-check").textContent = JSON.stringify(await api("/api/providers/check", {method: "POST"}), null, 2); }
-  catch (error) { $("provider-check").textContent = error.message; throw error; }
+  await checkProviderConnections("provider-check");
 });
+$("providers-form").addEventListener("input", () => { model.providersDirty = true; renderProviderForm(); });
+$("providers-form").addEventListener("change", () => { model.providersDirty = true; renderProviderForm(); });
+$("providers-form").onsubmit = async event => {
+  event.preventDefault(); if (model.providersSaving) return;
+  try {
+    const payload = readProviderPayload();
+    model.providersSaving = true; renderProviderForm();
+    $("providers-save-state").classList.remove("error-text"); $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
+    const result = await api("/api/settings/providers", {method: "PUT", body: payload});
+    applySettings(result, true);
+    const message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
+    $("providers-save-state").textContent = message; notice(message);
+    const checks = await Promise.allSettled([api("/api/status"), loadVoices()]);
+    if (checks[0].status === "fulfilled") renderStatus(checks[0].value);
+    const failed = checks.filter(item => item.status === "rejected");
+    if (failed.length) $("providers-save-state").textContent = `${message} 状态刷新失败：${safeMessage(failed[0].reason.message)}。可稍后刷新。`;
+  } catch (error) {
+    const message = `保存失败：${safeMessage(error.message)}${error.status === 409 ? " 请先暂停或等待正在生成 / 发布的任务结束，再重试。" : ""} 当前输入已保留。`;
+    $("providers-save-state").textContent = message; $("providers-save-state").classList.add("error-text"); notice(message, true);
+  } finally { model.providersSaving = false; renderProviderForm(); }
+};
+$("reset-providers").onclick = () => {
+  if (!model.settings || model.providersSaving) return;
+  providerFormFromSettings(model.settings); renderProviderForm();
+  $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。"; $("providers-save-state").classList.remove("error-text");
+};
+$("check-providers-settings").onclick = () => busy($("check-providers-settings"), () => checkProviderConnections("providers-check-result"));
 $("character-editor").oninput = () => { model.characterDirty = true; $("character-dirty").textContent = "有未保存修改"; };
 $("character-version").onchange = () => {
   const version = Number($("character-version").value);
@@ -674,11 +827,20 @@ $("clone-form").onsubmit = event => {
     await loadCharacters(); await selectCharacter(id); notice("已创建新角色，可以编辑人格、风格和音色。");
   });
 };
+$("preview-voice").onchange = renderVoicePreview;
 $("preview-form").onsubmit = event => {
   event.preventDefault(); busy(event.submitter, async () => {
+    const voice = model.voices.find(item => item.id === $("preview-voice").value);
+    const unavailable = voiceAvailability(voice); if (unavailable) throw new Error(unavailable);
     $("preview-state").textContent = "等待合成…"; $("preview-audio").pause();
-    try { const result = await api("/api/tts/preview", {method: "POST", body: {text: $("preview-text").value, voice_id: $("preview-voice").value}}); $("preview-audio").src = result.audio_ref; $("preview-audio").hidden = false; $("preview-state").textContent = `合成完成${result.duration != null ? ` · ${Number(result.duration).toFixed(2)} 秒` : ""}，点击播放试听。`; }
-    catch (error) { $("preview-state").textContent = `合成失败：${error.message}`; throw error; }
+    try {
+      const result = await api("/api/tts/preview", {method: "POST", body: {text: $("preview-text").value, voice_id: $("preview-voice").value}});
+      $("preview-audio").src = result.audio_ref; $("preview-audio").hidden = false;
+      const recorded = voice?.provider === "prerecorded";
+      const actualText = recorded && result.text ? ` 实际录音台词：${result.text}` : "";
+      $("preview-state").textContent = safeMessage(`${recorded ? "预录已准备" : "合成完成"}${result.duration != null ? ` · ${Number(result.duration).toFixed(2)} 秒` : ""}，点击播放试听。${actualText}${result.warning ? ` ${result.warning}` : ""}`);
+    }
+    catch (error) { $("preview-state").textContent = `合成失败：${safeMessage(error.message)}`; throw error; }
   });
 };
 $("copy-overlay").onclick = () => busy($("copy-overlay"), async () => { await navigator.clipboard.writeText($("overlay-url").value); notice("播放器链接已复制。"); });
@@ -796,8 +958,8 @@ $("stop-auto-reply").onclick = () => busy($("stop-auto-reply"), async () => {
 async function compactContext(scope, videoId, threadId) {
   if (scope === "comments" && (!videoId || !threadId)) throw new Error("请先选择要压缩的视频与单个楼ID；不同楼上下文不会合并。");
   const payload = {scope, ...(scope === "comments" ? {video_id: videoId, thread_id: threadId} : {})};
-  $("compaction-result").textContent = "正在使用本地模型压缩上下文…";
-  notice("上下文压缩已开始，请等待本地模型返回。");
+  $("compaction-result").textContent = "正在使用当前文本模型压缩上下文…";
+  notice("上下文压缩已开始，请等待当前文本模型返回。");
   try {
     const result = await api("/api/context/compact", {method: "POST", body: payload});
     const message = result.message || result.detail || (result.compacted === false ? "没有可压缩的历史。" : "压缩请求已完成，请查看实际上下文占用与压缩次数。");
@@ -866,7 +1028,7 @@ $("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
 });
 $("character-image").onerror = () => { $("character-image").hidden = true; };
 window.addEventListener("hashchange", changePage);
-window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty) { event.preventDefault(); event.returnValue = ""; } });
+window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.providersDirty) { event.preventDefault(); event.returnValue = ""; } });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 setInterval(poll, 2500);
 enterWorkspace().catch(error => { showLogin(); if (error.status !== 401) $("login-error").textContent = error.message; });

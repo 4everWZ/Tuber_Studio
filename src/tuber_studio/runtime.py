@@ -10,9 +10,10 @@ from uuid import uuid4
 import httpx
 import psutil
 
+from .api_providers import VisionService, create_llm
 from .context import ContextManager
 from .memory import missing_slots
-from .providers import DemoProvider, LlamaCppProvider, VoiceService, public_error
+from .providers import VoiceService, public_error
 from .retention import INTERVAL_SECONDS, RetentionManager
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
@@ -21,12 +22,11 @@ TERMINAL = {"completed", "failed", "cancelled", "expired"}
 class Runtime:
     def __init__(self, settings, store):
         self.settings, self.store = settings, store
-        self.llm = (
-            DemoProvider()
-            if settings.data["llm"]["kind"] == "demo"
-            else LlamaCppProvider(settings.data["llm"], settings.inference_token)
-        )
+        self.llm = create_llm(settings)
         self.voices = VoiceService(settings)
+        self.vision = VisionService(
+            settings.data.get("vision", {"kind": "disabled"}), settings.provider_key("vision")
+        )
         self.context = ContextManager(settings, store, self.llm)
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None
@@ -92,6 +92,7 @@ class Runtime:
             await asyncio.gather(self.worker, return_exceptions=True)
         await self.llm.close()
         await self.voices.close()
+        await self.vision.close()
         if self.inference_client:
             await self.inference_client.aclose()
 
@@ -171,6 +172,8 @@ class Runtime:
             await asyncio.sleep(2)
 
     async def set_work_mode(self, mode):
+        if mode == "live" and not self.settings.data.get("features", {}).get("live_enabled", False):
+            raise ValueError("直播功能已后置；当前使用非直播工作台")
         if mode not in {"text", "live"}:
             raise ValueError("工作模式应为text或live")
         if self.inference_client is None:
@@ -285,6 +288,10 @@ class Runtime:
         self.queue.clear()
 
     async def control(self, action):
+        if action in {"start", "resume"} and not self.settings.data.get("features", {}).get(
+            "live_enabled", False
+        ):
+            raise ValueError("直播功能已后置；当前使用非直播工作台")
         if action == "resume" and self.state == "stopped":
             raise ValueError("请先启动Mock会话")
         if action in {"start", "resume"} and self.inference_client is not None:

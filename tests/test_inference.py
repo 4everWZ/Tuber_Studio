@@ -65,7 +65,7 @@ def gguf(path, context=131072, architecture="llama", *, vision_context=None, arc
     path.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 0, len(entries)) + b"".join(entries))
 
 
-def setup_broker(root, post=None, mode="text", selected="llm2b"):
+def setup_broker(root, post=None, mode="text", selected="llm2b", context_tokens=131072):
     for resource in RESOURCES.values():
         if resource.model:
             gguf(
@@ -74,13 +74,17 @@ def setup_broker(root, post=None, mode="text", selected="llm2b"):
                 "qwen35" if resource.alias == "Qwen3.5-2B" else "llama",
             )
     control = Control()
+    control.context_tokens = context_tokens
 
     async def handle(request):
         key = next(key for key, spec in RESOURCES.items() if request.url.port == httpx.URL(spec.url).port)
         if request.url.path == "/props":
             return httpx.Response(
                 200,
-                json={"model_alias": RESOURCES[key].alias, "default_generation_settings": {"n_ctx": 131072}},
+                json={
+                    "model_alias": RESOURCES[key].alias,
+                    "default_generation_settings": {"n_ctx": control.context_tokens},
+                },
             )
         if request.method == "POST" and post:
             return await post(request, key)
@@ -620,6 +624,7 @@ async def test_process_runner_owns_session_and_confirms_group_stop(tmp_path, mon
     process = Process()
     runner = ProcessRunner(tmp_path)
     (tmp_path / "runtime").mkdir()
+    gguf(tmp_path / "runtime/models" / RESOURCES["llm2b"].model)
 
     async def profiles():
         return {"llm2b": {"command": runner.command("llm2b")}}
@@ -663,6 +668,7 @@ async def test_cancel_during_spawn_acquires_and_stops_child_before_return(tmp_pa
 
     runner = ProcessRunner(tmp_path)
     (tmp_path / "runtime").mkdir()
+    gguf(tmp_path / "runtime/models" / RESOURCES["llm2b"].model)
 
     async def profiles():
         return {"llm2b": {"command": runner.command("llm2b")}}
@@ -774,6 +780,353 @@ def test_runner_commands_are_fixed_profiles(tmp_path):
     assert speech[2:] == ["-a", "127.0.0.1", "-p", "9011"]
     with pytest.raises(KeyError):
         runner.command("arbitrary; command")
+
+
+@pytest.mark.parametrize("window", [4096, 65536, 131072, 262144])
+def test_runner_uses_explicit_context_without_rope_override(tmp_path, window):
+    runner = ProcessRunner(tmp_path, context_tokens=window)
+    for key in ("llm2b", "llmqwen35"):
+        argv = runner.command(key)
+        assert argv[argv.index("--ctx-size") + 1] == str(window)
+        assert not any(argument.startswith(("--rope", "--yarn")) for argument in argv)
+
+
+@pytest.mark.parametrize("window", [True, False, "65536", 4096.0, 0, -1, 4095])
+def test_runner_rejects_invalid_context_before_startup(tmp_path, window):
+    with pytest.raises(ValueError, match="at least 4096"):
+        ProcessRunner(tmp_path, context_tokens=window)
+
+
+async def test_smaller_requested_window_loads_and_reports_actual_native_separately(tmp_path):
+    broker, control = setup_broker(tmp_path, context_tokens=8192)
+    gguf(tmp_path / "runtime/models" / RESOURCES["llm2b"].model, context=32768)
+    await broker.initialize()
+    status = await broker.observe()
+    assert status["requested_context_tokens"] == 8192
+    assert status["providers"]["llm2b"]["native_context_tokens"] == 32768
+    assert status["providers"]["llm2b"]["context_tokens"] == 8192
+    assert control.events == [("start", "llm2b")]
+    await broker.close()
+
+
+async def test_larger_window_requires_selected_real_native_not_other_installed_profiles(tmp_path):
+    broker, control = setup_broker(tmp_path, selected="llmqwen35", context_tokens=262144)
+    await broker.initialize()
+    assert broker.properties["llmqwen35"]["default_generation_settings"]["n_ctx"] == 262144
+    control.events.clear()
+    with pytest.raises(HTTPException):
+        await broker.forward("llm2b", "warmup", b"{}")
+    assert control.events == [] and control.alive["llmqwen35"]
+    assert not control.alive["llm2b"]
+    await broker.close()
+
+
+async def test_actual_props_must_match_requested_window_without_caching_false_capacity(tmp_path):
+    broker, control = setup_broker(tmp_path, context_tokens=8192)
+    await broker.client.aclose()
+
+    def upstream(request):
+        if request.url.path == "/props":
+            return httpx.Response(
+                200, json={"model_alias": "MiniCPM5-2B", "default_generation_settings": {"n_ctx": 131072}}
+            )
+        return httpx.Response(200, json={"status": "ok"})
+
+    broker.client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+    with pytest.raises(RuntimeError, match="does not match"):
+        await broker.initialize()
+    assert "llm2b" not in broker.properties
+    assert not control.alive["llm2b"]
+    await broker.close()
+
+
+async def test_studio_claim_cannot_expand_the_gguf_native_limit(tmp_path):
+    broker, control = setup_broker(tmp_path, context_tokens=262144)
+    (tmp_path / "runtime/studio.json").write_text(
+        json.dumps({"llm": {"context_tokens": 262144, "native_context_tokens": 262144}})
+    )
+    with pytest.raises(RuntimeError, match="natively"):
+        await broker.initialize()
+    assert broker.natives["llm2b"] == 131072 and not control.events
+    await broker.close()
+
+
+@pytest.mark.parametrize("kind", ["openai_compatible", "demo"])
+async def test_external_llm_boot_keeps_broker_cold_and_uses_its_own_model_window(tmp_path, kind):
+    path = tmp_path / "runtime/studio.json"
+    path.parent.mkdir(parents=True)
+    original = json.dumps(
+        {
+            "llm": {"kind": kind, "model": "remote-model", "context_tokens": 262144},
+            "inference_broker": {"model": "MiniCPM5-1B", "context_tokens": 65536, "mode": "live"},
+        }
+    )
+    path.write_text(original)
+    app = create_app(tmp_path)
+    manager = app.state.broker
+
+    async def forbidden():
+        pytest.fail("External API boot must not warm local workers")
+
+    manager.initialize = forbidden
+    async with app.router.lifespan_context(app):
+        assert manager.selected == "llm1b" and manager.context_tokens == 65536
+        assert (
+            manager.runner.command("llm1b")[manager.runner.command("llm1b").index("--ctx-size") + 1]
+            == "65536"
+        )
+        token = (path.parent / "inference-token").read_text()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+        ) as client:
+            health = (await client.get("/health")).json()
+            assert health["state"] == "cold" and health["mode"] == "text"
+            assert health["requested_context_tokens"] == 65536
+            assert all(
+                not item["running"] and item["native_context_tokens"] is None
+                for item in health["providers"].values()
+            )
+            assert (await client.get("/llm/1b/props")).status_code == 503
+    assert path.read_text() == original
+
+
+async def test_external_llm_uses_default_local_profile_without_copying_remote_window(tmp_path):
+    path = tmp_path / "runtime/studio.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"llm": {"kind": "openai_compatible", "model": "remote-256k", "context_tokens": 262144}})
+    )
+    app = create_app(tmp_path, warm_start=False)
+    assert app.state.broker.selected == "llm2b"
+    assert app.state.broker.context_tokens == 131072
+    await app.state.broker.close()
+
+
+@pytest.mark.parametrize("kind", [None, "llama_cpp", "openai_compatible"])
+async def test_context_transition_reloads_actual_window_and_only_updates_its_owned_settings(tmp_path, kind):
+    broker, control = setup_broker(tmp_path)
+    llm = {"model": "remote" if kind == "openai_compatible" else "MiniCPM5-2B", "context_tokens": 262144}
+    if kind is not None:
+        llm["kind"] = kind
+    config = {
+        "llm": llm,
+        "inference_broker": {"model": "MiniCPM5-2B", "context_tokens": 131072},
+        "secret": "preserved",
+        "other_setting": [1, 2],
+    }
+    path = tmp_path / "runtime/studio.json"
+    path.write_text(json.dumps(config))
+    await broker.forward("llm1b", "warmup", b"{}")
+    assert "llm1b" in broker.properties
+    control.events.clear()
+    result = await broker.change_context(65536)
+    assert result["requested_context_tokens"] == 65536 and result["busy"] is False
+    assert result["providers"]["llm2b"]["context_tokens"] == 65536
+    assert broker.context_tokens == control.context_tokens == 65536
+    assert control.events == [("stop", "llm1b"), ("start", "llm2b")]
+    assert set(broker.properties) == {"llm2b"}
+    expected = json.loads(json.dumps(config))
+    expected["inference_broker"]["context_tokens"] = 65536
+    if kind != "openai_compatible":
+        expected["llm"]["context_tokens"] = 65536
+    assert json.loads(path.read_text()) == expected
+    await broker.close()
+
+
+async def test_context_over_native_is_rejected_before_stopping_resident_model(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    await broker.initialize()
+    control.events.clear()
+    with pytest.raises(HTTPException) as rejected:
+        await broker.change_context(262144)
+    assert rejected.value.status_code == 422
+    assert not control.events and control.alive["llm2b"]
+    assert broker.context_tokens == 131072
+    assert broker.properties["llm2b"]["default_generation_settings"]["n_ctx"] == 131072
+    await broker.close()
+
+
+async def test_context_cannot_use_stale_cached_native_when_artifact_is_invalid(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    await broker.initialize()
+    control.events.clear()
+    (tmp_path / "runtime/models" / RESOURCES["llm2b"].model).write_bytes(b"invalid")
+    with pytest.raises(HTTPException) as rejected:
+        await broker.change_context(8192)
+    assert rejected.value.status_code == 503
+    assert not control.events and control.alive["llm2b"]
+    assert broker.context_tokens == 131072
+    await broker.close()
+
+
+@pytest.mark.parametrize("failure", ["load", "persist"])
+async def test_context_failure_restores_old_process_window_props_and_config(tmp_path, failure):
+    broker, control = setup_broker(tmp_path)
+    await broker.initialize()
+    path = tmp_path / "runtime/studio.json"
+    original = '{"llm":{"kind":"llama_cpp","context_tokens":131072},"secret":"unchanged"}'
+    path.write_text(original)
+    start = control.start
+
+    async def failing_start(key):
+        await start(key)
+        if failure == "load" and control.context_tokens == 8192:
+            raise RuntimeError("new worker failed")
+
+    def failing_persist():
+        raise OSError("read-only or full filesystem")
+
+    control.start = failing_start
+    if failure == "persist":
+        broker._persist_context = failing_persist
+    with pytest.raises(HTTPException) as rejected:
+        await broker.change_context(8192)
+    assert rejected.value.status_code == 503
+    assert broker.context_tokens == control.context_tokens == 131072
+    assert control.alive["llm2b"] and not control.alive["tts"]
+    assert broker.properties["llm2b"]["default_generation_settings"]["n_ctx"] == 131072
+    assert control.events[-1] == ("start", "llm2b")
+    assert path.read_text() == original and not broker.lock.locked()
+    await broker.close()
+
+
+async def test_context_cancellation_restores_old_window_and_never_advertises_stale_new_props(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    await broker.initialize()
+    path = tmp_path / "runtime/studio.json"
+    original = '{"llm":{"context_tokens":131072}}'
+    path.write_text(original)
+    get = broker.client.get
+    entered = asyncio.Event()
+
+    async def loading(url, **options):
+        if control.context_tokens == 8192:
+            entered.set()
+            await asyncio.Event().wait()
+        return await get(url, **options)
+
+    broker.client.get = loading
+    work = asyncio.create_task(broker.change_context(8192))
+    await entered.wait()
+    assert broker.properties == {} and broker.lock.locked()
+    work.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await work
+    assert control.context_tokens == broker.context_tokens == 131072
+    assert control.alive["llm2b"] and not broker.lock.locked()
+    assert broker.properties["llm2b"]["default_generation_settings"]["n_ctx"] == 131072
+    assert path.read_text() == original
+    await broker.close()
+
+
+@pytest.mark.parametrize("operation", ["context", "idle"])
+@pytest.mark.parametrize("blocked_by", ["busy", "live"])
+async def test_context_and_idle_reject_busy_or_live_mode_without_resource_changes(
+    tmp_path, operation, blocked_by
+):
+    broker, control = setup_broker(tmp_path, mode="live" if blocked_by == "live" else "text")
+    if blocked_by == "busy":
+        await broker.lock.acquire()
+    try:
+        with pytest.raises(HTTPException) as rejected:
+            await (broker.idle() if operation == "idle" else broker.change_context(8192))
+        assert rejected.value.status_code == 409 and not control.events
+    finally:
+        if broker.lock.locked():
+            broker.lock.release()
+        await broker.close()
+
+
+async def test_idle_stops_only_owned_workers_and_does_not_change_configuration(tmp_path):
+    broker, control = setup_broker(tmp_path)
+    await broker.initialize()
+    path = tmp_path / "runtime/studio.json"
+    original = '{"llm":{"kind":"openai_compatible","context_tokens":262144},"secret":"preserve"}'
+    path.write_text(original)
+    control.events.clear()
+    result = await broker.idle()
+    assert result["state"] == "cold" and result["active_provider"] is None and result["busy"] is False
+    assert control.events == [("stop", "llm2b")]
+    assert all(not state["running"] for state in result["providers"].values())
+    assert path.read_text() == original
+    assert (await broker.read("llm2b", "props"))["is_sleeping"]
+    await broker.close()
+
+
+@pytest.mark.parametrize("operation,body", [("context", {"context_tokens": 8192}), ("idle", {})])
+async def test_authenticated_context_and_idle_routes_return_resource_health(tmp_path, operation, body):
+    broker, _ = setup_broker(tmp_path)
+    await broker.initialize()
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
+        response = await client.post("/" + operation, json=body)
+    assert response.status_code == 200
+    health = response.json()
+    assert health["busy"] is False and health["mode"] == "text"
+    if operation == "context":
+        assert health["requested_context_tokens"] == 8192
+        assert health["providers"]["llm2b"]["context_tokens"] == 8192
+    else:
+        assert health["state"] == "cold" and health["active_provider"] is None
+    await broker.close()
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/context", {}),
+        ("/context", {"context_tokens": True}),
+        ("/context", {"context_tokens": 4095}),
+        ("/context", {"context_tokens": 8192, "command": "x"}),
+        ("/idle", {"pid": 123}),
+        ("/idle", {"command": "stop"}),
+    ],
+)
+async def test_context_and_idle_require_auth_and_exact_typed_bodies(tmp_path, path, body):
+    broker, control = setup_broker(tmp_path)
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://broker") as client:
+        assert (await client.post(path, json=body)).status_code == 401
+        response = await client.post(path, json=body, headers={HEADER: token})
+        assert response.status_code == 422 and not control.events
+    await broker.close()
+
+
+async def test_runner_checks_native_window_before_stopping_or_spawning(tmp_path, monkeypatch):
+    runner = ProcessRunner(tmp_path, context_tokens=65536)
+    gguf(tmp_path / "runtime/models" / RESOURCES["llm2b"].model, context=32768)
+    events = []
+
+    async def profiles():
+        return {"llm2b": {"command": runner.command("llm2b")}}
+
+    async def stop(key):
+        events.append(key)
+
+    runner.validate_all = profiles
+    runner.stop = stop
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", lambda *a, **k: pytest.fail("Must not spawn"))
+    with pytest.raises(RuntimeError, match="natively"):
+        await runner.start("llm2b")
+    assert not events
+
+
+async def test_broker_rejects_output_budget_above_configured_actual_window_before_activation(tmp_path):
+    broker, control = setup_broker(tmp_path, context_tokens=4096)
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
+        rejected = await client.post("/llm/2b/completion", json={"prompt": "hello", "n_predict": 4097})
+        assert rejected.status_code == 422 and not control.events
+        accepted = await client.post("/llm/2b/completion", json={"prompt": "hello", "n_predict": 4096})
+        assert accepted.status_code == 200
+    await broker.close()
 
 
 def test_native_window_is_read_from_actual_gguf(tmp_path):
@@ -938,7 +1291,8 @@ async def test_selected_profile_has_one_studio_configuration_owner(tmp_path):
                     "mode": "exclusive",
                     "kv_cache_type": "q4_0",
                     "cuda_managed_memory": False,
-                }
+                },
+                "llm": {"context_tokens": 65536},
             }
         )
     )
@@ -946,6 +1300,8 @@ async def test_selected_profile_has_one_studio_configuration_owner(tmp_path):
     manager = app.state.broker
     args = manager.runner.command("llm2b")
     assert args[args.index("--cache-type-k") + 1] == "q4_0"
+    assert args[args.index("--ctx-size") + 1] == "65536"
+    assert manager.context_tokens == 65536
     assert manager.runner.cuda_managed_memory is False
     assert (await manager.observe())["kv_cache_type"] == "q4_0"
     assert not (tmp_path / "runtime/inference-profile.json").exists()

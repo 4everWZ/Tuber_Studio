@@ -43,6 +43,12 @@ def summary_budget(history, config):
     return min(cap, base + 128 * max(0, units - 12) + 128 * max(0, constraints - 6))
 
 
+def retained_user_budget(config):
+    # The upstream selector/truncator is unchanged. A deliberately smaller
+    # window gets a proportional local retention budget; 128K+ retains 20K.
+    return min(20_000, max(1, config["context_tokens"] * 20_000 // 131072))
+
+
 class BudgetedSummary:
     def __init__(self, provider, budget):
         self.provider, self.budget = provider, budget
@@ -210,10 +216,17 @@ class ContextManager:
             )
         history = json.loads(row["history"])
         messages = self.render(prefix, initial, history, pending, suffix)
-        count = await self.provider.count_tokens(messages)
+        overflow = False
+        try:
+            count = await self.provider.count_tokens(messages)
+        except ContextWindowExceeded:
+            # A remote usage probe may reject overlong input before it can
+            # report a count. Enter the same full compactor, which owns the
+            # upstream overflow-recovery loop, rather than truncating here.
+            overflow, count = True, 0
         config = self.settings.data["llm"]
         total = count + config.get("max_tokens", 160)
-        if needs_compaction(total, config, row["carried_prefix_tokens"]):
+        if overflow or needs_compaction(total, config, row["carried_prefix_tokens"]):
             if not history:
                 raise ContextWindowExceeded("核心设定或当前输入已超窗，没有可压缩历史；请调整输入")
             await self._compact(row, prefix, initial, pending, suffix)
@@ -246,6 +259,7 @@ class ContextManager:
                     BudgetedSummary(self.provider, budget),
                     max_retries=config.get("compaction_max_retries", 3),
                     summary_prompt=SUMMARIZATION_PROMPT + "\n\n" + DOMAIN_GUIDANCE,
+                    retained_user_tokens=retained_user_budget(config),
                 )
                 # Use the entire actual input frame, including pending event and
                 # output instructions. The denominator is the full model window.
@@ -372,10 +386,16 @@ class ContextManager:
             "native_tokens": native,
             "verified": bool(
                 server
-                and server >= configured >= 131072
+                and server >= configured >= 4096
                 and native >= configured
                 and not self.provider.profile_error
+                and self.settings.data["llm"]["kind"] == "llama_cpp"
             ),
+            "capacity_source": getattr(
+                self.provider, "capacity_source", "server_verified" if server else "unverified"
+            ),
+            "token_accounting": getattr(self.provider, "token_accounting", "server_tokenizer"),
+            "retained_user_token_budget": retained_user_budget(self.settings.data["llm"]),
             "active_tokens": row["input_tokens"] if row else 0,
             "compact_count": row["compact_count"] if row else 0,
             "last_compaction_error": row["last_error"] if row else None,

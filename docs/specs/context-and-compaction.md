@@ -7,11 +7,13 @@
 | MEM-05 | P1 | MUST 有会话摘要和活动窗口，将过期对话压缩／按留存规则清理，不能无限增长；当前首版已提前要求真实长窗口和模型压缩。 |
 | MEM-06 | P1 | MUST 真正token预算，固定核心与系统规则优先，其余按相关度／重要性／新鲜度取舍，不截断关键安全规则。 |
 
-实际模型总窗口至少131072 tokens，可在已确认原生上限及设备证据内增加。配置目标、服务实际窗口和原生上限分别记录；Provider核查llama.cpp的真实n_ctx及模型别名。低于128K、服务小于配置或超原生上限必须报错；外部历史库／摘要不替代真实窗口，也不为扩大数字默认强扩RoPE。
+默认窗口131072 tokens（128K），Operator可显式调小或在真实支持范围内调大，最小4096。配置目标、服务实际窗口和原生上限分别记录；本地broker须核验真实GGUF native及实际n_ctx，窗口切换失败／取消恢复原资源与配置。当前MiniCPM5-2B真实上限131072，不能靠修改声明或RoPE参数假扩。服务小于配置或超真实原生上限必须报错；外部历史库／摘要不替代实际窗口。
+
+兼容API的窗口及服务上限由Operator声明，未经本机容量实测，不显示为本地verified。通过一token Chat Completions探针的usage.prompt_tokens计量实际请求，同输入只缓存计数摘要；该探针会发送上下文并可能额外计费。连接检查仅查询模型列表，不生成内容。外部服务是否持久保留KV及是否完整支持所声明窗口，不从一次计数／prefill推断；本地与API容量状态分别展示。
 
 语义组装顺序为系统规则＋固定角色核心 → 当前直播／评论模式与权限 → 命中Lore＋当前用户必要关系 → 本场摘要与有关联活动历史 → 当前不可信输入 → 输出格式与长度约束。具体chat template角色封装可按模型适配，但不能使不可信消息变成系统指令或丢失核心优先级。
 
-用实际chat template与tokenizer计量完整输入：/apply-template＋/tokenize，角色分隔符和输出预留都计入窗口。沿用Codex默认自动阈值min(配置阈值,floor(窗口×90%))、有效硬边界floor(窗口×95%)；128K时为117964／124518。预留不是把模型窗口降低为124K。支持total／body_after_prefix阈值，后者仍受总窗口硬边界约束。
+本地用实际chat template与tokenizer计量完整输入：/apply-template＋/tokenize；API采用服务usage计数，角色分隔符和输出预留都计入窗口。沿用Codex默认自动阈值min(配置阈值,floor(窗口×90%))、有效硬边界floor(窗口×95%)；128K时为117964／124518。预留不是把模型窗口降低为124K。支持total／body_after_prefix阈值，后者仍受总窗口硬边界约束。
 
 固定核心、Lore／关系、活动历史、当前任务和输出约束分别组装。历史积累至阈值后由模型摘要压缩，不固定只留最近几轮、不静默整块丢弃。直播按场次＋角色ID＋版本隔离，评论按平台＋视频＋对话楼＋角色ID＋版本隔离，不将整视频评论当成一个对话；只有completed语音进直播历史，草稿进独立运营历史，不能冒称已发布。旧整视频窗口不混入任意新楼。SQLite保存逻辑消息、源ID、截断完整性、压缩代数与错误，重启可恢复。
 
@@ -27,18 +29,18 @@
 
 | 上游归属 | 必须保留的行为 | 本地适配边界 |
 | --- | --- | --- |
-| core/src/compact.rs：run_compact_task_inner_impl | 克隆原历史、追加原压缩提示、模型生成完整摘要、成功后重建并安装。 | 使用本地llama.cpp完整HTTP响应及finish_reason；无远端Responses会话。 |
+| core/src/compact.rs：run_compact_task_inner_impl | 克隆原历史、追加原压缩提示、模型生成完整摘要、成功后重建并安装。 | 使用本地或兼容API完整HTTP响应及finish_reason；无远端Responses压缩会话。 |
 | 同上重试循环 | 超窗逐项移除工作副本最旧项并重置重试；中断／不完整输出立即失败；其余可重试错误有界退避，各次输出隔离。 | 固定核心在独立prefix保留，不对平台写请求重试。 |
 | backoff.rs | 200ms×2^(attempt−1)，±10% jitter，按毫秒取整；重试次数限制，不自行添加固定延迟上限。 | 本地async等待，transport错误映射到相应分支。 |
 | collect_annotated_user_messages | 只保留真实用户文本，排除旧summary和系统上下文。 | 本项目text-only，保留源事件／评论ID及完整性标记。 |
-| build_compacted_history_with_limit | 20000预算从新到旧选用户消息，最旧不足时保留头尾，再恢复顺序，追加summary prefix＋模型摘要。 | UTF-8字节数÷4向上取整仅用于上游保留预算，不冒充真实tokenizer。 |
+| build_compacted_history_with_limit | 从新到旧按预算选用户消息，最旧不足时保留头尾，再恢复顺序，追加summary prefix＋模型摘要。默认128K及更大窗口保留上游20000预算。 | Operator调小窗口时，保留预算按floor(窗口×20000/131072)缩放，上限20000；选择／截断算法不变。UTF-8字节数÷4向上取整仅用于此预算，不冒充真实tokenizer。 |
 | utils/string/src/truncate.rs | UTF-8边界对半头尾截断，…N tokens truncated…标记在保留预算外，来源标为不完整。 | 单文本消息及相应来源元数据。 |
 | insert_initial_context_before_last_real_user_or_summary | 规范上下文插到最后真实用户前；无真实用户则摘要前，均无则追加。 | 当前核心prefix和Lore／权限在相同渲染边界重建，不在逻辑窗口复制旧配置。 |
-| protocol/src/openai_models.rs | 90%触发、95%有效窗口，压缩后重算token。 | 真实本地模型计数，手动／自动压缩共用算法。 |
+| protocol/src/openai_models.rs | 90%触发、95%有效窗口，压缩后重算token。 | 本地tokenizer或API usage计数，手动／自动压缩共用算法。 |
 
 本项目没有Codex工具调用、多媒体消息、世界状态／插件Hook、远端加密压缩端点；这些宿主对象的缺失不成为删减文本算法的理由。远端内部模型算法不公开，不能声称本地等价实现。离线固定台词不具真实128K或模型摘要能力。
 
-原摘要提示和summary prefix保留原文；domain-compact.md只追加对话／草稿领域语义，避免“无代码进度”被误判为“无对话”。领域提示按关联事件核对已有ID、已答事实和待办，保留人物、动作、对象及数量的对应关系，不补写来源。它不替换20K保留、超窗恢复、退避、模型摘要或原子安装。摘要须保留与后续工作有关的确认偏好、约束、待办和引用，原用户消息仍按上游规则保留。
+原摘要提示和summary prefix保留原文；domain-compact.md只追加对话／草稿领域语义，避免“无代码进度”被误判为“无对话”。领域提示按关联事件核对已有ID、已答事实和待办，保留人物、动作、对象及数量的对应关系，不补写来源。它不替换按预算保留、超窗恢复、退避、模型摘要或原子安装。小窗口只调整保留预算，不截断核心或当前输入；仍超窗时保留原始数据并明确失败。摘要须保留与后续工作有关的确认偏好、约束、待办和引用，原用户消息仍按上游规则保留。
 
 ## 首轮后40%复检
 
@@ -50,7 +52,7 @@
 
 两轮属于一次原子操作，首轮结果只在内存中暂存；任一轮失败、取消、不完整、最终超硬边界或提交失败时不安装任何中间历史，原记录保留。两轮均成功但仍≥40%时，在既有硬边界内可安装最终结果并给出明确warning，不无限循环，也不宣称已降到40%以下。占用warning不是容量验证失败，不能仅因此禁用生成。
 
-状态分别报告occupancy_percent、compaction_passes_last、last_compaction_warning和secondary_threshold_percent=40。compact_count累计成功安装的实际核心轮数，一次操作可增加1或2；失败不增加累计数，最近尝试轮数结合last_compaction_error表示结果。UI显示近似百分比、最近轮数和独立提示，实际128K验证、资源休眠、压缩错误与占用warning保持不同含义。
+状态分别报告occupancy_percent、compaction_passes_last、last_compaction_warning和secondary_threshold_percent=40。compact_count累计成功安装的实际核心轮数，一次操作可增加1或2；失败不增加累计数，最近尝试轮数结合last_compaction_error表示结果。UI显示近似百分比、最近轮数和独立提示；当前请求窗口验证、API容量声明、资源休眠、压缩错误与占用warning保持不同含义。
 
 ## 失败与验收
 
