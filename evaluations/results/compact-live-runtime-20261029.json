@@ -5,7 +5,8 @@
     "3c8b796": "sha256:bb33edc9c45607c0d28baacba77652986f7587aeb8a761e18dbb4c5e45d6dfd4",
     "767d9d4": "sha256:903bd9c51fa8aacba3c4d67d4e987d77e3316182e662724d1aa1b47355527ad8",
     "f7aa386": "sha256:90b92ac2a275f8c55bffbe97b8cf5702acf6e7ee32f2a441d41838f2ad70fda9",
-    "c6d8dd3": "sha256:cb9b83333552292e6574cbb2fd36cd85f1c94cf62799a25398e0b322024d1a3c"
+    "c6d8dd3": "sha256:cb9b83333552292e6574cbb2fd36cd85f1c94cf62799a25398e0b322024d1a3c",
+    "e84b9ab": "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5"
   },
   "configuration": {
     "model": "MiniCPM5-2B",
@@ -926,6 +927,218 @@
     "restored_managed_memory": false,
     "tts_off_after": true,
     "finished_epoch": 1793261784.96692
+  },
+  "packaging_fix_deployment": {
+    "receipt": {
+      "source": "e84b9ab",
+      "started_epoch": 1793265275.1694858,
+      "finished": true,
+      "previous_image": "sha256:cb9b83333552292e6574cbb2fd36cd85f1c94cf62799a25398e0b322024d1a3c",
+      "running_containers": [
+        "tuber-studio"
+      ],
+      "stage": "verify",
+      "image": "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5",
+      "passed": true,
+      "config_unchanged": true,
+      "finished_epoch": 1793265298.3709505
+    },
+    "verification": "{\"file\": \"evaluate_tts_candidates.py\", \"sha256\": \"d984553225a918b99888b8b49a27d3315392a3e40eddf8cd798d26cce4e23241\"}\n{\"file\": \"evaluate_tts_parity.py\", \"sha256\": \"e2fee01570a1c1b8a344141e52afd63083adba7da00f88e8f4b28cdd43bb8bc0\"}\n{\"file\": \"jetson/tts/install-candidates.py\", \"sha256\": \"7dbaff09febe4939ea59c45df06cf8da477a0069570bebc347f2db0b71473f1c\"}\n{\"profile\": {\"model\": \"MiniCPM5-2B\", \"resident_llm\": true, \"context_when_resident\": 131072, \"kv\": \"q4_0\", \"llm_pids\": [26]}}\n"
+  },
+  "post_reboot_formal_resource": {
+    "scope": "post-reboot formal resource acceptance; no archived-PCM quality gate",
+    "source": "e84b9ab",
+    "started_epoch": 1793265484.092431,
+    "finished": true,
+    "numerical_evidence": "evaluations/results/compact-live-runtime-20261029.json: matched six same-order PCM pairs",
+    "voice_quality_verified": false,
+    "speeches": [],
+    "before": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        26
+      ]
+    },
+    "completed": false,
+    "error": "Server error '503 Service Unavailable' for url 'http://127.0.0.1:9012/mode'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
+    "memory": {
+      "baseline": {
+        "available_kib": 3435052,
+        "swap_used_kib": 0,
+        "pswpin": 0,
+        "pswpout": 0,
+        "oom_kill": 0
+      },
+      "final": {
+        "available_kib": 3373208,
+        "swap_used_kib": 0,
+        "pswpin": 0,
+        "pswpout": 0,
+        "oom_kill": 0
+      },
+      "minimum_available_kib": 1709460,
+      "swapin_bytes": 0,
+      "swapout_bytes": 0,
+      "maximum_rolling_25s_swap_bytes": 0,
+      "oom_kill_delta": 0,
+      "samples": 55
+    },
+    "last_stage": "cold_live_mode",
+    "restored_profile": {
+      "model": "MiniCPM5-2B",
+      "resident_llm": true,
+      "context_when_resident": 131072,
+      "kv": "q4_0",
+      "llm_pids": [
+        66
+      ]
+    },
+    "finished_epoch": 1793265511.8305554,
+    "observed_failure_log_excerpt": [
+      "ggml_backend_cuda_buffer_type_alloc_buffer: allocating 1512.02 MiB on device 0: cudaMalloc failed: out of memory",
+      "alloc_tensor_range: failed to allocate CUDA0 buffer of size 1585468416"
+    ],
+    "failure_log_source": "runtime/inference-llm2b.log tail captured immediately after this probe, before candidate execution",
+    "pc_connectivity_observations": [
+      {
+        "epoch": 1793265488.5143294,
+        "utc": "2026-10-29T09:18:08.514329+00:00",
+        "observations": [
+          {
+            "address": "192.168.1.182",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.047,
+            "error": null
+          },
+          {
+            "address": "100.95.31.18",
+            "kind": "icmp",
+            "success": false,
+            "elapsed_seconds": 0.797,
+            "error": null
+          },
+          {
+            "address": "192.168.1.1",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.047,
+            "error": null
+          }
+        ]
+      },
+      {
+        "epoch": 1793265493.518348,
+        "utc": "2026-10-29T09:18:13.518348+00:00",
+        "observations": [
+          {
+            "address": "192.168.1.182",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.062,
+            "error": null
+          },
+          {
+            "address": "100.95.31.18",
+            "kind": "icmp",
+            "success": false,
+            "elapsed_seconds": 0.797,
+            "error": null
+          },
+          {
+            "address": "192.168.1.1",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.062,
+            "error": null
+          }
+        ]
+      },
+      {
+        "epoch": 1793265498.5195317,
+        "utc": "2026-10-29T09:18:18.519532+00:00",
+        "observations": [
+          {
+            "address": "192.168.1.182",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.062,
+            "error": null
+          },
+          {
+            "address": "100.95.31.18",
+            "kind": "icmp",
+            "success": false,
+            "elapsed_seconds": 0.797,
+            "error": null
+          },
+          {
+            "address": "192.168.1.1",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.047,
+            "error": null
+          }
+        ]
+      },
+      {
+        "epoch": 1793265503.520548,
+        "utc": "2026-10-29T09:18:23.520548+00:00",
+        "observations": [
+          {
+            "address": "192.168.1.182",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.047,
+            "error": null
+          },
+          {
+            "address": "100.95.31.18",
+            "kind": "icmp",
+            "success": false,
+            "elapsed_seconds": 0.782,
+            "error": null
+          },
+          {
+            "address": "192.168.1.1",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.032,
+            "error": null
+          }
+        ]
+      },
+      {
+        "epoch": 1793265508.5212507,
+        "utc": "2026-10-29T09:18:28.521251+00:00",
+        "observations": [
+          {
+            "address": "192.168.1.182",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.078,
+            "error": null
+          },
+          {
+            "address": "100.95.31.18",
+            "kind": "icmp",
+            "success": false,
+            "elapsed_seconds": 0.782,
+            "error": null
+          },
+          {
+            "address": "192.168.1.1",
+            "kind": "icmp",
+            "success": true,
+            "elapsed_seconds": 0.078,
+            "error": null
+          }
+        ]
+      }
+    ]
   },
   "no_pinned_allocation_trial": {
     "scope": "manual ProcessRunner isolated allocator experiment; not production live acceptance",

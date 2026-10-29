@@ -1,0 +1,1289 @@
+{
+  "schema_version": 1,
+  "review_date": "2026-10-29",
+  "kind": "pinned_primary_source_review_and_controlled_jetson_cpu_screening",
+  "status": "completed_stock_and_shared_loader_screening_not_a_global_memory_floor",
+  "scope": "Independent API/offline GPT-SoVITS v2 voice-preserving inference memory-floor investigation. No live coexistence, no production default changes.",
+  "baseline": {
+    "source_revision": "e84b9ab",
+    "container_image": "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5",
+    "voice": "whale_sovits_v2",
+    "weights_version": "da_fei_yu-v2-e12-e15",
+    "gpt_checkpoint": "runtime/tts/weights/da_fei_yu-e12.ckpt",
+    "sovits_checkpoint": "runtime/tts/weights/da_fei_yu_e15_s300.pth",
+    "reference": "runtime/tts/ref/dafeiyu_ref.wav",
+    "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+    "llm": "MiniCPM5-2B Q4_K_M, q4_0 K/V, 131072, text",
+    "tts": "off",
+    "business": "stopped",
+    "automatic_browse_and_reply": false,
+    "preserved_by_this_task": true
+  },
+  "sources": {
+    "genie_repository": "https://github.com/High-Logic/Genie-TTS",
+    "genie_revision": "d347fd0f8683e9a362b69f59fa0a4799ddb5e828",
+    "genie_license": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/LICENSE",
+    "genie_readme": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/README.md",
+    "genie_packaging": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/pyproject.toml",
+    "genie_loader": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/ModelManager.py#L123",
+    "genie_converter": "https://github.com/High-Logic/Genie-TTS/tree/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/Converter/v2",
+    "genie_version_selector": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/Converter/Converter.py#L7",
+    "genie_reference": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/Audio/ReferenceAudio.py",
+    "genie_dynamic_chinese": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/GetPhonesAndBert.py#L112",
+    "genie_inference": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/Core/Inference.py",
+    "genie_resources": "https://github.com/High-Logic/Genie-TTS/blob/d347fd0f8683e9a362b69f59fa0a4799ddb5e828/src/genie_tts/Core/Resources.py",
+    "genie_pypi_metadata": "https://pypi.org/pypi/genie-tts/json",
+    "ort_1221_metadata": "https://pypi.org/pypi/onnxruntime/1.22.1/json",
+    "optional_roberta_file_inventory": "https://huggingface.co/api/models/litagin/chinese-roberta-wwm-ext-large-onnx/tree/main?recursive=true&expand=false",
+    "optional_roberta_readme": "https://huggingface.co/litagin/chinese-roberta-wwm-ext-large-onnx/blob/main/README.md",
+    "ort_initializer_api": "https://onnxruntime.ai/docs/api/python/api_summary.html#onnxruntime.SessionOptions.add_initializer",
+    "ort_1221_initializer_api_source": "https://github.com/microsoft/onnxruntime/blob/v1.22.1/onnxruntime/python/onnxruntime_pybind_state.cc",
+    "ort_1221_session_config": "https://github.com/microsoft/onnxruntime/blob/v1.22.1/include/onnxruntime/core/session/onnxruntime_session_options_config_keys.h"
+  },
+  "source_verified_findings": {
+    "license": "Genie engine code is MIT, copyright High_Logic 2025. Optional RoBERTa model repository declares Apache-2.0. Existing custom voice metadata remains CC-BY-NC-4.0; engine licensing does not change voice licensing.",
+    "supported_models": "README/converters support v2 and v2ProPlus. The actual existing v2 custom checkpoints converted successfully; 1250 decoder/vocoder initializers passed exact key/shape checks, and both candidate loaders executed six actual syntheses. Seven additional text-encoder initializer dimensions were exercised through real encoder forwards but not separately enumerated by the explicit shape-check loop.",
+    "conversion": "The v2 converter injects checkpoint tensors into packaged pre-exported ONNX templates and emits external weight bins. It does not instantiate full GPT/SoVITS modules or trace torch.onnx.export. It loads whole checkpoints on CPU; the encoder conversion holds both GPT and SoVITS state dictionaries concurrently. The original generic selector guesses v2ProPlus using pth filesize >150MiB; this experiment explicitly selects v2 and must verify every mapped tensor shape.",
+    "conversion_peak_memory": "Measured successful conversion: function 1.276178739s; sampled whole-machine peak 2478756KiB (2.364GiB), child peak RSS639410176 bytes (609.79MiB). This is template weight injection, not a traced model export. Independent 180s deadline, zero swap traffic and OOM delta0.",
+    "runtime_precision": "The normal loader reads FP16 bin with numpy.fromfile, converts the entire array to FP32, creates an FP32 bytes buffer, copies slices into ONNX tensor raw_data, serializes the model, then constructs CPU ORT sessions. FP16 distribution storage does not establish FP16 computation or low cold-load peak.",
+    "decoder_residency": "First-stage and recurrent-stage decoders have the same 291 FP32 initializers and are independently loaded into separate sessions. The shared FP16 disk filename does not establish shared runtime backing buffers. ORT graph optimizations/prepacking/allocator behavior may further change measured residency.",
+    "target_chinese": "Chinese text has a dynamic RoBERTa ONNX path. Missing or failing RoBERTa assets silently yield all-zero features. The independent candidate instead uses the original Chinese frontend and actual original 22-layer BERT backbone on every synthesis call; zero features must fail the gate.",
+    "frontend_semantics": "Genie's Chinese frontend uses G2pM, Jieba and its own text normalization; inference also prepends Chinese punctuation, has baked ONNX sampling graphs, and caps the recurrent decode loop at 500 iterations. These differ from the original pipeline. The independent candidate preserves the original frontend and does not apply Genie's extra prefix, but sampling/vocoder/backend numerics still require separate quality review.",
+    "reference_precompute": "Upstream ReferenceAudio caches phones, BERT, 16k/32k audio and HuBERT ssl_content in RAM; CNHuBERT remains held on model_manager after extraction. There is no durable validated reference-only NPZ cache or explicit HuBERT release in that code path. A fixed-reference adaptation can persist these arrays or reuse this project's checked semantic reference cache while pruning only the reference quantizer branch from the encoder graph. Unknown future target text still requires real dynamic BERT.",
+    "cpu_arm64": "ONNX Runtime1.22.1 was installed into the new isolated candidate venv, imported with CPUExecutionProvider available, and executed original-v2 conversion, encoder, both AR decoder graphs and VITS on the actual aarch64/Python3.12 Jetson. Production ONNX1.17.0/Torch2.7/Transformers4.44.2 were reused without replacement.",
+    "gpu_arm64": "No CUDA EP experiment performed. Upstream does not offer a user-facing CUDA provider selection. A compatible Jetson CUDA ORT build/wheel, STFT/provider coverage and memory benefits are unverified; CUDA is not necessary for the minimal CPU route.",
+    "readme_performance": "README reports ~200MB Runtime Size, ~230MB model size and Japanese i7-13620H first-inference latency. Runtime Size has no defined RSS/peak-RAM measurement protocol and must not be interpreted as Jetson process or whole-machine memory. Japanese zero-BERT-path latency cannot establish Chinese dynamic-feature latency or residency.",
+    "runtime_adaptation": "Stock means the unchanged upstream FP16-bin-to-FP32 loading function, with CPU intra-op4/inter-op1 threads. Both candidates use the original deployed Chinese frontend, original 22-layer CPU FP32 BERT, original checked reference semantic/phones/BERT cache, and text-output-only ONNX encoder pruning. They are independent adapted backends, not the unmodified public genie_tts package workflow.",
+    "shared_initializer_boundary": "The initial attempt that cleared TensorProto external data failed in ORT graph optimization before synthesis. The corrected candidate retains legal FP32 external files, supplies immutable numpy.memmap-backed OrtValues through add_initializer and keeps backing arrays alive. The same AR backing file/views are supplied to both sessions. Optimizer/prepacking can still copy or retain weights; no claim of universal physical sharing inside ORT is established."
+  },
+  "static_v2_template_inventory": {
+    "method": "Read official pinned ONNX protobuf initializer tensor shapes, float32 datatype and external data metadata locally without installing/importing ONNX. Values describe serialized model parameter requirements, not a runtime benchmark or physical-memory lower bound.",
+    "templates": [
+      {
+        "file": "t2s_encoder_fp32.onnx",
+        "graph_bytes": 14568,
+        "float32_initializer_bytes": 11465732,
+        "initializer_count": 7
+      },
+      {
+        "file": "t2s_first_stage_decoder_fp32.onnx",
+        "graph_bytes": 423076,
+        "float32_initializer_bytes": 306827268,
+        "initializer_count": 291
+      },
+      {
+        "file": "t2s_stage_decoder_fp32.onnx",
+        "graph_bytes": 422151,
+        "float32_initializer_bytes": 306827268,
+        "initializer_count": 291
+      },
+      {
+        "file": "vits_fp32.onnx",
+        "graph_bytes": 1654845,
+        "float32_initializer_bytes": 161687040,
+        "initializer_count": 668
+      }
+    ],
+    "sum_float32_initializer_bytes_in_four_graphs": 786807308,
+    "sum_float32_initializer_mib_in_four_graphs": 750.36,
+    "excluded": [
+      "dynamic BERT",
+      "HuBERT",
+      "Python/Torch/ORT libraries",
+      "graph optimization/prepacking",
+      "temporary FP16/FP32/protobuf loading buffers",
+      "activations",
+      "KV",
+      "allocator arenas",
+      "OS and other services"
+    ],
+    "optional_roberta_assets": {
+      "model.onnx_bytes": 1197594863,
+      "model_fp16.onnx_bytes": 599034176,
+      "tokenizer.json_bytes": 438228,
+      "downloaded": false
+    },
+    "optional_roberta_representation": "Model card states that only the third-from-last hidden-state representation is exported, as used by Style-Bert-VITS2. The planned candidate uses the existing original BERT checkpoint directly, avoiding a new representation/tokenizer assumption."
+  },
+  "package_identity": {
+    "git_pyproject_version": "2.0.2",
+    "git_requires_python": ">=3.10",
+    "pypi_version": "2.0.2",
+    "pypi_requires_python": ">=3.9",
+    "pypi_wheel": "genie_tts-2.0.2-py3-none-any.whl",
+    "pypi_wheel_bytes": 489887,
+    "pypi_wheel_uploaded": "2025-12-12T07:43:31.573453Z",
+    "pypi_wheel_sha256": "36f4ece00281a89450aa0c0d00325852056baeff0dded42ab3465190b79ec30c",
+    "wheel_digest_verified": true,
+    "wheel_matches_git_for_loader_chinese_features_resources": false,
+    "implication": "A plain pip install genie-tts==2.0.2 does not reproduce the reviewed Git revision even though the version strings match. Use the fixed Git source/templates and record local adaptation.",
+    "ort_wheel": "onnxruntime-1.22.1-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    "ort_wheel_bytes": 14473861,
+    "ort_wheel_pypi_sha256": "984cea2a02fcc5dfea44ade9aca9fe0f7a8a2cd6f77c258fc4388238618f3928",
+    "ort_wheel_already_present_read_only": "runtime/evaluations/tts-candidates/wheels",
+    "planned_environment": "New runtime/evaluations/genie-floor-20261029/venv, no installed Torch/torchaudio/torchvision/transformers replacements; reuse original /opt/venv and /opt/studio-venv paths. Existing tts-candidates env and evidence remain read-only.",
+    "production_onnx": "1.17.0 in /opt/venv, read-only metadata inspection",
+    "production_protobuf": "6.30.2 in /opt/venv, read-only metadata inspection",
+    "optional_ort_dependencies_missing_in_production": [
+      "coloredlogs",
+      "flatbuffers",
+      "humanfriendly"
+    ],
+    "isolated_installed_packages": {
+      "onnxruntime": "1.22.1",
+      "coloredlogs": "15.0.1",
+      "humanfriendly": "10.0",
+      "flatbuffers": "25.2.10"
+    },
+    "verified_small_dependency_wheels": [
+      {
+        "package": "coloredlogs",
+        "version": "15.0.1",
+        "filename": "coloredlogs-15.0.1-py2.py3-none-any.whl",
+        "sha256": "612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934",
+        "url": "https://files.pythonhosted.org/packages/a7/06/3d6badcf13db419e25b07041d9c7b4a2c331d3f4e7134445ec5df57714cd/coloredlogs-15.0.1-py2.py3-none-any.whl"
+      },
+      {
+        "package": "humanfriendly",
+        "version": "10.0",
+        "filename": "humanfriendly-10.0-py2.py3-none-any.whl",
+        "sha256": "1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477",
+        "url": "https://files.pythonhosted.org/packages/f0/0f/310fb31e39e2d734ccaa2c0fb981ee41f7bd5056ce9bc29b2248bd569169/humanfriendly-10.0-py2.py3-none-any.whl"
+      },
+      {
+        "package": "flatbuffers",
+        "version": "25.2.10",
+        "filename": "flatbuffers-25.2.10-py2.py3-none-any.whl",
+        "sha256": "ebba5f4d5ea615af3f7fd70fc310636fbb2bbd1f566ac0a23d98dd412de50051",
+        "url": "https://files.pythonhosted.org/packages/b8/25/155f9f080d5e4bc0082edfda032ea2bc2b8fab3f4d25d46c1e9dd22a1a89/flatbuffers-25.2.10-py2.py3-none-any.whl"
+      }
+    ],
+    "original_runtime_protected": {
+      "torch": {
+        "version": "2.7.0",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "torchaudio": {
+        "version": "2.7.0",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "torchvision": {
+        "version": "0.22.0",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "torchao": {
+        "version": "0.10.0+gitbc4f51d",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "transformers": {
+        "version": "4.44.2",
+        "location": "/opt/studio-venv/lib/python3.12/site-packages"
+      }
+    },
+    "original_distribution_snapshot_unchanged": true,
+    "isolated_environment": "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv"
+  },
+  "fixed_experiment_plan": {
+    "claim": "Whether a checkpoint-preserving Genie CPU backend can reduce measured inference memory for arbitrary dynamic Chinese input in an isolated API/offline deployment; distinguish stock loader from shared-immutable-initializer adaptation.",
+    "control": "Performed: verified exact UID, argv, create_time of the unique original Mini immediately before signalling; after each model attempt group, typed broker warmup restored Mini and the existing profile checker confirmed the original text/131072/q4_0/TTS-off/business-off/automatic-off state. Production config bytes and original dependency version/path snapshots remained unchanged.",
+    "steps": [
+      "Provision an isolated env from verified wheel files; compare original distribution version/path snapshots before/after. No model imports during setup.",
+      "Under MemoryWatch, convert existing original GPT/SoVITS checkpoints with pinned v2 templates; check mapped keys and exact tensor shapes. Record conversion cold peak and wall time.",
+      "Reuse the existing content-checked reference cache only; create a text-output-only ONNX encoder graph and supply original cached reference semantic tokens. No precomputed target texts.",
+      "Load original 22-layer BERT on CPU FP32 and preserve the original Chinese text frontend; measure all imports/loading/first synthesis/hot synthesis for the 3 original screening sentences, 2 repetitions each, target features recomputed every time.",
+      "Run stock FP16-bin-to-FP32 loader first. Only if measured loader duplication/cold peak justifies it, test ORT add_initializer with one immutable FP32 buffer per weight bin shared between two AR sessions. Record a changed loader/backend candidate, not bitwise equivalence.",
+      "Restore the original Mini profile; any real memory/swap/OOM/deadline guard abort stops subsequent model candidates in this window."
+    ],
+    "limits": {
+      "available_memory_floor_mib": 160,
+      "rolling_swap_traffic_mib": 64,
+      "rolling_swap_window_seconds": 25,
+      "sample_interval_seconds": 0.5,
+      "conversion_deadline_seconds": 180,
+      "stock_run_deadline_seconds": 270,
+      "shared_run_deadline_seconds": 270
+    },
+    "required_observations": [
+      "whole-machine MemTotal-MemAvailable cold peak",
+      "child peak RSS",
+      "phase minima",
+      "swapin/swapout and rolling traffic",
+      "OOM-kill delta",
+      "conversion/reference/first/hot wall times",
+      "audio duration",
+      "RTF",
+      "finite/non-silent PCM",
+      "separate listening/quality evidence before any quality claim"
+    ],
+    "numerical_and_quality_boundary": "Existing original voice checkpoints/reference preserved. CPU FP32 BERT, Genie sampling and ONNX vocoder may change samples/prosody. Non-silence is only an execution gate; listening, recognition quality, voice identity, bitwise parity and sustained-live performance remain unverified.",
+    "not_planned_in_first_window": [
+      "CUDA EP",
+      "new voices",
+      "new LLM/visual models",
+      "BERT disabled",
+      "target-corpus precompute presented as arbitrary-input floor",
+      "production changes",
+      "live coexistence",
+      "other-engine scan"
+    ],
+    "execution_deviation": "Container DNS prevented online dependency setup before Mini was touched. Official dependency wheels were downloaded/verified on the Windows workstation and transferred in one stdin payload. Setup/controller fixes were kept separate from memory/model failures. The successful conversion and stock run, followed by one corrected shared-loader retry, completed without a memory guard abort."
+  },
+  "execution": {
+    "cpu_synthesis_runs_completed": 2,
+    "cpu_synthesis_utterances_completed": 12,
+    "gpu_model_runs": 0,
+    "isolated_dependency_installation_commands": 1,
+    "isolated_dependency_distributions_installed": 4,
+    "production_dependency_installations": 0,
+    "successful_model_conversions": 1,
+    "reference_precompute_runs": 0,
+    "reference_precompute_policy": "The existing original checked fixed-reference cache was reused and validated. No HuBERT reload or new reference extraction was needed; those historical once-only costs are outside this new run, not zero-cost reference preparation claims.",
+    "production_configuration_writes": 0,
+    "other_containers_or_services_touched": false,
+    "stock_measurement": {
+      "action": "run",
+      "variant": "stock",
+      "completed": true,
+      "guard_reason": null,
+      "returncode": 0,
+      "memory": {
+        "baseline": {
+          "available_kib": 5789664,
+          "swap_used_kib": 0,
+          "pswpin": 0,
+          "pswpout": 0,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 6767060,
+          "swap_used_kib": 1280,
+          "pswpin": 8,
+          "pswpout": 220,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1540876,
+        "swapin_bytes": 32768,
+        "swapout_bytes": 901120,
+        "maximum_rolling_25s_swap_bytes": 933888,
+        "oom_kill_delta": 0,
+        "samples": 109
+      },
+      "peak_machine_total_minus_available_kib": 6261840,
+      "sampled_peak_child_rss_bytes": 5521666048,
+      "phase_minimum_available_kib": {
+        "imports": 5550936,
+        "bert_loading": 4184576,
+        "session_loading": 1540876,
+        "start_speech": 2227408,
+        "completed": 3401564
+      },
+      "events": [
+        {
+          "stage": "reference_precomputed",
+          "reference_cache": {
+            "arrays": {
+              "prompt_semantic": {
+                "dtype": "int64",
+                "shape": [
+                  123
+                ]
+              },
+              "reference_bert": {
+                "dtype": "float16",
+                "shape": [
+                  1024,
+                  41
+                ]
+              },
+              "reference_phones": {
+                "dtype": "int64",
+                "shape": [
+                  41
+                ]
+              },
+              "reference_spec": {
+                "dtype": "float16",
+                "shape": [
+                  1,
+                  1025,
+                  217
+                ]
+              }
+            },
+            "format": 1,
+            "identity": {
+              "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+              "config_sha256": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+              "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+              "paths": {
+                "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+                "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+                "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+                "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+                "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+                "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+                "reference": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+                "t2s": "/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt",
+                "vits": "/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth"
+              },
+              "precision": "float16",
+              "prompt_lang": "zh",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "sha256": {
+                "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+                "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+                "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+                "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+                "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+                "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+                "reference": "ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b",
+                "t2s": "415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3",
+                "vits": "1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb"
+              },
+              "source_sha256": {
+                "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+                "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+                "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+                "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+                "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+                "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+              },
+              "upstream": "20240821v2",
+              "voice_id": "whale_sovits_v2",
+              "voice_version": "sirmn6-v1",
+              "weights_version": "da_fei_yu-v2-e12-e15"
+            },
+            "norm_text": "什么嘛,这么简单的事情,你居然专门跑来问我.",
+            "npz_sha256": "e14fdfdfa70af5e424cdc56b75307f39193fd42e06193c34dde2df17861fa56a"
+          },
+          "new_reference_precompute": false,
+          "dynamic_target_features": true,
+          "resident_hubert": false
+        },
+        {
+          "stage": "bert_loading"
+        },
+        {
+          "stage": "bert_loaded",
+          "seconds": 4.476822478000031,
+          "layers": 22,
+          "dtype": "float32",
+          "device": "cpu"
+        },
+        {
+          "stage": "session_loading",
+          "file": "text_encoder_cached_reference.onnx",
+          "variant": "stock"
+        },
+        {
+          "stage": "session_loading",
+          "file": "vits_fp32.onnx",
+          "variant": "stock"
+        },
+        {
+          "stage": "session_loading",
+          "file": "t2s_first_stage_decoder_fp32.onnx",
+          "variant": "stock"
+        },
+        {
+          "stage": "session_loading",
+          "file": "t2s_stage_decoder_fp32.onnx",
+          "variant": "stock"
+        },
+        {
+          "stage": "loaded",
+          "seconds": 12.683010247000311,
+          "providers": [
+            "CPUExecutionProvider"
+          ],
+          "dynamic_bert_resident": true,
+          "variant": "stock"
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 0,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 0,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "seconds": 7.4308046410001225,
+          "dynamic_frontend_seconds": 3.006089252000038,
+          "audio_seconds": 3.24,
+          "rtf": 2.293458222530902,
+          "peak": 0.9137787818908691,
+          "rms": 0.2084159553050995,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 0,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 0,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "seconds": 5.483857015000012,
+          "dynamic_frontend_seconds": 0.8113788839996232,
+          "audio_seconds": 3.4,
+          "rtf": 1.6128991220588271,
+          "peak": 0.8976765275001526,
+          "rms": 0.21466539800167084,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 0,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！"
+        },
+        {
+          "stage": "speech",
+          "repetition": 0,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "seconds": 5.693152773999827,
+          "dynamic_frontend_seconds": 0.7124172909998379,
+          "audio_seconds": 3.72,
+          "rtf": 1.530417412365545,
+          "peak": 0.8787365555763245,
+          "rms": 0.205366313457489,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 1,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 1,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "seconds": 5.015288634000171,
+          "dynamic_frontend_seconds": 0.7637720130001071,
+          "audio_seconds": 3.08,
+          "rtf": 1.6283404655844713,
+          "peak": 0.8977423310279846,
+          "rms": 0.1999639868736267,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 1,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 1,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "seconds": 6.466520126999967,
+          "dynamic_frontend_seconds": 0.8208099519997631,
+          "audio_seconds": 4.28,
+          "rtf": 1.510869188551394,
+          "peak": 0.9349771738052368,
+          "rms": 0.21990735828876495,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 1,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！"
+        },
+        {
+          "stage": "speech",
+          "repetition": 1,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "seconds": 4.5018702389998,
+          "dynamic_frontend_seconds": 0.7248040599997694,
+          "audio_seconds": 2.68,
+          "rtf": 1.6798023279849998,
+          "peak": 0.9114125967025757,
+          "rms": 0.1973387897014618,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "completed",
+          "variant": "stock"
+        }
+      ],
+      "error_tail": null
+    },
+    "shared_measurement": {
+      "action": "run",
+      "variant": "shared",
+      "completed": true,
+      "guard_reason": null,
+      "returncode": 0,
+      "memory": {
+        "baseline": {
+          "available_kib": 5795392,
+          "swap_used_kib": 1280,
+          "pswpin": 8,
+          "pswpout": 220,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 5781124,
+          "swap_used_kib": 1280,
+          "pswpin": 8,
+          "pswpout": 220,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 2631924,
+        "swapin_bytes": 0,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 0,
+        "oom_kill_delta": 0,
+        "samples": 107
+      },
+      "peak_machine_total_minus_available_kib": 5170792,
+      "sampled_peak_child_rss_bytes": 3472842752,
+      "phase_minimum_available_kib": {
+        "imports": 5563784,
+        "bert_loading": 4738504,
+        "session_loading": 2887008,
+        "start_speech": 2631924,
+        "completed": 3254880
+      },
+      "events": [
+        {
+          "stage": "reference_precomputed",
+          "reference_cache": {
+            "arrays": {
+              "prompt_semantic": {
+                "dtype": "int64",
+                "shape": [
+                  123
+                ]
+              },
+              "reference_bert": {
+                "dtype": "float16",
+                "shape": [
+                  1024,
+                  41
+                ]
+              },
+              "reference_phones": {
+                "dtype": "int64",
+                "shape": [
+                  41
+                ]
+              },
+              "reference_spec": {
+                "dtype": "float16",
+                "shape": [
+                  1,
+                  1025,
+                  217
+                ]
+              }
+            },
+            "format": 1,
+            "identity": {
+              "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+              "config_sha256": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+              "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+              "paths": {
+                "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+                "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+                "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+                "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+                "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+                "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+                "reference": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+                "t2s": "/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt",
+                "vits": "/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth"
+              },
+              "precision": "float16",
+              "prompt_lang": "zh",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "sha256": {
+                "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+                "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+                "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+                "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+                "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+                "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+                "reference": "ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b",
+                "t2s": "415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3",
+                "vits": "1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb"
+              },
+              "source_sha256": {
+                "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+                "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+                "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+                "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+                "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+                "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+              },
+              "upstream": "20240821v2",
+              "voice_id": "whale_sovits_v2",
+              "voice_version": "sirmn6-v1",
+              "weights_version": "da_fei_yu-v2-e12-e15"
+            },
+            "norm_text": "什么嘛,这么简单的事情,你居然专门跑来问我.",
+            "npz_sha256": "e14fdfdfa70af5e424cdc56b75307f39193fd42e06193c34dde2df17861fa56a"
+          },
+          "new_reference_precompute": false,
+          "dynamic_target_features": true,
+          "resident_hubert": false
+        },
+        {
+          "stage": "bert_loading"
+        },
+        {
+          "stage": "bert_loaded",
+          "seconds": 4.447576955999921,
+          "layers": 22,
+          "dtype": "float32",
+          "device": "cpu"
+        },
+        {
+          "stage": "session_loading",
+          "file": "text_encoder_cached_reference.onnx",
+          "variant": "shared"
+        },
+        {
+          "stage": "session_loading",
+          "file": "vits_fp32.onnx",
+          "variant": "shared"
+        },
+        {
+          "stage": "session_loading",
+          "file": "t2s_first_stage_decoder_fp32.onnx",
+          "variant": "shared"
+        },
+        {
+          "stage": "session_loading",
+          "file": "t2s_stage_decoder_fp32.onnx",
+          "variant": "shared"
+        },
+        {
+          "stage": "loaded",
+          "seconds": 9.819870303000243,
+          "providers": [
+            "CPUExecutionProvider"
+          ],
+          "dynamic_bert_resident": true,
+          "variant": "shared"
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 0,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 0,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "seconds": 7.893350466000356,
+          "dynamic_frontend_seconds": 3.2867661810000754,
+          "audio_seconds": 3.36,
+          "rtf": 2.3492114482143918,
+          "peak": 0.821986198425293,
+          "rms": 0.20977851748466492,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 0,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 0,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "seconds": 5.522842530000162,
+          "dynamic_frontend_seconds": 0.8147906889998922,
+          "audio_seconds": 3.48,
+          "rtf": 1.587023715517288,
+          "peak": 0.910323441028595,
+          "rms": 0.2138666808605194,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 0,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！"
+        },
+        {
+          "stage": "speech",
+          "repetition": 0,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "seconds": 5.4238414759997795,
+          "dynamic_frontend_seconds": 0.7234304349999547,
+          "audio_seconds": 3.48,
+          "rtf": 1.558575136781546,
+          "peak": 0.9025363326072693,
+          "rms": 0.18636740744113922,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 1,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 1,
+          "index": 0,
+          "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "seconds": 5.142201568000019,
+          "dynamic_frontend_seconds": 0.7606933860001845,
+          "audio_seconds": 3.2,
+          "rtf": 1.6069379900000058,
+          "peak": 0.9013491272926331,
+          "rms": 0.20189416408538818,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 1,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。"
+        },
+        {
+          "stage": "speech",
+          "repetition": 1,
+          "index": 1,
+          "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+          "seconds": 6.83659383999975,
+          "dynamic_frontend_seconds": 0.8098684289998346,
+          "audio_seconds": 4.6,
+          "rtf": 1.486216052173859,
+          "peak": 0.8849644064903259,
+          "rms": 0.21248213946819305,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "start_speech",
+          "repetition": 1,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！"
+        },
+        {
+          "stage": "speech",
+          "repetition": 1,
+          "index": 2,
+          "text": "收到三份海苔饭团啦，谢谢小壳！",
+          "seconds": 5.326136242999837,
+          "dynamic_frontend_seconds": 0.7160080710000329,
+          "audio_seconds": 3.44,
+          "rtf": 1.548295419476697,
+          "peak": 0.916020929813385,
+          "rms": 0.20317180454730988,
+          "valid_non_silent": true
+        },
+        {
+          "stage": "completed",
+          "variant": "shared"
+        }
+      ],
+      "error_tail": null
+    },
+    "conversion_measurement": {
+      "action": "convert",
+      "variant": "stock",
+      "completed": true,
+      "guard_reason": null,
+      "returncode": 0,
+      "memory": {
+        "baseline": {
+          "available_kib": 5795168,
+          "swap_used_kib": 0,
+          "pswpin": 0,
+          "pswpout": 0,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 5784308,
+          "swap_used_kib": 0,
+          "pswpin": 0,
+          "pswpout": 0,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 5323960,
+        "swapin_bytes": 0,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 0,
+        "oom_kill_delta": 0,
+        "samples": 11
+      },
+      "peak_machine_total_minus_available_kib": 2478756,
+      "sampled_peak_child_rss_bytes": 639410176,
+      "phase_minimum_available_kib": {
+        "imports": 5408636,
+        "converted": 5323960
+      },
+      "events": [
+        {
+          "stage": "converted",
+          "seconds": 1.2761787389999881,
+          "mapped_initializers_shape_checked": 1250,
+          "files": {
+            "vits_fp32.onnx": 1654845,
+            "t2s_encoder_fp32.onnx": 14568,
+            "t2s_stage_decoder_fp32.onnx": 417625,
+            "vits_fp16.bin": 80843520,
+            "t2s_encoder_fp32.bin": 11465732,
+            "t2s_shared_fp16.bin": 153413634,
+            "t2s_first_stage_decoder_fp32.onnx": 416803
+          }
+        }
+      ],
+      "error_tail": null
+    },
+    "shared_initial_setup_failure": {
+      "action": "run",
+      "variant": "shared",
+      "completed": false,
+      "guard_reason": null,
+      "returncode": 1,
+      "memory": {
+        "baseline": {
+          "available_kib": 6774212,
+          "swap_used_kib": 1280,
+          "pswpin": 8,
+          "pswpout": 220,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 6780300,
+          "swap_used_kib": 1280,
+          "pswpin": 8,
+          "pswpout": 220,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 4988288,
+        "swapin_bytes": 0,
+        "swapout_bytes": 0,
+        "maximum_rolling_25s_swap_bytes": 0,
+        "oom_kill_delta": 0,
+        "samples": 25
+      },
+      "peak_machine_total_minus_available_kib": 2814428,
+      "sampled_peak_child_rss_bytes": 1977888768,
+      "phase_minimum_available_kib": {
+        "imports": 6530332,
+        "bert_loading": 5714844,
+        "session_loading": 4988288
+      },
+      "events": [
+        {
+          "stage": "reference_precomputed",
+          "reference_cache": {
+            "arrays": {
+              "prompt_semantic": {
+                "dtype": "int64",
+                "shape": [
+                  123
+                ]
+              },
+              "reference_bert": {
+                "dtype": "float16",
+                "shape": [
+                  1024,
+                  41
+                ]
+              },
+              "reference_phones": {
+                "dtype": "int64",
+                "shape": [
+                  41
+                ]
+              },
+              "reference_spec": {
+                "dtype": "float16",
+                "shape": [
+                  1,
+                  1025,
+                  217
+                ]
+              }
+            },
+            "format": 1,
+            "identity": {
+              "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+              "config_sha256": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+              "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+              "paths": {
+                "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+                "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+                "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+                "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+                "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+                "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+                "reference": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+                "t2s": "/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt",
+                "vits": "/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth"
+              },
+              "precision": "float16",
+              "prompt_lang": "zh",
+              "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+              "sha256": {
+                "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+                "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+                "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+                "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+                "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+                "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+                "reference": "ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b",
+                "t2s": "415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3",
+                "vits": "1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb"
+              },
+              "source_sha256": {
+                "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+                "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+                "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+                "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+                "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+                "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+              },
+              "upstream": "20240821v2",
+              "voice_id": "whale_sovits_v2",
+              "voice_version": "sirmn6-v1",
+              "weights_version": "da_fei_yu-v2-e12-e15"
+            },
+            "norm_text": "什么嘛,这么简单的事情,你居然专门跑来问我.",
+            "npz_sha256": "e14fdfdfa70af5e424cdc56b75307f39193fd42e06193c34dde2df17861fa56a"
+          },
+          "new_reference_precompute": false,
+          "dynamic_target_features": true,
+          "resident_hubert": false
+        },
+        {
+          "stage": "bert_loading"
+        },
+        {
+          "stage": "bert_loaded",
+          "seconds": 4.532126696999967,
+          "layers": 22,
+          "dtype": "float32",
+          "device": "cpu"
+        },
+        {
+          "stage": "session_loading",
+          "file": "text_encoder_cached_reference.onnx",
+          "variant": "shared"
+        },
+        {
+          "stage": "session_loading",
+          "file": "vits_fp32.onnx",
+          "variant": "shared"
+        }
+      ],
+      "error_tail": "workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin\", \"reference\": \"/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav\", \"t2s\": \"/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt\", \"vits\": \"/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth\"}, \"precision\": \"float16\", \"prompt_lang\": \"zh\", \"prompt_text\": \"什么嘛，这么简单的事情，你居然专门跑来问我。\", \"reference_text\": \"什么嘛，这么简单的事情，你居然专门跑来问我。\", \"sha256\": {\"bert/config.json\": \"3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5\", \"bert/pytorch_model.bin\": \"e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8\", \"bert/tokenizer.json\": \"173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b\", \"hubert/config.json\": \"c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103\", \"hubert/preprocessor_config.json\": \"dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b\", \"hubert/pytorch_model.bin\": \"24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c\", \"reference\": \"ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b\", \"t2s\": \"415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3\", \"vits\": \"1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb\"}, \"source_sha256\": {\"GPT_SoVITS/TTS_infer_pack/TTS.py\": \"bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670\", \"GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py\": \"9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874\", \"GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py\": \"097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b\", \"GPT_SoVITS/feature_extractor/cnhubert.py\": \"80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33\", \"GPT_SoVITS/module/mel_processing.py\": \"34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc\", \"tools/my_utils.py\": \"4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3\"}, \"upstream\": \"20240821v2\", \"voice_id\": \"whale_sovits_v2\", \"voice_version\": \"sirmn6-v1\", \"weights_version\": \"da_fei_yu-v2-e12-e15\"}, \"norm_text\": \"什么嘛,这么简单的事情,你居然专门跑来问我.\", \"npz_sha256\": \"e14fdfdfa70af5e424cdc56b75307f39193fd42e06193c34dde2df17861fa56a\"}, \"new_reference_precompute\": false, \"dynamic_target_features\": true, \"resident_hubert\": false}\nTUBER_GENIE {\"stage\": \"bert_loading\"}\nGPT-SoVITS v2 compatibility source checks passed\nTUBER_GENIE {\"stage\": \"bert_loaded\", \"seconds\": 4.532126696999967, \"layers\": 22, \"dtype\": \"float32\", \"device\": \"cpu\"}\nTUBER_GENIE {\"stage\": \"session_loading\", \"file\": \"text_encoder_cached_reference.onnx\", \"variant\": \"shared\"}\nTUBER_GENIE {\"stage\": \"session_loading\", \"file\": \"vits_fp32.onnx\", \"variant\": \"shared\"}\n\u001b[1;31m2026-10-29 09:51:59.921048938 [E:onnxruntime:, inference_session.cc:2280 operator()] Exception during initialization: /onnxruntime_src/onnxruntime/core/optimizer/initializer.cc:48 onnxruntime::Initializer::Initializer(const onnx::TensorProto&, const std::filesystem::__cxx11::path&) [ONNXRuntimeError] : 2 : INVALID_ARGUMENT : corrupted protobuf data: tensor shape size(2816) does not match the data size(0) in proto\n\u001b[m\nTraceback (most recent call last):\n  File \"/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/evaluate_genie_tts.py\", line 357, in <module>\n    main()\n  File \"/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/evaluate_genie_tts.py\", line 351, in main\n    (convert if args.action==\"convert\" else run)(args)\n  File \"/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/evaluate_genie_tts.py\", line 226, in run\n    vocoder = session(modeldir/\"vits_fp32.onnx\", \"vits_fp16.bin\")\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/evaluate_genie_tts.py\", line 223, in session\n    return ort.InferenceSession(model.SerializeToString(), providers=[\"CPUExecutionProvider\"], sess_options=options)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/lib/python3.12/site-packages/onnxruntime/capi/onnxruntime_inference_collection.py\", line 472, in __init__\n    self._create_inference_session(providers, provider_options, disabled_optimizers)\n  File \"/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2/venv/lib/python3.12/site-packages/onnxruntime/capi/onnxruntime_inference_collection.py\", line 561, in _create_inference_session\n    sess.initialize_session(providers, provider_options, disabled_optimizers)\nonnxruntime.capi.onnxruntime_pybind11_state.RuntimeException: [ONNXRuntimeError] : 6 : RUNTIME_EXCEPTION : Exception during initialization: /onnxruntime_src/onnxruntime/core/optimizer/initializer.cc:48 onnxruntime::Initializer::Initializer(const onnx::TensorProto&, const std::filesystem::__cxx11::path&) [ONNXRuntimeError] : 2 : INVALID_ARGUMENT : corrupted protobuf data: tensor shape size(2816) does not match the data size(0) in proto\n\n"
+    },
+    "listening_assessment": null,
+    "global_minimum_memory_floor_mib": null,
+    "guard_aborted": false,
+    "model_checkpoint_incompatibility_observed": false,
+    "user_cancelled": false,
+    "setup_failures": [
+      {
+        "stage": "initial_remote_preparation",
+        "classification": "network_setup",
+        "detail": "SSH LAN and Tailscale intermittently timed out; docker cp to read-only rootfs /tmp failed. No Mini signal/model run/install at that stage."
+      },
+      {
+        "stage": "controller_initial",
+        "classification": "dependency_network_setup",
+        "detail": "Container DNS URLError before installation or Mini signalling. Initial controller receipt states original packages/config bytes unchanged."
+      },
+      {
+        "stage": "convert_initial",
+        "classification": "independent_tool_resource_lookup_setup",
+        "detail": "Module namespace lacked __spec__; importlib.resources failed before checkpoint mapping. Mini197 restored through typed broker to364. No guard fired."
+      },
+      {
+        "stage": "shared_initial",
+        "classification": "ort_graph_optimizer_initializer_setup",
+        "detail": "ORT rejected empty TensorProto despite add_initializer. Mini364 restored to466. This failure is not a memory floor or checkpoint failure."
+      }
+    ],
+    "restoration": {
+      "initial_original_mini_identity": {
+        "pid": 364,
+        "uid": 1001,
+        "create_time": 1793267361.44,
+        "argv": [
+          "/opt/llama/bin/llama-server",
+          "-m",
+          "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+          "--alias",
+          "MiniCPM5-2B",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "9013",
+          "--jinja",
+          "--ctx-size",
+          "131072",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--n-gpu-layers",
+          "99",
+          "--flash-attn",
+          "on",
+          "--cache-type-k",
+          "q4_0",
+          "--cache-type-v",
+          "q4_0",
+          "--reasoning",
+          "auto",
+          "--temp",
+          "1.0",
+          "--top-p",
+          "0.95",
+          "--min-p",
+          "0.0",
+          "--batch-size",
+          "256",
+          "--ubatch-size",
+          "64",
+          "--cache-ram",
+          "0",
+          "--no-mmap",
+          "--direct-io"
+        ]
+      },
+      "last_shared_original_mini_identity": {
+        "pid": 466,
+        "uid": 1001,
+        "create_time": 1793267522.07,
+        "argv": [
+          "/opt/llama/bin/llama-server",
+          "-m",
+          "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+          "--alias",
+          "MiniCPM5-2B",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "9013",
+          "--jinja",
+          "--ctx-size",
+          "131072",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--n-gpu-layers",
+          "99",
+          "--flash-attn",
+          "on",
+          "--cache-type-k",
+          "q4_0",
+          "--cache-type-v",
+          "q4_0",
+          "--reasoning",
+          "auto",
+          "--temp",
+          "1.0",
+          "--top-p",
+          "0.95",
+          "--min-p",
+          "0.0",
+          "--batch-size",
+          "256",
+          "--ubatch-size",
+          "64",
+          "--cache-ram",
+          "0",
+          "--no-mmap",
+          "--direct-io"
+        ]
+      },
+      "stock_attempt_restored_profile": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          466
+        ]
+      },
+      "final_restored_profile": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          532
+        ]
+      },
+      "final_profile_checks": "The existing profile() check required text mode, selected MiniCPM5-2B/131072, no broker job, production TTS stopped, business stopped, and automatic browse/reply false.",
+      "production_config_bytes_unchanged": true,
+      "protected_configuration_files": [
+        "runtime/studio.json",
+        "runtime/tts/tts_infer.yaml",
+        "config/voices.json"
+      ],
+      "original_distribution_versions_and_paths_unchanged": true,
+      "finished_utc": "2026-10-29T09:55:46Z",
+      "device_window_returned": true,
+      "initial_before_first_controlled_unload": {
+        "pid": 197,
+        "uid": 1001,
+        "create_time": 1793265905.81,
+        "argv": [
+          "/opt/llama/bin/llama-server",
+          "-m",
+          "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+          "--alias",
+          "MiniCPM5-2B",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "9013",
+          "--jinja",
+          "--ctx-size",
+          "131072",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--n-gpu-layers",
+          "99",
+          "--flash-attn",
+          "on",
+          "--cache-type-k",
+          "q4_0",
+          "--cache-type-v",
+          "q4_0",
+          "--reasoning",
+          "auto",
+          "--temp",
+          "1.0",
+          "--top-p",
+          "0.95",
+          "--min-p",
+          "0.0",
+          "--batch-size",
+          "256",
+          "--ubatch-size",
+          "64",
+          "--cache-ram",
+          "0",
+          "--no-mmap",
+          "--direct-io"
+        ]
+      }
+    },
+    "remote_evidence_directory": "/workspace/tuber/runtime/evaluations/genie-floor-20261029/attempt2",
+    "remote_stock_audio_pattern": "measurement-resume/stock-{repetition}-{index}.wav",
+    "remote_shared_audio_pattern": "measurement-sharedfix/shared-{repetition}-{index}.wav"
+  },
+  "tooling": {
+    "independent_tool": "tools/evaluate_genie_tts.py",
+    "checks_completed": [
+      "project uv run --no-sync Python syntax compile",
+      "--help without importing Torch/ORT",
+      "static review of original frontend and cache shape boundary",
+      "Actual pinned-template conversion with real custom checkpoints",
+      "6/6 stock CPU synthesis cases with dynamic original22-layer BERT",
+      "6/6 corrected shared-loader CPU synthesis cases",
+      "Exact process identity before controlled Mini unload",
+      "Typed broker restoration and original config/dependency invariance receipts",
+      "Project Ruff targeted lint and formatting checks after implementation",
+      "Final JSON syntax validation and owned-file diff whitespace check"
+    ],
+    "device_execution_verified": true,
+    "limitations": "The maintained tool runs an independent backend only; maintenance lifecycle and offline installation were task-only controllers. Hot-phase memory was aggregated, exact process cold-to-first latency was not isolated, and the historical reference extraction was reused rather than rerun.",
+    "source_archive_sha256": "7ea2e5083c571a39ab2bc16205e21b92a953cb07999301a7d5ffcb566566f1da",
+    "tool_sha256_stock_and_initial_shared": "b5bc13d3d35760403b65cca5473bf24068b43826388c71792283c999736428b7",
+    "tool_sha256_corrected_shared": "dd2431f2af4d047b7811f8b472e63cc646caadf1c572738421ac3c811c1cd03c",
+    "maintained_tool_sha256_after_formatting": "ba55b7a2cc9fcf58d23173c7f6f6a5a1368ad05ed3c44de45c0f09d197cfc711",
+    "formatting_note": "Measured tool identities above identify the exact source payloads used on device. The maintained local file subsequently received import sorting, formatting, and replacement of the List alias with the equivalent built-in list in the unchanged upstream function execution scope; no model/measurement behavior was changed."
+  },
+  "conclusion": "The original v2 voice runs through pinned Genie ONNX on Jetson CPU with real dynamic original Chinese BERT. Its stock loader reached 5.972 GiB sampled whole-machine peak; a corrected external-FP32/memmap/add_initializer loader reached 4.931 GiB, with 6/6 non-silent syntheses each. The measured cold-peak reduction is useful, but neither an extremely small Chinese inference runtime nor a lower steady residency/global floor is demonstrated. Original Mini text profile and production config/dependencies were restored/preserved.",
+  "measurement_summary": {
+    "stock": {
+      "completed_speech_cases": 6,
+      "non_silent_finite_cases": 6,
+      "whole_machine_sampled_peak_gib": 5.9717559814453125,
+      "child_sampled_peak_rss_gib": 5.142452239990234,
+      "phase_load_seconds": 12.683010247000311,
+      "first_synthesis_seconds": 7.4308046410001225,
+      "first_audio_seconds": 3.24,
+      "first_rtf": 2.293458222530902,
+      "phase_load_plus_first_synthesis_seconds": 20.113814888000434,
+      "full_process_imports_reference_validation_to_first_audio_seconds": null,
+      "remaining_calls_seconds_range": [
+        4.5018702389998,
+        6.466520126999967
+      ],
+      "remaining_calls_rtf_range": [
+        1.510869188551394,
+        1.6798023279849998
+      ],
+      "remaining_calls_median_seconds": 5.483857015000012,
+      "reference_encoder_resident": false,
+      "dynamic_22_layer_bert_resident": true,
+      "target_features_recomputed_each_call": true
+    },
+    "shared": {
+      "completed_speech_cases": 6,
+      "non_silent_finite_cases": 6,
+      "whole_machine_sampled_peak_gib": 4.931251525878906,
+      "child_sampled_peak_rss_gib": 3.2343368530273438,
+      "phase_load_seconds": 9.819870303000243,
+      "first_synthesis_seconds": 7.893350466000356,
+      "first_audio_seconds": 3.36,
+      "first_rtf": 2.3492114482143918,
+      "phase_load_plus_first_synthesis_seconds": 17.7132207690006,
+      "full_process_imports_reference_validation_to_first_audio_seconds": null,
+      "remaining_calls_seconds_range": [
+        5.142201568000019,
+        6.83659383999975
+      ],
+      "remaining_calls_rtf_range": [
+        1.486216052173859,
+        1.6069379900000058
+      ],
+      "remaining_calls_median_seconds": 5.4238414759997795,
+      "reference_encoder_resident": false,
+      "dynamic_22_layer_bert_resident": true,
+      "target_features_recomputed_each_call": true
+    },
+    "whole_machine_cold_peak_reduction_mib": 1065.4765625,
+    "whole_machine_cold_peak_reduction_fraction": 0.17423760428244728,
+    "child_peak_rss_reduction_mib": 1953.91015625,
+    "swap_and_oom": "Stock: 32768B swapin +901120B swapout, max rolling933888B. Shared: zero new swap traffic. OOM-kill deltas0 and no guards for either successful synthesis run.",
+    "interpretation": "The shared/external-file loader reduced the measured whole-machine cold peak by about 1.04 GiB and child peakRSS by about 1.91 GiB. This is a composite loader change, not proof that initializer sharing alone caused all of the reduction. No lower hot residency or global inference floor is established."
+  },
+  "comparison_boundaries": {
+    "against_production_compact": "Genie candidate is CPU FP32 BERT and CPU FP32 AR/VITS with four CPU threads; existing compact production path uses CUDA FP16 and the original AR/VITS backend. Original frontend/reference/checkpoints were retained, but this is not a matched-precision/backend comparison or proof that Genie uses less RAM than compact.",
+    "frontend": "Original deployed TextPreprocessor.preprocess(text, zh, cut5) with its original default phoneme version, no extra Genie punctuation prefix. All input sentences were split into actual original frontend chunks and dynamically processed each time.",
+    "conditioning": "Reference cache is original FP16 conditioning promoted to FP32 when fed to ONNX. Dynamic target BERT executes original 22 layers in FP32. Reference HuBERT is not resident.",
+    "sampling": "The shipped Genie ONNX graphs contain their own TopK/RandomNormalLike sampling and 500-iteration limit. No equivalence to original seed42/top_k5/top_p1/temperature1/repetition_penalty1.35 is claimed; ORT RNG was not seeded through a common protocol. PCM/audio duration varied between runs and repeated sentences.",
+    "audio_quality": "12/12 finite non-silent WAVs prove successful synthesis only. No listening, ASR, voice-identity, prosody or parity gate was performed.",
+    "latency": "Per-call times cover real text frontend/BERT, AR and vocoder work. Phase-load times cover BERT/backend loading after initial imports and reference checks. Exact process-start/import/reference-check-to-first-WAV wall time was not separately recorded; phase-load+first synthesis is reported with that exclusion. Whole-machine memory monitoring did cover imports and reference validation.",
+    "cold_vs_warm_memory": "The 0.5 s phase sampler grouped all session-loading events and all speech starts. It does not yield a separate cold/first/hot memory high-water mark for each utterance or an exact warm resident floor. Completed-stage endpoint machine usage is about 4.20 GiB(stock) and 4.34 GiB(shared), affected by allocator and file cache; do not claim the shared candidate lowers steady residency from these endpoints.",
+    "generalization": "Three short Chinese screening sentences, two repetitions, one controlled run per successful candidate. No long-form stress, mixed-language quality, concurrent API load, LLM coexistence or sustained-live claim."
+  }
+}

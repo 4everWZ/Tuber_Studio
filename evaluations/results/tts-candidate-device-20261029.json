@@ -1,0 +1,2633 @@
+{
+  "schema_version": 1,
+  "kind": "device_candidate_campaign_deferred_by_user",
+  "date": "2026-10-29",
+  "timezone": "Asia/Taipei",
+  "status": "deferred_by_user",
+  "block_state": "user_scope_change",
+  "completion": {
+    "full_candidate_campaign_completed": false,
+    "current_device_owner": "root",
+    "device_access_and_transfers_paused": true,
+    "next_action": "TTS and live evaluation are deferred by the user. Do not resume this campaign unless the user explicitly restores its priority and root hands over device ownership.",
+    "network_cause": "undetermined; earlier reboot/network block is historical, not the final stop reason",
+    "network_interpretation": "LAN and Tailscale SSH intermittently failed while the last verified state was idle Mini text mode. SSH failure alone does not establish RAM exhaustion, OOM or a candidate-model failure. The user subsequently reported restarting the device.",
+    "final_stop_reason": "User prioritizes non-live workflows, external LLM/TTS APIs and configurable context of at least 128K."
+  },
+  "environment_at_first_campaign": {
+    "source": "c6d8dd3",
+    "image": "sha256:cb9b83333552292e6574cbb2fd36cd85f1c94cf62799a25398e0b322024d1a3c",
+    "image_identity_verified_before_launch": true,
+    "platform": "Jetson aarch64",
+    "configured_cuda": "12.8",
+    "expected_original_torch_series": "2.7",
+    "default_llm": "MiniCPM5-2B",
+    "context_tokens": 131072,
+    "kv_cache_type": "q4_0",
+    "cuda_managed_memory": false,
+    "work_mode": "text",
+    "tts_running": false,
+    "business_state": "stopped",
+    "auto_browse": false,
+    "auto_reply": false,
+    "platform_publishing_exercised": false,
+    "candidate_python": "/workspace/tuber/runtime/evaluations/tts-candidates/venv/bin/python",
+    "pythonpath": "/workspace/tuber/tools:/workspace/tuber/src",
+    "candidate_model_defaults_changed": false
+  },
+  "installation_evidence": {
+    "phase": "previously completed isolated CPU-only installation; separate from candidate execution",
+    "installation_image_source": "f7aa386",
+    "installation_image": "sha256:90b92ac2a275f8c55bffbe97b8cf5702acf6e7ee32f2a441d41838f2ad70fda9",
+    "receipt_sources": [
+      "/workspace/tuber/runtime/evaluations/tts-candidates/installation-receipt.json",
+      "/workspace/tuber/runtime/evaluations/tts-candidates/installation-verification.json",
+      "/workspace/tuber/runtime/evaluations/tts-candidates/installer.log"
+    ],
+    "host_bundle_directory": "/home/weizheng/code/Tuber_Studio/runtime/evaluations/tts-candidates",
+    "receipt_observation": "Original installation receipt, installation-verification.json and installer.log were retrieved after the stopped campaign. The 249/249 production version/path comparison is from that earlier installation phase, not an operator or model test.",
+    "full_receipts_retrieved_locally": true,
+    "installed_only_in_candidate_venv": [
+      {
+        "distribution": "gsv-tts-lite",
+        "version": "0.4.7"
+      },
+      {
+        "distribution": "av",
+        "version": "16.0.1"
+      },
+      {
+        "distribution": "pysbd",
+        "version": "0.3.4"
+      }
+    ],
+    "pip_policy": "Local verified wheels, --no-index --no-deps, candidate venv only; original Torch reused.",
+    "optional_extras_not_installed": [
+      "sounddevice",
+      "onnxruntime",
+      "pyopenjtalk-plus"
+    ],
+    "production_distributions_compared_at_installation": 249,
+    "production_versions_and_paths_unchanged_at_installation": true,
+    "protected_original_runtime_reused": [
+      "torch",
+      "torchaudio",
+      "torchvision",
+      "torchao",
+      "transformers"
+    ],
+    "torch_or_lite_imported_during_installation": false,
+    "gpu_or_model_execution_during_installation": false,
+    "installation_is_not_operator_abi_or_voice_validation": true,
+    "later_image_snapshot": {
+      "image_source": "c6d8dd3",
+      "production_metadata_rows_before_first_campaign": 245,
+      "remote_manifest": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3-preflight.json",
+      "interpretation": "This is a later image's metadata snapshot, not the earlier 249-distribution installation comparison. No after-campaign package-manifest comparison has yet been collected."
+    },
+    "local_transfer_only_receipt": {
+      "path": "runtime/evaluations/tts-candidates/transfer-receipt-jetson.json",
+      "scope": "Earlier bundle transfer and hash verification; its installed=false predates the separate installation and must not be read as the final installation state."
+    },
+    "protected_runtime_versions_and_paths": {
+      "torch": {
+        "version": "2.7.0",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "torchaudio": {
+        "version": "2.7.0",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "torchvision": {
+        "version": "0.22.0",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "torchao": {
+        "version": "0.10.0+gitbc4f51d",
+        "location": "/opt/venv/lib/python3.12/site-packages"
+      },
+      "transformers": {
+        "version": "4.44.2",
+        "location": "/opt/studio-venv/lib/python3.12/site-packages"
+      }
+    },
+    "production_distributions_after_installation": 249,
+    "production_metadata_changed": {}
+  },
+  "protocol": {
+    "candidate_voice": "whale_sovits_v2",
+    "voice_checkpoints": "Existing GPT-SoVITS v2 fine-tuned GPT/SoVITS checkpoints and reference audio/text",
+    "sampling": {
+      "seed": 42,
+      "top_k": 5,
+      "top_p": 1.0,
+      "temperature": 1.0,
+      "repetition_penalty": 1.35,
+      "speed_factor": 1.0,
+      "vits_noise_scale": 0.5
+    },
+    "speech_corpus": "evaluations/speech-cases.json",
+    "formal_case_count": 25,
+    "fixed_deadlines_seconds": {
+      "micro": 180,
+      "diagnose": 300,
+      "formal_25": 900,
+      "restore": 210
+    },
+    "memory_watch": {
+      "sample_interval_seconds": 0.5,
+      "minimum_available_mib": 160,
+      "maximum_swap_mib_over_rolling_25_seconds": 64,
+      "maximum_oom_kill_delta": 0,
+      "thresholds_or_precision_relaxed": false
+    },
+    "planned_co_residency_proof": "Reference precompute and complete cold utterance before broker-owned Mini load; two actual four-token uncached, untruncated Mini forwards after first and last corpus utterances, with unchanged validated Mini identity.",
+    "measurement_boundary": "Operator and dispatch diagnostics are separate from unprofiled formal latency/memory forwards. INT8 weight storage is not evidence of integer GEMM. Whole-machine peak is sampled MemTotal minus minimum MemAvailable, not CUDA allocation alone.",
+    "network_policy": "Measured candidate workers deny external network connections and permit only fixed loopback management/inference endpoints.",
+    "pressure_telemetry": {
+      "planned_interval_seconds": 1,
+      "fields": [
+        "epoch",
+        "memory/io/cpu PSI when supported",
+        "MemAvailable",
+        "Mlocked",
+        "SUnreclaim",
+        "SwapFree",
+        "allocstall*",
+        "pgscan*",
+        "pswp*"
+      ],
+      "psi_kernel_files_reported_unavailable": true,
+      "missing_psi_does_not_block_meminfo_vmstat": "Both the local mock and retrieved device JSONL show that unsupported PSI is recorded separately while meminfo/vmstat remain available.",
+      "time_series_retrieved_locally": true
+    }
+  },
+  "first_campaign": {
+    "status": "finished_with_setup_failures_and_dependency_skips",
+    "launch_epoch_observed": 1793264221.5033438,
+    "finished_observed_epoch": 1793264256.815685,
+    "controller_sha256": "6a084a360d8b4cde6cc122a87e5041200b309b4a9c7603d8393069cb01a01d64",
+    "local_and_remote_controller_hash_matched_before_launch": true,
+    "evidence_directory": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3",
+    "host_evidence_directory": "/home/weizheng/code/Tuber_Studio/runtime/tmp/tts-candidates-c6d8dd3",
+    "campaign_receipt": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/campaign.json",
+    "launch_log": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3-launch.log",
+    "full_raw_campaign_retrieved_locally": true,
+    "observed_evidence": "Full finished campaign JSON, setup stack traces, per-case supervision/restoration logs and pressure telemetry have now been retrieved. All original setup failures remain preserved.",
+    "common_setup_failure": {
+      "exception": "FileNotFoundError",
+      "missing_file": "/workspace/tuber/tools/evaluate_tts_candidates.py",
+      "stage": "Task adapter attempted to load the maintained candidate harness before its model/operator child could run.",
+      "interpretation": "Packaging/setup failure, not a Torch operator, model, voice or co-residency failure."
+    },
+    "cases": [
+      {
+        "case": "cpu-micro",
+        "candidate": "bert-int8",
+        "action": "int8-operator",
+        "load_order": "isolated",
+        "status": "setup_or_operator_failure_no_model_verdict",
+        "raw_classification": "setup_or_operator_failure_no_model_verdict",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802708,
+          "minimum_available_kib": 5658516,
+          "peak_machine_total_minus_available_kib": 2144192,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 3
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cpu-micro/supervisor.pressure.jsonl",
+          "samples": 2,
+          "start_epoch": 1793264223.2358441,
+          "end_epoch": 1793264223.739847,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5658516,
+              "maximum": 5660572
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 97712,
+              "maximum": 97716
+            },
+            "SwapFree": {
+              "minimum": 11860124,
+              "maximum": 11860124
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 282,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              282
+            ]
+          },
+          "identity": {
+            "pid": 282,
+            "created_at": 1793264223.27,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802708,
+            "minimum_available_kib": 3157188,
+            "peak_machine_total_minus_available_kib": 4645520,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cpu-micro/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793264223.741721,
+            "end_epoch": 1793264228.2719789,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3157188,
+                "maximum": 5660572
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 97712,
+                "maximum": 98292
+              },
+              "SwapFree": {
+                "minimum": 11860124,
+                "maximum": 11860124
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cpu-micro/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cpu-micro/restoration.log"
+        ],
+        "candidate_operator_or_voice_execution_count": 0
+      },
+      {
+        "case": "cuda-micro",
+        "candidate": "bert-cuda-int8wo",
+        "action": "cuda-int8-operator",
+        "load_order": "isolated",
+        "status": "setup_or_operator_failure_no_model_verdict",
+        "raw_classification": "setup_or_operator_failure_no_model_verdict",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802708,
+          "minimum_available_kib": 5661220,
+          "peak_machine_total_minus_available_kib": 2141488,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 3
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cuda-micro/supervisor.pressure.jsonl",
+          "samples": 2,
+          "start_epoch": 1793264229.3220158,
+          "end_epoch": 1793264229.8260062,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5661220,
+              "maximum": 5661232
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 97724,
+              "maximum": 97728
+            },
+            "SwapFree": {
+              "minimum": 11860124,
+              "maximum": 11860124
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 294,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              294
+            ]
+          },
+          "identity": {
+            "pid": 294,
+            "created_at": 1793264229.36,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802708,
+            "minimum_available_kib": 3136396,
+            "peak_machine_total_minus_available_kib": 4666312,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cuda-micro/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793264229.8278322,
+            "end_epoch": 1793264234.3583703,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3136396,
+                "maximum": 5661232
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 97724,
+                "maximum": 98400
+              },
+              "SwapFree": {
+                "minimum": 11860124,
+                "maximum": 11860124
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cuda-micro/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/cuda-micro/restoration.log"
+        ],
+        "candidate_operator_or_voice_execution_count": 0
+      },
+      {
+        "case": "compact-isolated25",
+        "candidate": "compact",
+        "action": "run",
+        "load_order": "isolated",
+        "status": "setup_or_operator_failure_no_model_verdict",
+        "raw_classification": "setup_or_operator_failure_no_model_verdict",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802708,
+          "minimum_available_kib": 5656356,
+          "peak_machine_total_minus_available_kib": 2146352,
+          "swapin_bytes": 4096,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 4096,
+          "oom_kill_delta": 0,
+          "samples": 3
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/compact-isolated25/supervisor.pressure.jsonl",
+          "samples": 2,
+          "start_epoch": 1793264235.3652675,
+          "end_epoch": 1793264235.8694823,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5656356,
+              "maximum": 5661132
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 97868,
+              "maximum": 97888
+            },
+            "SwapFree": {
+              "minimum": 11860124,
+              "maximum": 11860124
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 1,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 306,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              306
+            ]
+          },
+          "identity": {
+            "pid": 306,
+            "created_at": 1793264235.4,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802708,
+            "minimum_available_kib": 3128336,
+            "peak_machine_total_minus_available_kib": 4674372,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/compact-isolated25/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793264235.871994,
+            "end_epoch": 1793264240.399456,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3128336,
+                "maximum": 5656356
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 97868,
+                "maximum": 98548
+              },
+              "SwapFree": {
+                "minimum": 11860124,
+                "maximum": 11860124
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/compact-isolated25/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/compact-isolated25/restoration.log"
+        ],
+        "candidate_operator_or_voice_execution_count": 0
+      },
+      {
+        "case": "cuda-diagnostic",
+        "status": "not_run_failed_dependency",
+        "dependency": "cuda-micro"
+      },
+      {
+        "case": "cuda-isolated25",
+        "status": "not_run_failed_dependency",
+        "dependency": "cuda-diagnostic"
+      },
+      {
+        "case": "cuda-ttsfirst25",
+        "status": "not_run_failed_dependency",
+        "dependency": "cuda-isolated25"
+      },
+      {
+        "case": "cpu-diagnostic",
+        "status": "not_run_failed_dependency",
+        "dependency": "cpu-micro"
+      },
+      {
+        "case": "cpu-isolated25",
+        "status": "not_run_failed_dependency",
+        "dependency": "cpu-diagnostic"
+      },
+      {
+        "case": "cpu-ttsfirst25",
+        "status": "not_run_failed_dependency",
+        "dependency": "cpu-isolated25"
+      },
+      {
+        "case": "lite-isolated25",
+        "candidate": "lite",
+        "action": "run",
+        "load_order": "isolated",
+        "status": "setup_or_operator_failure_no_model_verdict",
+        "raw_classification": "setup_or_operator_failure_no_model_verdict",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802708,
+          "minimum_available_kib": 5652288,
+          "peak_machine_total_minus_available_kib": 2150420,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 3
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/lite-isolated25/supervisor.pressure.jsonl",
+          "samples": 2,
+          "start_epoch": 1793264241.3947814,
+          "end_epoch": 1793264241.8983328,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5652288,
+              "maximum": 5652400
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 98032,
+              "maximum": 98036
+            },
+            "SwapFree": {
+              "minimum": 11860124,
+              "maximum": 11860124
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 318,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              318
+            ]
+          },
+          "identity": {
+            "pid": 318,
+            "created_at": 1793264241.42,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802708,
+            "minimum_available_kib": 3120192,
+            "peak_machine_total_minus_available_kib": 4682516,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/lite-isolated25/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793264241.9001331,
+            "end_epoch": 1793264246.430617,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3120192,
+                "maximum": 5652288
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 98032,
+                "maximum": 98548
+              },
+              "SwapFree": {
+                "minimum": 11860124,
+                "maximum": 11860124
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/lite-isolated25/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/lite-isolated25/restoration.log"
+        ],
+        "candidate_operator_or_voice_execution_count": 0
+      },
+      {
+        "case": "lite-ttsfirst25",
+        "status": "not_run_failed_dependency",
+        "dependency": "lite-isolated25"
+      }
+    ],
+    "actual_candidate_operator_runs": 0,
+    "actual_candidate_voice_forwards": 0,
+    "actual_four_token_mini_forwards": 0,
+    "candidate_wav_paths": [],
+    "mini_loads_during_restoration_did_occur": true,
+    "guard_abort_observed": false,
+    "restoration_last_verified_before_user_reboot": {
+      "mini_pid": 318,
+      "mini_created_at_epoch": 1793264241.42,
+      "uid": 1001,
+      "parent_stack_pid": 1,
+      "model": "MiniCPM5-2B",
+      "context_tokens": 131072,
+      "kv_cache_type": "q4_0",
+      "cuda_managed_memory": false,
+      "work_mode": "text",
+      "tts_running": false,
+      "production_configuration_bytes_unchanged": true,
+      "identity_check": "Fixed ProcessRunner argv, UID, stack parent, PID/create time and pidfd before stopping only the owned Mini.",
+      "current_post_reboot_pid_or_residency": "unknown; root must reverify"
+    },
+    "metrics_boundary": "Only setup-process and Mini-recovery resource observations exist; the missing harness prevented every candidate operator or voice forward."
+  },
+  "repair_and_continuation": {
+    "original_setup_failure_evidence_preserved": true,
+    "runtime_fallback_prepared_locally": true,
+    "runtime_fallback_transfer_succeeded": false,
+    "unused_planned_repair_directory": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3-setup-fixed",
+    "maintained_harness_source_git": "06d0617",
+    "maintained_harness_sha256_for_proposed_runtime_copy": "2b41ab75d0c845d241863f024d06cdc79853a8ff8941f0700905b14da8797f59",
+    "packaging_fix_git": "e84b9ab",
+    "packaging_fix_scope": "Add candidate harness/installer/parity tooling and CLI build smoke; production server, compact backend and inference implementation unchanged according to root's handoff.",
+    "packaging_fix_image_build_confirmed_started": true,
+    "packaging_fix_image_deployed": true,
+    "resume_requirements": [
+      "User explicitly reprioritizes TTS/live evaluation.",
+      "Root verifies the then-current environment and explicitly hands over the device.",
+      "Preserve all prior results and original guards; do not automatically rerun the interrupted campaign."
+    ],
+    "deployed_image": "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5",
+    "post_reboot_fresh_campaign_started": true,
+    "initial_runtime_fallback_round_remained_unused": true,
+    "historical_network_block_resolved_before_post_reboot_campaign": true,
+    "current_continuation": "deferred_by_user",
+    "initial_runtime_fallback_round_started": false,
+    "initial_runtime_repair_blocked_by_network_then_reboot": true
+  },
+  "related_baseline_evidence": {
+    "maintained_result": "evaluations/results/compact-live-runtime-20261029.json",
+    "scope": "Separate root-run formal/allocator and matched original-versus-compact experiments; not candidate results.",
+    "matched_original_compact_pcm_pairs": 6,
+    "matched_pcm_pairs_bit_identical": 6,
+    "matched_protocol_boundary": "Same warmup, thread settings and call order. Historical golden differences also appeared in the original backend; old goldens were not replaced. This does not validate BERT INT8 or Lite voice quality."
+  },
+  "claims": {
+    "lite_jetson_execution_compatible": "not established",
+    "bert_cpu_integer_compute_verified": false,
+    "bert_cuda_integer_compute_verified": false,
+    "bert_cuda_int8_storage_measured_on_device": true,
+    "candidate_co_residency_verified": false,
+    "candidate_memory_saving_measured": false,
+    "voice_quality_verified": false,
+    "voice_quality_status": "not evaluated",
+    "latency_or_rtf_comparison_available": false,
+    "default_backend_changed": false,
+    "conclusion": "CPU INT8 micro execution and CUDA BERT INT8 storage were verified. CUDA BERT actually used FP16 GEMM. Compact completed 25 isolated non-silent speech cases. Full candidate latency/memory comparisons, CPU-INT8 BERT, Lite, co-residency, four-token live interleaving and voice-quality evaluation remain unverified and are deferred by the user. No default backend changed.",
+    "cpu_micro_integer_operator_verified": true,
+    "cpu_micro_evidence": "qnnpack executed quantized::linear_dynamic once on a qint8 test Linear; full CPU-INT8 BERT/voice not evaluated.",
+    "bert_cuda_storage_evidence": "Full 22-layer BERT diagnostic observed 132 INT8 Linear weight stores and 132 FP16,FP16 aten.mm dispatches; no integer GEMM observed.",
+    "compact_isolated_25_non_silent_outputs_verified": true,
+    "compact_isolated_latency_rtf_available": true
+  },
+  "post_reboot_campaign": {
+    "status": "deferred_by_user",
+    "source": "e84b9ab",
+    "image": "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5",
+    "started_epoch": 1793265686.5460732,
+    "finished_epoch": 1793265910.4546618,
+    "evidence_directory": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot",
+    "full_raw_campaign_retrieved_locally": true,
+    "source_integrity": {
+      "image_matches_root_verified_image": true,
+      "canonical_git_source": "e84b9ab:tools/evaluate_tts_candidates.py",
+      "canonical_lf_blob_sha256": "d984553225a918b99888b8b49a27d3315392a3e40eddf8cd798d26cce4e23241",
+      "canonical_git_blob_verified_locally": true,
+      "windows_worktree_crlf_sha256": "2b41ab75d0c845d241863f024d06cdc79853a8ff8941f0700905b14da8797f59",
+      "line_ending_hash_difference_is_expected": true,
+      "harness_location": "/workspace/tuber/tools/evaluate_tts_candidates.py",
+      "old_runtime_harness_copy_used": false,
+      "controller_sha256": "6a084a360d8b4cde6cc122a87e5041200b309b4a9c7603d8393069cb01a01d64",
+      "config_sha256_before_and_after_unchanged": {
+        "runtime/studio.json": "29846c7fd3e1c1452bf8426b9da383b3621a3e074edae10881b9127a564e720b",
+        "config/voices.json": "08a1ac9813baf6f21a1008ce6b2212edf1af64816de97abe327be300be3de706",
+        "runtime/tts/tts_infer.yaml": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243"
+      },
+      "speech_corpus_sha256": "266d76a4c180edf78d4f5fab99b296f9396c0dbb0be4c0a53a6ecc25856f6e49"
+    },
+    "preflight": {
+      "profile": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          66
+        ],
+        "identity": {
+          "pid": 66,
+          "created_at": 1793265508.31,
+          "uid": 1001,
+          "argv": [
+            "/opt/llama/bin/llama-server",
+            "-m",
+            "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+            "--alias",
+            "MiniCPM5-2B",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9013",
+            "--jinja",
+            "--ctx-size",
+            "131072",
+            "--parallel",
+            "1",
+            "--fit",
+            "off",
+            "--n-gpu-layers",
+            "99",
+            "--flash-attn",
+            "on",
+            "--cache-type-k",
+            "q4_0",
+            "--cache-type-v",
+            "q4_0",
+            "--reasoning",
+            "auto",
+            "--temp",
+            "1.0",
+            "--top-p",
+            "0.95",
+            "--min-p",
+            "0.0",
+            "--batch-size",
+            "256",
+            "--ubatch-size",
+            "64",
+            "--cache-ram",
+            "0",
+            "--no-mmap",
+            "--direct-io"
+          ],
+          "ppid": 1
+        }
+      },
+      "torch_or_lite_imported": false,
+      "packages": {
+        "torch": {
+          "version": "2.7.0",
+          "location": "/opt/venv/lib/python3.12/site-packages"
+        },
+        "torchaudio": {
+          "version": "2.7.0",
+          "location": "/opt/venv/lib/python3.12/site-packages"
+        },
+        "torchvision": {
+          "version": "0.22.0",
+          "location": "/opt/venv/lib/python3.12/site-packages"
+        },
+        "transformers": {
+          "version": "4.44.2",
+          "location": "/opt/studio-venv/lib/python3.12/site-packages"
+        },
+        "torchao": {
+          "version": "0.10.0+gitbc4f51d",
+          "location": "/opt/venv/lib/python3.12/site-packages"
+        },
+        "gsv-tts-lite": {
+          "version": "0.4.7",
+          "location": "/workspace/tuber/runtime/evaluations/tts-candidates/venv/lib/python3.12/site-packages"
+        },
+        "numpy": {
+          "version": "1.26.4",
+          "location": "/opt/studio-venv/lib/python3.12/site-packages"
+        },
+        "PyYAML": {
+          "version": "6.0.2",
+          "location": "/opt/venv/lib/python3.12/site-packages"
+        },
+        "httpx": {
+          "version": "0.28.1",
+          "location": "/opt/venv/lib/python3.12/site-packages"
+        },
+        "psutil": {
+          "version": "7.2.2",
+          "location": "/opt/studio-venv/lib/python3.12/site-packages"
+        },
+        "av": {
+          "version": "16.0.1",
+          "location": "/workspace/tuber/runtime/evaluations/tts-candidates/venv/lib/python3.12/site-packages"
+        },
+        "sounddevice": null,
+        "pysbd": {
+          "version": "0.3.4",
+          "location": "/workspace/tuber/runtime/evaluations/tts-candidates/venv/lib/python3.12/site-packages"
+        },
+        "onnxruntime": null,
+        "pyopenjtalk-plus": null,
+        "pyopenjtalk": {
+          "version": "0.4.1",
+          "location": "/opt/studio-venv/lib/python3.12/site-packages"
+        },
+        "safetensors": {
+          "version": "0.8.0",
+          "location": "/opt/studio-venv/lib/python3.12/site-packages"
+        }
+      },
+      "metadata_ast_assets_weights_cache_corpus_sampling_checks_passed": true,
+      "source_path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot-preflight.json"
+    },
+    "cases": [
+      {
+        "case": "cpu-micro",
+        "candidate": "bert-int8",
+        "action": "int8-operator",
+        "load_order": "isolated",
+        "status": "completed_not_quality_verified",
+        "raw_classification": "completed_not_quality_verified",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 5626020,
+          "peak_machine_total_minus_available_kib": 2176696,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 12
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cpu-micro/supervisor.pressure.jsonl",
+          "samples": 6,
+          "start_epoch": 1793265688.1912115,
+          "end_epoch": 1793265693.215793,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5629588,
+              "maximum": 5877644
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 76424,
+              "maximum": 76428
+            },
+            "SwapFree": {
+              "minimum": 12289948,
+              "maximum": 12289948
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 102,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              102
+            ]
+          },
+          "identity": {
+            "pid": 102,
+            "created_at": 1793265693.34,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802716,
+            "minimum_available_kib": 3238748,
+            "peak_machine_total_minus_available_kib": 4563968,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 10
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cpu-micro/restoration.pressure.jsonl",
+            "samples": 5,
+            "start_epoch": 1793265693.2196536,
+            "end_epoch": 1793265697.2464595,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3246056,
+                "maximum": 5877644
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 76424,
+                "maximum": 77776
+              },
+              "SwapFree": {
+                "minimum": 12289948,
+                "maximum": 12289948
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cpu-micro/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cpu-micro/restoration.log"
+        ],
+        "result_path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cpu-micro/result.json",
+        "measurement_kind": "instrumented_diagnostic",
+        "completed": true,
+        "corpus": {
+          "source": "/workspace/tuber/evaluations/speech-cases.json",
+          "requested_count": 0,
+          "scheduled_count": 0,
+          "completed_count": 0,
+          "quality_verified": false
+        },
+        "actual_four_token_mini_forwards": [],
+        "memory_harness": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 5626020,
+          "peak_machine_total_minus_available_kib": 2176696,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 9
+        },
+        "phases_minimum_available_kib": {
+          "python_import": 5632260,
+          "operator_diagnostic": 5626020
+        },
+        "cold_loading_and_warmup_seconds": null,
+        "genuine_integer_compute_observed": true,
+        "integer_evidence_scope": "this instrumented diagnostic",
+        "diagnostic_identity": null,
+        "raw_child_guard_reason": null,
+        "audio": [],
+        "cold_warmup_synthesis_calls_completed": 0,
+        "speech_latency_rtf": [],
+        "operator_diagnostics": [
+          {
+            "engine": "qnnpack",
+            "operators": {
+              "quantized::linear_dynamic": 1
+            },
+            "weight_dtype": "torch.qint8"
+          }
+        ]
+      },
+      {
+        "case": "cuda-micro",
+        "candidate": "bert-cuda-int8wo",
+        "action": "cuda-int8-operator",
+        "load_order": "isolated",
+        "status": "int8_storage_float_compute_completed_not_quality_verified",
+        "raw_classification": "int8_storage_float_compute_completed_not_quality_verified",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 5094628,
+          "peak_machine_total_minus_available_kib": 2708088,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 18
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-micro/supervisor.pressure.jsonl",
+          "samples": 9,
+          "start_epoch": 1793265698.2444222,
+          "end_epoch": 1793265706.279762,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5094628,
+              "maximum": 5869748
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 76440,
+              "maximum": 76704
+            },
+            "SwapFree": {
+              "minimum": 12289948,
+              "maximum": 12289948
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 121,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              121
+            ]
+          },
+          "identity": {
+            "pid": 121,
+            "created_at": 1793265706.42,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802716,
+            "minimum_available_kib": 3250180,
+            "peak_machine_total_minus_available_kib": 4552536,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-micro/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793265706.2835522,
+            "end_epoch": 1793265710.8121278,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3250180,
+                "maximum": 5859912
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 76440,
+                "maximum": 77740
+              },
+              "SwapFree": {
+                "minimum": 12289948,
+                "maximum": 12289948
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-micro/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-micro/restoration.log"
+        ],
+        "result_path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-micro/result.json",
+        "measurement_kind": "instrumented_diagnostic",
+        "completed": true,
+        "corpus": {
+          "source": "/workspace/tuber/evaluations/speech-cases.json",
+          "requested_count": 0,
+          "scheduled_count": 0,
+          "completed_count": 0,
+          "quality_verified": false
+        },
+        "actual_four_token_mini_forwards": [],
+        "memory_harness": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 5094628,
+          "peak_machine_total_minus_available_kib": 2708088,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 15
+        },
+        "phases_minimum_available_kib": {
+          "python_import": 5528168,
+          "operator_diagnostic": 5094628
+        },
+        "cold_loading_and_warmup_seconds": null,
+        "genuine_integer_compute_observed": false,
+        "integer_evidence_scope": "this instrumented diagnostic",
+        "diagnostic_identity": null,
+        "raw_child_guard_reason": null,
+        "audio": [],
+        "cold_warmup_synthesis_calls_completed": 0,
+        "speech_latency_rtf": [],
+        "operator_diagnostics": [
+          {
+            "quantization": "weight-only",
+            "input_dtype": "torch.float16",
+            "output_dtype": "torch.float16",
+            "storage": {
+              "linear_weights": [
+                {
+                  "name": "0",
+                  "wrapper": "AffineQuantizedTensor",
+                  "logical_dtype": "torch.float16",
+                  "storage_dtype": "torch.int8",
+                  "storage_bytes": 1048576,
+                  "scale_bytes": 2048,
+                  "zero_point_bytes": 8192,
+                  "device": "cuda:0"
+                }
+              ],
+              "int8_storage_observed": true
+            },
+            "execution": {
+              "integer_compute_observed": false,
+              "integer_operators": {},
+              "matmul_dispatch": {
+                "aten.mm.default:torch.float16,torch.float16": 1
+              },
+              "classification": "no_integer_compute_observed"
+            },
+            "genuine_integer_compute_passed": false,
+            "warning": "INT8 weight storage with floating GEMM is not an INT8-compute result."
+          }
+        ]
+      },
+      {
+        "case": "compact-isolated25",
+        "candidate": "compact",
+        "action": "run",
+        "load_order": "isolated",
+        "status": "completed_not_quality_verified",
+        "raw_classification": "completed_not_quality_verified",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 3764812,
+          "peak_machine_total_minus_available_kib": 4037904,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 302
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/supervisor.pressure.jsonl",
+          "samples": 151,
+          "start_epoch": 1793265711.8526533,
+          "end_epoch": 1793265862.6141584,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 3765032,
+              "maximum": 5865436
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 76592,
+              "maximum": 78308
+            },
+            "SwapFree": {
+              "minimum": 12289948,
+              "maximum": 12289948
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 148,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              148
+            ]
+          },
+          "identity": {
+            "pid": 148,
+            "created_at": 1793265862.85,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802716,
+            "minimum_available_kib": 3214652,
+            "peak_machine_total_minus_available_kib": 4588064,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793265862.6194267,
+            "end_epoch": 1793265867.1459763,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3214652,
+                "maximum": 5863344
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 77300,
+                "maximum": 78212
+              },
+              "SwapFree": {
+                "minimum": 12289948,
+                "maximum": 12289948
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/restoration.log"
+        ],
+        "result_path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/result.json",
+        "measurement_kind": "unprofiled_measurement",
+        "completed": true,
+        "corpus": {
+          "source": "/workspace/tuber/evaluations/speech-cases.json",
+          "requested_count": 25,
+          "scheduled_count": 25,
+          "completed_count": 25,
+          "quality_verified": false
+        },
+        "actual_four_token_mini_forwards": [],
+        "memory_harness": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 3763552,
+          "peak_machine_total_minus_available_kib": 4039164,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 299
+        },
+        "phases_minimum_available_kib": {
+          "python_import": 5614028,
+          "loading": 4959064,
+          "start_cold_warmup": 4108472,
+          "start_speech_0": 4107804,
+          "start_speech_1": 4084396,
+          "start_speech_2": 4095780,
+          "start_speech_3": 4092224,
+          "start_speech_4": 4090356,
+          "start_speech_5": 4084852,
+          "start_speech_6": 4083860,
+          "start_speech_7": 4079680,
+          "start_speech_8": 4080344,
+          "start_speech_9": 4080272,
+          "start_speech_10": 4078052,
+          "start_speech_11": 4080764,
+          "start_speech_12": 4077496,
+          "start_speech_13": 4076756,
+          "start_speech_14": 4066020,
+          "start_speech_15": 4078468,
+          "start_speech_16": 4078704,
+          "start_speech_17": 4071372,
+          "start_speech_18": 3774896,
+          "start_speech_19": 3773236,
+          "start_speech_20": 3778552,
+          "start_speech_21": 3776836,
+          "start_speech_22": 3768880,
+          "start_speech_23": 3767992,
+          "start_speech_24": 3763552
+        },
+        "cold_loading_and_warmup_seconds": 16.814245714000094,
+        "genuine_integer_compute_observed": null,
+        "integer_evidence_scope": "separate validated diagnostic; formal forward not instrumented",
+        "diagnostic_identity": null,
+        "raw_child_guard_reason": null,
+        "audio": [
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-23.wav",
+            "bytes": 294444
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-5.wav",
+            "bytes": 270124
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-4.wav",
+            "bytes": 243244
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-10.wav",
+            "bytes": 233004
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-20.wav",
+            "bytes": 199724
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-cold_warmup-0.wav",
+            "bytes": 235564
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-7.wav",
+            "bytes": 256044
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-11.wav",
+            "bytes": 330284
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-3.wav",
+            "bytes": 302124
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-15.wav",
+            "bytes": 238124
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-6.wav",
+            "bytes": 263724
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-0.wav",
+            "bytes": 235564
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-24.wav",
+            "bytes": 243244
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-8.wav",
+            "bytes": 243244
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-22.wav",
+            "bytes": 227884
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-12.wav",
+            "bytes": 156204
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-19.wav",
+            "bytes": 235564
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-2.wav",
+            "bytes": 207404
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-16.wav",
+            "bytes": 248364
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-13.wav",
+            "bytes": 279084
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-17.wav",
+            "bytes": 285484
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-21.wav",
+            "bytes": 250924
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-9.wav",
+            "bytes": 281644
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-1.wav",
+            "bytes": 266284
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-14.wav",
+            "bytes": 199724
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/compact-isolated25/compact-speech-18.wav",
+            "bytes": 220204
+          }
+        ],
+        "cold_warmup_synthesis_calls_completed": 1,
+        "speech_latency_rtf": [
+          {
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 4.193948657999954,
+            "duration_seconds": 3.68,
+            "rms_pcm16": 6407.434859888365,
+            "pcm_sha256": "f20c191488370c798d8f6bd7b0a5a8f20b59541dbe7f4df15cc7a279cf0456e4",
+            "rtf": 1.139659961413031
+          },
+          {
+            "index": 1,
+            "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+            "seconds": 5.476201905999915,
+            "duration_seconds": 4.16,
+            "rms_pcm16": 6758.080633259381,
+            "pcm_sha256": "3d778b4d73c3d42befb9be5629c76507691169a108d72c1da098cdf22b629027",
+            "rtf": 1.316394688942287
+          },
+          {
+            "index": 2,
+            "text": "收到三份海苔饭团啦，谢谢小壳！",
+            "seconds": 4.062307752000038,
+            "duration_seconds": 3.24,
+            "rms_pcm16": 5657.080354865595,
+            "pcm_sha256": "b1fbdcc784416a80411c2ca023bc13810c24bf7112a6b78298cf1e50642b94cd",
+            "rtf": 1.2537986888889006
+          },
+          {
+            "index": 3,
+            "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+            "seconds": 5.69295806599996,
+            "duration_seconds": 4.72,
+            "rms_pcm16": 6294.638644266843,
+            "pcm_sha256": "bef94fa29495d4f7d486f5a9cc88daa20b075220cc7279d00af1bca12b92b531",
+            "rtf": 1.206135183474568
+          },
+          {
+            "index": 4,
+            "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+            "seconds": 4.595578083000078,
+            "duration_seconds": 3.8,
+            "rms_pcm16": 6057.6012805804685,
+            "pcm_sha256": "5d59322bb47d0b4854ce998f417958868f6077b5153cdcae1cd4bb706dec4e02",
+            "rtf": 1.209362653421073
+          },
+          {
+            "index": 5,
+            "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+            "seconds": 4.971031756999992,
+            "duration_seconds": 4.22,
+            "rms_pcm16": 6232.307304138636,
+            "pcm_sha256": "431f9fa758be04164d6be8bf87b4b0a3bfe2d61bd5a18d68008a2d7996015047",
+            "rtf": 1.1779696106635051
+          },
+          {
+            "index": 6,
+            "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+            "seconds": 5.094662676999974,
+            "duration_seconds": 4.12,
+            "rms_pcm16": 6523.043462981129,
+            "pcm_sha256": "041a882689f2bd2301069a3203791949e0b7a6ebfca2600ed7cd54a886476b72",
+            "rtf": 1.2365686109223237
+          },
+          {
+            "index": 7,
+            "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+            "seconds": 4.969574308999995,
+            "duration_seconds": 4.0,
+            "rms_pcm16": 6424.4003766146825,
+            "pcm_sha256": "55dcb52fd19673877b17735e8485141883a18b84fdc2d70af5f71462d313754e",
+            "rtf": 1.2423935772499988
+          },
+          {
+            "index": 8,
+            "text": "这条评论我看到了，等我想清楚再认真回答。",
+            "seconds": 4.776625763000084,
+            "duration_seconds": 3.8,
+            "rms_pcm16": 6408.415906685458,
+            "pcm_sha256": "a0c6138703ce3648622a1a33bcce1731117a62dc104d4c7809cb082e31d2fdf2",
+            "rtf": 1.2570067797368643
+          },
+          {
+            "index": 9,
+            "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+            "seconds": 5.14374082300003,
+            "duration_seconds": 4.4,
+            "rms_pcm16": 6410.743157414818,
+            "pcm_sha256": "45456cb89cb241242437b90985f0d1e2244dd043772a8a7b3b117ade06d1095e",
+            "rtf": 1.1690320052272796
+          },
+          {
+            "index": 10,
+            "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+            "seconds": 4.449490184999945,
+            "duration_seconds": 3.64,
+            "rms_pcm16": 6411.537508898579,
+            "pcm_sha256": "ed507880d5e35bab393d0a7c8e2a6fafe5877ac41310bd03d1ffe9cc7fc0c958",
+            "rtf": 1.2223874134615234
+          },
+          {
+            "index": 11,
+            "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+            "seconds": 6.0312455279999995,
+            "duration_seconds": 5.16,
+            "rms_pcm16": 6613.553491303143,
+            "pcm_sha256": "a1fbd56b58ddf239d1ed56c1527f214be198957e169d4cd0570196d7fea88bb3",
+            "rtf": 1.1688460325581393
+          },
+          {
+            "index": 12,
+            "text": "明天也来聊聊吧，记得早点休息。",
+            "seconds": 3.473250509999957,
+            "duration_seconds": 2.44,
+            "rms_pcm16": 6139.69288464632,
+            "pcm_sha256": "c69100fe38f24e58b029e4938525c50bc44e63510831829b80f63abdad1aef39",
+            "rtf": 1.4234633237704744
+          },
+          {
+            "index": 13,
+            "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+            "seconds": 5.293572307999966,
+            "duration_seconds": 4.36,
+            "rms_pcm16": 6206.160072011937,
+            "pcm_sha256": "ca97326c26b845550009eaf7e783570fbe5a7ba32f56ff8270a6e2c6375066b6",
+            "rtf": 1.2141220889908177
+          },
+          {
+            "index": 14,
+            "text": "这个梗有点冷，海水都快结冰了。",
+            "seconds": 3.681674750999946,
+            "duration_seconds": 3.12,
+            "rms_pcm16": 6564.369585424519,
+            "pcm_sha256": "bc870329ff3e9dd228022b169e7481982db6233e98de04d645e6dd7889b2c9c8",
+            "rtf": 1.1800239586538288
+          },
+          {
+            "index": 15,
+            "text": "三个人分六个饭团，每个人可以拿到两个。",
+            "seconds": 4.463828863000003,
+            "duration_seconds": 3.72,
+            "rms_pcm16": 6704.30719770955,
+            "pcm_sha256": "db549d225e2df46e956c7e2027f720176f48e8423ac951153ad2c6287428a33f",
+            "rtf": 1.1999539954301084
+          },
+          {
+            "index": 16,
+            "text": "现在是晚上八点半，先休息五分钟再继续。",
+            "seconds": 4.386640566999972,
+            "duration_seconds": 3.88,
+            "rms_pcm16": 6042.7499173321885,
+            "pcm_sha256": "5b8eee70520b364ee6ef2ef1dbf74761eae200e2de168a19dcd9b022884d8dce",
+            "rtf": 1.1305774657216423
+          },
+          {
+            "index": 17,
+            "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+            "seconds": 5.160935332000008,
+            "duration_seconds": 4.46,
+            "rms_pcm16": 5930.301838588226,
+            "pcm_sha256": "81499c1a970d6cb831362a7d2b55a17bfd108a40d591b30e8fa94a0b4e5167e3",
+            "rtf": 1.157160388340809
+          },
+          {
+            "index": 18,
+            "text": "DeepSeek 是名字，白饭才是今天的主题。",
+            "seconds": 12.023197813000024,
+            "duration_seconds": 3.44,
+            "rms_pcm16": 6184.098363558519,
+            "pcm_sha256": "2f751a0e1ce743f217732bf68638ad894d4224b94bf5b5b6b8764e6fae3a36dd",
+            "rtf": 3.4951156433139605
+          },
+          {
+            "index": 19,
+            "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+            "seconds": 4.962478481000062,
+            "duration_seconds": 3.68,
+            "rms_pcm16": 6548.843997741855,
+            "pcm_sha256": "2858bd23d5015017dd428b0b432db31ae1547ab57d48a450d121d14c0ff730ff",
+            "rtf": 1.3484995872282777
+          },
+          {
+            "index": 20,
+            "text": "Thank you，今天也谢谢大家陪我聊天。",
+            "seconds": 4.151606465999976,
+            "duration_seconds": 3.12,
+            "rms_pcm16": 6527.284332866873,
+            "pcm_sha256": "fc2630831986124a5bee6bfe292136db8ea2d3de73b3b1bff6a329be1bc6f9fc",
+            "rtf": 1.3306430980769153
+          },
+          {
+            "index": 21,
+            "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+            "seconds": 4.97405254399996,
+            "duration_seconds": 3.92,
+            "rms_pcm16": 6362.479945345108,
+            "pcm_sha256": "b034da31010cb081acf810405866faf951e870c90f926e87bdcf9c960f7d1c4f",
+            "rtf": 1.2688909551020306
+          },
+          {
+            "index": 22,
+            "text": "真的？原来是这样！让我再看一眼。",
+            "seconds": 4.412500272999978,
+            "duration_seconds": 3.56,
+            "rms_pcm16": 5919.802422319029,
+            "pcm_sha256": "14794516f8f51b5128ffc00fcfdcee595d5673ff9cd197689feb58e3863dd9f5",
+            "rtf": 1.2394663688202185
+          },
+          {
+            "index": 23,
+            "text": "嗯……这件事情，要从昨天的海底集市说起。",
+            "seconds": 5.55440615100008,
+            "duration_seconds": 4.6,
+            "rms_pcm16": 6453.023676168422,
+            "pcm_sha256": "0812e2609a6c927c7dfc6e79cf78fcd2d61a7f5f2253b0effaf27d2a03d64453",
+            "rtf": 1.2074795980434958
+          },
+          {
+            "index": 24,
+            "text": "再来一碗白饭，不过这次记得加上海苔。",
+            "seconds": 4.591951002000087,
+            "duration_seconds": 3.8,
+            "rms_pcm16": 6181.624475186146,
+            "pcm_sha256": "bd02df025341b371f894e56917d8760385f2215dfec8da848d00fd13d6424fda",
+            "rtf": 1.2084081584210755
+          }
+        ],
+        "speech_summary": {
+          "completed_count": 25,
+          "mean_seconds": 5.0634984227199995,
+          "median_seconds": 4.962478481000062,
+          "maximum_seconds": 12.023197813000024,
+          "mean_rtf": 1.320134393434926,
+          "maximum_rtf": 3.4951156433139605,
+          "aggregate_rtf": 1.304487433718054,
+          "all_output_rms_positive": true,
+          "voice_quality_verified": false
+        }
+      },
+      {
+        "case": "cuda-diagnostic",
+        "candidate": "bert-cuda-int8wo",
+        "action": "diagnose",
+        "load_order": "isolated",
+        "status": "int8_storage_float_compute_completed_not_quality_verified",
+        "raw_classification": "int8_storage_float_compute_completed_not_quality_verified",
+        "raw_guard_reason": null,
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 3884388,
+          "peak_machine_total_minus_available_kib": 3918328,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 60
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/supervisor.pressure.jsonl",
+          "samples": 30,
+          "start_epoch": 1793265868.1374454,
+          "end_epoch": 1793265897.3078973,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 3884388,
+              "maximum": 5868784
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 77048,
+              "maximum": 78320
+            },
+            "SwapFree": {
+              "minimum": 12289948,
+              "maximum": 12289948
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 176,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              176
+            ]
+          },
+          "identity": {
+            "pid": 176,
+            "created_at": 1793265897.53,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802716,
+            "minimum_available_kib": 3170296,
+            "peak_machine_total_minus_available_kib": 4632420,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793265897.3136778,
+            "end_epoch": 1793265901.8448827,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3170296,
+                "maximum": 5864036
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 77296,
+                "maximum": 78356
+              },
+              "SwapFree": {
+                "minimum": 12289948,
+                "maximum": 12289948
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/restoration.log"
+        ],
+        "result_path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/result.json",
+        "measurement_kind": "instrumented_diagnostic",
+        "completed": true,
+        "corpus": {
+          "source": "/workspace/tuber/evaluations/speech-cases.json",
+          "requested_count": 25,
+          "scheduled_count": 1,
+          "completed_count": 1,
+          "quality_verified": false
+        },
+        "actual_four_token_mini_forwards": [],
+        "memory_harness": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 3886656,
+          "peak_machine_total_minus_available_kib": 3916060,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 57
+        },
+        "phases_minimum_available_kib": {
+          "python_import": 5514804,
+          "loading": 4287412,
+          "start_cold_warmup": 3886656,
+          "start_speech_0": 3891808
+        },
+        "cold_loading_and_warmup_seconds": 15.648177424999972,
+        "genuine_integer_compute_observed": false,
+        "integer_evidence_scope": "this instrumented diagnostic",
+        "diagnostic_identity": {
+          "candidate": "bert-cuda-int8wo",
+          "voice": "whale_sovits_v2",
+          "warmup_text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "packages": {
+            "torch": {
+              "version": "2.7.0",
+              "location": "/opt/venv/lib/python3.12/site-packages"
+            },
+            "torchao": {
+              "version": "0.10.0+gitbc4f51d",
+              "location": "/opt/venv/lib/python3.12/site-packages"
+            },
+            "transformers": {
+              "version": "4.44.2",
+              "location": "/opt/studio-venv/lib/python3.12/site-packages"
+            }
+          },
+          "reference_identity": {
+            "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+            "config_sha256": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+            "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+            "paths": {
+              "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+              "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+              "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+              "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+              "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+              "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+              "reference": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "t2s": "/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt",
+              "vits": "/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth"
+            },
+            "precision": "float16",
+            "prompt_lang": "zh",
+            "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+            "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+            "sha256": {
+              "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+              "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+              "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+              "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+              "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+              "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+              "reference": "ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b",
+              "t2s": "415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3",
+              "vits": "1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb"
+            },
+            "source_sha256": {
+              "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+              "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+              "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+              "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+              "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+              "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+            },
+            "upstream": "20240821v2",
+            "voice_id": "whale_sovits_v2",
+            "voice_version": "sirmn6-v1",
+            "weights_version": "da_fei_yu-v2-e12-e15"
+          }
+        },
+        "raw_child_guard_reason": null,
+        "audio": [
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/bert-cuda-int8wo-cold_warmup-0.wav",
+            "bytes": 235564
+          },
+          {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-diagnostic/bert-cuda-int8wo-speech-0.wav",
+            "bytes": 235564
+          }
+        ],
+        "cold_warmup_synthesis_calls_completed": 1,
+        "speech_latency_rtf": [
+          {
+            "index": 0,
+            "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+            "seconds": 4.4148399930001005,
+            "duration_seconds": 3.68,
+            "rms_pcm16": 6432.7682167352705,
+            "pcm_sha256": "63f52289f1d0623d3caf1bb2809d57515dab77d1ffd1c2100bb27b8b41482e85",
+            "rtf": 1.199684780706549
+          }
+        ],
+        "speech_summary": {
+          "completed_count": 1,
+          "mean_seconds": 4.4148399930001005,
+          "median_seconds": 4.4148399930001005,
+          "maximum_seconds": 4.4148399930001005,
+          "mean_rtf": 1.199684780706549,
+          "maximum_rtf": 1.199684780706549,
+          "aggregate_rtf": 1.199684780706549,
+          "all_output_rms_positive": true,
+          "voice_quality_verified": false
+        },
+        "operator_diagnostics": [
+          {
+            "quantization": "weight-only",
+            "input_dtype": "torch.float16",
+            "output_dtype": "torch.float16",
+            "storage": {
+              "linear_weights": [
+                {
+                  "name": "0",
+                  "wrapper": "AffineQuantizedTensor",
+                  "logical_dtype": "torch.float16",
+                  "storage_dtype": "torch.int8",
+                  "storage_bytes": 1048576,
+                  "scale_bytes": 2048,
+                  "zero_point_bytes": 8192,
+                  "device": "cuda:0"
+                }
+              ],
+              "int8_storage_observed": true
+            },
+            "execution": {
+              "integer_compute_observed": false,
+              "integer_operators": {},
+              "matmul_dispatch": {
+                "aten.mm.default:torch.float16,torch.float16": 1
+              },
+              "classification": "no_integer_compute_observed"
+            },
+            "genuine_integer_compute_passed": false,
+            "warning": "INT8 weight storage with floating GEMM is not an INT8-compute result."
+          }
+        ],
+        "bert_storage": {
+          "int8_storage_observed": true,
+          "linear_weights": 132,
+          "storage_bytes": 276824064,
+          "scale_bytes": 405504,
+          "zero_point_bytes": 1622016,
+          "not_a_whole_machine_memory_saving_measurement": true
+        },
+        "bert_dispatch": {
+          "integer_compute_observed": false,
+          "integer_operators": {},
+          "matmul_dispatch": {
+            "aten.mm.default:torch.float16,torch.float16": 132
+          },
+          "classification": "no_integer_compute_observed"
+        }
+      },
+      {
+        "case": "cuda-isolated25",
+        "candidate": "bert-cuda-int8wo",
+        "action": "run",
+        "load_order": "isolated",
+        "status": "deferred_by_user",
+        "raw_classification": "safety_guard_aborted",
+        "raw_guard_reason": "Campaign received signal 15; restore before stopping",
+        "safety_threshold_abort": false,
+        "memory_supervisor": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 5633196,
+          "peak_machine_total_minus_available_kib": 2169520,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 6
+        },
+        "pressure": {
+          "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-isolated25/supervisor.pressure.jsonl",
+          "samples": 4,
+          "start_epoch": 1793265902.8425064,
+          "end_epoch": 1793265905.690773,
+          "unsupported": [
+            "pressure_cpu",
+            "pressure_io",
+            "pressure_memory"
+          ],
+          "meminfo_kib": {
+            "MemAvailable": {
+              "minimum": 5633196,
+              "maximum": 5855272
+            },
+            "Mlocked": {
+              "minimum": 0,
+              "maximum": 0
+            },
+            "SUnreclaim": {
+              "minimum": 77168,
+              "maximum": 77344
+            },
+            "SwapFree": {
+              "minimum": 12289948,
+              "maximum": 12289948
+            }
+          },
+          "vmstat_counter_deltas": {
+            "pswpin": 0,
+            "pswpout": 0,
+            "allocstall_dma": 0,
+            "allocstall_dma32": 0,
+            "allocstall_normal": 0,
+            "allocstall_movable": 0,
+            "pgscan_kswapd": 0,
+            "pgscan_direct": 0,
+            "pgscan_direct_throttle": 0,
+            "pgscan_anon": 0,
+            "pgscan_file": 0
+          }
+        },
+        "restoration": {
+          "verified": true,
+          "mini_pid": 197,
+          "profile": {
+            "model": "MiniCPM5-2B",
+            "resident_llm": true,
+            "context_when_resident": 131072,
+            "kv": "q4_0",
+            "llm_pids": [
+              197
+            ]
+          },
+          "identity": {
+            "pid": 197,
+            "created_at": 1793265905.81,
+            "uid": 1001,
+            "ppid": 1
+          },
+          "memory": {
+            "total_ram_kib": 7802716,
+            "minimum_available_kib": 3140872,
+            "peak_machine_total_minus_available_kib": 4661844,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 11
+          },
+          "pressure": {
+            "path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-isolated25/restoration.pressure.jsonl",
+            "samples": 6,
+            "start_epoch": 1793265905.6950057,
+            "end_epoch": 1793265910.2210252,
+            "unsupported": [
+              "pressure_cpu",
+              "pressure_io",
+              "pressure_memory"
+            ],
+            "meminfo_kib": {
+              "MemAvailable": {
+                "minimum": 3140872,
+                "maximum": 5855188
+              },
+              "Mlocked": {
+                "minimum": 0,
+                "maximum": 0
+              },
+              "SUnreclaim": {
+                "minimum": 77136,
+                "maximum": 78276
+              },
+              "SwapFree": {
+                "minimum": 12289948,
+                "maximum": 12289948
+              }
+            },
+            "vmstat_counter_deltas": {
+              "pswpin": 0,
+              "pswpout": 0,
+              "allocstall_dma": 0,
+              "allocstall_dma32": 0,
+              "allocstall_normal": 0,
+              "allocstall_movable": 0,
+              "pgscan_kswapd": 0,
+              "pgscan_direct": 0,
+              "pgscan_direct_throttle": 0,
+              "pgscan_anon": 0,
+              "pgscan_file": 0
+            }
+          }
+        },
+        "source_logs": [
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-isolated25/supervisor.log",
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-isolated25/restoration.log"
+        ],
+        "result_path": "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot/cuda-isolated25/result.json",
+        "measurement_kind": "unprofiled_measurement",
+        "completed": false,
+        "corpus": {
+          "source": "/workspace/tuber/evaluations/speech-cases.json",
+          "requested_count": 25,
+          "scheduled_count": 25,
+          "completed_count": 0,
+          "quality_verified": false
+        },
+        "actual_four_token_mini_forwards": [],
+        "memory_harness": {
+          "total_ram_kib": 7802716,
+          "minimum_available_kib": 5631432,
+          "peak_machine_total_minus_available_kib": 2171284,
+          "swapin_bytes": 0,
+          "swapout_bytes": 0,
+          "maximum_rolling_25s_swap_bytes": 0,
+          "oom_kill_delta": 0,
+          "samples": 4
+        },
+        "phases_minimum_available_kib": {
+          "python_import": 5631432
+        },
+        "cold_loading_and_warmup_seconds": null,
+        "genuine_integer_compute_observed": false,
+        "integer_evidence_scope": "separate validated diagnostic; formal forward not instrumented",
+        "diagnostic_identity": {
+          "candidate": "bert-cuda-int8wo",
+          "voice": "whale_sovits_v2",
+          "warmup_text": "海底厨房开门啦，今天的饭团要趁热吃。",
+          "packages": {
+            "torch": {
+              "version": "2.7.0",
+              "location": "/opt/venv/lib/python3.12/site-packages"
+            },
+            "torchao": {
+              "version": "0.10.0+gitbc4f51d",
+              "location": "/opt/venv/lib/python3.12/site-packages"
+            },
+            "transformers": {
+              "version": "4.44.2",
+              "location": "/opt/studio-venv/lib/python3.12/site-packages"
+            }
+          },
+          "reference_identity": {
+            "compatibility_sha256": "06ae7dc176cc43371f3ec64c5d121d63421e06be2ba8c9895d61f548654497b4",
+            "config_sha256": "94ce615125fb0b384df7a80685752a7a32d34ba100dbde07a9f6a00f55e26243",
+            "inference_adapter_sha256": "cdf9712746f4be456b87064a58ab9310ac1c809c894100cbe46af17c5e6bca6c",
+            "paths": {
+              "bert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+              "bert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+              "bert/tokenizer.json": "/workspace/tuber/runtime/tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+              "hubert/config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/config.json",
+              "hubert/preprocessor_config.json": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+              "hubert/pytorch_model.bin": "/workspace/tuber/runtime/tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+              "reference": "/workspace/tuber/runtime/tts/ref/dafeiyu_ref.wav",
+              "t2s": "/workspace/tuber/runtime/tts/weights/da_fei_yu-e12.ckpt",
+              "vits": "/workspace/tuber/runtime/tts/weights/da_fei_yu_e15_s300.pth"
+            },
+            "precision": "float16",
+            "prompt_lang": "zh",
+            "prompt_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+            "reference_text": "什么嘛，这么简单的事情，你居然专门跑来问我。",
+            "sha256": {
+              "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+              "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+              "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+              "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+              "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+              "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+              "reference": "ad71f1e5b965fc51e84a58a1c4375d638a6169d7caa16645c8fee9e7540d712b",
+              "t2s": "415d62f17e6b4daee34ba39478ed4f5432ece5aee0d60567f8596f6ab32abcd3",
+              "vits": "1b9fb70bdc211d6f76c18a110d2caa225fb949f7fd8ff88a5698011b645d27fb"
+            },
+            "source_sha256": {
+              "GPT_SoVITS/TTS_infer_pack/TTS.py": "bc5c1ae679ed898b0f7de8b5d56b8be9e83fd3dfc318f867bf333d2cfffcd670",
+              "GPT_SoVITS/TTS_infer_pack/TextPreprocessor.py": "9731638672df3f07ac98f718ca222d4838aad08de8d4c5ec2a2a5c60561d8874",
+              "GPT_SoVITS/TTS_infer_pack/text_segmentation_method.py": "097592884b3948d2fbcb09a3bab6cb3a944a5910b8b759b14f8d630c9e2c746b",
+              "GPT_SoVITS/feature_extractor/cnhubert.py": "80948e8589a7c4dc71474f1d11f1efce7b2ef7ca00263735872cfc9d30834a33",
+              "GPT_SoVITS/module/mel_processing.py": "34964b11d0be41fade678b8175dd43e68270b1cda3021b7e18592ddd036619fc",
+              "tools/my_utils.py": "4cc04c7ca0adb43bbf396f437538b8ff010b477ab8b0c23841c250da824a1cd3"
+            },
+            "upstream": "20240821v2",
+            "voice_id": "whale_sovits_v2",
+            "voice_version": "sirmn6-v1",
+            "weights_version": "da_fei_yu-v2-e12-e15"
+          }
+        },
+        "raw_child_guard_reason": "Interrupted",
+        "audio": [],
+        "cold_warmup_synthesis_calls_completed": 0,
+        "speech_latency_rtf": []
+      },
+      {
+        "case": "cuda-ttsfirst25",
+        "candidate": "bert-cuda-int8wo",
+        "action": "run",
+        "load_order": "tts-first",
+        "status": "deferred_by_user",
+        "not_run_reason": "user_scope_change",
+        "actual_candidate_voice_forwards": 0,
+        "actual_four_token_mini_forwards": 0
+      },
+      {
+        "case": "cpu-diagnostic",
+        "candidate": "bert-int8",
+        "action": "diagnose",
+        "load_order": "isolated",
+        "status": "deferred_by_user",
+        "not_run_reason": "user_scope_change",
+        "actual_candidate_voice_forwards": 0,
+        "actual_four_token_mini_forwards": 0
+      },
+      {
+        "case": "cpu-isolated25",
+        "candidate": "bert-int8",
+        "action": "run",
+        "load_order": "isolated",
+        "status": "deferred_by_user",
+        "not_run_reason": "user_scope_change",
+        "actual_candidate_voice_forwards": 0,
+        "actual_four_token_mini_forwards": 0
+      },
+      {
+        "case": "cpu-ttsfirst25",
+        "candidate": "bert-int8",
+        "action": "run",
+        "load_order": "tts-first",
+        "status": "deferred_by_user",
+        "not_run_reason": "user_scope_change",
+        "actual_candidate_voice_forwards": 0,
+        "actual_four_token_mini_forwards": 0
+      },
+      {
+        "case": "lite-isolated25",
+        "candidate": "lite",
+        "action": "run",
+        "load_order": "isolated",
+        "status": "deferred_by_user",
+        "not_run_reason": "user_scope_change",
+        "actual_candidate_voice_forwards": 0,
+        "actual_four_token_mini_forwards": 0
+      },
+      {
+        "case": "lite-ttsfirst25",
+        "candidate": "lite",
+        "action": "run",
+        "load_order": "tts-first",
+        "status": "deferred_by_user",
+        "not_run_reason": "user_scope_change",
+        "actual_candidate_voice_forwards": 0,
+        "actual_four_token_mini_forwards": 0
+      }
+    ],
+    "stop": {
+      "reason": "user_scope_change",
+      "requested_epoch": 1793265905.3251338,
+      "controller_identity": {
+        "pid": 88,
+        "created_at": 1793265686.17,
+        "uid": 1001,
+        "argv": [
+          "/workspace/tuber/runtime/evaluations/tts-candidates/venv/bin/python",
+          "/workspace/tuber/runtime/tmp/run-tts-candidate-campaign.py",
+          "--execute",
+          "--root",
+          "/workspace/tuber",
+          "--output",
+          "/workspace/tuber/runtime/tmp/tts-candidates-e84b9ab-post-reboot",
+          "--source",
+          "e84b9ab",
+          "--image-id",
+          "sha256:8a0667e8071c5b61e8617bc4959f6d656a7ea26df1bba71a9681f9328b1cebb5"
+        ]
+      },
+      "method": "SIGTERM via pidfd after exactargv/UID/create_time verification",
+      "raw_controller_classification": "safety_guard_aborted",
+      "raw_supervisor_interruption": "Campaign received signal 15; restore before stopping",
+      "raw_child_interruption": "Interrupted",
+      "curated_interpretation": "User-requested SIGTERM was handled through the existing cancellation/watch path. It is not a memory/swap/OOM/deadline guard failure or a model failure.",
+      "new_cases_started_after_request": false,
+      "safety_threshold_abort": false
+    },
+    "last_verified_restoration": {
+      "verification_observed_epoch": 1793265931.7290192,
+      "profile": {
+        "model": "MiniCPM5-2B",
+        "resident_llm": true,
+        "context_when_resident": 131072,
+        "kv": "q4_0",
+        "llm_pids": [
+          197
+        ],
+        "identity": {
+          "pid": 197,
+          "created_at": 1793265905.81,
+          "uid": 1001,
+          "argv": [
+            "/opt/llama/bin/llama-server",
+            "-m",
+            "/workspace/tuber/runtime/models/MiniCPM5-2B-Q4_K_M.gguf",
+            "--alias",
+            "MiniCPM5-2B",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9013",
+            "--jinja",
+            "--ctx-size",
+            "131072",
+            "--parallel",
+            "1",
+            "--fit",
+            "off",
+            "--n-gpu-layers",
+            "99",
+            "--flash-attn",
+            "on",
+            "--cache-type-k",
+            "q4_0",
+            "--cache-type-v",
+            "q4_0",
+            "--reasoning",
+            "auto",
+            "--temp",
+            "1.0",
+            "--top-p",
+            "0.95",
+            "--min-p",
+            "0.0",
+            "--batch-size",
+            "256",
+            "--ubatch-size",
+            "64",
+            "--cache-ram",
+            "0",
+            "--no-mmap",
+            "--direct-io"
+          ],
+          "ppid": 1
+        }
+      },
+      "configuration_bytes_unchanged": true,
+      "tts_running": false,
+      "business_state": "stopped",
+      "auto_browse": false,
+      "auto_reply": false,
+      "remaining_candidate_or_controller_processes": [],
+      "device_ownership_returned_to": "root",
+      "later_state_must_not_be_inferred_from_this_snapshot": true
+    },
+    "actual_four_token_mini_forwards": 0,
+    "candidate_audio_synthesis_calls_completed_including_cold_warmup": 28,
+    "completed_formal_speech_corpus": {
+      "compact_isolated": 25,
+      "bert_cuda_isolated": 0,
+      "bert_cpu_isolated": 0,
+      "lite_isolated": 0
+    },
+    "completed_instrumented_diagnostic_target_speech_cases": 1,
+    "voice_quality_verified": false,
+    "measurement_interpretation": "Compact25 is the only completed unprofiled voice measurement. CUDA BERT diagnosis has profiler overhead and cannot be used as a fair peak-RAM/latency comparison. The next formal CUDA case was cancelled before any stage event or speech output; no co-residency case ran."
+  },
+  "retrieved_evidence": {
+    "collected_epoch": 1793265988.5149415,
+    "raw_files": 56,
+    "wav_paths_only_count": 28,
+    "local_task_only_raw_archive": "tmp/tts-candidates-raw-20261029.json",
+    "raw_archive_sha256": "295e0d843856535907b2b289628b2b6a9eec0f4ed1f517d0cb730f8cccedd9d8",
+    "canonical_remote_evidence_retained": true,
+    "wav_bytes_downloaded_or_added_to_git": false,
+    "raw_logs_or_webpages_embedded_in_maintained_result": false
+  }
+}
