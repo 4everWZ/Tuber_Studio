@@ -46,7 +46,13 @@ class SpeechEngine:
     @classmethod
     def load(cls, root, voice_id):
         pipeline = compact.create_pipeline(root, voice_id=voice_id, prepare_if_needed=True)
-        return cls(root, voice_id, pipeline)
+        engine = cls(root, voice_id, pipeline)
+        # The broker keeps the LLM unloaded until this server is ready. Exercise
+        # the complete dynamic Chinese frontend/AR/VITS path now, rather than
+        # deferring its first CUDA allocations to a resident-pair request.
+        # No file, business record or playback is produced by this private probe.
+        engine.synthesize(engine.request({"text": "海底的小灯亮起来了。", "text_lang": "zh", "seed": 42}))
+        return engine
 
     def request(self, body):
         if self.failed:

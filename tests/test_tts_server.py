@@ -218,6 +218,59 @@ async def test_health_is_not_ready_until_startup_pipeline_finishes(backend, tmp_
         await lifespan.__aexit__(None, None, None)
 
 
+@pytest.mark.parametrize("silent", [False, True])
+async def test_startup_requires_complete_non_silent_warmup_before_health_ready(
+    backend, tmp_path, monkeypatch, silent
+):
+    server, _, pipeline, _, _ = backend
+    entered, release = threading.Event(), threading.Event()
+    events = []
+
+    def run(params):
+        events.append(("warmup", params.copy()))
+        entered.set()
+        assert release.wait(3)
+        try:
+            yield 32000, array.array("h", ([0] if silent else [100, -100]) * 100)
+        finally:
+            events.append(("closed", None))
+
+    pipeline.run = run
+    monkeypatch.setattr(server.compact, "create_pipeline", lambda *a, **k: pipeline)
+    app = server.create_app(tmp_path, voice_id="oc")
+    lifespan = app.router.lifespan_context(app)
+    startup = asyncio.create_task(lifespan.__aenter__())
+    started = False
+    try:
+        for _ in range(100):
+            if entered.is_set():
+                break
+            await asyncio.sleep(0.005)
+        assert entered.is_set()
+        assert events[0][1]["seed"] == 42 and events[0][1]["text_lang"] == "zh"
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://speech"
+        ) as client:
+            assert (await client.get("/docs")).status_code == 503
+            release.set()
+            if silent:
+                with pytest.raises(RuntimeError, match="silent"):
+                    await startup
+                assert (await client.get("/docs")).status_code == 503
+            else:
+                await startup
+                started = True
+                assert (await client.get("/docs")).status_code == 200
+                assert app.state.engine.request({"text": "business text"})["seed"] == -1
+            assert events[-1][0] == "closed"
+            assert len(events) == 2
+    finally:
+        release.set()
+        await asyncio.gather(startup, return_exceptions=True)
+        if started:
+            await lifespan.__aexit__(None, None, None)
+
+
 def test_operator_voice_selection_uses_runtime_config(backend, tmp_path):
     server, _, _, _, _ = backend
     assert server.select_voice(tmp_path) == "oc"

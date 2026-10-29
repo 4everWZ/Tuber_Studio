@@ -83,7 +83,7 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 正式TTS入口为tools/jetson/tts/server.py，固定监听容器127.0.0.1:9011，只提供健康检查及WAV合成。runtime/studio.json的tts.voice_id选择配置的音色，缺省取首个gpt_sovits；该进程只使用一个固定参考。切新OC时配置对应voice_id／参考音频／文字／语言并重载TTS，不能请求任意路径或同时加载多个声音模型。
 
-参考缓存位于runtime/tts/reference_features/<voice_id>，由经过身份及张量校验的NPZ／JSON组成。缺失／失效时，直播冷加载先卸载LLM，在短命进程中重新预计算；进程退出后加载不含HuBERT的精简后端，再加载MiniCPM5／131072。运行中素材或配置变化会拒绝旧pipeline并报错，broker退出失效子进程，后续请求按同一顺序重载。原始权重、动态中文BERT特征、采样与AR／VITS解码保持；serve.py仅保留原版兼容／对照用途，不再作为生产HTTP入口。
+参考缓存位于runtime/tts/reference_features/<voice_id>，由经过身份及张量校验的NPZ／JSON组成。缺失／失效时，直播冷加载先卸载LLM，在短命进程中重新预计算；进程退出后加载不含HuBERT的精简后端，完成同进程固定短句预热及清理，再报告健康并加载MiniCPM5／131072。预热音频丢弃、不记为播放或对话，不改变对外默认随机种子；静音／异常不就绪。运行中素材或配置变化会拒绝旧pipeline并报错，broker退出失效子进程，后续请求按同一顺序重载。原始权重、动态中文BERT特征、采样与AR／VITS解码保持；serve.py仅保留原版兼容／对照用途，不再作为生产HTTP入口。
 
 语音内存比较使用tools/evaluate_tts_memory.py；它与正式后端共用compact.py，也保留原实现作对照。所有入口都在同一镜像和原生Torch环境内。必须先停止业务、清空待执行任务并关闭评论自动策略。输出指定在项目runtime内，包含音频和各阶段整机采样；保护阈值沿用可用160MiB、25秒换页64MiB和有界超时。
 
