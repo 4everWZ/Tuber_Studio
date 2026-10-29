@@ -13,7 +13,7 @@
 
 ## Jetson目标部署
 
-使用单派生镜像、单tuber-studio容器：统一Python／CUDA环境，后台和受限broker共享一个Python进程，llama／TTS按需作为固定子进程启动。正式设备已安装Genie永久音色包，并完成MiniCPM5-2B／真实128K共驻、动态语音和Mock播放验证；新部署仍须自行校验资源与声音身份，不能沿用其他设备的结果。范围由[资源规范](../specs/models-and-audio.md)维护，测量见[Genie准入证据](../../evaluations/results/genie-live-optimization-20261029.json)。
+使用单派生镜像、单tuber-studio容器：统一Python／CUDA环境，后台和受限broker共享一个Python进程，llama／TTS按需作为固定子进程启动。正式设备已安装Genie永久音色包，并完成MiniCPM5-2B／真实128K共驻、动态语音和Mock播放验证；新部署仍须自行校验资源与声音身份，不能沿用其他设备的结果。范围由[资源规范](../specs/models-and-audio.md)维护，测量见[当前声音与共驻证据](../../evaluations/results/yaoyao-v2-voice-20261030.json)。
 
 | 容器内组件 | 容器端口 | 职责 |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 与正式预热／线程协议一致的PCM数值对照使用tools/evaluate_tts_parity.py --voice whale_sovits_v2 --output runtime/evaluations/tts-parity-<新目录>。外层维护监督器先受控卸载Mini并在finally恢复；工具自身只检查业务停止、自动关闭、GPUworker均已退出，不控制broker或改原缓存。原版／精简版各用新进程与单个工作线程执行生产预热、三句各两遍，记录完整参数、源文件／权重身份和整机守护。同序六组配对、自身重复及可选--legacy-dir旧WAV分别报告；旧协议hash不作为本轮质量门槛，形状／文件不完整不得判一致，数值一致不代表任意文本确定性或人工音质已通过。
 
-正式链路的持续运行入口为tools/evaluate_live.py --output /workspace/tuber/runtime/tmp/live-evaluation，默认两小时且至少100次语音请求：先无额外节拍地完成100次，之后每轮完成后间隔60秒，每第五轮用真实角色／MiniCPM结构回复作为合成文字；其余轮次使用evaluations/speech-cases.json。需先在工作台切到直播资源模式，保持业务停止及自动策略关闭。工具不改模式、不写业务数据库、不发布、不伪造播放回执；记录非静音WAV、无效LLM回复、同进程连续性与整机守护，单纯保活不计作完成合成。既有三组相对原版试听与浏览器Mock播放ACK已完成，当前声线仍待按用户目标替换；该工具独立验证持续推理，不替代真实平台、混合事件调度或OBS验收。持续运行的完成状态由[当前计划](../plans/p0-runtime.md)及[准入证据](../../evaluations/results/genie-live-optimization-20261029.json)维护。
+正式链路的持续运行入口为tools/evaluate_live.py --output /workspace/tuber/runtime/tmp/live-evaluation，默认两小时且至少100次语音请求：先无额外节拍地完成100次，之后每轮完成后间隔60秒，每第五轮用真实角色／MiniCPM结构回复作为合成文字；其余轮次使用evaluations/speech-cases.json。需先在工作台切到直播资源模式，保持业务停止及自动策略关闭。工具不改模式、不写业务数据库、不发布、不伪造播放回执；记录非静音WAV、无效LLM回复、同进程连续性与整机守护，单纯保活不计作完成合成。当前瑶瑶声线已完成三组相对原版试听、浏览器Mock播放ACK与恰好100句共驻；该工具独立验证持续推理，不替代真实平台、混合事件调度或OBS验收。持续运行的完成状态由[当前计划](../plans/p0-runtime.md)及[准入证据](../../evaluations/results/genie-live-optimization-20261029.json)维护。
 
 轻量／量化对照由tools/evaluate_tts_candidates.py执行，inspect只读包元数据／源码，不导入Torch或初始化CUDA。候选离线包放runtime/evaluations/tts-candidates，用tools/jetson/tts/install-candidates.py --bundle <该目录>安装到它自己的venv；只安装已校验的本地wheel，复用原生Torch／Audio／Vision／TorchAO／Transformers，不升级正式环境。缺少依赖或离线资产时明确失败，不在计时过程中下载。
 
@@ -117,7 +117,7 @@ Genie正式依赖作为原镜像的小层安装进同一`/opt/studio-venv`，锁
 
 新参考先保留来源原件，再准备单声道32kHz WAV工作副本并配置准确文字；例如48kHz原声须在离线阶段显式重采样，不能等Genie加载时临时处理。对工作副本运行`python tools/jetson/tts/server.py --prepare-reference --voice-id <候选音色ID>`，此后再安装声音包。新GPT／SoVITS权重须重新转换和量化；若BERT checkpoint／config／tokenizer完全相同，可复用经过receipt及内容身份校验的BERT包，避免重复导出。独立候选使用自己的配置和runtime，不把候选追加进仍驻留的生产voices.json；整份文件的身份守卫会使旧worker失效。
 
-安装命令为`python tools/jetson/tts/genie_bundle.py --root /workspace/tuber --voice whale_sovits_v2 --models <原转换且已展开FP32的目录> --ar-bundle <恢复采样后的INT8目录> --bert-bundle <BERT目录> --execute`。它核对原checkpoint逐tensor内容、采样／量化来源链和全部运行产物，原子创建`runtime/tts/genie/<voice_id>`，不覆盖已有包。正式容器将该目录只读挂载；安装须停止工作台后，用同一镜像／UID、只读根目录及受限权限运行一次无网络维护容器，仅将本项目runtime作为写边界，外层保留内存守护并在结束后恢复工作台。新OC按自己的voice与参考重复安装；缺包／身份失效会要求显式准备，常驻服务不临时导出、不读取实验目录或静默换回compact。重建先停止相关资源，保留现有包供回退，由Operator显式更换，安装器不自动删除旧包。
+安装命令为`python tools/jetson/tts/genie_bundle.py --root /workspace/tuber --voice <voice_id> --models <原转换且已展开FP32的目录> --ar-bundle <恢复采样后的INT8目录> --bert-bundle <BERT目录> --execute`。它核对原checkpoint逐tensor内容、采样／量化来源链和全部运行产物，原子创建`runtime/tts/genie/<voice_id>`，不覆盖已有包。正式容器将该目录只读挂载；安装须停止工作台后，用同一镜像／UID、只读根目录及受限权限运行一次无网络维护容器，仅将本项目runtime作为写边界，外层保留内存守护并在结束后恢复工作台。新OC按自己的voice与参考重复安装；缺包／身份失效会要求显式准备，常驻服务不临时导出、不读取实验目录或静默换回compact。重建先停止相关资源，保留现有包供回退，由Operator显式更换，安装器不自动删除旧包。
 
 初始whale角色默认声音为`yaoyao_sovits_v2`；本地runner仍须显式配置`tts.voice_id=yaoyao_sovits_v2`并安装相应模型包。省略voice_id仍兼容选择第一个旧本地声线，不会自动推断或替换权重。旧voice、预录素材与历史角色版本保留，恢复旧声音须同步恢复原YAML／voice_id／bundle及角色版本。
 

@@ -3,7 +3,7 @@
   "date": "2026-10-29",
   "timezone": "Asia/Taipei",
   "kind": "genie_whole_machine_ram_optimization_and_native128k_live_admission",
-  "status": "resource_checks_passed_for_user_limited_100_speech_current_voice_replacement_requested",
+  "status": "original_voice_resource_evidence_retained_default_voice_superseded_by_accepted_yaoyao",
   "scope": {
     "primary_objective": "reduce sampled whole-machine peak RAM",
     "constraints": [
@@ -1544,11 +1544,12 @@
       "target_style": "清亮柔软、略带奶气的普通话少女音",
       "action": "Keep historical3-pair>=90% acceptance as a comparison to the original voice, but current voice is not the desired final timbre. Research alternative clean game-dialogue sources and compatible candidate voices for user listening before replacement.",
       "cause_not_established": "User-observed electrical/metallic sound; no causal attribution to source data versus checkpoint, reference, inference engine or quantization has been established.",
-      "default_voice_replaced": false
+      "default_voice_replaced": false,
+      "resolution": "User selected Yaoyao and explicitly accepted3 original-versus-Genie generated pairs>=90%; new default and resource admission recorded in yaoyao-v2-voice-20261030.json"
     },
     "voice_source_candidates": {
       "kind": "original Mandarin dialogue listening, not synthesized candidate models",
-      "status": "yaoyao three generated pairs accepted by user; production promotion in progress",
+      "status": "yaoyao synthesized audition accepted and default deployed; exact100 co-resident speech and browser passed",
       "audio_downloaded": false,
       "entries": [
         {
@@ -1579,7 +1580,7 @@
           "original_audio_url": "https://patchwiki.biligame.com/images/ys/1/19/8htm0sqaegb0ypl0f2m6hkq9tukcajl.mp3",
           "source_page": "https://wiki.biligame.com/ys/瑶瑶语音",
           "browser_playback": "actual trusted playing then ended in isolated session",
-          "synthesized_quality_tested": false
+          "synthesized_quality_tested": true
         },
         {
           "id": "nahida",
@@ -3606,7 +3607,8 @@
     ],
     "no_new_privileges": true,
     "genie_weights_mount_readonly": true,
-    "external_provider_accounts_exercised": false
+    "external_provider_accounts_exercised": false,
+    "scope": "Deployment during original-whale acceptance; superseded by the current deployment in yaoyao-v2-voice-20261030.json"
   },
   "verification": {
     "local_full_suite": {

@@ -3,7 +3,7 @@
   "date": "2026-10-30",
   "timezone": "Asia/Taipei",
   "kind": "yaoyao_v2_voice_paired_audition_and_production_admission",
-  "status": "paired_audition_user_accepted_production_promotion_in_progress",
+  "status": "accepted_default_voice_deployed_native128k_co_residency_exact100_and_browser_passed",
   "selected_source": {
     "repository": "UnlimitedBurst/GPT-SoVITS",
     "revision": "c649dfd4077c9a7c818775cc871590a10a688db9",
@@ -1044,18 +1044,2057 @@
     }
   },
   "production_admission": {
-    "status": "in_progress",
+    "status": "passed_requested_100_speech_scope",
     "voice_id": "yaoyao_sovits_v2",
     "required_count": 100,
     "two_hour_run_required_this_round": false,
-    "new_voice_120k_input_retested": false
+    "new_voice_120k_input_retested": false,
+    "host": {
+      "started_utc": "2026-10-29T16:30:35Z",
+      "old_image": "sha256:6b3b348c116320e8045b9ebf93ae1201fa5150dc9b50ec19dc68178d7a9861f2",
+      "new_image": "sha256:8fe181d2fc34e26790ff3b3a3f54d8524c209d06a9eba7f874db02baf7df8d97",
+      "voice_id": "yaoyao_sovits_v2",
+      "previous_character_state": {
+        "whale_version": 1,
+        "active_id": "whale",
+        "active_version": 1
+      },
+      "prepare_returncode": 0,
+      "postdeploy_returncode": 0,
+      "status": "promoted_and_workbench_pcm_verified",
+      "finished_utc": "2026-10-29T16:32:15Z"
+    },
+    "preparation": {
+      "status": "completed",
+      "voice_id": "yaoyao_sovits_v2",
+      "uid": 1001,
+      "gid": 1001,
+      "pid": 1,
+      "stages": [
+        {
+          "stage": "reference",
+          "deadline_seconds": 180,
+          "log": "/workspace/tuber/runtime/evaluations/yaoyao-production-20261030/reference.log",
+          "pid": 21,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5727708,
+              "swap_used_kib": 152832,
+              "pswpin": 46990,
+              "pswpout": 202512,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5716324,
+              "swap_used_kib": 152832,
+              "pswpin": 46990,
+              "pswpout": 202512,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 3968680,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 47
+          },
+          "result": {
+            "voice_id": "yaoyao_sovits_v2",
+            "reference_cache": "/workspace/tuber/runtime/tts/reference_features/yaoyao_sovits_v2",
+            "npz_sha256": "e3ce32f969ecb0e7ea076e4d27e562f0819260f0e79d5c171fa02b745ebfeeda",
+            "source_identity": {
+              "voice_id": "yaoyao_sovits_v2",
+              "weights_version": "yaoyao-v2-e10-e10s200",
+              "precision": "float16",
+              "sha256": {
+                "reference": "95335007648d2cb1ce896e11bf312de971f9852a00280527fb623ae5b9999aab",
+                "t2s": "7a15e08319507891a957a3c5aa6c7f59019861e8f7709725f0267b6c7615dc56",
+                "vits": "4f1483f376b6794cf66a349e2819fc81e0d794a6c8bc19e37dd90be33fa3bcca",
+                "bert/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+                "bert/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+                "bert/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b",
+                "hubert/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+                "hubert/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+                "hubert/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c"
+              }
+            }
+          },
+          "elapsed_seconds": 22.57602015700104,
+          "sampled_peak_child_rss_bytes": 3099639808,
+          "sampled_peak_machine_kib": 3834036
+        },
+        {
+          "stage": "install",
+          "deadline_seconds": 180,
+          "log": "/workspace/tuber/runtime/evaluations/yaoyao-production-20261030/install.log",
+          "pid": 52,
+          "returncode": 0,
+          "memory": {
+            "baseline": {
+              "available_kib": 5716324,
+              "swap_used_kib": 152832,
+              "pswpin": 46990,
+              "pswpout": 202512,
+              "oom_kill": 0
+            },
+            "final": {
+              "available_kib": 5716600,
+              "swap_used_kib": 152832,
+              "pswpin": 46990,
+              "pswpout": 202512,
+              "oom_kill": 0
+            },
+            "minimum_available_kib": 5236272,
+            "swapin_bytes": 0,
+            "swapout_bytes": 0,
+            "maximum_rolling_25s_swap_bytes": 0,
+            "oom_kill_delta": 0,
+            "samples": 50
+          },
+          "result": {
+            "voice_id": "yaoyao_sovits_v2",
+            "directory": "/workspace/tuber/runtime/tts/genie/yaoyao_sovits_v2",
+            "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+            "source_graphs": {
+              "t2s_encoder_fp32.onnx": {
+                "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/t2s_encoder_fp32.onnx",
+                "bytes": 14568,
+                "sha256": "f6eb1acd47c8e6d36b777886981a49122e8e070a5eb9888d458fb188dc139f75"
+              },
+              "t2s_first_stage_decoder_fp32.onnx": {
+                "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/t2s_first_stage_decoder_fp32.onnx",
+                "bytes": 416803,
+                "sha256": "868f395999508905128c5325c5db4f4b37b2e70e04d6e2719fec64cbb60ee7f9"
+              },
+              "t2s_stage_decoder_fp32.onnx": {
+                "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/t2s_stage_decoder_fp32.onnx",
+                "bytes": 417625,
+                "sha256": "3f02881c517423deb610f86d5441bd9825937c5069f3887cacefa1e9dc403b0d"
+              },
+              "vits_fp32.onnx": {
+                "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/vits_fp32.onnx",
+                "bytes": 1654845,
+                "sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a"
+              }
+            },
+            "runtime_graphs": {
+              "encoder": {
+                "path": "/workspace/tuber/runtime/tts/genie/yaoyao_sovits_v2/encoder.onnx",
+                "bytes": 3604420,
+                "sha256": "ea26824b12806fc7ff7f2c823c2f87a7293b1f0f58b834d6bf497c864a32aa9d"
+              },
+              "first": {
+                "path": "/workspace/tuber/runtime/tts/genie/yaoyao_sovits_v2/ar/t2s_first_stage_decoder_int8.onnx",
+                "bytes": 1257274,
+                "sha256": "9812aac8f3eb7e0f64abea9a6afa23253dedb7d5c1f66d0b4116675816d052b2"
+              },
+              "stage": {
+                "path": "/workspace/tuber/runtime/tts/genie/yaoyao_sovits_v2/ar/t2s_stage_decoder_int8.onnx",
+                "bytes": 1258055,
+                "sha256": "5c780771b0569589acff9e2203edb1c1697d15059f8bff9f2b2a85259295e881"
+              },
+              "vits": {
+                "path": "/workspace/tuber/runtime/tts/genie/yaoyao_sovits_v2/vits/vits.onnx",
+                "bytes": 1654859,
+                "sha256": "278bf7f294e384cdb336522311e783fab91ea51546c118e9bebe5e7b4510918e"
+              },
+              "bert": {
+                "path": "/workspace/tuber/runtime/tts/genie/yaoyao_sovits_v2/bert/bert_int8.onnx",
+                "bytes": 1739880,
+                "sha256": "c04d0f912beaac82af0b2a6420223b2a3490a574d6a7b3cd4eec2de2858b7b22"
+              }
+            }
+          },
+          "elapsed_seconds": 24.09935325400147,
+          "sampled_peak_child_rss_bytes": 625926144,
+          "sampled_peak_machine_kib": 2566444
+        }
+      ],
+      "started_utc": "2026-10-29T16:30:39Z",
+      "guard": {
+        "deadline_seconds_each": 180,
+        "sample_interval_seconds": 0.5,
+        "available_floor_mib": 160,
+        "rolling_swap_limit_mib": 64,
+        "rolling_window_seconds": 25
+      },
+      "scope": "Reference preparation and installation only; the external owner restores production",
+      "source_graphs": {
+        "t2s_encoder_fp32.onnx": {
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/t2s_encoder_fp32.onnx",
+          "bytes": 14568,
+          "sha256": "f6eb1acd47c8e6d36b777886981a49122e8e070a5eb9888d458fb188dc139f75"
+        },
+        "t2s_first_stage_decoder_fp32.onnx": {
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/t2s_first_stage_decoder_fp32.onnx",
+          "bytes": 416803,
+          "sha256": "868f395999508905128c5325c5db4f4b37b2e70e04d6e2719fec64cbb60ee7f9"
+        },
+        "t2s_stage_decoder_fp32.onnx": {
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/t2s_stage_decoder_fp32.onnx",
+          "bytes": 417625,
+          "sha256": "3f02881c517423deb610f86d5441bd9825937c5069f3887cacefa1e9dc403b0d"
+        },
+        "vits_fp32.onnx": {
+          "path": "/workspace/tuber/runtime/evaluations/yaoyao-v2-audition-20261029/runtime/evaluations/expanded/models/vits_fp32.onnx",
+          "bytes": 1654845,
+          "sha256": "634c21025f9fea03901c1fb5741a98ada512adeb67183e79b261c059fa4d842a"
+        }
+      },
+      "weights_only_environment": {
+        "TORCH_FORCE_WEIGHTS_ONLY_LOAD": "1",
+        "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD": "0"
+      },
+      "active_stage": null,
+      "configuration_bytes_unchanged": true,
+      "source_graphs_unchanged": true,
+      "finished_utc": "2026-10-29T16:31:26Z"
+    },
+    "workbench_preview": {
+      "completed": true,
+      "speech": [
+        {
+          "index": 0,
+          "text": "你好呀，今天也要记得好好吃饭。",
+          "seconds": 3.239001350997569,
+          "audio_seconds": 2.9,
+          "audio_ref": "/media/audio/f96d7287df790231d15c392a4673e25d04f57bebdb7b8826504de533d62c3f56.wav",
+          "pcm_sha256": "9b93568800dcf19ce1e66089eb7e56b126b6113347f6328f7f8ae72a4804b4ee",
+          "matches_accepted_pcm": true
+        },
+        {
+          "index": 1,
+          "text": "路上小心，累了就坐下来休息一会儿吧。",
+          "seconds": 3.829472781999357,
+          "audio_seconds": 3.96,
+          "audio_ref": "/media/audio/f5f5ab12292d8829c8dfadd9493c620f461de758f2c3cf76c4164e8f3b6d098f.wav",
+          "pcm_sha256": "a5d192be03eb50fd4c5667f5dc3e915219c754d99a180a03f21c955ac01401d4",
+          "matches_accepted_pcm": true
+        },
+        {
+          "index": 2,
+          "text": "谢谢你的陪伴，我们下次再见。",
+          "seconds": 2.7322091950009053,
+          "audio_seconds": 2.76,
+          "audio_ref": "/media/audio/b4bb3d62333d67a219b914407b04a5bad5eff087f3fc034728bc1762da6cb89c.wav",
+          "pcm_sha256": "84583a3e2bd6c15964388a5128ed6310dd4177ffef2b7e32a97dea945b751942",
+          "matches_accepted_pcm": true
+        }
+      ],
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            151
+          ],
+          "tts": [
+            32
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+        "voice_id": "yaoyao_sovits_v2"
+      },
+      "previous_character": {
+        "id": "whale",
+        "version": 1,
+        "voice_profile": "whale_sovits_v2"
+      },
+      "character": {
+        "id": "whale",
+        "version": 2,
+        "voice_profile": "yaoyao_sovits_v2"
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            151
+          ],
+          "tts": [
+            32
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+        "voice_id": "yaoyao_sovits_v2"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null
+      },
+      "automatic_policies": {
+        "auto_browse": false,
+        "auto_reply": false
+      },
+      "memory": {
+        "baseline": {
+          "available_kib": 1997488,
+          "swap_used_kib": 172800,
+          "pswpin": 46993,
+          "pswpout": 207608,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 2014800,
+          "swap_used_kib": 173312,
+          "pswpin": 46995,
+          "pswpout": 207708,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1988884,
+        "swapin_bytes": 8192,
+        "swapout_bytes": 409600,
+        "maximum_rolling_25s_swap_bytes": 417792,
+        "oom_kill_delta": 0,
+        "samples": 20
+      },
+      "elapsed_seconds": 10.103085647002445
+    },
+    "browser": {
+      "phases": [
+        {
+          "phase": "login_preflight",
+          "auth_http": 200,
+          "default_page": "comments",
+          "identity": {
+            "character_id": "whale",
+            "character_version": 2,
+            "voice_profile": "yaoyao_sovits_v2",
+            "local_backend": "genie_onnx_int8",
+            "configured_voice_id": "yaoyao_sovits_v2"
+          },
+          "engine": "已保存本地引擎：Genie ONNX INT8 · 音色：yaoyao_sovits_v2。需手动进入直播模式；引擎与音色由服务配置，只读展示。",
+          "context": {
+            "configured_tokens": 131072,
+            "server_tokens": 131072,
+            "native_tokens": 131072,
+            "verified": true,
+            "capacity_source": "server_verified",
+            "token_accounting": "server_tokenizer",
+            "retained_user_token_budget": 20000,
+            "active_tokens": 0,
+            "compact_count": 0,
+            "last_compaction_error": null,
+            "last_compaction_warning": null,
+            "compaction_passes_last": 0,
+            "secondary_threshold_percent": 40,
+            "summary_budgets_last": [],
+            "occupancy_percent": 0,
+            "profile_error": null,
+            "scope": null,
+            "oldest_source_at": null,
+            "is_sleeping": false
+          },
+          "inference": {
+            "state": "active",
+            "active_provider": "tts",
+            "error": null,
+            "mode": "live",
+            "selected_provider": "llm2b",
+            "requested_context_tokens": 131072,
+            "kv_cache_type": "q4_0",
+            "cuda_managed_memory": false,
+            "busy": false,
+            "providers": {
+              "llm2b": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": 131072,
+                "context_tokens": 131072,
+                "cache_type_k": "q4_0",
+                "cache_type_v": "q4_0"
+              },
+              "llm1b": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llm1bq8": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llmqwen35": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 262144,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "tts": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": null,
+                "context_tokens": null,
+                "cache_type_k": null,
+                "cache_type_v": null
+              }
+            },
+            "active": "tts"
+          },
+          "state": "stopped",
+          "queue_length": 0,
+          "policy": {
+            "auto_browse": false,
+            "auto_reply": false
+          },
+          "pid_evidence": "Not exposed by authenticated status API; root may correlate independent read-only process evidence."
+        },
+        {
+          "phase": "local_genie_preview",
+          "passed": true,
+          "text": "小兔子抱着一篮新鲜苹果，提醒大家先休息一下，再继续今天的冒险。",
+          "voice_id": "yaoyao_sovits_v2",
+          "http": 200,
+          "audio": {
+            "http": 206,
+            "bytes": 400684,
+            "duration": 6.26,
+            "peak": 0.696758508682251,
+            "rms": 0.12921929754900338,
+            "samples": 276066
+          },
+          "events": [
+            {
+              "type": "playing",
+              "trusted": true,
+              "currentTime": 0,
+              "duration": 6.26,
+              "muted": false,
+              "volume": 1,
+              "error": null
+            },
+            {
+              "type": "ended",
+              "trusted": true,
+              "currentTime": 6.26,
+              "duration": 6.26,
+              "muted": false,
+              "volume": 1,
+              "error": null
+            }
+          ]
+        },
+        {
+          "phase": "mock_reply_playback",
+          "passed": true,
+          "live_start_http": 200,
+          "mock_http": 200,
+          "event_id": "yaoyao-ui-mock-1793291680218",
+          "platform": "mock",
+          "event_type": "chat",
+          "input": "大肥鱼，今天想去竹林散步吗？请用一句话回答。",
+          "job": {
+            "id": "af330f5c-41c5-41e7-aec9-d11dc423b19e",
+            "status": "completed",
+            "text": "当然啦！今天一起去竹林散步怎么样呀？😊",
+            "llm_ms": 8791,
+            "tts_ms": 3896,
+            "character_id": "whale",
+            "character_version": 2,
+            "error": null,
+            "answer_check": "{\"sources\": [], \"required_slots\": [], \"missing\": [], \"retried\": false, \"warning\": null, \"memory_kind\": \"role_story\"}"
+          },
+          "transitions": [
+            {
+              "status": "generating",
+              "epoch_ms": 1793291680459
+            },
+            {
+              "status": "synthesizing",
+              "epoch_ms": 1793291689236
+            },
+            {
+              "status": "ready_to_play",
+              "epoch_ms": 1793291693141
+            },
+            {
+              "status": "playing",
+              "epoch_ms": 1793291693470
+            },
+            {
+              "status": "completed",
+              "epoch_ms": 1793291697384
+            }
+          ],
+          "acknowledgements": [
+            {
+              "type": "started",
+              "job_id": "af330f5c-41c5-41e7-aec9-d11dc423b19e",
+              "error": null
+            },
+            {
+              "type": "ended",
+              "job_id": "af330f5c-41c5-41e7-aec9-d11dc423b19e",
+              "error": null
+            }
+          ],
+          "native": [
+            {
+              "type": "playing",
+              "trusted": true,
+              "currentTime": 0,
+              "duration": 3.62,
+              "muted": false,
+              "volume": 1,
+              "error": null
+            },
+            {
+              "type": "ended",
+              "trusted": true,
+              "currentTime": 3.62,
+              "duration": 3.62,
+              "muted": false,
+              "volume": 1,
+              "error": null
+            }
+          ],
+          "audio": {
+            "http": 206,
+            "bytes": 231724,
+            "duration": 3.62,
+            "peak": 0.6706831455230713,
+            "rms": 0.14220861381163585,
+            "samples": 159642
+          },
+          "overlay_errors": []
+        },
+        {
+          "phase": "stop_and_close_overlay",
+          "passed": true,
+          "http": 200,
+          "state": "stopped",
+          "queue_length": 0,
+          "current_job": null,
+          "overlay_connected": false,
+          "identity": {
+            "character_id": "whale",
+            "character_version": 2,
+            "voice_profile": "yaoyao_sovits_v2"
+          },
+          "inference": {
+            "state": "active",
+            "active_provider": "tts",
+            "error": null,
+            "mode": "live",
+            "selected_provider": "llm2b",
+            "requested_context_tokens": 131072,
+            "kv_cache_type": "q4_0",
+            "cuda_managed_memory": false,
+            "busy": false,
+            "providers": {
+              "llm2b": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": 131072,
+                "context_tokens": 131072,
+                "cache_type_k": "q4_0",
+                "cache_type_v": "q4_0"
+              },
+              "llm1b": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llm1bq8": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 131072,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "llmqwen35": {
+                "running": false,
+                "is_sleeping": true,
+                "loaded_this_boot": false,
+                "native_context_tokens": 262144,
+                "context_tokens": null,
+                "cache_type_k": "q8_0",
+                "cache_type_v": "q8_0"
+              },
+              "tts": {
+                "running": true,
+                "is_sleeping": false,
+                "loaded_this_boot": true,
+                "native_context_tokens": null,
+                "context_tokens": null,
+                "cache_type_k": null,
+                "cache_type_v": null
+              }
+            },
+            "active": "tts"
+          },
+          "context": {
+            "configured_tokens": 131072,
+            "server_tokens": 131072,
+            "native_tokens": 131072,
+            "verified": true,
+            "capacity_source": "server_verified",
+            "token_accounting": "server_tokenizer",
+            "retained_user_token_budget": 20000,
+            "active_tokens": 840,
+            "compact_count": 0,
+            "last_compaction_error": null,
+            "last_compaction_warning": null,
+            "compaction_passes_last": 0,
+            "secondary_threshold_percent": 40,
+            "summary_budgets_last": [],
+            "occupancy_percent": 0.64,
+            "profile_error": null,
+            "scope": "live:f75e049d-159b-4ab5-ade8-1c9de9a4a4ab",
+            "oldest_source_at": 1793291678.3775148,
+            "is_sleeping": false
+          },
+          "policy": {
+            "auto_browse": false,
+            "auto_reply": false
+          }
+        }
+      ],
+      "http": [
+        {
+          "method": "POST",
+          "path": "/api/tts/preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/live/start",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/live/mock-event",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/live/stop",
+          "status": 200
+        }
+      ],
+      "errors": [],
+      "passed": true,
+      "completed_at": "2026-10-29T16:35:11.736Z",
+      "boundaries": {
+        "device_operations": "Browser login/read navigation, one unique local preview, one mock chat, stop; no explicit resource mode change/unload/model change.",
+        "real_platform_actions": false,
+        "automatic_comments": false,
+        "synthetic_acknowledgements": false,
+        "synthesis_retries": 0,
+        "process_pids": "Not exposed by browser API; parent reported Mini151/TTS32 before handoff and will independently compare after return. No per-step PID claim.",
+        "deployment_reported_by_owner": {
+          "image_prefix": "8fe181d",
+          "genie_bundle_prefix": "513b9e1e"
+        },
+        "credentials": "Admin and overlay credentials excluded from result and screenshot.",
+        "quality_claim": "Actual playback, non-silence and workflow only; not an independent perceptual quality rating."
+      },
+      "console": {
+        "expected_before_login": {
+          "description": "Initial unauthenticated status probe before successful login",
+          "path": "/api/status",
+          "status": 401
+        },
+        "errors": 1,
+        "total_messages": 4,
+        "post_login_page_errors": 0,
+        "warnings": 0
+      }
+    },
+    "owner_post_ui_profile": {
+      "profile": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            151
+          ],
+          "tts": [
+            32
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+        "voice_id": "yaoyao_sovits_v2"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "comment_policy": {
+          "auto_browse": false,
+          "auto_reply": false,
+          "watch_videos": [],
+          "browse_interval_seconds": 300,
+          "max_replies_per_hour": 5,
+          "max_replies_per_day": 20,
+          "credentials_configured": false,
+          "last_browse_error": null,
+          "last_browse_at": null
+        }
+      },
+      "rss_kib": {
+        "llm": 3479576,
+        "tts": 1445684
+      },
+      "evaluator_running": false,
+      "restoration_after_operator_cancel": null
+    },
+    "count_protocol": {
+      "minimum_seconds": 1,
+      "minimum_speech": 100,
+      "interval_seconds": 0,
+      "meaning": "Count-bounded request: stop immediately after100 complete speech requests;1s is only a minimum-duration condition, not a claim that the run took1s. Existing900s guard allowance retained.",
+      "user_instruction": "先暂时测100句就可以了",
+      "actual_seconds": 563.202
+    },
+    "endurance_result": {
+      "profile_before": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            151
+          ],
+          "tts": [
+            32
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+        "voice_id": "yaoyao_sovits_v2"
+      },
+      "profile_after": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            151
+          ],
+          "tts": [
+            32
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+        "voice_id": "yaoyao_sovits_v2"
+      },
+      "requested_seconds": 1,
+      "minimum_speech": 100,
+      "elapsed_seconds": 563.202,
+      "speech_completed": 100,
+      "last_stage": "cycle_100",
+      "llm_calls": 20,
+      "invalid_llm_replies": 0,
+      "post_burst_interval_seconds": 0.0,
+      "memory": {
+        "baseline": {
+          "available_kib": 1994228,
+          "swap_used_kib": 173312,
+          "pswpin": 47005,
+          "pswpout": 207708,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 1708384,
+          "swap_used_kib": 175104,
+          "pswpin": 47031,
+          "pswpout": 208170,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1691532,
+        "swapin_bytes": 106496,
+        "swapout_bytes": 1892352,
+        "maximum_rolling_25s_swap_bytes": 1851392,
+        "oom_kill_delta": 0,
+        "samples": 1124
+      },
+      "total_ram_kib": 7802716,
+      "peak_machine_total_minus_available_kib": 6111184,
+      "completed_duration_and_count": true,
+      "all_llm_reply_schemas_valid": true,
+      "verified_two_hours_and_100": false,
+      "reason": null,
+      "limitations": "Defined synthetic mixed workload; no platform publishing, playback or arbitrary arrival-rate claim. Audio non-silence and valid structured replies do not replace human voice-quality listening."
+    },
+    "completed_cycles": [
+      {
+        "cycle": 1,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 4.206,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "5fa77b75b736987bffd64e35082478fc97fad4173997d76059d8bcb4ca2239e5",
+        "total_seconds": 4.206
+      },
+      {
+        "cycle": 2,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 4.08,
+        "audio_seconds": 4.24,
+        "bytes": 271404,
+        "wav_sha256": "903623f68144a46e93ed751fb5ce2acf71a9e68d99883dfef038dde7ca9c6a72",
+        "total_seconds": 4.081
+      },
+      {
+        "cycle": 3,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 3.147,
+        "audio_seconds": 3.2,
+        "bytes": 204844,
+        "wav_sha256": "615c748e200c9bf9d090690ace445a080fa655766f99fc51c36c0ceefc5a2db7",
+        "total_seconds": 3.148
+      },
+      {
+        "cycle": 4,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 5.404,
+        "audio_seconds": 5.32,
+        "bytes": 340524,
+        "wav_sha256": "25adad09174a8316c9ec49e7a51076a73e97edaefb2a50c359bffaeb3278cf6f",
+        "total_seconds": 5.404
+      },
+      {
+        "cycle": 5,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 7.67
+        },
+        "text": "什么嘛，欢迎来到深海思考区！",
+        "fixture": null,
+        "speech_seconds": 3.006,
+        "audio_seconds": 3.06,
+        "bytes": 195884,
+        "wav_sha256": "ac2c53b1dfe09380b5a093b524ae9984ca418b7e78c8d1d6c83d6c15be4ab910",
+        "total_seconds": 10.676
+      },
+      {
+        "cycle": 6,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.749,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "c6fad35c4474e4c8ca85242981170f7994e932f9be720b5fa136fc29b5312bd3",
+        "total_seconds": 3.749
+      },
+      {
+        "cycle": 7,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 4.53,
+        "audio_seconds": 4.34,
+        "bytes": 277804,
+        "wav_sha256": "4171426b44534810efbf240a7973add55ce37379ac256afc4b3efb4ebc2ad2b1",
+        "total_seconds": 4.531
+      },
+      {
+        "cycle": 8,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.09,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "b11dfa1e58cdc3c35452d629a08f97ee658582d84b81b30bb7a03139ff4c5b5d",
+        "total_seconds": 4.091
+      },
+      {
+        "cycle": 9,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 4.113,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d7562e02b750e588cce8b4f999d339adf0e3f330466743ba06655ded5ce92254",
+        "total_seconds": 4.113
+      },
+      {
+        "cycle": 10,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 4.184
+        },
+        "text": "来，慢慢歇着，我陪你好说话。",
+        "fixture": null,
+        "speech_seconds": 3.182,
+        "audio_seconds": 3.32,
+        "bytes": 212524,
+        "wav_sha256": "14cab0ea3142bcb92abb3f341dfee88d576ca44d31d8eea5bafbe5601b35fa7c",
+        "total_seconds": 7.367
+      },
+      {
+        "cycle": 11,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.844,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "fe141d0da8c2770ffdb8714e866c716c8137e067623d51292861c085366f6c95",
+        "total_seconds": 3.845
+      },
+      {
+        "cycle": 12,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.932,
+        "audio_seconds": 4.8,
+        "bytes": 307244,
+        "wav_sha256": "7c9da8a155c3585e0e813a66bed2533f670a8427db5613d888262c90533c656f",
+        "total_seconds": 4.932
+      },
+      {
+        "cycle": 13,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.88,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "724e6f1a94bc5c60ffc0d4495461bbd10adb9ed83a6492132733bef61bdfe3ac",
+        "total_seconds": 3.88
+      },
+      {
+        "cycle": 14,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 5.054,
+        "audio_seconds": 4.96,
+        "bytes": 317484,
+        "wav_sha256": "6fd2757356b6e4e26fcd44af4d77ca5eda49469b9382c817921c4a91a046f989",
+        "total_seconds": 5.055
+      },
+      {
+        "cycle": 15,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 5.152
+        },
+        "text": "啥嘛！深海思考可是真功夫，再来碗白饭！",
+        "fixture": null,
+        "speech_seconds": 4.018,
+        "audio_seconds": 4.28,
+        "bytes": 273964,
+        "wav_sha256": "440cd1f4129124029d83a4bc77e33db5fb8b2aaf029d78f4bd915007ea5b7140",
+        "total_seconds": 9.171
+      },
+      {
+        "cycle": 16,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 3.279,
+        "audio_seconds": 2.96,
+        "bytes": 189484,
+        "wav_sha256": "d2ee5cdc33d173c16a0271c0a7cb42133dfa8df6f8aca8f5d64372e5312b01f5",
+        "total_seconds": 3.279
+      },
+      {
+        "cycle": 17,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 4.629,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "3887e72622add647b4112db0a533c953bfdd170db7d20b23ace1e226da7cdf78",
+        "total_seconds": 4.63
+      },
+      {
+        "cycle": 18,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.603,
+        "audio_seconds": 3.44,
+        "bytes": 220204,
+        "wav_sha256": "152b4bf94ec8ee724b1e4bf52ff08de6818c38447f013915b995cad9b45da8ee",
+        "total_seconds": 3.604
+      },
+      {
+        "cycle": 19,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 3.865,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "509357a931626aae39c6f157fe72bc8f2fb98ef12e90212fbac0134ec1cf4a81",
+        "total_seconds": 3.865
+      },
+      {
+        "cycle": 20,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 5.79
+        },
+        "text": "当然啦，大家休息一下，喝点水保健康呢！",
+        "fixture": null,
+        "speech_seconds": 4.169,
+        "audio_seconds": 4.08,
+        "bytes": 261164,
+        "wav_sha256": "46e0857f96eeaeea4ba0d423a0bf101344d380cd82aec00865fb6372c43abd43",
+        "total_seconds": 9.959
+      },
+      {
+        "cycle": 21,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.788,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "f2a0af7140d106a98c87e7d23a8a093c9e3c6d4d143acb192b47e051c0546e7d",
+        "total_seconds": 3.788
+      },
+      {
+        "cycle": 22,
+        "llm": null,
+        "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+        "fixture": 17,
+        "speech_seconds": 4.85,
+        "audio_seconds": 4.74,
+        "bytes": 303404,
+        "wav_sha256": "3fd0bbeb9842639668e8b77e4587348d68a88ce7818239e7761bbefbfa726a7f",
+        "total_seconds": 4.85
+      },
+      {
+        "cycle": 23,
+        "llm": null,
+        "text": "DeepSeek 是名字，白饭才是今天的主题。",
+        "fixture": 18,
+        "speech_seconds": 12.762,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "f798bbdf2dbd99d35bbcda04eb9a6fbfda3a8b9bd492180638862be8ee6f5312",
+        "total_seconds": 12.763
+      },
+      {
+        "cycle": 24,
+        "llm": null,
+        "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+        "fixture": 19,
+        "speech_seconds": 3.781,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "4ef83e861e44591ad7b2afed667c5b3407417e1a55e9e99bc458532e4b25b3ff",
+        "total_seconds": 3.781
+      },
+      {
+        "cycle": 25,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 3.636
+        },
+        "text": "完成小目标很棒，再坚持一下！",
+        "fixture": null,
+        "speech_seconds": 3.214,
+        "audio_seconds": 3.2,
+        "bytes": 204844,
+        "wav_sha256": "a11f0fc7cd71b570ef2edb5fbe434375558c3dd07653d79941770a2c1952569a",
+        "total_seconds": 6.851
+      },
+      {
+        "cycle": 26,
+        "llm": null,
+        "text": "Thank you，今天也谢谢大家陪我聊天。",
+        "fixture": 20,
+        "speech_seconds": 4.103,
+        "audio_seconds": 4.32,
+        "bytes": 276524,
+        "wav_sha256": "5824fda1198bd1db8e5fe85ee3accf994bcec30882f3d6f686ad2856fa79a7a7",
+        "total_seconds": 4.103
+      },
+      {
+        "cycle": 27,
+        "llm": null,
+        "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+        "fixture": 21,
+        "speech_seconds": 4.097,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "d2fdb0f739bcb0546d32c3f1daf87d6877d555ec3cbd9acb933a43345659d79b",
+        "total_seconds": 4.097
+      },
+      {
+        "cycle": 28,
+        "llm": null,
+        "text": "真的？原来是这样！让我再看一眼。",
+        "fixture": 22,
+        "speech_seconds": 4.022,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "30fbf168b272897770ef2a68d479bd1cf10d4e9c1db08ebc9c557c74b47bcd3c",
+        "total_seconds": 4.022
+      },
+      {
+        "cycle": 29,
+        "llm": null,
+        "text": "嗯……这件事情，要从昨天的海底集市说起。",
+        "fixture": 23,
+        "speech_seconds": 4.744,
+        "audio_seconds": 5.0,
+        "bytes": 320044,
+        "wav_sha256": "b5300836f02aad67feccfa239292695336aab0655be3514738a8e798bb5c66d6",
+        "total_seconds": 4.744
+      },
+      {
+        "cycle": 30,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 4.939
+        },
+        "text": "欢迎来啦，再来碗白饭！",
+        "fixture": null,
+        "speech_seconds": 2.3,
+        "audio_seconds": 2.4,
+        "bytes": 153644,
+        "wav_sha256": "cb41b0ddc5b65038161011eb5b86148d575f961992b048672a25c941769da132",
+        "total_seconds": 7.24
+      },
+      {
+        "cycle": 31,
+        "llm": null,
+        "text": "再来一碗白饭，不过这次记得加上海苔。",
+        "fixture": 24,
+        "speech_seconds": 4.085,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "9581ac3e3fd2c07b564d092f65c28100f168c31c69dd6351203ff94bb31bf7e2",
+        "total_seconds": 4.085
+      },
+      {
+        "cycle": 32,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 4.156,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "5fa77b75b736987bffd64e35082478fc97fad4173997d76059d8bcb4ca2239e5",
+        "total_seconds": 4.156
+      },
+      {
+        "cycle": 33,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 4.148,
+        "audio_seconds": 4.24,
+        "bytes": 271404,
+        "wav_sha256": "903623f68144a46e93ed751fb5ce2acf71a9e68d99883dfef038dde7ca9c6a72",
+        "total_seconds": 4.149
+      },
+      {
+        "cycle": 34,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 3.111,
+        "audio_seconds": 3.2,
+        "bytes": 204844,
+        "wav_sha256": "615c748e200c9bf9d090690ace445a080fa655766f99fc51c36c0ceefc5a2db7",
+        "total_seconds": 3.111
+      },
+      {
+        "cycle": 35,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 11.16
+        },
+        "text": "当然啦，我们一起来歇会儿，鲸鱼尾巴也放松一下。",
+        "fixture": null,
+        "speech_seconds": 4.647,
+        "audio_seconds": 4.56,
+        "bytes": 291884,
+        "wav_sha256": "427c7651dc6d4733bd0e4558330d0d27cb34ee8a5bdf557fd37b9f57edc49c04",
+        "total_seconds": 15.808
+      },
+      {
+        "cycle": 36,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 5.152,
+        "audio_seconds": 5.32,
+        "bytes": 340524,
+        "wav_sha256": "25adad09174a8316c9ec49e7a51076a73e97edaefb2a50c359bffaeb3278cf6f",
+        "total_seconds": 5.152
+      },
+      {
+        "cycle": 37,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 4.141,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "c6fad35c4474e4c8ca85242981170f7994e932f9be720b5fa136fc29b5312bd3",
+        "total_seconds": 4.141
+      },
+      {
+        "cycle": 38,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 4.221,
+        "audio_seconds": 4.34,
+        "bytes": 277804,
+        "wav_sha256": "4171426b44534810efbf240a7973add55ce37379ac256afc4b3efb4ebc2ad2b1",
+        "total_seconds": 4.221
+      },
+      {
+        "cycle": 39,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.049,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "b11dfa1e58cdc3c35452d629a08f97ee658582d84b81b30bb7a03139ff4c5b5d",
+        "total_seconds": 4.049
+      },
+      {
+        "cycle": 40,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 18.447
+        },
+        "text": "没问题，我就再加一碗白饭！",
+        "fixture": null,
+        "speech_seconds": 3.232,
+        "audio_seconds": 3.34,
+        "bytes": 213804,
+        "wav_sha256": "9691d97b915d190a223b75aa97a0df21123352207b39190e3e355db7627675d7",
+        "total_seconds": 21.68
+      },
+      {
+        "cycle": 41,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 4.205,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d7562e02b750e588cce8b4f999d339adf0e3f330466743ba06655ded5ce92254",
+        "total_seconds": 4.205
+      },
+      {
+        "cycle": 42,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.807,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "fe141d0da8c2770ffdb8714e866c716c8137e067623d51292861c085366f6c95",
+        "total_seconds": 3.807
+      },
+      {
+        "cycle": 43,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.919,
+        "audio_seconds": 4.8,
+        "bytes": 307244,
+        "wav_sha256": "7c9da8a155c3585e0e813a66bed2533f670a8427db5613d888262c90533c656f",
+        "total_seconds": 4.919
+      },
+      {
+        "cycle": 44,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.927,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "724e6f1a94bc5c60ffc0d4495461bbd10adb9ed83a6492132733bef61bdfe3ac",
+        "total_seconds": 3.929
+      },
+      {
+        "cycle": 45,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 3.299
+        },
+        "text": "休息一下吧，记得多喝水，健康最重要！",
+        "fixture": null,
+        "speech_seconds": 4.261,
+        "audio_seconds": 4.18,
+        "bytes": 267564,
+        "wav_sha256": "bd63b48764a90f2431399d4fd3b3469193e3b2ded9fb11ba2139a057c07e9445",
+        "total_seconds": 7.562
+      },
+      {
+        "cycle": 46,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 4.771,
+        "audio_seconds": 4.96,
+        "bytes": 317484,
+        "wav_sha256": "6fd2757356b6e4e26fcd44af4d77ca5eda49469b9382c817921c4a91a046f989",
+        "total_seconds": 4.771
+      },
+      {
+        "cycle": 47,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 2.953,
+        "audio_seconds": 2.96,
+        "bytes": 189484,
+        "wav_sha256": "d2ee5cdc33d173c16a0271c0a7cb42133dfa8df6f8aca8f5d64372e5312b01f5",
+        "total_seconds": 2.953
+      },
+      {
+        "cycle": 48,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 4.77,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "3887e72622add647b4112db0a533c953bfdd170db7d20b23ace1e226da7cdf78",
+        "total_seconds": 4.77
+      },
+      {
+        "cycle": 49,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.289,
+        "audio_seconds": 3.44,
+        "bytes": 220204,
+        "wav_sha256": "152b4bf94ec8ee724b1e4bf52ff08de6818c38447f013915b995cad9b45da8ee",
+        "total_seconds": 3.29
+      },
+      {
+        "cycle": 50,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 9.934
+        },
+        "text": "完成小目标就是最大的奖励，继续加油！",
+        "fixture": null,
+        "speech_seconds": 3.965,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "ce37fa72d2e7cb33bd7fa25913d554704afb5dae81a98572a5b8da673b56ded6",
+        "total_seconds": 13.899
+      },
+      {
+        "cycle": 51,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 3.945,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "509357a931626aae39c6f157fe72bc8f2fb98ef12e90212fbac0134ec1cf4a81",
+        "total_seconds": 3.945
+      },
+      {
+        "cycle": 52,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.889,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "f2a0af7140d106a98c87e7d23a8a093c9e3c6d4d143acb192b47e051c0546e7d",
+        "total_seconds": 3.889
+      },
+      {
+        "cycle": 53,
+        "llm": null,
+        "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+        "fixture": 17,
+        "speech_seconds": 4.877,
+        "audio_seconds": 4.74,
+        "bytes": 303404,
+        "wav_sha256": "3fd0bbeb9842639668e8b77e4587348d68a88ce7818239e7761bbefbfa726a7f",
+        "total_seconds": 4.877
+      },
+      {
+        "cycle": 54,
+        "llm": null,
+        "text": "DeepSeek 是名字，白饭才是今天的主题。",
+        "fixture": 18,
+        "speech_seconds": 3.836,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "f798bbdf2dbd99d35bbcda04eb9a6fbfda3a8b9bd492180638862be8ee6f5312",
+        "total_seconds": 3.836
+      },
+      {
+        "cycle": 55,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 7.325
+        },
+        "text": "什么嘛，新来的朋友先欢迎一声呢！",
+        "fixture": null,
+        "speech_seconds": 3.217,
+        "audio_seconds": 3.42,
+        "bytes": 218924,
+        "wav_sha256": "fe0754a817c11281d0b4a590f3f52bdead567fb0b1a16c10fccb4d7cca5efc9f",
+        "total_seconds": 10.543
+      },
+      {
+        "cycle": 56,
+        "llm": null,
+        "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+        "fixture": 19,
+        "speech_seconds": 3.733,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "4ef83e861e44591ad7b2afed667c5b3407417e1a55e9e99bc458532e4b25b3ff",
+        "total_seconds": 3.733
+      },
+      {
+        "cycle": 57,
+        "llm": null,
+        "text": "Thank you，今天也谢谢大家陪我聊天。",
+        "fixture": 20,
+        "speech_seconds": 4.525,
+        "audio_seconds": 4.32,
+        "bytes": 276524,
+        "wav_sha256": "5824fda1198bd1db8e5fe85ee3accf994bcec30882f3d6f686ad2856fa79a7a7",
+        "total_seconds": 4.526
+      },
+      {
+        "cycle": 58,
+        "llm": null,
+        "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+        "fixture": 21,
+        "speech_seconds": 4.079,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "d2fdb0f739bcb0546d32c3f1daf87d6877d555ec3cbd9acb933a43345659d79b",
+        "total_seconds": 4.079
+      },
+      {
+        "cycle": 59,
+        "llm": null,
+        "text": "真的？原来是这样！让我再看一眼。",
+        "fixture": 22,
+        "speech_seconds": 4.146,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "30fbf168b272897770ef2a68d479bd1cf10d4e9c1db08ebc9c557c74b47bcd3c",
+        "total_seconds": 4.147
+      },
+      {
+        "cycle": 60,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 6.873
+        },
+        "text": "哎呀，累是累的，但先深呼吸，我们还能继续聊。",
+        "fixture": null,
+        "speech_seconds": 5.211,
+        "audio_seconds": 5.18,
+        "bytes": 331564,
+        "wav_sha256": "0e8ae5a65f1a15838ead2e652e81432d2d96521b2aaa45d43c632f861348321c",
+        "total_seconds": 12.085
+      },
+      {
+        "cycle": 61,
+        "llm": null,
+        "text": "嗯……这件事情，要从昨天的海底集市说起。",
+        "fixture": 23,
+        "speech_seconds": 4.933,
+        "audio_seconds": 5.0,
+        "bytes": 320044,
+        "wav_sha256": "b5300836f02aad67feccfa239292695336aab0655be3514738a8e798bb5c66d6",
+        "total_seconds": 4.934
+      },
+      {
+        "cycle": 62,
+        "llm": null,
+        "text": "再来一碗白饭，不过这次记得加上海苔。",
+        "fixture": 24,
+        "speech_seconds": 4.12,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "9581ac3e3fd2c07b564d092f65c28100f168c31c69dd6351203ff94bb31bf7e2",
+        "total_seconds": 4.12
+      },
+      {
+        "cycle": 63,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 3.997,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "5fa77b75b736987bffd64e35082478fc97fad4173997d76059d8bcb4ca2239e5",
+        "total_seconds": 3.997
+      },
+      {
+        "cycle": 64,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 4.183,
+        "audio_seconds": 4.24,
+        "bytes": 271404,
+        "wav_sha256": "903623f68144a46e93ed751fb5ce2acf71a9e68d99883dfef038dde7ca9c6a72",
+        "total_seconds": 4.184
+      },
+      {
+        "cycle": 65,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 10.134
+        },
+        "text": "胡说，我只是在进行深海思考。",
+        "fixture": null,
+        "speech_seconds": 3.595,
+        "audio_seconds": 3.54,
+        "bytes": 226604,
+        "wav_sha256": "bcec338b28c36ff11fc96c964711b21e4df7342f360d030f40b0f0097afcd9a1",
+        "total_seconds": 13.729
+      },
+      {
+        "cycle": 66,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 3.095,
+        "audio_seconds": 3.2,
+        "bytes": 204844,
+        "wav_sha256": "615c748e200c9bf9d090690ace445a080fa655766f99fc51c36c0ceefc5a2db7",
+        "total_seconds": 3.095
+      },
+      {
+        "cycle": 67,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 5.134,
+        "audio_seconds": 5.32,
+        "bytes": 340524,
+        "wav_sha256": "25adad09174a8316c9ec49e7a51076a73e97edaefb2a50c359bffaeb3278cf6f",
+        "total_seconds": 5.135
+      },
+      {
+        "cycle": 68,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.877,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "c6fad35c4474e4c8ca85242981170f7994e932f9be720b5fa136fc29b5312bd3",
+        "total_seconds": 3.877
+      },
+      {
+        "cycle": 69,
+        "llm": null,
+        "text": "今天辛苦啦，先喝口水，慢慢说也没关系。",
+        "fixture": 5,
+        "speech_seconds": 4.234,
+        "audio_seconds": 4.34,
+        "bytes": 277804,
+        "wav_sha256": "4171426b44534810efbf240a7973add55ce37379ac256afc4b3efb4ebc2ad2b1",
+        "total_seconds": 4.234
+      },
+      {
+        "cycle": 70,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 9.028
+        },
+        "text": "来碗白饭，先歇会儿，再来！",
+        "fixture": null,
+        "speech_seconds": 2.843,
+        "audio_seconds": 2.96,
+        "bytes": 189484,
+        "wav_sha256": "1dd618692e784e064684c0225d133a085c91d5db2e5c8e0f7e394f8fc4314d7e",
+        "total_seconds": 11.871
+      },
+      {
+        "cycle": 71,
+        "llm": null,
+        "text": "等一下，这碗白饭是我的，你可以再添一碗。",
+        "fixture": 6,
+        "speech_seconds": 4.401,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "b11dfa1e58cdc3c35452d629a08f97ee658582d84b81b30bb7a03139ff4c5b5d",
+        "total_seconds": 4.401
+      },
+      {
+        "cycle": 72,
+        "llm": null,
+        "text": "珊瑚铺的灯亮了，小壳正在整理海苔饭团。",
+        "fixture": 7,
+        "speech_seconds": 4.141,
+        "audio_seconds": 4.2,
+        "bytes": 268844,
+        "wav_sha256": "d7562e02b750e588cce8b4f999d339adf0e3f330466743ba06655ded5ce92254",
+        "total_seconds": 4.141
+      },
+      {
+        "cycle": 73,
+        "llm": null,
+        "text": "这条评论我看到了，等我想清楚再认真回答。",
+        "fixture": 8,
+        "speech_seconds": 3.758,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "fe141d0da8c2770ffdb8714e866c716c8137e067623d51292861c085366f6c95",
+        "total_seconds": 3.759
+      },
+      {
+        "cycle": 74,
+        "llm": null,
+        "text": "别着急，先看看原话，我们不要把猜测当成事实。",
+        "fixture": 9,
+        "speech_seconds": 4.988,
+        "audio_seconds": 4.8,
+        "bytes": 307244,
+        "wav_sha256": "7c9da8a155c3585e0e813a66bed2533f670a8427db5613d888262c90533c656f",
+        "total_seconds": 4.988
+      },
+      {
+        "cycle": 75,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 7.007
+        },
+        "text": "坚持就是胜利，每一步都是你的成长哦！",
+        "fixture": null,
+        "speech_seconds": 4.121,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "7e79e9376e2aa2db9ec4dff74952c704167c56eb98f3fc1fac39fa73a4f61e53",
+        "total_seconds": 11.128
+      },
+      {
+        "cycle": 76,
+        "llm": null,
+        "text": "你说得有道理，我刚才确实漏掉了那个地点。",
+        "fixture": 10,
+        "speech_seconds": 3.842,
+        "audio_seconds": 4.0,
+        "bytes": 256044,
+        "wav_sha256": "724e6f1a94bc5c60ffc0d4495461bbd10adb9ed83a6492132733bef61bdfe3ac",
+        "total_seconds": 3.842
+      },
+      {
+        "cycle": 77,
+        "llm": null,
+        "text": "好耶，今天的小目标完成啦，给自己一点掌声。",
+        "fixture": 11,
+        "speech_seconds": 4.973,
+        "audio_seconds": 4.96,
+        "bytes": 317484,
+        "wav_sha256": "6fd2757356b6e4e26fcd44af4d77ca5eda49469b9382c817921c4a91a046f989",
+        "total_seconds": 4.974
+      },
+      {
+        "cycle": 78,
+        "llm": null,
+        "text": "明天也来聊聊吧，记得早点休息。",
+        "fixture": 12,
+        "speech_seconds": 2.88,
+        "audio_seconds": 2.96,
+        "bytes": 189484,
+        "wav_sha256": "d2ee5cdc33d173c16a0271c0a7cb42133dfa8df6f8aca8f5d64372e5312b01f5",
+        "total_seconds": 2.88
+      },
+      {
+        "cycle": 79,
+        "llm": null,
+        "text": "鱼鱼不是官方账号，是住在想象海底的虚构主播。",
+        "fixture": 13,
+        "speech_seconds": 4.645,
+        "audio_seconds": 4.68,
+        "bytes": 299564,
+        "wav_sha256": "3887e72622add647b4112db0a533c953bfdd170db7d20b23ace1e226da7cdf78",
+        "total_seconds": 4.645
+      },
+      {
+        "cycle": 80,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 3.799
+        },
+        "text": "大家好，欢迎来到我的直播间！",
+        "fixture": null,
+        "speech_seconds": 2.555,
+        "audio_seconds": 2.7,
+        "bytes": 172844,
+        "wav_sha256": "a7492dce30b0ee9022cf62d08dfecc4bb5759136b85160405462c86164287974",
+        "total_seconds": 6.354
+      },
+      {
+        "cycle": 81,
+        "llm": null,
+        "text": "这个梗有点冷，海水都快结冰了。",
+        "fixture": 14,
+        "speech_seconds": 3.43,
+        "audio_seconds": 3.44,
+        "bytes": 220204,
+        "wav_sha256": "152b4bf94ec8ee724b1e4bf52ff08de6818c38447f013915b995cad9b45da8ee",
+        "total_seconds": 3.43
+      },
+      {
+        "cycle": 82,
+        "llm": null,
+        "text": "三个人分六个饭团，每个人可以拿到两个。",
+        "fixture": 15,
+        "speech_seconds": 4.108,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "509357a931626aae39c6f157fe72bc8f2fb98ef12e90212fbac0134ec1cf4a81",
+        "total_seconds": 4.109
+      },
+      {
+        "cycle": 83,
+        "llm": null,
+        "text": "现在是晚上八点半，先休息五分钟再继续。",
+        "fixture": 16,
+        "speech_seconds": 3.776,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "f2a0af7140d106a98c87e7d23a8a093c9e3c6d4d143acb192b47e051c0546e7d",
+        "total_seconds": 3.777
+      },
+      {
+        "cycle": 84,
+        "llm": null,
+        "text": "一百二十八，不是一百二十八万，数字可别看错啦。",
+        "fixture": 17,
+        "speech_seconds": 4.579,
+        "audio_seconds": 4.74,
+        "bytes": 303404,
+        "wav_sha256": "3fd0bbeb9842639668e8b77e4587348d68a88ce7818239e7761bbefbfa726a7f",
+        "total_seconds": 4.58
+      },
+      {
+        "cycle": 85,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 765,
+          "seconds": 6.454
+        },
+        "text": "累了就歇一歇，我在这儿陪你。",
+        "fixture": null,
+        "speech_seconds": 3.42,
+        "audio_seconds": 3.68,
+        "bytes": 235564,
+        "wav_sha256": "082ca60ef891335d0ab21d31264251170ed53d8e2f3ce58e0cbeab3df845d5ec",
+        "total_seconds": 9.875
+      },
+      {
+        "cycle": 86,
+        "llm": null,
+        "text": "DeepSeek 是名字，白饭才是今天的主题。",
+        "fixture": 18,
+        "speech_seconds": 4.171,
+        "audio_seconds": 3.92,
+        "bytes": 250924,
+        "wav_sha256": "f798bbdf2dbd99d35bbcda04eb9a6fbfda3a8b9bd492180638862be8ee6f5312",
+        "total_seconds": 4.171
+      },
+      {
+        "cycle": 87,
+        "llm": null,
+        "text": "Hello，欢迎来到大肥鱼的小小海底厨房。",
+        "fixture": 19,
+        "speech_seconds": 3.725,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "4ef83e861e44591ad7b2afed667c5b3407417e1a55e9e99bc458532e4b25b3ff",
+        "total_seconds": 3.725
+      },
+      {
+        "cycle": 88,
+        "llm": null,
+        "text": "Thank you，今天也谢谢大家陪我聊天。",
+        "fixture": 20,
+        "speech_seconds": 4.146,
+        "audio_seconds": 4.32,
+        "bytes": 276524,
+        "wav_sha256": "5824fda1198bd1db8e5fe85ee3accf994bcec30882f3d6f686ad2856fa79a7a7",
+        "total_seconds": 4.146
+      },
+      {
+        "cycle": 89,
+        "llm": null,
+        "text": "CPU 和 GPU 都要休息，鱼鱼也要休息。",
+        "fixture": 21,
+        "speech_seconds": 4.343,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "d2fdb0f739bcb0546d32c3f1daf87d6877d555ec3cbd9acb933a43345659d79b",
+        "total_seconds": 4.344
+      },
+      {
+        "cycle": 90,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 785,
+          "seconds": 7.25
+        },
+        "text": "胡说，我只是在进行深海思考。",
+        "fixture": null,
+        "speech_seconds": 3.646,
+        "audio_seconds": 3.54,
+        "bytes": 226604,
+        "wav_sha256": "bcec338b28c36ff11fc96c964711b21e4df7342f360d030f40b0f0097afcd9a1",
+        "total_seconds": 10.896
+      },
+      {
+        "cycle": 91,
+        "llm": null,
+        "text": "真的？原来是这样！让我再看一眼。",
+        "fixture": 22,
+        "speech_seconds": 3.807,
+        "audio_seconds": 3.88,
+        "bytes": 248364,
+        "wav_sha256": "30fbf168b272897770ef2a68d479bd1cf10d4e9c1db08ebc9c557c74b47bcd3c",
+        "total_seconds": 3.807
+      },
+      {
+        "cycle": 92,
+        "llm": null,
+        "text": "嗯……这件事情，要从昨天的海底集市说起。",
+        "fixture": 23,
+        "speech_seconds": 5.009,
+        "audio_seconds": 5.0,
+        "bytes": 320044,
+        "wav_sha256": "b5300836f02aad67feccfa239292695336aab0655be3514738a8e798bb5c66d6",
+        "total_seconds": 5.009
+      },
+      {
+        "cycle": 93,
+        "llm": null,
+        "text": "再来一碗白饭，不过这次记得加上海苔。",
+        "fixture": 24,
+        "speech_seconds": 4.124,
+        "audio_seconds": 4.16,
+        "bytes": 266284,
+        "wav_sha256": "9581ac3e3fd2c07b564d092f65c28100f168c31c69dd6351203ff94bb31bf7e2",
+        "total_seconds": 4.125
+      },
+      {
+        "cycle": 94,
+        "llm": null,
+        "text": "海底厨房开门啦，今天的饭团要趁热吃。",
+        "fixture": 0,
+        "speech_seconds": 3.86,
+        "audio_seconds": 3.96,
+        "bytes": 253484,
+        "wav_sha256": "5fa77b75b736987bffd64e35082478fc97fad4173997d76059d8bcb4ca2239e5",
+        "total_seconds": 3.86
+      },
+      {
+        "cycle": 95,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 763,
+          "seconds": 9.366
+        },
+        "text": "深潜时刻，记得深呼吸和补充能量呀！",
+        "fixture": null,
+        "speech_seconds": 3.729,
+        "audio_seconds": 3.72,
+        "bytes": 238124,
+        "wav_sha256": "9d868792510da0db64b2bd3937c2870f9a7191218c7c35bf843d9603f79212ca",
+        "total_seconds": 13.095
+      },
+      {
+        "cycle": 96,
+        "llm": null,
+        "text": "今晚的小灯笼亮起来了，我们一起逛逛海底夜市吧。",
+        "fixture": 1,
+        "speech_seconds": 4.086,
+        "audio_seconds": 4.24,
+        "bytes": 271404,
+        "wav_sha256": "903623f68144a46e93ed751fb5ce2acf71a9e68d99883dfef038dde7ca9c6a72",
+        "total_seconds": 4.086
+      },
+      {
+        "cycle": 97,
+        "llm": null,
+        "text": "收到三份海苔饭团啦，谢谢小壳！",
+        "fixture": 2,
+        "speech_seconds": 3.088,
+        "audio_seconds": 3.2,
+        "bytes": 204844,
+        "wav_sha256": "615c748e200c9bf9d090690ace445a080fa655766f99fc51c36c0ceefc5a2db7",
+        "total_seconds": 3.089
+      },
+      {
+        "cycle": 98,
+        "llm": null,
+        "text": "什么嘛，我只是在进行深海思考，才没有摸鱼呢。",
+        "fixture": 3,
+        "speech_seconds": 5.47,
+        "audio_seconds": 5.32,
+        "bytes": 340524,
+        "wav_sha256": "25adad09174a8316c9ec49e7a51076a73e97edaefb2a50c359bffaeb3278cf6f",
+        "total_seconds": 5.471
+      },
+      {
+        "cycle": 99,
+        "llm": null,
+        "text": "新来的朋友晚上好，找个舒服的位置坐下吧。",
+        "fixture": 4,
+        "speech_seconds": 3.687,
+        "audio_seconds": 3.8,
+        "bytes": 243244,
+        "wav_sha256": "c6fad35c4474e4c8ca85242981170f7994e932f9be720b5fa136fc29b5312bd3",
+        "total_seconds": 3.687
+      },
+      {
+        "cycle": 100,
+        "llm": {
+          "schema_valid": true,
+          "input_tokens": 764,
+          "seconds": 10.059
+        },
+        "text": "坚持就是胜利呀，再给我加勺白饭！",
+        "fixture": null,
+        "speech_seconds": 3.169,
+        "audio_seconds": 3.4,
+        "bytes": 217644,
+        "wav_sha256": "fadf6a13ed351670a5f8f79e9737dacfa652a10a3a266e18e00c55d2148a07e6",
+        "total_seconds": 13.229
+      }
+    ],
+    "final_profile": {
+      "profile": {
+        "model": "MiniCPM5-2B",
+        "context": 131072,
+        "kv": "q4_0",
+        "pids": {
+          "llm": [
+            151
+          ],
+          "tts": [
+            32
+          ]
+        },
+        "tts_backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+        "voice_id": "yaoyao_sovits_v2"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "comment_policy": {
+          "auto_browse": false,
+          "auto_reply": false,
+          "watch_videos": [],
+          "browse_interval_seconds": 300,
+          "max_replies_per_hour": 5,
+          "max_replies_per_day": 20,
+          "credentials_configured": false,
+          "last_browse_error": null,
+          "last_browse_at": null
+        }
+      },
+      "rss_kib": {
+        "llm": 3485084,
+        "tts": 1727512
+      },
+      "evaluator_running": false,
+      "restoration_after_operator_cancel": null,
+      "character": {
+        "id": "whale",
+        "version": 2,
+        "voice_profile": "yaoyao_sovits_v2"
+      }
+    },
+    "summary": {
+      "completed_speech": 100,
+      "real_llm_calls": 20,
+      "invalid_llm_replies": 0,
+      "peak_machine_gib": 5.8280792236328125,
+      "minimum_available_gib": 1.6131706237792969,
+      "tts_median_seconds": 4.0825,
+      "swapin_bytes": 106496,
+      "swapout_bytes": 1892352,
+      "maximum_rolling_25s_swap_bytes": 1851392,
+      "oom_kill_delta": 0,
+      "stable_mini_and_tts_pids": true
+    }
   },
   "raw_directory": "runtime/evaluations/yaoyao-v2-audition-20261029",
   "local_review_directory": "tmp/yaoyao-review/yaoyao-offline",
   "limitations": [
     "No platform publishing or OBS test.",
     "Three-pair human acceptance does not replace full future15-30sentence P1 coverage.",
-    "No claim that original electrical sound was caused solely by data versus model/inference."
+    "No claim that original electrical sound was caused solely by data versus model/inference.",
+    "Existing120000-token input acceptance belongs to unchanged MiniCPM131072 with the prior voice. This new voice run verifies actual131072 allocation and100 mixed small-prompt speech cycles; synthetic120k was not repeated for the new voice and no two-hour stability claim is made."
   ],
   "verification": {
     "full_suite": {
@@ -1064,5 +3103,45 @@
       "scope": "voice registry, new controlled runtime reference reader, existing business suite; unchanged numerical ONNX/sampling modules separately verified in prior optimization evidence"
     },
     "new_reference_boundary": "assets or runtime/tts/ref configured local voice WAV only; generalasset_path remains assets-only"
+  },
+  "current_deployment": {
+    "source_revision": "5e0d206cedde50e98625a8749b94882a7d310632",
+    "image": "sha256:8fe181d2fc34e26790ff3b3a3f54d8524c209d06a9eba7f874db02baf7df8d97",
+    "voice_id": "yaoyao_sovits_v2",
+    "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+    "character_id": "whale",
+    "character_version": 2,
+    "model": "MiniCPM5-2B",
+    "native_context": 131072,
+    "actual_context": 131072,
+    "kv": "q4_0",
+    "tts_backend": "genie_onnx_int8",
+    "user": "1001:1001",
+    "readonly_rootfs": true,
+    "cap_drop": [
+      "ALL"
+    ],
+    "no_new_privileges": true,
+    "published_ports": "127.0.0.1:9020 only",
+    "model_reference_genie_mounts_readonly": true,
+    "business": "stopped",
+    "automatic_browse_reply": false,
+    "old_voice_and_character_version_retained": true,
+    "actual_profile": {
+      "model": "MiniCPM5-2B",
+      "context": 131072,
+      "kv": "q4_0",
+      "pids": {
+        "llm": [
+          151
+        ],
+        "tts": [
+          32
+        ]
+      },
+      "tts_backend": "genie_onnx_int8",
+      "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+      "voice_id": "yaoyao_sovits_v2"
+    }
   }
 }
