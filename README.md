@@ -12,8 +12,9 @@ A self-hosted AI character workspace for Bilibili comments and local voice inter
 - **Local models and APIs:** MiniCPM5-2B with a configurable 128K default context, Genie speech, prerecorded audio, and OpenAI-compatible LLM and TTS providers.
 - **Context and memory:** thread-scoped conversations, source-grounded recall, automatic compaction, and configurable data retention.
 - **Voice interaction:** text/live resource modes, short voice previews, Mock events, and a browser overlay for audio, subtitles, and character expressions.
+- **Live workspace:** draggable scene elements, saved layouts, a local music catalog and request queue, normal song playback, timed lyrics, and mouth animation driven by an isolated vocal track. TTS handles speech; a replaceable singing-model interface is reserved for future use.
 
-The next live-stream iteration covers a dedicated workspace, draggable scene elements, and song requests with direct playback or singing in the character's voice; these are planned features, tracked in the [live workspace plan](docs/plans/live-workbench.md). Bilibili and Douyin live-stream adapters are on the roadmap.
+See the [live workspace guide](docs/guides/live.md) and [remaining validation plan](docs/plans/live-workbench.md). No singing model is connected by default; target-device resources and OBS require separate validation. Bilibili and Douyin live-stream adapters are on the roadmap.
 
 ## Jetson quick start
 

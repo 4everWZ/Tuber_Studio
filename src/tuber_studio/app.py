@@ -19,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from .comments import Comments
 from .config import Settings
 from .dynamics import Dynamics
+from .live_api import register_live_api
+from .live_media import MAX_UPLOAD
 from .models import Character, Event
 from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
@@ -26,11 +28,11 @@ from .runtime import Runtime
 from .store import Store
 
 
-def create_app(settings=None, adapter=None):
+def create_app(settings=None, adapter=None, *, singing_provider=None):
     settings = settings or Settings()
     seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
     store = Store(settings.runtime / "studio.sqlite3", seeds)
-    runtime = Runtime(settings, store)
+    runtime = Runtime(settings, store, singing_provider=singing_provider)
     comments = Comments(settings, store, runtime, adapter)
     dynamics = Dynamics(settings, store, runtime, comments)
     sessions = {}
@@ -87,11 +89,13 @@ def create_app(settings=None, adapter=None):
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not same_origin(request):
                 return JSONResponse({"detail": "跨站写入被拒绝"}, status_code=403)
-            if int(request.headers.get("content-length", "0")) > 2_100_000:
+            uploading = request.url.path == "/api/live/uploads" and request.method == "POST"
+            if int(request.headers.get("content-length", "0")) > (MAX_UPLOAD if uploading else 2_100_000):
                 return JSONResponse({"detail": "请求过大"}, status_code=413)
-            body = await request.body()
-            if len(body) > 2_100_000:
-                return JSONResponse({"detail": "请求过大"}, status_code=413)
+            if not uploading:
+                body = await request.body()
+                if len(body) > 2_100_000:
+                    return JSONResponse({"detail": "请求过大"}, status_code=413)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -105,6 +109,7 @@ def create_app(settings=None, adapter=None):
     web = Path(__file__).parent / "web"
     app.mount("/static", StaticFiles(directory=web), name="static")
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
+    register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok)
 
     @app.get("/")
     async def index():

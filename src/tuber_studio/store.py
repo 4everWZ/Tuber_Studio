@@ -71,6 +71,8 @@ class Store:
         for table in ("jobs", "drafts"):
             if "answer_check" not in {row[1] for row in self.db.execute(f"PRAGMA table_info({table})")}:
                 self.db.execute(f"ALTER TABLE {table} ADD COLUMN answer_check TEXT")
+        if "media" not in {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}:
+            self.db.execute("ALTER TABLE jobs ADD COLUMN media TEXT")
         self.db.execute(
             "UPDATE jobs SET status='cancelled',error='服务重启，取消遗留任务' "
             "WHERE status NOT IN ('completed','failed','cancelled','expired')"
@@ -217,11 +219,14 @@ class Store:
             "tts_ms",
             "playback_token",
             "answer_check",
+            "media",
         }
         if not fields.keys() <= allowed:
             raise ValueError("未知任务字段")
         if isinstance(fields.get("answer_check"), (dict, list)):
             fields["answer_check"] = dump(fields["answer_check"])
+        if isinstance(fields.get("media"), dict):
+            fields["media"] = dump(fields["media"])
         fields["updated_at"] = time.time()
         self.execute(
             "UPDATE jobs SET " + ",".join(f"{k}=?" for k in fields) + " WHERE id=?",
@@ -246,6 +251,8 @@ class Store:
                 "UPDATE jobs SET status='completed',updated_at=? WHERE id=?", (time.time(), job_id)
             )
             self.db.execute("UPDATE events SET status='completed' WHERE id=?", (event["id"],))
+            if event["payload"]["type"] == "song":
+                return True
             self.db.execute(
                 "INSERT OR IGNORE INTO conversations(session_id,character_id,user_id,event_text,"
                 "reply_text,job_id,created_at) VALUES(?,?,?,?,?,?,?)",

@@ -12,6 +12,7 @@ import psutil
 
 from .api_providers import VisionService, create_llm
 from .context import ContextManager
+from .live_media import LiveMedia
 from .memory import missing_slots
 from .providers import VoiceService, public_error
 from .retention import INTERVAL_SECONDS, RetentionManager
@@ -20,7 +21,7 @@ TERMINAL = {"completed", "failed", "cancelled", "expired"}
 
 
 class Runtime:
-    def __init__(self, settings, store):
+    def __init__(self, settings, store, *, singing_provider=None):
         self.settings, self.store = settings, store
         self.llm = create_llm(settings)
         self.voices = VoiceService(settings)
@@ -48,6 +49,9 @@ class Runtime:
         self.timings = {"llm_ms": None, "tts_ms": None}
         self.accept_times = {}
         self.last_gift = False
+        self.media = LiveMedia(settings, store, singing_provider=singing_provider)
+        self.playback = None
+        self.media_changed = asyncio.Event()
         broker = settings.data.get("inference_broker", {})
         self.inference_client = (
             httpx.AsyncClient(
@@ -91,6 +95,7 @@ class Runtime:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
         await self.llm.close()
+        await self.media.singing.close()
         await self.voices.close()
         await self.vision.close()
         if self.inference_client:
@@ -143,6 +148,7 @@ class Runtime:
             "timings": self.timings,
             "context": self.context.status(),
             "inference": self.inference_status,
+            "playback": self.playback,
         }
 
     async def refresh_inference(self):
@@ -173,7 +179,7 @@ class Runtime:
 
     async def set_work_mode(self, mode):
         if mode == "live" and not self.settings.data.get("features", {}).get("live_enabled", False):
-            raise ValueError("直播功能已后置；当前使用非直播工作台")
+            raise ValueError("当前设备尚未启用直播功能，请先在设备配置中显式启用")
         if mode not in {"text", "live"}:
             raise ValueError("工作模式应为text或live")
         if self.inference_client is None:
@@ -274,6 +280,8 @@ class Runtime:
         if task and not task.done():
             task.cancel()
         self.playback_done.set()
+        self.playback = None
+        self.media_changed.set()
         await self.send_overlay({"type": "stop", "job_id": job_id})
         if task:
             await asyncio.gather(task, return_exceptions=True)
@@ -288,6 +296,14 @@ class Runtime:
         self.queue.clear()
 
     async def control(self, action):
+        if action in {"media-pause", "media-resume"}:
+            if not self.playback or not self.playback.get("song"):
+                raise ValueError("当前没有可暂停的歌曲")
+            if self.store.job(self.current_id)["status"] != "playing":
+                raise ValueError("请等待歌曲实际开始播放")
+            paused = action == "media-pause"
+            await self.send_overlay({"type": "media-control", "job_id": self.current_id, "paused": paused})
+            return self.status()
         if action in {"start", "resume"} and not self.settings.data.get("features", {}).get(
             "live_enabled", False
         ):
@@ -352,14 +368,36 @@ class Runtime:
         elif age > self.settings.data["event_ttl_seconds"] or age < -30:
             status, reason = "expired", "事件过期或时间在未来"
         elif event.type == "song":
-            status, reason = "filtered", "点歌播放属于后续直播适配，不假称已执行"
+            try:
+                media = self.media.request(event, self.character)
+                queued_songs = [self.store.job(j) for j in self.queue if self.store.job(j).get("media")]
+                if len(queued_songs) >= self.media.config()["queue_limit"]:
+                    raise ValueError("点歌队列已满")
+                active = ([self.current_id] if self.current_id else []) + self.queue
+                if any(
+                    self.store.job(j).get("media")
+                    and json.loads(self.store.job(j)["media"])["song"]["id"] == media["song"]["id"]
+                    for j in active
+                ):
+                    raise ValueError("这首歌正在播放或已排队")
+            except ValueError as error:
+                status, reason = "filtered", str(error)
         elif event.type == "disconnect":
             status, reason = "filtered", "模拟平台断线；需人工恢复"
         elif event.type == "chat" and (not event.text.strip() or len(set(event.text.strip())) < 2):
             status, reason = "filtered", "空消息或重复字符"
         # Bound both acceptance rate and the tracking map; anonymous viewers are not merged by nickname.
-        user_key = (event.platform, event.platform_user_id) if event.platform_user_id else None
-        if user_key and status == "queued" and time.monotonic() - self.accept_times.get(user_key, -100) < 1:
+        user_key = (
+            (event.platform, event.platform_user_id, "song" if event.type == "song" else "interaction")
+            if event.platform_user_id
+            else None
+        )
+        cooldown = self.media.config()["cooldown_seconds"] if event.type == "song" else 1
+        if (
+            user_key
+            and status == "queued"
+            and time.monotonic() - self.accept_times.get(user_key, -10000) < cooldown
+        ):
             status, reason = "filtered", "同用户短时限流"
         db_id, fresh = self.store.add_event(event, self.session_id, status, reason)
         if not fresh:
@@ -372,7 +410,10 @@ class Runtime:
         if user_key:
             self.accept_times[user_key] = time.monotonic()
             if len(self.accept_times) > 2000:
-                self.accept_times = {k: t for k, t in self.accept_times.items() if time.monotonic() - t < 60}
+                horizon = max(60, self.media.config()["cooldown_seconds"])
+                self.accept_times = {
+                    k: t for k, t in self.accept_times.items() if time.monotonic() - t < horizon
+                }
                 while len(self.accept_times) > 2000:
                     self.accept_times.pop(next(iter(self.accept_times)))
         if len(self.queue) >= self.settings.data["queue_limit"]:
@@ -384,6 +425,8 @@ class Runtime:
             "updated_at) VALUES(?,?,?,?,?,'queued',?,?)",
             (job_id, db_id, self.session_id, character["id"], character["version"], time.time(), time.time()),
         )
+        if event.type == "song":
+            self.store.update_job(job_id, media=media)
         self.queue.append(job_id)
         self.wake.set()
         return {"id": db_id, "job_id": job_id, "status": "queued"}
@@ -415,12 +458,16 @@ class Runtime:
                         raise
                 finally:
                     self.current_id, self.task = None, None
+                    self.playback = None
 
     async def _process(self, job_id):
         try:
             job = self.store.job(job_id)
             row = self.store.event(job["event_id"])
             event = row["payload"]
+            if event["type"] == "song":
+                await self._process_song(job_id, job)
+                return
             age = time.time() - datetime.fromisoformat(event["timestamp"]).timestamp()
             if age > self.settings.data["event_ttl_seconds"]:
                 self.store.update_job(job_id, status="expired", error="排队期间过期")
@@ -488,33 +535,7 @@ class Runtime:
                 audio_ref=audio.ref,
                 error=warning,
             )
-            deadline = time.monotonic() + self.settings.data.get("playback_wait_seconds", 45)
-            while not self.overlay:
-                if time.monotonic() > deadline:
-                    raise ValueError("没有overlay播放器，未播报；请打开OBS地址或浏览器播放器")
-                await asyncio.sleep(0.1)
-            token = secrets.token_urlsafe(24)
-            self.store.update_job(job_id, playback_token=token)
-            self.playback_done.clear()
-            sent = await self.send_overlay(
-                {
-                    "type": "play",
-                    "job_id": job_id,
-                    "playback_token": token,
-                    "text": audio.text,
-                    "emotion": emotion,
-                    "animation_id": animation,
-                    "audio_ref": audio.ref,
-                    "duration": audio.duration,
-                    "character": character,
-                    "assets": self.settings.assets(character),
-                }
-            )
-            if not sent:
-                raise ValueError("播放器连接已断开，未重播")
-            await asyncio.wait_for(self.playback_done.wait(), timeout=audio.duration + 20)
-            if self.store.job(job_id)["status"] == "ready_to_play":
-                raise ValueError("播放器未确认开始")
+            await self._play(job_id, audio, character, emotion, animation)
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -529,6 +550,89 @@ class Runtime:
                 )
                 await self.send_overlay({"type": "stop", "job_id": job_id})
             self.error = message
+
+    async def _process_song(self, job_id, job):
+        snapshot = json.loads(job["media"])
+        if time.time() - job["created_at"] > snapshot["ttl"]:
+            raise ValueError("点歌排队已过期")
+        self.store.update_job(job_id, status="synthesizing")
+        character = self.store.character(job["character_id"], job["character_version"])
+        if snapshot["mode"] == "sing":
+            async with self.generation_lock:
+                audio, activity = await self.media.singing.prepare(snapshot, character)
+        else:
+            audio, activity = await asyncio.to_thread(self.media.prepare, snapshot)
+        ref = "/media/music/" + audio.path.stem
+        self.store.update_job(job_id, status="ready_to_play", text=audio.text, audio_ref=ref)
+        await self._play(job_id, audio, character, "cheerful", "idle", media=snapshot, activity=activity)
+
+    async def _play(self, job_id, audio, character, emotion, animation, *, media=None, activity=None):
+        deadline = time.monotonic() + self.settings.data.get("playback_wait_seconds", 45)
+        while not self.overlay:
+            if time.monotonic() > deadline:
+                raise ValueError("没有overlay播放器，未播报；请打开OBS地址或浏览器播放器")
+            await asyncio.sleep(0.1)
+        token = secrets.token_urlsafe(24)
+        self.store.update_job(job_id, playback_token=token)
+        self.playback_done.clear()
+        sent = await self.send_overlay(
+            {
+                "type": "play",
+                "job_id": job_id,
+                "playback_token": token,
+                "text": audio.text,
+                "emotion": emotion,
+                "animation_id": animation,
+                "audio_ref": self.store.job(job_id)["audio_ref"],
+                "duration": audio.duration,
+                "character": character,
+                "assets": self.settings.assets(character),
+                "media": media,
+                "activity": activity,
+                "volume": self.media.config()["volume"] if media else 1,
+            }
+        )
+        if not sent:
+            raise ValueError("播放器连接已断开，未重播")
+        self.playback = {
+            "job_id": job_id,
+            "song": media,
+            "text": audio.text,
+            "animation_id": animation,
+            "emotion": emotion,
+            "position": 0,
+            "duration": audio.duration,
+            "paused": False,
+            "started": False,
+            "reported_at": time.time(),
+            "mouth": 0,
+            "visual_warning": (
+                "缺少独立人声，口型保持待机"
+                if media and not activity
+                else "缺少角色嘴型素材"
+                if media
+                and not {"sing_open", "sing_closed"}.issubset(
+                    {asset["id"] for asset in self.settings.assets(character)}
+                )
+                else None
+            ),
+        }
+        remaining = audio.duration + 20
+        while not self.playback_done.is_set():
+            began = time.monotonic()
+            self.media_changed.clear()
+            try:
+                await asyncio.wait_for(self.media_changed.wait(), timeout=min(1, remaining))
+            except TimeoutError:
+                pass
+            if not (self.playback or {}).get("paused"):
+                remaining -= time.monotonic() - began
+            elif time.time() - self.playback["reported_at"] > 15:
+                raise ValueError("暂停时播放器失去心跳")
+            if remaining <= 0:
+                raise TimeoutError
+        if self.store.job(job_id)["status"] == "ready_to_play":
+            raise ValueError("播放器未确认开始")
 
     async def attach_overlay(self, websocket):
         if self.overlay:
@@ -552,27 +656,47 @@ class Runtime:
         job = self.store.job(self.current_id)
         if not secrets.compare_digest(str(data.get("playback_token", "")), str(job["playback_token"] or "")):
             return False
+        if data.get("type") == "progress" and job["status"] == "playing" and self.playback:
+            position, mouth = data.get("position"), data.get("mouth", 0)
+            if (
+                type(position) not in {float, int}
+                or not 0 <= position <= self.playback["duration"] + 1
+                or type(mouth) not in {float, int}
+                or not 0 <= mouth <= 1
+                or type(data.get("paused")) is not bool
+            ):
+                return False
+            self.playback.update(
+                position=position, paused=data["paused"], mouth=mouth, reported_at=time.time()
+            )
+            self.media_changed.set()
+            return True
         if data.get("type") == "started" and job["status"] == "ready_to_play":
             self.store.update_job(job["id"], status="playing")
+            if self.playback:
+                self.playback["started"] = True
             return True
         if data.get("type") == "ended" and self.store.complete(job["id"]):
             event = self.store.event(job["event_id"])["payload"]
             character = self.store.character(job["character_id"], job["character_version"])
             check = json.loads(job["answer_check"]) if job.get("answer_check") else {}
-            self.context.record(
-                "live:" + job["session_id"],
-                character,
-                event,
-                job["text"],
-                memory_kind=check.get("memory_kind"),
-            )
+            if event["type"] != "song":
+                self.context.record(
+                    "live:" + job["session_id"],
+                    character,
+                    event,
+                    job["text"],
+                    memory_kind=check.get("memory_kind"),
+                )
             self.last_played = self.store.job(job["id"])
             self.playback_done.set()
+            self.media_changed.set()
             return True
         if data.get("type") == "failed" and job["status"] not in TERMINAL:
             self.store.update_job(
                 job["id"], status="failed", error="浏览器播放失败，请检查自动播放权限／音频设备"
             )
             self.playback_done.set()
+            self.media_changed.set()
             return True
         return False
