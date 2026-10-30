@@ -1,15 +1,17 @@
 {
   "attribution": {
     "images": {
-      "note": "GIF assets remain author property; noncommercial sharing with author attribution only. Talking tag uses a waving GIF, not lip sync.",
-      "website": "https://kiriyuki.com",
-      "license_url": "https://github.com/Loping151/dsh-nekowhale-stickers/blob/main/LICENSE-ASSETS",
-      "author": "可以叫我云大人 / 雾雪",
+      "author": "YunYueSama",
+      "repository": "https://github.com/YunYueSama/codex-deepseek-pet",
+      "revision": "7661c8b304c5400701f91da01b1a643a207331de",
+      "license": "大肥鱼项目署名许可 1.0",
+      "license_path": "third_party/whale-avatar/LICENSE",
+      "asset_license_path": "third_party/whale-avatar/ASSET_LICENSE.md",
       "design_sources": [
-        "ZipZipPipe https://space.bilibili.com/4168597",
-        "上善无形 https://space.bilibili.com/4456176"
+        "上善无形 https://space.bilibili.com/4456176",
+        "ZipZipPipe https://space.bilibili.com/4168597"
       ],
-      "author_url": "https://space.bilibili.com/103739"
+      "note": "Modified by Tuber Studio: extracted complete-character atlas frames, resized to 384px, and encoded six transparent GIF states. Talking is a greeting gesture, not lip sync. Upstream author licenses their own contributions; underlying community references retain their rights."
     },
     "voice": {
       "dataset": "https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh",
@@ -26,52 +28,172 @@
   "character_id": "whale",
   "entries": [
     {
-      "source": "https://kiriyuki.com/meme/kit/nekowhale/showcase/3N05.gif",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-idle.png",
       "character_id": "whale",
       "id": "idle",
       "tag": "idle",
       "path": "assets/whale/idle.gif",
-      "license_status": "noncommercial_attribution_required"
+      "license_status": "upstream_attribution_with_third_party_references",
+      "artwork_version": "q-fullbody-1",
+      "source_frames": [
+        1,
+        3,
+        5,
+        7,
+        5,
+        3,
+        1
+      ],
+      "duration_ms": [
+        200,
+        240,
+        260,
+        800,
+        260,
+        240,
+        600
+      ]
     },
     {
-      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/13N11_ciallo.gif",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-wave.png",
       "character_id": "whale",
       "id": "talking",
       "tag": "talking",
       "path": "assets/whale/talking.gif",
-      "license_status": "noncommercial_attribution_required"
+      "license_status": "upstream_attribution_with_third_party_references",
+      "artwork_version": "q-fullbody-1",
+      "source_frames": [
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25,
+        27,
+        29,
+        31
+      ],
+      "duration_ms": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        650
+      ]
     },
     {
-      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/10N01_%E7%8C%AB%E7%8C%AB%E6%90%93%E6%89%8B.gif",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/actions.png",
       "character_id": "whale",
       "id": "cheerful",
       "tag": "cheerful",
       "path": "assets/whale/cheerful.gif",
-      "license_status": "noncommercial_attribution_required"
+      "license_status": "upstream_attribution_with_third_party_references",
+      "artwork_version": "q-fullbody-1",
+      "source_frames": [
+        0,
+        10,
+        15,
+        10,
+        0
+      ],
+      "duration_ms": [
+        300,
+        200,
+        500,
+        200,
+        400
+      ]
     },
     {
-      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/12N06_%E9%94%A4.gif",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/actions.png",
       "character_id": "whale",
       "id": "angry",
       "tag": "angry",
       "path": "assets/whale/angry.gif",
-      "license_status": "noncommercial_attribution_required"
+      "license_status": "upstream_attribution_with_third_party_references",
+      "artwork_version": "q-fullbody-1",
+      "source_frames": [
+        0,
+        8,
+        8,
+        4,
+        0
+      ],
+      "duration_ms": [
+        300,
+        200,
+        700,
+        300,
+        400
+      ]
     },
     {
-      "source": "https://kiriyuki.com/media/gif/%E5%A4%A7%E8%82%A5%E9%B1%BC/11N06_%E5%B0%8F%E9%97%AE%E5%8F%B7.gif",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/expressions.png",
       "character_id": "whale",
       "id": "confused",
       "tag": "confused",
       "path": "assets/whale/confused.gif",
-      "license_status": "noncommercial_attribution_required"
+      "license_status": "upstream_attribution_with_third_party_references",
+      "artwork_version": "q-fullbody-1",
+      "source_frames": [
+        0,
+        1,
+        2,
+        3,
+        2,
+        1,
+        0
+      ],
+      "duration_ms": [
+        300,
+        180,
+        250,
+        650,
+        250,
+        180,
+        500
+      ]
     },
     {
-      "source": "https://kiriyuki.com/meme/kit/nekowhale/showcase/TT02.gif",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/actions.png",
       "character_id": "whale",
       "id": "gift",
       "tag": "gift",
       "path": "assets/whale/gift.gif",
-      "license_status": "noncommercial_attribution_required"
+      "license_status": "upstream_attribution_with_third_party_references",
+      "artwork_version": "q-fullbody-1",
+      "source_frames": [
+        0,
+        5,
+        5,
+        1,
+        0
+      ],
+      "duration_ms": [
+        250,
+        200,
+        700,
+        500,
+        350
+      ]
     },
     {
       "source": "https://www.modelscope.cn/api/v1/datasets/sirmn6/da-fei-yu-gpt-sovits/repo?Revision=master&FilePath=samples/sample1.wav",
@@ -91,5 +213,6 @@
       "path": "assets/whale/ref.wav",
       "license_status": "cc-by-nc-4.0"
     }
-  ]
+  ],
+  "artwork_version": "q-fullbody-1"
 }

@@ -46,6 +46,7 @@ COPY src ./src
 COPY config ./config
 COPY assets ./assets
 COPY third_party/openai-codex ./third_party/openai-codex
+COPY third_party/whale-avatar ./third_party/whale-avatar
 COPY evaluations/semantic-cases.json ./evaluations/semantic-cases.json
 COPY evaluations/speech-cases.json ./evaluations/speech-cases.json
 COPY tools/evaluate_semantics.py ./tools/evaluate_semantics.py

@@ -22,7 +22,7 @@
 
 ## 初始大肥鱼内容与替换
 
-初始同人形象与表情取材入口为 [deepseek-chan-meme-pack](https://github.com/the-beating-light-of-the-nail/deepseek-chan-meme-pack) 和 [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers)。实际素材逐项在assets/whale/manifest.json保存来源和约束；角色卡只是可编辑内容，不自称DeepSeek官方。
+默认六种 GIF 统一使用 [YunYueSama 的大肥鱼 Q 版图集](https://github.com/YunYueSama/codex-deepseek-pet)：蓝紫渐层长发、圆脸蓝眼、鲸鳍、单条鲸尾、深蓝女仆装和白色鲸鱼围裙。完整角色帧经裁出、缩放和 GIF 编码，待机、招呼、开心、生气、困惑、礼物保持同一套造型。招呼动画用于说话状态，不表示口型同步。作者署名和完整素材条款见 [素材来源](../../third_party/whale-avatar/UPSTREAM.md)，逐项来源与动作帧在 assets/whale/manifest.json；声音引用独立维护。可用 `uv run --with pillow python tools/import_whale_avatar.py` 重建图片，原图留在忽略的 tmp/。
 
 声音参考 [大肥鱼声音数据集](https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh) 和 [GPT-SoVITS资源](https://www.modelscope.cn/datasets/sirmn6/da-fei-yu-gpt-sovits)。资源标有CC BY-NC 4.0时保留来源／署名、非商用约束；音频、数据、模型及使用场景分别核对，打赏直播不能自动当作已获商用许可。替换近似或原创资产时更新清单／声音身份，不只替换文件名。
 
