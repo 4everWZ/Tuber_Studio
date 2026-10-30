@@ -24,6 +24,8 @@
 
 默认六种 GIF 统一使用 [YunYueSama 的大肥鱼 Q 版图集](https://github.com/YunYueSama/codex-deepseek-pet)：蓝紫渐层长发、圆脸蓝眼、鲸鳍、单条鲸尾、深蓝女仆装和白色鲸鱼围裙。完整角色帧经裁出、缩放和 GIF 编码，待机、招呼、开心、生气、困惑、礼物保持同一套造型。招呼动画用于说话状态，不表示口型同步。作者署名和完整素材条款见 [素材来源](../../third_party/whale-avatar/UPSTREAM.md)，逐项来源与动作帧在 assets/whale/manifest.json；声音引用独立维护。可用 `uv run --with pillow python tools/import_whale_avatar.py` 重建图片，原图留在忽略的 tmp/。
 
+唱歌的`sing_open`／`sing_closed`复用同一图集的现成张嘴／闭嘴帧；新OC可在自身manifest提供同名标签，缺失则回退待机。口型需要独立人声活动数据驱动，两张图本身不代表已经实现音素级口型或演唱能力。仅重建这两帧可加`--singing-only`。
+
 声音参考 [大肥鱼声音数据集](https://www.modelscope.cn/datasets/YinZilu/da-fei-yu-girl-voice-zh) 和 [GPT-SoVITS资源](https://www.modelscope.cn/datasets/sirmn6/da-fei-yu-gpt-sovits)。资源标有CC BY-NC 4.0时保留来源／署名、非商用约束；音频、数据、模型及使用场景分别核对，打赏直播不能自动当作已获商用许可。替换近似或原创资产时更新清单／声音身份，不只替换文件名。
 
 现有原型允许先使用已有内容；商业模式默认拒绝无商业授权音色。该检查不会替运营者取得第三方素材权利，来源变化后也应重新核对。

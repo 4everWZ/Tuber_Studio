@@ -212,6 +212,30 @@
       "tag": "voice_reference",
       "path": "assets/whale/ref.wav",
       "license_status": "cc-by-nc-4.0"
+    },
+    {
+      "id": "sing_open",
+      "tag": "sing_open",
+      "character_id": "whale",
+      "path": "assets/whale/sing_open.png",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/expressions.png",
+      "source_frames": [
+        12
+      ],
+      "artwork_version": "q-fullbody-1",
+      "license_status": "upstream_attribution_with_third_party_references"
+    },
+    {
+      "id": "sing_closed",
+      "tag": "sing_closed",
+      "character_id": "whale",
+      "path": "assets/whale/sing_closed.png",
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/expressions.png",
+      "source_frames": [
+        13
+      ],
+      "artwork_version": "q-fullbody-1",
+      "license_status": "upstream_attribution_with_third_party_references"
     }
   ],
   "artwork_version": "q-fullbody-1"

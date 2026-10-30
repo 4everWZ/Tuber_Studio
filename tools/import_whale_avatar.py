@@ -7,6 +7,7 @@ Raw downloads remain in ignored tmp/, not in the program image.
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -27,12 +28,12 @@ CLIPS = {
 }
 
 
-def build():
+def build(singing_only=False):
     scratch = ROOT / "tmp/whale-avatar-import"
     scratch.mkdir(parents=True, exist_ok=True)
     atlases = {}
     with httpx.Client(timeout=60, follow_redirects=True) as client:
-        for name in sorted({clip[0] for clip in CLIPS.values()}):
+        for name in ["expressions"] if singing_only else sorted({clip[0] for clip in CLIPS.values()}):
             response = client.get(f"{RAW}/assets/whale/{name}.png")
             response.raise_for_status()
             path = scratch / f"{name}.png"
@@ -50,7 +51,7 @@ def build():
 
     manifest_path = ROOT / "assets/whale/manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    for name, (atlas, indices, durations) in CLIPS.items():
+    for name, (atlas, indices, durations) in [] if singing_only else CLIPS.items():
         frames = []
         for index in indices:
             x, y = index % 4 * 512, index // 4 * 512
@@ -80,6 +81,23 @@ def build():
             source_frames=indices,
             duration_ms=durations,
         )
+    for name, index in (("sing_open", 12), ("sing_closed", 13)):
+        x, y = index % 4 * 512, index // 4 * 512
+        tile = atlases["expressions"].crop((x, y, x + 512, y + 512))
+        tile.resize((384, 384), Image.Resampling.LANCZOS).save(ROOT / f"assets/whale/{name}.png")
+        manifest["entries"] = [entry for entry in manifest["entries"] if entry["id"] != name]
+        manifest["entries"].append(
+            {
+                "id": name,
+                "tag": name,
+                "character_id": "whale",
+                "path": f"assets/whale/{name}.png",
+                "source": f"{REPOSITORY}/blob/{REVISION}/assets/whale/expressions.png",
+                "source_frames": [index],
+                "artwork_version": "q-fullbody-1",
+                "license_status": "upstream_attribution_with_third_party_references",
+            }
+        )
     manifest["artwork_version"] = "q-fullbody-1"
     manifest["attribution"]["images"] = {
         "author": "YunYueSama",
@@ -99,8 +117,10 @@ def build():
         ),
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("Updated six full-body Q-style GIFs and preserved upstream attribution.")
+    print("Updated singing PNG frames" if singing_only else "Updated six GIFs and singing PNG frames")
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--singing-only", action="store_true")
+    build(parser.parse_args().singing_only)
