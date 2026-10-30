@@ -110,7 +110,9 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 目标为从适合 Jetson 的原始 CUDA／PyTorch 镜像派生一个 tuber-studio 镜像／容器，只保留运行所需组件，统一 Python／CUDA 环境，共享项目 runtime 挂载。容器内分离业务后端、受限 broker 和按需 llama／TTS 子进程；不默认部署 host Docker controller／独立 host venv，也不挂载 Docker.sock。
 
-程序交付面向Jetson ARM64／L4T R36.4，镜像`tuber-studio:ready-r36.4`只包含程序、锁定依赖、固定URL／大小／SHA256清单、小型预设及Genie转换／图骨架模板；不内置推理权重、原始声音模型或生成的永久包。原生CUDA／Torch仍使程序镜像处于约14GB量级，不按排除权重推断微型体积。构建和导出不得依赖旧runtime、模型资产或生产数据。
+程序交付面向Jetson ARM64／L4T R36.4，默认由GitHub Actions测试并构建ARM64镜像，发布到`ghcr.io/4everwz/tuber_studio:r36.4`，同次构建提供独立run-ready.sh产物。构建SHA／版本标签或digest供固定安装和回退；发布工作流及取得镜像／启动脚本的方法由[部署指南](../guides/deployment.md)维护。本机构建仅作开发备用，不作为操作者常规更新的前置。
+
+程序镜像只包含程序、锁定依赖、固定URL／大小／SHA256清单、小型预设及Genie转换／图骨架模板；不内置推理权重、原始声音模型或生成的永久包。原生CUDA／Torch仍使程序镜像处于约14GB量级，不按排除权重推断微型体积。统一Dockerfile的program-base／ready阶段使用仅含清单和预设的ready_assets命名上下文；CI构建、发布不得依赖旧runtime、模型资产、设备连接或生产凭证。源码仓库公开不等于GHCR包已成功发布或可匿名拉取，首次发布须分别验证。
 
 首次启动将[固定下载清单](../../config/jetson/downloads.json)中的MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT及NLTK下载到持久runtime，逐文件验证固定来源、字节数和SHA256，完整校验后才发布。可使用HTTPS origin形式的TUBER_HF_BASE替换HF源站，不能改变revision、关闭校验或回退到其他声音／模型。初次网络、公共源可用性和转换能力是启动前提；超时、取消或校验失败必须有界报错，不能把部分文件或半个bundle当成就绪。
 

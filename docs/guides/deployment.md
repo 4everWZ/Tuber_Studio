@@ -36,30 +36,32 @@
 
 ### 程序镜像：首次启动下载与准备
 
-目标硬件为Jetson ARM64／L4T R36.4及已配置的Docker／NVIDIA容器运行时，不是Windows／x86镜像。`tuber-studio:ready-r36.4`只含程序、锁定依赖、Genie转换／图骨架模板、固定URL／大小／SHA256清单和小型预设，不内置Mini、原始声音权重、BERT／HuBERT checkpoint或生成的永久音色包。原生CUDA／Torch等基础依赖使本地程序镜像仍约14GB量级；镜像大小、压缩归档大小和首次准备的磁盘峰值须分别核算，不以“未带权重”冒称微型镜像。
+目标硬件为Jetson ARM64／L4T R36.4及已配置的Docker／NVIDIA容器运行时，不是Windows／x86镜像。默认发行入口为GitHub Actions构建的`ghcr.io/4everwz/tuber_studio:r36.4`；程序镜像只含程序、锁定依赖、Genie转换／图骨架模板、固定URL／大小／SHA256清单和小型预设，不内置Mini、原始声音权重、BERT／HuBERT checkpoint或生成的永久音色包。原生CUDA／Torch等基础依赖使本地程序镜像仍约14GB量级；镜像大小、传输体积和首次准备的磁盘峰值须分别核算，不以“未带权重”冒称微型镜像。
 
-维护者从源码构建并交付归档及独立脚本，无需旧runtime、现有权重或已准备的Genie包：
+常规更新由[公开仓库](https://github.com/4everWZ/Tuber_Studio)的[CI工作流](../../.github/workflows/ci.yml)完成测试和ARM64程序镜像构建，发布到GHCR；不在运行设备上重建镜像。push、PR及手动运行执行测试；main push、v*标签及手动运行可构建／发布镜像，PR不发布。发布job使用限定的packages:write和GITHUB_TOKEN，不要求另配PAT。首次实际Actions运行、GHCR发布与匿名拉取尚待触发／验证，不能将工作流文件存在当成已经发布成功。
 
-    bash tools/jetson/build-ready-image.sh
-    docker save tuber-studio:ready-r36.4 | gzip > tuber-studio-ready-r36.4.tar.gz
-    cp tools/jetson/run-ready.sh ./run-ready.sh
+从同一次成功发布的[Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载`jetson-program-<commit前12位>`产物，将根目录的run-ready.sh解压到本机目录；同级image-evidence.json和program-contract.json提供该次镜像与程序交付信息。以拥有Docker权限的普通数据所有者执行，数据目录应专用于本应用：
 
-构建时安装依赖并包含固定转换工具；`package-ready.py`只读取`config/jetson/downloads.json`和预设，不收集runtime。构建上下文放项目tmp，ready最后一层不联网下载模型；基础镜像构建仍可能需要网络。接收机器不需要源码仓库、uv、宿主Python或运行时pip安装。
-
-接收机器以拥有Docker权限的普通数据所有者执行，数据目录应专用于本应用：
-
-    docker load -i tuber-studio-ready-r36.4.tar.gz
     bash run-ready.sh --data ./tuber-data
+
+GHCR包首次发布默认可能是private，公开源码仓库不会自动保证包公开。维护者首次发布后须在GitHub包设置将tuber_studio设为public，并实际核验匿名拉取；保留private时，操作者须先按GitHub权限策略完成docker login ghcr.io。Actions发布使用的GITHUB_TOKEN不是分发给操作者的登录令牌。首次发布与匿名拉取当前均未验收。
+
+脚本默认`ghcr.io/4everwz/tuber_studio:r36.4`，本地缺少该引用时自动拉取，并只解析一次镜像ID，初始化与正式容器使用同一个ID。已有本地标签不会因此自动更新；要更新r36.4，先显式拉取，再替换本项目容器：
+
+    docker pull ghcr.io/4everwz/tuber_studio:r36.4
+    bash run-ready.sh --data ./tuber-data --replace
+
+每次发布提供`sha-<完整40位commit>`标签；默认分支另提供r36.4及latest，v1.2.3等版本发布另提供v1.2.3与1.2.3。上述标签以对应发布成功为前提，版本示例不表示已经存在。固定安装或回退时，用--image指定实际已发布的SHA／版本标签或digest，并配套该构建的启动脚本。保留原数据目录和旧镜像引用；镜像回退不回滚数据库或修改过的配置，不能假定任意版本间数据兼容。常规GHCR交付不需要docker save／load归档，也不需要源码仓库、uv、宿主Python或运行时pip安装。
 
 首次启动需要访问清单列出的公共HTTPS源。下载包括MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS权重与参考原件、中文BERT／HuBERT及NLTK词典；每个文件均核对固定revision、字节数和SHA256。可按网络情况只替换Hugging Face的HTTPS源站，例如：
 
-    TUBER_HF_BASE=https://hf-mirror.com bash run-ready.sh --data ./tuber-data
+    TUBER_HF_BASE=https://hf-mirror.com bash run-ready.sh --image ghcr.io/4everwz/tuber_studio:r36.4 --data ./tuber-data
 
 `TUBER_HF_BASE`必须是HTTPS origin，不带路径、查询参数或凭证；不改变固定路径／revision和校验和，也不替代GitHub等其他下载源。需要代理时可显式设置容器可达的`TUBER_DOWNLOAD_PROXY`，同样仅接受无凭证／路径的HTTP(S) origin，不隐式继承宿主代理环境。镜像站和原公共源均可能不可达；下载有界、进度与失败可见，失败退出，不跳过校验或静默换成其他模型／音色／演示模式。重试同一启动命令会复用已完整验证的文件；不承诺未完成大文件断点续传。
 
 下载后由固定短命bootstrap顺序执行词典准备、权重净化、32kHz参考处理、Genie转换／采样恢复／INT8图准备、22层动态BERT图准备、参考特征预计算和永久bundle安装。此阶段不得有本项目LLM驻留；准备子进程退出、校验完成后，才启动常驻Genie、完成非静音短句预热，再加载Mini131072／q4_0。准备不是训练，也不是运行时安装新依赖；首次准备耗时与内存／磁盘峰值独立计入，不能套用热态合成结果。已验证的生成产物可重启复用，身份不符明确拒绝，不自动覆盖或临时凑包。
 
-脚本支持--image、--data、--name、--port及--replace；默认镜像tuber-studio:ready-r36.4、容器tuber-studio、回环端口9020。初始化容器使用同一镜像／调用者UID和可写数据目录，完成下载与一次性准备后，再以只读根目录及模型／参考／词典只读子挂载运行正式服务；drop ALL capabilities、no-new-privileges、临时目录限额及独立bridge仍生效。不挂Docker.sock，不修改宿主Python环境，不停止其他项目资源。仅发布127.0.0.1:9020，远程访问使用SSH转发。
+脚本支持--image、--data、--name、--port及--replace；默认GHCR r36.4、容器名tuber-studio、回环端口9020。初始化容器使用同一镜像／调用者UID和可写数据目录，完成下载与一次性准备后，再以只读根目录及模型／参考／词典只读子挂载运行正式服务；drop ALL capabilities、no-new-privileges、临时目录限额及独立bridge仍生效。不挂Docker.sock，不修改宿主Python环境，不停止其他项目资源。仅发布127.0.0.1:9020，远程访问使用SSH转发。
 
 新数据目录独立生成私有admin-token、overlay-token、inference-token和空白业务数据库；镜像不携带生产令牌、API凭证、Cookie、数据库、日志或已生成音频。令牌保存在数据目录，不放URL。已有studio.json、TTS YAML、数据库和凭证保留，预设只填缺失文件；已有不可变下载或生成资产身份不符时拒绝并保留原件，不静默替换。原BERT／HuBERT checkpoint虽不常驻推理，仍参与完整声音身份校验，下载后不能随意删去。公共声音素材与权重的许可分别适用，程序打包不授予额外声音使用权。
 
@@ -71,6 +73,24 @@
 初始化下载／准备阶段通过启动终端、容器日志及数据目录的portable-status.json报告进度和失败；此时后台可能尚未启动。资源加载阶段后台可达也不代表模型就绪，失败须显示资源错误。新空数据目录的首次下载、转换、冷启动和重启复用尚待设备验收，见[当前计划](../plans/p0-runtime.md)；原设备声音、128K及100句结果不替代交付流程验收。
 
 重复启动使用同一数据目录，已验证资产复用。替换现有同名容器须显式传--replace，且只允许绑定该数据目录的本项目容器；需要重新准备音色时必须先受控停止该项目LLM／TTS，不能边运行旧模型边转换。日常停止／重启使用docker stop／docker start，不删除数据目录。直接docker run同样使用镜像内portable入口及固定/workspace/tuber/runtime卷；独立脚本提供完整的权限、初始化和挂载参数。
+
+### 开发备用：本机程序镜像构建
+
+维护者仅在需要本地排查或CI尚不可用时，从源码构建本机程序镜像；这不是常规发行流程，也不要求运行设备为每次更新执行构建：
+
+    bash tools/jetson/build-ready-image.sh
+    bash tools/jetson/run-ready.sh --image tuber-studio:ready-r36.4 --data ./tuber-data
+
+同一个`tools/jetson/Dockerfile`维护`program-base`与`ready`命名阶段，已无独立Dockerfile.ready。`package-ready.py`只从固定下载清单和预设生成构建上下文，不读取旧runtime；构建通过命名上下文ready_assets传入该目录。本机构建脚本使用项目tmp新目录，CI使用tmp/ci-ready-image；构建不加载模型，也不需要现有权重或Genie包，基础依赖安装仍可能联网。
+
+CI默认使用原生ubuntu-24.04-arm runner，构建前释放未使用SDK空间并要求至少40GiB可用磁盘，不足明确失败。需更大云端ARM运行器时，可由维护者以仓库变量JETSON_BUILD_RUNNER指定JSON runner标签；不以生产Jetson作为构建依赖。CI测试、镜像构建／发布与真实Jetson首次下载／准备／推理分别验证。
+
+确需离线搬运程序镜像时才在开发机器导出，再在接收机器加载；这只免去镜像拉取，不使首次模型下载成为离线流程：
+
+    docker save tuber-studio:ready-r36.4 | gzip > tuber-studio-ready-r36.4.tar.gz
+    cp tools/jetson/run-ready.sh ./run-ready.sh
+    docker load -i tuber-studio-ready-r36.4.tar.gz
+    bash run-ready.sh --image tuber-studio:ready-r36.4 --data ./tuber-data
 
 ### 保留的精简镜像流程
 

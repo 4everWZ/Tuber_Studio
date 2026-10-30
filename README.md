@@ -9,12 +9,13 @@
 
 打开[本地工作台](http://127.0.0.1:8020)，管理令牌在runtime/admin-token。源码模板默认text且关闭直播；Jetson程序镜像另带MiniCPM5-2B／131072／q4_0与Genie瑶瑶v2的live预设，不内置推理权重。首次启动联网下载固定来源并校验，在持久数据目录一次性准备音色包，然后加载资源；业务保持停止、自动浏览／回复关闭。切回text会卸载TTS。设置页可保存Provider、独立API凭证与上下文窗口。MiniCPM5-2B只支持文本，多模态仅保留本地／API接口，默认关闭。下载、准备、连接或容量失败均须可见，不静默换模型或声音。
 
-Jetson ARM64／L4T R36.4收到程序镜像归档和独立启动脚本后，无需项目源码或宿主Python环境；首次安装须联网：
+Jetson ARM64／L4T R36.4使用GitHub Actions构建的GHCR程序镜像和同次构建附带的独立run-ready.sh，无需项目源码或宿主Python环境。成功发布后执行：
 
-    docker load -i tuber-studio-ready-r36.4.tar.gz
     bash run-ready.sh --data ./tuber-data
 
-镜像只包含程序、依赖、固定下载清单和小型预设；原生CUDA／Torch使程序镜像仍约14GB量级，不是微型镜像。权重、词典和生成的Genie包留在tuber-data；验证通过后重复启动复用，不重新下载安装依赖，也不覆盖已有配置、令牌或数据库。可用TUBER_HF_BASE指定HTTPS镜像源。新数据目录首次下载／准备／冷启动仍待设备验收，见[当前计划](docs/plans/p0-runtime.md)；既有声音结果不替代该验证。原精简镜像流程仍保留。
+从[仓库Actions](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载对应构建的`jetson-program-<提交前12位>`产物，解压其中run-ready.sh；脚本默认使用ghcr.io/4everwz/tuber_studio:r36.4，缺少镜像时自动拉取，初始化与服务锁定同一镜像ID。常规发布不要求本机docker build／save／load。首次实际Actions构建和GHCR发布尚待触发与验证，不表示上述镜像已发布；已有标签更新、固定SHA／版本或回退见[部署指南](docs/guides/deployment.md)。
+
+镜像只包含程序、依赖、固定下载清单和小型预设；原生CUDA／Torch使程序镜像仍约14GB量级，不是微型镜像。首次启动须联网，权重、词典和生成的Genie包留在tuber-data；验证通过后重复启动复用，不重新下载安装依赖，也不覆盖已有配置、令牌或数据库。可用TUBER_HF_BASE指定HTTPS镜像源。新数据目录首次下载／准备／冷启动仍待设备验收，见[当前计划](docs/plans/p0-runtime.md)；既有声音结果不替代该验证。本机构建只作开发备用，原精简镜像流程仍保留。
 
 [部署与Jetson启动](docs/guides/deployment.md) · [创建OC](docs/guides/characters.md) · [规范与文档导航](docs/README.md) · [当前计划](docs/plans/p0-runtime.md)
 

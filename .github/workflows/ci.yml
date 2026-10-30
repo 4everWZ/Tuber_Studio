@@ -1,0 +1,127 @@
+name: CI and Jetson program image
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Python lint and CPU contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Project uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.8'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Locked project environment
+        run: uv sync --locked --group dev
+      - name: Lint and format
+        run: |
+          uv run --locked ruff check src tests tools
+          uv run --locked ruff format --check src tests tools
+      - name: Unit and CPU graph contracts
+        run: |
+          mkdir -p tmp/ci-results
+          uv run --locked --with numpy==2.2.6 --with onnx==1.17.0 --with PyYAML==6.0.2 \
+            pytest -q --junitxml=tmp/ci-results/pytest.xml
+      - name: Generate program-only context without runtime or model downloads
+        run: |
+          uv run --locked python tools/jetson/package-ready.py --root "$PWD" --output "$PWD/tmp/ci-ready-image"
+          uv run --locked python tools/ci/audit_program.py --assets tmp/ci-ready-image --output tmp/ci-results/program-contract.json
+      - name: CPU check evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cpu-checks-${{ github.sha }}
+          path: tmp/ci-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  image:
+    name: Native ARM64 program image and GHCR
+    needs: checks
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+        startsWith(github.ref, 'refs/tags/v')))
+    runs-on: ${{ fromJSON(vars.JETSON_BUILD_RUNNER || '"ubuntu-24.04-arm"') }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Image tags and source labels
+        id: meta
+        run: python3 tools/ci/image_metadata.py tags
+      - name: Native ARM64 and disk capacity preflight
+        run: python3 tools/ci/runner_preflight.py --cleanup-hosted --output tmp/ci-image/runner-preflight.json
+      - name: Prepare public metadata and small presets
+        run: |
+          python3 tools/jetson/package-ready.py --root "$PWD" --output "$PWD/tmp/ci-ready-image"
+          python3 tools/ci/audit_program.py --assets tmp/ci-ready-image --output tmp/ci-image/program-contract.json
+          cp tmp/ci-ready-image/run-ready.sh tmp/ci-image/run-ready.sh
+      - name: Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Login to GHCR with the job token
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish one program-only image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: tools/jetson/Dockerfile
+          target: ready
+          build-contexts: ready_assets=tmp/ci-ready-image
+          platforms: linux/arm64
+          build-args: PYPI_INDEX=https://pypi.org/simple
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache-arm64
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache-arm64,mode=max,oci-mediatypes=true,image-manifest=true
+          provenance: mode=max
+      - name: Digest and build evidence
+        env:
+          IMAGE_NAME: ${{ steps.meta.outputs.image }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILDX_METADATA: ${{ steps.build.outputs.metadata }}
+        run: python3 tools/ci/image_metadata.py evidence --output tmp/ci-image/image-evidence.json
+      - name: Downloadable launcher and evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jetson-program-${{ steps.meta.outputs.short_sha || github.sha }}
+          path: tmp/ci-image/
+          if-no-files-found: warn
+          retention-days: 30

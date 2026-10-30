@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Standalone launch helper: Docker and an NVIDIA-enabled Jetson are sufficient.
 set -euo pipefail
-image=tuber-studio:ready-r36.4
+image=ghcr.io/4everwz/tuber_studio:r36.4
 data=./tuber-data
 name=tuber-studio
 port=9020
@@ -28,6 +28,10 @@ if docker inspect "$name" >/dev/null 2>&1; then
   actual=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/tuber/runtime"}}{{.Source}}{{end}}{{end}}' "$name")
   [[ "$replace" == true && "$actual" == "$data" ]] || { echo 'Existing container must own this data and require --replace.' >&2; exit 1; }
 fi
+if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image"; fi
+# Both preparation and service use the exact same local image, even if an
+# operator pulls a newer mutable tag during initialization.
+image=$(docker image inspect --format '{{.Id}}' "$image")
 security=(--read-only --cap-drop ALL --security-opt no-new-privileges=true --pids-limit 256
   --ulimit core=0:0 --user "$(id -u):$(id -g)"
   --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m --tmpfs /run:rw,nosuid,nodev,noexec,size=16m)

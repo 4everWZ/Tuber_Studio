@@ -109,6 +109,9 @@ RUN chmod -R a+rX /opt/tuber-builtin /opt/tuber-launch \
     && chown 65532:65532 /workspace/tuber/runtime \
     && chmod 0700 /workspace/tuber/runtime
 VOLUME ["/workspace/tuber/runtime"]
+RUN --mount=type=bind,source=tools/ci,target=/opt/tuber-ci,readonly \
+    /opt/studio-venv/bin/python /opt/tuber-ci/audit_program.py \
+    --image-root /workspace/tuber --builtin /opt/tuber-builtin
 USER 65532:65532
 HEALTHCHECK --interval=20s --timeout=10s --start-period=420s --retries=3 \
     CMD ["/opt/studio-venv/bin/python", "-m", "tuber_studio.portable", "--healthcheck"]

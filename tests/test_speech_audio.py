@@ -52,7 +52,9 @@ def runtime_reference(settings, tmp_path, monkeypatch):
     return voice, reference
 
 
-def test_reference_resolver_preserves_assets_compatibility_and_public_asset_boundary(settings, runtime_reference):
+def test_reference_resolver_preserves_assets_compatibility_and_public_asset_boundary(
+    settings, runtime_reference
+):
     voice, reference = runtime_reference
     assert settings.voice_reference_path(voice) == reference
     with pytest.raises(ValueError, match="素材"):
@@ -171,8 +173,13 @@ async def test_genie_runtime_reference_uses_checked_bundle_and_content_cache(set
         changed[-1] ^= 1
         reference.write_bytes(changed)
         assert (await service.synthesize(first.text, voice)).path != first.path
-        assert calls == [("GET", "/docs"), ("POST", "/tts"), ("GET", "/docs"),
-                         ("GET", "/docs"), ("POST", "/tts")]
+        assert calls == [
+            ("GET", "/docs"),
+            ("POST", "/tts"),
+            ("GET", "/docs"),
+            ("GET", "/docs"),
+            ("POST", "/tts"),
+        ]
         reference.unlink()
         state["ready"] = False
         with pytest.raises(httpx.HTTPStatusError):
