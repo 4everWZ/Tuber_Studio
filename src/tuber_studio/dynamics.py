@@ -165,7 +165,7 @@ class Dynamics:
         char = self._character()
         return self.store.all(
             "SELECT * FROM grounded_memory WHERE character_id=? AND character_version=? "
-            "AND role='assistant' AND kind='role_story' AND fictional=1 ORDER BY id DESC LIMIT 200",
+            "AND role='assistant' AND kind='role_story' AND fictional=1 AND scope NOT LIKE 'dm:%' ORDER BY id DESC LIMIT 200",
             (char["id"], char["version"]),
         )
 

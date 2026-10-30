@@ -217,6 +217,8 @@ class LiveMedia:
         if len(songs) >= 200:
             raise ValueError("曲库上限200首")
         self.store.set("music_catalog", songs + [song])
+        if getattr(self, "cache", None):
+            self.cache.release_uploads(song)
         return song
 
     def request(self, event, character):

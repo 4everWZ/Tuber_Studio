@@ -18,9 +18,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .comments import Comments
 from .config import Settings
+from .direct_messages import DirectMessages
 from .dynamics import Dynamics
 from .live_api import register_live_api
 from .live_media import MAX_UPLOAD
+from .message_api import register_message_api
 from .models import Character, Event
 from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
@@ -28,13 +30,15 @@ from .runtime import Runtime
 from .store import Store
 
 
-def create_app(settings=None, adapter=None, *, singing_provider=None):
+def create_app(settings=None, adapter=None, *, singing_provider=None, message_adapter=None):
     settings = settings or Settings()
     seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
     store = Store(settings.runtime / "studio.sqlite3", seeds)
     runtime = Runtime(settings, store, singing_provider=singing_provider)
     comments = Comments(settings, store, runtime, adapter)
     dynamics = Dynamics(settings, store, runtime, comments)
+    messages = DirectMessages(settings, store, runtime, comments, message_adapter)
+    comments.direct_messages = messages
     sessions = {}
     login_attempts = {}
 
@@ -44,22 +48,27 @@ def create_app(settings=None, adapter=None, *, singing_provider=None):
             await runtime.open()
             await comments.open()
             await dynamics.open()
+            await messages.open()
             yield
         finally:
             try:
+                await messages.close()
+            finally:
                 try:
                     await dynamics.close()
                 finally:
-                    await comments.close()
-            finally:
-                try:
-                    await runtime.close()
-                finally:
-                    store.close()
+                    try:
+                        await comments.close()
+                    finally:
+                        try:
+                            await runtime.close()
+                        finally:
+                            store.close()
 
     app = FastAPI(title="Tuber Studio", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.runtime, app.state.comments, app.state.store = runtime, comments, store
     app.state.dynamics = dynamics
+    app.state.messages = messages
 
     def valid_session(cookie):
         return bool(cookie and sessions.get(cookie, 0) > time.time())
@@ -110,6 +119,7 @@ def create_app(settings=None, adapter=None, *, singing_provider=None):
     app.mount("/static", StaticFiles(directory=web), name="static")
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
     register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok)
+    register_message_api(app, messages, require_admin)
 
     @app.get("/")
     async def index():

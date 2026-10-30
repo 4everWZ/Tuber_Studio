@@ -17,12 +17,15 @@ const model = {
   dynamicListsLoaded: false,
   dynamicMemorySummary: null,
 };
+const cachePanel = new CachePanel($("cache-panel"), api, notice);
+setInterval(() => { if (model.authenticated) cachePanel.refresh(); }, 5000);
+const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
   connecting: "连接中", error: "错误", queued: "排队中", generating: "生成台词", synthesizing: "合成语音",
   ready_to_play: "等待播放器", playing: "播放中", completed: "已完成", failed: "失败", cancelled: "已取消",
   expired: "已过期", filtered: "已过滤", duplicate: "重复事件", dropped: "已丢弃", selected: "已选中",
-  received: "已收到", skipped: "已跳过", pending: "等待中", running: "处理中", pending_review: "待审核",
+  private_handoff: "已转私信", received: "已收到", skipped: "已跳过", pending: "等待中", running: "处理中", pending_review: "待审核",
   approved: "已审核", rejected: "已拒绝", copied: "已复制", published: "已发布", publishing: "发布中",
   publish_uncertain: "发布结果待核对", publish_failed: "发布失败", question: "问题",
   suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
@@ -726,22 +729,23 @@ function renderDraft(force = false) {
     if (model.draftDirty) return;
     renderAnswerCheck(null);
     $("draft-source").textContent = "选择列表中的评论，查看角色草稿及来源。";
-    $("draft-text").value = ""; $("draft-text").disabled = true; $("draft-status").textContent = "选择评论";
+    $("open-private-draft").hidden = true; $("draft-text").value = ""; $("draft-text").disabled = true; $("draft-status").textContent = "选择评论";
     describe($("draft-meta"), []); ["approve-draft", "reject-draft", "copy-draft", "publish-draft"].forEach(id => { $(id).disabled = true; }); return;
   }
   const draft = comment.draft;
   renderAnswerCheck(draft);
   $("draft-source").textContent = `${comment.display_name || "匿名观众"}：${comment.content}`;
   setBadge($("draft-status"), draft?.status || "未生成");
-  describe($("draft-meta"), [["来源评论", `${comment.video_id} / ${comment.comment_id}`], ["楼ID", comment.thread_id || comment.comment_id], ["父评论ID", comment.parent_comment_id || "顶层"], ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"], ["模型", draft?.model || "—"], ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])]);
+  describe($("draft-meta"), [["来源评论", `${comment.video_id} / ${comment.comment_id}`], ["与当前OC的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : "匿名用户"], ["楼ID", comment.thread_id || comment.comment_id], ["父评论ID", comment.parent_comment_id || "顶层"], ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"], ["模型", draft?.model || "—"], ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])]);
   if (force || !model.draftDirty || model.draftId !== draft?.id) { $("draft-text").value = draft?.text || ""; model.draftId = draft?.id || null; model.draftDirty = false; }
-  const locked = draft && ["published", "publishing", "publish_uncertain"].includes(draft.status);
+  const locked = draft && ["published", "publishing", "publish_uncertain", "private_handoff"].includes(draft.status);
   $("draft-text").disabled = !draft || locked;
   $("approve-draft").disabled = !draft || locked;
   $("reject-draft").disabled = !draft || locked;
-  $("copy-draft").disabled = !draft;
+  $("copy-draft").disabled = !draft || draft.status === "private_handoff";
+  $("open-private-draft").hidden = draft?.status !== "private_handoff";
   $("publish-draft").disabled = !draft || draft.status !== "approved" || !model.policy?.credentials_configured || model.draftDirty;
-  $("draft-note").textContent = draft?.error ? `错误：${draft.error}` : model.draftDirty ? "文字已修改，先审核保存后再发布或复制。" : model.policy?.auto_reply ? "自动回复已开启；新草稿可能自动发布。当前草稿以此处状态与平台回执为准。" : "人工审核模式。审核通过后可复制；账号凭证已配置时可发布。";
+  $("draft-note").textContent = draft?.status === "private_handoff" ? "在私信工作台审核这份回复并查看发送回执。" : draft?.error ? `错误：${draft.error}` : model.draftDirty ? "文字已修改，先审核保存后再发布或复制。" : model.policy?.auto_reply ? "自动回复已开启；新草稿可能自动发布。当前草稿以此处状态与平台回执为准。" : "人工审核模式。审核通过后可复制；账号凭证已配置时可发布。";
 }
 function renderCommentTasks(tasks) {
   const tbody = $("comment-tasks"); if (!tasks.length) return empty(tbody, 4, "暂无评论任务。选中评论后生成角色草稿。");
@@ -960,12 +964,12 @@ async function reviewDynamic(action) {
 }
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
-  model.page = ["comments", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
+  model.page = ["comments", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
   document.querySelectorAll("[data-section]").forEach(section => { section.hidden = section.dataset.section !== model.page; });
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page; link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
-  document.title = `${({comments: "评论工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材", settings: "设置"})[model.page]} · Tuber Studio`;
+  document.title = `${({comments: "评论工作台", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await refreshComments(); else if (model.page === "dynamics") await refreshDynamics(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await loadRetention(); }
+  try { if (model.page === "comments") await refreshComments(); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh()]); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {
@@ -976,6 +980,7 @@ async function poll() {
     if (["overview", "live"].includes(model.page)) await refreshLive();
     if (model.page === "comments") await refreshComments();
     if (model.page === "dynamics") await refreshDynamics();
+    if (model.page === "messages") await messagesPanel.refresh();
   } catch (error) { $("connection").textContent = "连接失败，等待重试"; if (error.status !== 401) notice(error.message, true); }
   finally { model.polling = false; }
 }

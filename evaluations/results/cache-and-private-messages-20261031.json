@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-31",
+  "scope": "shared media cache budgets and source-bound private messaging",
+  "source_branch": "feat/cache-controls-and-direct-messages",
+  "base_commit": "c8d2801",
+  "checks": {
+    "pytest": {"passed": 869, "failed": 0, "skipped": 0},
+    "node_component_tests_passed": 3,
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "javascript_syntax": "passed",
+    "program_context_audit": "passed; no model weights or credentials embedded"
+  },
+  "cache": {
+    "music_max_bytes": 16106127360,
+    "shared_music_pool": ["imported songs", "online audio", "singing cache"],
+    "verified": [
+      "shared quota, protected catalog and queued media, upload leases, LRU eviction",
+      "speech and temporary budgets, path and link exclusions, admin authorization",
+      "HTTP Range and If-Range remain valid after playback updates LRU access",
+      "browser cleanup reclaimed 122296 bytes while preserving 45479 catalog bytes",
+      "browser saved 1024 MiB and online component observed the same shared cap"
+    ]
+  },
+  "private_messages": {
+    "transport": "HTTP MockTransport and injected local adapter only",
+    "actual_platform_read_exercised": false,
+    "actual_platform_send_exercised": false,
+    "verified": [
+      "incoming source -> draft -> approval -> one write -> receipt",
+      "source-bound recipient, account identity, OC version and separate private context",
+      "same UID and OC share relationship stats across comments and private messages",
+      "private text and private stories excluded from public replies and dynamic sources",
+      "old incoming messages not auto-replied, limits and pre-write stop checks",
+      "uncertain delivery, cancellation and restart never automatically resend",
+      "failed channel classification preserves source without queueing or sending",
+      "desktop browser review/send state and 390px mobile layout without overflow"
+    ]
+  },
+  "device_channel_probe": {
+    "device": "Jetson; existing MiniCPM5-2B service",
+    "synthetic_inputs_only": true,
+    "configuration_changed": false,
+    "actual_context": 131072,
+    "enable_thinking": true,
+    "max_tokens": 1024,
+    "schema": "channel and reason enums",
+    "cases": [
+      {"case": "public_schedule", "result": "comment/public_topic", "seconds": 6.79},
+      {"case": "public_smalltalk", "result": "comment/public_topic", "seconds": 7.87},
+      {"case": "explicit_private_request", "result": "direct_message/private_details", "seconds": 4.4},
+      {"case": "implicit_privacy", "result": "incomplete structured output at existing token budget; rejected"},
+      {"case": "long_followup", "result": "not run after previous failure"}
+    ],
+    "acceptance": "partial; not a complete model-quality acceptance",
+    "pending_choice": "Per-classification thinking override requested but not authorized; preserve existing model settings."
+  },
+  "remaining_acceptance": [
+    "real Bilibili account reads and authorized text delivery with platform msg_key",
+    "complete native-model channel classification quality evaluation"
+  ],
+  "deployment": "local implementation only; no push or device deployment for this change"
+}

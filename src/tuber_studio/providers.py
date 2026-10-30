@@ -425,6 +425,7 @@ def wav_duration(path: Path, *, require_speech=False) -> float:
 class VoiceService:
     def __init__(self, settings):
         self.settings = settings
+        self.cache = None
         config = settings.data["tts"]
         self.client = (
             api_client(config, settings.provider_key("tts"))
@@ -481,10 +482,18 @@ class VoiceService:
         data = await asyncio.to_thread(source.read_bytes)
         target = self.settings.audio / (hashlib.sha256(data).hexdigest()[:32] + ".wav")
         if not target.exists():
-            await asyncio.to_thread(target.write_bytes, data)
+            await self._store_audio(target, data, require_speech=False)
+        if self.cache:
+            self.cache.touch(target, seconds=180)
         return Audio(target, duration, text)
 
     async def synthesize(self, text, voice):
+        audio = await self._synthesize(text, voice)
+        if self.cache:
+            self.cache.touch(audio.path, seconds=180)
+        return audio
+
+    async def _synthesize(self, text, voice):
         if voice["provider"] == "prerecorded":
             audio = await self.prerecorded(voice["sample_asset"], voice["sample_text"])
             audio.warning = "当前为预录原型；字幕按实际录音台词显示，模型候选台词保留在任务详情"
@@ -540,14 +549,28 @@ class VoiceService:
         response.raise_for_status()
         if len(response.content) > 20_000_000:
             raise ValueError("合成音频过大")
+        duration = await self._store_audio(path, response.content)
+        return Audio(path, duration, text)
+
+    async def _store_audio(self, path, data, *, require_speech=True):
+        if self.cache:
+            async with self.cache.write("speech", len(data)) as allowed:
+                if len(data) > allowed:
+                    raise ValueError("语音缓存空间不足")
+                return await self._write_audio(path, data, require_speech=require_speech)
+        return await self._write_audio(path, data, require_speech=require_speech)
+
+    async def _write_audio(self, path, data, *, require_speech):
         temporary = path.with_suffix(".part")
         try:
-            await asyncio.to_thread(temporary.write_bytes, response.content)
-            duration = await asyncio.to_thread(wav_duration, temporary, require_speech=True)
+            await asyncio.to_thread(temporary.write_bytes, data)
+            duration = await asyncio.to_thread(wav_duration, temporary, require_speech=require_speech)
             temporary.replace(path)
+            if self.cache:
+                self.cache.touch(path, seconds=180)
+            return duration
         finally:
             temporary.unlink(missing_ok=True)
-        return Audio(path, duration, text)
 
     async def _api_speech(self, text, voice):
         if voice["provider"] != "openai_compatible":
@@ -585,16 +608,10 @@ class VoiceService:
             },
             limit=20_000_000,
         )
-        temporary = path.with_suffix(".part")
         try:
-            await asyncio.to_thread(temporary.write_bytes, data)
-            try:
-                duration = await asyncio.to_thread(wav_duration, temporary, require_speech=True)
-            except wave.Error:
-                raise ValueError("语音API须返回有效WAV；未缓存不兼容格式") from None
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+            duration = await self._store_audio(path, data)
+        except wave.Error:
+            raise ValueError("语音API须返回有效WAV；未缓存不兼容格式") from None
         return Audio(path, duration, text)
 
 

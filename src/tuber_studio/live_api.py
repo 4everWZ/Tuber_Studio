@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import Field
 
 from .live_media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, StrictModel, default_scene, inspect_audio
+from .media_cache import CachePolicy
 from .online_songs import SongRequestSettings
 
 
@@ -115,6 +116,18 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.post("/api/live/uploads", dependencies=[Depends(require_admin)])
     async def upload(request: Request):
+        try:
+            async with (
+                asyncio.timeout(90),
+                runtime.cache.write(
+                    "music", int(request.headers.get("content-length") or MAX_UPLOAD)
+                ) as allowed,
+            ):
+                return await receive_upload(request, allowed)
+        except TimeoutError:
+            raise ValueError("歌曲上传超过90秒，已取消并释放临时文件") from None
+
+    async def receive_upload(request, allowed):
         descriptor, name = tempfile.mkstemp(prefix=".upload-", dir=media.directory)
         temporary = Path(name)
         size, digest = 0, hashlib.sha256()
@@ -122,7 +135,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
             with os.fdopen(descriptor, "wb") as output:
                 async for chunk in request.stream():
                     size += len(chunk)
-                    if size > MAX_UPLOAD:
+                    if size > min(MAX_UPLOAD, allowed):
                         raise HTTPException(413, "音频上限96MiB")
                     digest.update(chunk)
                     output.write(chunk)
@@ -133,6 +146,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
                 raise ValueError("音乐文件不能使用链接")
             if not target.exists():
                 os.replace(temporary, target)
+            runtime.cache.touch(target, seconds=300)
             return {"id": identity, **info, "bytes": size}
         finally:
             temporary.unlink(missing_ok=True)
@@ -140,7 +154,20 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
     @app.get("/media/music/{identity}", dependencies=[Depends(require_view)])
     async def music_file(identity: str):
         path = media.blob(identity)
+        runtime.cache.touch(path)
         return FileResponse(path, media_type=MEDIA_TYPES[path.suffix])
+
+    @app.get("/api/cache", dependencies=[Depends(require_admin)])
+    async def cache_status():
+        return runtime.cache.status()
+
+    @app.put("/api/cache", dependencies=[Depends(require_admin)])
+    async def cache_policy(data: CachePolicy):
+        return await runtime.cache.configure(data.model_dump())
+
+    @app.post("/api/cache/{category}/clear", dependencies=[Depends(require_admin)])
+    async def clear_cache(category: str):
+        return {"result": await runtime.cache.clear(category), **runtime.cache.status()}
 
     @app.get("/api/live/online", dependencies=[Depends(require_admin)])
     async def online_status():

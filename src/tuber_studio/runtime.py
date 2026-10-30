@@ -4,6 +4,7 @@ import asyncio
 import json
 import secrets
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -13,9 +14,11 @@ import psutil
 from .api_providers import VisionService, create_llm
 from .context import ContextManager
 from .live_media import LiveMedia
+from .media_cache import MediaCache
 from .memory import missing_slots
 from .online_songs import OnlineSongs
 from .providers import VoiceService, public_error
+from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
@@ -24,6 +27,7 @@ TERMINAL = {"completed", "failed", "cancelled", "expired"}
 class Runtime:
     def __init__(self, settings, store, *, singing_provider=None):
         self.settings, self.store = settings, store
+        self.relationships = Relationships(store)
         self.llm = create_llm(settings)
         self.voices = VoiceService(settings)
         self.vision = VisionService(
@@ -54,6 +58,9 @@ class Runtime:
         self.media = LiveMedia(settings, store, singing_provider=singing_provider)
         self.playback = None
         self.media_changed = asyncio.Event()
+        self.cache = MediaCache(self)
+        self.media.cache = self.cache
+        self.voices.cache = self.cache
         self.online_songs = OnlineSongs(self)
         broker = settings.data.get("inference_broker", {})
         self.inference_client = (
@@ -74,6 +81,21 @@ class Runtime:
     @property
     def character(self):
         return self.store.character()
+
+    @asynccontextmanager
+    async def offline_generation(self):
+        while True:
+            while self.state in {"live", "paused"} and (self.current_id or self.queue):
+                await asyncio.sleep(0.2)
+            await self.generation_lock.acquire()
+            if self.state in {"live", "paused"} and (self.current_id or self.queue):
+                self.generation_lock.release()
+                continue
+            try:
+                yield
+            finally:
+                self.generation_lock.release()
+            return
 
     async def open(self):
         await self.online_songs.open()

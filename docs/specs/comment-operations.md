@@ -53,3 +53,7 @@ comments保存thread_id／parent_comment_id；B站root标识楼、parent标识�
 另验映射／预览无写入、人工分类保持、角色／视频隔离、错误与取消／重启恢复、单次写入和不确定结果防重发。真实写入须以配置账号的实际平台回执验证，不能由隔离传输测试推断。
 
 Adapter接口和浏览候选工作流可参考 [dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll/tree/main)，但不继承其权限、代码许可或自动行为；实际平台能力和授权单独核对。
+
+## 评论转私信
+
+启用[私信策略](private-messages.md)后，模型可基于当前公开楼与共享的OC关系数值选择转入私信。公开草稿仅保存private_handoff标记，不能审核／复制成公开回复；私信正文与平台回执在独立工作台维护，不能写回公开楼上下文。自动浏览产生的移交可按显式私信自动发送策略执行，手工批次仍待审核。

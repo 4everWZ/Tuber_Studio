@@ -120,6 +120,30 @@ class SingingService:
         return identity
 
     async def prepare(self, snapshot, character):
+        cache = getattr(self.media, "cache", None)
+        if cache is None:
+            return await self._prepare(snapshot, character)
+        async with cache.locks["temporary"]:
+            cache.enforce("temporary")
+            cache.writing.add("temporary")
+            try:
+                return await self._prepare(snapshot, character)
+            finally:
+                cache.writing.discard("temporary")
+                cache.enforce("temporary")
+
+    async def publish_cached(self, source):
+        cache = getattr(self.media, "cache", None)
+        if cache is None:
+            return await asyncio.to_thread(self.publish, source)
+        async with cache.write("music", source.stat().st_size) as allowed:
+            if source.stat().st_size > allowed:
+                raise ValueError("演唱音频超过剩余音乐缓存容量")
+            identity = await asyncio.to_thread(self.publish, source)
+            cache.touch(self.media.blob(identity), seconds=180)
+            return identity
+
+    async def _prepare(self, snapshot, character):
         identity = self.identity(character)
         if identity != snapshot.get("singing"):
             raise ValueError("排队后声音或演唱模型身份已改变，请重新点歌")
@@ -164,10 +188,18 @@ class SingingService:
             ):
                 raise ValueError("演唱输出的声音或模型身份不匹配")
             result = {
-                "audio": await asyncio.to_thread(self.publish, prepared.audio),
-                "vocal": await asyncio.to_thread(self.publish, prepared.vocal) if prepared.vocal else None,
+                "audio": await self.publish_cached(prepared.audio),
+                "vocal": await self.publish_cached(prepared.vocal) if prepared.vocal else None,
             }
-            atomic_json(cache, result)
+            manager = getattr(self.media, "cache", None)
+            if manager:
+                required = len(json.dumps(result, ensure_ascii=False, indent=2).encode("utf-8"))
+                async with manager.write("music", required) as allowed:
+                    if required > allowed:
+                        raise ValueError("音乐缓存空间不足，无法保存演唱索引")
+                    atomic_json(cache, result)
+            else:
+                atomic_json(cache, result)
         audio = self.media.blob(result["audio"])
         if await asyncio.to_thread(digest, audio) != result["audio"]:
             raise ValueError("演唱缓存内容身份失效")

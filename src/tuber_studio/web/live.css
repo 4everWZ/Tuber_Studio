@@ -5,3 +5,5 @@
 .online-panel{margin:23px 30px;padding:22px}.online-panel>.panel-heading{flex-wrap:wrap}.online-panel details{margin:14px 0}.online-panel form .fields{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.online-panel code{overflow-wrap:anywhere}.online-choice{border-top:1px solid var(--line,#bcd3d6);margin-top:18px;padding-top:12px}.online-panel .song-row img{border-radius:10px;object-fit:cover}.online-panel .song-tools{margin-top:18px}
 
 @media(min-width:1400px){.online-panel{margin-left:238px}}@media(max-width:760px){.online-panel{margin:15px;padding:16px}}
+
+.cache-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin:18px 0}.cache-group{border:1px solid #dae9e8;border-radius:10px;padding:14px}.cache-group h3{margin:0 0 8px}.cache-group input{width:100%}

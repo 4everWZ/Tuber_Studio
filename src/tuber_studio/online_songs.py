@@ -28,7 +28,7 @@ class SongRequestSettings(StrictModel):
     quality: Literal["flac_preferred", "high_bitrate"] = "flac_preferred"
     fallback_bitrate: int = Field(default=320000, ge=128000, le=320000)
     allow_lower_quality: bool = False
-    cache_limit_mib: int = Field(default=512, ge=96, le=4096)
+    cache_limit_mib: int = Field(default=15360, ge=96, le=15360)
     max_download_mib: int = Field(default=96, ge=1, le=96)
     max_duration_seconds: int = Field(default=600, ge=10, le=600)
     license_note: str = Field(default="", max_length=500)
@@ -98,14 +98,17 @@ class OnlineSongs:
         self.search_times = {}
 
     def config(self):
-        return SongRequestSettings.model_validate(self.store.get("song_requests", {})).model_dump()
+        value = {
+            **self.store.get("song_requests", {}),
+            "cache_limit_mib": self.runtime.cache.policy()["music_limit_mib"],
+        }
+        return SongRequestSettings.model_validate(value).model_dump()
 
     def status(self):
-        index = self.store.get("online_music_cache", {})
         return {
             "settings": self.config(),
             "component": self.component.status(),
-            "cache_bytes": cache_bytes(index),
+            "cache_bytes": self.runtime.cache.usage("music")["bytes"],
             "preparing": [identity for identity, task in self.tasks.items() if not task.done()],
             "candidates": [value for value in self.choices.values() if value["expires_at"] > time.time()],
         }
@@ -118,6 +121,11 @@ class OnlineSongs:
     async def configure(self, value, *, restart=False):
         config = SongRequestSettings.model_validate(value).model_dump()
         async with self.config_lock:
+            cache_policy = self.runtime.cache.policy()
+            if cache_policy["music_limit_mib"] != config["cache_limit_mib"]:
+                await self.runtime.cache.configure(
+                    {**cache_policy, "music_limit_mib": config["cache_limit_mib"]}
+                )
             if (
                 cache_bytes(self.store.get("online_music_cache", {}), self.protected())
                 > config["cache_limit_mib"] * 1024 * 1024
@@ -370,29 +378,7 @@ class OnlineSongs:
         return result
 
     def evict(self, *, reserve=0):
-        index = self.store.get("online_music_cache", {})
-        protected = self.protected()
-        limit = self.config()["cache_limit_mib"] * 1024 * 1024 - reserve
-        size = cache_bytes(index)
-        files = {}
-        for row in index.values():
-            old = files.get(row["audio"])
-            if old is None or row["used_at"] > old["used_at"]:
-                files[row["audio"]] = row
-        for row in sorted(files.values(), key=lambda row: row["used_at"]):
-            if size <= limit:
-                break
-            if row["audio"] in protected:
-                continue
-            path = self.directory / (row["audio"] + "." + row["quality"]["format"])
-            if path.is_symlink():
-                raise ValueError("在线缓存文件不能使用链接")
-            path.unlink(missing_ok=True)
-            size -= row["bytes"]
-            index = {key: value for key, value in index.items() if value["audio"] != row["audio"]}
-        self.store.set("online_music_cache", index)
-        if size > limit:
-            raise ValueError("缓存空间不足，当前及下一首音频已受保护，请增大缓存上限")
+        self.runtime.cache.enforce("music", reserve=reserve)
 
     async def _prepare(self, snapshot):
         async with self.preparation_lock:
@@ -421,12 +407,6 @@ class OnlineSongs:
                     self.store.set("online_music_cache", index)
             lyric = await self.component.call("lyrics", {"id": snapshot["online"]["id"]})
             maximum = min(MAX_UPLOAD, config["max_download_mib"] * 1024 * 1024)
-            protected = self.protected()
-            protected_bytes = cache_bytes(self.store.get("online_music_cache", {}), protected)
-            maximum = min(maximum, config["cache_limit_mib"] * 1024 * 1024 - protected_bytes)
-            if maximum <= 0:
-                raise ValueError("缓存空间不足，请增大缓存上限")
-            self.evict(reserve=maximum)
             temporary = self.directory / (".download-" + secrets.token_hex(16))
             errors = []
             try:
@@ -444,7 +424,9 @@ class OnlineSongs:
                                 or abs(actual["duration"] - snapshot["duration"]) > 3
                             ):
                                 raise ValueError("歌曲版本信息在排队后改变，请重新确认")
-                            identity, size = await download(resolved["url"], temporary, maximum)
+                            async with self.runtime.cache.write("music", maximum) as allowed:
+                                identity, size = await download(resolved["url"], temporary, allowed)
+                                self.runtime.cache.touch(temporary, seconds=300)
                             info = await asyncio.to_thread(inspect_audio, temporary)
                             self.validate_quality(info, snapshot, config)
                             self.require_enabled()

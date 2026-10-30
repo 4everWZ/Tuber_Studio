@@ -16,6 +16,8 @@
     return data;
   }
   const online = new OnlineSongRequests(api, feedback);
+  const cachePanel = new CachePanel($("cache-panel"), api, feedback);
+  setInterval(() => { if (authenticated) cachePanel.refresh(); }, 5000);
   async function run(button, action) {
     button.disabled = true; button.setAttribute("aria-busy","true");
     try { await action(); } catch (error) { feedback(error.message,true); }

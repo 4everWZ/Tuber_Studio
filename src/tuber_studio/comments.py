@@ -58,6 +58,7 @@ class Comments:
         self.active_task_id = None
         self.thread_tasks = set()
         self.closed = False
+        self.direct_messages = None
 
     async def open(self):
         self.worker = asyncio.create_task(self._worker())
@@ -280,6 +281,9 @@ class Comments:
             (*args, min(limit, 1000)),
         )
         for row in rows:
+            row["relationship"] = self.runtime.relationships.view(
+                self.runtime.character["id"], row["platform"], row["platform_user_id"]
+            )
             row["draft"] = self.store.one("SELECT * FROM drafts WHERE comment_id=?", (row["id"],))
             if row["draft"] and row["draft"].get("answer_check"):
                 row["draft"]["answer_check"] = json.loads(row["draft"]["answer_check"])
@@ -490,10 +494,50 @@ class Comments:
                     else None
                 )
                 try:
+                    relationship = self.runtime.relationships.observe(
+                        character["id"],
+                        row["platform"],
+                        row["platform_user_id"],
+                        row["display_name"],
+                        f"comment:{cid}",
+                        row["content"],
+                    )
+                    handoff = (
+                        await self.direct_messages.route_comment(
+                            row,
+                            character,
+                            relationship,
+                            candidate or context,
+                            scope,
+                            event,
+                            automatic=automatic,
+                        )
+                        if self.direct_messages
+                        else None
+                    )
+                    if handoff:
+                        if candidate:
+                            self._check_sources(sources, row["video_id"], row["thread_id"], row["platform"])
+                            context.install_candidate(scope, character, candidate)
+                        self.store.execute(
+                            "INSERT OR IGNORE INTO drafts(comment_id,text,status,character_id,character_version,model,input_summary,created_at,updated_at) VALUES(?,?,'private_handoff',?,?,?,?,?,?)",
+                            (
+                                cid,
+                                f"已转私信草稿 #{handoff}",
+                                character["id"],
+                                character["version"],
+                                self.settings.data["llm"].get("model", "demo"),
+                                json.dumps(event, ensure_ascii=False),
+                                time.time(),
+                                time.time(),
+                            ),
+                        )
+                        return
                     reply, check = await self.runtime.generate_reply(
                         scope,
                         character,
                         event,
+                        relationship=relationship,
                         mode="comment_draft",
                         **({"context": candidate} if candidate else {}),
                     )
@@ -560,7 +604,7 @@ class Comments:
         row = self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
         if not row:
             raise ValueError("草稿不存在")
-        if row["status"] in {"published", "publishing", "publish_uncertain"}:
+        if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff"}:
             raise ValueError("已发布或结果不确定的回复不能覆盖；请核对平台")
         if action not in {"approve", "reject"}:
             raise ValueError("未知审核动作")

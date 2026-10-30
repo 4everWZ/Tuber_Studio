@@ -169,14 +169,17 @@ class Store:
     def user(self, event):
         if not event.platform_user_id:
             return None
+        return self.ensure_user(event.platform, event.platform_user_id, event.display_name)
+
+    def ensure_user(self, platform, platform_user_id, display_name):
         self.execute(
             "INSERT INTO users(platform,platform_user_id,display_name) VALUES(?,?,?) "
-            "ON CONFLICT(platform,platform_user_id) DO UPDATE SET display_name=excluded.display_name",
-            (event.platform, event.platform_user_id, event.display_name),
+            "ON CONFLICT(platform,platform_user_id) DO UPDATE SET display_name=CASE WHEN excluded.display_name!='' THEN excluded.display_name ELSE users.display_name END",
+            (platform, platform_user_id, display_name),
         )
         return self.one(
             "SELECT id FROM users WHERE platform=? AND platform_user_id=?",
-            (event.platform, event.platform_user_id),
+            (platform, platform_user_id),
         )["id"]
 
     def relationship(self, character_id, user_id):

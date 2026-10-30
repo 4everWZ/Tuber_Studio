@@ -165,3 +165,12 @@ ZRAM／SSD Swap 仅兜底，不以持续换页维持低延迟。过载依次暂�
 | AC-08 | 声音接入时切音色不串缓存，API 音色不自动替换角色本地声线，商业配置不直接启用开发专用声音。 |
 
 实现依据 [MiniCPM官方llama.cpp部署](https://github.com/OpenBMB/MiniCPM/blob/main/docs/deployment/llama_cpp.md)、[GPT-SoVITS API v2](https://github.com/RVC-Boss/GPT-SoVITS/blob/main/api_v2.py)；设备依据 [Orin Nano Super](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/nano-super-developer-kit/) 与 [Orin Nano软件编码](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Multimedia/SoftwareEncodeInOrinNano.html)。接入时核对版本兼容和许可。
+
+
+## 媒体磁盘缓存
+
+工作台设置与直播工作台须显示音乐、语音、临时产物的实际磁盘占用、可回收／受保护大小、写入状态和最大容量，并提供清理。音乐池合计导入曲目、在线FLAC／MP3与演唱输出，最高15360 MiB（15 GiB）；新安装默认15 GiB，已有在线缓存限额作为迁移初值保留。语音默认512 MiB，临时产物默认1024 MiB，分别可配置。在线点歌设置中的cache_limit_mib映射到同一个音乐池，不叠加第二份额度。
+
+导入、在线下载和TTS写入共用所属媒体池的容量准入与LRU淘汰；超过剩余允许大小则取消写入并清理半成品。每池写入串行，音乐下载不阻塞语音池；每首／每次语音原有大小和时长上限继续生效。临时演唱工作区在准备前后检查保留容量，活动生成不被手动清理。
+
+清理仅回收服务拥有的媒体缓存，保护曲库中的歌曲／人声／伴奏、当前／待播和新上传素材；降低上限低于受保护占用须拒绝，不先删原始曲库。移除曲库条目后才可回收其未被占用文件。模型、参考音频、音色包、账号、数据库及原始项目素材不属于清理对象，路径链接拒绝。清理同时失效在线／演唱索引，防止继续引用已删音频。容量、清理与对话留存是独立设置。

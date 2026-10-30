@@ -48,8 +48,16 @@ class RetentionManager:
             "next_run": max(time.time(), (last or 0) + INTERVAL_SECONDS) if self.days is not None else None,
             "last_result": self.last_result,
             "cleanup_interval_seconds": INTERVAL_SECONDS,
-            "preserved": PRESERVED,
+            "preserved": self.preserved(),
         }
+
+    def preserved(self):
+        names = ["dm_inbox", "dm_drafts", "dm_attempts", "relation_events"]
+        return PRESERVED + [
+            name
+            for name in names
+            if self.store.one("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
+        ]
 
     def set_policy(self, days):
         days = validate_days(days)
@@ -128,7 +136,7 @@ class RetentionManager:
                     (cutoff,),
                 )["n"]
             },
-            "preserved": PRESERVED,
+            "preserved": self.preserved(),
         }
 
     def cleanup(self, before=None, *, now=None, manual=False):
