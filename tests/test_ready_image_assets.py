@@ -60,7 +60,7 @@ def payload(tmp_path, monkeypatch):
     for key, filename in (('metadata', 'metadata.json'), ('features', 'features.npz')):
         relative = 'tts/reference_features/' + assets.VOICE + '/' + filename
         path = runtime / relative
-        bundle['reference'][key] = relative
+        bundle['reference'][key] = 'runtime/' + relative
         bundle['reference'][key + '_identity'] = {'bytes': path.stat().st_size, 'sha256': assets.hash_file(path)}
     bundle['bundle_identity'] = contract._manifest_identity(bundle)
     put('tts/genie/' + assets.VOICE + '/manifest.json', json.dumps(bundle).encode())

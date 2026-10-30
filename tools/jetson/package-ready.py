@@ -100,7 +100,7 @@ def collect(root: Path, runtime: Path) -> dict[str, str | None]:
     for key, filename in (('metadata', 'metadata.json'), ('features', 'features.npz')):
         relative = 'tts/reference_features/' + VOICE + '/' + filename
         record = bundle['reference'][key + '_identity']
-        if bundle['reference'][key] != relative or checked(runtime, relative).stat().st_size != record['bytes']:
+        if bundle['reference'][key] != 'runtime/' + relative or checked(runtime, relative).stat().st_size != record['bytes']:
             raise ValueError('Genie reference file identity differs')
         selected[relative] = record['sha256']
     if selected['tts/reference_features/' + VOICE + '/features.npz'] != metadata['npz_sha256']:
