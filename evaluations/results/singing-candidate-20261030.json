@@ -1,0 +1,32 @@
+{
+  "candidate": "Seed-VC 44.1kHz SVC",
+  "status": "rejected_for_current_voice",
+  "source_revision": "51383efd921027683c89e5348211d93ff12ac2a8",
+  "core_model_revision": "257283f9f41585055e8f858fba4fd044e5caed6e",
+  "conditions": {
+    "device": "Windows laptop; RTX 3060 Laptop 6GB; 32GB system RAM",
+    "voice_id": "yaoyao_sovits_v2",
+    "reference_seconds": 5.74934375,
+    "source": "8-second excerpt of the upstream TECHNOPOLIS isolated vocal example; private evaluation only",
+    "steps": 30,
+    "pitch_shift": 0,
+    "length_adjust": 1.0
+  },
+  "cpu_screening": {
+    "elapsed_seconds": 807.61,
+    "peak_worker_tree_rss_mb": 3586.67,
+    "minimum_system_available_mb": 2826.28,
+    "outcome": "non-finite output rejected; upstream CPU Whisper FP16 path"
+  },
+  "cuda_screening": {
+    "elapsed_seconds": 43.094,
+    "peak_worker_tree_rss_mb": 2344.57,
+    "minimum_system_available_mb": 3813.53,
+    "output_seconds": 7.9992743764,
+    "numerical_result": "valid non-silent PCM WAV",
+    "quality_review": "rejected by operator",
+    "service_cold_prepare_seconds": 31.08879,
+    "service_cache_seconds": 0.18473
+  },
+  "scope": "These conditions establish neither accepted singing quality nor Jetson resource admission. The candidate implementation is excluded from product delivery; only the replaceable singing interface is retained. No model or source audio is bundled."
+}
