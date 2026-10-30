@@ -413,7 +413,9 @@ def test_file_deadline_aborts_trickling_stream_and_cleans_partial(tmp_path, monk
 
 def test_prepare_hook_runs_fixed_child_only_for_selected_local_speech(tmp_path, monkeypatch):
     (tmp_path / "runtime").mkdir()
-    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"kind": "gpt_sovits"}}))
+    (tmp_path / "runtime/studio.json").write_text(
+        json.dumps({"tts": {"kind": "gpt_sovits", "local_backend": "genie_onnx_int8"}})
+    )
     assert portable.prepare_runtime(tmp_path)["prepared"] is False
     script = tmp_path / "tools/jetson/tts/bootstrap.py"
     script.parent.mkdir(parents=True)
@@ -436,9 +438,23 @@ def test_prepare_hook_runs_fixed_child_only_for_selected_local_speech(tmp_path, 
     assert portable.prepare_runtime(tmp_path)["prepared"] is False and len(calls) == 1
 
 
+def test_compact_speech_keeps_its_existing_reference_preparation_path(tmp_path, monkeypatch):
+    (tmp_path / "runtime").mkdir()
+    path = tmp_path / "runtime/studio.json"
+    path.write_text(json.dumps({"tts": {"kind": "gpt_sovits", "local_backend": "compact"}}))
+    original = path.read_bytes()
+    monkeypatch.setattr(
+        portable.subprocess, "Popen", lambda *a, **kw: pytest.fail("Unexpected Genie preparation")
+    )
+    assert portable.prepare_runtime(tmp_path)["prepared"] is False
+    assert path.read_bytes() == original
+
+
 def test_prepare_timeout_terminates_only_its_child_and_propagates_failure(tmp_path, monkeypatch):
     (tmp_path / "runtime").mkdir()
-    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"kind": "gpt_sovits"}}))
+    (tmp_path / "runtime/studio.json").write_text(
+        json.dumps({"tts": {"kind": "gpt_sovits", "local_backend": "genie_onnx_int8"}})
+    )
     script = tmp_path / "tools/jetson/tts/bootstrap.py"
     script.parent.mkdir(parents=True)
     script.write_text("# fixed")

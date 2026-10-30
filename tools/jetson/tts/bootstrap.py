@@ -15,6 +15,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import runpy
 import shutil
 import signal
@@ -362,10 +363,24 @@ def prepare(root):
     root = Path(root).absolute()
     checked(root, root)
     bundle = helper(root, "genie_bundle")
-    validate_configuration(root)
-    final = root / "runtime/tts/genie" / VOICE
+    studio = json.loads(checked(root, root / "runtime/studio.json").read_text())
+    tts = studio.get("tts", {})
+    selected = tts.get("voice_id")
+    if (
+        tts.get("kind") != "gpt_sovits"
+        or tts.get("local_backend") != "genie_onnx_int8"
+        or not isinstance(selected, str)
+        or re.fullmatch(r"[A-Za-z0-9_-]+", selected) is None
+    ):
+        raise ValueError("Bootstrap requires a configured local Genie voice; configuration is preserved")
+    final = root / "runtime/tts/genie" / selected
     if final.exists() or final.is_symlink():
-        return {"reused": True, "bundle_identity": bundle.verify_bundle(root, VOICE)["identity"]}
+        return {"reused": True, "bundle_identity": bundle.verify_bundle(root, selected)["identity"]}
+    if selected != VOICE:
+        raise ValueError(
+            "Selected Genie voice has no bundle; prepare it manually; configuration is preserved"
+        )
+    validate_configuration(root)
     import fcntl
 
     lock = checked(root, root / "runtime/tts/.bootstrap.lock", exists=False)

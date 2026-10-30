@@ -98,6 +98,58 @@ def test_verified_bundle_reuse_does_not_require_raw_downloads_or_start_workers(b
     assert not (base / "runtime/tts/sources").exists()
 
 
+def test_custom_existing_bundle_reuses_selected_voice_without_fixed_validation(bootstrap, root, monkeypatch):
+    base, bundle = root
+    path = base / "runtime/studio.json"
+    data = json.loads(path.read_text())
+    data["tts"]["voice_id"] = "custom_oc_v2"
+    path.write_text(json.dumps(data))
+    (base / "runtime/tts/genie/custom_oc_v2").mkdir(parents=True)
+    calls = []
+    monkeypatch.setattr(bundle, "verify_bundle", lambda r, v: calls.append((r, v)) or {"identity": "b" * 64})
+    monkeypatch.setattr(
+        bootstrap, "validate_configuration", lambda r: pytest.fail("Fixed Yaoyao only applies to generation")
+    )
+    monkeypatch.setattr(bootstrap, "ensure_no_workers", lambda: pytest.fail("Must not prepare on reuse"))
+    monkeypatch.setattr(bootstrap, "run_phase", lambda *a: pytest.fail("Must not run a generation phase"))
+    assert bootstrap.prepare(base) == {"reused": True, "bundle_identity": "b" * 64}
+    assert calls == [(base, "custom_oc_v2")]
+    assert json.loads(path.read_text())["tts"]["voice_id"] == "custom_oc_v2"
+    assert not (base / "runtime/tts/sources").exists()
+    assert not (base / "runtime/evaluations").exists()
+
+
+def test_missing_custom_bundle_requires_manual_preparation_without_mutation(bootstrap, root, monkeypatch):
+    base, bundle = root
+    path = base / "runtime/studio.json"
+    data = json.loads(path.read_text())
+    data["tts"]["voice_id"] = "custom_oc_v2"
+    path.write_text(json.dumps(data))
+    before = {p.relative_to(base): p.read_bytes() for p in base.rglob("*") if p.is_file()}
+    monkeypatch.setattr(bundle, "verify_bundle", lambda *a: pytest.fail("No bundle exists to verify"))
+    monkeypatch.setattr(bootstrap, "validate_configuration", lambda r: pytest.fail("Must not select Yaoyao"))
+    monkeypatch.setattr(bootstrap, "ensure_no_workers", lambda: pytest.fail("Must not prepare another voice"))
+    with pytest.raises(ValueError, match="prepare it manually"):
+        bootstrap.prepare(base)
+    assert {p.relative_to(base): p.read_bytes() for p in base.rglob("*") if p.is_file()} == before
+    assert not (base / "runtime/tts/.bootstrap.lock").exists()
+    assert not (base / "runtime/evaluations").exists()
+
+
+@pytest.mark.parametrize("voice", ["../other", "/absolute", "custom/voice", ""])
+def test_selected_voice_must_be_a_safe_id_before_bundle_lookup(bootstrap, root, monkeypatch, voice):
+    base, bundle = root
+    path = base / "runtime/studio.json"
+    data = json.loads(path.read_text())
+    data["tts"]["voice_id"] = voice
+    path.write_text(json.dumps(data))
+    monkeypatch.setattr(
+        bundle, "verify_bundle", lambda *a: pytest.fail("Unsafe ID cannot reach bundle lookup")
+    )
+    with pytest.raises(ValueError, match="configured local Genie voice"):
+        bootstrap.prepare(base)
+
+
 def test_invalid_existing_bundle_is_preserved_without_rebuild(bootstrap, root, monkeypatch):
     base, bundle = root
     directory = base / "runtime/tts/genie" / bootstrap.VOICE

@@ -451,8 +451,9 @@ def prepare_runtime(root=ROOT):
     """
     root = Path(root)
     data = _small_json(_checked(root / "runtime/studio.json", root))
-    if data.get("tts", {}).get("kind") != "gpt_sovits":
-        return {"prepared": False, "reason": "local speech is not selected"}
+    speech = data.get("tts", {})
+    if speech.get("kind") != "gpt_sovits" or speech.get("local_backend", "compact") != "genie_onnx_int8":
+        return {"prepared": False, "reason": "fixed Genie speech is not selected"}
     script = _checked(root / "tools/jetson/tts/bootstrap.py", root)
     if not script.exists():
         return {"prepared": False, "reason": "legacy checkout has no generated-asset bootstrap"}
