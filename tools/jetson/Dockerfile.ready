@@ -1,0 +1,14 @@
+ARG BASE_IMAGE=tuber-studio:r36.4
+FROM ${BASE_IMAGE}
+USER root
+COPY builtin /opt/tuber-builtin
+COPY run-ready.sh /opt/tuber-launch/run-ready.sh
+RUN chmod -R a+rX /opt/tuber-builtin /opt/tuber-launch \
+    && mkdir -p /workspace/tuber/runtime \
+    && chown 65532:65532 /workspace/tuber/runtime \
+    && chmod 0700 /workspace/tuber/runtime
+VOLUME ["/workspace/tuber/runtime"]
+USER 65532:65532
+HEALTHCHECK --interval=20s --timeout=10s --start-period=180s --retries=3 \
+    CMD ["/opt/studio-venv/bin/python", "-m", "tuber_studio.portable", "--healthcheck"]
+ENTRYPOINT ["/opt/studio-venv/bin/python", "-m", "tuber_studio.portable"]

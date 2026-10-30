@@ -885,9 +885,10 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
     )
     selected_alias = settings.get("model", RESOURCES["llm2b"].alias)
     selected = next((key for key, resource in RESOURCES.items() if resource.alias == selected_alias), None)
-    manager = broker or InferenceBroker(
-        root, runner=runner, mode=profile.get("mode", "text") if local else "text", selected=selected
-    )
+    mode = profile.get("mode", "text") if local else "text"
+    if data.get("tts", {}).get("kind") in {"openai_compatible", "prerecorded"}:
+        mode = "text"
+    manager = broker or InferenceBroker(root, runner=runner, mode=mode, selected=selected)
     token = inference_token(root)
 
     @asynccontextmanager

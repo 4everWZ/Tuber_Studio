@@ -937,6 +937,33 @@ async def test_external_llm_uses_default_local_profile_without_copying_remote_wi
     await app.state.broker.close()
 
 
+@pytest.mark.parametrize("kind", ["openai_compatible", "prerecorded", None])
+async def test_factory_external_speech_starts_text_without_rewriting_live_configuration(
+    tmp_path, monkeypatch, kind
+):
+    from tuber_studio import inference
+
+    original_broker, control = setup_broker(tmp_path)
+    config = {"llm": {"model": "MiniCPM5-2B"}, "inference_broker": {"mode": "live"}}
+    if kind is not None:
+        config["tts"] = {"kind": kind}
+    path = tmp_path / "runtime/studio.json"
+    path.write_text(json.dumps(config))
+    before = path.read_bytes()
+    monkeypatch.setattr(inference, "ProcessRunner", lambda *a, **k: control)
+    monkeypatch.setattr(
+        inference,
+        "InferenceBroker",
+        lambda root, **kwargs: InferenceBroker(root, client=original_broker.client, **kwargs),
+    )
+    app = inference.create_app(tmp_path)
+    async with app.router.lifespan_context(app):
+        expected = [("start", "tts"), ("start", "llm2b")] if kind is None else [("start", "llm2b")]
+        assert control.events == expected
+        assert app.state.broker.mode == ("live" if kind is None else "text")
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize("kind", [None, "llama_cpp", "openai_compatible"])
 async def test_context_transition_reloads_actual_window_and_only_updates_its_owned_settings(tmp_path, kind):
     broker, control = setup_broker(tmp_path)
