@@ -112,7 +112,7 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 程序交付面向Jetson ARM64／L4T R36.4，默认由GitHub Actions测试并构建ARM64镜像，发布到`ghcr.io/4everwz/tuber_studio:r36.4`，同次构建提供独立run-ready.sh产物。构建SHA／版本标签或digest供固定安装和回退；发布工作流及取得镜像／启动脚本的方法由[部署指南](../guides/deployment.md)维护。本机构建仅作开发备用，不作为操作者常规更新的前置。
 
-程序镜像只包含程序、锁定依赖、固定URL／大小／SHA256清单、小型预设及Genie转换／图骨架模板；不内置推理权重、原始声音模型或生成的永久包。原生CUDA／Torch仍使程序镜像处于约14GB量级，不按排除权重推断微型体积。统一Dockerfile的program-base／ready阶段使用仅含清单和预设的ready_assets命名上下文；CI构建、发布不得依赖旧runtime、模型资产、设备连接或生产凭证。源码仓库公开不等于GHCR包已成功发布或可匿名拉取，首次发布须分别验证。
+程序镜像只包含程序、锁定依赖、固定URL／大小／SHA256清单、小型预设及Genie转换／图骨架模板；不内置推理权重、原始声音模型或生成的永久包。当前发布压缩层约6.04GiB、展开镜像约13.36GiB，仍含原生CUDA／Torch，不按排除权重推断微型体积。统一Dockerfile的program-base／ready阶段使用仅含清单和预设的ready_assets命名上下文；CI构建、发布不得依赖旧runtime、模型资产、设备连接或生产凭证。源码公开、包发布、匿名访问及设备部署分别验收；当前公开CI包与设备部署已有[交付证据](../../evaluations/results/ready-program-image-20261030.json)，不据此忽略操作者Docker daemon对GHCR／CDN的实际可达性。
 
 首次启动将[固定下载清单](../../config/jetson/downloads.json)中的MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT及NLTK下载到持久runtime，逐文件验证固定来源、字节数和SHA256，完整校验后才发布。可使用HTTPS origin形式的TUBER_HF_BASE替换HF源站，不能改变revision、关闭校验或回退到其他声音／模型。初次网络、公共源可用性和转换能力是启动前提；超时、取消或校验失败必须有界报错，不能把部分文件或半个bundle当成就绪。
 
@@ -120,7 +120,7 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 重启验证并复用已下载及生成产物，不重复下载／转换，也不覆盖已有studio.json、TTS YAML、令牌或数据库。不可变源资产或声音包身份不符时拒绝并保留原文件，不静默修补；原BERT／HuBERT checkpoint、sanitized权重、参考及NPZ保留声音身份依赖，inode和时间戳在冷启动重新建立签名。镜像不携带生产凭证、数据库、日志、普通缓存或实验环境；新数据目录独立生成私有令牌与空业务数据库。
 
-新安装默认features.live_enabled=true及inference_broker.mode=live，业务仍stopped且自动浏览／回复关闭；已有Operator配置优先。模型就绪须观察实际窗口、驻留与bundle身份，HTTP可达不算就绪，健康检查只读，不触发下载、转换或加载。全新空数据卷下载／顺序准备、真实Mini131072／q4_0与Genie合成、断网重启复用及配置／令牌／数据库保留已有[设备验收](../../evaluations/results/ready-program-image-20261030.json)，不外推为GitHub构建产物已经发布。精简镜像及显式维护新声音的流程继续保留；构建、交付与启动命令由[部署指南](../guides/deployment.md)维护，尚未完成的GHCR构建／发布／拉取由[当前计划](../plans/p0-runtime.md)维护。
+新安装默认features.live_enabled=true及inference_broker.mode=live，业务仍stopped且自动浏览／回复关闭；已有Operator配置优先。模型就绪须观察实际窗口、驻留与bundle身份，HTTP可达不算就绪，健康检查只读，不触发下载、转换或加载。全新空数据卷下载／顺序准备、真实Mini131072／q4_0与Genie合成、断网重启复用及配置／令牌／数据库保留已有[设备验收](../../evaluations/results/ready-program-image-20261030.json)；同一CI镜像已由正式启动包部署到原runtime，复用已接受的瑶瑶包并验证真实回复／音频、配置与令牌保留，业务保持停止／自动关闭。精简镜像及显式维护新声音的流程继续保留；构建、交付与启动命令由[部署指南](../guides/deployment.md)维护。
 
 工作台为本地声音计算缓存内容身份时，只可读取已配置gpt_sovits音色的assets或runtime/tts/ref内有效WAV；拒绝绝对路径、穿越、链接和其他runtime／系统文件。该专用读取不扩展通用素材路由，也不给模型或观众文件读取权限。
 

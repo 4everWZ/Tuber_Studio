@@ -1,0 +1,501 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "kind": "program_only_image_first_install_and_offline_restart",
+  "status": "ci_publication_anonymous_pull_exact_image_deployment_and_runtime_preservation_passed",
+  "hardware": {
+    "device": "Jetson 8GB ARM64 L4T R36.4",
+    "tested_source_revision": "69d8d8f",
+    "tested_program_image": "sha256:e6ea74122ba375af0e6d6c4effa8f2e365b618e0904453390f4fc3c8b7841e27",
+    "image_size_bytes": 14347685237,
+    "fresh_empty_named_volume": true,
+    "host_project_and_models_mounts": false,
+    "initial_downloads": "13 artifacts from fixed public HTTPS revisions, exact sizes and SHA256 validated",
+    "download_bytes": 2647460040,
+    "embedded_preset_bytes": 2507,
+    "initial_network": "bridge; explicit temporary operator HTTP CONNECT proxy, because direct HF origins timed out",
+    "runtime_dependency_installs": false,
+    "preparation_phases": [
+      {
+        "bootstrap_phase": "nltk",
+        "state": "completed",
+        "seconds": 9.518045358003292
+      },
+      {
+        "bootstrap_phase": "sanitize",
+        "state": "completed",
+        "seconds": 6.016003509001166
+      },
+      {
+        "bootstrap_phase": "resample",
+        "state": "completed",
+        "seconds": 0.5034167459962191
+      },
+      {
+        "bootstrap_phase": "convert",
+        "state": "completed",
+        "seconds": 5.013394039000559
+      },
+      {
+        "bootstrap_phase": "expand",
+        "state": "completed",
+        "seconds": 3.5088127159979194
+      },
+      {
+        "bootstrap_phase": "quantize",
+        "state": "completed",
+        "seconds": 51.616373323995504
+      },
+      {
+        "bootstrap_phase": "bert",
+        "state": "completed",
+        "seconds": 83.67246876400168
+      },
+      {
+        "bootstrap_phase": "reference",
+        "state": "completed",
+        "seconds": 46.60262790900015
+      },
+      {
+        "bootstrap_phase": "install",
+        "state": "completed",
+        "seconds": 23.553133137997065
+      }
+    ],
+    "preparation": {
+      "reused": false,
+      "bundle_identity": "4fd475e1e06895ae7b47c3aad7638a5c6c6a19b3d24fb86352e621294de7de47",
+      "memory": {
+        "baseline": {
+          "available_kib": 5739552,
+          "swap_used_kib": 226048,
+          "pswpin": 59463,
+          "pswpout": 446891,
+          "oom_kill": 0
+        },
+        "final": {
+          "available_kib": 5760932,
+          "swap_used_kib": 266496,
+          "pswpin": 60704,
+          "pswpout": 458556,
+          "oom_kill": 0
+        },
+        "minimum_available_kib": 1837480,
+        "swapin_bytes": 5083136,
+        "swapout_bytes": 47779840,
+        "maximum_rolling_25s_swap_bytes": 47833088,
+        "oom_kill_delta": 0,
+        "samples": 477
+      }
+    },
+    "first_boot": {
+      "ready": {
+        "ready": true,
+        "mode": "live",
+        "model": "MiniCPM5-2B",
+        "context_tokens": 131072,
+        "voice_id": "yaoyao_sovits_v2",
+        "backend": "genie_onnx_int8",
+        "bundle_identity": "4fd475e1e06895ae7b47c3aad7638a5c6c6a19b3d24fb86352e621294de7de47"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "comment_policy": {
+          "auto_browse": false,
+          "auto_reply": false,
+          "watch_videos": [],
+          "browse_interval_seconds": 300,
+          "max_replies_per_hour": 5,
+          "max_replies_per_day": 20,
+          "credentials_configured": false,
+          "last_browse_error": null,
+          "last_browse_at": null
+        }
+      },
+      "llm": {
+        "schema_valid": true,
+        "spoken_text": "太好了呀，逛海底集市可是深海浪漫的必修课啦！",
+        "input_tokens": 760,
+        "seconds": 9.811
+      },
+      "speech": {
+        "seconds": 3.84,
+        "audio_seconds": 3.28,
+        "sample_rate": 32000,
+        "bytes": 209964,
+        "wav_sha256": "195d68a56528b3889c11fd26e644014dc802f949665491aea5ea8230b7cc4eff"
+      },
+      "residency": {
+        "before": {
+          "llm2b": true,
+          "llm1b": false,
+          "llm1bq8": false,
+          "llmqwen35": false,
+          "tts": true
+        },
+        "after": {
+          "llm2b": true,
+          "llm1b": false,
+          "llm1bq8": false,
+          "llmqwen35": false,
+          "tts": true
+        },
+        "kv_cache_type": "q4_0"
+      },
+      "token_files": {
+        "admin-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        },
+        "overlay-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        },
+        "inference-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        }
+      }
+    },
+    "offline_restart": {
+      "ready": {
+        "ready": true,
+        "mode": "live",
+        "model": "MiniCPM5-2B",
+        "context_tokens": 131072,
+        "voice_id": "yaoyao_sovits_v2",
+        "backend": "genie_onnx_int8",
+        "bundle_identity": "4fd475e1e06895ae7b47c3aad7638a5c6c6a19b3d24fb86352e621294de7de47"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "comment_policy": {
+          "auto_browse": false,
+          "auto_reply": false,
+          "watch_videos": [],
+          "browse_interval_seconds": 300,
+          "max_replies_per_hour": 5,
+          "max_replies_per_day": 20,
+          "credentials_configured": false,
+          "last_browse_error": null,
+          "last_browse_at": null
+        }
+      },
+      "llm": {
+        "schema_valid": true,
+        "spoken_text": "海底集市听起来很棒！再来一碗白饭~",
+        "input_tokens": 760,
+        "seconds": 8.936
+      },
+      "speech": {
+        "seconds": 3.396,
+        "audio_seconds": 3.28,
+        "sample_rate": 32000,
+        "bytes": 209964,
+        "wav_sha256": "195d68a56528b3889c11fd26e644014dc802f949665491aea5ea8230b7cc4eff"
+      },
+      "residency": {
+        "before": {
+          "llm2b": true,
+          "llm1b": false,
+          "llm1bq8": false,
+          "llmqwen35": false,
+          "tts": true
+        },
+        "after": {
+          "llm2b": true,
+          "llm1b": false,
+          "llm1bq8": false,
+          "llmqwen35": false,
+          "tts": true
+        },
+        "kv_cache_type": "q4_0"
+      },
+      "token_files": {
+        "admin-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        },
+        "overlay-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        },
+        "inference-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        }
+      }
+    },
+    "isolation": {
+      "per_installation_credentials_differ": true,
+      "three_credentials_independent": true,
+      "image_user": "65532:65532",
+      "read_only_rootfs": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges=true"
+      ],
+      "mount_destinations": [
+        "/workspace/tuber/runtime"
+      ],
+      "network_endpoints_after_disconnect": {},
+      "restart_oom_killed": false
+    },
+    "preservation": {
+      "contents_and_modes_of_18_config_token_and_raw_asset_files_unchanged": true,
+      "token_and_immutable_mtimes_unchanged": true,
+      "studio_json_same_content_but_startup_atomic_write_updates_mtime": true,
+      "edited_retention_days_31_preserved": true,
+      "sqlite_sentinel_preserved": true,
+      "restart_network_endpoints": {},
+      "downloads_on_restart": 0,
+      "generation_phases_on_restart": 0,
+      "same_seed_speech_identical_bytes": true
+    },
+    "accepted_voice_same_seed_pcm_parity": {
+      "existing_accepted_bundle": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+      "wav_sha256": "195d68a56528b3889c11fd26e644014dc802f949665491aea5ea8230b7cc4eff",
+      "bytes": 209964,
+      "same_as_fresh_install": true
+    }
+  },
+  "ci": {
+    "workflow": ".github/workflows/ci.yml",
+    "run_url": "https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469",
+    "source_revision": "2a869285434c51da130d8afc318e1f30f64376e9",
+    "conclusion": "success",
+    "cpu_tests_passed": 638,
+    "lint_format_and_program_only_audits_passed": true,
+    "native_arm64_build_seconds": 155,
+    "publication_receipt": {
+      "image": "ghcr.io/4everwz/tuber_studio",
+      "digest": "sha256:71ec56fd59b7b9ffc513dd9587a6b47e94a60a2fd702516a05dcb06e0274d5c5",
+      "pull_reference": "ghcr.io/4everwz/tuber_studio@sha256:71ec56fd59b7b9ffc513dd9587a6b47e94a60a2fd702516a05dcb06e0274d5c5",
+      "tags": [
+        "ghcr.io/4everwz/tuber_studio:sha-2a869285434c51da130d8afc318e1f30f64376e9",
+        "ghcr.io/4everwz/tuber_studio:r36.4",
+        "ghcr.io/4everwz/tuber_studio:latest"
+      ],
+      "source_revision": "2a869285434c51da130d8afc318e1f30f64376e9",
+      "run_url": "https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469",
+      "platform": "linux/arm64",
+      "build_record": "builder-08e78e13-d229-4486-94d3-b9f9614140f6/builder-08e78e13-d229-4486-94d3-b9f9614140f60/n1g8q2mdn78v5c9h3tztb0tqv",
+      "scope": "CI build/export and program-image file contracts; no GPU/voice/128K hardware acceptance run",
+      "hardware_acceptance_verified": false,
+      "anonymous_registry_pull_verified": false,
+      "runtime_downloads_or_model_execution_performed": false
+    },
+    "artifact_url": "https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469/artifacts/12949948299",
+    "program_contract": {
+      "program_only": true,
+      "embedded_presets": [
+        "studio.json",
+        "tts/tts_infer.yaml"
+      ],
+      "embedded_bytes": 2507,
+      "download_artifact_count": 13,
+      "download_bytes": 2647460040,
+      "download_destinations": [
+        "models/MiniCPM5-2B-Q4_K_M.gguf",
+        "nltk_data/corpora/cmudict.zip",
+        "nltk_data/taggers/averaged_perceptron_tagger.zip",
+        "nltk_data/taggers/averaged_perceptron_tagger_eng.zip",
+        "tts/pretrained/chinese-hubert-base/config.json",
+        "tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+        "tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+        "tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "tts/sources/gpt-original.ckpt",
+        "tts/sources/reference-original.wav",
+        "tts/sources/sovits-original.pth"
+      ],
+      "model_weights_embedded_in_builtin": false,
+      "credentials_embedded_in_builtin": false,
+      "gpu_or_voice_acceptance_verified": false,
+      "scope": "generated named build context; no model downloads or CUDA execution"
+    },
+    "runner_preflight": {
+      "passed": true,
+      "architecture": "aarch64",
+      "minimum_free_bytes": 42949672960,
+      "runner_environment": "github-hosted",
+      "cleaned_sdk_paths": [],
+      "free_before_bytes": {
+        "/home/runner/work/Tuber_Studio/Tuber_Studio": 114232242176,
+        "/var/lib/docker": 114232242176
+      },
+      "free_after_bytes": {
+        "/home/runner/work/Tuber_Studio/Tuber_Studio": 114232242176,
+        "/var/lib/docker": 114232242176
+      }
+    },
+    "anonymous_index_manifest_status": 200,
+    "anonymous_pull_completed_on_device": true
+  },
+  "evidence_limits": [
+    "Initial empty-volume download/conversion and disconnected restart used the local program image at69d8d8f. The final638-test CI image at2a86928 was separately pulled by exact digest and exercised on the preserved production runtime with its accepted voice bundle.",
+    "The fresh generated bundle has a different source/serialization identity; same-seed fixture WAV bytes match the accepted original and final CI runtime. One fixture does not establish a new broad subjective voice-quality score.",
+    "No new100-sentence stress run,120K-prefill or prolonged platform test: unchanged model/voice algorithms were outside this packaging verification.",
+    "Initial preparation disk peak and RAM covering downloads were not sampled; the memory summary covers sequential conversion/reference/install phases.",
+    "Direct regional GHCR CDN transfers retried. A temporary read-only proxy transported unchanged public CI image bytes; Docker daemon and system DNS were not modified. Normal first installation requires Docker network access to GHCR/CDN and public model sources."
+  ],
+  "ci_deployment": {
+    "identity": {
+      "index_digest": "sha256:71ec56fd59b7b9ffc513dd9587a6b47e94a60a2fd702516a05dcb06e0274d5c5",
+      "platform_digest": "sha256:51e3da88c26bc6d0c6553f78f8a76e1c213fb89098a48ed8fc64696a47682bd2",
+      "config_digest": "sha256:15f71ac8f89733c980267f1fe9aaf7858f247241195964c45bc4958b2b6618d0",
+      "compressed_layer_bytes": 6482112185,
+      "layers": 79
+    },
+    "actual_image_id": "sha256:15f71ac8f89733c980267f1fe9aaf7858f247241195964c45bc4958b2b6618d0",
+    "actual_image_size_bytes": 14347651846,
+    "image_and_source_labels_match_ci": true,
+    "image_download": "CI-built OCI bytes; temporary read-only LAN/localhost transport for blocked CDN layers, with Docker digest verification; canonical GHCR digest pull then completed using cached layers. No local image build or repackaging.",
+    "launcher_sha256": "b6767d2a8265149bd415d14aeaa1ba221082975c93a3e4cfb6ebf113b2c7a60f",
+    "exact_ci_artifact_launcher_used": true,
+    "initialization": {
+      "copied": [
+        "tts/sources/gpt-original.ckpt",
+        "tts/sources/sovits-original.pth",
+        "tts/sources/reference-original.wav"
+      ],
+      "preserved": [
+        "models/MiniCPM5-2B-Q4_K_M.gguf",
+        "tts/pretrained/chinese-roberta-wwm-ext-large/pytorch_model.bin",
+        "tts/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "tts/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "tts/pretrained/chinese-hubert-base/pytorch_model.bin",
+        "tts/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "tts/pretrained/chinese-hubert-base/config.json",
+        "nltk_data/corpora/cmudict.zip",
+        "nltk_data/taggers/averaged_perceptron_tagger_eng.zip",
+        "nltk_data/taggers/averaged_perceptron_tagger.zip",
+        "studio.json",
+        "tts/tts_infer.yaml"
+      ],
+      "created_credentials": []
+    },
+    "existing_bundle_reused": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8",
+    "credentials_created_on_upgrade": 0,
+    "credentials_preserved": true,
+    "settings_content_preserved": true,
+    "business": {
+      "state": "stopped",
+      "queue_length": 0,
+      "current_job": null,
+      "comment_policy": {
+        "auto_browse": false,
+        "auto_reply": false,
+        "watch_videos": [],
+        "browse_interval_seconds": 300,
+        "max_replies_per_hour": 5,
+        "max_replies_per_day": 20,
+        "credentials_configured": false,
+        "last_browse_error": null,
+        "last_browse_at": null
+      }
+    },
+    "probe": {
+      "ready": {
+        "ready": true,
+        "mode": "live",
+        "model": "MiniCPM5-2B",
+        "context_tokens": 131072,
+        "voice_id": "yaoyao_sovits_v2",
+        "backend": "genie_onnx_int8",
+        "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8"
+      },
+      "business": {
+        "state": "stopped",
+        "queue_length": 0,
+        "current_job": null,
+        "comment_policy": {
+          "auto_browse": false,
+          "auto_reply": false,
+          "watch_videos": [],
+          "browse_interval_seconds": 300,
+          "max_replies_per_hour": 5,
+          "max_replies_per_day": 20,
+          "credentials_configured": false,
+          "last_browse_error": null,
+          "last_browse_at": null
+        }
+      },
+      "llm": {
+        "schema_valid": true,
+        "spoken_text": "深海思考中，一起逛海底集市吗？",
+        "input_tokens": 760,
+        "seconds": 9.153
+      },
+      "speech": {
+        "seconds": 3.692,
+        "audio_seconds": 3.28,
+        "sample_rate": 32000,
+        "bytes": 209964,
+        "wav_sha256": "195d68a56528b3889c11fd26e644014dc802f949665491aea5ea8230b7cc4eff"
+      },
+      "residency": {
+        "before": {
+          "llm2b": true,
+          "llm1b": false,
+          "llm1bq8": false,
+          "llmqwen35": false,
+          "tts": true
+        },
+        "after": {
+          "llm2b": true,
+          "llm1b": false,
+          "llm1bq8": false,
+          "llmqwen35": false,
+          "tts": true
+        },
+        "kv_cache_type": "q4_0"
+      },
+      "token_files": {
+        "admin-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        },
+        "overlay-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        },
+        "inference-token": {
+          "bytes": 43,
+          "mode": "0o600"
+        }
+      }
+    },
+    "docker_healthy": true,
+    "runtime_user": "1001:1001",
+    "read_only_rootfs": true,
+    "cap_drop": [
+      "ALL"
+    ],
+    "security_opt": [
+      "no-new-privileges=true"
+    ],
+    "pids_limit": 256,
+    "port_bindings": {
+      "9020/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "9020"
+        }
+      ]
+    },
+    "model_mounts_readonly": true,
+    "host_docker_socket_mounted": false,
+    "rollback_image_retained": "sha256:8fe181d2fc34e26790ff3b3a3f54d8524c209d06a9eba7f874db02baf7df8d97",
+    "windows_workbench_http_status": 200,
+    "temporary_test_installation_removed": true,
+    "temporary_download_helpers_stopped": true
+  }
+}

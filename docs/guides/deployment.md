@@ -36,15 +36,19 @@
 
 ### 程序镜像：首次启动下载与准备
 
-目标硬件为Jetson ARM64／L4T R36.4及已配置的Docker／NVIDIA容器运行时，不是Windows／x86镜像。默认发行入口为GitHub Actions构建的`ghcr.io/4everwz/tuber_studio:r36.4`；程序镜像只含程序、锁定依赖、Genie转换／图骨架模板、固定URL／大小／SHA256清单和小型预设，不内置Mini、原始声音权重、BERT／HuBERT checkpoint或生成的永久音色包。原生CUDA／Torch等基础依赖使本地程序镜像仍约14GB量级；镜像大小、传输体积和首次准备的磁盘峰值须分别核算，不以“未带权重”冒称微型镜像。
+目标硬件为Jetson ARM64／L4T R36.4及已配置的Docker／NVIDIA容器运行时，不是Windows／x86镜像。默认发行入口为GitHub Actions构建的`ghcr.io/4everwz/tuber_studio:r36.4`；程序镜像只含程序、锁定依赖、Genie转换／图骨架模板、固定URL／大小／SHA256清单和小型预设，不内置Mini、原始声音权重、BERT／HuBERT checkpoint或生成的永久音色包。本次发布压缩层总计6,482,112,185字节（约6.04GiB），展开镜像14,347,651,846字节（约13.36GiB），主要仍是原生CUDA／Torch等依赖；首次准备的磁盘峰值另计，不以“未带权重”冒称微型镜像。
 
-常规更新由[公开仓库](https://github.com/4everWZ/Tuber_Studio)的[CI工作流](../../.github/workflows/ci.yml)完成测试和ARM64程序镜像构建，发布到GHCR；不在运行设备上重建镜像。push、PR及手动运行执行测试；main push、v*标签及手动运行可构建／发布镜像，PR不发布。发布job使用限定的packages:write和GITHUB_TOKEN，不要求另配PAT。首次实际Actions运行、GHCR发布与匿名拉取尚待触发／验证，不能将工作流文件存在当成已经发布成功。
+常规更新由[公开仓库](https://github.com/4everWZ/Tuber_Studio)的[CI工作流](../../.github/workflows/ci.yml)完成测试和ARM64程序镜像构建，发布到GHCR；不在运行设备上重建镜像。push、PR及手动运行执行测试；main push、v*标签及手动运行可构建／发布镜像，PR不发布。发布job使用限定的packages:write和GITHUB_TOKEN，不要求另配PAT。[已完成的发布](https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469)通过638项测试与镜像构建／发布，源码2a869285434c51da130d8afc318e1f30f64376e9；匿名标签／索引清单读取及同一CI镜像在设备的真实部署已验证，完整条件见[交付证据](../../evaluations/results/ready-program-image-20261030.json)。
 
-从同一次成功发布的[Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载`jetson-program-<commit前12位>`产物，将根目录的run-ready.sh解压到本机目录；同级image-evidence.json和program-contract.json提供该次镜像与程序交付信息。以拥有Docker权限的普通数据所有者执行，数据目录应专用于本应用：
+CI须能读取基础包`ghcr.io/4everwz/jetson-llama-cpp`，当前该包公开。若后续改为private，包所有者须在Manage Actions access中添加构建仓库并授予Read；目标应用镜像的packages:write不会自动授予其他基础包的读取权。基础包拉取403时先核对可见性与读取授权，不删掉基础组件或换未核验底座绕过。
+
+从同一次成功发布的[Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载`jetson-program-<commit前12位>`产物；[当前已验证的启动包](https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469/artifacts/12949948299)可直接取得。将根目录的run-ready.sh解压到本机目录；同级image-evidence.json和program-contract.json提供该次镜像与程序交付信息。以拥有Docker权限的普通数据所有者执行，数据目录应专用于本应用：
 
     bash run-ready.sh --data ./tuber-data
 
-GHCR包首次发布默认可能是private，公开源码仓库不会自动保证包公开。维护者首次发布后须在GitHub包设置将tuber_studio设为public，并实际核验匿名拉取；保留private时，操作者须先按GitHub权限策略完成docker login ghcr.io。Actions发布使用的GITHUB_TOKEN不是分发给操作者的登录令牌。首次发布与匿名拉取当前均未验收。
+当前GHCR应用包已公开，匿名标签／索引清单读取返回200。后续新包仍须核对可见性，公开源码仓库不会自动保证包公开；若保留private，操作者须先按GitHub权限策略完成docker login ghcr.io。Actions发布使用的GITHUB_TOKEN不是分发给操作者的登录令牌。
+
+镜像首次拉取或更新要求宿主Docker daemon能访问GHCR及其层CDN，包括DNS、HTTPS和大文件传输；仅清单可达不证明全部层可顺利下载。`TUBER_DOWNLOAD_PROXY`只作用于容器内模型资源下载，不配置Docker daemon的镜像下载网络。本项目不附带临时registry转发器，也不由启动脚本修改宿主daemon网络；如镜像拉取失败，应由操作者先恢复其Docker网络再运行启动器。
 
 脚本默认`ghcr.io/4everwz/tuber_studio:r36.4`，本地缺少该引用时自动拉取，并只解析一次镜像ID，初始化与正式容器使用同一个ID。已有本地标签不会因此自动更新；要更新r36.4，先显式拉取，再替换本项目容器：
 
@@ -70,7 +74,7 @@ GHCR包首次发布默认可能是private，公开源码仓库不会自动保证
     docker inspect --format '{{.State.Health.Status}}' tuber-studio
     docker logs --tail 80 tuber-studio
 
-初始化下载／准备阶段通过启动终端、容器日志及数据目录的portable-status.json报告进度和失败；此时后台可能尚未启动。资源加载阶段后台可达也不代表模型就绪，失败须显示资源错误。新空数据目录的首次下载、转换、冷启动和重启复用尚待设备验收，见[当前计划](../plans/p0-runtime.md)；原设备声音、128K及100句结果不替代交付流程验收。
+初始化下载／准备阶段通过启动终端、容器日志及数据目录的portable-status.json报告进度和失败；此时后台可能尚未启动。资源加载阶段后台可达也不代表模型就绪，失败须显示资源错误。[程序镜像设备验收](../../evaluations/results/ready-program-image-20261030.json)已验证独立空named volume、默认非root UID、无宿主项目模型挂载下的公共资源下载与顺序准备、Mini实际131072／q4_0和Genie真实合成；断开全部网络后重启不重新下载／转换，配置、私有令牌与SQLite数据保留。正式设备随后用本次CI启动包的run-ready.sh替换为同一CI镜像，复用已接受的瑶瑶包并再次通过真实LLM／WAV验证，三类令牌和配置内容保持，业务stopped、队列空、自动策略关闭；先前已验镜像仍保留作回退，身份见交付证据。studio.json原子重写的mtime变化不表示配置内容覆盖；31天留存仅为独立测试卷的保留性测试，默认仍为30天。
 
 重复启动使用同一数据目录，已验证资产复用。替换现有同名容器须显式传--replace，且只允许绑定该数据目录的本项目容器；需要重新准备音色时必须先受控停止该项目LLM／TTS，不能边运行旧模型边转换。日常停止／重启使用docker stop／docker start，不删除数据目录。直接docker run同样使用镜像内portable入口及固定/workspace/tuber/runtime卷；独立脚本提供完整的权限、初始化和挂载参数。
 
