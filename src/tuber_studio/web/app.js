@@ -11,6 +11,11 @@ const model = {
   threadContextPending: null,
   retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
   providersDirty: false, providersSaving: false,
+  dynamicPolicy: null, dynamicPolicyDirty: false, dynamicSaving: false, dynamicEvaluating: false,
+  dynamicPosts: [], dynamicDecisions: [], dynamicMemories: [], dynamicPostId: null, dynamicPostDirty: false,
+  dynamicPostPending: false, dynamicMemorySaving: new Set(),
+  dynamicListsLoaded: false,
+  dynamicMemorySummary: null,
 };
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
@@ -22,6 +27,7 @@ const names = {
   publish_uncertain: "发布结果待核对", publish_failed: "发布失败", question: "问题",
   suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
   gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示", llama_cpp: "llama.cpp",
+  invalidated: "已失效", post: "生成动态", wait: "等待", role_story: "虚构角色故事",
 };
 function label(value) { return names[value] || value || "—"; }
 function display(value) { return value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); }
@@ -86,6 +92,8 @@ async function busy(button, action) {
     if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
     if (button.id === "preview-submit") renderVoicePreview();
     if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) renderDraft();
+    if (["approve-dynamic", "reject-dynamic", "publish-dynamic"].includes(button.id)) renderDynamicPost();
+    if (["save-dynamic-policy", "stop-dynamics", "evaluate-dynamics"].includes(button.id)) renderDynamicPolicy();
   }
 }
 function showLogin() {
@@ -189,6 +197,7 @@ function renderStatus(status) {
   renderCharacterImage(); renderControls();
   renderContext(status.context);
   renderInference(status.inference); renderVoicePreview();
+  if (model.dynamicPolicy) renderDynamicPolicy();
 }
 function resourceMode(inference) {
   if (inference?.mode === "exclusive") return "text";
@@ -760,14 +769,203 @@ async function loadPopularVideos() {
   });
   $("refresh-videos").textContent = "收起热门视频";
 }
+function boundedInteger(id, title, minimum, maximum) {
+  const value = Number($(id).value);
+  if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`${title}须为 ${minimum} 至 ${maximum} 的整数。`);
+  return value;
+}
+function renderDynamicPolicy() {
+  const policy = model.dynamicPolicy;
+  $("dynamic-policy-fields").disabled = !policy || model.dynamicSaving;
+  $("save-dynamic-policy").disabled = !policy || model.dynamicSaving || !model.dynamicPolicyDirty;
+  $("stop-dynamics").disabled = !policy?.enabled || model.dynamicSaving;
+  $("evaluate-dynamics").disabled = !policy || model.dynamicEvaluating || model.dynamicSaving;
+  $("evaluate-dynamics").setAttribute("aria-busy", String(model.dynamicEvaluating));
+  $("save-dynamic-policy").setAttribute("aria-busy", String(model.dynamicSaving));
+  if (!policy) return;
+  $("dynamic-mode").textContent = !policy.enabled ? "运营已停止" : policy.auto_publish ? "运营中 · 自动发布" : "运营中 · 人工审核";
+  $("dynamic-mode").className = `badge ${policy.enabled ? "active" : ""}`;
+  const character = model.status?.character;
+  describe($("dynamic-policy-status"), [["当前角色", character ? `${character.name} · v${character.version}` : "未报告"], ["共用B站账号", policy.credentials_configured ? "已配置（不回显）" : "未配置，可手动生成草稿"], ["下次评估（当地时间）", localDateTime(policy.next_evaluation_at)], ["退避至（当地时间）", localDateTime(policy.backoff_until)], ["最近错误", policy.last_error || "无"], ["表单", model.dynamicPolicyDirty ? "有未保存修改" : "显示已保存策略"]]);
+}
+function localDateTime(value) {
+  if (value == null) return "—";
+  const date = new Date(typeof value === "number" ? value * 1000 : value);
+  return Number.isNaN(date.getTime()) ? display(value) : date.toLocaleString("zh-CN", {hour12: false});
+}
+function dynamicPolicyFromServer(policy) {
+  model.dynamicPolicy = policy;
+  if (!model.dynamicPolicyDirty) {
+    $("dynamic-enabled").checked = !!policy.enabled;
+    $("dynamic-auto-publish").checked = policy.auto_publish !== false;
+    $("dynamic-evaluate-interval").value = policy.evaluate_interval_seconds ?? 1800;
+    $("dynamic-min-post-interval").value = policy.min_post_interval_seconds ?? 21600;
+    $("dynamic-max-posts").value = policy.max_posts_per_day ?? 2;
+    $("dynamic-memory-summary-max").value = policy.memory_summary_max_tokens ?? 2048;
+  }
+  renderDynamicPolicy();
+}
+function appendDynamicSources(container, sources) {
+  container.replaceChildren();
+  if (!Array.isArray(sources) || !sources.length) { container.append(node("p", "暂无可展示的来源原文。", "hint")); return; }
+  sources.forEach(source => {
+    const entry = node("div", null, "dynamic-source");
+    entry.append(node("strong", `${source.fictional ? "虚构角色故事" : "公开来源"} · ${source.type || "来源"} · ${source.id || "—"}`));
+    entry.append(node("p", source.text || "未返回来源文字。"));
+    if (source.original_comment) entry.append(node("p", `原评论：${display(source.original_comment)}`, "hint"));
+    if (source.source_url) {
+      try {
+        const url = new URL(source.source_url);
+        if (url.protocol === "https:") { const link = node("a", "打开来源"); link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer"; entry.append(link); }
+      } catch { /* Source text remains visible without an unsafe or invalid link. */ }
+    }
+    container.append(entry);
+  });
+}
+function renderDynamicPosts() {
+  const body = $("dynamic-posts"); $("dynamic-count").textContent = `${model.dynamicPosts.length} 条`;
+  if (!model.dynamicPosts.length) empty(body, 3, "暂无动态。可先评估并生成一份待审核草稿。");
+  else {
+    body.replaceChildren();
+    model.dynamicPosts.forEach(post => {
+      const row = node("tr", null, post.id === model.dynamicPostId ? "selected-row" : "");
+      cell(row, localDateTime(post.created_at), `${post.character_id} · v${post.character_version}`);
+      const button = node("button", post.content || "查看动态", "comment-link");
+      button.onclick = () => {
+        if (model.dynamicPostDirty && post.id !== model.dynamicPostId && !confirm("动态有未保存修改。放弃修改并选择另一条？")) return;
+        if (post.id !== model.dynamicPostId) model.dynamicPostDirty = false;
+        model.dynamicPostId = post.id; renderDynamicPosts();
+      };
+      cell(row, button); cell(row, badge(post.status)); body.append(row);
+    });
+  }
+  renderDynamicPost();
+}
+function renderDynamicPost() {
+  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
+  const editable = !!post && ["pending_review", "approved"].includes(post.status);
+  if (post) setBadge($("dynamic-post-status"), post.status);
+  else { $("dynamic-post-status").className = "badge"; $("dynamic-post-status").textContent = "选择动态"; }
+  $("dynamic-post-text").disabled = !editable || model.dynamicPostPending;
+  if (!model.dynamicPostDirty) $("dynamic-post-text").value = post?.content || "";
+  $("approve-dynamic").disabled = !editable || model.dynamicPostPending;
+  $("reject-dynamic").disabled = !editable || model.dynamicPostPending;
+  $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || !model.dynamicPolicy?.credentials_configured;
+  describe($("dynamic-post-meta"), post ? [["动态ID", post.id], ["角色", `${post.character_id} · v${post.character_version}`], ["模型", post.model], ["决策原因", post.reason || "未报告"], ["发布时间（当地时间）", localDateTime(post.published_at)]] : []);
+  appendDynamicSources($("dynamic-post-sources"), post?.sources);
+  $("dynamic-post-receipt").textContent = JSON.stringify(publicSettings({receipt: post?.receipt ?? null, error: post?.error ?? null}), null, 2);
+  $("dynamic-post-note").textContent = !post ? "从列表选择动态，查看来源、决策与平台回执。" : model.dynamicPostDirty ? "有未保存修改；审核通过后保存，再发布。" : post.error ? `平台操作未完成：${post.error}` : post.status === "publish_uncertain" ? "发布结果不确定，请核对平台回执；不会自动重发。" : post.status === "published" ? "已发布，平台回执见下方。" : !model.dynamicPolicy?.credentials_configured ? "未配置B站账号；可生成和审核草稿，发布前请到评论设置配置凭证。" : "手动评估生成的草稿始终保留人工审核，后台不会补发。";
+  $("dynamic-post-note").classList.toggle("error-text", !!post?.error || post?.status === "publish_uncertain");
+}
+function renderDynamicDecisions() {
+  const body = $("dynamic-decisions");
+  if (!model.dynamicDecisions.length) return empty(body, 4, "暂无评估决策。手动评估或开启运营后查看。");
+  body.replaceChildren();
+  model.dynamicDecisions.forEach(decision => {
+    const row = node("tr"); cell(row, localDateTime(decision.created_at), `${decision.character_id} · v${decision.character_version}${decision.manual ? " · 手动" : " · 后台"}`);
+    cell(row, badge(decision.action), label(decision.status)); cell(row, decision.reason || "未报告", decision.error || "");
+    const details = node("details"); details.append(node("summary", `来源 ${list(decision.sources).length} 条`));
+    const sources = node("div"); appendDynamicSources(sources, decision.sources); details.append(sources); cell(row, details); body.append(row);
+  });
+}
+function renderDynamicMemories() {
+  if (model.dynamicMemorySaving.size) return;
+  const body = $("dynamic-memories");
+  if (!model.dynamicMemories.length) return empty(body, 3, "当前角色暂无可选择的来源记忆；已发布回复无需手动授权。");
+  body.replaceChildren();
+  model.dynamicMemories.forEach(memory => {
+    const row = node("tr"), check = node("input"); check.type = "checkbox"; check.checked = !!memory.public;
+    check.setAttribute("aria-label", `允许记忆 ${memory.id} 用于公开动态`);
+    check.onchange = async () => {
+      const before = !!memory.public; model.dynamicMemorySaving.add(memory.id); check.disabled = true;
+      try {
+        await api(`/api/dynamics/memories/${encodeURIComponent(memory.id)}`, {method: "PUT", body: {public: check.checked}});
+        memory.public = check.checked;
+        $("dynamic-memory-state").textContent = check.checked ? "已允许该记忆用于公开动态。" : "已撤销该记忆的后续公开使用；已发布内容保留原回执。";
+        $("dynamic-memory-state").classList.remove("error-text");
+      } catch (error) {
+        check.checked = before; $("dynamic-memory-state").textContent = `授权保存失败：${safeMessage(error.message)}`;
+        $("dynamic-memory-state").classList.add("error-text");
+      } finally { model.dynamicMemorySaving.delete(memory.id); check.disabled = false; }
+    };
+    cell(row, check); cell(row, memory.text, `${memory.character_id} · v${memory.character_version} · ${memory.id}`);
+    cell(row, memory.fictional || memory.kind === "role_story" ? "虚构角色故事" : label(memory.kind), localDateTime(memory.created_at)); body.append(row);
+  });
+}
+function renderDynamicMemorySummary(summary) {
+  const state = $("dynamic-summary-valid");
+  state.textContent = summary.valid ? "有效" : "待更新";
+  state.className = `badge ${summary.valid ? "good" : ""}`;
+  describe($("dynamic-summary-meta"), [["角色", summary.character_id ? `${summary.character_id} · v${summary.character_version}` : "未报告"], ["实际用量 / 摘要上限", `${tokenCount(summary.token_count)} / ${tokenCount(summary.max_tokens)}`], ["最近更新（当地时间）", localDateTime(summary.updated_at)]]);
+  $("dynamic-summary-state").textContent = summary.valid ? "当前有效摘要供运营评估使用；原文保留在来源核对中。" : "尚无有效摘要或来源／策略已变化；下次评估将更新摘要。";
+  const body = $("dynamic-summary-entries"), entries = list(summary.entries);
+  if (!entries.length) { empty(body, 3, "暂无运营记忆摘要摘录。公开来源就绪后评估生成。"); return; }
+  body.replaceChildren();
+  entries.forEach(entry => {
+    const row = node("tr"); cell(row, entry.source_id || "未返回来源ID"); cell(row, entry.quote || "未返回摘录");
+    cell(row, entry.fictional ? "虚构角色故事" : "公开互动摘录"); body.append(row);
+  });
+}
+async function refreshDynamics() {
+  const [policy, posts, decisions, memories, summary] = await Promise.all([api("/api/dynamics/policy"), api("/api/dynamics/posts"), api("/api/dynamics/decisions"), api("/api/dynamics/memories?limit=100"), api("/api/dynamics/memory-summary")]);
+  const first = !model.dynamicListsLoaded;
+  const credentialsChanged = model.dynamicPolicy?.credentials_configured !== policy.credentials_configured;
+  dynamicPolicyFromServer(policy);
+  if (first || JSON.stringify(model.dynamicPosts) !== JSON.stringify(list(posts))) {
+    model.dynamicPosts = list(posts); renderDynamicPosts();
+  } else if (credentialsChanged) renderDynamicPost();
+  if (first || JSON.stringify(model.dynamicDecisions) !== JSON.stringify(list(decisions))) {
+    model.dynamicDecisions = list(decisions); renderDynamicDecisions();
+  }
+  if (!model.dynamicMemorySaving.size && (first || JSON.stringify(model.dynamicMemories) !== JSON.stringify(list(memories)))) {
+    model.dynamicMemories = list(memories); renderDynamicMemories();
+  }
+  if (JSON.stringify(model.dynamicMemorySummary) !== JSON.stringify(summary)) {
+    model.dynamicMemorySummary = summary; renderDynamicMemorySummary(summary);
+  }
+  model.dynamicListsLoaded = true;
+}
+async function saveDynamicPolicy(stop = false) {
+  if (model.dynamicSaving) return;
+  const payload = stop ? {enabled: false} : {
+    enabled: $("dynamic-enabled").checked, auto_publish: $("dynamic-auto-publish").checked,
+    evaluate_interval_seconds: boundedInteger("dynamic-evaluate-interval", "动态评估间隔", 300, 86400),
+    min_post_interval_seconds: boundedInteger("dynamic-min-post-interval", "最短发布间隔", 21600, 604800),
+    max_posts_per_day: boundedInteger("dynamic-max-posts", "每日动态数", 1, 2),
+    memory_summary_max_tokens: boundedInteger("dynamic-memory-summary-max", "运营记忆摘要长度", 256, 4096),
+  };
+  model.dynamicSaving = true; renderDynamicPolicy();
+  try {
+    const policy = await api("/api/dynamics/policy", {method: "PUT", body: payload});
+    if (stop) $("dynamic-enabled").checked = false;
+    else model.dynamicPolicyDirty = false;
+    dynamicPolicyFromServer(policy);
+    $("dynamic-policy-state").classList.remove("error-text");
+    $("dynamic-policy-state").textContent = !policy.enabled ? "动态运营已停止；已发布请求以平台回执为准。" : policy.auto_publish ? "运营已开启，后台评估可直接发布；手动评估仍只生成草稿。" : "运营已开启，所有新动态保留人工审核。";
+    notice($("dynamic-policy-state").textContent);
+  } catch (error) {
+    $("dynamic-policy-state").textContent = `策略保存失败：${safeMessage(error.message)}。输入已保留。`;
+    $("dynamic-policy-state").classList.add("error-text"); throw error;
+  } finally { model.dynamicSaving = false; renderDynamicPolicy(); }
+}
+async function reviewDynamic(action) {
+  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
+  if (!post || model.dynamicPostPending) return;
+  model.dynamicPostPending = true; renderDynamicPost();
+  try {
+    await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/review`, {method: "POST", body: {action, text: $("dynamic-post-text").value}});
+    model.dynamicPostDirty = false; await refreshDynamics();
+    $("dynamic-post-note").textContent = action === "approve" ? "审核已保存，尚未手动发布。" : "动态已拒绝。";
+  } finally { model.dynamicPostPending = false; renderDynamicPost(); }
+}
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
-  model.page = ["comments", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
+  model.page = ["comments", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
   document.querySelectorAll("[data-section]").forEach(section => { section.hidden = section.dataset.section !== model.page; });
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page; link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
-  document.title = `${({comments: "评论工作台", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材", settings: "设置"})[model.page]} · Tuber Studio`;
+  document.title = `${({comments: "评论工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await refreshComments(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await loadRetention(); }
+  try { if (model.page === "comments") await refreshComments(); else if (model.page === "dynamics") await refreshDynamics(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await loadRetention(); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {
@@ -777,6 +975,7 @@ async function poll() {
     renderStatus(await api("/api/status"));
     if (["overview", "live"].includes(model.page)) await refreshLive();
     if (model.page === "comments") await refreshComments();
+    if (model.page === "dynamics") await refreshDynamics();
   } catch (error) { $("connection").textContent = "连接失败，等待重试"; if (error.status !== 401) notice(error.message, true); }
   finally { model.polling = false; }
 }
@@ -999,6 +1198,42 @@ $("comment-policy-form").onsubmit = event => {
 $("stop-auto-reply").onclick = () => busy($("stop-auto-reply"), async () => {
   await api("/api/comments/policy", {method: "PUT", body: {auto_reply: false}}); await loadPolicy(); notice("自动回复已停止。已提交给平台的请求以回执为准。");
 });
+$("dynamic-policy-form").addEventListener("input", () => { model.dynamicPolicyDirty = true; renderDynamicPolicy(); });
+$("dynamic-policy-form").addEventListener("change", () => { model.dynamicPolicyDirty = true; renderDynamicPolicy(); });
+$("dynamic-policy-form").onsubmit = event => { event.preventDefault(); busy($("save-dynamic-policy"), () => saveDynamicPolicy()); };
+$("stop-dynamics").onclick = () => busy($("stop-dynamics"), () => saveDynamicPolicy(true));
+$("refresh-dynamics").onclick = () => busy($("refresh-dynamics"), refreshDynamics);
+$("evaluate-dynamics").onclick = () => busy($("evaluate-dynamics"), async () => {
+  if (model.dynamicEvaluating || !model.dynamicPolicy) return;
+  model.dynamicEvaluating = true; renderDynamicPolicy();
+  $("dynamic-policy-state").classList.remove("error-text");
+  $("dynamic-policy-state").textContent = "正在评估当前角色的公开来源，手动评估不会自动发布…";
+  notice("");
+  try {
+    const result = await api("/api/dynamics/evaluate", {method: "POST", body: {}});
+    await refreshDynamics();
+    if (result.post_id != null && !model.dynamicPostDirty) { model.dynamicPostId = result.post_id; renderDynamicPosts(); }
+    $("dynamic-policy-state").textContent = result.action === "wait" ? `本轮决定等待：${result.reason || "当前没有适合发布的内容。"}` : result.action === "error" ? `评估未完成：${result.error || result.reason || "请查看决策记录。"}` : "评估完成；生成的草稿等待人工审核，不会由后台补发。";
+    $("dynamic-policy-state").classList.toggle("error-text", result.action === "error");
+  } catch (error) {
+    $("dynamic-policy-state").textContent = `评估失败：${safeMessage(error.message)}。可查看已保留的决策与错误。`;
+    $("dynamic-policy-state").classList.add("error-text"); throw error;
+  } finally { model.dynamicEvaluating = false; renderDynamicPolicy(); }
+});
+$("dynamic-post-text").oninput = () => { model.dynamicPostDirty = true; renderDynamicPost(); };
+$("approve-dynamic").onclick = () => busy($("approve-dynamic"), () => reviewDynamic("approve"));
+$("reject-dynamic").onclick = () => busy($("reject-dynamic"), () => reviewDynamic("reject"));
+$("publish-dynamic").onclick = () => busy($("publish-dynamic"), async () => {
+  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
+  if (!post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending) return;
+  model.dynamicPostPending = true; renderDynamicPost();
+  try {
+    await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, {method: "POST"});
+    await refreshDynamics();
+  } catch (error) {
+    await refreshDynamics().catch(() => {}); notice(`动态发布未完成：${safeMessage(error.message)}，请核对平台回执。`, true);
+  } finally { model.dynamicPostPending = false; renderDynamicPost(); }
+});
 async function compactContext(scope, videoId, threadId) {
   if (scope === "comments" && (!videoId || !threadId)) throw new Error("请先选择要压缩的视频与单个楼ID；不同楼上下文不会合并。");
   const payload = {scope, ...(scope === "comments" ? {video_id: videoId, thread_id: threadId} : {})};
@@ -1055,7 +1290,7 @@ $("retention-preview").onclick = () => retentionAction("preview", async () => {
   if (result.cutoff == null) throw new Error("服务未返回清理截止时间，请指定日期后重新预览。");
   model.retentionPreview = {signature, cutoff: result.cutoff};
   $("retention-preview-cutoff").textContent = `删除时间早于 ${result.cutoff} 的适用记录（UTC，边界不包含）。`;
-  const countLabels = {context_windows: "上下文窗口", grounded_memory: "来源检索索引", conversations: "对话记录", jobs: "直播任务", events: "直播事件", sessions: "直播会话"};
+  const countLabels = {context_windows: "上下文窗口", grounded_memory: "来源检索索引", conversations: "对话记录", jobs: "直播任务", events: "直播事件", sessions: "直播会话", dynamic_memory_summaries: "运营记忆摘要"};
   describe($("retention-preview-counts"), Object.entries(result.counts || {}).map(([key, count]) => [countLabels[key] || key, count]));
   $("retention-preview-detail").textContent = JSON.stringify(result, null, 2);
   $("retention-preview-panel").hidden = false;
@@ -1072,7 +1307,7 @@ $("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
 });
 $("character-image").onerror = () => { $("character-image").hidden = true; };
 window.addEventListener("hashchange", changePage);
-window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.providersDirty) { event.preventDefault(); event.returnValue = ""; } });
+window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty) { event.preventDefault(); event.returnValue = ""; } });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 setInterval(poll, 2500);
 enterWorkspace().catch(error => { showLogin(); if (error.status !== 401) $("login-error").textContent = error.message; });

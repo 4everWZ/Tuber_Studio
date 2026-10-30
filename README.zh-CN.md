@@ -8,6 +8,7 @@
 
 - **评论工作台：** 浏览视频或导入评论，按楼组织对话、分类反馈并生成回复。默认人工审核，支持编辑、复制、通过配置的账号发布，也可选择启用自动浏览与回复。
 - **角色配置：** 复制并自定义人格、说话风格、规则、形象与音色绑定，支持版本管理。
+- **实验性 B站动态：** 角色根据公开记忆自主决定发布时间和内容，支持频率限制、来源追踪、可选审核和一键停止。
 - **本地模型与 API：** MiniCPM5-2B 默认使用可调的 128K 上下文，支持 Genie 语音、预录音频及 OpenAI 兼容的 LLM／TTS 服务。
 - **上下文与记忆：** 按楼隔离对话、基于来源检索事实、自动压缩上下文，并可设置数据留存策略。
 - **语音互动：** 文本／直播资源模式、短句试听、Mock 事件，以及呈现音频、字幕和角色表情的浏览器播放器。
@@ -44,6 +45,7 @@ uv run python -m tuber_studio
 
 - [部署、更新与网络配置](docs/guides/deployment.md)
 - [创建原创角色](docs/guides/characters.md)
+- [评论与自主动态运营](docs/guides/operations.md)
 - [文档索引](docs/README.md) · [上下文与压缩](docs/specs/context-and-compaction.md)
 - [CI 与 ARM64 镜像构建](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)
 
@@ -51,4 +53,4 @@ uv run python -m tuber_studio
 
 项目使用 MiniCPM、llama.cpp、GPT-SoVITS 和 Genie-TTS。第三方条款见 [Genie-TTS 许可证](third_party/Genie-TTS/LICENSE)、[Codex 许可证](third_party/openai-codex/LICENSE)和 [Codex 声明](third_party/openai-codex/NOTICE)。
 
-角色形象与音色来源及相应使用条款记录在[素材清单](assets/whale/manifest.json)和[音色配置](config/voices.json)中。
+Q 版形象作者为 [YunYueSama](https://github.com/YunYueSama/codex-deepseek-pet)，本项目将图集转换为六种 GIF，见[素材条款与修改说明](third_party/whale-avatar/UPSTREAM.md)。其他形象和音色来源见[素材清单](assets/whale/manifest.json)和[音色配置](config/voices.json)。

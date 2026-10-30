@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings
 from tuber_studio.context import ContextManager
+from tuber_studio.operations_memory import OperationsMemory
 from tuber_studio.providers import DemoProvider
 from tuber_studio.retention import RetentionManager
 
@@ -84,6 +85,35 @@ def test_expiry_removes_recent_summary_of_old_sources_without_deleting_dataset(s
     assert not context.memory.retrieve(scope, character, "上次去了哪里？")["evidence"]
     assert store.one("SELECT content FROM comments")["content"] == "原文"
     assert store.one("SELECT status FROM drafts")["status"] == "publish_uncertain"
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+def test_expiry_clears_operations_summary_in_the_same_transaction(settings, store, rollback):
+    context = memory(settings, store)
+    now = time.time()
+    context.memory.record("public-story", store.character(), "old-story", "assistant", "我去了珊瑚铺。")
+    store.execute("UPDATE grounded_memory SET created_at=?", (now - 31 * 86400,))
+    OperationsMemory(store)
+    store.execute(
+        "INSERT INTO dynamic_memory_summaries VALUES(?,?,?,?,?,?,?,?)",
+        ("whale", 1, "fixture", 2048, 40, '[{"source_id":"memory:1","quote":"珊瑚铺"}]', now, "fixture"),
+    )
+    manager = RetentionManager(settings, store)
+    assert manager.preview(now=now)["counts"]["dynamic_memory_summaries"] == 1
+    assert store.one("SELECT * FROM dynamic_memory_summaries")  # Preview leaves the summary intact.
+    if rollback:
+        store.execute(
+            "CREATE TRIGGER fail_source_cleanup BEFORE DELETE ON grounded_memory "
+            "BEGIN SELECT RAISE(ABORT,'fixture failure'); END"
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="fixture failure"):
+            manager.cleanup(now=now)
+        assert store.one("SELECT * FROM dynamic_memory_summaries")
+        assert store.one("SELECT id FROM grounded_memory")
+    else:
+        assert manager.cleanup(now=now)["counts"]["dynamic_memory_summaries"] == 1
+        assert not store.one("SELECT * FROM dynamic_memory_summaries")
+        assert not store.one("SELECT id FROM grounded_memory")
 
 
 def test_oldest_input_age_expires_active_window_and_legacy_cache(settings, store):

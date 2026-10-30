@@ -11,7 +11,7 @@
 | ID | 适用范围 | 要求 |
 | --- | --- | --- |
 | AUDIO-01 | 当前 | MUST 可替换 LLMProvider，支持本地 GGUF＋llama.cpp 和操作者配置的 OpenAI-compatible API，业务接口不绑定模型名。 |
-| AUDIO-02 | 当前 | MUST 校验模型 schema，仅接受 spoken_text、有限 emotion、有限 animation_id、可选 reply_to，非法字段无工具权。 |
+| AUDIO-02 | 回复生成 | MUST 校验回复 schema，仅接受 spoken_text、有限 emotion、有限 animation_id、可选 reply_to，非法字段无工具权。运营摘要与决定使用独立的受限 schema，不混成播报回复。 |
 | AUDIO-03 | 声音接入 | MUST 保留 TTSProvider 与预录路径；外部 API 使用独立声音配置；本地 Genie 推理已接入，新音色、引擎或 Profile 须分别验证。 |
 | AUDIO-04 | 声音接入 | MUST voice_profile 绑定 Provider、模型／权重版本、参考资产或 API voice 及许可；切角色不串声线／缓存。 |
 | AUDIO-05 | 本地 TTS | MUST 预计算固定参考特征并精简推理后端，键含模型、音色版本、参考音频／文字／语言及实现身份，修改失效；SHOULD 缓存固定台词。 |
@@ -21,6 +21,8 @@
 | AUDIO-09 | 声音接入 | MUST 展示来源、许可和约束，商业模式不默认启用仅非商用／未授权音色。 |
 
 最小语义接口为 LLMProvider.generate(context,constraints) → StructuredReply，TTSProvider.synthesize(text,voice,options) → AudioArtifact/AudioStream。提交草稿／TTS 前校验完整结束、字数、控制字符、情绪／动作枚举及当前源事件引用；原样复述输入不算有效角色回答。输出不能直接成为 shell、文件操作、HTTP 工具、发布或支付。
+
+运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)；本地通过 llama.cpp 的 schema 约束 JSON 输出，兼容 API 使用 JSON 模式与程序 schema 校验。输入和输出仍受真实 token 预算、完整结束和禁止工具调用约束；summary／Codex 压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载 LLM 或 TTS。
 
 本地 MiniCPM 的 Think 模式通过原生 chat template 和 reasoning_format=deepseek 分离推理与正式内容；所有 Provider 只解析 message.content 进入台词／摘要，不将 reasoning_content 播报、存入对话或当作回复 JSON，不靠字符串裁掉思考标签补成功。本地模板默认正式输出预算 1024 tokens，包含模型推理与最终 JSON，台词仍受角色字数上限约束；摘要预算独立，未完整 stop 即失败。延迟须实测，不能从 NoThink 短句推断 Think 实时性。
 

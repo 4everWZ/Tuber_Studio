@@ -83,6 +83,7 @@ class LLMProvider(Protocol):
     async def count_tokens(self, messages: list[dict]) -> int: ...
     async def prefill(self, messages: list[dict]) -> bool: ...
     async def summarize(self, messages: list[dict], *, max_tokens: int | None = None) -> str: ...
+    async def generate_json(self, messages: list[dict], schema: dict, *, max_tokens: int) -> dict: ...
     async def health(self) -> dict: ...
     async def close(self) -> None: ...
 
@@ -265,6 +266,79 @@ class LlamaCppProvider:
         content = choice["message"]["content"]
         return validate_reply(content, character, event_id, source_text)
 
+    async def generate_json(self, messages, schema, *, max_tokens):
+        """A bounded schema-constrained task, independent of compaction output."""
+        json_schema_text(schema, max_tokens)
+        await self.ensure_capacity()
+        messages = single_system_messages(messages)
+        tokens = await self.count_tokens(messages)
+        self.last_tokens = tokens
+        if tokens + max_tokens > self.config["context_tokens"] * 95 // 100:
+            raise ContextWindowExceeded("结构化输入超出真实token预算；禁止静默丢弃数据")
+        response = await self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": self.config.get("model", "local"),
+                "messages": messages,
+                **self.sampling(),
+                "max_tokens": max_tokens,
+                "stream": False,
+                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
+                **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),
+                "response_format": {"type": "json_object", "schema": schema},
+                **({"seed": self.config["seed"]} if "seed" in self.config else {}),
+            },
+            timeout=httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5),
+        )
+        if response.status_code == 400 and "context" in response.text.lower():
+            raise ContextWindowExceeded("模型结构化输入超窗")
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
+            raise ValueError("模型未返回唯一结构化回答")
+        choice = choices[0]
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("模型结构化输出未完整结束；未采用结果")
+        message = choice.get("message")
+        if not isinstance(message, dict) or message.get("tool_calls") or message.get("function_call"):
+            raise ValueError("模型返回了不允许的工具调用或无效消息")
+        usage = data.get("usage", {})
+        if (
+            not isinstance(usage, dict)
+            or type(usage.get("prompt_tokens")) is not int
+            or (usage["prompt_tokens"] != tokens)
+        ):
+            raise ValueError("模型未确认结构化输入完整计量；未采用结果")
+        return parse_json_object(message.get("content"))
+
+
+def json_schema_text(schema, max_tokens):
+    """Validate the task contract; remote API schemas remain instructions."""
+    if type(max_tokens) is not int or max_tokens < 1:
+        raise ValueError("结构化输出预算须为正整数")
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        raise ValueError("结构化任务需要object类型JSON Schema")
+    try:
+        return json.dumps(schema, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError, RecursionError):
+        raise ValueError("结构化任务Schema无效") from None
+
+
+def parse_json_object(content):
+    """Do not strip fences or salvage a partial/embedded model result."""
+    try:
+        if not isinstance(content, str):
+            raise ValueError
+        value = json.loads(content)
+        if not isinstance(value, dict):
+            raise ValueError
+        # Python's decoder accepts NaN/Infinity, which are not JSON values.
+        json.dumps(value, allow_nan=False)
+        return value
+    except (ValueError, RecursionError):
+        raise ValueError("模型未返回完整JSON对象；未采用结果") from None
+
 
 def validate_reply(content, character, event_id, source_text=None):
     try:
@@ -306,6 +380,9 @@ class DemoProvider:
 
     async def summarize(self, messages, *, max_tokens=None):
         raise ValueError("离线诊断Provider没有模型摘要能力，请连接真实LLM")
+
+    async def generate_json(self, messages, schema, *, max_tokens):
+        raise ValueError("离线诊断Provider没有模型结构化生成能力，请连接真实LLM")
 
     async def generate(self, messages, character, event_id, source_text=None):
         return Reply(

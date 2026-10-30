@@ -57,6 +57,88 @@ def assert_no_secrets(value):
     assert all(secret not in rendered for secret in SECRETS.values())
 
 
+def wbi_nav(code=0):
+    return httpx.Response(
+        200,
+        json={
+            "code": code,
+            "data": {
+                "wbi_img": {
+                    "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                    "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+                }
+            },
+        },
+    )
+
+
+async def test_wbi_query_signature_matches_fixed_vector_without_mutating_input(adapter_factory, monkeypatch):
+    monkeypatch.setattr("tuber_studio.bilibili.time.time", lambda: 1702204169)
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.method == "GET" and request.url.host == "api.bilibili.com"
+        assert request.url.path == "/x/web-interface/nav"
+        return wbi_nav(-101)
+
+    adapter = await adapter_factory(handle)
+    original = {"search_type": "video", "keyword": "海底 & Python", "page": 2, "order": "totalrank"}
+    signed = await adapter.wbi_params(original)
+    assert signed == original | {
+        "wts": 1702204169,
+        "web_location": 1550101,
+        "w_rid": "f34a765a27a15041b56c7ceb4acf597d",
+    }
+    assert "wts" not in original and "w_rid" not in original
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("failure", ["risk", "http", "malformed", "redirect", "expired"])
+async def test_wbi_denial_never_retries_or_echoes_credentials(adapter_factory, failure):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        if failure == "risk":
+            return httpx.Response(200, json={"code": -412, "message": SECRETS["sessdata"]})
+        if failure == "http":
+            return httpx.Response(412, text=SECRETS["csrf"])
+        if failure == "redirect":
+            return httpx.Response(302, headers={"Location": "http://127.0.0.1/private"})
+        if failure == "expired":
+            return wbi_nav(-101)
+        return httpx.Response(
+            200, json={"code": 0, "data": {"wbi_img": {"img_url": "file:///etc/passwd", "sub_url": "x"}}}
+        )
+
+    adapter = await adapter_factory(handle, SECRETS)
+    with pytest.raises(ValueError) as caught:
+        await adapter.wbi_params()
+    assert_no_secrets(caught.value)
+    assert len(requests) == 1
+
+
+async def test_wbi_resigns_query_and_preserves_trusted_web_location(adapter_factory, monkeypatch):
+    monkeypatch.setattr("tuber_studio.bilibili.time.time", lambda: 1702204169)
+    adapter = await adapter_factory(lambda request: wbi_nav())
+    original = {"wts": 1, "w_rid": "stale", "web_location": 123}
+    signed = await adapter.wbi_params(original)
+    assert signed["wts"] == 1702204169 and signed["web_location"] == 123
+    assert signed["w_rid"] != "stale" and len(signed["w_rid"]) == 32
+    assert original == {"wts": 1, "w_rid": "stale", "web_location": 123}
+
+
+@pytest.mark.parametrize("params", [[], "params", {1: "x"}, {"x": {}}, {"x": True}])
+async def test_wbi_rejects_invalid_query_before_network(adapter_factory, params):
+    def handle(request):
+        pytest.fail("invalid query reached network")
+
+    adapter = await adapter_factory(handle)
+    with pytest.raises(ValueError):
+        await adapter.wbi_params(params)
+
+
 @pytest.mark.parametrize(
     ("value", "parameter", "identifier"),
     [

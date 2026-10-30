@@ -4,7 +4,16 @@ import json
 import time
 from datetime import UTC, datetime
 
-PRESERVED = ["comments", "drafts", "publish_attempts", "characters", "users", "relations"]
+PRESERVED = [
+    "comments",
+    "drafts",
+    "publish_attempts",
+    "characters",
+    "users",
+    "relations",
+    "dynamic_posts",
+    "dynamic_decisions",
+]
 INTERVAL_SECONDS = 3600
 
 
@@ -67,11 +76,10 @@ class RetentionManager:
             raise ValueError("截至时间不能早于1970年或晚于当前时间")
         return cutoff
 
-    @staticmethod
-    def _clauses():
+    def _clauses(self):
         # Invalidate an entire derived window if any contributing source expires.
         # Keeping a recent summary of an old source would defeat retention.
-        return {
+        clauses = {
             "context_windows": "(oldest_source_at < :cutoff OR updated_at < :cutoff OR "
             "(oldest_source_at IS NULL AND history != '[]') OR EXISTS "
             "(SELECT 1 FROM grounded_memory m WHERE m.scope=context_windows.mode "
@@ -92,6 +100,16 @@ class RetentionManager:
             "(SELECT 1 FROM grounded_memory m WHERE m.scope=w.mode AND m.character_id=w.character_id "
             "AND m.character_version=w.character_version AND m.created_at < :cutoff))",
         }
+        if self.store.one(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='dynamic_memory_summaries'"
+        ):
+            # Drop derived public-memory snapshots before deleting their possible
+            # conversation sources, within the same previewed transaction.
+            return {
+                "dynamic_memory_summaries": "EXISTS (SELECT 1 FROM grounded_memory WHERE created_at < :cutoff)",
+                **clauses,
+            }
+        return clauses
 
     def preview(self, before=None, *, now=None):
         cutoff = self.cutoff(before, now=now)

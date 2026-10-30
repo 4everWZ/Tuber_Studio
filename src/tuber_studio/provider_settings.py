@@ -164,6 +164,8 @@ async def apply_settings(runtime, body):
     policy = runtime.store.get("comment_policy", {})
     if policy.get("auto_browse") or policy.get("auto_reply"):
         raise ProviderConfigurationError("请先关闭自动浏览和自动回复，再修改Provider")
+    if runtime.store.get("dynamic_policy", {}).get("enabled"):
+        raise ProviderConfigurationError("请先停止动态运营，再修改Provider")
     data, keys = proposal(settings, body)
     staged = copy.copy(settings)
     staged.data, staged.provider_keys = data, keys

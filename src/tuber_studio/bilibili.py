@@ -13,9 +13,11 @@ No fingerprint generation, challenge solving, or permission fallback is used.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
-from urllib.parse import urlsplit
+import time
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -26,6 +28,42 @@ class PublishUncertain(ValueError):
 
 _BV = re.compile(r"BV1[0-9A-Za-z]{9}\Z")
 _AV = re.compile(r"av([1-9][0-9]{0,18})\Z", re.IGNORECASE)
+# Public nav-key permutation used by bilibili-api-python 17.4.2. This is
+# request signing only: no generated buvid/fingerprint or challenge fallback.
+_WBI_ORDER = (
+    46,
+    47,
+    18,
+    2,
+    53,
+    8,
+    23,
+    32,
+    15,
+    50,
+    10,
+    31,
+    58,
+    3,
+    45,
+    35,
+    27,
+    43,
+    5,
+    49,
+    33,
+    9,
+    42,
+    19,
+    29,
+    28,
+    14,
+    39,
+    12,
+    38,
+    41,
+    13,
+)
 _ERRORS = {
     -101: "账号未登录或登录已失效",
     -102: "账号已被平台限制",
@@ -115,11 +153,11 @@ class BilibiliAdapter:
     async def close(self):
         await self.client.aclose()
 
-    async def _get(self, path: str, params: dict) -> dict:
+    async def _get_payload(self, path: str, params: dict):
         try:
             response = await self.client.get(path, params=params)
             response.raise_for_status()
-            return _data(response.json())
+            return response.json()
         except httpx.HTTPStatusError as error:
             raise ValueError(
                 f"B 站读取失败（HTTP {error.response.status_code}），请检查权限或风控状态"
@@ -130,6 +168,47 @@ class BilibiliAdapter:
             raise ValueError("B 站返回了非 JSON 响应，请检查平台访问状态") from None
         except (TypeError, KeyError):
             raise ValueError("B 站返回了无效数据") from None
+
+    async def _get(self, path: str, params: dict) -> dict:
+        return _data(await self._get_payload(path, params))
+
+    async def wbi_params(self, params: dict | None = None) -> dict:
+        """Sign a trusted caller's query, including a POST's query, once.
+
+        Checked against bilibili-api-python 17.4.2's _get_mixin_key/_enc_wbi.
+        The JSON/form body is separate and is never included in this signature.
+        No fingerprint generation, challenge solving or retry is performed.
+        """
+        if params is not None and (
+            not isinstance(params, dict)
+            or any(not isinstance(k, str) or type(v) not in (str, int) for k, v in params.items())
+        ):
+            raise ValueError("B 站签名参数须为字符串键和字符串或整数值")
+        payload = await self._get_payload("/x/web-interface/nav", {})
+        # Anonymous nav deliberately reports -101 while supplying public WBI
+        # keys. An explicitly configured but expired login must still fail.
+        if isinstance(payload, dict) and payload.get("code") == -101 and not self._sessdata:
+            nav = payload.get("data")
+        else:
+            nav = _data(payload)
+        try:
+            images = nav["wbi_img"]
+            keys = [urlsplit(images[k]).path.rsplit("/", 1)[-1].split(".")[0] for k in ("img_url", "sub_url")]
+            if any(not re.fullmatch(r"[0-9a-fA-F]{32}", k) for k in keys):
+                raise ValueError
+            joined = "".join(keys)
+            mixin = "".join(joined[i] for i in _WBI_ORDER)
+        except (KeyError, TypeError, AttributeError, ValueError):
+            raise ValueError("B 站搜索签名配置无效，请稍后重试") from None
+        signed = dict(params or {})
+        signed.pop("w_rid", None)
+        signed["wts"] = int(time.time())
+        if not signed.get("web_location"):
+            signed["web_location"] = 1550101
+        signed["w_rid"] = hashlib.md5(
+            (urlencode(sorted(signed.items())) + mixin).encode(), usedforsecurity=False
+        ).hexdigest()
+        return signed
 
     async def popular(self) -> list:
         data = await self._get("/x/web-interface/popular", {"pn": 1, "ps": 20})

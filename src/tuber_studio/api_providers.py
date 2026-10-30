@@ -9,7 +9,15 @@ from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
 from .http_api import api_client, models_health, response_json
-from .providers import DemoProvider, LlamaCppProvider, public_error, single_system_messages, validate_reply
+from .providers import (
+    DemoProvider,
+    LlamaCppProvider,
+    json_schema_text,
+    parse_json_object,
+    public_error,
+    single_system_messages,
+    validate_reply,
+)
 
 
 def create_llm(settings):
@@ -135,6 +143,27 @@ class APIProvider:
             raise ContextWindowExceeded("输入超出API窗口预算；禁止静默丢弃历史")
         content, _ = await self._complete(messages, budget=budget, structured=True)
         return validate_reply(content, character, event_id, source_text)
+
+    async def generate_json(self, messages, schema, *, max_tokens):
+        schema_text = json_schema_text(schema, max_tokens)
+        # JSON-object mode is widely supported; do not assume a compatible API
+        # implements json_schema. Domain/source validation stays with the caller.
+        messages = [
+            *messages,
+            {
+                "role": "system",
+                "content": (
+                    "仅返回一个符合以下JSON Schema的JSON对象，不使用代码围栏，不调用工具：" + schema_text
+                ),
+            },
+        ]
+        count = await self.count_tokens(messages)
+        if count + max_tokens > self.config["context_tokens"] * 95 // 100:
+            raise ContextWindowExceeded("结构化输入超出API窗口预算；禁止静默丢弃数据")
+        content, actual = await self._complete(messages, budget=max_tokens, structured=True)
+        if actual + max_tokens > self.config["context_tokens"] * 95 // 100:
+            raise ContextWindowExceeded("API结构化实际计量超窗；未采用结果")
+        return parse_json_object(content)
 
 
 class VisionProvider(Protocol):

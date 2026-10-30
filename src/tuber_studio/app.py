@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .comments import Comments
 from .config import Settings
+from .dynamics import Dynamics
 from .models import Character, Event
 from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
@@ -31,6 +32,7 @@ def create_app(settings=None, adapter=None):
     store = Store(settings.runtime / "studio.sqlite3", seeds)
     runtime = Runtime(settings, store)
     comments = Comments(settings, store, runtime, adapter)
+    dynamics = Dynamics(settings, store, runtime, comments)
     sessions = {}
     login_attempts = {}
 
@@ -39,10 +41,14 @@ def create_app(settings=None, adapter=None):
         try:
             await runtime.open()
             await comments.open()
+            await dynamics.open()
             yield
         finally:
             try:
-                await comments.close()
+                try:
+                    await dynamics.close()
+                finally:
+                    await comments.close()
             finally:
                 try:
                     await runtime.close()
@@ -51,6 +57,7 @@ def create_app(settings=None, adapter=None):
 
     app = FastAPI(title="Tuber Studio", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.runtime, app.state.comments, app.state.store = runtime, comments, store
+    app.state.dynamics = dynamics
 
     def valid_session(cookie):
         return bool(cookie and sessions.get(cookie, 0) > time.time())
@@ -167,7 +174,7 @@ def create_app(settings=None, adapter=None):
 
     @app.get("/api/status", dependencies=[Depends(require_admin)])
     async def status():
-        return runtime.status() | {"comment_policy": comments.policy()}
+        return runtime.status() | {"comment_policy": comments.policy(), "dynamic_policy": dynamics.policy()}
 
     @app.post("/api/inference/mode", dependencies=[Depends(require_admin)])
     async def work_mode(mode: Literal["text", "live"] = Body(embed=True)):
@@ -408,6 +415,50 @@ def create_app(settings=None, adapter=None):
             return await comments.fetch(data.get("video", ""), data.get("max_pages", 1))
         except Exception as error:
             raise ValueError(public_error(error)) from None
+
+    @app.get("/api/dynamics/policy", dependencies=[Depends(require_admin)])
+    async def dynamic_policy():
+        return dynamics.policy()
+
+    @app.put("/api/dynamics/policy", dependencies=[Depends(require_admin)])
+    async def set_dynamic_policy(data: dict = Body(...)):
+        return await dynamics.set_policy(data)
+
+    @app.get("/api/dynamics/posts", dependencies=[Depends(require_admin)])
+    async def dynamic_posts(status: str | None = None, limit: int = Query(50, ge=1, le=100)):
+        return dynamics.list_posts(status=status, limit=limit)
+
+    @app.get("/api/dynamics/decisions", dependencies=[Depends(require_admin)])
+    async def dynamic_decisions(limit: int = Query(50, ge=1, le=100)):
+        return dynamics.list_decisions(limit=limit)
+
+    @app.get("/api/dynamics/memories", dependencies=[Depends(require_admin)])
+    async def dynamic_memories(limit: int = Query(100, ge=1, le=200)):
+        return dynamics.list_memories(limit=limit)
+
+    @app.get("/api/dynamics/memory-summary", dependencies=[Depends(require_admin)])
+    async def dynamic_memory_summary():
+        return dynamics.summary_status()
+
+    @app.put("/api/dynamics/memories/{memory_id}", dependencies=[Depends(require_admin)])
+    async def dynamic_memory(memory_id: int, data: dict = Body(...)):
+        if set(data) != {"public"} or type(data["public"]) is not bool:
+            raise ValueError("请指定 public 布尔值")
+        return dynamics.mark_memory(memory_id, data["public"])
+
+    @app.post("/api/dynamics/evaluate", dependencies=[Depends(require_admin)])
+    async def evaluate_dynamic():
+        return await dynamics.evaluate(manual=True)
+
+    @app.post("/api/dynamics/posts/{post_id}/review", dependencies=[Depends(require_admin)])
+    async def review_dynamic(post_id: int, data: dict = Body(...)):
+        if set(data) - {"action", "text"}:
+            raise ValueError("未知动态审核字段")
+        return dynamics.review(post_id, data.get("action"), data.get("text"))
+
+    @app.post("/api/dynamics/posts/{post_id}/publish", dependencies=[Depends(require_admin)])
+    async def publish_dynamic(post_id: int):
+        return await dynamics.publish(post_id)
 
     @app.post("/api/comments/import", dependencies=[Depends(require_admin)])
     async def import_comments(data: dict = Body(...)):

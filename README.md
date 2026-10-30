@@ -8,6 +8,7 @@ A self-hosted AI character workspace for Bilibili comments and local voice inter
 
 - **Comment workspace:** browse videos or import comments, organize conversation threads, classify feedback, and generate replies. Drafts use manual review by default, with editing, copying, account-based publishing, and optional automatic browsing and replies.
 - **Character profiles:** clone and customize personality, speaking style, rules, artwork, and voice bindings, with version history.
+- **Experimental Bilibili posts:** let the character decide when to post from public memories, with publishing limits, source tracking, optional review, and a stop control.
 - **Local models and APIs:** MiniCPM5-2B with a configurable 128K default context, Genie speech, prerecorded audio, and OpenAI-compatible LLM and TTS providers.
 - **Context and memory:** thread-scoped conversations, source-grounded recall, automatic compaction, and configurable data retention.
 - **Voice interaction:** text/live resource modes, short voice previews, Mock events, and a browser overlay for audio, subtitles, and character expressions.
@@ -44,6 +45,7 @@ Open [http://127.0.0.1:8020](http://127.0.0.1:8020); the administrator token is 
 
 - [Deployment, updates, and network configuration](docs/guides/deployment.md)
 - [Create an original character](docs/guides/characters.md)
+- [Comments and autonomous posts](docs/guides/operations.md)
 - [Documentation index](docs/README.md) · [Context and compaction](docs/specs/context-and-compaction.md)
 - [CI and ARM64 image builds](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)
 
@@ -51,4 +53,4 @@ Open [http://127.0.0.1:8020](http://127.0.0.1:8020); the administrator token is 
 
 Built with MiniCPM, llama.cpp, GPT-SoVITS, and Genie-TTS. Third-party terms are included in the [Genie-TTS license](third_party/Genie-TTS/LICENSE), [Codex license](third_party/openai-codex/LICENSE), and [Codex notices](third_party/openai-codex/NOTICE).
 
-Character artwork and voice sources are credited in the [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json), including their respective usage terms.
+Q-style artwork by [YunYueSama](https://github.com/YunYueSama/codex-deepseek-pet), adapted into six GIF states under the [upstream asset terms](third_party/whale-avatar/UPSTREAM.md). Artwork and voice sources are recorded in the [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json).
