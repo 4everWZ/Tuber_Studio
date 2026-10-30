@@ -109,6 +109,12 @@ CI默认使用原生ubuntu-24.04-arm runner，构建前释放未使用SDK空间�
 
 停止／启动使用docker stop tuber-studio和docker start tuber-studio；更新源码、角色素材或音色模板须重建镜像并--replace，runtime保留。服务启动与模型可用分开：即使资源加载失败，后台仍显示错误；检查runtime/inference-llm2b.log等资源日志，不把HTTP可达当作质量／128K验收。
 
+## 存储目录与维护
+
+模型、数据库、评论数据集、配置和凭证保存在持久数据目录中，随容器更新继续复用。`models/`、`tts/`下的模型原件、参考特征与永久Genie包，以及`nltk_data/`共同构成离线启动所需资源；常驻程序使用镜像内的`/opt/studio-venv`。
+
+历史实验保留结果、来源回执和试听音频。重复的ONNX转换文件、传输分片及退役Python环境可回收，需要重现实验时使用保留的模型原件和维护工具重新生成。Docker清理按本项目的具体容器、镜像与缓存ID执行，保留当前镜像和一个已验证的回退版本。
+
 ## 本地访问Jetson后台
 
 后台准备好后，在Windows保持SSH转发运行：

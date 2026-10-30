@@ -1,24 +1,54 @@
 # Tuber Studio
 
-本地角色工作台：逛B站评论区、生成大肥鱼口吻草稿，默认人工审核，可显式开启自动浏览／回复，可复制角色创建OC。MiniCPM5-2B／真实128K与Genie TTS已跑通本地Mock直播、语音播放和100句以上连续合成；初始大肥鱼已采用用户试听接受的瑶瑶v2声线，真实平台直播仍后置。LLM、语音均可配置兼容API。
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-本地开发：
+A self-hosted AI character workspace for Bilibili comments and local voice interaction. Create original characters, draft replies in their voice, and bring conversations to a browser overlay.
 
-    uv sync --python 3.12
-    uv run python -m tuber_studio
+## Features
 
-打开[本地工作台](http://127.0.0.1:8020)，管理令牌在runtime/admin-token。源码模板默认text且关闭直播；Jetson程序镜像另带MiniCPM5-2B／131072／q4_0与Genie瑶瑶v2的live预设，不内置推理权重。首次启动联网下载固定来源并校验，在持久数据目录一次性准备音色包，然后加载资源；业务保持停止、自动浏览／回复关闭。切回text会卸载TTS。设置页可保存Provider、独立API凭证与上下文窗口。MiniCPM5-2B只支持文本，多模态仅保留本地／API接口，默认关闭。下载、准备、连接或容量失败均须可见，不静默换模型或声音。
+- **Comment workspace:** browse videos or import comments, organize conversation threads, classify feedback, and generate replies. Drafts use manual review by default, with editing, copying, account-based publishing, and optional automatic browsing and replies.
+- **Character profiles:** clone and customize personality, speaking style, rules, artwork, and voice bindings, with version history.
+- **Local models and APIs:** MiniCPM5-2B with a configurable 128K default context, Genie speech, prerecorded audio, and OpenAI-compatible LLM and TTS providers.
+- **Context and memory:** thread-scoped conversations, source-grounded recall, automatic compaction, and configurable data retention.
+- **Voice interaction:** text/live resource modes, short voice previews, Mock events, and a browser overlay for audio, subtitles, and character expressions.
 
-Jetson ARM64／L4T R36.4使用GitHub Actions构建的GHCR程序镜像，无需项目源码或宿主Python环境。下载[已验证的启动包](https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469/artifacts/12949948299)，解压其中run-ready.sh后执行：
+Bilibili and Douyin live-stream adapters are on the roadmap.
 
-    bash run-ready.sh --data ./tuber-data
+## Jetson quick start
 
-后续版本从[仓库Actions](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)取得对应成功发布的`jetson-program-<提交前12位>`产物。脚本默认使用ghcr.io/4everwz/tuber_studio:r36.4，缺少镜像时自动拉取，初始化与服务锁定同一镜像ID。CI镜像已完成构建、公开发布及设备实际部署验证；常规发布不要求本机docker build／save／load。已有标签更新、固定SHA／版本或回退见[部署指南](docs/guides/deployment.md)。
+Requires an ARM64 Jetson running **L4T R36.4**, Docker with the NVIDIA container runtime, Bash, and curl. Run as a regular user with Docker access. Internet access is needed for GHCR/CDN image downloads and the initial model download.
 
-镜像只包含程序、依赖、固定下载清单和小型预设；本次发布压缩层约6.04GiB，展开镜像约13.36GiB，仍含原生CUDA／Torch。首次启动须联网，权重、词典和生成的Genie包留在tuber-data；重复启动复用验证文件，不重新下载安装依赖，也不覆盖已有配置、令牌或数据库。可用TUBER_HF_BASE指定HTTPS镜像源；Docker本身还须能访问GHCR及其CDN。全新空数据卷下载／准备、断网重启，以及CI镜像实际部署后的Mini128K／Genie合成都已验证，见[程序镜像验收](evaluations/results/ready-program-image-20261030.json)。本机构建只作开发备用，原精简镜像流程仍保留。
+```bash
+curl -fsSL https://raw.githubusercontent.com/4everWZ/Tuber_Studio/main/tools/jetson/run-ready.sh -o run-ready.sh
+bash run-ready.sh --data ./tuber-data
+```
 
-[部署与Jetson启动](docs/guides/deployment.md) · [创建OC](docs/guides/characters.md) · [规范与文档导航](docs/README.md) · [当前计划](docs/plans/p0-runtime.md)
+The launcher pulls `ghcr.io/4everwz/tuber_studio:r36.4`, downloads the models, and prepares the default voice on first launch. Models, settings, credentials, and the database stay in `tuber-data` and are reused on subsequent starts.
 
-声音、共驻、真实长输入及Mock播放的条件与测量见[当前声音与共驻结果](evaluations/results/yaoyao-v2-voice-20261030.json)；持续运行与真实平台接入分别验收。
+Open [http://127.0.0.1:9020](http://127.0.0.1:9020) and sign in with the administrator token in `tuber-data/admin-token`. Keep that file private. For access from another computer, see the [deployment guide](docs/guides/deployment.md).
 
-默认窗口128K（131072 tokens），可显式调小或在真实支持范围内调大，最小4096；当前MiniCPM5-2B原生上限131072，不能靠声明扩窗。兼容API的窗口上限由Operator声明，不能冒称本机实测；实际计数可能额外发送一token探针并计费。[上下文规范](docs/specs/context-and-compaction.md)维护Codex公开本地压缩核心及适配边界。项目环境独立，凭证、数据库、权重、缓存和临时探针不进Git。形象及预录来源见assets/whale/manifest.json，当前音色来源与约束见config/voices.json，代码归属不授予额外素材权利。
+Start in the comment workspace: fetch or import comments, select a thread, and generate a draft for review. Automatic browsing and replies are off by default. For voice interaction, use live resource mode, open the overlay, start a Mock session, and inject a chat event.
+
+## Local development
+
+Use Python 3.12 and [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync --python 3.12
+uv run python -m tuber_studio
+```
+
+Open [http://127.0.0.1:8020](http://127.0.0.1:8020); the administrator token is in `runtime/admin-token`. Configure model and speech endpoints in **Settings**. The source configuration starts in text mode.
+
+## Documentation
+
+- [Deployment, updates, and network configuration](docs/guides/deployment.md)
+- [Create an original character](docs/guides/characters.md)
+- [Documentation index](docs/README.md) · [Context and compaction](docs/specs/context-and-compaction.md)
+- [CI and ARM64 image builds](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)
+
+## Acknowledgements
+
+Built with MiniCPM, llama.cpp, GPT-SoVITS, and Genie-TTS. Third-party terms are included in the [Genie-TTS license](third_party/Genie-TTS/LICENSE), [Codex license](third_party/openai-codex/LICENSE), and [Codex notices](third_party/openai-codex/NOTICE).
+
+Character artwork and voice sources are credited in the [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json), including their respective usage terms.
