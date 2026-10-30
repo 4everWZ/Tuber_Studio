@@ -13,7 +13,7 @@ A self-hosted AI character workspace for Bilibili comments and local voice inter
 - **Context and memory:** thread-scoped conversations, source-grounded recall, automatic compaction, and configurable data retention.
 - **Voice interaction:** text/live resource modes, short voice previews, Mock events, and a browser overlay for audio, subtitles, and character expressions.
 
-Bilibili and Douyin live-stream adapters are on the roadmap.
+The next live-stream iteration covers a dedicated workspace, draggable scene elements, and song requests with direct playback or singing in the character's voice; these are planned features, tracked in the [live workspace plan](docs/plans/live-workbench.md). Bilibili and Douyin live-stream adapters are on the roadmap.
 
 ## Jetson quick start
 
