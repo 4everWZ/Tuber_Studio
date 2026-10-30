@@ -10,8 +10,15 @@ from pathlib import Path
 
 from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import Field
 
-from .live_media import MAX_UPLOAD, MusicSettings, default_scene, inspect_wav
+from .live_media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, StrictModel, default_scene, inspect_audio
+from .online_songs import SongRequestSettings
+
+
+class ConfirmSong(StrictModel):
+    token: str = Field(min_length=20, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
+    number: int = Field(ge=1, le=20, strict=True)
 
 
 def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok):
@@ -27,6 +34,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
             job = store.job(identity)
             event = store.event(job["event_id"])["payload"]
             snapshot = json.loads(job["media"]) if job.get("media") else None
+            is_online = bool(snapshot and snapshot.get("online"))
             if snapshot:
                 snapshot = {
                     "mode": snapshot["mode"],
@@ -39,6 +47,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
                     "text": event["text"],
                     "requester": event["display_name"],
                     "media": snapshot,
+                    "preparation": runtime.online_songs.preparation_status(identity) if is_online else None,
                 }
             )
         events = [
@@ -114,29 +123,56 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
                 async for chunk in request.stream():
                     size += len(chunk)
                     if size > MAX_UPLOAD:
-                        raise HTTPException(413, "WAV上限96MiB")
+                        raise HTTPException(413, "音频上限96MiB")
                     digest.update(chunk)
                     output.write(chunk)
-            info = await asyncio.to_thread(inspect_wav, temporary)
+            info = await asyncio.to_thread(inspect_audio, temporary)
             identity = digest.hexdigest()
-            target = media.directory / (identity + ".wav")
+            target = media.directory / (identity + "." + info["format"])
             if target.is_symlink():
                 raise ValueError("音乐文件不能使用链接")
             if not target.exists():
                 os.replace(temporary, target)
-            return {"id": identity, "duration": info["duration"], "bytes": size}
+            return {"id": identity, **info, "bytes": size}
         finally:
             temporary.unlink(missing_ok=True)
 
     @app.get("/media/music/{identity}", dependencies=[Depends(require_view)])
     async def music_file(identity: str):
-        return FileResponse(media.blob(identity), media_type="audio/wav")
+        path = media.blob(identity)
+        return FileResponse(path, media_type=MEDIA_TYPES[path.suffix])
+
+    @app.get("/api/live/online", dependencies=[Depends(require_admin)])
+    async def online_status():
+        return runtime.online_songs.status()
+
+    @app.put("/api/live/online", dependencies=[Depends(require_admin)])
+    async def configure_online(data: SongRequestSettings):
+        return await runtime.online_songs.configure(data.model_dump())
+
+    @app.post("/api/live/online/restart", dependencies=[Depends(require_admin)])
+    async def restart_online():
+        if not runtime.online_songs.config()["enabled"]:
+            raise ValueError("请先启用在线点歌")
+        return await runtime.online_songs.configure(runtime.online_songs.config(), restart=True)
+
+    @app.get("/api/live/online/search", dependencies=[Depends(require_admin)])
+    async def online_search(q: str):
+        if not q.strip() or len(q) > 100:
+            raise ValueError("请输入100字以内的歌名／歌手")
+        return {"songs": await runtime.online_songs.search(q)}
+
+    @app.post("/api/live/online/confirm", dependencies=[Depends(require_admin)])
+    async def confirm_online(data: ConfirmSong):
+        event, snapshot = runtime.online_songs.confirm(data.token, data.number)
+        return await runtime.submit(event, online_snapshot=snapshot)
 
     @app.put("/api/live/queue", dependencies=[Depends(require_admin)])
     async def reorder(data: list[str] = Body(...)):
         if len(data) != len(set(data)) or set(data) != set(runtime.queue):
             raise ValueError("队列已改变，请刷新后重排完整待播队列")
         runtime.queue[:] = data
+        runtime.online_songs.sync()
         return {"queue": data}
 
     @app.delete("/api/live/queue/{identity}", dependencies=[Depends(require_admin)])
@@ -149,4 +185,5 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         store.execute(
             "UPDATE events SET status='cancelled',reason=? WHERE id=?", ("人工移除", job["event_id"])
         )
+        runtime.online_songs.sync()
         return {"removed": identity}

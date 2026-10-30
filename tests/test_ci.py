@@ -128,4 +128,4 @@ def test_fixed_action_revisions_and_publish_permission_scope():
     assert "pull_request" in workflow["on"] and "workflow_dispatch" in workflow["on"]
     assert "workflow_dispatch" in workflow["jobs"]["image"]["if"]
     assert "github.event_name == 'push'" in workflow["jobs"]["image"]["if"]
-    assert workflow["jobs"]["image"]["needs"] == "checks"
+    assert set(workflow["jobs"]["image"]["needs"]) == {"checks", "song-component"}

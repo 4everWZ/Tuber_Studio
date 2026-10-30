@@ -1,0 +1,12 @@
+{
+  "name": "tuber-online-song-requests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optional, single-process metadata and audio source adapter for Tuber Studio",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node helper.cjs", "test": "node --test test/*.test.cjs" },
+  "dependencies": {
+    "netease-metadata": "https://codeload.github.com/xgxdmx/NeteaseMusic-API/tar.gz/0395d087d9e99ceef480c54e7932c2332e5c0c39",
+    "@unblockneteasemusic/server": "https://codeload.github.com/UnblockNeteaseMusic/server/tar.gz/1d64281c0fae81a4e3cf21f176706b0baa3a606d"
+  }
+}

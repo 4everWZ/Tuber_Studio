@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  song-component:
+    name: Optional online song component
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Install optional library dependencies without lifecycle scripts
+        working-directory: components/song_requests
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Matching and real stdio process contracts
+        working-directory: components/song_requests
+        run: npm test
+
   checks:
     name: Python lint and CPU contracts
     runs-on: ubuntu-24.04
@@ -60,7 +78,7 @@ jobs:
 
   image:
     name: Native ARM64 program image and GHCR
-    needs: checks
+    needs: [checks, song-component]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&

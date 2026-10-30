@@ -104,7 +104,10 @@ window.LiveScene = class {
       } else if (item.kind === "now") {
         const record = make("div", null, "record"), name = make("p", song?.title || "等待下一首歌", "song-name");
         const info = make("p", song ? `${media.mode === "sing" ? "角色演唱" : "直接播放 · "+(song.artist || "曲库音源")} · ${media.requester}` : "从曲库点一首喜欢的歌", "song-detail");
+        const quality = song?.quality;
+        if (quality) info.textContent += ` · ${song.source === "bodian" ? "波点" : "咪咕"} ${quality.format.toUpperCase()}${quality.format === "mp3" ? ` ${Math.round(quality.bitrate/1000)} kbps` : ` ${quality.bits_per_sample}-bit / ${quality.sample_rate/1000} kHz`}`;
         info.title = info.textContent;
+        if (song?.cover) { try { const url = new URL(song.cover); if (url.hostname.endsWith(".music.126.net") && ["http:","https:"].includes(url.protocol)) { url.protocol = "https:"; const cover = make("img"); cover.src = url.href; cover.alt = ""; cover.referrerPolicy = "no-referrer"; cover.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:inherit"; record.append(cover); } } catch (_) {} }
         const progress = make("div", null, "scene-progress"), fill = make("span");
         fill.style.width = `${Math.min(100, position / (playback?.duration || 1) * 100)}%`; progress.append(fill);
         body.replaceChildren(make("h3", "♫ 这一首，唱给你"), record, name, info, progress);

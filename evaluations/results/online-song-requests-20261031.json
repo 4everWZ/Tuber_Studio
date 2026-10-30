@@ -1,0 +1,123 @@
+{
+  "date": "2026-10-31",
+  "scope": "Windows本机私有测试；未修改Jetson部署、说话声线或模型配置",
+  "metadata": {
+    "provider": "xgxdmx/NeteaseMusic-API",
+    "search_and_detail": true,
+    "song_id": "441491828",
+    "title": "水星记",
+    "artist": "郭顶",
+    "duration_seconds": 325.266,
+    "line_lrc_obtained": true,
+    "lyrics_content_retained": false
+  },
+  "sources": [
+    {
+      "source": "bodian",
+      "requested_flac": true,
+      "bytes": 29149100,
+      "sha256": "11cd6577b70f98762d50f3518e8aacc4692fd05de6fcea9986cbd0fdd5f8c921",
+      "actual": {
+        "duration": 325.2666439909297,
+        "format": "flac",
+        "media_type": "audio/flac",
+        "bitrate": 716709,
+        "sample_rate": 44100,
+        "channels": 2,
+        "bits_per_sample": 16
+      }
+    },
+    {
+      "source": "bodian",
+      "requested_flac": false,
+      "bytes": 13013351,
+      "sha256": "9b96282a1b49db2e26d00276312c221ea0fdb9c67f581be51557a07b8ed66bb3",
+      "actual": {
+        "duration": 325.2666439909297,
+        "format": "mp3",
+        "media_type": "audio/mpeg",
+        "bitrate": 320000,
+        "sample_rate": 44100,
+        "channels": 2,
+        "bits_per_sample": null
+      }
+    },
+    {
+      "source": "migu",
+      "requested_flac": true,
+      "status": "not_validated",
+      "reason": "咪咕未配置 MIGU_COOKIE"
+    }
+  ],
+  "browser": {
+    "engine": "Chromium 156.0.8078.48",
+    "page": "Existing /overlay with the same live scene renderer",
+    "real_bodian_flac": {
+      "started_ack": true,
+      "actual_clock_advanced": true,
+      "pause_position_seconds": 65.86571,
+      "paused_clock_frozen": true,
+      "lrc_line_matches_reported_position": true,
+      "full_song_human_lyric_alignment_reviewed": false
+    },
+    "disable": {
+      "playback": null,
+      "node_running": false,
+      "pid": null,
+      "session_state": "live",
+      "cache_bytes_retained": 29149100,
+      "lyric_reset": true
+    },
+    "generated_mp3_fixture": {
+      "imported_through_workbench": true,
+      "actual_started_and_natural_ended_ack": true,
+      "final_status": "completed"
+    },
+    "recovery": {
+      "terminated_only_owned_test_helper": true,
+      "exit_reason_visible": true,
+      "restart_button_restored_component": true
+    },
+    "inflight_search": {
+      "request_intercepted_and_held": true,
+      "switch_disabled_component_before_request_released": true
+    },
+    "mobile_settings": {
+      "viewport_width": 390,
+      "document_width": 390,
+      "settings_visible": true
+    }
+  },
+  "automated": {
+    "python": {
+      "passed": 844,
+      "failed": 0,
+      "skipped": 0,
+      "environment": "locked project + numpy 2.2.6 / onnx 1.17.0 / PyYAML 6.0.2, matching CI"
+    },
+    "node": {
+      "passed": 3,
+      "installed_with": "npm ci --ignore-scripts --no-audit --no-fund"
+    },
+    "ruff": "passed",
+    "javascript_syntax": "passed",
+    "program_only_context_audit": "passed",
+    "boundaries_covered": [
+      "raw FLAC/MP3 MIME and range responses",
+      "current/next prefetch and reorder cancellation",
+      "disable cancels download/current online song, keeps chat and TTS playback",
+      "cached bytes integrity and shared-blob accounting",
+      "same-user/room candidate confirmation",
+      "late search after disable/session change rejected",
+      "concurrent duplicate event enqueued once",
+      "non-public CDN addresses rejected"
+    ]
+  },
+  "not_validated": [
+    "咪咕实际取音频：未配置MIGU_COOKIE",
+    "目标Jetson设备与OBS本体的FLAC/MP3解码及现场音画同步",
+    "可选Docker镜像变体构建",
+    "真实直播平台Adapter",
+    "整曲歌词与实际演唱的人工对时、各音源长期成功率／FLAC可得率"
+  ]
+}

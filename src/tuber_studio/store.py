@@ -185,12 +185,18 @@ class Store:
         )
         return json.loads(row["data"]) if row else {}
 
-    def add_event(self, event, session_id, status, reason=None):
+    def duplicate_event(self, event):
         key = dump([event.platform, event.room_id, event.event_id])
         existing = self.one("SELECT id FROM events WHERE event_key=?", (key,))
         if existing:
             self.execute("UPDATE events SET duplicates=duplicates+1 WHERE id=?", (existing["id"],))
-            return existing["id"], False
+            return existing["id"]
+        return None
+
+    def add_event(self, event, session_id, status, reason=None):
+        if existing := self.duplicate_event(event):
+            return existing, False
+        key = dump([event.platform, event.room_id, event.event_id])
         user_id = self.user(event)
         cursor = self.execute(
             "INSERT INTO events(event_key,event_id,session_id,user_id,payload,status,reason,created_at) "

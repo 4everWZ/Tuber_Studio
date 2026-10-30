@@ -9,12 +9,16 @@ import sys
 import wave
 from typing import Literal
 
+from mutagen import MutagenError
+from mutagen.flac import FLAC
+from mutagen.mp3 import MP3
 from pydantic import BaseModel, ConfigDict, Field
 
 from .providers import Audio
 
 MAX_UPLOAD = 96 * 1024 * 1024
 BLOB = re.compile(r"^[a-f0-9]{64}$")
+MEDIA_TYPES = {".wav": "audio/wav", ".flac": "audio/flac", ".mp3": "audio/mpeg"}
 
 
 class StrictModel(BaseModel):
@@ -126,6 +130,35 @@ def inspect_wav(path, *, envelope=False, scan=True):
         raise ValueError("音频须为完整有效的16-bit PCM WAV") from None
 
 
+def inspect_audio(path, *, scan=True):
+    """Identify the stream, never trust a URL, extension or provider quality label."""
+    with path.open("rb") as source:
+        header = source.read(12)
+    if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+        return {**inspect_wav(path, scan=scan), "format": "wav", "media_type": "audio/wav"}
+    try:
+        audio = FLAC(path) if header[:4] == b"fLaC" else MP3(path)
+        info = audio.info
+        if not math.isfinite(info.length) or not 0.05 <= info.length <= 600:
+            raise ValueError("歌曲须为0.05至600秒")
+        if info.channels not in {1, 2} or not 8000 <= info.sample_rate <= 192000:
+            raise ValueError("歌曲声道或采样率不支持")
+        if isinstance(audio, MP3) and (info.layer != 3 or info.sketchy):
+            raise ValueError("MP3 数据不完整或格式无效")
+        kind = "flac" if isinstance(audio, FLAC) else "mp3"
+        return {
+            "duration": info.length,
+            "format": kind,
+            "media_type": MEDIA_TYPES["." + kind],
+            "bitrate": info.bitrate,
+            "sample_rate": info.sample_rate,
+            "channels": info.channels,
+            "bits_per_sample": getattr(info, "bits_per_sample", None),
+        }
+    except (MutagenError, OSError, EOFError):
+        raise ValueError("音频须为完整有效的 PCM WAV、FLAC 或 MP3") from None
+
+
 class LiveMedia:
     def __init__(self, settings, store, *, singing_provider=None):
         self.settings, self.store = settings, store
@@ -140,10 +173,16 @@ class LiveMedia:
     def blob(self, identity):
         if not isinstance(identity, str) or not BLOB.fullmatch(identity):
             raise ValueError("未知音乐素材ID")
-        path = self.directory / (identity + ".wav")
-        if path.is_symlink() or not path.is_file() or path.resolve().parent != self.directory.resolve():
-            raise ValueError("音乐素材不存在")
-        return path
+        for directory in (self.directory, self.settings.runtime / "online_music"):
+            if directory.is_symlink():
+                raise ValueError("音乐目录不能使用链接")
+            for suffix in MEDIA_TYPES:
+                path = directory / (identity + suffix)
+                if path.is_symlink():
+                    raise ValueError("音乐文件不能使用链接")
+                if path.is_file() and path.resolve().parent == directory.resolve():
+                    return path
+        raise ValueError("音乐素材不存在")
 
     def config(self):
         return MusicSettings.model_validate(self.store.get("music_settings", {})).model_dump()
@@ -169,7 +208,8 @@ class LiveMedia:
         song = Song.model_validate(value).model_dump()
         for field in ("audio", "vocal", "accompaniment"):
             if song[field]:
-                await asyncio.to_thread(inspect_wav, self.blob(song[field]))
+                inspector = inspect_audio if field == "audio" else inspect_wav
+                await asyncio.to_thread(inspector, self.blob(song[field]))
         times = [line["time"] for line in song["lyrics"]]
         if times != sorted(times) or len(times) != len(set(times)):
             raise ValueError("歌词时间须严格递增")
@@ -202,7 +242,7 @@ class LiveMedia:
             if not capability["available"]:
                 raise ValueError(capability["reason"])
         path = self.blob(song["audio"])
-        info = inspect_wav(path, scan=False)
+        info = inspect_audio(path, scan=False)
         snapshot = {
             "song": song,
             "mode": mode,
@@ -220,6 +260,6 @@ class LiveMedia:
         path = self.blob(song["audio"])
         if hashlib.sha256(path.read_bytes()).hexdigest() != song["audio"]:
             raise ValueError("歌曲音频内容已改变，请重新导入")
-        info = inspect_wav(path)
+        info = inspect_audio(path)
         activity = inspect_wav(self.blob(song["vocal"]), envelope=True) if song.get("vocal") else None
         return Audio(path, info["duration"], song["title"]), activity

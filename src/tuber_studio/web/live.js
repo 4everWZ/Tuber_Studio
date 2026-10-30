@@ -15,6 +15,7 @@
     if (!response.ok) { if (response.status === 401) login(); throw new Error(typeof data.detail === "string" ? data.detail : "请检查输入内容"); }
     return data;
   }
+  const online = new OnlineSongRequests(api, feedback);
   async function run(button, action) {
     button.disabled = true; button.setAttribute("aria-busy","true");
     try { await action(); } catch (error) { feedback(error.message,true); }
@@ -85,6 +86,7 @@
       up.onclick = () => run(up, async () => { const order = state.queue.map(item => item.id); [order[index-1],order[index]] = [order[index],order[index-1]]; await api("/api/live/queue",{method:"PUT",body:order}); });
       const remove = element("button","×"); remove.setAttribute("aria-label","移除待播任务");
       remove.onclick = () => run(remove, () => api(`/api/live/queue/${q.id}`,{method:"DELETE"}));
+      if (q.preparation) info.append(element("small",q.preparation[1] || q.preparation[0],q.preparation[1] ? "error" : ""));
       row.append(element("span",String(index+1).padStart(2,"0")),info,up,remove); return row;
     }));
     if (!state.queue.length) $("queue").append(element("li","还没有待播任务，下一首留给你。","empty"));
@@ -92,7 +94,8 @@
   async function poll() {
     if (polling || !authenticated) return; polling = true;
     try {
-      [state,status] = await Promise.all([api("/api/live/view"),api("/api/status")]);
+      const values = await Promise.all([api("/api/live/view"),api("/api/status"),api("/api/live/online")]);
+      [state,status] = values; online.update(values[2]);
       if (!scene.scene || (!dirty && JSON.stringify(state.scene) !== scene.signature)) loadScene(state.scene);
       scene.update(state); renderQueue();
       $("session-state").textContent = state.muted ? "已静音" : ({stopped:"未开播",live:"直播中",paused:"队列已暂停",degraded:"连接降级"}[state.state] || state.state);
@@ -100,8 +103,10 @@
       $("character-name").textContent = `${state.character.name} · v${state.character.version}`;
       $("voice-state").textContent = `说话音色：${status.character.voice_profile}`;
       const playing = state.playback, current = status.current_job;
+      const track = playing?.song?.song; const quality = track?.quality;
+      const qualityText = quality ? ` · ${track.source === "bodian" ? "波点" : "咪咕"} ${quality.format.toUpperCase()}${quality.format === "flac" ? ` ${quality.bits_per_sample}-bit / ${quality.sample_rate/1000} kHz` : ` ${Math.round(quality.bitrate/1000)} kbps`}` : "";
       $("current-title").textContent = playing?.song?.song.title || (current ? current.text || "正在准备互动" : "准备好，就开始吧");
-      $("current-detail").textContent = playing ? `${playing.paused ? "已暂停" : playing.started ? "播放中" : "等待播放"} · ${Math.floor(playing.position)} / ${Math.round(playing.duration)} 秒${playing.visual_warning ? " · "+playing.visual_warning : ""}` : ({generating:"正在生成互动",synthesizing:"正在准备音频／转换演唱",ready_to_play:"等待播放器"}[current?.status] || "Mock 直播 · 真实平台尚未接入");
+      $("current-detail").textContent = playing ? `${playing.paused ? "已暂停" : playing.started ? "播放中" : "等待播放"} · ${Math.floor(playing.position)} / ${Math.round(playing.duration)} 秒${qualityText}${playing.visual_warning ? " · "+playing.visual_warning : ""}` : ({generating:"正在生成互动",synthesizing:"正在准备音频／转换演唱",ready_to_play:"等待播放器"}[current?.status] || "Mock 直播 · 真实平台尚未接入");
       $("media-toggle").disabled = !playing?.song || !playing.started;
       $("media-toggle").textContent = playing?.paused ? "继续歌曲" : "暂停歌曲";
       $("runtime-error").textContent = status.error || "";
@@ -131,7 +136,7 @@
   $("media-toggle").onclick = event => run(event.currentTarget, () => api(`/api/live/media-${state.playback?.paused ? "resume" : "pause"}`,{method:"POST"}));
   $("clear-queue").onclick = event => { if (confirm("清空所有待播任务？当前播放保持。")) run(event.currentTarget, () => api("/api/live/clear",{method:"POST"})); };
   $("open-overlay").onclick = event => { const page = window.open("about:blank","_blank"); if (!page) return feedback("请允许打开播放器窗口",true); page.opener = null; run(event.currentTarget,async () => { try { const config = await api("/api/settings"); page.location = config.overlay_url; } catch(error) { page.close(); throw error; } }); };
-  $("event-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => { const result = await api("/api/live/mock-event",{method:"POST",body:{type:$("event-type").value,display_name:$("event-name").value,text:$("event-text").value}}); feedback(result.reason || "事件已加入队列",result.status !== "queued"); }); };
+  $("event-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => { const result = await api("/api/live/mock-event",{method:"POST",body:{type:$("event-type").value,display_name:$("event-name").value,platform_user_id:"workbench-debug",text:$("event-text").value}}); feedback(result.reason || "事件已加入队列",result.status !== "queued"); }); };
   $("music-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => {
     await api("/api/live/music",{method:"PUT",body:{...music.settings,default_mode:$("default-mode").value,volume:Number($("music-volume").value),queue_limit:Number($("music-limit").value),cooldown_seconds:Number($("music-cooldown").value)}}); await loadMusic(); feedback("点歌设置已保存，对新确认项生效。");
   }); };
@@ -156,7 +161,7 @@
       const lyrics = parseLyrics($("song-lyrics").value), files = {};
       for (const [key,id] of [["audio","song-file"],["vocal","vocal-file"],["accompaniment","accompaniment-file"]]) {
         const file = $(id).files[0]; if (!file) continue;
-        if (file.size > 96*1024*1024) throw new Error("单个WAV上限96MiB");
+        if (file.size > 96*1024*1024) throw new Error("单个音频上限96MiB");
         $("import-state").textContent = `正在上传${key === "audio" ? "歌曲" : key === "vocal" ? "人声" : "伴奏"}…`;
         files[key] = (await api("/api/live/uploads",{method:"POST",body:file,headers:{"Content-Type":"audio/wav"}})).id;
       }

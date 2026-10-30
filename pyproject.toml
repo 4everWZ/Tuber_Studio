@@ -9,6 +9,7 @@ dependencies = [
     "wsproto>=1.2,<2",
     "httpx>=0.28,<1",
     "psutil>=6,<8",
+    "mutagen>=1.47,<2",
 ]
 
 [dependency-groups]

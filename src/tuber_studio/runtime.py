@@ -14,6 +14,7 @@ from .api_providers import VisionService, create_llm
 from .context import ContextManager
 from .live_media import LiveMedia
 from .memory import missing_slots
+from .online_songs import OnlineSongs
 from .providers import VoiceService, public_error
 from .retention import INTERVAL_SECONDS, RetentionManager
 
@@ -48,10 +49,12 @@ class Runtime:
         self.last_played = None
         self.timings = {"llm_ms": None, "tts_ms": None}
         self.accept_times = {}
+        self.submissions = {}
         self.last_gift = False
         self.media = LiveMedia(settings, store, singing_provider=singing_provider)
         self.playback = None
         self.media_changed = asyncio.Event()
+        self.online_songs = OnlineSongs(self)
         broker = settings.data.get("inference_broker", {})
         self.inference_client = (
             httpx.AsyncClient(
@@ -73,6 +76,7 @@ class Runtime:
         return self.store.character()
 
     async def open(self):
+        await self.online_songs.open()
         try:
             await self.llm.health()
         except Exception as error:
@@ -88,6 +92,7 @@ class Runtime:
             self.retention_worker.cancel()
             await asyncio.gather(self.retention_worker, return_exceptions=True)
         await self.control("stop")
+        await self.online_songs.close()
         if self.inference_observer:
             self.inference_observer.cancel()
             await asyncio.gather(self.inference_observer, return_exceptions=True)
@@ -259,6 +264,7 @@ class Runtime:
         return False
 
     def new_session(self):
+        self.online_songs.choices.clear()
         self.session_id = str(uuid4())
         character = self.character
         self.store.execute(
@@ -282,6 +288,7 @@ class Runtime:
         self.playback_done.set()
         self.playback = None
         self.media_changed.set()
+        self.online_songs.sync()
         await self.send_overlay({"type": "stop", "job_id": job_id})
         if task:
             await asyncio.gather(task, return_exceptions=True)
@@ -294,6 +301,22 @@ class Runtime:
                 "UPDATE events SET status='cancelled',reason=? WHERE id=?", (reason, job["event_id"])
             )
         self.queue.clear()
+        self.online_songs.sync()
+
+    def current_is_online(self):
+        job = self.store.job(self.current_id) if self.current_id else None
+        return bool(job and job.get("media") and json.loads(job["media"]).get("online"))
+
+    def clear_online_queue(self):
+        for identity in list(self.queue):
+            job = self.store.job(identity)
+            if job.get("media") and json.loads(job["media"]).get("online"):
+                self.queue.remove(identity)
+                self.store.update_job(identity, status="cancelled", error="关闭／重新配置在线点歌组件")
+                self.store.execute(
+                    "UPDATE events SET status='cancelled',reason=? WHERE id=?",
+                    ("在线点歌组件关闭／重配", job["event_id"]),
+                )
 
     async def control(self, action):
         if action in {"media-pause", "media-resume"}:
@@ -325,6 +348,7 @@ class Runtime:
             self.error = None
         elif action == "stop":
             self.state = "stopped"
+            self.online_songs.choices.clear()
             self.clear_queue()
             await self.cancel_current("停止会话")
         elif action == "mute":
@@ -339,6 +363,7 @@ class Runtime:
         else:
             raise ValueError("未知控制命令")
         self.wake.set()
+        self.online_songs.sync()
         return self.status()
 
     async def activate(self, character_id, version=None):
@@ -359,17 +384,57 @@ class Runtime:
         self.wake.set()
         return result
 
-    async def submit(self, event):
+    async def submit(self, event, *, online_snapshot=None):
+        key = (event.platform, event.room_id, event.event_id)
+        while key in self.submissions:
+            await asyncio.shield(self.submissions[key])
+        if existing := self.store.duplicate_event(event):
+            return {"id": existing, "status": "duplicate", "reason": "重复事件，不再入队"}
+        finished = asyncio.get_running_loop().create_future()
+        self.submissions[key] = finished
+        try:
+            return await self._submit(event, online_snapshot=online_snapshot)
+        finally:
+            self.submissions.pop(key, None)
+            finished.set_result(None)
+
+    async def _submit(self, event, *, online_snapshot=None):
         now = datetime.now(UTC)
         age = (now - event.timestamp).total_seconds()
         status, reason = "queued", None
+        if self.state != "stopped" and -30 <= age <= self.settings.data["event_ttl_seconds"]:
+            try:
+                if event.type == "chat":
+                    interpreted = await self.online_songs.interpret(event)
+                    if interpreted and isinstance(interpreted, tuple):
+                        _, online_snapshot = interpreted
+                    elif interpreted and interpreted.get("status") == "needs_confirmation":
+                        db_id, fresh = self.store.add_event(
+                            event, self.session_id, "needs_confirmation", interpreted["reason"]
+                        )
+                        return {**interpreted, "id": db_id} if fresh else {"id": db_id, "status": "duplicate"}
+                    elif interpreted:
+                        online_snapshot = interpreted
+                    if online_snapshot:
+                        event = event.model_copy(
+                            update={"type": "song", "text": online_snapshot["song"]["title"], "metadata": {}}
+                        )
+                elif event.type == "song" and "online_id" in event.metadata:
+                    online_snapshot = await self.online_songs.selection(event.metadata["online_id"], event)
+            except ValueError as error:
+                status, reason = "filtered", str(error)
+        age = (datetime.now(UTC) - event.timestamp).total_seconds()
         if self.state == "stopped":
             status, reason = "filtered", "Mock会话未启动"
         elif age > self.settings.data["event_ttl_seconds"] or age < -30:
             status, reason = "expired", "事件过期或时间在未来"
-        elif event.type == "song":
+        elif event.type == "song" and status == "queued":
             try:
-                media = self.media.request(event, self.character)
+                if online_snapshot:
+                    self.online_songs.require_enabled()
+                    if online_snapshot["online"]["epoch"] != self.online_songs.epoch:
+                        raise ValueError("在线点歌设置已改变，请重新点歌")
+                media = online_snapshot or self.media.request(event, self.character)
                 queued_songs = [self.store.job(j) for j in self.queue if self.store.job(j).get("media")]
                 if len(queued_songs) >= self.media.config()["queue_limit"]:
                     raise ValueError("点歌队列已满")
@@ -428,6 +493,9 @@ class Runtime:
         if event.type == "song":
             self.store.update_job(job_id, media=media)
         self.queue.append(job_id)
+        if online_snapshot:
+            self.online_songs.choices.pop(online_snapshot["online"].get("choice_token"), None)
+        self.online_songs.sync()
         self.wake.set()
         return {"id": db_id, "job_id": job_id, "status": "queued"}
 
@@ -449,6 +517,7 @@ class Runtime:
             self.wake.clear()
             while self.queue and self.state == "live" and not self.muted:
                 self.current_id = self.pick()
+                self.online_songs.sync()
                 self.task = asyncio.create_task(self._process(self.current_id))
                 try:
                     await self.task
@@ -459,6 +528,7 @@ class Runtime:
                 finally:
                     self.current_id, self.task = None, None
                     self.playback = None
+                    self.online_songs.sync()
 
     async def _process(self, job_id):
         try:
@@ -557,7 +627,11 @@ class Runtime:
             raise ValueError("点歌排队已过期")
         self.store.update_job(job_id, status="synthesizing")
         character = self.store.character(job["character_id"], job["character_version"])
-        if snapshot["mode"] == "sing":
+        if snapshot.get("online"):
+            snapshot = await self.online_songs.prepared(job_id)
+            self.store.update_job(job_id, media=snapshot)
+            audio, activity = await asyncio.to_thread(self.media.prepare, snapshot)
+        elif snapshot["mode"] == "sing":
             async with self.generation_lock:
                 audio, activity = await self.media.singing.prepare(snapshot, character)
         else:

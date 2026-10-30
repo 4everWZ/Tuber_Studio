@@ -9,3 +9,4 @@ runtime/
 .playwright-cli/
 dist/
 *.egg-info/
+node_modules/
