@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import json
+import logging
+import subprocess
 from pathlib import Path
 
 import httpx
@@ -172,6 +174,300 @@ def test_large_copy_and_existing_hash_use_bounded_reads(tmp_path, monkeypatch):
     portable.initialize_runtime(builtin, runtime)
     portable.initialize_runtime(builtin, runtime)
     assert len(calls) >= 6 and (runtime / "models/large.bin").read_bytes() == content
+
+
+def remote_entry(name, content, urls):
+    return {
+        "path": name,
+        "bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "mode": 0o444,
+        "urls": urls,
+    }
+
+
+def mock_download(monkeypatch, route):
+    original = httpx.Client
+    monkeypatch.delenv("TUBER_HF_BASE", raising=False)
+    monkeypatch.delenv("TUBER_DOWNLOAD_PROXY", raising=False)
+    monkeypatch.setattr(
+        portable.httpx, "Client", lambda *a, **kw: original(*a, transport=httpx.MockTransport(route), **kw)
+    )
+
+
+def test_downloads_are_checked_published_once_and_existing_assets_do_not_access_network(
+    tmp_path, monkeypatch, capsys
+):
+    builtin, runtime = tmp_path / "builtin", tmp_path / "runtime"
+    expected, requests = b"verified model", []
+    manifest(builtin, [remote_entry("models/new.gguf", expected, ["https://huggingface.co/example/model"])])
+
+    def route(request):
+        requests.append(request)
+        return httpx.Response(200, content=expected)
+
+    mock_download(monkeypatch, route)
+    portable.initialize_runtime(builtin, runtime)
+    portable.initialize_runtime(builtin, runtime)
+    assert (runtime / "models/new.gguf").read_bytes() == expected and len(requests) == 1
+    assert not list(runtime.rglob(".tuber-download-*"))
+    assert '"received_bytes": 14' in capsys.readouterr().out
+    target = runtime / "models/new.gguf"
+    target.chmod(0o600)
+    target.write_bytes(b"preserve corruption for inspection")
+    with pytest.raises(ValueError, match="preserved"):
+        portable.initialize_runtime(builtin, runtime)
+    assert len(requests) == 1 and target.read_bytes() == b"preserve corruption for inspection"
+
+
+def test_interrupted_candidate_is_cleaned_before_one_bounded_fallback(tmp_path, monkeypatch):
+    builtin, runtime = tmp_path / "builtin", tmp_path / "runtime"
+    expected, requests = b"complete", []
+    urls = ["https://huggingface.co/first", "https://hf-mirror.com/second"]
+    manifest(builtin, [remote_entry("tts/weights/source.pth", expected, urls)])
+
+    class Interrupted(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"part"
+            raise httpx.ReadError("private upstream address must not be logged")
+
+    def route(request):
+        requests.append(str(request.url))
+        return (
+            httpx.Response(200, stream=Interrupted())
+            if len(requests) == 1
+            else httpx.Response(200, content=expected)
+        )
+
+    mock_download(monkeypatch, route)
+    portable.initialize_runtime(builtin, runtime)
+    assert requests == urls and (runtime / "tts/weights/source.pth").read_bytes() == expected
+    assert not list(runtime.rglob(".tuber-download-*"))
+
+
+@pytest.mark.parametrize("failure", ["hash", "oversize", "status", "redirect_loop", "redirect_http"])
+def test_failed_downloads_never_publish_and_do_not_log_secret_urls(
+    tmp_path, monkeypatch, capsys, caplog, failure
+):
+    builtin, runtime = tmp_path / "builtin", tmp_path / "runtime"
+    url = "https://example.com/public/model?signature=PRIVATE_MARKER"
+    manifest(builtin, [remote_entry("models/download.bin", b"good", [url])])
+    requests = []
+
+    def route(request):
+        requests.append(request)
+        if failure == "hash":
+            return httpx.Response(200, content=b"evil")
+        if failure == "oversize":
+            return httpx.Response(200, content=b"excessive bytes")
+        if failure == "status":
+            return httpx.Response(403)
+        if failure == "redirect_http":
+            return httpx.Response(302, headers={"location": "http://unsafe.local/file"})
+        return httpx.Response(302, headers={"location": str(request.url)})
+
+    mock_download(monkeypatch, route)
+    caplog.set_level(logging.INFO)
+    with pytest.raises(RuntimeError, match="Bounded asset download failed") as error:
+        portable.initialize_runtime(builtin, runtime)
+    assert len(requests) <= 6 and all(request.url.scheme == "https" for request in requests)
+    assert not (runtime / "models/download.bin").exists() and not list(runtime.rglob(".tuber-download-*"))
+    visible = str(error.value) + capsys.readouterr().out + caplog.text
+    assert "PRIVATE_MARKER" not in visible and "example.com" not in visible
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com/a",
+        "https://name:secret@example.com/a",
+        "file:///etc/passwd",
+        "https://example.com/a#fragment",
+    ],
+)
+def test_manifest_download_urls_cannot_acquire_other_protocols_or_credentials(tmp_path, url):
+    builtin = tmp_path / "builtin"
+    manifest(builtin, [remote_entry("models/new.bin", b"x", [url])])
+    with pytest.raises(ValueError):
+        portable.initialize_runtime(builtin, tmp_path / "runtime")
+    assert not (tmp_path / "runtime").exists()
+
+
+def test_mirror_rewrites_only_known_hf_origins_and_preserves_exact_file_path(monkeypatch):
+    monkeypatch.setenv("TUBER_HF_BASE", "https://mirror.example:8443")
+    for source in ("huggingface.co", "hf-mirror.com"):
+        assert (
+            str(portable._download_url(f"https://{source}/org/model/resolve/main/file?download=true"))
+            == "https://mirror.example:8443/org/model/resolve/main/file?download=true"
+        )
+    assert str(portable._download_url("https://models.example/file")) == "https://models.example/file"
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "http://mirror.example",
+        "https://user:secret@mirror.example",
+        "https://mirror.example/prefix",
+        "https://mirror.example/?secret=x",
+        "https://mirror.example/#fragment",
+    ],
+)
+def test_mirror_override_cannot_add_credentials_paths_queries_or_plain_http(monkeypatch, base):
+    monkeypatch.setenv("TUBER_HF_BASE", base)
+    with pytest.raises(ValueError):
+        portable._download_url("https://huggingface.co/org/model")
+
+
+def test_explicit_proxy_reaches_download_client_without_downgrading_https_or_logging_origin(
+    tmp_path, monkeypatch, capsys
+):
+    builtin, runtime = tmp_path / "builtin", tmp_path / "runtime"
+    manifest(builtin, [remote_entry("models/proxy.bin", b"ok", ["https://huggingface.co/org/file"])])
+    monkeypatch.setenv("TUBER_DOWNLOAD_PROXY", "http://127.0.0.1:19099")
+    monkeypatch.setenv("TUBER_HF_BASE", "https://hf-mirror.com")
+    captured, original = [], httpx.Client
+
+    def factory(*args, proxy=None, **kwargs):
+        captured.append((proxy, kwargs["trust_env"]))
+
+        def route(request):
+            assert request.url.scheme == "https" and request.url.host == "hf-mirror.com"
+            return httpx.Response(200, content=b"ok")
+
+        return original(*args, transport=httpx.MockTransport(route), **kwargs)
+
+    monkeypatch.setattr(portable.httpx, "Client", factory)
+    portable.initialize_runtime(builtin, runtime)
+    assert captured == [("http://127.0.0.1:19099", False)]
+    assert "19099" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "proxy",
+    [
+        "socks5://localhost:8080",
+        "http://user:secret@localhost:8080",
+        "http://localhost:8080/path",
+        "https://localhost:8080?secret=1",
+    ],
+)
+def test_proxy_is_an_explicit_origin_and_rejects_credentials_without_echo(monkeypatch, proxy):
+    monkeypatch.setenv("TUBER_DOWNLOAD_PROXY", proxy)
+    with pytest.raises(ValueError) as error:
+        with portable._download_client():
+            pytest.fail("Invalid proxy must not create a network client")
+    assert proxy not in str(error.value) and "secret" not in str(error.value)
+
+
+def test_each_download_gets_its_own_deadline_separate_from_serve_timeout(tmp_path, monkeypatch):
+    builtin, runtime = tmp_path / "builtin", tmp_path / "runtime"
+    manifest(
+        builtin,
+        [
+            remote_entry(f"models/{index}.bin", b"data", [f"https://example.com/{index}"])
+            for index in range(2)
+        ],
+    )
+    clock = [0.0]
+
+    class Slow(httpx.SyncByteStream):
+        def __iter__(self):
+            clock[0] += 900
+            yield b"data"
+
+    mock_download(monkeypatch, lambda request: httpx.Response(200, stream=Slow()))
+    monkeypatch.setattr(portable.time, "monotonic", lambda: clock[0])
+    portable.initialize_runtime(builtin, runtime)
+    assert clock[0] == 1800 and len(list((runtime / "models").iterdir())) == 2
+
+
+def test_file_deadline_aborts_trickling_stream_and_cleans_partial(tmp_path, monkeypatch):
+    builtin, runtime = tmp_path / "builtin", tmp_path / "runtime"
+    manifest(
+        builtin,
+        [
+            remote_entry(
+                "models/slow.bin", b"data", ["https://example.com/first", "https://example.com/second"]
+            )
+        ],
+    )
+    clock, requests = [0.0], []
+
+    class TooSlow(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"d"
+            clock[0] = portable.DOWNLOAD_SECONDS + 1
+            yield b"ata"
+
+    def route(request):
+        requests.append(request)
+        return httpx.Response(200, stream=TooSlow())
+
+    mock_download(monkeypatch, route)
+    monkeypatch.setattr(portable.time, "monotonic", lambda: clock[0])
+    with pytest.raises(TimeoutError):
+        portable.initialize_runtime(builtin, runtime)
+    assert len(requests) == 1 and not list(runtime.rglob(".tuber-download-*"))
+
+
+def test_prepare_hook_runs_fixed_child_only_for_selected_local_speech(tmp_path, monkeypatch):
+    (tmp_path / "runtime").mkdir()
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"kind": "gpt_sovits"}}))
+    assert portable.prepare_runtime(tmp_path)["prepared"] is False
+    script = tmp_path / "tools/jetson/tts/bootstrap.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("# fixed program, not executed by CPU contract test")
+    calls = []
+
+    class Child:
+        def __init__(self, argv, **kwargs):
+            calls.append((argv, kwargs))
+
+        def wait(self, timeout):
+            assert timeout == portable.PREPARE_SECONDS
+            return 0
+
+    monkeypatch.setattr(portable.subprocess, "Popen", Child)
+    assert portable.prepare_runtime(tmp_path) == {"prepared": True, "returncode": 0}
+    assert calls[0][0] == [portable.sys.executable, str(script), "--root", str(tmp_path)]
+    assert calls[0][1] == {"cwd": tmp_path, "start_new_session": True}
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"kind": "openai_compatible"}}))
+    assert portable.prepare_runtime(tmp_path)["prepared"] is False and len(calls) == 1
+
+
+def test_prepare_timeout_terminates_only_its_child_and_propagates_failure(tmp_path, monkeypatch):
+    (tmp_path / "runtime").mkdir()
+    (tmp_path / "runtime/studio.json").write_text(json.dumps({"tts": {"kind": "gpt_sovits"}}))
+    script = tmp_path / "tools/jetson/tts/bootstrap.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("# fixed")
+    events = []
+
+    class Child:
+        pid = 123456
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            events.append("terminate")
+
+        def wait(self, timeout):
+            if timeout == portable.PREPARE_SECONDS:
+                raise subprocess.TimeoutExpired("fixed bootstrap", timeout)
+            events.append(("wait", timeout))
+            return -15
+
+    monkeypatch.setattr(portable.subprocess, "Popen", Child)
+    if portable.os.name == "posix":
+        monkeypatch.setattr(portable.os, "killpg", lambda pid, signum: events.append((pid, signum)))
+    with pytest.raises(subprocess.TimeoutExpired):
+        portable.prepare_runtime(tmp_path)
+    assert ("wait", 8) in events
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@
 
 本规范维护 Provider、声音身份／缓存、设备 Profile 和推理封装；具体设备测量及准入记录由证据文件维护。
 
-非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。本地资源配置为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，已验证动态语音、浏览器实际播放ACK及真实长输入接收后同进程继续合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。模板仍默认text且关闭直播，设备由Operator显式启用；真实平台接入与持续运行须独立验收。当前声音与共驻测量见[瑶瑶正式验收](../../evaluations/results/yaoyao-v2-voice-20261030.json)，原引擎优化对照见[Genie资源实验](../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
+非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。本地资源配置为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，已验证动态语音、浏览器实际播放ACK及真实长输入接收后同进程继续合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。源码模板默认text且关闭直播，ready程序镜像的新安装另用获准声音的live预设，首次下载与准备完成后才加载；真实平台接入与持续运行须独立验收。当前声音与共驻测量见[瑶瑶正式验收](../../evaluations/results/yaoyao-v2-voice-20261030.json)，原引擎优化对照见[Genie资源实验](../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
 
 初始大肥鱼的目标声线为清亮柔软、略带奶气的普通话少女音，避免明显电音／金属感；已接受的声音绑定为yaoyao_sovits_v2，角色设定和形象继续由whale角色卡维护。原素材和实际合成须分别试听；模型版本、干净参考、来源和运行包身份分别核验。声音替换重新验证质量、速度与整机RAM，旧声线的相对试听通过不转移为新声线准入，也不以强行升调代替声音选择。
 
@@ -60,7 +60,7 @@ Qwen3.5-2B 是可显式准备的历史候选，不替换 MiniCPM5-2B 默认；[�
 
 ## 工作模式
 
-配置模板默认 text，直播功能关闭；已准入设备由Operator显式启用Genie／Mock直播，评论页和其他导航不会隐式改变资源模式或启用声音。使用本地 LLM 时，text 结束直播生产和待播任务、卸载本地 TTS，保留所选 LLM 给评论回复等工作；选择外部 LLM API 时可释放本地推理资源。视觉须另行显式配置，text 名称不表示默认模型具有图像能力。外部语音 API 不依赖本地 live 共驻，也不自动切换角色声音。
+源码配置模板默认 text，直播功能关闭；ready程序镜像的新安装使用独立Genie／Mock live预设，已有安装保留Operator配置。评论页和其他导航不会隐式改变资源模式或启用声音。使用本地 LLM 时，text 结束直播生产和待播任务、卸载本地 TTS，保留所选 LLM 给评论回复等工作；选择外部 LLM API 时可释放本地推理资源。视觉须另行显式配置，text 名称不表示默认模型具有图像能力。外部语音 API 不依赖本地 live 共驻，也不自动切换角色声音。
 
 用户显式选择 live，须让所选本地 LLM 与 TTS 均就绪并共驻，仍受统一生成配额控制；启动／恢复直播先确认加载成功，失败时不启动直播任务。正式 Genie Profile 已验证停止、切text卸载TTS及回live，不能据此推断任意重启或故障恢复均已验收。
 
@@ -72,7 +72,7 @@ compact的TTS生成器完全关闭后再执行上游已有的缓存清理，让�
 
 本地语音减内存保留固定参考特征预计算和推理精简路线，也可独立比较轻量引擎或局部 INT8。数值保持路线保留当前 v2 声音、动态中文 BERT 和原采样／解码；轻量引擎、量化或精度变化须单独标明条件并重新评估质量，不能以关闭 BERT、换音色或缩小 LLM 窗口冒充相同配置／质量下的优化。参考特征缓存绑定音色版本、参考音频／文本／语言、模型权重、前端与实现版本，任何不匹配须拒绝复用，新 OC 各自建立缓存。
 
-compact 对照后端使用固定参考 NPZ／JSON 缓存，常驻路径跳过 HuBERT，仅保留原始特征实际使用的 22 层 BERT backbone；目标中文执行同一前端和动态 BERT，AR／VITS 解码、权重精度与采样不改变。参考缓存缺失／失效时，由 TTS 监督进程启动固定 argv 的短命预计算子进程，确认退出后才加载精简 pipeline，不在常驻进程中加载后删除 HuBERT。Genie 的完整模型包另须显式离线准备，不在常驻服务中导出。live冷启动先卸载LLM，完成所选TTS加载、预热和健康检查，再按当前窗口加载LLM；失败、取消或模型异常按既有模式回滚，不静默换后端或互斥模式。
+compact 对照后端使用固定参考 NPZ／JSON 缓存，常驻路径跳过 HuBERT，仅保留原始特征实际使用的 22 层 BERT backbone；目标中文执行同一前端和动态 BERT，AR／VITS 解码、权重精度与采样不改变。参考缓存缺失／失效时，由 TTS 监督进程启动固定 argv 的短命预计算子进程，确认退出后才加载精简 pipeline，不在常驻进程中加载后删除 HuBERT。Genie 的完整模型包在ready首次初始化或显式维护阶段准备，不在常驻服务中导出。live冷启动先卸载LLM，完成所选TTS加载、预热和健康检查，再按当前窗口加载LLM；失败、取消或模型异常按既有模式回滚，不静默换后端或互斥模式。
 
 TTS报告就绪前，须在同进程中完成一条固定短中文、显式种子的完整非静音预热合成并结束清理，让动态中文前端及AR／VITS首次初始化发生在LLM未驻留阶段。预热结果丢弃，不产生台词／播放／对话记录，不改变外部请求的默认随机种子；预热失败不就绪。短句预热不替代更长／混语形状和整机峰值验证。
 
@@ -102,13 +102,23 @@ Genie常驻路径仅加载CPU ORT：原checkpoint的22层中文BERT有效输出�
 
 输出恢复原v2后处理：各音频段仅在峰值超过1时归一化，各段尾部都追加`max(fragment_interval,0.01)`秒静音（含最后一段，默认0.3），按文本顺序拼接，再乘32768转int16。测量同时保留原声波时长、分段数、静音总时长、最终音频时长与真实合成耗时；加静音降低RTF不代表计算更快，旧无gap实验不改写为同协议结果。
 
-永久bundle位于`runtime/tts/genie/<voice_id>`，首次离线安装原子创建，拒绝覆盖和路径链接；缺失时要求显式准备，不从实验目录临时凑模型。manifest绑定原权重、参考、前端／采样／量化实现及每个模型图和external数据的内容身份，冷加载完整校验，每句及健康检查仅查小stat，变化拒绝旧pipeline并要求重建／重载。`/docs`只报告实际backend、voice_id和bundle_identity；工作台先确认该身份，再使用含backend及bundle身份的音频缓存，不串用旧compact或其他OC的声音。
+永久bundle位于`runtime/tts/genie/<voice_id>`，由ready首次初始化或显式维护原子创建，拒绝覆盖和路径链接；常驻服务缺包时要求准备，不从实验目录临时凑模型。manifest绑定原权重、参考、前端／采样／量化实现及每个模型图和external数据的内容身份，冷加载完整校验，每句及健康检查仅查小stat，变化拒绝旧pipeline并要求重建／重载。`/docs`只报告实际backend、voice_id和bundle_identity；工作台先确认该身份，再使用含backend及bundle身份的音频缓存，不串用旧compact或其他OC的声音。
 
 CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制](https://forums.developer.nvidia.com/t/intermittent-nvmapmemalloc-error-12-and-cuda-allocator-crash-during-pytorch-inference-on-jetson-orin-nano/349752)：MemAvailable充足不保证大块CUDA分配成功。只可对本项目固定模型目录中的干净文件作缓存建议，不全局drop_caches、不改系统／内核安全参数，不把换页维持或分配错误隐藏成共驻成功。
 
 ## 单容器封装与推理边界
 
 目标为从适合 Jetson 的原始 CUDA／PyTorch 镜像派生一个 tuber-studio 镜像／容器，只保留运行所需组件，统一 Python／CUDA 环境，共享项目 runtime 挂载。容器内分离业务后端、受限 broker 和按需 llama／TTS 子进程；不默认部署 host Docker controller／独立 host venv，也不挂载 Docker.sock。
+
+程序交付面向Jetson ARM64／L4T R36.4，镜像`tuber-studio:ready-r36.4`只包含程序、锁定依赖、固定URL／大小／SHA256清单、小型预设及Genie转换／图骨架模板；不内置推理权重、原始声音模型或生成的永久包。原生CUDA／Torch仍使程序镜像处于约14GB量级，不按排除权重推断微型体积。构建和导出不得依赖旧runtime、模型资产或生产数据。
+
+首次启动将[固定下载清单](../../config/jetson/downloads.json)中的MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT及NLTK下载到持久runtime，逐文件验证固定来源、字节数和SHA256，完整校验后才发布。可使用HTTPS origin形式的TUBER_HF_BASE替换HF源站，不能改变revision、关闭校验或回退到其他声音／模型。初次网络、公共源可用性和转换能力是启动前提；超时、取消或校验失败必须有界报错，不能把部分文件或半个bundle当成就绪。
+
+下载后固定短命bootstrap顺序完成权重净化、参考处理／NPZ、转换、原采样恢复、INT8图准备和bundle安装；整个准备期间不得驻留LLM，结束并释放准备资源后才进入常驻TTS预热及Mini131072／q4_0共驻。初始化与健康检查不得pip安装依赖、创建新运行环境或改变原生Torch。首次准备成本与冷加载、热态合成分别测量；转换不在业务／直播常驻进程中进行。
+
+重启验证并复用已下载及生成产物，不重复下载／转换，也不覆盖已有studio.json、TTS YAML、令牌或数据库。不可变源资产或声音包身份不符时拒绝并保留原文件，不静默修补；原BERT／HuBERT checkpoint、sanitized权重、参考及NPZ保留声音身份依赖，inode和时间戳在冷启动重新建立签名。镜像不携带生产凭证、数据库、日志、普通缓存或实验环境；新数据目录独立生成私有令牌与空业务数据库。
+
+新安装默认features.live_enabled=true及inference_broker.mode=live，业务仍stopped且自动浏览／回复关闭；已有Operator配置优先。模型就绪须观察实际窗口、驻留与bundle身份，HTTP可达不算就绪，健康检查只读，不触发下载、转换或加载。精简镜像及显式维护新声音的流程继续保留；构建、交付与启动命令由[部署指南](../guides/deployment.md)维护，未完成的设备冷启动验收由[当前计划](../plans/p0-runtime.md)维护。
 
 工作台为本地声音计算缓存内容身份时，只可读取已配置gpt_sovits音色的assets或runtime/tts/ref内有效WAV；拒绝绝对路径、穿越、链接和其他runtime／系统文件。该专用读取不扩展通用素材路由，也不给模型或观众文件读取权限。
 

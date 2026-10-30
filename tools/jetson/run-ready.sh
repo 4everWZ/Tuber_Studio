@@ -31,9 +31,13 @@ fi
 security=(--read-only --cap-drop ALL --security-opt no-new-privileges=true --pids-limit 256
   --ulimit core=0:0 --user "$(id -u):$(id -g)"
   --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m --tmpfs /run:rw,nosuid,nodev,noexec,size=16m)
-# An offline, CPU-only initialization pass gives bind mounts and named-volume
-# launches the same missing-only initialization; no model is loaded here.
-docker run --rm --pull=never --network none "${security[@]}" \
+# First install downloads pinned assets and prepares the fixed voice before
+# starting resident inference. Repeated launches reuse verified local files.
+initial_network=(--network bridge)
+mirror=()
+if [[ -n "${TUBER_HF_BASE:-}" ]]; then mirror=(-e "TUBER_HF_BASE=$TUBER_HF_BASE"); fi
+if [[ -n "${TUBER_DOWNLOAD_PROXY:-}" ]]; then mirror+=(-e "TUBER_DOWNLOAD_PROXY=$TUBER_DOWNLOAD_PROXY"); fi
+docker run --rm --pull=never --runtime nvidia "${initial_network[@]}" "${mirror[@]}" "${security[@]}" \
   --mount "type=bind,src=$data,dst=/workspace/tuber/runtime" "$image" --initialize-only
 mounts=(--mount "type=bind,src=$data,dst=/workspace/tuber/runtime")
 for relative in models tts/weights tts/pretrained tts/ref tts/genie nltk_data; do

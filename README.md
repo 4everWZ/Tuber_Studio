@@ -7,7 +7,14 @@
     uv sync --python 3.12
     uv run python -m tuber_studio
 
-打开[本地工作台](http://127.0.0.1:8020)，管理令牌在runtime/admin-token。Jetson使用单派生Docker镜像／容器；模板仍默认text且关闭直播，已部署设备由Operator显式启用Mock／live，切回text会卸载TTS。新部署须先准备并校验Genie永久音色包，不能直接沿用已部署设备的准入结论。设置页可保存Provider、独立API凭证与上下文窗口。MiniCPM5-2B只支持文本，多模态仅保留本地／API接口，默认关闭。连接／容量失败会显示错误。
+打开[本地工作台](http://127.0.0.1:8020)，管理令牌在runtime/admin-token。源码模板默认text且关闭直播；Jetson程序镜像另带MiniCPM5-2B／131072／q4_0与Genie瑶瑶v2的live预设，不内置推理权重。首次启动联网下载固定来源并校验，在持久数据目录一次性准备音色包，然后加载资源；业务保持停止、自动浏览／回复关闭。切回text会卸载TTS。设置页可保存Provider、独立API凭证与上下文窗口。MiniCPM5-2B只支持文本，多模态仅保留本地／API接口，默认关闭。下载、准备、连接或容量失败均须可见，不静默换模型或声音。
+
+Jetson ARM64／L4T R36.4收到程序镜像归档和独立启动脚本后，无需项目源码或宿主Python环境；首次安装须联网：
+
+    docker load -i tuber-studio-ready-r36.4.tar.gz
+    bash run-ready.sh --data ./tuber-data
+
+镜像只包含程序、依赖、固定下载清单和小型预设；原生CUDA／Torch使程序镜像仍约14GB量级，不是微型镜像。权重、词典和生成的Genie包留在tuber-data；验证通过后重复启动复用，不重新下载安装依赖，也不覆盖已有配置、令牌或数据库。可用TUBER_HF_BASE指定HTTPS镜像源。新数据目录首次下载／准备／冷启动仍待设备验收，见[当前计划](docs/plans/p0-runtime.md)；既有声音结果不替代该验证。原精简镜像流程仍保留。
 
 [部署与Jetson启动](docs/guides/deployment.md) · [创建OC](docs/guides/characters.md) · [规范与文档导航](docs/README.md) · [当前计划](docs/plans/p0-runtime.md)
 

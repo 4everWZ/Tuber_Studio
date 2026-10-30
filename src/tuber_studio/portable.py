@@ -1,8 +1,10 @@
-"""Offline image bootstrap and observed readiness; legacy stack stays independent.
+"""Program-image asset bootstrap and observed readiness; legacy stack is separate.
 
-The image supplies a controlled manifest and immutable payload. Runtime files
-are published without replacing existing data. Only a once-per-boot typed mode
-request may establish resources; Docker health checks are strictly observers.
+The image supplies small presets and a controlled public-download manifest.
+Runtime files are verified and published without replacing existing data. Only
+a once-per-boot typed mode request may establish resources; Docker health checks
+are strictly observers. Generated voice artifacts belong to the fixed child
+bootstrap, which exits before the normal model processes start.
 """
 
 from __future__ import annotations
@@ -17,8 +19,11 @@ import re
 import secrets
 import signal
 import stat
+import subprocess
+import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 import httpx
@@ -26,6 +31,8 @@ import httpx
 ROOT = Path("/workspace/tuber")
 BUILTIN = Path("/opt/tuber-builtin")
 DEADLINE_SECONDS = 420
+DOWNLOAD_SECONDS = 1800
+PREPARE_SECONDS = 1800
 CHUNK_BYTES = 1024 * 1024
 TOKENS = ("admin-token", "overlay-token", "inference-token")
 PRESERVE = {"studio.json", "tts/tts_infer.yaml"}
@@ -116,7 +123,7 @@ def _manifest(builtin):
         raise ValueError("Portable manifest files must be a list")
     entries, paths = [], set()
     for entry in manifest["files"]:
-        if not isinstance(entry, dict) or set(entry) - {"path", "bytes", "sha256", "mode", "policy"}:
+        if not isinstance(entry, dict) or set(entry) - {"path", "bytes", "sha256", "mode", "policy", "urls"}:
             raise ValueError("Unsupported portable file entry")
         name = entry.get("path")
         if (
@@ -148,9 +155,179 @@ def _manifest(builtin):
             or entry["mode"] not in {0o444, 0o600}
         ):
             raise ValueError("Invalid portable asset identity or permissions")
+        if "urls" in entry:
+            urls = entry["urls"]
+            if not isinstance(urls, list) or not 1 <= len(urls) <= 4:
+                raise ValueError("Download entries require one to four fixed HTTPS candidates")
+            for url in urls:
+                _https_url(url)
         paths.add(name)
         entries.append(entry | {"policy": policy})
     return entries
+
+
+def _https_url(value):
+    if not isinstance(value, str) or not value or any(ord(char) <= 32 for char in value):
+        raise ValueError("Asset URLs must be fixed absolute HTTPS URLs")
+    try:
+        url = httpx.URL(value)
+    except (httpx.InvalidURL, ValueError):
+        raise ValueError("Invalid fixed HTTPS asset URL") from None
+    if url.scheme != "https" or not url.host or url.userinfo or url.fragment:
+        raise ValueError("Asset URLs require HTTPS without user information or fragments")
+    return url
+
+
+def _download_url(value):
+    url = _https_url(value)
+    mirror = os.environ.get("TUBER_HF_BASE")
+    if mirror and url.host in {"huggingface.co", "hf-mirror.com"} and url.port in (None, 443):
+        base = _https_url(mirror)
+        if base.path not in ("", "/") or base.query:
+            raise ValueError("TUBER_HF_BASE must be a plain HTTPS origin")
+        url = url.copy_with(scheme=base.scheme, host=base.host, port=base.port)
+    return url
+
+
+def _download_progress(entry, count, *, attempt, complete=False):
+    print(
+        json.dumps(
+            {
+                "portable_download": {
+                    "path": entry["path"],
+                    "received_bytes": count,
+                    "total_bytes": entry["bytes"],
+                    "attempt": attempt,
+                    "complete": complete,
+                }
+            }
+        ),
+        flush=True,
+    )
+
+
+@contextmanager
+def _download_client():
+    # httpx INFO logs include full request URLs, including signed CDN queries.
+    # Initialization happens before the app starts; keep those URLs out of logs.
+    logger = logging.getLogger("httpx")
+    was_disabled = logger.disabled
+    logger.disabled = True
+    try:
+        proxy = os.environ.get("TUBER_DOWNLOAD_PROXY")
+        if proxy:
+            try:
+                parsed = httpx.URL(proxy)
+            except (httpx.InvalidURL, ValueError):
+                raise ValueError("Invalid explicit download proxy origin") from None
+            if (
+                any(ord(char) <= 32 for char in proxy)
+                or parsed.scheme not in {"http", "https"}
+                or not parsed.host
+                or parsed.userinfo
+                or parsed.path not in ("", "/")
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("Download proxy must be an HTTP(S) origin without credentials or paths")
+            proxy = str(parsed)
+        with httpx.Client(
+            trust_env=False, follow_redirects=False, proxy=proxy, headers={"Accept-Encoding": "identity"}
+        ) as client:
+            yield client
+    finally:
+        logger.disabled = was_disabled
+
+
+def _publish(temporary, target, entry, runtime, deadline):
+    """Publish a complete private temporary file without replacing a winner."""
+    if os.name != "nt":
+        temporary.chmod(entry["mode"])
+    _checked(target, runtime)
+    try:
+        os.link(temporary, target, follow_symlinks=False)
+    except FileExistsError:
+        _checked(target, runtime)
+        _existing(target, entry, deadline)
+        return False
+    return True
+
+
+def _download_missing(target, entry, runtime, deadline):
+    target = _checked(target, runtime)
+    if _existing(target, entry, deadline):
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _checked(target.parent, runtime)
+    urls = list(dict.fromkeys(str(_download_url(url)) for url in entry["urls"]))
+    for attempt, url in enumerate(urls, 1):
+        _deadline(deadline)
+        descriptor, temporary = tempfile.mkstemp(prefix=".tuber-download-", dir=target.parent)
+        temporary = Path(temporary)
+        published = False
+        verified = False
+        try:
+            with (
+                os.fdopen(descriptor, "wb") as output,
+                _download_client() as client,
+            ):
+                count, digest = 0, hashlib.sha256()
+                next_progress = time.monotonic() + 5
+                _download_progress(entry, 0, attempt=attempt)
+                for redirect in range(6):
+                    _deadline(deadline)
+                    timeout = max(0.001, min(30, deadline - time.monotonic()))
+                    with client.stream(
+                        "GET", url, timeout=httpx.Timeout(timeout, connect=min(10, timeout))
+                    ) as response:
+                        if response.status_code in {301, 302, 303, 307, 308}:
+                            location = response.headers.get("location")
+                            if redirect == 5 or not location:
+                                raise ValueError("Asset download exceeded its safe redirect limit")
+                            url = str(_https_url(str(httpx.URL(url).join(location))))
+                            continue
+                        response.raise_for_status()
+                        length = response.headers.get("content-length")
+                        if length is not None and int(length) != entry["bytes"]:
+                            raise ValueError("Download length does not match the manifest")
+                        # Check the absolute deadline on each transport chunk;
+                        # aggregating to 1MiB first could hide a slow trickle.
+                        for chunk in response.iter_bytes():
+                            _deadline(deadline)
+                            count += len(chunk)
+                            if count > entry["bytes"]:
+                                raise ValueError("Asset download exceeded its declared size")
+                            output.write(chunk)
+                            digest.update(chunk)
+                            if time.monotonic() >= next_progress:
+                                _download_progress(entry, count, attempt=attempt)
+                                next_progress = time.monotonic() + 5
+                        break
+                if (count, digest.hexdigest()) != (entry["bytes"], entry["sha256"]):
+                    raise ValueError("Downloaded bytes do not match the controlled manifest")
+                output.flush()
+                os.fsync(output.fileno())
+                _advise(output)
+                verified = True
+            published = _publish(temporary, target, entry, runtime, deadline)
+            _download_progress(entry, count, attempt=attempt, complete=True)
+            return published
+        except (httpx.HTTPError, ValueError, TimeoutError):
+            if verified:
+                raise
+            # Do not stringify request exceptions: their URL may contain a
+            # signed CDN query or private mirror information. Each fixed
+            # candidate is attempted once within this file's common deadline.
+            pass
+        finally:
+            if temporary.exists() and os.name == "nt":
+                temporary.chmod(0o600)
+            temporary.unlink(missing_ok=True)
+            if published and os.name == "nt":
+                _checked(target, runtime).chmod(entry["mode"])
+    raise RuntimeError(
+        "Bounded asset download failed for " + entry["path"] + "; partial files were removed"
+    ) from None
 
 
 def _existing(path, entry, deadline):
@@ -201,19 +378,8 @@ def _copy_missing(source, target, entry, runtime, builtin, deadline):
                 _advise(output)
             finally:
                 _advise(original)
-        if os.name != "nt":
-            temporary.chmod(entry["mode"])
-        _checked(target, runtime)
-        try:
-            # link publishes atomically and refuses an existing destination;
-            # rename/replace would overwrite a concurrent initializer's data.
-            os.link(temporary, target, follow_symlinks=False)
-        except FileExistsError:
-            _checked(target, runtime)
-            _existing(target, entry, deadline)
-            return False
-        published = True
-        return True
+        published = _publish(temporary, target, entry, runtime, deadline)
+        return published
     finally:
         temporary.unlink(missing_ok=True)
         if published and os.name == "nt":
@@ -263,13 +429,65 @@ def initialize_runtime(builtin=BUILTIN, runtime=ROOT / "runtime", *, deadline=No
     _checked(runtime, runtime).mkdir(parents=True, exist_ok=True, mode=0o700)
     copied, preserved = [], []
     for entry in entries:
-        _deadline(deadline)
-        source = _checked(builtin / "files" / entry["path"], builtin)
+        file_deadline = deadline if deadline is not None else time.monotonic() + DOWNLOAD_SECONDS
+        _deadline(file_deadline)
         target = _checked(runtime / entry["path"], runtime)
-        added = _copy_missing(source, target, entry, runtime, builtin, deadline)
+        if "urls" in entry:
+            added = _download_missing(target, entry, runtime, file_deadline)
+        else:
+            source = _checked(builtin / "files" / entry["path"], builtin)
+            added = _copy_missing(source, target, entry, runtime, builtin, file_deadline)
         (copied if added else preserved).append(entry["path"])
     created_tokens = [name for name in TOKENS if _token(runtime, name)]
     return {"copied": copied, "preserved": preserved, "created_credentials": created_tokens}
+
+
+def prepare_runtime(root=ROOT):
+    """Run the fixed generated-asset bootstrap, then release all its memory.
+
+    This child owns conversion/reference work; portable never imports Torch or
+    generates graphs itself. Older checkouts without the script stay usable.
+    The program-only image always includes the script.
+    """
+    root = Path(root)
+    data = _small_json(_checked(root / "runtime/studio.json", root))
+    if data.get("tts", {}).get("kind") != "gpt_sovits":
+        return {"prepared": False, "reason": "local speech is not selected"}
+    script = _checked(root / "tools/jetson/tts/bootstrap.py", root)
+    if not script.exists():
+        return {"prepared": False, "reason": "legacy checkout has no generated-asset bootstrap"}
+    if not script.is_file():
+        raise ValueError("Generated-asset bootstrap must be a fixed regular program file")
+    child = subprocess.Popen(
+        [sys.executable, str(script), "--root", str(root)],
+        cwd=root,
+        start_new_session=True,
+    )
+    try:
+        code = child.wait(timeout=PREPARE_SECONDS)
+        if code:
+            raise RuntimeError("Generated-asset bootstrap failed; inspect its phase logs")
+    except BaseException:
+        if os.name == "posix":
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        elif child.poll() is None:
+            child.terminate()
+        try:
+            child.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                child.kill()
+            child.wait(timeout=5)
+        raise
+    return {"prepared": True, "returncode": code}
 
 
 def _configuration(root):
@@ -495,14 +713,27 @@ def main():
         if args.healthcheck:
             asyncio.run(healthcheck())
             return 0
-        deadline = time.monotonic() + DEADLINE_SECONDS
-        initialized = initialize_runtime(deadline=deadline)
+        _checked(ROOT / "runtime", ROOT).mkdir(parents=True, exist_ok=True, mode=0o700)
+        _status(ROOT, {"state": "starting", "phase": "asset_initialization"})
+        initialized = initialize_runtime(BUILTIN, ROOT / "runtime")
         print(json.dumps({"portable_initialized": initialized}, ensure_ascii=False), flush=True)
+        _status(ROOT, {"state": "starting", "phase": "generated_asset_preparation"})
+        prepared = prepare_runtime(ROOT)
+        print(json.dumps({"portable_prepared": prepared}, ensure_ascii=False), flush=True)
         if not args.initialize_only:
-            _deadline(deadline)
-            asyncio.run(serve_portable(startup_timeout=deadline - time.monotonic()))
+            asyncio.run(serve_portable(startup_timeout=DEADLINE_SECONDS))
+        else:
+            _status(ROOT, {"state": "initialized", "phase": "assets_complete"})
         return 0
     except Exception:
+        if not args.healthcheck:
+            try:
+                _status(
+                    ROOT,
+                    {"state": "error", "error": "Asset initialization or startup failed; inspect phase logs"},
+                )
+            except (OSError, ValueError):
+                pass
         LOGGER.exception("Portable startup/observation failed")
         return 1
 

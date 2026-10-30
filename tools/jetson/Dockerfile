@@ -6,7 +6,7 @@ ARG TTS_TAG=20240821v2
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && git clone --depth 1 --branch "${TTS_TAG}" https://github.com/RVC-Boss/GPT-SoVITS.git /opt/GPT-SoVITS-v2 \
     && rm -rf /opt/GPT-SoVITS-v2/.git
-FROM ${CUDA_IMAGE}
+FROM ${CUDA_IMAGE} AS program-base
 
 # Reuse the original CUDA/PyTorch image; do not copy a second CUDA stack.
 COPY --from=llama /opt/llama.cpp/bin/llama-server /opt/llama/bin/llama-server
@@ -96,3 +96,20 @@ EXPOSE 9020
 # A direct image launch must not silently inherit the CUDA base image's root user.
 USER 65532:65532
 ENTRYPOINT ["/opt/studio-venv/bin/python", "-m", "tuber_studio.stack"]
+
+# The named context is generated from public download metadata and two small
+# presets. It contains no runtime/, model tensors or installation credentials.
+FROM program-base AS ready
+USER root
+COPY --from=ready_assets /builtin /opt/tuber-builtin
+COPY --from=ready_assets /run-ready.sh /opt/tuber-launch/run-ready.sh
+COPY tools/jetson/tts/bootstrap.py ./tools/jetson/tts/bootstrap.py
+RUN chmod -R a+rX /opt/tuber-builtin /opt/tuber-launch \
+    && mkdir -p /workspace/tuber/runtime \
+    && chown 65532:65532 /workspace/tuber/runtime \
+    && chmod 0700 /workspace/tuber/runtime
+VOLUME ["/workspace/tuber/runtime"]
+USER 65532:65532
+HEALTHCHECK --interval=20s --timeout=10s --start-period=420s --retries=3 \
+    CMD ["/opt/studio-venv/bin/python", "-m", "tuber_studio.portable", "--healthcheck"]
+ENTRYPOINT ["/opt/studio-venv/bin/python", "-m", "tuber_studio.portable"]
