@@ -31,6 +31,9 @@ def source(tmp_path):
         "tools/jetson/tts/requirements.txt",
         "tools/jetson/tts/genie-requirements.txt",
         "third_party/Genie-TTS/dependency.py",
+        "components/song_requests/Dockerfile",
+        "components/song_requests/package.json",
+        "components/song_requests/package-lock.json",
     ):
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +94,10 @@ def test_program_archive_excludes_runtime_and_untracked_secrets(source):
         assert (
             archive.extractfile("program/environment-image.txt").read().decode().strip()
             == result["environment_image"]
+        )
+        assert (
+            archive.extractfile("program/online-environment-image.txt").read().decode().strip()
+            == result["online_environment_image"]
         )
         assert all(b"PRIVATE" not in archive.extractfile(name).read() for name in names)
 
@@ -188,17 +195,18 @@ esac
     env = {**os.environ, "MOCK_STATE": str(state), "MOCK_DATA": str(data)}
 
     # Resolve PATH inside Bash so both native Linux and Git-for-Windows use shell paths.
-    def run(*, entry="run-ready.sh", **overrides):
+    def run(*, entry="run-ready.sh", extra=(), **overrides):
         return subprocess.run(
             [
                 bash,
                 "-c",
-                'export PATH="$(cd "$1" && pwd):$PATH"; exec bash "$2" --source "$3" --data "$4" --replace',
+                'export PATH="$(cd "$1" && pwd):$PATH"; shift; script=$1; source=$2; data=$3; shift 3; exec bash "$script" --source "$source" --data "$data" --replace "$@"',
                 "_",
                 scripts.as_posix(),
                 (ROOT / "tools/jetson" / entry).as_posix(),
                 source.as_posix(),
                 data.as_posix(),
+                *extra,
             ],
             env=env | overrides,
             capture_output=True,
@@ -243,3 +251,28 @@ def test_repository_entry_reuses_the_locally_built_environment(launcher):
     lines = (state / "log").read_text().splitlines()
     assert not any(line.startswith("pull ") for line in lines)
     assert any("image inspect tuber-studio:environment-r36.4" in line for line in lines)
+
+
+def test_online_environment_survives_the_next_code_only_launch(launcher):
+    run, state = launcher
+    (state / "image").touch()
+    reference = state.parent / "project/online-environment-image.txt"
+    reference.write_text("ghcr.io/owner/repo:online-env-test\n")
+    assert run(extra=("--environment", "online")).returncode == 0
+    assert (state.parent / "data/environment-profile").read_text().strip() == "online"
+    (state / "log").write_text("")
+    result = run()
+    assert result.returncode == 0, result.stderr
+    log = (state / "log").read_text()
+    assert "image inspect ghcr.io/owner/repo:online-env-test" in log
+    assert not any(line.startswith("pull ") for line in log.splitlines())
+
+
+def test_only_dependency_edits_change_the_online_extension(source):
+    helper = load("tools/jetson/environment.py")
+    base, online = helper.contract(source), helper.online_contract(source)
+    (source / "components/song_requests/helper.cjs").write_text("updated helper")
+    assert helper.contract(source) == base and helper.online_contract(source) == online
+    (source / "components/song_requests/package-lock.json").write_text("new dependencies")
+    assert helper.contract(source) == base
+    assert helper.online_contract(source)["sha256"] != online["sha256"]

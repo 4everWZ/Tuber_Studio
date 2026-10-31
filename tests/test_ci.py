@@ -53,6 +53,14 @@ def test_only_ephemeral_hosted_runners_are_eligible_for_sdk_cleanup():
     assert helper.MINIMUM_BYTES == 40 * 1024**3
 
 
+def test_online_environment_extends_the_matching_base_instead_of_rebuilding_it():
+    result = tool("image_metadata").image_tags(
+        "owner/repo", "a" * 40, "refs/heads/main", "push", "main", "c" * 64, "b" * 64
+    )
+    assert result["reference"] == "ghcr.io/owner/repo:online-env-" + "c" * 24
+    assert result["base_reference"] == "ghcr.io/owner/repo:env-" + "b" * 24
+
+
 def context(tmp_path):
     assets = tmp_path / "ready"
     files = assets / "builtin/files"

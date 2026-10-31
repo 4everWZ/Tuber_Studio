@@ -4,6 +4,8 @@
 
 在本目录执行 `npm ci --ignore-scripts`，然后在 `/live` 的「在线点歌」中启用。依赖及其传递版本由 `package-lock.json` 锁定，使用指定仓库的固定提交：
 
+Docker部署可使用CI发布的在线环境扩展：首次运行启动器时传`--environment online`，以后按数据目录保存的环境选择继续复用。程序包携带base／online两种固定环境引用；更新helper源码不重建镜像，npm依赖改变才更新扩展。工作台播放用途可显式选择“仅本机／OBS技术测试”，不代表确认直播用途，只接收工作台／Mock请求。
+
 - [xgxdmx/NeteaseMusic-API](https://github.com/xgxdmx/NeteaseMusic-API/tree/0395d087d9e99ceef480c54e7932c2332e5c0c39)，MIT，仅使用 `cloudsearch`、`song_detail`、`lyric`／`lyric_new`，不调用其 `song_url_v1` 或 `unblockmusic-utils` 解析。
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server/tree/1d64281c0fae81a4e3cf21f176706b0baa3a606d)，LGPL-3.0-only，仅调用波点／咪咕 Provider；保留其包内许可。通过模块边界替换宽松的 `select`，拒绝首条结果兜底；禁用 `insure` 远程解析兜底。
 

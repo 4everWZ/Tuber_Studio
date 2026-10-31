@@ -22,6 +22,7 @@ from .song_download import download
 
 class SongRequestSettings(StrictModel):
     enabled: bool = False
+    usage: Literal["broadcast", "local_test"] = "broadcast"
     sources: list[Literal["bodian", "migu"]] = Field(
         default_factory=lambda: ["bodian", "migu"], min_length=1, max_length=2
     )
@@ -192,10 +193,13 @@ class OnlineSongs:
     def snapshot(self, song, event):
         self.require_enabled()
         config = self.config()
-        if (
-            not config["live_allowed"]
-            or not config["license_note"].strip()
-            or (self.runtime.settings.data.get("commercial_mode") and not config["commercial_allowed"])
+        if not config["license_note"].strip():
+            raise ValueError("请先在在线点歌设置中确认音源的目标用途及许可范围")
+        if config["usage"] == "local_test":
+            if event.platform != "mock":
+                raise ValueError("本机测试仅接受工作台／Mock点歌；平台直播点歌须确认直播用途")
+        elif not config["live_allowed"] or (
+            self.runtime.settings.data.get("commercial_mode") and not config["commercial_allowed"]
         ):
             raise ValueError("请先在在线点歌设置中确认音源的目标用途及许可范围")
         song = OnlineSong.model_validate(song).model_dump()

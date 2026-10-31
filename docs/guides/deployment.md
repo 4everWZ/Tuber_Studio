@@ -58,6 +58,8 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 启动器支持--source、--image、--data、--name、--port及--replace。默认容器名tuber-studio、回环9020；替换同名容器必须明确--replace且绑定同一数据目录。只挂载程序所需src、tools、config、assets、third_party、components及项目依赖声明，不暴露宿主.git或.env。程序挂载只读，runtime可写；正式推理资产子目录只读。drop ALL capabilities、no-new-privileges、临时目录限额及独立bridge继续生效。
 
+需要在线点歌时，首次增加`--environment online`；启动器使用程序包中的online-environment-image.txt，拉起包含Node及锁定npm依赖的环境扩展镜像。环境选择保存在数据目录environment-profile，后续仅更新程序时继续沿用online，不能退回未安装组件的基础环境。`--environment base`可明确切回基础环境。两种环境都只在本地缺失时拉取；新程序的环境指纹变化时才选择对应新镜像。普通安装仍默认base，工作台的在线点歌开关仍独立默认关闭。
+
 ### 首次模型准备与后续复用
 
 环境镜像不带模型。程序中的固定清单将MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT和NLTK下载到持久目录，逐文件核对来源、大小和SHA256。首次启动需要访问这些公共HTTPS源；可显式使用HTTPS origin形式的TUBER_HF_BASE或容器可达的TUBER_DOWNLOAD_PROXY，不能改变revision或关闭校验。
@@ -76,6 +78,8 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 ### 环境镜像何时更新
 
 CI照常执行Python／Node检查并交付独立程序包。环境标识只依赖pyproject.toml、uv.lock、Dockerfile、TTS依赖清单及固定Genie依赖；应用、WebUI、角色／素材、初始化和运维脚本变动不改变标识。CI先查询env-<指纹>，已发布则跳过构建；只有新环境未发布时才构建ARM64镜像。默认分支的environment-r36.4别名仅在目标环境变更时更新。
+
+CI另外发布可选online-env-<指纹>环境：在已发布的基础环境上只增加Node和npm依赖，不重建CUDA／Python底座。指纹由基础环境、组件Dockerfile及package.json／package-lock.json决定；helper、UI和其他程序代码更新复用同一镜像。发布前沿用组件协议测试，目标机器安装后仍需真实搜索、取流与播放器验收。
 
 CI镜像构建需要可读的基础CUDA／llama包及GHCR发布权限；使用限定packages:write和短命GITHUB_TOKEN，不将凭证分发给操作者。默认原生ubuntu-24.04-arm runner，真正构建前才执行磁盘预检。发布、匿名访问、设备启动与模型质量分别验收。
 

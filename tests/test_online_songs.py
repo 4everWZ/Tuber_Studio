@@ -336,6 +336,19 @@ async def test_missing_component_is_explicit_and_off_does_not_spawn(tmp_path):
     assert component.process is None
 
 
+async def test_local_obs_testing_does_not_assert_broadcast_rights(runtime, monkeypatch):
+    online = await enabled(runtime, monkeypatch)
+    await online.configure({"enabled": True, "usage": "local_test", "license_note": "仅本机／OBS技术测试"})
+    assert not online.config()["live_allowed"]
+    result = await runtime.submit(Event(type="song", metadata={"online_id": "123"}, text="测试歌"))
+    assert result["status"] == "queued"
+    with pytest.raises(ValueError, match="本机测试"):
+        online.snapshot(SONG, Event(platform="bilibili", type="song", text="测试歌"))
+    await online.configure({"enabled": True, "license_note": "未确认直播用途"})
+    with pytest.raises(ValueError, match="用途"):
+        online.snapshot(SONG, Event(type="song", text="测试歌"))
+
+
 def test_optional_environment_dependencies_can_be_separate_from_readonly_helper(tmp_path, monkeypatch):
     component = SongComponent(tmp_path / "program")
     component.directory.mkdir(parents=True)

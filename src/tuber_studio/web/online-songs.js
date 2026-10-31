@@ -9,7 +9,7 @@ class OnlineSongRequests {
     this.$("restart").onclick = () => this.action(this.$("restart"), async () => this.update(await api("/api/live/online/restart", {method:"POST"}), true));
     this.$("settings").onsubmit = event => {
       event.preventDefault(); this.action(event.submitter, async () => {
-        const config = {...this.value.settings, sources:this.$("sources").value.split(","), quality:this.$("quality").value,
+        const config = {...this.value.settings, usage:this.$("usage").value, sources:this.$("sources").value.split(","), quality:this.$("quality").value,
           fallback_bitrate:Number(this.$("bitrate").value), allow_lower_quality:this.$("lower").checked,
           cache_limit_mib:Number(this.$("cache").value), max_download_mib:Number(this.$("download").value),
           max_duration_seconds:Number(this.$("duration").value), license_note:this.$("license").value,
@@ -52,7 +52,7 @@ class OnlineSongRequests {
   update(value, fields = false) {
     const initial = !this.value; this.value = value; const {settings, component} = value;
     if (!this.busy || fields) this.$("enabled").checked = settings.enabled;
-    this.$("status").textContent = `${settings.enabled ? component.running ? "点歌组件运行中" : "点歌组件未运行" : "在线点歌已关闭"} · 缓存 ${(value.cache_bytes/1048576).toFixed(1)} / ${settings.cache_limit_mib} MiB${component.running && !component.migu_configured ? " · 咪咕尚未配置凭证" : ""}`;
+    this.$("status").textContent = `${settings.enabled ? component.running ? "点歌组件运行中" : "点歌组件未运行" : "在线点歌已关闭"} · ${settings.usage === "local_test" ? "仅本机／OBS测试" : "直播用途"} · 缓存 ${(value.cache_bytes/1048576).toFixed(1)} / ${settings.cache_limit_mib} MiB${component.running && !component.migu_configured ? " · 咪咕尚未配置凭证" : ""}`;
     if (component.error || this.$("error").textContent === this.componentError) this.$("error").textContent = component.error || "";
     this.componentError = component.error;
     this.$("install").hidden = component.installed;
@@ -60,7 +60,7 @@ class OnlineSongRequests {
     this.$("controls").hidden = !settings.enabled || !component.running;
     if (!settings.enabled) this.$("results").replaceChildren();
     if (initial || fields) {
-      this.$("sources").value = settings.sources.join(","); this.$("quality").value = settings.quality;
+      this.$("usage").value = settings.usage; this.$("sources").value = settings.sources.join(","); this.$("quality").value = settings.quality;
       this.$("bitrate").value = settings.fallback_bitrate; this.$("cache").value = settings.cache_limit_mib;
       this.$("download").value = settings.max_download_mib; this.$("duration").value = settings.max_duration_seconds;
       this.$("lower").checked = settings.allow_lower_quality; this.$("license").value = settings.license_note;

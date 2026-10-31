@@ -64,12 +64,27 @@ def verify(
     return expected
 
 
+def online_contract(root):
+    """Node libraries extend the existing base; helper edits reuse both images."""
+    root = Path(root).resolve()
+    base = contract(root)
+    identities = {}
+    for name in ("Dockerfile", "package.json", "package-lock.json"):
+        path = root / "components/song_requests" / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("Missing regular online environment dependency input")
+        identities[name] = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    value = {"format": 1, "base_sha256": base["sha256"], "inputs": identities}
+    return {**value, "sha256": hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--online", action="store_true")
     args = parser.parse_args()
-    result = contract(args.root)
+    result = online_contract(args.root) if args.online else contract(args.root)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2) + "\n")

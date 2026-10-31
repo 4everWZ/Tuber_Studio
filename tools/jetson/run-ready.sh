@@ -2,6 +2,7 @@
 # Program is mounted read-only; the image supplies only the reusable environment.
 set -euo pipefail
 image=
+environment_profile=
 script_dir=$(cd "$(dirname "$0")" && pwd -P)
 source_root=
 for candidate in "$script_dir/program" "$script_dir/../.."; do
@@ -14,21 +15,17 @@ replace=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --image) image=${2:?}; shift 2 ;;
+    --environment) environment_profile=${2:?}; shift 2 ;;
     --source) source_root=${2:?}; shift 2 ;;
     --data) data=${2:?}; shift 2 ;;
     --name) name=${2:?}; shift 2 ;;
     --port) port=${2:?}; shift 2 ;;
     --replace) replace=true; shift ;;
-    *) echo 'Usage: run-ready.sh [--source PROGRAM_DIR] [--image IMAGE] [--data DIR] [--name NAME] [--port PORT] [--replace]' >&2; exit 2 ;;
+    *) echo 'Usage: run-ready.sh [--environment base|online] [--source PROGRAM_DIR] [--image IMAGE] [--data DIR] [--name NAME] [--port PORT] [--replace]' >&2; exit 2 ;;
   esac
 done
 [[ -n "$source_root" && -f "$source_root/src/tuber_studio/portable.py" ]] || { echo 'Extract program.tar.gz beside this launcher, or provide --source PROGRAM_DIR.' >&2; exit 2; }
 source_root=$(realpath -e -- "$source_root")
-if [[ -z "$image" ]]; then
-  if [[ -f "$source_root/environment-image.txt" ]]; then image=$(cat "$source_root/environment-image.txt");
-  else image=ghcr.io/4everwz/tuber_studio:environment-r36.4; fi
-fi
-[[ -n "$image" && "$image" != -* && "$image" != *[[:space:]]* ]] || exit 2
 if [[ $(id -u) == 0 ]]; then echo 'Run as the data owner, not root.' >&2; exit 1; fi
 [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ && "$port" =~ ^[0-9]+$ ]] || exit 2
 (( port > 0 && port < 65536 )) || exit 2
@@ -37,6 +34,18 @@ case "$proposed" in /|"$HOME"|/etc|/home|/tmp|/var|/usr|/opt|/run|/dev|/proc|/sy
 mkdir -p -- "$data"
 data=$(realpath -e -- "$data")
 [[ -d "$data" && -w "$data" ]] || exit 2
+if [[ -z "$environment_profile" && -f "$data/environment-profile" ]]; then environment_profile=$(cat "$data/environment-profile"); fi
+environment_profile=${environment_profile:-base}
+[[ "$environment_profile" == base || "$environment_profile" == online ]] || { echo 'Environment must be base or online.' >&2; exit 2; }
+if [[ -z "$image" ]]; then
+  reference_file=environment-image.txt
+  alias=environment-r36.4
+  if [[ "$environment_profile" == online ]]; then reference_file=online-environment-image.txt; alias=environment-online-r36.4; fi
+  if [[ -f "$source_root/$reference_file" ]]; then image=$(cat "$source_root/$reference_file");
+  elif [[ "$environment_profile" == base ]] && docker image inspect tuber-studio:environment-r36.4 >/dev/null 2>&1; then image=tuber-studio:environment-r36.4;
+  else image="ghcr.io/4everwz/tuber_studio:$alias"; fi
+fi
+[[ -n "$image" && "$image" != -* && "$image" != *[[:space:]]* ]] || exit 2
 if docker inspect "$name" >/dev/null 2>&1; then
   actual=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace/tuber/runtime"}}{{.Source}}{{end}}{{end}}' "$name")
   [[ "$replace" == true && "$actual" == "$data" ]] || { echo 'Existing container must own this data and require --replace.' >&2; exit 1; }
@@ -87,5 +96,8 @@ docker run -d --pull=never --name "$name" --runtime nvidia "${security[@]}" "${p
   --network "$network" \
   --publish "127.0.0.1:$port:9020" --restart unless-stopped --stop-timeout 45 \
   --label tuber-studio.service=stack "$image"
+profile_file=$(mktemp "$data/.environment-profile.XXXXXX")
+printf '%s\n' "$environment_profile" > "$profile_file"
+mv -T -- "$profile_file" "$data/environment-profile"
 echo "Workbench: http://127.0.0.1:$port"
 echo "Administrator token: $data/admin-token (private; generated per installation)"

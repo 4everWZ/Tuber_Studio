@@ -182,3 +182,75 @@ jobs:
           path: tmp/ci-image/
           if-no-files-found: warn
           retention-days: 30
+
+  online-image:
+    name: Optional online song environment (build only when absent)
+    needs: [image]
+    if: needs.image.result == 'success'
+    runs-on: ${{ fromJSON(vars.JETSON_BUILD_RUNNER || '"ubuntu-24.04-arm"') }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Online environment identity
+        run: python3 tools/jetson/environment.py --online --output tmp/ci-online/environment.json
+      - name: Online image metadata
+        id: meta
+        run: python3 tools/ci/image_metadata.py tags --online
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reuse the matching online environment
+        id: lookup
+        env:
+          ENVIRONMENT_IMAGE: ${{ steps.meta.outputs.reference }}
+        run: |
+          if docker buildx imagetools inspect "$ENVIRONMENT_IMAGE" > tmp/ci-online/lookup.txt 2> tmp/ci-online/lookup-error.txt; then
+            echo 'missing=false' >> "$GITHUB_OUTPUT"
+          elif grep -qiE 'manifest unknown|name unknown|: not found$' tmp/ci-online/lookup-error.txt; then
+            echo 'missing=true' >> "$GITHUB_OUTPUT"
+          else
+            cat tmp/ci-online/lookup-error.txt >&2
+            exit 1
+          fi
+      - name: Build disk preflight
+        if: steps.lookup.outputs.missing == 'true'
+        run: python3 tools/ci/runner_preflight.py --cleanup-hosted --output tmp/ci-online/runner-preflight.json
+      - name: Build and publish only the Node dependency extension
+        if: steps.lookup.outputs.missing == 'true'
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: components/song_requests/Dockerfile
+          platforms: linux/arm64
+          build-args: TUBER_IMAGE=${{ steps.meta.outputs.base_reference }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache-online-arm64
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache-online-arm64,mode=max,oci-mediatypes=true,image-manifest=true
+          provenance: mode=max
+      - name: Online image receipt
+        if: steps.lookup.outputs.missing == 'true'
+        env:
+          IMAGE_NAME: ${{ steps.meta.outputs.image }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          BUILDX_METADATA: ${{ steps.build.outputs.metadata }}
+        run: python3 tools/ci/image_metadata.py evidence --output tmp/ci-online/image-evidence.json
+      - name: Online environment evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jetson-online-environment-${{ github.sha }}
+          path: tmp/ci-online/
+          if-no-files-found: warn
+          retention-days: 30

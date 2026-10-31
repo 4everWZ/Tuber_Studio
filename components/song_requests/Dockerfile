@@ -11,4 +11,5 @@ COPY --from=component /usr/local/bin/node /usr/local/bin/node
 COPY --from=component /component/node_modules /opt/tuber-song-node/node_modules
 COPY --from=component /component/package-lock.json /opt/tuber-song-node/package-lock.json
 ENV NODE_PATH=/opt/tuber-song-node/node_modules
+RUN node -e "require.resolve('netease-metadata/package.json'); require.resolve('@unblockneteasemusic/server/package.json')"
 USER 65532:65532

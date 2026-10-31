@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 
-def image_tags(repository, sha, ref, event, default_branch, environment_sha):
+def image_tags(repository, sha, ref, event, default_branch, environment_sha, base_environment_sha=None):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid GitHub repository identity")
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
@@ -19,17 +19,20 @@ def image_tags(repository, sha, ref, event, default_branch, environment_sha):
     if event not in {"push", "workflow_dispatch"} or (event == "push" and not default and release is None):
         raise ValueError("PRs and unapproved events cannot publish container images")
     image = "ghcr.io/" + repository.lower()
-    reference = image + ":env-" + environment_sha[:24]
+    prefix = "online-env-" if base_environment_sha else "env-"
+    alias = ":environment-online-r36.4" if base_environment_sha else ":environment-r36.4"
+    reference = image + ":" + prefix + environment_sha[:24]
     tags = [reference]
     if default:
-        tags += [image + ":environment-r36.4"]
+        tags += [image + alias]
     if release is not None:
         if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", release):
             raise ValueError("Release publication requires a vX.Y.Z or prerelease tag")
     return {
         "image": image,
         "reference": reference,
-        "alias": image + ":environment-r36.4" if default else "",
+        "alias": image + alias if default else "",
+        "base_reference": image + ":env-" + (base_environment_sha or environment_sha)[:24],
         "tags": "\n".join(tags),
         "short_sha": sha[:12],
         "labels": "\n".join(
@@ -46,16 +49,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("tags", "evidence"))
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--online", action="store_true")
     args = parser.parse_args()
     if args.command == "tags":
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+        descriptor = json.loads(
+            Path(
+                "tmp/ci-online/environment.json" if args.online else "tmp/ci-environment/environment.json"
+            ).read_text()
+        )
         result = image_tags(
             os.environ["GITHUB_REPOSITORY"],
             os.environ["GITHUB_SHA"],
             os.environ["GITHUB_REF"],
             os.environ["GITHUB_EVENT_NAME"],
             event["repository"]["default_branch"],
-            json.loads(Path("tmp/ci-environment/environment.json").read_text())["sha256"],
+            descriptor["sha256"],
+            descriptor.get("base_sha256") if args.online else None,
         )
         with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:
             for key, value in result.items():

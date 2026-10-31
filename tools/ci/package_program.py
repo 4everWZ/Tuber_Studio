@@ -37,6 +37,8 @@ def package(root, output, repository="4everWZ/Tuber_Studio"):
         raise ValueError("Use a new program archive inside project tmp/")
     identity = environment.contract(root)
     image = "ghcr.io/" + repository.lower() + ":env-" + identity["sha256"][:24]
+    online = environment.online_contract(root)
+    online_image = "ghcr.io/" + repository.lower() + ":online-env-" + online["sha256"][:24]
     files = subprocess.check_output(["git", "ls-files", "-z", "--", *PATHS], cwd=root).decode().split("\0")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output, "w:gz") as archive:
@@ -54,13 +56,18 @@ def package(root, output, repository="4everWZ/Tuber_Studio"):
             } and not name.startswith("third_party/Genie-TTS/"):
                 raise ValueError("Program bundle cannot contain model weights")
             archive.add(path, arcname="program/" + name, recursive=False)
-        content = (image + "\n").encode()
-        member = tarfile.TarInfo("program/environment-image.txt")
-        member.size, member.mode = len(content), 0o644
-        archive.addfile(member, io.BytesIO(content))
+        for name, reference in (
+            ("environment-image.txt", image),
+            ("online-environment-image.txt", online_image),
+        ):
+            content = (reference + "\n").encode()
+            member = tarfile.TarInfo("program/" + name)
+            member.size, member.mode = len(content), 0o644
+            archive.addfile(member, io.BytesIO(content))
     return {
         "program_archive": str(output),
         "environment_image": image,
+        "online_environment_image": online_image,
         "environment_sha256": identity["sha256"],
         "source_files": len(list(filter(None, files))),
         "bytes": output.stat().st_size,
