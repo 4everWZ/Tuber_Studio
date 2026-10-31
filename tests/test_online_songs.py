@@ -336,6 +336,23 @@ async def test_missing_component_is_explicit_and_off_does_not_spawn(tmp_path):
     assert component.process is None
 
 
+def test_optional_environment_dependencies_can_be_separate_from_readonly_helper(tmp_path, monkeypatch):
+    component = SongComponent(tmp_path / "program")
+    component.directory.mkdir(parents=True)
+    (component.directory / "helper.cjs").write_text("// mounted program")
+    libraries = tmp_path / "image-node-modules"
+    for name in ("netease-metadata", "@unblockneteasemusic/server"):
+        path = libraries / name / "package.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    monkeypatch.setattr("tuber_studio.song_component.shutil.which", lambda name: "/image/node")
+    monkeypatch.setenv("NODE_PATH", str(libraries))
+    assert component.installed()
+    assert not (component.directory / "node_modules").exists()
+    (libraries / "netease-metadata/package.json").unlink()
+    assert not component.installed()
+
+
 def test_optional_api_is_admin_only_and_disabled_by_default(settings):
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/live/online").status_code == 401

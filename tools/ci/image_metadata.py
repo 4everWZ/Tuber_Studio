@@ -7,32 +7,36 @@ import re
 from pathlib import Path
 
 
-def image_tags(repository, sha, ref, event, default_branch):
+def image_tags(repository, sha, ref, event, default_branch, environment_sha):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid GitHub repository identity")
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Publication requires a full source commit")
+    if not re.fullmatch(r"[0-9a-f]{64}", environment_sha):
+        raise ValueError("Environment publication requires dependency identity")
     default = ref == "refs/heads/" + default_branch
     release = ref.removeprefix("refs/tags/") if ref.startswith("refs/tags/") else None
     if event not in {"push", "workflow_dispatch"} or (event == "push" and not default and release is None):
         raise ValueError("PRs and unapproved events cannot publish container images")
     image = "ghcr.io/" + repository.lower()
-    tags = [image + ":sha-" + sha]
+    reference = image + ":env-" + environment_sha[:24]
+    tags = [reference]
     if default:
-        tags += [image + ":r36.4", image + ":latest"]
+        tags += [image + ":environment-r36.4"]
     if release is not None:
         if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", release):
             raise ValueError("Release publication requires a vX.Y.Z or prerelease tag")
-        tags += [image + ":" + release, image + ":" + release[1:]]
     return {
         "image": image,
+        "reference": reference,
+        "alias": image + ":environment-r36.4" if default else "",
         "tags": "\n".join(tags),
         "short_sha": sha[:12],
         "labels": "\n".join(
             (
                 "org.opencontainers.image.source=https://github.com/" + repository,
                 "org.opencontainers.image.revision=" + sha,
-                "org.opencontainers.image.description=Jetson ARM64 program image; assets download on first initialization",
+                "org.opencontainers.image.description=Jetson ARM64 environment; application supplied by read-only mounts",
             )
         ),
     }
@@ -51,6 +55,7 @@ def main():
             os.environ["GITHUB_REF"],
             os.environ["GITHUB_EVENT_NAME"],
             event["repository"]["default_branch"],
+            json.loads(Path("tmp/ci-environment/environment.json").read_text())["sha256"],
         )
         with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:
             for key, value in result.items():
@@ -75,7 +80,7 @@ def main():
             + os.environ["GITHUB_RUN_ID"],
             "platform": "linux/arm64",
             "build_record": metadata.get("buildx.build.ref"),
-            "scope": "CI build/export and program-image file contracts; no GPU/voice/128K hardware acceptance run",
+            "scope": "CI environment build/export; mounted program and GPU/voice/128K acceptance remain separate",
             "hardware_acceptance_verified": False,
             "anonymous_registry_pull_verified": False,
             "runtime_downloads_or_model_execution_performed": False,
@@ -87,9 +92,9 @@ def main():
         summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if summary:
             with Path(summary).open("a") as stream:
-                stream.write("Published program image: `" + report["pull_reference"] + "`\n\n")
+                stream.write("Published environment image: `" + report["pull_reference"] + "`\n\n")
                 stream.write(
-                    "Artifact includes run-ready.sh and build evidence. GPU, voice and 128K acceptance remain separate.\n"
+                    "Program/launcher are in the separate jetson-program artifact. GPU, voice and 128K acceptance remain separate.\n"
                 )
                 stream.write(
                     "First GHCR package may require visibility changed to public or docker login before pulling.\n"

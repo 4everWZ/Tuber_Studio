@@ -1,6 +1,6 @@
-"""Program-image asset bootstrap and observed readiness; legacy stack is separate.
+"""Program asset bootstrap and observed readiness; legacy stack is separate.
 
-The image supplies small presets and a controlled public-download manifest.
+The mounted program supplies small presets and a public-download manifest.
 Runtime files are verified and published without replacing existing data. Only
 a once-per-boot typed mode request may establish resources; Docker health checks
 are strictly observers. Generated voice artifacts belong to the fixed child
@@ -447,7 +447,7 @@ def prepare_runtime(root=ROOT):
 
     This child owns conversion/reference work; portable never imports Torch or
     generates graphs itself. Older checkouts without the script stay usable.
-    The program-only image always includes the script.
+    The independent program bundle includes the script.
     """
     root = Path(root)
     data = _small_json(_checked(root / "runtime/studio.json", root))

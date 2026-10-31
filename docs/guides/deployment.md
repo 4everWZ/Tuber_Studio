@@ -13,101 +13,76 @@
 
 ## Jetson目标部署
 
-使用单派生镜像、单tuber-studio容器：统一Python／CUDA环境，后台和受限broker共享一个Python进程，llama／TTS按需作为固定子进程启动。正式设备已安装Genie永久音色包，并完成MiniCPM5-2B／真实128K共驻、动态语音和Mock播放验证；新部署仍须自行校验资源与声音身份，不能沿用其他设备的结果。范围由[资源规范](../specs/models-and-audio.md)维护，测量见[当前声音与共驻证据](../../evaluations/results/yaoyao-v2-voice-20261030.json)。
+Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Python锁定依赖及固定Genie转换／图骨架依赖。应用源码、WebUI、角色素材、初始化清单和配置预设随独立程序包或宿主源码目录交付，以只读挂载运行；模型、音色包、缓存、配置、令牌和数据库保存在独立数据目录。普通程序修改不重建镜像，也不在启动时安装依赖。
 
-| 容器内组件 | 容器端口 | 职责 |
+目标为Jetson ARM64／L4T R36.4及NVIDIA容器运行时，不是Windows／x86镜像。使用单个tuber-studio容器，后台／受限broker共享业务进程，llama／TTS按需作为固定子进程运行。源码与程序包根仍映射为容器/workspace/tuber；Python环境为/opt/studio-venv，官方GPT-SoVITS依赖为/opt/GPT-SoVITS-v2，固定Genie依赖为/opt/Genie-TTS。不挂Docker.sock，不在宿主安装运行环境，不操作其他项目服务。
+
+| 容器内组件 | 端口 | 职责 |
 | --- | --- | --- |
-| 管理后台 | 9020 | 认证管理API／WS、WebUI、overlay、SQLite与业务调度；宿主仅发布回环。 |
-| 受限broker | 9012 | 固定推理路径与固定子进程runner、全局生成锁、按Profile加载／休眠；内部token认证。 |
-| 2B llama子进程 | 9013 | 默认MiniCPM5-2B，默认128K、可在真实native范围调节；别名与实际窗口核查。 |
-| GPT-SoVITS／Genie TTS子进程 | 9011 | 动态声音，按绑定权重与参考音频合成。 |
-| 可选1B诊断子进程 | 9010 | 仅用于独立质量／资源实验，不替代默认2B。 |
-| 可选Qwen 2B候选子进程 | 9015 | 受限入口/llm/qwen35，仅在显式配置该候选时驻留；不自动替换默认。 |
+| 后台 | 9020 | 管理API、WebUI、OBS、业务调度，仅发布宿主回环 |
+| 受限broker | 9012 | 固定推理入口、进程管理与资源锁 |
+| MiniCPM5-2B | 9013 | 原生131072窗口、q4_0 KV，实际容量核查 |
+| Genie／GPT-SoVITS | 9011 | 绑定权重与参考的语音合成 |
+| 显式实验候选 | 9010／9015 | 独立诊断，不自动替换默认模型 |
 
-不部署host Docker controller／独立host venv，不挂Docker.sock，也不把宿主docker组权限给业务后台。broker只允许固定进程及本项目模型路径；管理令牌、overlay凭证、runtime/inference-token三者分权。内部认证头为X-Tuber-Inference-Key，不在浏览器、日志或示例中公开其值。外部OBS／浏览器通过后台访问媒体，不直连模型子端口。
+管理令牌、OBS凭证和内部推理令牌分权，浏览器不直连模型端口。维护路径为/home/weizheng/code/Tuber_Studio，通过ssh jetson访问；网络地址由SSH配置维护。资源与声音身份要求见[模型与声音](../specs/models-and-audio.md)。
 
-维护用项目路径为/home/weizheng/code/Tuber_Studio，使用ssh jetson连接；网络地址由本机SSH配置维护，不在项目规范里固定。源码、工具和配置模板进镜像，工作数据置runtime。ready程序镜像不内置推理权重，首次启动下载到挂载目录并准备音色；精简镜像仍使用预先准备的外部权重。TTS官方源码在镜像/opt/GPT-SoVITS-v2，固定Genie转换／图骨架模板子集在/opt/Genie-TTS，应用环境在/opt/studio-venv；原生CUDA／Torch由基础镜像复用，不在宿主或runtime新建Python环境。仅操作本项目资源，不停止其他项目服务。
+### 首次安装：程序包与环境镜像分开
 
-模板的LLM入口为http://127.0.0.1:9012/llm/2b，本地TTS入口为http://127.0.0.1:9012/tts。源码模板features.live_enabled=false、资源为text；ready程序镜像使用独立live预设，已有安装则尊重原配置。text下动态试听先手动切live，导航不隐式加载TTS或改变资源模式；停止会清理任务，切text还会卸载TTS。预录与已配置语音API可独立试听，不要求本地共驻。
+从[成功的GitHub Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载jetson-program-<完整commit>产物，内含program.tar.gz、run-ready.sh和program-evidence.json。在新版本专用目录解压，随后由具有Docker权限的普通数据所有者运行：
 
-默认继续MiniCPM5-2B Q4_K_M权重＋q4_0 KV＋131072窗口；Genie／Mock直播与非直播评论可分别使用，真实B站／抖音直播接入仍后置。MiniCPM5-2B没有视觉编码器，本地／API视觉接口默认disabled，不下载新视觉模型或从资源模式名称宣称已能看图。
+    tar -xzf program.tar.gz
+    bash run-ready.sh --data /path/to/tuber-data
 
-镜像以dustynv/pytorch:2.7-r36.4.0-cu128-24.04为基础，从ghcr.io/4everwz/jetson-llama-cpp:r36.4-cu128-u24.04-sm87-d749821阶段只复制llama-server，复用原生Torch和CUDA。锁定依赖安装到项目容器环境，固定只读源码通过同一环境的.pth加载，不在每次源码更新时联网重建editable包；构建时核验模块根仍为/workspace/tuber。运行层不复制开发测试、临时文件、宿主venv或第二套CUDA；带维护用准入／资源评估脚本与固定用例。
+启动器会找到同级program目录；也可以直接运行program/tools/jetson/run-ready.sh或显式传--source PROGRAM_DIR。程序包包含environment-image.txt，指定与该版本依赖匹配的ghcr.io/4everwz/tuber_studio:env-<环境指纹前24位>。不要求宿主Python、uv或运行时pip安装。
 
-### 程序镜像：首次启动下载与准备
+**本地有对应镜像就直接复用；缺失才docker pull一次。** 启动器随后将引用解析为固定镜像ID，环境预检、资产初始化和正式容器全部使用该ID与--pull=never。不会每次检查远端更新或重新下载已有镜像。源码目录没有environment-image.txt时使用environment-r36.4别名；可用--image明确选择本地标签或已发布的环境引用。
 
-目标硬件为Jetson ARM64／L4T R36.4及已配置的Docker／NVIDIA容器运行时，不是Windows／x86镜像。默认发行入口为GitHub Actions构建的`ghcr.io/4everwz/tuber_studio:r36.4`；程序镜像只含程序、锁定依赖、Genie转换／图骨架模板、固定URL／大小／SHA256清单和小型预设，不内置Mini、原始声音权重、BERT／HuBERT checkpoint或生成的永久音色包。本次发布压缩层总计6,482,112,185字节（约6.04GiB），展开镜像14,347,651,846字节（约13.36GiB），主要仍是原生CUDA／Torch等依赖；首次准备的磁盘峰值另计，不以“未带权重”冒称微型镜像。
+环境预检对比程序依赖与镜像内/opt/tuber-environment.json；不匹配会在替换旧容器前报错，不自动改依赖、升级已有本地标签或绕过检查。显式环境升级可先docker pull已发布的对应引用，再重运行启动器。首次采用新分离架构需要一个新环境镜像，旧的源码内置r36.4程序镜像不是新架构的已验环境，不能只改标签冒充兼容。
 
-常规更新由[公开仓库](https://github.com/4everWZ/Tuber_Studio)的[CI工作流](../../.github/workflows/ci.yml)完成测试和ARM64程序镜像构建，发布到GHCR；不在运行设备上重建镜像。push、PR及手动运行执行测试；main push、v*标签及手动运行可构建／发布镜像，PR不发布。发布job使用限定的packages:write和GITHUB_TOKEN，不要求另配PAT。[已完成的发布](https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469)通过638项测试与镜像构建／发布，源码2a869285434c51da130d8afc318e1f30f64376e9；匿名标签／索引清单读取及同一CI镜像在设备的真实部署已验证，完整条件见[交付证据](../../evaluations/results/ready-program-image-20261030.json)。
+GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包须由操作者docker login ghcr.io。TUBER_DOWNLOAD_PROXY只作用于容器内模型资源下载，不配置Docker daemon。公开源码不自动保证新容器包公开，后续包可见性仍需核查。
 
-CI须能读取基础包`ghcr.io/4everwz/jetson-llama-cpp`，当前该包公开。若后续改为private，包所有者须在Manage Actions access中添加构建仓库并授予Read；目标应用镜像的packages:write不会自动授予其他基础包的读取权。基础包拉取403时先核对可见性与读取授权，不删掉基础组件或换未核验底座绕过。
+### 日常代码更新与回退
 
-从同一次成功发布的[Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载`jetson-program-<commit前12位>`产物；[当前已验证的启动包](https://github.com/4everWZ/Tuber_Studio/actions/runs/40993933469/artifacts/12949948299)可直接取得。将根目录的run-ready.sh解压到本机目录；同级image-evidence.json和program-contract.json提供该次镜像与程序交付信息。以拥有Docker权限的普通数据所有者执行，数据目录应专用于本应用：
+程序更新优先解压到新的版本目录，复用原数据目录：
 
-    bash run-ready.sh --data ./tuber-data
+    bash NEW_VERSION/run-ready.sh --source NEW_VERSION/program --data /path/to/tuber-data --replace
 
-当前GHCR应用包已公开，匿名标签／索引清单读取返回200。后续新包仍须核对可见性，公开源码仓库不会自动保证包公开；若保留private，操作者须先按GitHub权限策略完成docker login ghcr.io。Actions发布使用的GITHUB_TOKEN不是分发给操作者的登录令牌。
+只要依赖未变，新版本引用同一个环境镜像，不需要重建或拉取环境。旧版本目录和一个已验证环境保留用于回退；回退时指定原程序目录和匹配镜像，数据目录保持不变。程序／环境回退不会回滚数据库，不推断任意版本之间的数据兼容。
 
-镜像首次拉取或更新要求宿主Docker daemon能访问GHCR及其层CDN，包括DNS、HTTPS和大文件传输；仅清单可达不证明全部层可顺利下载。`TUBER_DOWNLOAD_PROXY`只作用于容器内模型资源下载，不配置Docker daemon的镜像下载网络。本项目不附带临时registry转发器，也不由启动脚本修改宿主daemon网络；如镜像拉取失败，应由操作者先恢复其Docker网络再运行启动器。
+开发者可以在宿主源码目录运行：
 
-脚本默认`ghcr.io/4everwz/tuber_studio:r36.4`，本地缺少该引用时自动拉取，并只解析一次镜像ID，初始化与正式容器使用同一个ID。已有本地标签不会因此自动更新；要更新r36.4，先显式拉取，再替换本项目容器：
+    bash tools/jetson/run-studio.sh
 
-    docker pull ghcr.io/4everwz/tuber_studio:r36.4
-    bash run-ready.sh --data ./tuber-data --replace
+该入口复用同一个启动器，将本项目runtime作为数据目录；优先使用本地构建的tuber-studio:environment-r36.4，不存在时采用发布环境，支持--image及--replace等参数。更改同一目录的源码前先停止本项目容器，避免运行中读到混合版本；git更新后重新执行启动器并传--replace。仅重启既有版本可docker stop／docker start，不拉取镜像。
 
-每次发布提供`sha-<完整40位commit>`标签；默认分支另提供r36.4及latest，v1.2.3等版本发布另提供v1.2.3与1.2.3。上述标签以对应发布成功为前提，版本示例不表示已经存在。固定安装或回退时，用--image指定实际已发布的SHA／版本标签或digest，并配套该构建的启动脚本。保留原数据目录和旧镜像引用；镜像回退不回滚数据库或修改过的配置，不能假定任意版本间数据兼容。常规GHCR交付不需要docker save／load归档，也不需要源码仓库、uv、宿主Python或运行时pip安装。
+启动器支持--source、--image、--data、--name、--port及--replace。默认容器名tuber-studio、回环9020；替换同名容器必须明确--replace且绑定同一数据目录。只挂载程序所需src、tools、config、assets、third_party、components及项目依赖声明，不暴露宿主.git或.env。程序挂载只读，runtime可写；正式推理资产子目录只读。drop ALL capabilities、no-new-privileges、临时目录限额及独立bridge继续生效。
 
-首次启动需要访问清单列出的公共HTTPS源。下载包括MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS权重与参考原件、中文BERT／HuBERT及NLTK词典；每个文件均核对固定revision、字节数和SHA256。可按网络情况只替换Hugging Face的HTTPS源站，例如：
+### 首次模型准备与后续复用
 
-    TUBER_HF_BASE=https://hf-mirror.com bash run-ready.sh --image ghcr.io/4everwz/tuber_studio:r36.4 --data ./tuber-data
+环境镜像不带模型。程序中的固定清单将MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT和NLTK下载到持久目录，逐文件核对来源、大小和SHA256。首次启动需要访问这些公共HTTPS源；可显式使用HTTPS origin形式的TUBER_HF_BASE或容器可达的TUBER_DOWNLOAD_PROXY，不能改变revision或关闭校验。
 
-`TUBER_HF_BASE`必须是HTTPS origin，不带路径、查询参数或凭证；不改变固定路径／revision和校验和，也不替代GitHub等其他下载源。需要代理时可显式设置容器可达的`TUBER_DOWNLOAD_PROXY`，同样仅接受无凭证／路径的HTTP(S) origin，不隐式继承宿主代理环境。镜像站和原公共源均可能不可达；下载有界、进度与失败可见，失败退出，不跳过校验或静默换成其他模型／音色／演示模式。重试同一启动命令会复用已完整验证的文件；不承诺未完成大文件断点续传。
+下载后顺序完成权重净化、参考处理、Genie图准备与永久音色安装；准备期间不加载LLM，子进程结束后才进入Genie预热及Mini131072／q4_0共驻。重复启动验证并复用已下载及生成资源，不重新下载／转换；身份不符时保留原件并报错。环境预检和小型公共启动预设在runtime/.portable-launch内生成，不修改已有Operator配置。初始化日志及portable-status.json显示进度，HTTP可达不等于模型就绪。
 
-下载后由固定短命bootstrap顺序执行词典准备、权重净化、32kHz参考处理、Genie转换／采样恢复／INT8图准备、22层动态BERT图准备、参考特征预计算和永久bundle安装。此阶段不得有本项目LLM驻留；准备子进程退出、校验完成后，才启动常驻Genie、完成非静音短句预热，再加载Mini131072／q4_0。准备不是训练，也不是运行时安装新依赖；首次准备耗时与内存／磁盘峰值独立计入，不能套用热态合成结果。已验证的生成产物可重启复用，身份不符明确拒绝，不自动覆盖或临时凑包。
-
-脚本支持--image、--data、--name、--port及--replace；默认GHCR r36.4、容器名tuber-studio、回环端口9020。初始化容器使用同一镜像／调用者UID和可写数据目录，完成下载与一次性准备后，再以只读根目录及模型／参考／词典只读子挂载运行正式服务；drop ALL capabilities、no-new-privileges、临时目录限额及独立bridge仍生效。不挂Docker.sock，不修改宿主Python环境，不停止其他项目资源。仅发布127.0.0.1:9020，远程访问使用SSH转发。
-
-新数据目录独立生成私有admin-token、overlay-token、inference-token和空白业务数据库；镜像不携带生产令牌、API凭证、Cookie、数据库、日志或已生成音频。令牌保存在数据目录，不放URL。已有studio.json、TTS YAML、数据库和凭证保留，预设只填缺失文件；已有不可变下载或生成资产身份不符时拒绝并保留原件，不静默替换。原BERT／HuBERT checkpoint虽不常驻推理，仍参与完整声音身份校验，下载后不能随意删去。公共声音素材与权重的许可分别适用，程序打包不授予额外声音使用权。
-
-新安装默认启用Mock／live资源，业务会话仍为stopped，自动浏览／回复关闭，不自动注入事件、播放或发布。已有配置选择text或外部Provider时按其实际配置运行，不强切live。启动观察核对实际模型、窗口、驻留集合、Genie声线及bundle身份；健康检查只读，不重跑下载、转换或加载。可查看：
+新目录独立生成私有admin-token、overlay-token、inference-token和业务数据库；已有配置／TTS YAML、数据库和凭证保留。新安装默认Mock／live资源、业务stopped、自动运营关闭。模型／声音／词典只读挂载、原始声音身份和就绪观察要求仍见资源规范。可检查：
 
     docker inspect --format '{{.State.Health.Status}}' tuber-studio
     docker logs --tail 80 tuber-studio
 
-初始化下载／准备阶段通过启动终端、容器日志及数据目录的portable-status.json报告进度和失败；此时后台可能尚未启动。资源加载阶段后台可达也不代表模型就绪，失败须显示资源错误。[程序镜像设备验收](../../evaluations/results/ready-program-image-20261030.json)已验证独立空named volume、默认非root UID、无宿主项目模型挂载下的公共资源下载与顺序准备、Mini实际131072／q4_0和Genie真实合成；断开全部网络后重启不重新下载／转换，配置、私有令牌与SQLite数据保留。正式设备随后用本次CI启动包的run-ready.sh替换为同一CI镜像，复用已接受的瑶瑶包并再次通过真实LLM／WAV验证，三类令牌和配置内容保持，业务stopped、队列空、自动策略关闭；先前已验镜像仍保留作回退，身份见交付证据。studio.json原子重写的mtime变化不表示配置内容覆盖；31天留存仅为独立测试卷的保留性测试，默认仍为30天。
+此前[程序内置镜像的设备证据](../../evaluations/results/ready-program-image-20261030.json)证明原资源链路的首次下载、断网复用与真实推理，不代替新环境镜像／外部程序挂载的设备验收。新架构的本地验证见[环境交付检查](../../evaluations/results/environment-delivery-20261031.json)，实际新镜像发布与设备替换另行执行。
 
-重复启动使用同一数据目录，已验证资产复用。替换现有同名容器须显式传--replace，且只允许绑定该数据目录的本项目容器；需要重新准备音色时必须先受控停止该项目LLM／TTS，不能边运行旧模型边转换。日常停止／重启使用docker stop／docker start，不删除数据目录。直接docker run同样使用镜像内portable入口及固定/workspace/tuber/runtime卷；独立脚本提供完整的权限、初始化和挂载参数。
+### 环境镜像何时更新
 
-### 开发备用：本机程序镜像构建
+CI照常执行Python／Node检查并交付独立程序包。环境标识只依赖pyproject.toml、uv.lock、Dockerfile、TTS依赖清单及固定Genie依赖；应用、WebUI、角色／素材、初始化和运维脚本变动不改变标识。CI先查询env-<指纹>，已发布则跳过构建；只有新环境未发布时才构建ARM64镜像。默认分支的environment-r36.4别名仅在目标环境变更时更新。
 
-维护者仅在需要本地排查或CI尚不可用时，从源码构建本机程序镜像；这不是常规发行流程，也不要求运行设备为每次更新执行构建：
+CI镜像构建需要可读的基础CUDA／llama包及GHCR发布权限；使用限定packages:write和短命GITHUB_TOKEN，不将凭证分发给操作者。默认原生ubuntu-24.04-arm runner，真正构建前才执行磁盘预检。发布、匿名访问、设备启动与模型质量分别验收。
+
+开发备用构建：
 
     bash tools/jetson/build-ready-image.sh
-    bash tools/jetson/run-ready.sh --image tuber-studio:ready-r36.4 --data ./tuber-data
+    bash tools/jetson/run-ready.sh --image tuber-studio:environment-r36.4 --data ./tuber-data
 
-同一个`tools/jetson/Dockerfile`维护`program-base`与`ready`命名阶段，已无独立Dockerfile.ready。`package-ready.py`只从固定下载清单和预设生成构建上下文，不读取旧runtime；构建通过命名上下文ready_assets传入该目录。本机构建脚本使用项目tmp新目录，CI使用tmp/ci-ready-image；构建不加载模型，也不需要现有权重或Genie包，基础依赖安装仍可能联网。
-
-CI默认使用原生ubuntu-24.04-arm runner，构建前释放未使用SDK空间并要求至少40GiB可用磁盘，不足明确失败。需更大云端ARM运行器时，可由维护者以仓库变量JETSON_BUILD_RUNNER指定JSON runner标签；不以生产Jetson作为构建依赖。CI测试、镜像构建／发布与真实Jetson首次下载／准备／推理分别验证。
-
-确需离线搬运程序镜像时才在开发机器导出，再在接收机器加载；这只免去镜像拉取，不使首次模型下载成为离线流程：
-
-    docker save tuber-studio:ready-r36.4 | gzip > tuber-studio-ready-r36.4.tar.gz
-    cp tools/jetson/run-ready.sh ./run-ready.sh
-    docker load -i tuber-studio-ready-r36.4.tar.gz
-    bash run-ready.sh --image tuber-studio:ready-r36.4 --data ./tuber-data
-
-### 保留的精简镜像流程
-
-在Jetson项目目录执行：
-
-    bash tools/jetson/build-image.sh
-    bash tools/jetson/run-studio.sh
-
-已有本项目容器时，第二条改为bash tools/jetson/run-studio.sh --replace。工具先用最终镜像、当前UID初始化／检查数据，再验证归属并停止旧项目GPU容器、替换工作台；同名但挂载不属于本项目时拒绝操作。旧分散部署入口已退役，不与单容器supervisor混用。配置缺失才从模板创建，已有配置／TTS YAML属于Operator，不覆盖；从旧版本迁移时须将llm、tts入口改为上述broker地址并补inference_broker，保留其他设置、凭证和数据库。
-
-初始化直接复用已验证的权重与词典；缺少时下载官方资源，网络失败有界退出。可用最终镜像执行tools/jetson/initialize-data.py --offline验证本地前提；它会检查真实cmudict、pos_tag与g2p_en消费者，避免启动时再交互下载。runtime须由运行UID可写，词典数据自身禁止其他账号写入。运行时无需安装依赖。
-
-停止／启动使用docker stop tuber-studio和docker start tuber-studio；更新源码、角色素材或音色模板须重建镜像并--replace，runtime保留。服务启动与模型可用分开：即使资源加载失败，后台仍显示错误；检查runtime/inference-llm2b.log等资源日志，不把HTTP可达当作质量／128K验收。
+build-image.sh是同一环境构建的兼容入口；Dockerfile保留program-base／ready目标名称，但二者都不包含应用源码。构建上下文不读取runtime，不要求模型或生产凭证。普通更新不在设备重新构建；需要离线搬运时可对环境镜像使用docker save／load，同时携带对应程序包，模型资源仍须已经准备或能够下载。
 
 ## 存储目录与维护
 
@@ -133,7 +108,7 @@ CI默认使用原生ubuntu-24.04-arm runner，构建前释放未使用SDK空间�
 4. Mock／语音验收时先打开独立overlay，再注入事件；只有一个播放页拥有播放权。浏览器禁止自动播放时按提示启用，再注入新事件，不重放失败任务。
 5. 暂停阻止后续任务；静音／停止取消当前播报。看真实平台回执区分审核、复制、发布和不确定结果。
 
-第4／5项适用于已启用的Mock／直播设备；源码模板仍默认关闭，ready程序镜像的新安装另有live预设。评论审核／复制不需要播放器。
+第4／5项适用于已启用的Mock／直播设备；源码模板仍默认关闭，独立程序启动器的新安装另有live预设。评论审核／复制不需要播放器。
 
 评论以楼ID隔离上下文，筛选或选择单楼后再看占用／压缩；同批可并发调度4楼，GPU仍串行。审核时可展开来源与完整性检查：它只对有证据的明确问题提示缺项并最多补答一次，日常闲聊不会被要求背诵旧事实。缺项warning不表示已发布或模型整体不可用。
 
@@ -163,7 +138,7 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 正式TTS入口为tools/jetson/tts/server.py，固定监听容器127.0.0.1:9011，只提供健康检查及WAV合成。runtime/studio.json的tts.voice_id选择配置的音色，缺省取首个gpt_sovits；该进程只使用一个固定参考。切新OC时配置对应voice_id／参考音频／文字／语言并重载TTS，不能请求任意路径或同时加载多个声音模型。
 
-参考缓存位于runtime/tts/reference_features/<voice_id>，由经过身份及张量校验的NPZ／JSON组成。compact路径缺失／失效时，直播冷加载先卸载LLM，在短命进程中重新预计算，退出后才加载不含HuBERT的精简后端；ready程序镜像在首次初始化阶段准备Genie完整模型包，新增声音的手动维护方式见下文，常驻服务不临时导出。两个后端均在同进程完成固定短句预热及清理，再报告健康并加载MiniCPM5／131072。预热音频丢弃、不记为播放或对话，不改变对外默认随机种子；静音／异常不就绪。运行中素材或配置变化会拒绝旧pipeline并报错，broker退出失效子进程，后续请求按既定加载顺序处理；失效的Genie包须重建。serve.py仅保留原版兼容／对照用途，不作为生产HTTP入口。
+参考缓存位于runtime/tts/reference_features/<voice_id>，由经过身份及张量校验的NPZ／JSON组成。compact路径缺失／失效时，直播冷加载先卸载LLM，在短命进程中重新预计算，退出后才加载不含HuBERT的精简后端；独立程序启动器在首次初始化阶段准备Genie完整模型包，新增声音的手动维护方式见下文，常驻服务不临时导出。两个后端均在同进程完成固定短句预热及清理，再报告健康并加载MiniCPM5／131072。预热音频丢弃、不记为播放或对话，不改变对外默认随机种子；静音／异常不就绪。运行中素材或配置变化会拒绝旧pipeline并报错，broker退出失效子进程，后续请求按既定加载顺序处理；失效的Genie包须重建。serve.py仅保留原版兼容／对照用途，不作为生产HTTP入口。
 
 历史compact语音内存比较使用tools/evaluate_tts_memory.py，与compact.py共用实现并保留原版对照；不将其结果混作Genie测量。维护工具在同一镜像和原生Torch环境内运行，必须先停止业务、清空待执行任务并关闭评论自动策略。输出指定在项目runtime内，包含音频和各阶段整机采样；保护阈值沿用可用160MiB、25秒换页64MiB和有界超时。
 
@@ -181,7 +156,7 @@ Genie历史独立实验使用tools/evaluate_genie_tts.py及单独环境，旧[�
 
 Genie正式依赖作为原镜像的小层安装进同一`/opt/studio-venv`，锁定CPU ORT1.22.1与少量依赖，保留原CUDA Torch／Audio／Vision、Transformers和NumPy版本及路径；不另起TTS容器或第二套Torch。镜像只携带固定Genie v2转换／模板子集及MIT许可，不装公共Genie服务器、播放器或额外语言资源。
 
-ready程序镜像的默认瑶瑶包由首次bootstrap准备，无须操作者手工执行以下转换。新增声音或精简镜像的维护路径仍须先取得并验证原v2权重／固定参考，再在服务外显式准备：用`genie_sampling.patch_graph`先恢复AR采样，再由`tools/jetson/tts/genie_quantize.py --models <恢复后FP32目录> --output <新AR目录> --execute`量化两个AR图；`tools/jetson/tts/genie_bert.py --root /workspace/tuber --output <新BERT目录> --execute`从原checkpoint准备一次22层动态BERT。上述维护输出放项目`runtime/evaluations`，全程必须有单一维护owner和内存守护，不能与常驻Mini同时导出。首次转换及准备峰值单列，不从直播峰值中消失。
+独立程序启动器的默认瑶瑶包由首次bootstrap准备，无须操作者手工执行以下转换。新增声音或精简镜像的维护路径仍须先取得并验证原v2权重／固定参考，再在服务外显式准备：用`genie_sampling.patch_graph`先恢复AR采样，再由`tools/jetson/tts/genie_quantize.py --models <恢复后FP32目录> --output <新AR目录> --execute`量化两个AR图；`tools/jetson/tts/genie_bert.py --root /workspace/tuber --output <新BERT目录> --execute`从原checkpoint准备一次22层动态BERT。上述维护输出放项目`runtime/evaluations`，全程必须有单一维护owner和内存守护，不能与常驻Mini同时导出。首次转换及准备峰值单列，不从直播峰值中消失。
 
 新参考先保留来源原件，再准备单声道32kHz WAV工作副本并配置准确文字；例如48kHz原声须在离线阶段显式重采样，不能等Genie加载时临时处理。对工作副本运行`python tools/jetson/tts/server.py --prepare-reference --voice-id <候选音色ID>`，此后再安装声音包。新GPT／SoVITS权重须重新转换和量化；若BERT checkpoint／config／tokenizer完全相同，可复用经过receipt及内容身份校验的BERT包，避免重复导出。独立候选使用自己的配置和runtime，不把候选追加进仍驻留的生产voices.json；整份文件的身份守卫会使旧worker失效。
 

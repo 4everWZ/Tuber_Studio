@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-31",
+  "scope": "environment-only images, independent program distribution and local-first startup",
+  "base_commit": "8a11914",
+  "checks": {
+    "pytest_passed": 879,
+    "node_passed": 4,
+    "final_delivery_contract_tests_passed": 29,
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "bash_syntax": "passed",
+    "public_bootstrap_metadata_audit": "passed"
+  },
+  "program_bundle": {
+    "bytes": 3138774,
+    "source_files": 140,
+    "environment_reference": "ghcr.io/4everwz/tuber_studio:env-ff99292f7ae1efb88a7a367d",
+    "extracted_environment_contract_matches": true,
+    "runtime_credentials_and_untracked_files_excluded": true,
+    "host_python_required_for_launch": false
+  },
+  "environment_contract": {
+    "code_ui_role_edits_reuse_identity": true,
+    "locked_dependency_edits_change_identity": true,
+    "line_endings_normalized_for_text_only": true,
+    "mismatch_rejected_before_container_replacement": true,
+    "optional_node_lock_checked_separately": true,
+    "real_node_process_works_with_dependencies_outside_program": true
+  },
+  "launcher_execution_tests": {
+    "transport": "real Bash with fake Docker CLI; no Docker daemon or GPU",
+    "existing_image_two_launches_pull_calls": 0,
+    "missing_image_two_launches_pull_calls": 1,
+    "all_runs_use_pull_never_and_same_local_image_id": true,
+    "public_source_mounts_readonly": true,
+    "failed_preflight_stops_or_removes_existing_container": false,
+    "operator_config_tokens_database_preserved": true
+  },
+  "ci_contract": {
+    "program_artifact_separate_from_image": true,
+    "environment_fingerprint_tag_reused": true,
+    "image_build_and_disk_cleanup_only_when_manifest_absent": true,
+    "registry_auth_or_network_errors_do_not_trigger_fallback_build": true,
+    "workflow_executed": false
+  },
+  "limitations": [
+    "New environment image not built/published in this local task.",
+    "Actual Docker bind mounts, NVIDIA startup and target-device resource reuse still need new-image acceptance; prior embedded-program image evidence does not establish them."
+  ],
+  "deployment": "no push, no container replacement, no target-device data/config changes"
+}

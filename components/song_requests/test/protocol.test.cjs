@@ -5,11 +5,13 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const root = path.resolve(__dirname, "../../..");
-test("installed upstream libraries expose one private stdio process without starting servers", {timeout:10000}, async () => {
+for (const external of [false, true]) test(`installed libraries expose one private stdio process (${external ? "environment dependencies" : "local dependencies"})`, {timeout:10000}, async () => {
   const parent = path.join(root, "tmp"); fs.mkdirSync(parent, {recursive:true});
   const temporary = fs.mkdtempSync(path.join(parent, "song-node-test-"));
-  const child = spawn(process.execPath, [path.join(__dirname,"../helper.cjs")], {
-    env:{...process.env, SELECT_MAX_BR:"false", TUBER_SONG_TEMP:temporary}, windowsHide:true, stdio:["pipe","pipe","pipe"],
+  let helper=path.join(__dirname,"../helper.cjs");
+  if(external){const program=path.join(temporary,"program");fs.mkdirSync(program);for(const name of ["helper.cjs","matching.cjs"])fs.copyFileSync(path.join(__dirname,"..",name),path.join(program,name));helper=path.join(program,"helper.cjs");}
+  const child = spawn(process.execPath, [helper], {
+    env:{...process.env, ...(external?{NODE_PATH:path.resolve(__dirname,"../node_modules")} : {}), SELECT_MAX_BR:"false", TUBER_SONG_TEMP:temporary}, windowsHide:true, stdio:["pipe","pipe","pipe"],
   });
   try {
     const line = new Promise((resolve, reject) => {

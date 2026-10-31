@@ -21,16 +21,16 @@ def tool(name):
 @pytest.mark.parametrize(
     "ref,event,expected",
     [
-        ("refs/heads/main", "push", {"r36.4", "latest"}),
+        ("refs/heads/main", "push", {"environment-r36.4"}),
         ("refs/heads/feature", "workflow_dispatch", set()),
-        ("refs/tags/v1.2.3", "push", {"v1.2.3", "1.2.3"}),
-        ("refs/tags/v1.2.3-rc.1", "push", {"v1.2.3-rc.1", "1.2.3-rc.1"}),
+        ("refs/tags/v1.2.3", "push", set()),
+        ("refs/tags/v1.2.3-rc.1", "push", set()),
     ],
 )
 def test_tags_keep_default_pointers_off_release_and_manual_feature_builds(ref, event, expected):
-    result = tool("image_metadata").image_tags("4everWZ/Tuber_Studio", "a" * 40, ref, event, "main")
+    result = tool("image_metadata").image_tags("4everWZ/Tuber_Studio", "a" * 40, ref, event, "main", "b" * 64)
     tags = {tag.split(":")[-1] for tag in result["tags"].splitlines()}
-    assert tags == {"sha-" + "a" * 40} | expected
+    assert tags == {"env-" + "b" * 24} | expected
     assert result["image"] == "ghcr.io/4everwz/tuber_studio" and result["short_sha"] == "a" * 12
 
 
@@ -40,7 +40,7 @@ def test_tags_keep_default_pointers_off_release_and_manual_feature_builds(ref, e
 )
 def test_pull_requests_and_nonrelease_inputs_cannot_produce_publish_tags(ref, event):
     with pytest.raises(ValueError):
-        tool("image_metadata").image_tags("owner/repo", "a" * 40, ref, event, "main")
+        tool("image_metadata").image_tags("owner/repo", "a" * 40, ref, event, "main", "b" * 64)
 
 
 def test_only_ephemeral_hosted_runners_are_eligible_for_sdk_cleanup():
@@ -129,3 +129,7 @@ def test_fixed_action_revisions_and_publish_permission_scope():
     assert "workflow_dispatch" in workflow["jobs"]["image"]["if"]
     assert "github.event_name == 'push'" in workflow["jobs"]["image"]["if"]
     assert set(workflow["jobs"]["image"]["needs"]) == {"checks", "song-component"}
+    steps = workflow["jobs"]["image"]["steps"]
+    build = next(step for step in steps if step.get("id") == "build")
+    assert build["if"] == "steps.lookup.outputs.missing == 'true'"
+    assert build["with"]["build-contexts"] == "environment_contract=tmp/ci-environment"

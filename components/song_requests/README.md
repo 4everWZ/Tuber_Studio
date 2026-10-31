@@ -46,10 +46,10 @@
 
 响应包含同一 `id` 及 `result` 或 `error`。`resolve` 的临时 URL 仅供 Python 下载使用，不是可直接提交至播放器的公共接口。解析串行，元数据与健康查询可并发。
 
-可选容器变体：先构建含本功能的主程序镜像，再执行：
+可选容器变体：先构建匹配依赖的环境镜像，再执行：
 
 ```sh
-docker build -f components/song_requests/Dockerfile --build-arg TUBER_IMAGE=tuber-studio:ready -t tuber-studio:online .
+docker build -f components/song_requests/Dockerfile --build-arg TUBER_IMAGE=tuber-studio:environment-r36.4 -t tuber-studio:online .
 ```
 
-该变体才携带 Node 与 npm 依赖，继续使用父镜像的启动器、runtime 卷及非 root 用户。普通 CI 另验证组件安装、匹配规则和真实 stdio 进程，不请求外部歌曲；各音源可用性及 OBS 本体解码仍需在目标网络／设备验收。
+该环境变体携带 Node 与 npm 依赖，辅助进程源码仍来自只读程序挂载，通过 NODE_PATH 复用镜像内依赖；启动预检核对变体内的 npm 锁文件，依赖不匹配先报错。只有 npm 依赖变化才重建该变体，helper 源码变化直接随程序更新；继续使用同一启动器、runtime 卷及非 root 用户。普通 CI 另验证组件安装、匹配规则和真实 stdio 进程，不请求外部歌曲；各音源可用性及 OBS 本体解码仍需在目标网络／设备验收。

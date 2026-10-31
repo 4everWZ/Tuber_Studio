@@ -42,33 +42,10 @@ RUN /opt/studio-venv/bin/python -c "import importlib.metadata as m,json; from pa
     && /opt/studio-venv/bin/python -c "import importlib.metadata as m,json,onnxruntime as o; from pathlib import Path; assert json.loads(Path('/tmp/speech-origin.json').read_text())=={n:[m.version(n),str(m.distribution(n).locate_file(''))] for n in ('torch','torchaudio','torchvision','transformers','numpy')}; assert o.__version__=='1.22.1' and 'CPUExecutionProvider' in o.get_available_providers()" \
     && rm -f /tmp/genie-requirements.txt /tmp/speech-origin.json
 
-COPY src ./src
-COPY config ./config
-COPY assets ./assets
-COPY third_party/openai-codex ./third_party/openai-codex
-COPY third_party/whale-avatar ./third_party/whale-avatar
-COPY evaluations/semantic-cases.json ./evaluations/semantic-cases.json
-COPY evaluations/speech-cases.json ./evaluations/speech-cases.json
-COPY tools/evaluate_semantics.py ./tools/evaluate_semantics.py
-COPY tools/evaluate_context.py ./tools/evaluate_context.py
-COPY tools/evaluate_tts_memory.py ./tools/evaluate_tts_memory.py
-COPY tools/evaluate_tts_candidates.py ./tools/evaluate_tts_candidates.py
-COPY tools/evaluate_tts_parity.py ./tools/evaluate_tts_parity.py
-COPY tools/evaluate_genie_tts.py ./tools/evaluate_genie_tts.py
-COPY tools/evaluate_live.py ./tools/evaluate_live.py
-COPY tools/jetson/tts/serve.py tools/jetson/tts/server.py tools/jetson/tts/compact.py tools/jetson/tts/inference_only.py tools/jetson/tts/prepare.py tools/jetson/tts/requirements.txt tools/jetson/tts/tts_infer.yaml ./tools/jetson/tts/
-COPY tools/jetson/tts/genie_sampling.py tools/jetson/tts/genie_quantize.py tools/jetson/tts/genie_bert.py tools/jetson/tts/genie_backend.py tools/jetson/tts/genie_bundle.py ./tools/jetson/tts/
-COPY tools/jetson/initialize-data.py ./tools/jetson/initialize-data.py
-COPY tools/jetson/tts/install-candidates.py ./tools/jetson/tts/install-candidates.py
-# Dependencies were already installed from the locked export. This image owns a
-# read-only source tree; preserve the same import path without rebuilding an
-# editable wheel (and downloading build backends) on every source update.
+# The app is supplied by a read-only host program mount at launch time.
 RUN /opt/studio-venv/bin/python -c "from pathlib import Path; import sysconfig; Path(sysconfig.get_path('purelib'), 'tuber-studio-source.pth').write_text('/workspace/tuber/src' + chr(10))" \
-    && /opt/studio-venv/bin/python -c "from pathlib import Path; from tuber_studio.config import ROOT; assert ROOT == Path('/workspace/tuber')" \
-    && /opt/studio-venv/bin/python tools/evaluate_tts_candidates.py --help > /dev/null \
-    && /opt/studio-venv/bin/python tools/evaluate_tts_parity.py --help > /dev/null \
-    && /opt/studio-venv/bin/python tools/jetson/tts/install-candidates.py --help > /dev/null \
     && rm -rf /tmp/uv-cache /root/.cache/pip
+COPY --from=environment_contract /environment.json /opt/tuber-environment.json
 
 ENV PATH=/opt/studio-venv/bin:/opt/llama/bin:$PATH \
     TUBER_ROOT=/workspace/tuber \
@@ -98,21 +75,14 @@ EXPOSE 9020
 USER 65532:65532
 ENTRYPOINT ["/opt/studio-venv/bin/python", "-m", "tuber_studio.stack"]
 
-# The named context is generated from public download metadata and two small
-# presets. It contains no runtime/, model tensors or installation credentials.
+# Compatibility target name; this is an environment image, with no app source,
+# presets, model metadata, runtime data or weights baked in.
 FROM program-base AS ready
 USER root
-COPY --from=ready_assets /builtin /opt/tuber-builtin
-COPY --from=ready_assets /run-ready.sh /opt/tuber-launch/run-ready.sh
-COPY tools/jetson/tts/bootstrap.py ./tools/jetson/tts/bootstrap.py
-RUN chmod -R a+rX /opt/tuber-builtin /opt/tuber-launch \
-    && mkdir -p /workspace/tuber/runtime \
+RUN mkdir -p /workspace/tuber/runtime \
     && chown 65532:65532 /workspace/tuber/runtime \
     && chmod 0700 /workspace/tuber/runtime
 VOLUME ["/workspace/tuber/runtime"]
-RUN --mount=type=bind,source=tools/ci,target=/opt/tuber-ci,readonly \
-    /opt/studio-venv/bin/python /opt/tuber-ci/audit_program.py \
-    --image-root /workspace/tuber --builtin /opt/tuber-builtin
 USER 65532:65532
 HEALTHCHECK --interval=20s --timeout=10s --start-period=420s --retries=3 \
     CMD ["/opt/studio-venv/bin/python", "-m", "tuber_studio.portable", "--healthcheck"]

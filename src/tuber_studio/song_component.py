@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 
 class SongComponent:
@@ -20,11 +21,19 @@ class SongComponent:
         self.lock = asyncio.Lock()
 
     def installed(self):
+        roots = [self.directory / "node_modules"]
+        roots.extend(
+            Path(path)
+            for path in os.environ.get("NODE_PATH", "").split(os.pathsep)
+            if path and Path(path).is_absolute()
+        )
         return bool(
             shutil.which("node")
             and (self.directory / "helper.cjs").is_file()
-            and (self.directory / "node_modules/netease-metadata/package.json").is_file()
-            and (self.directory / "node_modules/@unblockneteasemusic/server/package.json").is_file()
+            and all(
+                any((root / name / "package.json").is_file() for root in roots)
+                for name in ("netease-metadata", "@unblockneteasemusic/server")
+            )
         )
 
     def status(self):

@@ -2,7 +2,7 @@
 
 本规范维护 Provider、声音身份／缓存、设备 Profile 和推理封装；具体设备测量及准入记录由证据文件维护。
 
-非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。本地资源配置为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，已验证动态语音、浏览器实际播放ACK及真实长输入接收后同进程继续合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。源码模板默认text且关闭直播，ready程序镜像的新安装另用获准声音的live预设，首次下载与准备完成后才加载；真实平台接入与持续运行须独立验收。当前声音与共驻测量见[瑶瑶正式验收](../../evaluations/results/yaoyao-v2-voice-20261030.json)，原引擎优化对照见[Genie资源实验](../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
+非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。本地资源配置为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，已验证动态语音、浏览器实际播放ACK及真实长输入接收后同进程继续合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。源码模板默认text且关闭直播，独立程序启动器的新安装另用获准声音的live预设，首次下载与准备完成后才加载；真实平台接入与持续运行须独立验收。当前声音与共驻测量见[瑶瑶正式验收](../../evaluations/results/yaoyao-v2-voice-20261030.json)，原引擎优化对照见[Genie资源实验](../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
 
 初始大肥鱼的目标声线为清亮柔软、略带奶气的普通话少女音，避免明显电音／金属感；已接受的声音绑定为yaoyao_sovits_v2，角色设定和形象继续由whale角色卡维护。原素材和实际合成须分别试听；模型版本、干净参考、来源和运行包身份分别核验。声音替换重新验证质量、速度与整机RAM，旧声线的相对试听通过不转移为新声线准入，也不以强行升调代替声音选择。
 
@@ -77,7 +77,7 @@ Qwen3.5-2B 是可显式准备的历史候选，不替换 MiniCPM5-2B 默认；[�
 
 ## 工作模式
 
-源码配置模板默认 text，直播功能关闭；ready程序镜像的新安装使用独立Genie／Mock live预设，已有安装保留Operator配置。评论页和其他导航不会隐式改变资源模式或启用声音。使用本地 LLM 时，text 结束直播生产和待播任务、卸载本地 TTS，保留所选 LLM 给评论回复等工作；选择外部 LLM API 时可释放本地推理资源。视觉须另行显式配置，text 名称不表示默认模型具有图像能力。外部语音 API 不依赖本地 live 共驻，也不自动切换角色声音。
+源码配置模板默认 text，直播功能关闭；独立程序启动器的新安装使用独立Genie／Mock live预设，已有安装保留Operator配置。评论页和其他导航不会隐式改变资源模式或启用声音。使用本地 LLM 时，text 结束直播生产和待播任务、卸载本地 TTS，保留所选 LLM 给评论回复等工作；选择外部 LLM API 时可释放本地推理资源。视觉须另行显式配置，text 名称不表示默认模型具有图像能力。外部语音 API 不依赖本地 live 共驻，也不自动切换角色声音。
 
 用户显式选择 live，须让所选本地 LLM 与 TTS 均就绪并共驻，仍受统一生成配额控制；启动／恢复直播先确认加载成功，失败时不启动直播任务。正式 Genie Profile 已验证停止、切text卸载TTS及回live，不能据此推断任意重启或故障恢复均已验收。
 
@@ -127,9 +127,9 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 目标为从适合 Jetson 的原始 CUDA／PyTorch 镜像派生一个 tuber-studio 镜像／容器，只保留运行所需组件，统一 Python／CUDA 环境，共享项目 runtime 挂载。容器内分离业务后端、受限 broker 和按需 llama／TTS 子进程；不默认部署 host Docker controller／独立 host venv，也不挂载 Docker.sock。
 
-程序交付面向Jetson ARM64／L4T R36.4，默认由GitHub Actions测试并构建ARM64镜像，发布到`ghcr.io/4everwz/tuber_studio:r36.4`，同次构建提供独立run-ready.sh产物。构建SHA／版本标签或digest供固定安装和回退；发布工作流及取得镜像／启动脚本的方法由[部署指南](../guides/deployment.md)维护。本机构建仅作开发备用，不作为操作者常规更新的前置。
+程序交付面向Jetson ARM64／L4T R36.4。Docker镜像只提供CUDA／原生Torch、llama-server、锁定Python依赖及固定Genie转换／图骨架依赖；应用源码、WebUI、角色素材、初始化清单和预设由独立程序包或宿主源码目录只读挂载，数据仍独立持久化。日常代码更新不重建环境镜像，不在启动时安装依赖。
 
-程序镜像只包含程序、锁定依赖、固定URL／大小／SHA256清单、小型预设及Genie转换／图骨架模板；不内置推理权重、原始声音模型或生成的永久包。当前发布压缩层约6.04GiB、展开镜像约13.36GiB，仍含原生CUDA／Torch，不按排除权重推断微型体积。统一Dockerfile的program-base／ready阶段使用仅含清单和预设的ready_assets命名上下文；CI构建、发布不得依赖旧runtime、模型资产、设备连接或生产凭证。源码公开、包发布、匿名访问及设备部署分别验收；当前公开CI包与设备部署已有[交付证据](../../evaluations/results/ready-program-image-20261030.json)，不据此忽略操作者Docker daemon对GHCR／CDN的实际可达性。
+环境标识由依赖声明／锁文件、Dockerfile、TTS依赖及固定Genie源码计算，CI仅在对应env-<指纹>尚未发布时构建；同环境的程序更新复用已有镜像。本地缺少指定镜像才拉取，解析一次ID后所有运行使用--pull=never；依赖不匹配须在替换旧容器前拒绝，不静默升级。环境和程序构建不得依赖旧runtime、生产凭证、模型权重或设备连接。固定镜像与程序版本共同用于回退，不假定数据库自动回退；交付命令与CI由[部署指南](../guides/deployment.md)维护。
 
 首次启动将[固定下载清单](../../config/jetson/downloads.json)中的MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT及NLTK下载到持久runtime，逐文件验证固定来源、字节数和SHA256，完整校验后才发布。可使用HTTPS origin形式的TUBER_HF_BASE替换HF源站，不能改变revision、关闭校验或回退到其他声音／模型。初次网络、公共源可用性和转换能力是启动前提；超时、取消或校验失败必须有界报错，不能把部分文件或半个bundle当成就绪。
 
@@ -137,7 +137,7 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 重启验证并复用已下载及生成产物，不重复下载／转换，也不覆盖已有studio.json、TTS YAML、令牌或数据库。不可变源资产或声音包身份不符时拒绝并保留原文件，不静默修补；原BERT／HuBERT checkpoint、sanitized权重、参考及NPZ保留声音身份依赖，inode和时间戳在冷启动重新建立签名。镜像不携带生产凭证、数据库、日志、普通缓存或实验环境；新数据目录独立生成私有令牌与空业务数据库。
 
-新安装默认features.live_enabled=true及inference_broker.mode=live，业务仍stopped且自动浏览／回复关闭；已有Operator配置优先。模型就绪须观察实际窗口、驻留与bundle身份，HTTP可达不算就绪，健康检查只读，不触发下载、转换或加载。全新空数据卷下载／顺序准备、真实Mini131072／q4_0与Genie合成、断网重启复用及配置／令牌／数据库保留已有[设备验收](../../evaluations/results/ready-program-image-20261030.json)；同一CI镜像已由正式启动包部署到原runtime，复用已接受的瑶瑶包并验证真实回复／音频、配置与令牌保留，业务保持停止／自动关闭。精简镜像及显式维护新声音的流程继续保留；构建、交付与启动命令由[部署指南](../guides/deployment.md)维护。
+新安装默认features.live_enabled=true及inference_broker.mode=live，业务仍stopped且自动浏览／回复关闭；已有Operator配置优先。模型就绪须观察实际窗口、驻留与bundle身份，HTTP可达不算就绪，健康检查只读，不触发下载、转换或加载。全新空数据卷下载／顺序准备、真实Mini131072／q4_0与Genie合成、断网重启复用及配置／令牌／数据库保留已有[设备验收](../../evaluations/results/ready-program-image-20261030.json)；同一CI镜像已由正式启动包部署到原runtime，复用已接受的瑶瑶包并验证真实回复／音频、配置与令牌保留，业务保持停止／自动关闭。历史内置程序镜像证据不替代新环境／外部程序挂载的设备验收；显式维护新声音的流程继续保留，构建、交付与启动命令由[部署指南](../guides/deployment.md)维护。
 
 工作台为本地声音计算缓存内容身份时，只可读取已配置gpt_sovits音色的assets或runtime/tts/ref内有效WAV；拒绝绝对路径、穿越、链接和其他runtime／系统文件。该专用读取不扩展通用素材路由，也不给模型或观众文件读取权限。
 

@@ -31,12 +31,8 @@ def checked(base: Path, relative: str) -> Path:
     return path
 
 
-def package(root: Path, output: Path) -> dict:
-    root, output = root.resolve(), output.absolute()
-    if not output.is_relative_to(root / "tmp") or output.exists():
-        raise ValueError("Use a new build context inside this project tmp/")
-    if output.resolve() != output:
-        raise ValueError("Build output cannot traverse links")
+def builtin(root: Path):
+    """Public presets and resource metadata, shared by packaging and startup."""
     manifest = json.loads(checked(root, "config/jetson/downloads.json").read_text(encoding="utf-8"))
     records = manifest["files"]
     for entry in records:
@@ -50,8 +46,6 @@ def package(root: Path, output: Path) -> dict:
             for url in entry["urls"]
         ):
             raise ValueError("Downloads require public HTTPS URLs")
-    files = output / "builtin/files"
-    files.mkdir(parents=True)
     preset = json.loads(checked(root, "config/studio.example.json").read_text(encoding="utf-8"))
     preset["features"]["live_enabled"] = True
     preset["inference_broker"]["mode"] = "live"
@@ -61,9 +55,6 @@ def package(root: Path, output: Path) -> dict:
         "tts/tts_infer.yaml": checked(root, "config/jetson/tts_infer.yaml").read_bytes(),
     }
     for name, content in seeds.items():
-        target = files / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
         records.append(
             {
                 "path": name,
@@ -73,7 +64,29 @@ def package(root: Path, output: Path) -> dict:
                 "policy": "preserve",
             }
         )
-    (output / "builtin/manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest, seeds
+
+
+def write_builtin(root: Path, output: Path):
+    manifest, seeds = builtin(root)
+    output.mkdir(parents=True, exist_ok=False)
+    for name, content in seeds.items():
+        target = output / "files" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest, seeds
+
+
+def package(root: Path, output: Path) -> dict:
+    root, output = root.resolve(), output.absolute()
+    if not output.is_relative_to(root / "tmp") or output.exists():
+        raise ValueError("Use a new build context inside this project tmp/")
+    if output.resolve() != output:
+        raise ValueError("Build output cannot traverse links")
+    output.mkdir(parents=True)
+    manifest, seeds = write_builtin(root, output / "builtin")
+    records = manifest["files"]
     shutil.copyfile(checked(root, "tools/jetson/run-ready.sh"), output / "run-ready.sh")
     return {
         "download_files": len(records) - len(seeds),
