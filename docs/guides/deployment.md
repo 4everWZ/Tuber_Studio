@@ -69,7 +69,9 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
     docker inspect --format '{{.State.Health.Status}}' tuber-studio
     docker logs --tail 80 tuber-studio
 
-此前[程序内置镜像的设备证据](../../evaluations/results/ready-program-image-20261030.json)证明原资源链路的首次下载、断网复用与真实推理，不代替新环境镜像／外部程序挂载的设备验收。新架构的本地验证见[环境交付检查](../../evaluations/results/environment-delivery-20261031.json)，实际新镜像发布与设备替换另行执行。
+此前[程序内置镜像的设备证据](../../evaluations/results/ready-program-image-20261030.json)证明原资源链路的首次下载、断网复用与真实推理。环境分离后的[CI发布与Jetson迁移](../../evaluations/results/reusable-environment-release-20261031.json)已验证独立程序只读挂载、已有资源复用、实际131072模型回复和32kHz真实语音，原配置、令牌及业务记录保留；这次使用既有模型／音色数据，没有重复空卷完整下载。本地回归见[环境交付检查](../../evaluations/results/environment-delivery-20261031.json)。
+
+当前设备程序目录为/home/weizheng/code/Tuber_Studio/releases/35f81e609c920b039cddcc16ba1018aae29eb09c/program，current指向该目录；数据仍在原项目runtime。对应环境为ghcr.io/4everwz/tuber_studio:env-ff99292f7ae1efb88a7a367d，CI镜像摘要为sha256:dd2d04a2eec01937a856c1d71f18731568b8ae689f361ef85f52982800e3926c。同依赖的新程序继续复用该环境；从current执行启动器时仍显式传原runtime为--data。
 
 ### 环境镜像何时更新
 

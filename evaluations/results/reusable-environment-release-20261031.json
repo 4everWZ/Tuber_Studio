@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-31",
+  "scope": "first reusable environment CI publication and existing-data Jetson migration",
+  "program_revision": "35f81e609c920b039cddcc16ba1018aae29eb09c",
+  "ci_run": "https://github.com/4everWZ/Tuber_Studio/actions/runs/41208424955",
+  "ci_conclusion": "success",
+  "ci_checks": {
+    "python_passed": 879,
+    "node_passed": 4
+  },
+  "environment_reference": "ghcr.io/4everwz/tuber_studio:env-ff99292f7ae1efb88a7a367d",
+  "image_digest": "sha256:dd2d04a2eec01937a856c1d71f18731568b8ae689f361ef85f52982800e3926c",
+  "image_id": "sha256:c77ffcec704c8dd80130740c96938c6173df633854c1b7791018b9377947e2c4",
+  "image_size_bytes": 14343376334,
+  "anonymous_registry_manifest_status": 200,
+  "new_layer_bytes": 349175542,
+  "program_archive_sha256": "cc06a4b5c75d554797623e7936834d1e241d9597203c991535f15e5c0f1d06d7",
+  "source_directory": "/home/weizheng/code/Tuber_Studio/releases/35f81e609c920b039cddcc16ba1018aae29eb09c/program",
+  "data_directory": "/home/weizheng/code/Tuber_Studio/runtime",
+  "image_without_program_mount": {
+    "image_has_application": false,
+    "image_has_assets": false,
+    "image_has_config": false,
+    "application_importable_without_mount": false,
+    "environment_sha256": "ff99292f7ae1efb88a7a367d2008b404b1c50a5a16303f3a53801df644036143",
+    "packages": {
+      "torch": "2.7.0",
+      "onnxruntime": "1.22.1",
+      "fastapi": "0.162.0",
+      "mutagen": "1.48.1"
+    }
+  },
+  "source_mounts_readonly": true,
+  "health": "healthy",
+  "existing_assets": {
+    "downloaded_files": [],
+    "created_credentials": [],
+    "existing_genie_bundle_reused": true,
+    "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8"
+  },
+  "preserved_files": {
+    "studio.json": true,
+    "tts/tts_infer.yaml": true,
+    "provider-credentials.json": true,
+    "admin-token": true,
+    "overlay-token": true,
+    "inference-token": true
+  },
+  "table_counts_before": {
+    "characters": 2,
+    "character_versions": 3,
+    "users": 3,
+    "relations": 0,
+    "comments": 0,
+    "drafts": 0,
+    "conversations": 3,
+    "dm_inbox": 0,
+    "dm_drafts": 0,
+    "dm_attempts": 0
+  },
+  "table_counts_after": {
+    "characters": 2,
+    "character_versions": 3,
+    "users": 3,
+    "relations": 0,
+    "comments": 0,
+    "drafts": 0,
+    "conversations": 3,
+    "dm_inbox": 0,
+    "dm_drafts": 0,
+    "dm_attempts": 0
+  },
+  "runtime_smoke": {
+    "native_context": 131072,
+    "llm_reply": "当然是随时待命啦~，陪大家聊聊天需要我呀！",
+    "thinking_unchanged": true,
+    "reply_budget_unchanged": 1024,
+    "business_state": "stopped",
+    "queue_length": 0,
+    "cache_settings": {
+      "music_limit_mib": 15360,
+      "speech_limit_mib": 512,
+      "temporary_limit_mib": 1024
+    },
+    "private_messages_enabled": false,
+    "audio": {
+      "voice_id": "yaoyao_sovits_v2",
+      "duration": 4.16,
+      "rate": 32000,
+      "bytes": 266284,
+      "non_silent": true,
+      "warning": null
+    },
+    "mode_restored": "text",
+    "configuration_unchanged_during_probe": true
+  },
+  "rollback": {
+    "old_image": "sha256:42b4a8468d232b283d8d612d799840b70dc1b5400f968c866c61312b4f1d3b58",
+    "backup": "/home/weizheng/code/Tuber_Studio/runtime/backups/environment-migration-20261031-140425"
+  },
+  "transport": "GHCR layer CDN direct download stalled; temporary loopback transport used existing operator proxy. Official GHCR digest subsequently confirmed, temporary transport closed before service startup. Docker daemon settings unchanged.",
+  "external_platform_messages_sent": false,
+  "limitations": [
+    "Uses existing prepared model/voice assets; a fresh empty-volume full download on the new environment was not repeated.",
+    "Synthetic reply and waveform validation do not replace broader model-quality or continuous-load acceptance."
+  ]
+}
