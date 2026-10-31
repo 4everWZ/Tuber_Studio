@@ -73,7 +73,7 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 此前[程序内置镜像的设备证据](../../evaluations/results/ready-program-image-20261030.json)证明原资源链路的首次下载、断网复用与真实推理。环境分离后的[CI发布与Jetson迁移](../../evaluations/results/reusable-environment-release-20261031.json)已验证独立程序只读挂载、已有资源复用、实际131072模型回复和32kHz真实语音，原配置、令牌及业务记录保留；这次使用既有模型／音色数据，没有重复空卷完整下载。本地回归见[环境交付检查](../../evaluations/results/environment-delivery-20261031.json)。
 
-当前设备程序目录为/home/weizheng/code/Tuber_Studio/releases/35f81e609c920b039cddcc16ba1018aae29eb09c/program，current指向该目录；数据仍在原项目runtime。对应环境为ghcr.io/4everwz/tuber_studio:env-ff99292f7ae1efb88a7a367d，CI镜像摘要为sha256:dd2d04a2eec01937a856c1d71f18731568b8ae689f361ef85f52982800e3926c。同依赖的新程序继续复用该环境；从current执行启动器时仍显式传原runtime为--data。
+当前设备程序目录为/home/weizheng/code/Tuber_Studio/releases/2b452cae235a435f3e4a242a026e35cfaecddd33/program，current指向该目录；数据仍在原项目runtime。已安装online环境扩展ghcr.io/4everwz/tuber_studio:online-env-be6441607ae064398b0ee271，镜像摘要为sha256:4b3d0deb9bd9608e801f7c202748e69a84d55ef8cc096d54b3f5053894c7e4ee；其基础仍为env-ff99292f7ae1efb88a7a367d。在线点歌已启用，按Operator选择仅用于本机／OBS技术测试，直播／商业用途未确认。真实搜索、波点FLAC、浏览器播放器、歌词和普通重启后保留组件均见[设备点歌验收](../../evaluations/results/online-song-component-device-20261031.json)；咪咕仍未配置凭证，OBS本体未计为已验。
 
 ### 环境镜像何时更新
 

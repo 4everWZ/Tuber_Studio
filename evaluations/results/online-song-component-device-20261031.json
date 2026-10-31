@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-31",
+  "scope": "install and enable optional online song component on Jetson for operator-confirmed local/OBS technical testing",
+  "program_revision": "2b452cae235a435f3e4a242a026e35cfaecddd33",
+  "ci_run": "https://github.com/4everWZ/Tuber_Studio/actions/runs/41215254206",
+  "ci_checks": {
+    "python_passed": 883,
+    "node_passed": 4
+  },
+  "environment_reference": "ghcr.io/4everwz/tuber_studio:online-env-be6441607ae064398b0ee271",
+  "image_digest": "sha256:4b3d0deb9bd9608e801f7c202748e69a84d55ef8cc096d54b3f5053894c7e4ee",
+  "image_id": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
+  "base_environment_reused": "ghcr.io/4everwz/tuber_studio:env-ff99292f7ae1efb88a7a367d",
+  "source_directory": "/home/weizheng/code/Tuber_Studio/releases/2b452cae235a435f3e4a242a026e35cfaecddd33/program",
+  "preserved": {
+    "studio.json": true,
+    "admin-token": true,
+    "overlay-token": true,
+    "inference-token": true
+  },
+  "search": {
+    "query": "水星记 郭顶",
+    "returned_results": 20,
+    "selected_id": "441491828",
+    "title": "水星记",
+    "artist": "郭顶"
+  },
+  "stream": {
+    "title": "水星记",
+    "artist": "郭顶",
+    "source": "bodian",
+    "quality": {
+      "duration": 325.2666439909297,
+      "format": "flac",
+      "media_type": "audio/flac",
+      "bitrate": 716709,
+      "sample_rate": 44100,
+      "channels": 2,
+      "bits_per_sample": 16
+    },
+    "lyric_lines": 60,
+    "cache_bytes": 29149100
+  },
+  "browser": {
+    "actual_overlay_started_ack": true,
+    "actual_clock_advanced": true,
+    "paused_position_seconds": 95.906609,
+    "paused_clock_frozen": true,
+    "resumed_clock_advanced": true,
+    "lyric_matches_playback_position": true,
+    "disabled_audio_source_cleared": true,
+    "disabled_lyric_reset": true,
+    "search_and_request_clicked_in_workbench": true,
+    "second_request_used_cached_audio": true
+  },
+  "component_shutdown_and_restart": {
+    "old_pid": 79,
+    "disabled_pid": null,
+    "playback_stopped": true,
+    "cache_preserved_bytes": 29149100,
+    "new_pid": 270,
+    "restarted": true
+  },
+  "normal_restart_without_environment_argument": {
+    "image_download_required": false,
+    "model_downloads": [],
+    "generated_credentials": [],
+    "online_profile_preserved": true,
+    "component_auto_started": true
+  },
+  "final_state": {
+    "installed": true,
+    "running": true,
+    "helper_process_count": 1,
+    "node_version": "v24.22.2",
+    "profile": "online",
+    "usage": "local_test",
+    "live_allowed": false,
+    "commercial_allowed": false,
+    "cache_bytes": 29149100,
+    "cache_limit_mib": 15360,
+    "state": "stopped",
+    "mode": "text",
+    "migu_configured": false
+  },
+  "backup": "/home/weizheng/code/Tuber_Studio/runtime/backups/before-online-component-20261031-153546",
+  "external_platform_messages_or_broadcasts": false,
+  "not_validated": [
+    "Migu authenticated source retrieval: MIGU_COOKIE not configured.",
+    "OBS application itself: browser overlay tested, no real platform adapter or broadcast.",
+    "Whole-song lyric alignment human review and long-running source availability."
+  ]
+}

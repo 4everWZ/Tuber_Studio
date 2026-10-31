@@ -55,3 +55,5 @@ docker build -f components/song_requests/Dockerfile --build-arg TUBER_IMAGE=tube
 ```
 
 该环境变体携带 Node 与 npm 依赖，辅助进程源码仍来自只读程序挂载，通过 NODE_PATH 复用镜像内依赖；启动预检核对变体内的 npm 锁文件，依赖不匹配先报错。只有 npm 依赖变化才重建该变体，helper 源码变化直接随程序更新；继续使用同一启动器、runtime 卷及非 root 用户。普通 CI 另验证组件安装、匹配规则和真实 stdio 进程，不请求外部歌曲；各音源可用性及 OBS 本体解码仍需在目标网络／设备验收。
+
+当前Jetson已安装并启用该扩展，保存online环境选择；本机测试的真实搜索、波点FLAC和浏览器播放证据见[设备验收](../../evaluations/results/online-song-component-device-20261031.json)。新安装仍默认关闭；咪咕需单独配置凭证，浏览器结果不代替OBS本体验证。
