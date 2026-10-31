@@ -1,0 +1,185 @@
+{
+  "date": "2026-10-31",
+  "scope": "classification-only output budget while preserving configured thinking",
+  "base_commit": "cc3fada",
+  "user_decision": "Retain thinking; increase classification budget, leave normal reply and summary budgets unchanged.",
+  "implementation": {
+    "policy_field": "channel_max_tokens",
+    "default": 2048,
+    "minimum": 256,
+    "maximum": 8192,
+    "ui": "private message policy",
+    "thinking_override": false
+  },
+  "checks": {
+    "pytest_passed": 870,
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "javascript_syntax": "passed"
+  },
+  "device": "existing Jetson MiniCPM5-2B native service; candidate provider source loaded in disposable process; no deployed code or configuration changed",
+  "inputs": "five synthetic cases; same pre-existing prompt/schema across 2048 and 4096 runs",
+  "acceptance": "success requires complete JSON, consistent channel/reason, and expected channel; reason subclass accuracy not scored",
+  "runs": [
+    {
+      "classification_max_tokens": 2048,
+      "thinking_enabled": true,
+      "global_reply_max_tokens": 1024,
+      "configuration_unchanged": true,
+      "actual_context_tokens": 131072,
+      "complete_outputs": 5,
+      "expected_channel_and_domain_validation_passed": 3,
+      "cases": [
+        {
+          "case": "public_schedule",
+          "result": {
+            "channel": "comment",
+            "reason": "public_topic"
+          },
+          "passed": true,
+          "seconds": 8.78,
+          "finish_reason": "stop",
+          "prompt_tokens": 877,
+          "completion_tokens": 219,
+          "reasoning_characters": 457
+        },
+        {
+          "case": "public_smalltalk",
+          "result": {
+            "channel": "comment",
+            "reason": "public_topic"
+          },
+          "passed": true,
+          "seconds": 6.69,
+          "finish_reason": "stop",
+          "prompt_tokens": 879,
+          "completion_tokens": 166,
+          "reasoning_characters": 266
+        },
+        {
+          "case": "explicit_private",
+          "result": {
+            "channel": "direct_message",
+            "reason": "private_details"
+          },
+          "passed": true,
+          "seconds": 5.88,
+          "finish_reason": "stop",
+          "prompt_tokens": 887,
+          "completion_tokens": 145,
+          "reasoning_characters": 297
+        },
+        {
+          "case": "implicit_privacy",
+          "result": {
+            "channel": "comment",
+            "reason": "public_topic"
+          },
+          "passed": false,
+          "seconds": 13.93,
+          "finish_reason": "stop",
+          "prompt_tokens": 886,
+          "completion_tokens": 353,
+          "reasoning_characters": 685
+        },
+        {
+          "case": "long_followup",
+          "result": {
+            "channel": "comment",
+            "reason": "long_followup"
+          },
+          "passed": false,
+          "seconds": 7.86,
+          "validation_error": "Inconsistent channel and reason",
+          "finish_reason": "stop",
+          "prompt_tokens": 890,
+          "completion_tokens": 199,
+          "reasoning_characters": 322
+        }
+      ]
+    },
+    {
+      "classification_max_tokens": 4096,
+      "thinking_enabled": true,
+      "global_reply_max_tokens": 1024,
+      "configuration_unchanged": true,
+      "actual_context_tokens": 131072,
+      "complete_outputs": 5,
+      "expected_channel_and_domain_validation_passed": 3,
+      "cases": [
+        {
+          "case": "public_schedule",
+          "result": {
+            "channel": "comment",
+            "reason": "public_topic"
+          },
+          "passed": true,
+          "seconds": 9.1,
+          "finish_reason": "stop",
+          "prompt_tokens": 877,
+          "completion_tokens": 228,
+          "reasoning_characters": 412
+        },
+        {
+          "case": "public_smalltalk",
+          "result": {
+            "channel": "comment",
+            "reason": "public_topic"
+          },
+          "passed": true,
+          "seconds": 4.25,
+          "finish_reason": "stop",
+          "prompt_tokens": 879,
+          "completion_tokens": 101,
+          "reasoning_characters": 159
+        },
+        {
+          "case": "explicit_private",
+          "result": {
+            "channel": "direct_message",
+            "reason": "public_topic"
+          },
+          "passed": false,
+          "seconds": 11.15,
+          "validation_error": "Inconsistent channel and reason",
+          "finish_reason": "stop",
+          "prompt_tokens": 887,
+          "completion_tokens": 284,
+          "reasoning_characters": 545
+        },
+        {
+          "case": "implicit_privacy",
+          "result": {
+            "channel": "comment",
+            "reason": "private_details"
+          },
+          "passed": false,
+          "seconds": 6.87,
+          "validation_error": "Inconsistent channel and reason",
+          "finish_reason": "stop",
+          "prompt_tokens": 886,
+          "completion_tokens": 171,
+          "reasoning_characters": 311
+        },
+        {
+          "case": "long_followup",
+          "result": {
+            "channel": "direct_message",
+            "reason": "long_followup"
+          },
+          "passed": true,
+          "seconds": 8.1,
+          "finish_reason": "stop",
+          "prompt_tokens": 890,
+          "completion_tokens": 206,
+          "reasoning_characters": 382
+        }
+      ]
+    }
+  ],
+  "conclusion": "All ten requests completed, but each budget achieved 3/5 expected and valid decisions. Outputs consumed 101-353 tokens, so the observed wrong/inconsistent decisions were not token-budget exhaustion. These small stochastic samples do not establish reliable routing or a quality advantage for either budget.",
+  "remaining": "real-account read/send acceptance and broader native-model routing quality acceptance",
+  "platform_send_exercised": false,
+  "deployment": "local Git change only; no push, merge or device deployment",
+  "upstream_protocol": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md"
+}

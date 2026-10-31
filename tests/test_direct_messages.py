@@ -111,7 +111,10 @@ async def test_uncertain_send_cannot_be_retried_or_edited(messages):
     assert len(messages.adapter.sent) == 1
 
 
-async def test_model_handoff_never_records_private_reply_in_public_context(messages, monkeypatch):
+@pytest.mark.parametrize("budget", [2048, 4096])
+async def test_model_handoff_never_records_private_reply_in_public_context(messages, monkeypatch, budget):
+    await messages.configure({"enabled": True, "channel_max_tokens": budget})
+    original_llm = dict(messages.settings.data["llm"])
     comments = messages.comments
     comments.import_items(
         "import-private",
@@ -128,11 +131,13 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
     decisions = []
 
     async def decide(prompt, schema, *, max_tokens):
+        assert max_tokens == budget
         decisions.extend(prompt)
         return {"channel": "direct_message", "reason": "user_requested"}
 
     monkeypatch.setattr(messages.runtime.llm, "generate_json", decide)
     await comments._process_comment(source, messages.runtime.character, False)
+    assert messages.settings.data["llm"] == original_llm
     bridge = messages.store.one("SELECT * FROM drafts WHERE comment_id=?", (source["id"],))
     assert bridge["status"] == "private_handoff"
     draft = messages.store.one("SELECT * FROM dm_drafts")
@@ -314,7 +319,13 @@ def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings)
         client.post("/api/overlay/auth", json={"token": settings.overlay_token})
         assert client.get("/api/messages").status_code == 401
         client.post("/api/auth", json={"token": settings.admin_token})
-        assert not client.get("/api/messages").json()["policy"]["enabled"]
+        policy = client.get("/api/messages").json()["policy"]
+        assert not policy["enabled"] and policy["channel_max_tokens"] == 2048
+        assert (
+            client.put("/api/messages/policy", json={"channel_max_tokens": 4096}).json()["channel_max_tokens"]
+            == 4096
+        )
+        assert client.put("/api/messages/policy", json={"channel_max_tokens": 8193}).status_code == 422
         assert client.post("/api/messages/inbox/999/reply").status_code == 400
         assert client.post(
             "/api/messages/send", json={"receiver_id": "999", "text": "arbitrary"}

@@ -53,7 +53,7 @@
       {"case": "long_followup", "result": "not run after previous failure"}
     ],
     "acceptance": "partial; not a complete model-quality acceptance",
-    "pending_choice": "Per-classification thinking override requested but not authorized; preserve existing model settings."
+    "subsequent_choice": "User chose to retain thinking and increase classification-only budget. See channel-thinking-budget-20261031.json; normal reply settings remain unchanged."
   },
   "remaining_acceptance": [
     "real Bilibili account reads and authorized text delivery with platform msg_key",

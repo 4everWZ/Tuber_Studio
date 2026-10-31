@@ -19,6 +19,7 @@ class MessagePolicy(StrictModel):
     auto_poll: bool = False
     auto_send: bool = False
     allow_comment_handoff: bool = True
+    channel_max_tokens: int = Field(default=2048, ge=256, le=8192)
     poll_interval_seconds: int = Field(default=60, ge=20, le=86400)
     max_per_hour: int = Field(default=5, ge=1, le=30)
     max_per_day: int = Field(default=20, ge=1, le=200)
@@ -276,7 +277,7 @@ class DirectMessages:
         value = await self.runtime.llm.generate_json(
             messages,
             ChannelDecision.model_json_schema(),
-            max_tokens=self.settings.data["llm"].get("max_tokens", 1024),
+            max_tokens=policy["channel_max_tokens"],
         )
         decision = ChannelDecision.model_validate(value)
         if decision.channel == "comment":
