@@ -1659,16 +1659,17 @@ class BrowsingService:
             not row
             or row["status"] not in {"pending_review", "approved"}
             or not isinstance(action, str)
-            or action not in {"approve", "reject"}
+            or action not in {"approve", "reject", "edit", "save"}
         ):
             raise ValueError("当前候选不能审核")
         if text is not None and not isinstance(text, str):
             raise ValueError("正文须为字符串")
         text = row["text"] if text is None else text.strip()
         text = validate_operation_text(text)
+        new_status = row["status"] if action in {"edit", "save"} else ("approved" if action == "approve" else "rejected")
         self.store.execute(
             "UPDATE browsing_intents SET status=?,text=?,auto_authorized=0,updated_at=? WHERE id=?",
-            ("approved" if action == "approve" else "rejected", text, time.time(), identity),
+            (new_status, text, time.time(), identity),
         )
         return self.repo.decode(self.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
 

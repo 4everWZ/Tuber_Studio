@@ -35,6 +35,18 @@
       this.selectedIntentId = null;
       this.selectedTaskId = null;
       this.draftDirty = false;
+      this.unsavedDrafts = new Map(); // intentId -> string (draft text being edited)
+
+      // Caches to prevent poll-driven DOM clobbering & focus loss
+      this.renderedIntentId = null;
+      this.renderedIntentStatus = null;
+      this.renderedIntentText = null;
+      this.renderedIntentUpdatedAt = null;
+      this.renderedTaskId = null;
+      this.renderedTaskStatus = null;
+      this.renderedTab = null;
+      this.userInteractingUntil = 0;
+      this.lastMasterSignature = "";
 
       // Paginators
       this.intentPaginator = new Paginator({
@@ -135,7 +147,12 @@
 
     switchTab(tab) {
       if (this.activeTab === tab) return;
+      if (this.draftDirty && !confirm("当前草稿有未保存的修改，切换标签将丢失修改。是否继续？")) {
+        return;
+      }
+      this.draftDirty = false;
       this.activeTab = tab;
+      this.lastMasterSignature = "";
 
       this.container.querySelectorAll(".op-nav-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tab === tab);
@@ -146,7 +163,50 @@
       this.renderDetail();
     }
 
-    updateData({ intents, tasks, rounds, inbox }) {
+    computeMasterSignature() {
+      if (this.activeTab === "intents") {
+        const filtered = this.getFilteredIntents();
+        return `intents:${this.intentFilter}:${this.intentPaginator.currentPage}:${this.selectedIntentId}:${filtered.length}:${filtered.map(i => `${i.id}:${i.status}:${i.text?.length || 0}`).join(",")}`;
+      } else if (this.activeTab === "rounds") {
+        return `rounds:${this.roundPaginator.currentPage}:${this.rounds.length}:${this.rounds.map(r => `${r.id}:${r.status}`).join(",")}`;
+      } else if (this.activeTab === "tasks") {
+        const filtered = this.taskFilter ? this.tasks.filter(t => t.status === this.taskFilter) : this.tasks;
+        return `tasks:${this.taskFilter}:${this.taskPaginator.currentPage}:${this.selectedTaskId}:${filtered.length}:${filtered.map(t => `${t.id}:${t.status}`).join(",")}`;
+      } else if (this.activeTab === "inbox") {
+        return `inbox:${this.inbox.length}:${this.inbox.map(i => `${i.id || i.created_at}:${i.status || ""}`).join(",")}`;
+      }
+      return "";
+    }
+
+    syncIntentDetailNonEditor(intent) {
+      const detailPane = this.container.querySelector("#op-detail-pane");
+      if (!detailPane) return;
+
+      const isPending = intent.status === "pending_review";
+      const isApproved = intent.status === "approved";
+      const isPublished = intent.status === "published";
+
+      const statusInfo = humanizeStatus(intent.status);
+      const statusTag = detailPane.querySelector(".op-inspector-meta .op-tag-status");
+      if (statusTag) {
+        statusTag.className = `op-tag-status ${statusInfo.className}`;
+        statusTag.textContent = statusInfo.label;
+      }
+
+      const approveBtn = detailPane.querySelector("#op-btn-approve");
+      if (approveBtn) approveBtn.disabled = !isPending;
+
+      const publishBtn = detailPane.querySelector("#op-btn-publish");
+      if (publishBtn) publishBtn.disabled = !isApproved;
+
+      const rejectBtn = detailPane.querySelector("#op-btn-reject");
+      if (rejectBtn) rejectBtn.disabled = (intent.status === "rejected" || isPublished);
+
+      this.renderedIntentStatus = intent.status;
+      this.renderedIntentUpdatedAt = intent.updated_at;
+    }
+
+    updateData({ intents, tasks, rounds, inbox } = {}) {
       if (intents) this.intents = intents;
       if (tasks) this.tasks = tasks;
       if (rounds) this.rounds = rounds;
@@ -167,17 +227,66 @@
         counterInbox.hidden = pendingInboxCount === 0;
       }
 
-      // Automatically select first pending intent if nothing selected or current item disappeared
+      // Automatically select first pending intent if nothing selected or current item disappeared (and not dirty)
       if (this.activeTab === "intents") {
         const filtered = this.getFilteredIntents();
-        if (!this.selectedIntentId || !filtered.some(i => i.id === this.selectedIntentId)) {
+        if (!this.selectedIntentId || (!filtered.some(i => i.id === this.selectedIntentId) && !this.draftDirty)) {
           this.selectedIntentId = filtered.length > 0 ? filtered[0].id : null;
         }
       }
 
-      this.renderMasterSubbar();
-      this.renderMasterList();
-      this.renderDetail();
+      // Master list rendering with signature memoization & scroll preservation
+      const newSignature = this.computeMasterSignature();
+      if (newSignature !== this.lastMasterSignature) {
+        this.lastMasterSignature = newSignature;
+        const listContainer = this.container.querySelector("#op-master-list");
+        const prevScroll = listContainer ? listContainer.scrollTop : 0;
+        this.renderMasterSubbar();
+        this.renderMasterList();
+        if (listContainer) listContainer.scrollTop = prevScroll;
+      }
+
+      // Detail rendering protection:
+      if (this.activeTab === "intents") {
+        const currentIntent = this.intents.find(i => i.id === this.selectedIntentId);
+        if (!currentIntent) {
+          if (!this.draftDirty) {
+            this.renderDetail();
+          }
+          return;
+        }
+
+        const editorEl = this.container.querySelector("#op-intent-editor");
+        const isEditorFocused = editorEl && (document.activeElement === editorEl);
+        const isInteracting = this.draftDirty || isEditorFocused || (Date.now() < this.userInteractingUntil);
+
+        // If user is editing/interacting with the editor: DO NOT destroy or rewrite editor DOM!
+        if (isInteracting && this.renderedIntentId === currentIntent.id) {
+          this.syncIntentDetailNonEditor(currentIntent);
+          return;
+        }
+
+        // If not interacting, only render detail if the intent or its state actually changed
+        if (
+          this.renderedIntentId === currentIntent.id &&
+          this.renderedIntentStatus === currentIntent.status &&
+          this.renderedIntentText === currentIntent.text &&
+          this.renderedIntentUpdatedAt === currentIntent.updated_at
+        ) {
+          return; // Identical, avoid all DOM thrashing!
+        }
+
+        this.renderDetail();
+      } else if (this.activeTab === "tasks") {
+        const currentTask = this.tasks.find(t => t.id === this.selectedTaskId);
+        if (this.renderedTab !== "tasks" || this.renderedTaskId !== this.selectedTaskId || this.renderedTaskStatus !== currentTask?.status) {
+          this.renderDetail();
+        }
+      } else {
+        if (this.renderedTab !== this.activeTab) {
+          this.renderDetail();
+        }
+      }
     }
 
     getFilteredIntents() {
@@ -215,10 +324,16 @@
           pill.textContent = opt.label;
           pill.onclick = () => {
             if (this.intentFilter === opt.key) return;
+            if (this.draftDirty && !confirm("当前草稿有未保存的修改，切换分类将放弃修改。是否继续？")) {
+              return;
+            }
+            this.draftDirty = false;
+            this.unsavedDrafts.delete(this.selectedIntentId);
             this.intentFilter = opt.key;
             this.intentPaginator.currentPage = 1;
             const filtered = this.getFilteredIntents();
             this.selectedIntentId = filtered.length > 0 ? filtered[0].id : null;
+            this.lastMasterSignature = "";
             this.renderMasterSubbar();
             this.renderMasterList();
             this.renderDetail();
@@ -345,11 +460,18 @@
           </div>
         `;
 
+        card.dataset.id = intent.id;
         card.onclick = () => {
           if (this.selectedIntentId !== intent.id) {
-            this.selectedIntentId = intent.id;
+            if (this.draftDirty && !confirm("当前草稿有未保存的修改，切换卡片将放弃修改。是否继续切换？")) {
+              return;
+            }
             this.draftDirty = false;
-            this.renderIntentCards();
+            this.unsavedDrafts.delete(this.selectedIntentId);
+            this.selectedIntentId = intent.id;
+            this.lastMasterSignature = "";
+            const allCards = listContainer.querySelectorAll(".op-candidate-card");
+            allCards.forEach(c => c.classList.toggle("selected", c.dataset.id === intent.id));
             this.renderDetail();
           }
         };
@@ -507,6 +629,9 @@
       } else if (this.activeTab === "tasks") {
         this.renderTaskDetail(detailPane);
       } else {
+        this.renderedTab = this.activeTab;
+        this.renderedIntentId = null;
+        this.renderedTaskId = null;
         detailPane.innerHTML = `
           <div class="op-empty-state">
             <div class="op-empty-icon">📊</div>
@@ -520,6 +645,8 @@
     renderIntentDetail(detailPane) {
       const intent = this.intents.find(i => i.id === this.selectedIntentId);
       if (!intent) {
+        this.renderedIntentId = null;
+        this.renderedTab = "intents";
         detailPane.innerHTML = `
           <div class="op-empty-state">
             <div class="op-empty-icon">👈</div>
@@ -547,6 +674,15 @@
       const isPending = intent.status === "pending_review";
       const isApproved = intent.status === "approved";
       const isPublished = intent.status === "published";
+
+      const isModified = this.unsavedDrafts.has(intent.id);
+      const currentDraftText = isModified ? this.unsavedDrafts.get(intent.id) : (intent.text || "");
+
+      this.renderedIntentId = intent.id;
+      this.renderedIntentStatus = intent.status;
+      this.renderedIntentText = intent.text;
+      this.renderedIntentUpdatedAt = intent.updated_at;
+      this.renderedTab = "intents";
 
       detailPane.innerHTML = `
         <div class="op-inspector-content">
@@ -592,11 +728,16 @@
           <div class="op-draft-editor-box">
             <div class="op-editor-header">
               <label for="op-intent-editor"><strong>大肥鱼的发言台词（第一人称口吻）</strong></label>
-              <span class="hint" id="op-editor-status">已就绪</span>
+              <div class="op-editor-header-actions">
+                <span class="hint" id="op-editor-status">${isModified ? '<span class="op-dirty-pill">● 有未保存的台词修改</span>' : '已就绪'}</span>
+                <button type="button" class="op-btn-save-draft" id="op-btn-save-draft" ${!isModified ? "disabled" : ""} title="保存台词修改 (Ctrl+S)">
+                  💾 保存修改
+                </button>
+              </div>
             </div>
-            <textarea id="op-intent-editor" rows="6" ${isPublished ? "disabled" : ""}>${intent.text || ""}</textarea>
+            <textarea id="op-intent-editor" rows="6" ${isPublished ? "disabled" : ""}>${currentDraftText}</textarea>
             <div class="op-editor-tip hint">
-              提示：您可以直接在上方修改台词文字，确认无误后点击顶部「审核通过」或「立即发布」。
+              提示：您可以直接在上方修改台词文字，按 Ctrl+S 或点击「保存修改」，确认无误后点击「审核通过」或「立即发布」。
             </div>
           </div>
 
@@ -615,68 +756,156 @@
 
       const editor = detailPane.querySelector("#op-intent-editor");
       const editorStatus = detailPane.querySelector("#op-editor-status");
-
-      if (editor) {
-        editor.oninput = () => {
-          this.draftDirty = true;
-          if (editorStatus) editorStatus.textContent = "有未保存的台词修改";
-        };
-      }
-
-      // Button Handlers
+      const saveDraftBtn = detailPane.querySelector("#op-btn-save-draft");
       const approveBtn = detailPane.querySelector("#op-btn-approve");
-      if (approveBtn) {
-        approveBtn.onclick = async () => {
-          const newText = editor ? editor.value : intent.text;
-          approveBtn.disabled = true;
-          try {
+      const publishBtn = detailPane.querySelector("#op-btn-publish");
+      const rejectBtn = detailPane.querySelector("#op-btn-reject");
+
+      const saveDraftAction = async () => {
+        const newText = editor ? editor.value.trim() : intent.text;
+        if (!newText) {
+          if (this.notify) this.notify("台词内容不能为空", true);
+          return;
+        }
+        if (saveDraftBtn) {
+          saveDraftBtn.disabled = true;
+          saveDraftBtn.textContent = "保存中…";
+        }
+        try {
+          const action = isPending ? "edit" : "approve";
+          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
+            method: "POST",
+            body: { action: action, text: newText },
+          });
+          this.draftDirty = false;
+          this.unsavedDrafts.delete(intent.id);
+          intent.text = newText;
+          this.renderedIntentText = newText;
+          if (editorStatus) {
+            editorStatus.innerHTML = `<span class="op-saved-pill">✓ 已保存修改</span>`;
+          }
+          if (saveDraftBtn) {
+            saveDraftBtn.textContent = "💾 保存修改";
+            saveDraftBtn.disabled = true;
+          }
+          if (this.notify) this.notify("✓ 台词修改已保存！");
+          const cardSnippet = this.container.querySelector(`.op-candidate-card[data-id="${intent.id}"] .op-card-snippet`);
+          if (cardSnippet) cardSnippet.textContent = newText;
+        } catch (err) {
+          if (saveDraftBtn) {
+            saveDraftBtn.disabled = false;
+            saveDraftBtn.textContent = "💾 保存修改";
+          }
+          if (this.notify) this.notify(err.message, true);
+        }
+      };
+
+      const approveAction = async () => {
+        const newText = editor ? editor.value.trim() : intent.text;
+        if (!newText) {
+          if (this.notify) this.notify("台词内容不能为空", true);
+          return;
+        }
+        approveBtn.disabled = true;
+        try {
+          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
+            method: "POST",
+            body: { action: "approve", text: newText },
+          });
+          this.draftDirty = false;
+          this.unsavedDrafts.delete(intent.id);
+          intent.text = newText;
+          intent.status = "approved";
+          this.renderedIntentText = newText;
+          this.renderedIntentStatus = "approved";
+          if (this.notify) this.notify("✓ 草稿已通过审核！可以点击立即发布。");
+          await this.refresh();
+        } catch (e) {
+          approveBtn.disabled = false;
+          if (this.notify) this.notify(e.message, true);
+        }
+      };
+
+      const publishAction = async () => {
+        const newText = editor ? editor.value.trim() : intent.text;
+        publishBtn.disabled = true;
+        try {
+          if (newText && newText !== intent.text) {
             await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
               method: "POST",
               body: { action: "approve", text: newText },
             });
             this.draftDirty = false;
-            if (this.notify) this.notify("✓ 草稿已通过审核！可以点击立即发布。");
-            await this.refresh();
-          } catch (e) {
-            approveBtn.disabled = false;
-            if (this.notify) this.notify(e.message, true);
+            this.unsavedDrafts.delete(intent.id);
+            intent.text = newText;
+          }
+          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/publish`, {
+            method: "POST",
+          });
+          if (this.notify) this.notify("🚀 已成功提交发布到 B 站！");
+          await this.refresh();
+        } catch (e) {
+          publishBtn.disabled = false;
+          if (this.notify) this.notify(e.message, true);
+        }
+      };
+
+      const rejectAction = async () => {
+        if (!confirm("确认放弃并拒绝此条草稿吗？")) return;
+        rejectBtn.disabled = true;
+        try {
+          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
+            method: "POST",
+            body: { action: "reject", text: editor ? editor.value : intent.text },
+          });
+          this.draftDirty = false;
+          this.unsavedDrafts.delete(intent.id);
+          intent.status = "rejected";
+          if (this.notify) this.notify("已放弃该草稿。");
+          await this.refresh();
+        } catch (e) {
+          rejectBtn.disabled = false;
+          if (this.notify) this.notify(e.message, true);
+        }
+      };
+
+      if (saveDraftBtn) saveDraftBtn.onclick = saveDraftAction;
+      if (approveBtn) approveBtn.onclick = approveAction;
+      if (publishBtn) publishBtn.onclick = publishAction;
+      if (rejectBtn) rejectBtn.onclick = rejectAction;
+
+      if (editor) {
+        editor.onfocus = () => {
+          this.userInteractingUntil = Date.now() + 10000;
+        };
+        editor.oninput = () => {
+          const hasChanged = editor.value !== (intent.text || "");
+          this.draftDirty = hasChanged;
+          this.userInteractingUntil = Date.now() + 10000;
+          if (hasChanged) {
+            this.unsavedDrafts.set(intent.id, editor.value);
+            if (editorStatus) editorStatus.innerHTML = `<span class="op-dirty-pill">● 有未保存的台词修改</span>`;
+            if (saveDraftBtn) saveDraftBtn.disabled = false;
+          } else {
+            this.unsavedDrafts.delete(intent.id);
+            if (editorStatus) editorStatus.textContent = "已就绪";
+            if (saveDraftBtn) saveDraftBtn.disabled = true;
           }
         };
-      }
-
-      const publishBtn = detailPane.querySelector("#op-btn-publish");
-      if (publishBtn) {
-        publishBtn.onclick = async () => {
-          publishBtn.disabled = true;
-          try {
-            await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/publish`, {
-              method: "POST",
-            });
-            if (this.notify) this.notify("🚀 已成功提交发布到 B 站！");
-            await this.refresh();
-          } catch (e) {
-            publishBtn.disabled = false;
-            if (this.notify) this.notify(e.message, true);
-          }
-        };
-      }
-
-      const rejectBtn = detailPane.querySelector("#op-btn-reject");
-      if (rejectBtn) {
-        rejectBtn.onclick = async () => {
-          if (!confirm("确认放弃并拒绝此条草稿吗？")) return;
-          rejectBtn.disabled = true;
-          try {
-            await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
-              method: "POST",
-              body: { action: "reject", text: editor ? editor.value : intent.text },
-            });
-            this.draftDirty = false;
-            if (this.notify) this.notify("已放弃该草稿。");
-            await this.refresh();
-          } catch (e) {
-            rejectBtn.disabled = false;
-            if (this.notify) this.notify(e.message, true);
+        editor.onkeydown = (e) => {
+          this.userInteractingUntil = Date.now() + 10000;
+          if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+            e.preventDefault();
+            saveDraftAction();
+          } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+            e.preventDefault();
+            if (isPending) {
+              approveAction();
+            } else if (isApproved) {
+              publishAction();
+            } else {
+              saveDraftAction();
+            }
           }
         };
       }
@@ -684,6 +913,9 @@
 
     renderTaskDetail(detailPane) {
       const task = this.tasks.find(t => t.id === this.selectedTaskId);
+      this.renderedTab = "tasks";
+      this.renderedTaskId = task?.id || null;
+      this.renderedTaskStatus = task?.status || null;
       if (!task) {
         detailPane.innerHTML = `
           <div class="op-empty-state">

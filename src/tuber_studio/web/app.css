@@ -742,6 +742,56 @@
   font-size: 13px;
 }
 
+.op-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-btn-save-draft {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.op-btn-save-draft:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.op-btn-save-draft:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.op-dirty-pill {
+  color: #d97706;
+  font-weight: 600;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.op-saved-pill {
+  color: var(--success, #10b981);
+  font-weight: 600;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .op-draft-editor-box textarea {
   width: 100%;
   border: 1px solid #cbd5e1;

@@ -254,6 +254,24 @@ async def test_preview_complete_evidence_review_and_one_shot(browsing):
     assert len(browsing.adapter.sent) == 1
 
 
+async def test_review_edit_preserves_status_and_updates_text(browsing):
+    await finished(browsing, preview=True)
+    intent = browsing.intents()[0]
+    assert intent["status"] == "pending_review"
+    edited = browsing.review(intent["id"], "edit", "这是大肥鱼人工修改后的精彩台词")
+    assert edited["status"] == "pending_review"
+    assert edited["text"] == "这是大肥鱼人工修改后的精彩台词"
+    assert not edited["auto_authorized"]
+    # Still requires explicit approval before publish
+    with pytest.raises(ValueError):
+        await browsing.publish(intent["id"])
+    # Approve and publish
+    browsing.review(intent["id"], "approve")
+    published = await browsing.publish(intent["id"])
+    assert published["status"] == "published"
+    assert published["text"] == "这是大肥鱼人工修改后的精彩台词"
+
+
 async def test_missing_cc_never_uses_title_or_comments(browsing):
     browsing.adapter.no_subtitles = True
     row = await finished(browsing, preview=True)
