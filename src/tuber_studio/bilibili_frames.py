@@ -363,7 +363,9 @@ class FrameSampler:
         height = _integer(data.get("img_y_size"), maximum=2048)
         if timestamps:
             valid_targets = [float(t) for t in timestamps[:count] if 0 <= float(t) <= duration]
-            targets = valid_targets if valid_targets else [duration * (i + 1) / (count + 1) for i in range(count)]
+            targets = (
+                valid_targets if valid_targets else [duration * (i + 1) / (count + 1) for i in range(count)]
+            )
         else:
             targets = [duration * (i + 1) / (count + 1) for i in range(count)]
         selected, used = [], set()

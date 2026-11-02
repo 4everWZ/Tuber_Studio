@@ -207,20 +207,23 @@
     }
 
     updateData({ intents, tasks, rounds, inbox } = {}) {
-      if (intents) this.intents = intents;
-      if (tasks) this.tasks = tasks;
-      if (rounds) this.rounds = rounds;
-      if (inbox) this.inbox = inbox;
+      if (intents !== undefined) this.intents = Array.isArray(intents) ? intents : (intents?.items || []);
+      if (tasks !== undefined) this.tasks = Array.isArray(tasks) ? tasks : (tasks?.items || []);
+      if (rounds !== undefined) this.rounds = Array.isArray(rounds) ? rounds : (rounds?.items || []);
+      if (inbox !== undefined) {
+        this.inbox = Array.isArray(inbox) ? inbox : (Array.isArray(inbox?.items) ? inbox.items : []);
+      }
 
       // Update counters
-      const pendingIntentsCount = this.intents.filter(i => i.status === "pending_review").length;
+      const pendingIntentsCount = (Array.isArray(this.intents) ? this.intents : []).filter(i => i.status === "pending_review").length;
       const counterIntents = this.container.querySelector("#op-counter-intents");
       if (counterIntents) {
         counterIntents.textContent = pendingIntentsCount;
         counterIntents.hidden = pendingIntentsCount === 0;
       }
 
-      const pendingInboxCount = this.inbox.filter(i => i.status === "pending" || i.status === "received").length;
+      const inboxList = Array.isArray(this.inbox) ? this.inbox : [];
+      const pendingInboxCount = inboxList.filter(i => i.status === "pending" || i.status === "received").length;
       const counterInbox = this.container.querySelector("#op-counter-inbox");
       if (counterInbox) {
         counterInbox.textContent = pendingInboxCount;
@@ -1028,7 +1031,8 @@
       const intents = intentsRes.status === "fulfilled" ? intentsRes.value : [];
       const tasks = tasksRes.status === "fulfilled" ? tasksRes.value : [];
       const rounds = roundsRes.status === "fulfilled" ? roundsRes.value : [];
-      const inbox = inboxRes.status === "fulfilled" ? inboxRes.value : [];
+      const rawInbox = inboxRes.status === "fulfilled" ? inboxRes.value : [];
+      const inbox = Array.isArray(rawInbox) ? rawInbox : (Array.isArray(rawInbox?.items) ? rawInbox.items : []);
 
       this.updateData({ intents, tasks, rounds, inbox });
     }

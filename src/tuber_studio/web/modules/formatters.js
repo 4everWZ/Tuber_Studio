@@ -96,7 +96,7 @@
       case "checkpoint":
         return { label: "💾 进度已保存", className: "status-slate", priority: 9 };
       case "no_subtitles":
-        return { label: "🔇 无可用字幕", className: "status-slate", priority: 14 };
+        return { label: "🔇 暂无字幕 (TBD)", className: "status-slate", priority: 14 };
       default:
         return { label: status || "未知状态", className: "status-slate", priority: 99 };
     }
@@ -108,8 +108,8 @@
       "light_interaction": "优质讨论引发共鸣，大肥鱼参与活跃氛围",
       "specific_detail": "深入呼应视频中的核心观点与亮点细节",
       "private_details": "涉及更深话题，引导至私信交流",
-      "no_subtitles": "视频缺少可用字幕或音轨无法识别，已安全跳过",
-      "visual_unavailable": "视频多帧视觉提取未就绪，按策略跳过",
+      "no_subtitles": "视频暂无可用字幕，已跳过（待后续接入ASR）",
+      "visual_unavailable": "视频暂无可用字幕且视觉未就绪，已安全跳过（待后续接入ASR）",
       "platform_error": "B站接口网络波动或频控限制",
       "spam": "过滤掉广告营销或低俗刷屏发言",
       "short_comment": "评论内容过短，缺少展开互动的价值",

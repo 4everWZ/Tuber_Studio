@@ -664,6 +664,14 @@ class BrowsingService:
                     deadline=row["deadline"],
                     force=row["config"].get("force_read", False),
                 )
+                # Requirement: 无字幕的视频，暂时标记不刷视频，TBD等待后续接入ASR
+                has_subtitles = any(
+                    isinstance(p, dict) and p.get("segments") for p in material.get("parts", [])
+                )
+                if not has_subtitles:
+                    raise EvidenceUnavailable(
+                        "no_subtitles", "视频无可用字幕，暂时跳过（待后续接入ASR语音识别）"
+                    )
                 reason = self.filter_reason(material["metadata"], row["config"])
                 if reason:
                     raise EvidenceUnavailable("filtered", reason)
@@ -691,8 +699,9 @@ class BrowsingService:
                     "heartbeat": heartbeat,
                 }
             except ValueError as error:
+                kind = getattr(error, "kind", "")
                 metrics["failures"] += int(
-                    getattr(error, "kind", "") not in {"no_subtitles", "empty", "filtered"}
+                    kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
                 )
                 self.repo.complete(
                     identity,
@@ -754,7 +763,16 @@ class BrowsingService:
         return character, messages, model_schema
 
     async def _model(
-        self, row, schema, data, instruction, metrics=None, *, diagnose=None, source_binding=None, max_tokens=None
+        self,
+        row,
+        schema,
+        data,
+        instruction,
+        metrics=None,
+        *,
+        diagnose=None,
+        source_binding=None,
+        max_tokens=None,
     ):
         self._check_round(row)
         response_input = ResponseDecisionInput(data) if schema is ResponseDecision else None
@@ -763,10 +781,14 @@ class BrowsingService:
         )
         from .browsing_models import VideoEngagementDecision
 
-        output = max_tokens if max_tokens is not None else (
-            min(row["config"]["decision_max_tokens"], 1024)
-            if schema is VideoEngagementDecision
-            else row["config"]["decision_max_tokens"]
+        output = (
+            max_tokens
+            if max_tokens is not None
+            else (
+                min(row["config"]["decision_max_tokens"], 1024)
+                if schema is VideoEngagementDecision
+                else row["config"]["decision_max_tokens"]
+            )
         )
 
         def guard():
@@ -997,10 +1019,7 @@ class BrowsingService:
             identity, material = await self._prepare_evidence(bvid, self.effective(), force=True)
             current_version = material["source_version"]
             legacy_version = self.evidence.legacy_source_version(material)
-            if (
-                current_version != version
-                and legacy_version != version
-            ):
+            if current_version != version and legacy_version != version:
                 raise ValueError("视频来源材料已变化，不能使用旧候选")
             result.append(identity)
         return result
@@ -1228,9 +1247,7 @@ class BrowsingService:
             bvid = material["metadata"]["bvid"]
             aid = str(material["metadata"]["aid"])
             status = "viewed_without_comment"
-            source_key = canonical_intent(
-                "bilibili", bvid, "top-level", row["character_id"]
-            )
+            source_key = canonical_intent("bilibili", bvid, "top-level", row["character_id"])
             existing = self.store.one(
                 "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
                 (row["account_id"], row["character_id"], source_key),
@@ -1239,9 +1256,8 @@ class BrowsingService:
             chosen = {ref for d in actionable for ref in d.evidence_ids} if actionable else set()
 
             # Pre-fetch comments to verify if account already left a top-level comment on Bilibili
-            need_comments = (
-                actionable
-                and (row["config"]["top_level_enabled"] or row["config"].get("reply_enabled", False))
+            need_comments = actionable and (
+                row["config"]["top_level_enabled"] or row["config"].get("reply_enabled", False)
             )
             if need_comments and not existing:
                 context = await self._read(
@@ -1371,15 +1387,15 @@ class BrowsingService:
                     rid = str(it.get("thread_id") or cid)
                     threads_by_root.setdefault(rid, []).append(it)
 
-                now = time.time()
-                today_midnight = datetime.datetime.now().replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                ).timestamp()
+                today_midnight = (
+                    datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+                )
                 # Single video reply limit refreshed daily (since midnight today)
-                daily_replies_count = self.store.one(
-                    "SELECT COUNT(*) FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' AND source_key LIKE 'bilibili:' || ? || ':%' AND status != 'rejected' AND created_at >= ?",
+                count_row = self.store.one(
+                    "SELECT COUNT(*) AS n FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' AND source_key LIKE 'bilibili:' || ? || ':%' AND status != 'rejected' AND created_at >= ?",
                     (row["account_id"], row["character_id"], material["metadata"]["bvid"], today_midnight),
-                )[0]
+                )
+                daily_replies_count = count_row["n"] if count_row else 0
                 remaining_replies = max(0, max_replies - daily_replies_count)
 
                 replies_created = 0
@@ -1700,7 +1716,11 @@ class BrowsingService:
             raise ValueError("正文须为字符串")
         text = row["text"] if text is None else text.strip()
         text = validate_operation_text(text)
-        new_status = row["status"] if action in {"edit", "save"} else ("approved" if action == "approve" else "rejected")
+        new_status = (
+            row["status"]
+            if action in {"edit", "save"}
+            else ("approved" if action == "approve" else "rejected")
+        )
         self.store.execute(
             "UPDATE browsing_intents SET status=?,text=?,auto_authorized=0,updated_at=? WHERE id=?",
             (new_status, text, time.time(), identity),
@@ -2045,18 +2065,19 @@ class BrowsingService:
                 elif row["kind"] == "video_fav":
                     receipt = await self.adapter.favorite_video(row["target"], before_send=before_send)
                 elif row["kind"] == "top_level":
-                    receipt = await self.adapter.publish_top_level(row["target"], row["text"], before_send=before_send)
+                    receipt = await self.adapter.publish_top_level(
+                        row["target"], row["text"], before_send=before_send
+                    )
                 else:
-                    receipt = await self.adapter.publish_resource_reply(row["target"], row["text"], before_send=before_send)
+                    receipt = await self.adapter.publish_resource_reply(
+                        row["target"], row["text"], before_send=before_send
+                    )
                 if (
                     not token
                     or not isinstance(receipt, dict)
                     or (
                         row["kind"] not in ("video_like", "video_fav")
-                        and (
-                            not str(receipt.get("rpid", "")).isdigit()
-                            or int(receipt["rpid"]) <= 0
-                        )
+                        and (not str(receipt.get("rpid", "")).isdigit() or int(receipt["rpid"]) <= 0)
                     )
                 ):
                     raise PublishUncertain("没有有效一次提交回执")
@@ -2119,14 +2140,13 @@ class BrowsingService:
                 )
                 raise UnknownPublication("平台提交结果需人工核对，禁止重发", token) from None
             if row["kind"] in ("video_like", "video_fav"):
-                self.store.execute(
-                    "UPDATE browsing_intents SET visibility='visible' WHERE id=?", (identity,)
-                )
+                self.store.execute("UPDATE browsing_intents SET visibility='visible' WHERE id=?", (identity,))
             else:
                 try:
                     visibility = await self.adapter.verify_publication(row["target"], receipt)
                     self.store.execute(
-                        "UPDATE browsing_intents SET visibility=? WHERE id=?", (visibility["status"], identity)
+                        "UPDATE browsing_intents SET visibility=? WHERE id=?",
+                        (visibility["status"], identity),
                     )
                 except Exception:
                     self.store.execute(
