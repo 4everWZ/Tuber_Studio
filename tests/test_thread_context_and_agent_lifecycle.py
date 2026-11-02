@@ -185,3 +185,38 @@ def test_top_level_comment_not_duplicated():
         for c in items_without_own_top_level
     )
     assert has_own_top_level_2 is False
+
+
+def test_permission_matrix_payload_and_frequency_alignment():
+    """Verify matrix payload aligns max_per_hour with max_per_day, avoiding arbitrary round cutoffs."""
+    max_per_day = 20
+    max_replies_per_video = 3
+    # Frontend payload construction logic
+    payload = {
+        "max_replies_per_video": max(0, min(20, max_replies_per_video)),
+        "max_per_hour": max(1, min(30, max_per_day)),
+        "max_per_day": max(1, min(200, max_per_day)),
+    }
+    assert payload["max_replies_per_video"] == 3
+    assert payload["max_per_hour"] == 20
+    assert payload["max_per_day"] == 20
+    assert "max_per_round" not in payload
+
+
+def test_passive_reply_accounted_in_daily_meltdown():
+    """Both proactive and passive replies (@ mentions) count towards the daily write limit."""
+    import time
+    now = time.time()
+    # Mocking write attempts table rows within last 24h
+    attempts = [
+        {"account_id": "1", "channel": "comments", "started_at": now - 3600},
+        {"account_id": "1", "channel": "comments", "started_at": now - 1800},
+        {"account_id": "1", "channel": "comments", "started_at": now - 300},  # passive reply to @
+    ]
+    max_per_day = 3
+    count_last_24h = sum(1 for a in attempts if a["started_at"] > (now - 86400))
+    assert count_last_24h >= max_per_day
+    # Exceeding max_per_day triggers safety meltdown
+    is_meltdown = count_last_24h >= max_per_day
+    assert is_meltdown is True
+

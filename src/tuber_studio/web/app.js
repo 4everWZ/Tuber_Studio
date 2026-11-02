@@ -1509,7 +1509,22 @@ function jumpToPermissionMatrix() {
   }, 150);
 }
 
+let matrixUserInteractingUntil = 0;
+let matrixSaveTimeout = null;
+
+function triggerMatrixAutoSave() {
+  matrixUserInteractingUntil = Date.now() + 5000;
+  clearTimeout(matrixSaveTimeout);
+  matrixSaveTimeout = setTimeout(() => {
+    savePermissionMatrix({ silent: true }).catch(console.error);
+  }, 100);
+}
+
 function renderPermissionMatrix(status) {
+  if (Date.now() < matrixUserInteractingUntil) return;
+  const matrixEl = $("operations-permission-matrix");
+  if (matrixEl && matrixEl.contains(document.activeElement)) return;
+
   const settings = status.settings || {};
   // 1. Top level
   const topLevelVal = !settings.top_level_enabled ? "0" : settings.top_level_auto_publish ? "2" : "1";
@@ -1540,9 +1555,6 @@ function renderPermissionMatrix(status) {
   if ($("matrix-max-replies-video") && document.activeElement !== $("matrix-max-replies-video")) {
     $("matrix-max-replies-video").value = settings.max_replies_per_video ?? 2;
   }
-  if ($("matrix-max-per-round") && document.activeElement !== $("matrix-max-per-round")) {
-    $("matrix-max-per-round").value = settings.max_per_hour ?? 5;
-  }
   if ($("matrix-max-per-day") && document.activeElement !== $("matrix-max-per-day")) {
     $("matrix-max-per-day").value = settings.max_per_day ?? 20;
   }
@@ -1571,7 +1583,8 @@ function renderPermissionMatrix(status) {
   }
 }
 
-async function savePermissionMatrix() {
+async function savePermissionMatrix(options = {}) {
+  const isSilent = options && options.silent === true;
   const topVal = document.querySelector('input[name="matrix_top_level"]:checked')?.value || "1";
   const replyVal = document.querySelector('input[name="matrix_reply"]:checked')?.value || "1";
   const dmVal = document.querySelector('input[name="matrix_dm"]:checked')?.value || "1";
@@ -1594,7 +1607,6 @@ async function savePermissionMatrix() {
   const favAuto = favVal === "2";
 
   const maxRepliesVideo = parseInt($("matrix-max-replies-video")?.value || "2", 10);
-  const maxPerRound = parseInt($("matrix-max-per-round")?.value || "5", 10);
   const maxPerDay = parseInt($("matrix-max-per-day")?.value || "20", 10);
   const autoDowngrade = !!$("matrix-auto-downgrade")?.checked;
 
@@ -1618,7 +1630,7 @@ async function savePermissionMatrix() {
     video_fav_enabled: favEnabled,
     video_fav_auto_publish: favAuto,
     max_replies_per_video: Math.max(0, Math.min(20, maxRepliesVideo)),
-    max_per_hour: Math.max(1, Math.min(30, maxPerRound)),
+    max_per_hour: Math.max(1, Math.min(30, maxPerDay)),
     max_per_day: Math.max(1, Math.min(200, maxPerDay)),
     auto_downgrade_on_error: autoDowngrade,
     comment_handoff_enabled: dmHandoff,
@@ -1631,15 +1643,27 @@ async function savePermissionMatrix() {
   };
 
   const fb = $("matrix-save-feedback");
-  if (fb) fb.textContent = "正在保存权限矩阵…";
+  if (fb && !isSilent) fb.textContent = "正在保存权限矩阵…";
 
   try {
     await api("/api/automation/settings", { method: "PUT", body: payload });
-    if (fb) fb.textContent = "✓ 权限矩阵已保存并即时生效";
-    notice("权限矩阵已保存并即时生效。");
+    if (currentAutomationStatus) {
+      currentAutomationStatus.settings = { ...(currentAutomationStatus.settings || {}), ...payload };
+    }
+    const timeStr = new Date().toLocaleTimeString();
+    if (fb) {
+      fb.textContent = isSilent ? `✓ 设置已自动保存生效 (${timeStr})` : "✓ 权限矩阵已保存并即时生效";
+      fb.style.color = "var(--ok)";
+    }
+    if (!isSilent) {
+      notice("权限矩阵已保存并即时生效。");
+    }
     await updatePermissionCapsule();
   } catch (err) {
-    if (fb) fb.textContent = `保存失败：${err.message}`;
+    if (fb) {
+      fb.textContent = `保存失败：${err.message}`;
+      fb.style.color = "var(--danger)";
+    }
     notice(err.message, true);
   }
 }
@@ -1708,7 +1732,26 @@ async function saveOperationsQuickConfig() {
 
 if ($("permission-capsule")) $("permission-capsule").onclick = jumpToPermissionMatrix;
 if ($("op-permission-capsule-btn")) $("op-permission-capsule-btn").onclick = jumpToPermissionMatrix;
-if ($("matrix-save")) $("matrix-save").onclick = savePermissionMatrix;
+if ($("matrix-save")) $("matrix-save").onclick = () => savePermissionMatrix({ silent: false });
+
+const matrixContainer = $("operations-permission-matrix");
+if (matrixContainer) {
+  matrixContainer.addEventListener("change", () => {
+    triggerMatrixAutoSave();
+  });
+  matrixContainer.addEventListener("input", (e) => {
+    matrixUserInteractingUntil = Date.now() + 5000;
+    if (e.target.type === "number") {
+      clearTimeout(matrixSaveTimeout);
+      matrixSaveTimeout = setTimeout(() => {
+        savePermissionMatrix({ silent: true }).catch(console.error);
+      }, 600);
+    }
+  });
+  matrixContainer.addEventListener("focusin", () => {
+    matrixUserInteractingUntil = Date.now() + 5000;
+  });
+}
 if ($("op-save-quick-config")) $("op-save-quick-config").onclick = saveOperationsQuickConfig;
 if ($("op-preview-round")) {
   $("op-preview-round").onclick = async () => {

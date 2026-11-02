@@ -249,19 +249,15 @@
             <fieldset class="matrix-group">
               <legend>三、安全熔断与频率阈值</legend>
               <div class="form-grid">
-                <label>单视频最大回复数上限
+                <label>单视频每日最大回复数上限
                   <input id="matrix-max-replies-video" type="number" min="0" max="20" value="2">
-                  <small class="hint">0 为不回帖；达到上限或无有价值评论自动跳过，不一条道走到黑</small>
+                  <small class="hint">每日 00:00 刷新；0 为不回帖；主评一视频仅留一次，达到上限当日跳过</small>
                 </label>
-                <label>单轮互动总量上限
-                  <input id="matrix-max-per-round" type="number" min="1" max="50" value="5">
-                  <small class="hint">单轮内主评与回帖总额度上限</small>
-                </label>
-                <label>全天互动总量上限
+                <label>全天互动总量上限 (安全熔断)
                   <input id="matrix-max-per-day" type="number" min="1" max="200" value="20">
-                  <small class="hint">24小时内所有自动发布总上限</small>
+                  <small class="hint">24小时内所有发布总上限（含主评、主动跟帖与被艾特/回复互动），超限自动熔断</small>
                 </label>
-                <label class="check-field" style="margin-top: 1.5rem;">
+                <label class="check-field" style="margin-top: 1.5rem; grid-column: 1 / -1;">
                   <input id="matrix-auto-downgrade" type="checkbox" checked>
                   遇到连续平台报错自动降级为“仅草稿”
                 </label>
