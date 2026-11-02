@@ -310,8 +310,17 @@ def process_matches(identity: dict, nonce: str) -> psutil.Process | None:
 
         def exited_during_check():
             # The foreground owner and stop CLI may reap the same child concurrently.
-            # Linux can return empty exe/cmdline between our first status and reap.
-            return process.status() == psutil.STATUS_ZOMBIE or not process.is_running()
+            # Linux can clear exe/cmdline before marking the process as a zombie.
+            # Wait briefly for confirmed exit, never accept a mismatched live process.
+            for delay in (0, 0.005, 0.01, 0.02, 0.04, 0.08):
+                if delay:
+                    time.sleep(delay)
+                try:
+                    if process.status() == psutil.STATUS_ZOMBIE or not process.is_running():
+                        return True
+                except psutil.NoSuchProcess:
+                    return True
+            return False
 
         if process.status() == psutil.STATUS_ZOMBIE:
             return None
@@ -333,7 +342,7 @@ def process_matches(identity: dict, nonce: str) -> psutil.Process | None:
     except psutil.NoSuchProcess:
         return None
     except psutil.AccessDenied as error:
-        if not process.is_running():
+        if exited_during_check():
             return None
         raise ValueError("Cannot verify process ownership") from error
 

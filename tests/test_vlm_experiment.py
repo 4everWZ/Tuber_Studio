@@ -83,17 +83,19 @@ def test_atomic_metrics_retry_only_bounded_windows_sharing_violations(tmp_path, 
     assert not list(tmp_path.glob("*.tmp"))
 
 
-@pytest.mark.parametrize("mismatch", ["executable", "command", "ownership stamp"])
-@pytest.mark.parametrize("exiting", [False, True])
+@pytest.mark.parametrize("mismatch", ["executable", "command", "ownership stamp", "access denied"])
+@pytest.mark.parametrize("exit_after_checks", [None, 2, 7])
 def test_identity_mismatch_rechecks_concurrent_exit_without_accepting_changed_live_process(
-    monkeypatch, mismatch, exiting
+    monkeypatch, mismatch, exit_after_checks
 ):
     class Process:
         checks = 0
 
         def status(self):
             self.checks += 1
-            return psutil.STATUS_ZOMBIE if exiting and self.checks > 1 else psutil.STATUS_RUNNING
+            if exit_after_checks is not None and self.checks >= exit_after_checks:
+                return psutil.STATUS_ZOMBIE
+            return psutil.STATUS_RUNNING
 
         def create_time(self):
             return 123.0
@@ -108,16 +110,26 @@ def test_identity_mismatch_rechecks_concurrent_exit_without_accepting_changed_li
             return [] if mismatch == "command" else ["owned"]
 
         def environ(self):
+            if mismatch == "access denied":
+                raise psutil.AccessDenied(123)
             return {}
 
-    monkeypatch.setattr(psutil, "Process", lambda pid: Process())
+    process = Process()
+    sleeps = []
+    monkeypatch.setattr(psutil, "Process", lambda pid: process)
+    monkeypatch.setattr(experiment.time, "sleep", sleeps.append)
     identity = {"pid": 123, "create_time": 123.0, "executable": "/owned/llama-server", "command": ["owned"]}
-    if exiting:
+    if exit_after_checks is not None:
         assert experiment.process_matches(identity, "nonce") is None
     else:
-        expected = "ownership stamp" if mismatch == "ownership stamp" else "changed " + mismatch
+        expected = {
+            "ownership stamp": "ownership stamp",
+            "access denied": "Cannot verify process ownership",
+        }.get(mismatch, "changed " + mismatch)
         with pytest.raises(ValueError, match=expected):
             experiment.process_matches(identity, "nonce")
+    assert process.checks == (exit_after_checks or 7)
+    assert len(sleeps) <= 5 and sum(sleeps) <= 0.2
 
 
 def arguments(tmp_path, *extra):
