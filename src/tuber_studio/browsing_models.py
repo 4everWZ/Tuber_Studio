@@ -54,12 +54,16 @@ class BrowsingPolicy(StrictModel):
     sources: list[Literal["recommend", "search", "popular", "specified"]] = Field(
         default_factory=lambda: ["recommend"], max_length=4
     )
-    keywords: list[str] = Field(default_factory=list, max_length=2)
+    keywords: list[str] = Field(default_factory=list, max_length=20)
     watch_videos: list[str] = Field(default_factory=list, max_length=20)
     autonomous_topics: bool = False
     discovery_enabled: bool = False
     top_level_enabled: bool = False
+    top_level_auto_publish: bool = False
     reply_enabled: bool = False
+    reply_auto_publish: bool = False
+    max_replies_per_video: int = Field(default=2, ge=0, le=20)
+    auto_downgrade_on_error: bool = True
     mentions_enabled: bool = False
     mention_reply_enabled: bool = False
     replies_enabled: bool = False
@@ -67,7 +71,7 @@ class BrowsingPolicy(StrictModel):
     workers: int = Field(default=4, ge=1, le=8)
     candidate_limit: int = Field(default=20, ge=1, le=20)
     inspect_limit: int = Field(default=4, ge=1, le=20)
-    max_search_terms: int = Field(default=2, ge=1, le=2)
+    max_search_terms: int = Field(default=2, ge=1, le=20)
     max_pages: int = Field(default=2, ge=1, le=2)
     max_reads: int = Field(default=64, ge=1, le=128)
     max_model_calls: int = Field(default=16, ge=1, le=32)
@@ -124,7 +128,7 @@ class BrowsingPolicy(StrictModel):
 
 class BrowsePlan(StrictModel):
     action: Literal["recommend", "search", "popular", "wait"]
-    keywords: list[str] = Field(default_factory=list, max_length=2)
+    keywords: list[str] = Field(default_factory=list, max_length=20)
     reason: Literal["character_interest", "user_keywords", "explore", "wait"]
     delay_seconds: int = Field(default=300, ge=60, le=86400)
 

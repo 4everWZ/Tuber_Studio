@@ -1183,6 +1183,8 @@ class BrowsingService:
                 "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
                 (row["account_id"], row["character_id"], source_key),
             )
+            context = None
+            chosen = {ref for d in actionable for ref in d.evidence_ids} if actionable else set()
             if (
                 actionable
                 and row["config"]["top_level_enabled"]
@@ -1190,7 +1192,6 @@ class BrowsingService:
                 and self.repo.round(row["id"])["budget"]["top_levels"] < row["config"]["top_level_limit"]
             ):
                 self.repo.reserve_budget(row["id"], top_levels=1)
-                chosen = {ref for d in actionable for ref in d.evidence_ids}
                 context = await self._read(
                     self.adapter.fetch,
                     material["metadata"]["bvid"],
@@ -1212,6 +1213,72 @@ class BrowsingService:
                     status = "selected"
                     if intent["auto_authorized"]:
                         await self.publish(intent["id"], automatic=True)
+
+            max_replies = row["config"].get("max_replies_per_video", 2)
+            if row["config"].get("reply_enabled", False) and max_replies > 0 and chosen:
+                if context is None:
+                    context = await self._read(
+                        self.adapter.fetch,
+                        material["metadata"]["bvid"],
+                        1,
+                    )
+                items = context.get("items", []) if isinstance(context, dict) else []
+                replies_created = 0
+                for item in items:
+                    if replies_created >= max_replies:
+                        break
+                    if str(item.get("user_id")) == str(row["account_id"]):
+                        continue
+                    if category(item.get("text", "")) == "spam" or len(item.get("text", "").strip()) < 2:
+                        continue
+                    comment_id = str(item["comment_id"])
+                    canonical = canonical_intent(
+                        "bilibili", material["metadata"]["bvid"], comment_id, row["character_id"]
+                    )
+                    if self.store.one(
+                        "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                        (row["account_id"], row["character_id"], canonical),
+                    ):
+                        continue
+                    thread_context = {
+                        "source": {
+                            "comment_id": comment_id,
+                            "author_uid": str(item.get("user_id")),
+                            "text": item.get("text", ""),
+                        },
+                        "target": {
+                            "type": 1,
+                            "oid": str(material["metadata"]["aid"]),
+                            "bvid": material["metadata"]["bvid"],
+                            "root": str(item.get("thread_id") or comment_id),
+                            "parent": comment_id,
+                        },
+                        "items": [item],
+                    }
+                    thread_response = await self._response(
+                        row, material, thread_context, chosen, "reply_public", metrics
+                    )
+                    if thread_response.action == "reply_public" and thread_response.text:
+                        target = {
+                            "type": 1,
+                            "oid": str(material["metadata"]["aid"]),
+                            "bvid": material["metadata"]["bvid"],
+                            "root": str(item.get("thread_id") or comment_id),
+                            "parent": comment_id,
+                            "recipient": str(item.get("user_id")),
+                            "source_text": item.get("text", ""),
+                        }
+                        thread_intent = self._intent(
+                            row, "reply_public", target, thread_response, [result["material_key"]], chosen
+                        )
+                        if "reply_intent_ids" not in payload:
+                            payload["reply_intent_ids"] = []
+                        payload["reply_intent_ids"].append(thread_intent["id"])
+                        status = "selected"
+                        replies_created += 1
+                        if thread_intent["auto_authorized"]:
+                            await self.publish(thread_intent["id"], automatic=True)
+
             self.repo.complete(
                 identity, result["owner"], result["generation"], status, payload, result["material_key"]
             )
@@ -1316,6 +1383,11 @@ class BrowsingService:
             and self.operations.policy()["enabled"]
             and self.operations.policy()["epoch"] == row["epoch"]
             and self.semantic_ready()
+            and (
+                (kind == "top_level" and row["config"].get("top_level_auto_publish", False))
+                or (kind == "reply_public" and row["config"].get("reply_auto_publish", False))
+                or (kind == "private_handoff" and row["config"].get("comment_handoff_enabled", False))
+            )
         )
         self.store.execute(
             "INSERT OR IGNORE INTO browsing_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
