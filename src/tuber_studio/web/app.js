@@ -1427,7 +1427,7 @@ async function updatePermissionCapsule() {
       text = "权限：只读监控（无发布权）";
     } else if (
       control.enabled &&
-      (settings.top_level_auto_publish || settings.reply_auto_publish || settings.handoff_auto_send)
+      (settings.top_level_auto_publish || settings.reply_auto_publish || settings.video_like_auto_publish || settings.video_fav_auto_publish || settings.handoff_auto_send)
     ) {
       tier = "autopublish";
       icon = "⚡";
@@ -1436,6 +1436,8 @@ async function updatePermissionCapsule() {
     } else if (
       !settings.top_level_enabled &&
       !settings.reply_enabled &&
+      !settings.video_like_enabled &&
+      !settings.video_fav_enabled &&
       !settings.mentions_enabled
     ) {
       tier = "readonly";
@@ -1524,7 +1526,17 @@ function renderPermissionMatrix(status) {
   const dmRadio = document.querySelector(`input[name="matrix_dm"][value="${dmVal}"]`);
   if (dmRadio && document.activeElement?.name !== "matrix_dm") dmRadio.checked = true;
 
-  // 4. Circuit Breakers
+  // 4. Video Like
+  const likeVal = !settings.video_like_enabled ? "0" : settings.video_like_auto_publish ? "2" : "1";
+  const likeRadio = document.querySelector(`input[name="matrix_video_like"][value="${likeVal}"]`);
+  if (likeRadio && document.activeElement?.name !== "matrix_video_like") likeRadio.checked = true;
+
+  // 5. Video Favorite
+  const favVal = !settings.video_fav_enabled ? "0" : settings.video_fav_auto_publish ? "2" : "1";
+  const favRadio = document.querySelector(`input[name="matrix_video_fav"][value="${favVal}"]`);
+  if (favRadio && document.activeElement?.name !== "matrix_video_fav") favRadio.checked = true;
+
+  // 6. Circuit Breakers
   if ($("matrix-max-replies-video") && document.activeElement !== $("matrix-max-replies-video")) {
     $("matrix-max-replies-video").value = settings.max_replies_per_video ?? 2;
   }
@@ -1543,6 +1555,8 @@ async function savePermissionMatrix() {
   const topVal = document.querySelector('input[name="matrix_top_level"]:checked')?.value || "1";
   const replyVal = document.querySelector('input[name="matrix_reply"]:checked')?.value || "1";
   const dmVal = document.querySelector('input[name="matrix_dm"]:checked')?.value || "1";
+  const likeVal = document.querySelector('input[name="matrix_video_like"]:checked')?.value || "1";
+  const favVal = document.querySelector('input[name="matrix_video_fav"]:checked')?.value || "1";
 
   const topLevelEnabled = topVal !== "0";
   const topLevelAuto = topVal === "2";
@@ -1552,6 +1566,12 @@ async function savePermissionMatrix() {
 
   const dmHandoff = dmVal !== "0";
   const dmAuto = dmVal === "2";
+
+  const likeEnabled = likeVal !== "0";
+  const likeAuto = likeVal === "2";
+
+  const favEnabled = favVal !== "0";
+  const favAuto = favVal === "2";
 
   const maxRepliesVideo = parseInt($("matrix-max-replies-video")?.value || "2", 10);
   const maxPerRound = parseInt($("matrix-max-per-round")?.value || "5", 10);
@@ -1565,6 +1585,10 @@ async function savePermissionMatrix() {
     top_level_auto_publish: topLevelAuto,
     reply_enabled: replyEnabled,
     reply_auto_publish: replyAuto,
+    video_like_enabled: likeEnabled,
+    video_like_auto_publish: likeAuto,
+    video_fav_enabled: favEnabled,
+    video_fav_auto_publish: favAuto,
     max_replies_per_video: Math.max(0, Math.min(20, maxRepliesVideo)),
     max_per_hour: Math.max(1, Math.min(30, maxPerRound)),
     max_per_day: Math.max(1, Math.min(200, maxPerDay)),

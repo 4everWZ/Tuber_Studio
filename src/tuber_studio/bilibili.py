@@ -401,6 +401,89 @@ class BilibiliAdapter:
             "parent": parent,
         }
 
+    async def like_video(self, video_id: str, *, like: bool = True, before_send=None) -> dict:
+        if not self._sessdata or not self._csrf:
+            raise ValueError("点赞需要配置 SESSDATA 和 CSRF；当前不可操作")
+        info = await self._video(video_id)
+        if before_send is not None:
+            before_send()
+        try:
+            response = await self.client.post(
+                "/x/web-interface/archive/like",
+                data={
+                    "bvid": info["bvid"],
+                    "like": 1 if like else 2,
+                    "csrf": self._csrf,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise PublishUncertain("点赞结果未知，请到 B 站核对；不会自动重试") from None
+        if not isinstance(payload, dict) or type(payload.get("code")) is not int:
+            raise PublishUncertain("点赞响应无有效回执，请到 B 站核对；不会自动重试")
+        if payload["code"] != 0 and payload["code"] != 65006:
+            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次点赞"))
+        return {
+            "platform": "bilibili",
+            "code": 0,
+            "video_id": info["bvid"],
+            "aid": info["aid"],
+            "action": "like" if like else "unlike",
+            "already_liked": payload["code"] == 65006,
+        }
+
+    async def favorite_video(
+        self, video_id: str, *, folder_id: int | str | None = None, before_send=None
+    ) -> dict:
+        if not self._sessdata or not self._csrf:
+            raise ValueError("收藏需要配置 SESSDATA 和 CSRF；当前不可操作")
+        info = await self._video(video_id)
+        if not folder_id:
+            nav_payload = await self._get_payload("/x/web-interface/nav", {})
+            nav_data = _data(nav_payload) if isinstance(nav_payload, dict) and nav_payload.get("code") == 0 else {}
+            mid = nav_data.get("mid")
+            if not mid:
+                raise ValueError("获取账号信息失败，无法查询默认收藏夹")
+            folders_data = _data(await self._get_payload("/x/v3/fav/folder/created/list-all", {"up_mid": mid}))
+            folders = folders_data.get("list") if isinstance(folders_data, dict) else []
+            if not folders:
+                raise ValueError("未找到可用收藏夹")
+            default_folder = next(
+                (f for f in folders if f.get("attr", 0) == 0 or "默认" in str(f.get("title", ""))), folders[0]
+            )
+            folder_id = default_folder["id"]
+        if before_send is not None:
+            before_send()
+        try:
+            response = await self.client.post(
+                "/x/v3/fav/resource/deal",
+                data={
+                    "rid": info["aid"],
+                    "type": 2,
+                    "add_media_ids": str(folder_id),
+                    "del_media_ids": "",
+                    "csrf": self._csrf,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise PublishUncertain("收藏结果未知，请到 B 站核对；不会自动重试") from None
+        if not isinstance(payload, dict) or type(payload.get("code")) is not int:
+            raise PublishUncertain("收藏响应无有效回执，请到 B 站核对；不会自动重试")
+        if payload["code"] != 0 and payload["code"] != 11201:
+            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次收藏"))
+        return {
+            "platform": "bilibili",
+            "code": 0,
+            "video_id": info["bvid"],
+            "aid": info["aid"],
+            "folder_id": folder_id,
+            "action": "favorite",
+            "already_favorited": payload["code"] == 11201,
+        }
+
     async def reconcile_publication(self, target, *, author_uid, text, started_at, receipt=None):
         from .publication_reconciliation import reconcile_comment
 

@@ -661,6 +661,14 @@ class BrowsingAdapter(BilibiliAdapter):
         target = self._target(target)
         return await self._publish_target(target, text, before_send)
 
+    async def like_video(self, target, *, like: bool = True, before_send=None):
+        video_id = target["bvid"] if isinstance(target, dict) else str(target)
+        return await super().like_video(video_id, like=like, before_send=before_send)
+
+    async def favorite_video(self, target, *, folder_id=None, before_send=None):
+        video_id = target["bvid"] if isinstance(target, dict) else str(target)
+        return await super().favorite_video(video_id, folder_id=folder_id, before_send=before_send)
+
     async def verify_publication(self, target, receipt):
         try:
             rpid = _identifier(receipt.get("rpid"))

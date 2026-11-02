@@ -126,6 +126,18 @@ class ControlledPlatform:
     async def publish_resource_reply(self, target, text, *, before_send):
         return await self.publish_top_level(target, text, before_send=before_send)
 
+    async def like_video(self, target, *, like=True, before_send=None):
+        if before_send:
+            before_send()
+        self.sent.append((target, "like" if like else "unlike"))
+        return {"code": 0, "action": "like" if like else "unlike", "video_id": target.get("bvid")}
+
+    async def favorite_video(self, target, *, folder_id=None, before_send=None):
+        if before_send:
+            before_send()
+        self.sent.append((target, "favorite"))
+        return {"code": 0, "action": "favorite", "video_id": target.get("bvid")}
+
     async def verify_publication(self, target, receipt):
         return {"status": "not_found"}
 
@@ -174,6 +186,13 @@ class ControlledModel:
                     "reason": "specific_detail" if self.worth else "nothing_to_add",
                     "evidence_ids": ["missing"] if self.bad_ref else [data["segments"][0]["id"]],
                     "coverage_required": "provided",
+                }
+            if schema["title"] == "VideoEngagementDecision":
+                return {
+                    "should_like": True,
+                    "like_reason": "视频很有趣味，值得点赞",
+                    "should_favorite": True,
+                    "favorite_reason": "优质干货，收藏备查",
                 }
             return {
                 "action": self.response_action,
@@ -695,3 +714,61 @@ async def test_reread_really_refreshes_raw_material_but_keeps_rejection(browsing
     await browsing.active[response["id"]]
     assert len([c for c in browsing.adapter.calls if c[0] == "metadata"]) == before + 1
     assert len(browsing.intents()) == 1 and browsing.intents()[0]["status"] == "rejected"
+
+
+async def test_autonomous_like_and_favorite_intents(browsing):
+    browsing.store.set(
+        "browsing_policy",
+        BrowsingPolicy(
+            top_level_enabled=True,
+            video_like_enabled=True,
+            video_fav_enabled=True,
+        ).model_dump(),
+    )
+    await finished(browsing, preview=True)
+    intents = browsing.intents()
+    kinds = [intent["kind"] for intent in intents]
+    assert "top_level" in kinds
+    assert "video_like" in kinds
+    assert "video_fav" in kinds
+
+    like_intent = next(i for i in intents if i["kind"] == "video_like")
+    assert like_intent["status"] == "pending_review"
+    assert "点赞" in like_intent["text"]
+
+    fav_intent = next(i for i in intents if i["kind"] == "video_fav")
+    assert fav_intent["status"] == "pending_review"
+    assert "收藏" in fav_intent["text"]
+
+
+async def test_autonomous_like_and_favorite_auto_publish(browsing):
+    browsing.store.set(
+        "browsing_semantic_validation",
+        {"passed": True, "signature": browsing.model_signature()},
+    )
+    browsing.operations.configure({"enabled": True}, account_id="100", character=browsing.runtime.character)
+    browsing.store.set(
+        "browsing_policy",
+        BrowsingPolicy(
+            top_level_enabled=True,
+            top_level_auto_publish=True,
+            video_like_enabled=True,
+            video_like_auto_publish=True,
+            video_fav_enabled=True,
+            video_fav_auto_publish=True,
+        ).model_dump(),
+    )
+    row = await browsing.run(automatic=True)
+    await browsing.active[row["id"]]
+    intents = browsing.intents()
+    kinds = [intent["kind"] for intent in intents]
+    assert "video_like" in kinds
+    assert "video_fav" in kinds
+
+    like_intent = next(i for i in intents if i["kind"] == "video_like")
+    assert like_intent["status"] == "published"
+    assert like_intent["auto_authorized"] == 1
+
+    fav_intent = next(i for i in intents if i["kind"] == "video_fav")
+    assert fav_intent["status"] == "published"
+    assert fav_intent["auto_authorized"] == 1

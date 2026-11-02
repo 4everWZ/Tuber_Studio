@@ -425,3 +425,63 @@ async def test_publish_reply_inside_thread_uses_root_and_immediate_target(adapte
     receipt = await adapter.publish(BV, "13", "收到你的楼内补充啦", thread_id="11")
     assert receipt["root"] == "11" and receipt["parent"] == "13"
     assert len(posts) == 1
+
+
+async def test_like_video_success_and_duplicate(adapter_factory):
+    posts = []
+
+    def handle(request):
+        if request.method == "GET":
+            return video_response()
+        posts.append(request)
+        assert request.url.path == "/x/web-interface/archive/like"
+        form = parse_qs(request.content.decode())
+        assert form["bvid"] == [BV]
+        assert form["like"] == ["1"]
+        assert form["csrf"] == [SECRETS["csrf"]]
+        if len(posts) == 1:
+            return httpx.Response(200, json={"code": 0, "message": "0"})
+        return httpx.Response(200, json={"code": 65006, "message": "重复点赞"})
+
+    adapter = await adapter_factory(handle, SECRETS)
+    res1 = await adapter.like_video(BV, like=True)
+    assert res1["code"] == 0
+    assert not res1["already_liked"]
+
+    res2 = await adapter.like_video(BV, like=True)
+    assert res2["code"] == 0
+    assert res2["already_liked"]
+
+
+async def test_favorite_video_success_and_duplicate(adapter_factory):
+    posts = []
+
+    def handle(request):
+        if request.method == "GET":
+            if request.url.path == "/x/web-interface/nav":
+                return httpx.Response(200, json={"code": 0, "data": {"mid": 12345}})
+            if request.url.path == "/x/v3/fav/folder/created/list-all":
+                return httpx.Response(
+                    200,
+                    json={"code": 0, "data": {"list": [{"id": 9999, "title": "默认收藏夹", "attr": 0}]}},
+                )
+            return video_response()
+        posts.append(request)
+        assert request.url.path == "/x/v3/fav/resource/deal"
+        form = parse_qs(request.content.decode())
+        assert form["rid"] == [str(AID)]
+        assert form["type"] == ["2"]
+        assert form["add_media_ids"] == ["9999"]
+        assert form["csrf"] == [SECRETS["csrf"]]
+        if len(posts) == 1:
+            return httpx.Response(200, json={"code": 0, "message": "0"})
+        return httpx.Response(200, json={"code": 11201, "message": "已经添加过了"})
+
+    adapter = await adapter_factory(handle, SECRETS)
+    res1 = await adapter.favorite_video(BV)
+    assert res1["code"] == 0
+    assert not res1["already_favorited"]
+
+    res2 = await adapter.favorite_video(BV)
+    assert res2["code"] == 0
+    assert res2["already_favorited"]

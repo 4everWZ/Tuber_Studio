@@ -744,14 +744,20 @@ class BrowsingService:
         return character, messages, model_schema
 
     async def _model(
-        self, row, schema, data, instruction, metrics=None, *, diagnose=None, source_binding=None
+        self, row, schema, data, instruction, metrics=None, *, diagnose=None, source_binding=None, max_tokens=None
     ):
         self._check_round(row)
         response_input = ResponseDecisionInput(data) if schema is ResponseDecision else None
         character, messages, model_schema = self._model_input(
             row, schema, data, instruction, response_input=response_input
         )
-        output = row["config"]["decision_max_tokens"]
+        from .browsing_models import VideoEngagementDecision
+
+        output = max_tokens if max_tokens is not None else (
+            min(row["config"]["decision_max_tokens"], 1024)
+            if schema is VideoEngagementDecision
+            else row["config"]["decision_max_tokens"]
+        )
 
         def guard():
             self._check_round(row)
@@ -1214,6 +1220,70 @@ class BrowsingService:
                     if intent["auto_authorized"]:
                         await self.publish(intent["id"], automatic=True)
 
+            like_enabled = row["config"].get("video_like_enabled", False)
+            fav_enabled = row["config"].get("video_fav_enabled", False)
+            if (like_enabled or fav_enabled) and actionable:
+                engagement_decision = await self._engagement_decision(row, material, actionable, metrics)
+                bvid = material["metadata"]["bvid"]
+                aid = material["metadata"]["aid"]
+                title = material["metadata"].get("title", "")
+
+                if engagement_decision.should_like and like_enabled:
+                    like_source_key = canonical_intent("bilibili", bvid, "like", row["character_id"])
+                    existing_like = self.store.one(
+                        "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                        (row["account_id"], row["character_id"], like_source_key),
+                    )
+                    if not existing_like:
+                        like_target = {
+                            "type": 1,
+                            "oid": str(aid),
+                            "bvid": bvid,
+                            "title": title,
+                            "action": "like",
+                        }
+                        like_response = ResponseDecision(
+                            action="reply_public",
+                            text=engagement_decision.like_reason or "认可视频内容，给UP主点赞",
+                            reason="light_interaction",
+                            evidence_ids=list(chosen)[:4] if chosen else [],
+                        )
+                        like_intent = self._intent(
+                            row, "video_like", like_target, like_response, [result["material_key"]], chosen
+                        )
+                        payload["like_intent_id"] = like_intent["id"]
+                        status = "selected"
+                        if like_intent["auto_authorized"]:
+                            await self.publish(like_intent["id"], automatic=True)
+
+                if engagement_decision.should_favorite and fav_enabled:
+                    fav_source_key = canonical_intent("bilibili", bvid, "favorite", row["character_id"])
+                    existing_fav = self.store.one(
+                        "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                        (row["account_id"], row["character_id"], fav_source_key),
+                    )
+                    if not existing_fav:
+                        fav_target = {
+                            "type": 1,
+                            "oid": str(aid),
+                            "bvid": bvid,
+                            "title": title,
+                            "action": "favorite",
+                        }
+                        fav_response = ResponseDecision(
+                            action="reply_public",
+                            text=engagement_decision.favorite_reason or "视频质量极高，收藏备用",
+                            reason="light_interaction",
+                            evidence_ids=list(chosen)[:4] if chosen else [],
+                        )
+                        fav_intent = self._intent(
+                            row, "video_fav", fav_target, fav_response, [result["material_key"]], chosen
+                        )
+                        payload["fav_intent_id"] = fav_intent["id"]
+                        status = "selected"
+                        if fav_intent["auto_authorized"]:
+                            await self.publish(fav_intent["id"], automatic=True)
+
             max_replies = row["config"].get("max_replies_per_video", 2)
             if row["config"].get("reply_enabled", False) and max_replies > 0 and chosen:
                 if context is None:
@@ -1373,9 +1443,57 @@ class BrowsingService:
                 return "正文与近期公开发言／热评重复"
         return None
 
+    async def _engagement_decision(self, row, material, actionable, metrics):
+        from .browsing_models import VideoEngagementDecision
+
+        metadata = material.get("metadata", {})
+        title = metadata.get("title", "")
+        desc = metadata.get("desc", "")
+        owner = metadata.get("owner", {}).get("name", "")
+        summary_evidence = [d.model_dump() for d in actionable] if actionable else []
+
+        data = {
+            "title": title,
+            "owner": owner,
+            "desc": desc[:200] if desc else "",
+            "summary_evidence": summary_evidence[:4],
+        }
+        instruction = (
+            "你正在像真实用户一样在 B 站“刷视频”。\n"
+            "结合你的角色人设、兴趣偏好与视频内容，自主决策是否对该视频进行【点赞】和【收藏】。\n"
+            "原则与要求：\n"
+            "1. 真诚互动，不敷衍、不机械刷赞刷藏。\n"
+            "2. 点赞（should_like）：当你觉得视频有趣、有启发、有共鸣、认可创作者的用心或契合你的角色兴趣时为 true，并用简短一句话说明理由；否则为 false。\n"
+            "3. 收藏（should_favorite）：收藏的标准高于单纯点赞。仅当你觉得该视频质量极高、值得反复回看、当作重要素材或触动极深时为 true，并说明理由；一般视频仅点赞不收藏，为 false。\n"
+            "4. 投币功能目前暂不启用（TBD）。"
+        )
+        try:
+            return await self._model(
+                row,
+                VideoEngagementDecision,
+                data,
+                instruction,
+                metrics,
+                max_tokens=1024,
+            )
+        except Exception:
+            return VideoEngagementDecision(
+                should_like=bool(actionable),
+                like_reason="结合视频看点自主点赞" if actionable else "",
+                should_favorite=False,
+                favorite_reason="",
+            )
+
     def _intent(self, row, kind, target, response, material_keys, evidence_ids):
         resource = target.get("bvid") or "dynamic:" + str(target["oid"])
-        source = "top-level" if kind == "top_level" else str(target["parent"])
+        if kind == "top_level":
+            source = "top-level"
+        elif kind == "video_like":
+            source = "like"
+        elif kind == "video_fav":
+            source = "favorite"
+        else:
+            source = str(target.get("parent", "0"))
         source_key = canonical_intent("bilibili", resource, source, row["character_id"])
         identity, now = str(uuid4()), time.time()
         auto = (
@@ -1386,6 +1504,8 @@ class BrowsingService:
             and (
                 (kind == "top_level" and row["config"].get("top_level_auto_publish", False))
                 or (kind == "reply_public" and row["config"].get("reply_auto_publish", False))
+                or (kind == "video_like" and row["config"].get("video_like_auto_publish", False))
+                or (kind == "video_fav" and row["config"].get("video_fav_auto_publish", False))
                 or (kind == "private_handoff" and row["config"].get("comment_handoff_enabled", False))
             )
         )
@@ -1639,6 +1759,9 @@ class BrowsingService:
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
         async def read(row, attempt):
+            intent_row = self.store.one("SELECT kind FROM browsing_intents WHERE id=?", (identity,))
+            if intent_row and intent_row.get("kind") in ("video_like", "video_fav"):
+                return {"status": "published", "checked_at": time.time()}
             if not hasattr(self.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             try:
@@ -1697,7 +1820,7 @@ class BrowsingService:
                 "UPDATE browsing_intents SET material_keys=? WHERE id=?",
                 (dump(row["material_keys"]), identity),
             )
-            if row["kind"] != "top_level":
+            if row["kind"] not in ("top_level", "video_like", "video_fav"):
                 verified = await self._read(self.adapter.read_public_thread, row["target"]["source_event"])
                 if verified["source"]["text"] != row["target"]["source_text"] or str(
                     verified["source"]["author_uid"]
@@ -1741,7 +1864,15 @@ class BrowsingService:
                     raise ValueError("准备期间候选或审核状态已变化，保留最新状态")
                 if automatic:
                     policy = self.effective()
-                    if not policy["top_level_enabled" if row["kind"] == "top_level" else "reply_enabled"]:
+                    if row["kind"] == "top_level":
+                        allowed = policy.get("top_level_enabled", False)
+                    elif row["kind"] == "video_like":
+                        allowed = policy.get("video_like_enabled", False)
+                    elif row["kind"] == "video_fav":
+                        allowed = policy.get("video_fav_enabled", False)
+                    else:
+                        allowed = policy.get("reply_enabled", False)
+                    if not allowed:
                         raise ValueError("自动回应已关闭")
                 self.operations.assert_allowed(
                     automatic=automatic,
@@ -1774,17 +1905,24 @@ class BrowsingService:
                 )
 
             try:
-                method = (
-                    self.adapter.publish_top_level
-                    if row["kind"] == "top_level"
-                    else self.adapter.publish_resource_reply
-                )
-                receipt = await method(row["target"], row["text"], before_send=before_send)
+                if row["kind"] == "video_like":
+                    receipt = await self.adapter.like_video(row["target"], like=True, before_send=before_send)
+                elif row["kind"] == "video_fav":
+                    receipt = await self.adapter.favorite_video(row["target"], before_send=before_send)
+                elif row["kind"] == "top_level":
+                    receipt = await self.adapter.publish_top_level(row["target"], row["text"], before_send=before_send)
+                else:
+                    receipt = await self.adapter.publish_resource_reply(row["target"], row["text"], before_send=before_send)
                 if (
                     not token
                     or not isinstance(receipt, dict)
-                    or not str(receipt.get("rpid", "")).isdigit()
-                    or int(receipt["rpid"]) <= 0
+                    or (
+                        row["kind"] not in ("video_like", "video_fav")
+                        and (
+                            not str(receipt.get("rpid", "")).isdigit()
+                            or int(receipt["rpid"]) <= 0
+                        )
+                    )
                 ):
                     raise PublishUncertain("没有有效一次提交回执")
             except BaseException as error:
@@ -1845,15 +1983,20 @@ class BrowsingService:
                     (identity,),
                 )
                 raise UnknownPublication("平台提交结果需人工核对，禁止重发", token) from None
-            try:
-                visibility = await self.adapter.verify_publication(row["target"], receipt)
+            if row["kind"] in ("video_like", "video_fav"):
                 self.store.execute(
-                    "UPDATE browsing_intents SET visibility=? WHERE id=?", (visibility["status"], identity)
+                    "UPDATE browsing_intents SET visibility='visible' WHERE id=?", (identity,)
                 )
-            except Exception:
-                self.store.execute(
-                    "UPDATE browsing_intents SET visibility='check_failed' WHERE id=?", (identity,)
-                )
+            else:
+                try:
+                    visibility = await self.adapter.verify_publication(row["target"], receipt)
+                    self.store.execute(
+                        "UPDATE browsing_intents SET visibility=? WHERE id=?", (visibility["status"], identity)
+                    )
+                except Exception:
+                    self.store.execute(
+                        "UPDATE browsing_intents SET visibility='check_failed' WHERE id=?", (identity,)
+                    )
             return self.repo.decode(self.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
 
     async def sync_notifications(self, row=None):

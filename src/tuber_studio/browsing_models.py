@@ -62,6 +62,10 @@ class BrowsingPolicy(StrictModel):
     top_level_auto_publish: bool = False
     reply_enabled: bool = False
     reply_auto_publish: bool = False
+    video_like_enabled: bool = False
+    video_like_auto_publish: bool = False
+    video_fav_enabled: bool = False
+    video_fav_auto_publish: bool = False
     max_replies_per_video: int = Field(default=2, ge=0, le=20)
     auto_downgrade_on_error: bool = True
     mentions_enabled: bool = False
@@ -76,7 +80,7 @@ class BrowsingPolicy(StrictModel):
     max_reads: int = Field(default=64, ge=1, le=128)
     max_model_calls: int = Field(default=16, ge=1, le=32)
     max_input_tokens: int = Field(default=262144, ge=1024, le=1048576)
-    max_output_tokens: int = Field(default=16384, ge=2048, le=65536)
+    max_output_tokens: int = Field(default=32768, ge=2048, le=65536)
     decision_max_tokens: int = Field(default=8192, ge=512, le=65536)
     deadline_seconds: int = Field(default=1800, ge=10, le=1800)
     interval_seconds: int = Field(default=300, ge=60, le=86400)
@@ -195,6 +199,13 @@ class ResponseDecision(StrictModel):
     @classmethod
     def bounded_body(cls, value):
         return validate_operation_text(value) if value else value
+
+
+class VideoEngagementDecision(StrictModel):
+    should_like: bool = False
+    like_reason: str = ""
+    should_favorite: bool = False
+    favorite_reason: str = ""
 
 
 def content_decision_schema(evidence_ids):
