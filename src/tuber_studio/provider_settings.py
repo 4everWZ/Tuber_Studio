@@ -153,6 +153,10 @@ def proposal(settings, body):
         )
         if broker.get("enabled") and data["llm"]["model"] != current_local_model:
             raise ValueError("此设置不切换本地模型；请保持已安装的默认模型，或选择外部API")
+    profiles = data.get("work_mode_profiles")
+    mode = broker.get("mode")
+    if profiles and mode in profiles:
+        profiles[mode] = {name: copy.deepcopy(data[name]) for name in ("llm", "vision")}
     settings._validate(data)
     return data, keys
 
@@ -175,7 +179,7 @@ async def apply_settings(runtime, body):
         created.append(llm)
         voices = VoiceService(staged)
         created.append(voices)
-        vision = VisionService(data["vision"], keys.get("vision"))
+        vision = VisionService(data["vision"], staged.endpoint_key("vision"))
         created.append(vision)
     except BaseException:
         await _settle_cleanup(_close_clients(created))

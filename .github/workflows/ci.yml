@@ -66,6 +66,7 @@ jobs:
         run: |
           mkdir -p tmp/ci-results
           uv run --locked --with numpy==2.2.6 --with onnx==1.17.0 --with PyYAML==6.0.2 \
+            --with-requirements tools/deployment/business-requirements.txt \
             pytest -q --junitxml=tmp/ci-results/pytest.xml
       - name: Generate program-only context without runtime or model downloads
         run: |

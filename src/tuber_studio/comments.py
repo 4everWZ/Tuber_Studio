@@ -23,6 +23,7 @@ from .operation_text import validate_operation_text
 from .operations_control import OperationsControl, canonical_intent
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
+from .runtime_modes import operation_generation_context
 
 DEFAULT_POLICY = {
     "auto_browse": False,
@@ -589,7 +590,7 @@ class Comments:
         while True:
             while self._live_pending():
                 await asyncio.sleep(0.2)
-            async with self.runtime.generation_lock:
+            async with operation_generation_context(self.runtime, self.settings):
                 if self._live_pending():
                     continue
                 # Recheck after waiting for the GPU: another request may already

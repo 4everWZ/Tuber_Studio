@@ -12,6 +12,7 @@ import math
 import re
 import time
 from contextlib import nullcontext
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import Field, model_validator
@@ -19,6 +20,7 @@ from pydantic import Field, model_validator
 from .api_providers import APIProvider, validate_image
 from .generation_meter import GenerationMeter
 from .http_api import response_json
+from .image_preprocessing import prepare_image
 from .live_media import StrictModel
 from .llama_sampling import LlamaCppSampling
 
@@ -42,6 +44,9 @@ class VideoVisionConfig(StrictModel):
     enable_thinking: bool | None = Field(default=None, strict=True)
     sampling: LlamaCppSampling = Field(default_factory=LlamaCppSampling)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
+    properties_path: str = Field(default="/props", pattern=r"^/[A-Za-z0-9_/-]{1,160}$")
+    image_profile: Literal["server_native", "gemma4_image_280"] = "server_native"
+    image_order: Literal["text_first", "image_first"] = "text_first"
 
     @model_validator(mode="after")
     def valid(self):
@@ -139,7 +144,7 @@ class ApiVideoEvidenceProvider:
         props = await response_json(
             self.api.client,
             "GET",
-            str(self.api.client.base_url.copy_with(path="/props")),
+            str(self.api.client.base_url.copy_with(path=self.config.properties_path)),
             timeout=min(5, self.config.timeout_seconds),
         )
         # The configured llama.cpp endpoint must prove its actual window and
@@ -291,6 +296,20 @@ class ApiVideoEvidenceProvider:
         async with asyncio.timeout(min(self.config.timeout_seconds, max(0, deadline - time.time()))):
             with scope:
                 for number, frame in enumerate(frames, 1):
+                    prepared = (
+                        await asyncio.to_thread(
+                            prepare_image,
+                            frame["image"],
+                            frame.get("mime_type", "image/jpeg"),
+                            self.config.image_profile,
+                        )
+                        if self.config.image_profile != "server_native"
+                        else {
+                            "data": frame["image"],
+                            "mime_type": frame.get("mime_type", "image/jpeg"),
+                            "metadata": None,
+                        }
+                    )
                     messages = [
                         {
                             "role": "user",
@@ -305,14 +324,16 @@ class ApiVideoEvidenceProvider:
                                     "type": "image_url",
                                     "image_url": {
                                         "url": "data:"
-                                        + frame.get("mime_type", "image/jpeg")
+                                        + prepared["mime_type"]
                                         + ";base64,"
-                                        + base64.b64encode(frame["image"]).decode("ascii")
+                                        + base64.b64encode(prepared["data"]).decode("ascii")
                                     },
                                 },
                             ],
                         }
                     ]
+                    if self.config.image_order == "image_first":
+                        messages[0]["content"].reverse()
                     text, props, stage = await self._stage(
                         task,
                         deadline,
@@ -325,7 +346,15 @@ class ApiVideoEvidenceProvider:
                     if not isinstance(text, str) or not text.strip() or len(text) > 4000:
                         raise ValueError("视觉逐帧观察须为非空且有界的自然文本")
                     captions.append({"frame": frame, "text": text})
-                    stages.append(stage | {"stage": "caption", "number": number, "frame_id": frame["id"]})
+                    stages.append(
+                        stage
+                        | {
+                            "stage": "caption",
+                            "number": number,
+                            "frame_id": frame["id"],
+                            "preprocessing": prepared["metadata"],
+                        }
+                    )
                 messages = [
                     {
                         "role": "system",

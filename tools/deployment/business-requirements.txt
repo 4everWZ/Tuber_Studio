@@ -1,0 +1,2 @@
+# Optional spatial preprocessing on the business host; not an inference-image dependency.
+Pillow==10.4.0

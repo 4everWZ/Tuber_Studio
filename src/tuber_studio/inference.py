@@ -9,23 +9,38 @@ import secrets
 import signal
 import struct
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+import psutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
+from .inference_cache import cache_summary, scan_cache
+from .inference_observation import BackgroundObservation
+from .inference_profiles import (
+    GEMMA_ARTIFACTS,
+    GEMMA_ENGINE,
+    GEMMA_ENGINE_SHA256,
+    GEMMA_KEY,
+    artifact_identity,
+    project_asset,
+    verify_artifact,
+)
 from .inference_validation import (
     project_wav,
     validate_context_tokens,
     validate_llm_request,
     validate_speech_request,
+    validate_vision_request,
 )
 
 MAX_BODY = 2 * 1024 * 1024
+MAX_VISION_BODY = 12 * 1024 * 1024
 HEADER = "X-Tuber-Inference-Key"
 MODEL_CACHE_SUFFIXES = {".gguf", ".bin", ".pth", ".ckpt", ".safetensors", ".onnx", ".data"}
 
@@ -43,6 +58,7 @@ RESOURCES = {
     "llm1b": Resource("http://127.0.0.1:9010", "/health", "MiniCPM5-1B", "MiniCPM5-1B-Q4_K_M.gguf"),
     "llm1bq8": Resource("http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf"),
     "llmqwen35": Resource("http://127.0.0.1:9015", "/health", "Qwen3.5-2B", "Qwen_Qwen3.5-2B-Q4_K_M.gguf"),
+    GEMMA_KEY: Resource("http://127.0.0.1:9030", "/health", "Gemma4-E2B", "gemma-4-E2B-it-Q4_0.gguf"),
     "tts": Resource("http://127.0.0.1:9011", "/docs"),
 }
 LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
@@ -51,7 +67,7 @@ LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
 def resource_cache_type(key: str, configured: str) -> str | None:
     if not RESOURCES[key].model:
         return None
-    return configured if key == "llm2b" else "q8_0"
+    return configured if key in {"llm2b", GEMMA_KEY} else "q8_0"
 
 
 def native_context(path: Path, *, expected_architecture: str | None = None) -> int:
@@ -113,6 +129,7 @@ class ProcessRunner:
         kv_cache_type="q8_0",
         cuda_managed_memory=False,
         context_tokens=131072,
+        node_settings=None,
     ):
         if kv_cache_type not in {"q8_0", "q4_0"} or type(cuda_managed_memory) is not bool:
             raise ValueError("Invalid fixed inference allocation profile")
@@ -123,15 +140,105 @@ class ProcessRunner:
         self.logs = {}
         self.kv_cache_type, self.cuda_managed_memory = kv_cache_type, cuda_managed_memory
         self.context_tokens = validate_context_tokens(context_tokens)
+        self.node_settings = node_settings
+        self.verified_artifacts = {}
+
+    def model_path(self, key):
+        if key == GEMMA_KEY and self.node_settings:
+            value = self.node_settings.get("gemma_model", "runtime/models/" + RESOURCES[key].model)
+            return project_asset(self.root, value)
+        return (self.root / "runtime/models" / RESOURCES[key].model).resolve()
+
+    def gemma_assets(self):
+        settings = self.node_settings or {}
+        vision_only = settings.get("gemma_vision_only", self.node_settings is not None)
+        projector = GEMMA_ARTIFACTS["vision_only_projector" if vision_only else "projector"]
+        return {
+            "model": self.model_path(GEMMA_KEY),
+            "projector": project_asset(
+                self.root,
+                settings.get("gemma_projector", "runtime/models/" + projector["filename"]),
+            ),
+            "engine": project_asset(self.root, settings.get("gemma_engine", GEMMA_ENGINE)),
+        }
+
+    def artifact_identifiers(self, key):
+        result = {"model_sha256": None, "projector_sha256": None, "runtime_sha256": None}
+        if key == GEMMA_KEY:
+            for role, path in self.gemma_assets().items():
+                try:
+                    digest = self.verified_artifacts.get(artifact_identity(path))
+                except OSError:
+                    digest = None
+                result[("runtime" if role == "engine" else role) + "_sha256"] = digest
+        return result
 
     def command(self, key):
         resource = RESOURCES[key]
+        if key == GEMMA_KEY:
+            assets = self.gemma_assets()
+            return [
+                str(assets["engine"]),
+                "--model",
+                str(assets["model"]),
+                "--mmproj",
+                str(assets["projector"]),
+                "--alias",
+                resource.alias,
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "9030",
+                "--jinja",
+                "--ctx-size",
+                str(self.context_tokens),
+                "--parallel",
+                "1",
+                "--fit",
+                "off",
+                "--gpu-layers",
+                "99",
+                "--flash-attn",
+                "on",
+                "--cache-type-k",
+                self.kv_cache_type,
+                "--cache-type-v",
+                self.kv_cache_type,
+                "--reasoning",
+                "on",
+                "--temp",
+                "0.2",
+                "--top-p",
+                "0.95",
+                "--top-k",
+                "40",
+                "--min-p",
+                "0",
+                "--repeat-penalty",
+                "1",
+                "--batch-size",
+                "256",
+                "--ubatch-size",
+                "64",
+                "--threads",
+                "4",
+                "--cache-ram",
+                "0",
+                "--ctx-checkpoints",
+                "0",
+                "--no-context-shift",
+                "--load-mode",
+                "dio",
+                "--lazy-mode",
+                "on",
+                "--mmproj-offload",
+            ]
         if resource.model:
             cache = resource_cache_type(key, self.kv_cache_type)
             command = [
                 str(self.llama_binary),
                 "-m",
-                str(self.root / "runtime/models" / resource.model),
+                str(self.model_path(key)),
                 "--alias",
                 resource.alias,
                 "--host",
@@ -199,15 +306,26 @@ class ProcessRunner:
         ]
 
     async def validate_all(self):
+        return await asyncio.to_thread(self._validate_all_sync)
+
+    def _validate_all_sync(self):
         profiles = {}
         configuration = self.root / "runtime/studio.json"
-        settings = json.loads(configuration.read_text()) if configuration.is_file() else {}
+        settings = (
+            self.node_settings
+            if self.node_settings is not None
+            else (json.loads(configuration.read_text()) if configuration.is_file() else {})
+        )
         genie = settings.get("tts", {}).get("local_backend", "compact") == "genie_onnx_int8"
         for key, resource in RESOURCES.items():
-            model = (self.root / "runtime/models" / resource.model).resolve() if resource.model else None
+            model = self.model_path(key) if resource.model else None
             # Only the selected/requested model must be installed. _activate
             # rejects an absent fixed profile before changing any processes.
             if model is not None and not model.is_file():
+                continue
+            if key == GEMMA_KEY:
+                if all(path.is_file() for path in self.gemma_assets().values()):
+                    profiles[key] = {"command": self.command(key)}
                 continue
             required = (
                 [model, self.llama_binary]
@@ -275,7 +393,7 @@ class ProcessRunner:
         except (OSError, RuntimeError):
             return 0
         directories = []
-        for relative in ("models", "tts/weights", "tts/pretrained", "tts/genie"):
+        for relative in ("models", "node-assets", "tts/weights", "tts/pretrained", "tts/genie"):
             try:
                 directory = (runtime / relative).resolve()
                 if directory.is_relative_to(runtime) and directory.is_dir():
@@ -323,9 +441,21 @@ class ProcessRunner:
         resource = RESOURCES[key]
         if (
             resource.model
-            and native_context(self.root / "runtime/models" / resource.model) < self.context_tokens
+            and await asyncio.to_thread(lambda: native_context(self.model_path(key))) < self.context_tokens
         ):
             raise RuntimeError("Selected model does not natively support the requested context")
+        if key == GEMMA_KEY:
+            assets = self.gemma_assets()
+            await asyncio.to_thread(
+                verify_artifact, assets["engine"], GEMMA_ENGINE_SHA256, self.verified_artifacts
+            )
+            for role in ("model", "projector"):
+                expected = GEMMA_ARTIFACTS[role]["sha256"]
+                if role == "projector" and (self.node_settings or {}).get(
+                    "gemma_vision_only", self.node_settings is not None
+                ):
+                    expected = GEMMA_ARTIFACTS["vision_only_projector"]["sha256"]
+                await asyncio.to_thread(verify_artifact, assets[role], expected, self.verified_artifacts)
         await self.stop(key)
         self._advise_owned_model_cache()
         log = self.root / "runtime" / ("inference-" + key + ".log")
@@ -374,7 +504,18 @@ class ProcessRunner:
 
 
 class InferenceBroker:
-    def __init__(self, root: Path, runner=None, client=None, *, mode="text", selected="llm2b"):
+    def __init__(
+        self,
+        root: Path,
+        runner=None,
+        client=None,
+        *,
+        mode="text",
+        selected="llm2b",
+        operations_selected=None,
+        live_selected=None,
+        configuration_path=None,
+    ):
         mode = "text" if mode == "exclusive" else mode
         if mode not in {"text", "live"}:
             raise ValueError("Unknown inference resource mode")
@@ -393,26 +534,225 @@ class InferenceBroker:
         self.loaded = set()
         self.mode = mode
         self.selected = selected
+        self.operations_selected = operations_selected
+        self.live_selected = live_selected
+        for key in (operations_selected, live_selected):
+            if key is not None and (key not in RESOURCES or not RESOURCES[key].model):
+                raise ValueError("Unknown mode-specific inference model")
+        self.configuration_path = configuration_path
         self._target_touched = False
+        self._installed_profiles = None
+        self._artifact_identifiers = {}
+        self._asset_epoch = 0
+        self._observation_stop = threading.Event()
+        self._metadata_observation = BackgroundObservation(
+            self._observe_asset_metadata, interval=5, minimum_interval=1
+        )
+        self._storage_observation = BackgroundObservation(
+            self._observe_asset_storage, interval=300, retry_interval=30, minimum_interval=30
+        )
+        self._initial_swap = psutil.swap_memory().used
+
+    async def _profiles(self):
+        profiles = await self.runner.validate_all()
+        self._installed_profiles = profiles
+        return profiles
+
+    async def _observe_asset_metadata(self):
+        epoch = self._asset_epoch
+        if hasattr(self.runner, "artifact_identifiers"):
+            identities = await asyncio.to_thread(self.runner.artifact_identifiers, GEMMA_KEY)
+            if epoch == self._asset_epoch:
+                self._artifact_identifiers[GEMMA_KEY] = identities
+        profiles = await self._profiles()
+        return {"profiles": sorted(profiles)}
+
+    async def _observe_asset_storage(self):
+        return await asyncio.to_thread(self.storage_summary)
+
+    def _unknown_storage(self):
+        return [
+            {
+                "kind": name,
+                "path": str(self.root / "runtime" / name),
+                "used_bytes": None,
+                "reclaimable_bytes": None,
+                "usage_complete": False,
+                "protected": name != "inference-cache",
+            }
+            for name in ("models", "engines", "tts", "node-assets", "nltk_data", "inference-cache")
+        ]
+
+    def resource_snapshot(self):
+        memory, swap = psutil.virtual_memory(), psutil.swap_memory()
+        rss = 0
+        for process in [psutil.Process(), *psutil.Process().children(recursive=True)]:
+            try:
+                rss += process.memory_info().rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return {
+            "available_bytes": memory.available,
+            "total_bytes": memory.total,
+            "process_tree_rss_bytes": rss,
+            "swap_used_bytes": swap.used,
+            "swap_growth_bytes": max(0, swap.used - self._initial_swap),
+        }
+
+    def check_resources(self):
+        settings = getattr(self.runner, "node_settings", None)
+        if settings is None:
+            return
+        snapshot = self.resource_snapshot()
+        if snapshot["available_bytes"] < settings.get("min_available_mib", 384) * 1024**2:
+            raise HTTPException(503, "Inference paused: available memory is below the configured minimum")
+        if snapshot["swap_growth_bytes"] > settings.get("max_swap_growth_mib", 128) * 1024**2:
+            raise HTTPException(503, "Inference paused: swap growth exceeds the configured maximum")
+
+    def storage_summary(self):
+        result = []
+        runtime = (self.root / "runtime").resolve()
+        for relative in ("models", "engines", "tts", "node-assets", "nltk_data"):
+            directory = runtime / relative
+            total = count = 0
+            if directory.is_dir() and not directory.is_symlink():
+                for path in directory.rglob("*"):
+                    if self._observation_stop.is_set():
+                        return self._unknown_storage()
+                    try:
+                        if (
+                            path.is_symlink()
+                            or not path.resolve().is_relative_to(directory)
+                            or not path.is_file()
+                        ):
+                            continue
+                        total += path.stat().st_size
+                        count += 1
+                    except OSError:
+                        continue
+            result.append(
+                {
+                    "kind": relative,
+                    "path": str(directory),
+                    "used_bytes": total,
+                    "file_count": count,
+                    "protected": True,
+                    "reclaimable_bytes": 0,
+                }
+            )
+        return [*result, cache_summary(self.root)]
+
+    async def clear_cache(self):
+        self._require_idle_text()
+        async with self.lock:
+            if any(value is not False for value in [await self.runner.running(key) for key in RESOURCES]):
+                raise HTTPException(
+                    409, "Release all inference workers with idle before clearing their disk cache"
+                )
+            worker = asyncio.create_task(asyncio.to_thread(scan_cache, self.root, clear=True))
+            try:
+                result = await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # A cancelled to_thread await does not stop its filesystem work.
+                # Retain the model lease until deletion has actually finished.
+                while not worker.done():
+                    try:
+                        await asyncio.shield(worker)
+                    except asyncio.CancelledError:
+                        continue
+                worker.result()
+                raise
+            self._storage_observation.invalidate()
+            return {
+                key: result[key]
+                for key in (
+                    "removed_files",
+                    "removed_bytes",
+                    "protected",
+                    "protected_count",
+                    "errors",
+                    "error_count",
+                    "complete",
+                    "scanned_entries",
+                )
+            }
+
+    async def capabilities(self):
+        status = await self.observe()
+        self._metadata_observation.request()
+        self._storage_observation.request()
+        installed = self._installed_profiles
+        profiles = {}
+        for key, resource in RESOURCES.items():
+            properties = self.properties.get(key, {})
+            loaded = status["providers"][key]["running"] is True
+            profiles[key] = {
+                "alias": resource.alias,
+                "installed": key in installed if installed is not None else True if loaded else None,
+                "loaded": loaded,
+                "native_context_tokens": self.natives.get(key),
+                "context_tokens": properties.get("default_generation_settings", {}).get("n_ctx")
+                if loaded
+                else None,
+                "vision": bool(loaded and properties.get("modalities", {}).get("vision") is True),
+                "supports_vision": key == GEMMA_KEY,
+                "tts": key == "tts",
+                "quantization": "Q4_0" if key == GEMMA_KEY else None,
+                "projector_quantization": "Q8_0" if key == GEMMA_KEY else None,
+                **(
+                    self._artifact_identifiers.get(key)
+                    or {"model_sha256": None, "projector_sha256": None, "runtime_sha256": None}
+                ),
+            }
+        return {
+            "protocol": "tuber-inference-node",
+            "protocol_version": 1,
+            "state": status["state"],
+            "mode": status["mode"],
+            "model": status["model"],
+            "selected_provider": self.selected,
+            "profiles": profiles,
+            "requested_context_tokens": self.context_tokens,
+            "resource": self.resource_snapshot(),
+            "storage": self._storage_observation.value or self._unknown_storage(),
+            "storage_status": self._storage_observation.status(),
+            "metadata_status": self._metadata_observation.status(),
+            "installation_error": self._metadata_observation.error,
+        }
+
+    def request_inventory_refresh(self):
+        self._metadata_observation.invalidate()
+        self._storage_observation.invalidate()
+        self._metadata_observation.request()
+        self._storage_observation.request()
+        return {
+            "metadata_status": self._metadata_observation.status(),
+            "storage_status": self._storage_observation.status(),
+        }
+
+    def model_path(self, key):
+        if hasattr(self.runner, "model_path"):
+            return self.runner.model_path(key)
+        return (self.root / "runtime/models" / RESOURCES[key].model).resolve()
 
     async def initialize(self):
         async with self.lock:
-            profiles = await self.runner.validate_all()
+            profiles = await self._profiles()
             for key in profiles:
                 resource = RESOURCES[key]
                 if resource.model:
-                    path = (self.root / "runtime/models" / resource.model).resolve()
+                    path = await asyncio.to_thread(self.model_path, key)
                     if not path.is_relative_to(self.root):
                         raise RuntimeError("Selected model path is outside project")
-                    self.natives[key] = native_context(path)
-            self._validate_context(self.selected)
+                    self.natives[key] = await asyncio.to_thread(native_context, path)
+            await asyncio.to_thread(self._validate_context, self.selected)
             await self._apply_mode(self.mode)
 
     def _validate_context(self, key):
         if not RESOURCES[key].model:
             return
         if key not in self.natives:
-            self.natives[key] = native_context(self.root / "runtime/models" / RESOURCES[key].model)
+            self.natives[key] = native_context(self.model_path(key))
         if self.natives[key] < self.context_tokens:
             raise RuntimeError("Selected model does not natively support the requested context")
 
@@ -436,7 +776,7 @@ class InferenceBroker:
             await self._activate(key, keep=residents)
 
     def _persist_configuration(self, update):
-        path = self.root / "runtime/studio.json"
+        path = self.configuration_path or self.root / "runtime/studio.json"
         if path.is_symlink():
             raise RuntimeError("Studio configuration must be a regular runtime file")
         source = path if path.exists() else self.root / "config/studio.example.json"
@@ -457,6 +797,9 @@ class InferenceBroker:
 
     def _persist_mode(self, mode):
         def update(data):
+            if self.configuration_path is not None:
+                data["mode"] = mode
+                return
             profile = data.setdefault("inference_broker", {})
             if not isinstance(profile, dict):
                 raise ValueError("Invalid inference broker configuration")
@@ -466,6 +809,9 @@ class InferenceBroker:
 
     def _persist_context(self):
         def update(data):
+            if self.configuration_path is not None:
+                data["context_tokens"] = self.context_tokens
+                return
             profile = data.setdefault("inference_broker", {})
             if not isinstance(profile, dict):
                 raise ValueError("Invalid inference broker configuration")
@@ -484,13 +830,14 @@ class InferenceBroker:
 
     @asynccontextmanager
     async def _residency_change(self):
-        previous_mode, previous_active = self.mode, self.active
+        previous_mode, previous_active, previous_selected = self.mode, self.active, self.selected
         previous_context, previous_properties = self.context_tokens, self.properties.copy()
         residents = {key for key in RESOURCES if await self.runner.running(key)}
         try:
             yield
         except BaseException as failure:
             self.mode = previous_mode
+            self.selected = previous_selected
             context_changed = self.context_tokens != previous_context
             self.context_tokens = self.runner.context_tokens = previous_context
             self.properties = {} if context_changed else previous_properties
@@ -534,6 +881,10 @@ class InferenceBroker:
         async with self.lock:
             try:
                 async with self._residency_change():
+                    selected = self.live_selected if mode == "live" else self.operations_selected
+                    if selected is not None:
+                        await asyncio.to_thread(self._validate_context, selected)
+                        self.selected = selected
                     await self._apply_mode(mode)
                     self._persist_mode(mode)
                     self.mode = mode
@@ -552,9 +903,9 @@ class InferenceBroker:
         self._require_idle_text()
         async with self.lock:
             try:
-                profiles = await self.runner.validate_all()
+                profiles = await self._profiles()
                 # Check the artifact itself before stopping any resident resource.
-                native = native_context(self.root / "runtime/models" / RESOURCES[self.selected].model)
+                native = await asyncio.to_thread(lambda: native_context(self.model_path(self.selected)))
             except (OSError, RuntimeError, ValueError, KeyError, struct.error):
                 raise HTTPException(503, "Selected model capacity could not be verified") from None
             if self.selected not in profiles:
@@ -593,10 +944,12 @@ class InferenceBroker:
         return result | {"busy": False}
 
     async def _activate(self, key, *, keep=None):
-        profiles = await self.runner.validate_all()
-        if key not in profiles:
-            raise RuntimeError("Requested fixed inference profile is not installed")
-        self._validate_context(key)
+        already_running = await self.runner.running(key)
+        if not already_running:
+            profiles = await self._profiles()
+            if key not in profiles:
+                raise RuntimeError("Requested fixed inference profile is not installed")
+        await asyncio.to_thread(self._validate_context, key)
         self._target_touched = True
         # Confirm all other owned process groups have exited before starting the target.
         self.state = "switching"
@@ -608,7 +961,12 @@ class InferenceBroker:
             if not await self.runner.running(key):
                 self.active = None
                 await self.runner.start(key)
-            deadline = time.monotonic() + 180
+                self._asset_epoch += 1
+                if hasattr(self.runner, "artifact_identifiers"):
+                    self._artifact_identifiers[key] = await asyncio.to_thread(
+                        self.runner.artifact_identifiers, key
+                    )
+            deadline = time.monotonic() + (300 if key == GEMMA_KEY else 180)
             while True:
                 if not await self.runner.running(key):
                     raise RuntimeError("Requested inference process exited while loading")
@@ -670,6 +1028,9 @@ class InferenceBroker:
             "error": error,
             "mode": self.mode,
             "selected_provider": self.selected,
+            "model": RESOURCES[self.selected].alias,
+            "operations_provider": self.operations_selected or self.selected,
+            "live_provider": self.live_selected or self.selected,
             "requested_context_tokens": self.context_tokens,
             "kv_cache_type": resource_cache_type(cache_provider, configured_cache),
             "cuda_managed_memory": getattr(self.runner, "cuda_managed_memory", False),
@@ -729,10 +1090,13 @@ class InferenceBroker:
 
     async def forward(self, key, path, body):
         async with self.lock:
+            self.check_resources()
             if key == "tts" and self.mode != "live":
                 raise HTTPException(409, "Switch to live mode before synthesizing speech")
             if self.mode == "live" and key not in {self.selected, "tts"}:
                 raise HTTPException(409, "Live mode only permits the selected LLM and TTS")
+            if self.mode == "text" and self.operations_selected is not None and key != self.selected:
+                raise HTTPException(409, "Text mode only permits the selected operations model")
             self._target_touched = False
             if self.mode == "live":
                 try:
@@ -744,6 +1108,7 @@ class InferenceBroker:
             try:
                 if self.mode != "live":
                     await self._activate(key)
+                self.check_resources()
                 if path == "warmup":
                     return JSONResponse(await self.read(key, "props"))
                 response = await self.client.post(
@@ -764,6 +1129,8 @@ class InferenceBroker:
                     status_code=response.status_code,
                     media_type=response.headers.get("content-type", "application/octet-stream"),
                 )
+            except HTTPException:
+                raise
             except asyncio.CancelledError:
                 self.state, self.error = "stopping", "Inference request was cancelled"
                 cleanup = asyncio.create_task(self.runner.stop(key)) if self._target_touched else None
@@ -785,6 +1152,8 @@ class InferenceBroker:
                 raise HTTPException(503, self.error) from None
 
     async def close(self):
+        self._observation_stop.set()
+        await asyncio.gather(self._metadata_observation.close(), self._storage_observation.close())
         await self.client.aclose()
         if hasattr(self.runner, "close"):
             await self.runner.close()
@@ -844,14 +1213,22 @@ class InferenceGuard:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         headers = dict(scope.get("headers", []))
-        if not secrets.compare_digest(headers.get(b"x-tuber-inference-key", b""), self.token):
+        bearer = headers.get(b"authorization", b"")
+        bearer = bearer[7:] if bearer.startswith(b"Bearer ") else b""
+        if not (
+            secrets.compare_digest(headers.get(b"x-tuber-inference-key", b""), self.token)
+            or secrets.compare_digest(bearer, self.token)
+        ):
             response = JSONResponse({"detail": "Inference authentication required"}, status_code=401)
             return await response(scope, receive, send)
         length = headers.get(b"content-length")
+        limit = MAX_VISION_BODY if scope.get("path", "").startswith("/vlm/") else MAX_BODY
         if length:
             try:
-                if int(length) < 0 or int(length) > MAX_BODY:
-                    response = JSONResponse({"detail": "Request body exceeds 2MiB"}, status_code=413)
+                if int(length) < 0 or int(length) > limit:
+                    response = JSONResponse(
+                        {"detail": "Request body exceeds the endpoint limit"}, status_code=413
+                    )
                     return await response(scope, receive, send)
             except ValueError:
                 response = JSONResponse({"detail": "Invalid content length"}, status_code=400)
@@ -859,12 +1236,39 @@ class InferenceGuard:
         return await self.app(scope, receive, send)
 
 
-def create_app(root: Path | None = None, *, broker=None, warm_start=True):
+def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_config: Path | None = None):
     root = (root or Path(os.getenv("TUBER_ROOT", str(Path(__file__).resolve().parents[2])))).resolve()
-    configuration = root / "runtime/studio.json"
+    configuration = node_config or root / "runtime/studio.json"
+    if node_config is not None and not configuration.is_file():
+        raise ValueError("Inference node configuration is missing")
     if not configuration.exists():
         configuration = root / "config/studio.example.json"
     data = json.loads(configuration.read_text(encoding="utf-8")) if configuration.exists() else {}
+    if node_config is not None:
+        node = data
+        for field, default in (("min_available_mib", 384), ("max_swap_growth_mib", 128)):
+            value = node.get(field, default)
+            if type(value) is not int or value < 0:
+                raise ValueError("Inference resource thresholds must be nonnegative integer MiB")
+        if node.get("kv_cache_type", "q4_0") != "q4_0":
+            raise ValueError("The measured inference-node profile requires Q4 KV")
+        if type(node.get("gemma_vision_only", True)) is not bool:
+            raise ValueError("Gemma vision-only flag must be boolean")
+        mode = node.get("mode", "text")
+        selected_alias = (
+            node.get("live_model", "MiniCPM5-2B")
+            if mode == "live"
+            else node.get("operations_model", "Gemma4-E2B")
+        )
+        data = {
+            "inference_broker": node,
+            "llm": {
+                "kind": "llama_cpp",
+                "model": selected_alias,
+                "context_tokens": node.get("context_tokens", 131072),
+            },
+            "tts": node.get("tts", {}) | {"kind": "gpt_sovits"},
+        }
     profile = data.get("inference_broker", {})
     if not isinstance(profile, dict):
         raise ValueError("Invalid inference broker configuration")
@@ -882,13 +1286,25 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         kv_cache_type=profile.get("kv_cache_type", "q8_0"),
         cuda_managed_memory=profile.get("cuda_managed_memory", False),
         context_tokens=settings.get("context_tokens", 131072),
+        node_settings=profile if node_config is not None else None,
     )
     selected_alias = settings.get("model", RESOURCES["llm2b"].alias)
     selected = next((key for key, resource in RESOURCES.items() if resource.alias == selected_alias), None)
     mode = profile.get("mode", "text") if local else "text"
     if data.get("tts", {}).get("kind") in {"openai_compatible", "prerecorded"}:
         mode = "text"
-    manager = broker or InferenceBroker(root, runner=runner, mode=mode, selected=selected)
+    extra = {}
+    if node_config is not None:
+        for field, alias in (
+            ("operations_selected", profile.get("operations_model", "Gemma4-E2B")),
+            ("live_selected", profile.get("live_model", "MiniCPM5-2B")),
+        ):
+            key = next((key for key, value in RESOURCES.items() if value.alias == alias), None)
+            if key is None:
+                raise ValueError("Unknown mode-specific inference profile")
+            extra[field] = key
+        extra["configuration_path"] = node_config
+    manager = broker or InferenceBroker(root, runner=runner, mode=mode, selected=selected, **extra)
     token = inference_token(root)
 
     @asynccontextmanager
@@ -914,12 +1330,20 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
     async def health():
         return await manager.observe()
 
-    async def read_body(request):
+    @app.get("/capabilities")
+    async def capabilities():
+        return await manager.capabilities()
+
+    @app.get("/props")
+    async def props():
+        return await manager.read(manager.selected, "props")
+
+    async def read_body(request, limit=MAX_BODY):
         data = bytearray()
         async for chunk in request.stream():
             data.extend(chunk)
-            if len(data) > MAX_BODY:
-                raise HTTPException(413, "Request body exceeds 2MiB")
+            if len(data) > limit:
+                raise HTTPException(413, "Request body exceeds the endpoint limit")
         try:
             body = json.loads(data)
         except (ValueError, UnicodeDecodeError):
@@ -927,6 +1351,13 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
         if not isinstance(body, dict):
             raise HTTPException(422, "JSON object required")
         return body, bytes(data)
+
+    @app.post("/capabilities/refresh")
+    async def refresh_inventory(request: Request):
+        body, _ = await read_body(request)
+        if body:
+            raise HTTPException(422, "Inventory refresh accepts only an empty object")
+        return manager.request_inventory_refresh()
 
     async def cancellable(request, operation):
         async def disconnected():
@@ -979,6 +1410,13 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
             raise HTTPException(422, "Idle accepts only an empty object")
         return await cancellable(request, manager.idle())
 
+    @app.post("/cache/clear")
+    async def clear_cache(request: Request):
+        body, _ = await read_body(request)
+        if body:
+            raise HTTPException(422, "Cache cleanup accepts only an empty object")
+        return await cancellable(request, manager.clear_cache())
+
     async def dispatch(request: Request, key: str, path: str):
         if request.method == "GET":
             if (key.startswith("llm") and path in {"health", "props"}) or (key == "tts" and path == "docs"):
@@ -1011,9 +1449,33 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True):
 
     @app.api_route("/llm/{size}/{path:path}", methods=["GET", "POST"])
     async def llm(size: str, path: str, request: Request):
-        if size not in {"1b", "2b", "1bq8", "qwen35"}:
+        if size not in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b"}:
             raise HTTPException(404)
         return await dispatch(request, "llm" + size, path)
+
+    @app.api_route("/vlm/gemma4e2b/{path:path}", methods=["GET", "POST"])
+    async def vision(path: str, request: Request):
+        if request.method == "GET":
+            if path in {"props", "v1/props", "health"}:
+                return await manager.read(GEMMA_KEY, "props" if path.endswith("props") else "health")
+            if path == "v1/models":
+                properties = await manager.read(GEMMA_KEY, "props")
+                if properties.get("is_sleeping"):
+                    raise HTTPException(503, "The vision model is not resident")
+                return {"object": "list", "data": [{"id": RESOURCES[GEMMA_KEY].alias, "object": "model"}]}
+            raise HTTPException(404)
+        if path != "v1/chat/completions":
+            raise HTTPException(404)
+        body, data = await read_body(request, MAX_VISION_BODY)
+        try:
+            validate_vision_request(body, context_tokens=manager.context_tokens)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        if body.get("stream", False) is not False:
+            raise HTTPException(422, "Only buffered inference is supported")
+        if body.get("model", RESOURCES[GEMMA_KEY].alias) != RESOURCES[GEMMA_KEY].alias:
+            raise HTTPException(422, "Model does not match typed resource")
+        return await cancellable(request, manager.forward(GEMMA_KEY, path, data))
 
     @app.api_route("/tts/{path:path}", methods=["GET", "POST"])
     async def tts(path: str, request: Request):

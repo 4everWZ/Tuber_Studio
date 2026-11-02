@@ -73,7 +73,7 @@ class BrowsingPolicy(StrictModel):
     max_model_calls: int = Field(default=16, ge=1, le=32)
     max_input_tokens: int = Field(default=262144, ge=1024, le=1048576)
     max_output_tokens: int = Field(default=16384, ge=2048, le=65536)
-    decision_max_tokens: int = Field(default=2048, ge=512, le=65536)
+    decision_max_tokens: int = Field(default=8192, ge=512, le=65536)
     deadline_seconds: int = Field(default=1800, ge=10, le=1800)
     interval_seconds: int = Field(default=300, ge=60, le=86400)
     notification_interval_seconds: int = Field(default=60, ge=60, le=86400)
@@ -211,14 +211,37 @@ def content_decision_schema(evidence_ids):
                 else {"type": "string"},
             },
         }
-        branches.append(
-            {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": fields,
-                "required": list(fields),
-            }
-        )
+        alternatives = [{}]
+        if worth:
+            # These disjoint branches express exactly the existing model
+            # validator. Native decoding must not offer a combination that
+            # the same product immediately rejects after generation.
+            alternatives = [
+                {"interest": {"enum": [item for item in properties["interest"]["enum"] if item != "like"]}},
+                {
+                    "interest": {"enum": ["like"]},
+                    "coverage_required": {
+                        "enum": [
+                            item for item in properties["coverage_required"]["enum"] if item != "provided"
+                        ]
+                    },
+                },
+                {
+                    "interest": {"enum": ["like"]},
+                    "coverage_required": {"enum": ["provided"]},
+                    "reason": {"enum": ["specific_detail"]},
+                },
+            ]
+        for constraints in alternatives:
+            constrained = fields | {name: fields[name] | rule for name, rule in constraints.items()}
+            branches.append(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": constrained,
+                    "required": list(constrained),
+                }
+            )
     return {"title": "ContentDecision", "type": "object", "oneOf": branches}
 
 

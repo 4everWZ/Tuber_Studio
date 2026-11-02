@@ -116,7 +116,7 @@ def paragraph_sources(sources):
     return [group for group in groups if any(source.text.strip() for source in group)]
 
 
-def render_blocks(blocks):
+def render_blocks(blocks, *, text_renderer=None):
     lines, previous_page, previous_track = [], None, None
     for block in blocks:
         part = block.part
@@ -130,5 +130,6 @@ def render_blocks(blocks):
                 hints.append("自动")
             lines.append(label + ("（" + "/".join(hints) + "）" if hints else ""))
             previous_track = part.index
-        lines.append(f"[{block.alias}|{timestamp(block.sources[0].start)}]{block.text}")
+        text = text_renderer(block) if text_renderer is not None else block.text
+        lines.append(f"[{block.alias}|{timestamp(block.sources[0].start)}]{text}")
     return "\n".join(lines)

@@ -120,6 +120,9 @@ def install_visual(service, *, ask=True, ask_again=False):
 
 @pytest.mark.parametrize("ask_again", [False, True])
 async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask_again):
+    # The replay mock has no completion usage, so reserve room for all three
+    # full-budget calls instead of changing the new per-call default.
+    browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
     visual, inputs = install_visual(browsing, ask_again=ask_again)
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
@@ -135,11 +138,13 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     assert inputs[1]["has_visual"] is True
     assert inputs[1]["source_kinds"] == ["subtitle", "visual_observation"]
     assert inputs[1]["coverage"] == "sampled_visual"
-    assert "coverage_required表示还要补充的内容" in visual.prompts[1]
-    assert "interest=like表示想参与这个话题，吐槽、共情和分享也属于参与" in visual.prompts[1]
+    assert "source_kinds与has_visual描述已有材料" in visual.prompts[1]
+    assert "coverage_required表示还需补充什么" in visual.prompts[1]
+    assert "interest=like表示想参与" in visual.prompts[1]
+    assert "吐槽、共情、轻互动与分享都算" in visual.prompts[1]
     assert "worth_commenting表示有具体想说的话" in visual.prompts[1]
-    assert "当前材料够用选provided" in visual.prompts[1]
-    assert "需新的画面选visual" in visual.prompts[1]
+    assert "provided当前够用" in visual.prompts[1]
+    assert "visual需新画面" in visual.prompts[1]
     assert visual.task["round_id"] == row["id"] and visual.task["id"] == task["id"]
     assert visual.deadline <= row["deadline"]
     assert task["input_version"] == task["material_key"]

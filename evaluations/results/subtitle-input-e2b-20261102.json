@@ -1,0 +1,781 @@
+{
+  "date": "2026-11-02",
+  "adopted": "C6i",
+  "model": "Gemma 4 E2B",
+  "context_tokens": 131072,
+  "model_quantization": "Q4_0",
+  "projector_quantization": "Q8_0",
+  "kv_cache_type": "q4_0",
+  "max_tokens": 8192,
+  "enable_thinking": true,
+  "extra_reasoning_cap": null,
+  "sampling": {
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0,
+    "seed": 42
+  },
+  "platform_writes": 0,
+  "conditions": {
+    "classification_persona": "explicit low-loss interest/emotion brief bound to exact core/style/rules fingerprint",
+    "response_persona": "complete original persona",
+    "source_text": "all 192 original CC segments and full description preserved",
+    "backend_only_process_metadata": [
+      "metadata.fetched_at",
+      "metadata.tags when empty"
+    ],
+    "classification_group_target": {
+      "characters": 480,
+      "seconds": 90,
+      "tutorial_blocks_before": 14,
+      "tutorial_blocks_after": 6
+    },
+    "binding": "all exact original source IDs, times, order, tracks retained; final responses use individual rN",
+    "images": "no image encoding in this text-classification replay; visual observations are frozen outputs of the same E2B",
+    "cache": "node loaded; no extra warmup; every measured classification reported cached_tokens=0",
+    "timing": "n=1 per material/condition; node revisions/warmth differ across old experiments; not a paired speedup study"
+  },
+  "tutorial": {
+    "raw_segments": 192,
+    "raw_source_characters": 2006,
+    "joined_with_191_newlines_characters": 2197,
+    "historical_wrapped_characters": 23439,
+    "historical_request_tokens": 18504,
+    "historical_elapsed_seconds": 324,
+    "current_full_request_tokens": 3293,
+    "adopted_full_request_tokens": 1976,
+    "token_reduction_from_current_full_percent": 39.99,
+    "universal_token_cap": null
+  },
+  "native_count_matches_usage": true,
+  "classification_wall_seconds": {
+    "n": 8,
+    "p50": 31.594,
+    "max": 33.407
+  },
+  "records": [
+    {
+      "bvid": "BV161nZ6JE6b",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1",
+          "e2",
+          "e3"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 1976,
+      "completion_tokens": 779,
+      "finish_reason": "stop",
+      "elapsed_seconds": 31.844,
+      "cached_tokens": 0,
+      "source_segments": 192,
+      "reference_block_count": 6,
+      "resolved_source_count": 92,
+      "reference_binding_sha256": "15c34919e0b671b441ee857f9dd0baeb68b9bb4e6830e02ad47d111267da1031",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 14,
+        "candidate_blocks": 6
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 1976,
+        "prompt_ms": 2215.245,
+        "prompt_per_token_ms": 1.1210754048582996,
+        "prompt_per_second": 892.000659069313,
+        "predicted_n": 779,
+        "predicted_ms": 29448.487,
+        "predicted_per_token_ms": 37.851525706940876,
+        "predicted_per_second": 26.419014328308275
+      },
+      "visual_condition": null
+    },
+    {
+      "bvid": "BV1trHP67EvL",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1",
+          "e2"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 788,
+      "completion_tokens": 755,
+      "finish_reason": "stop",
+      "elapsed_seconds": 28.703,
+      "cached_tokens": 0,
+      "source_segments": 12,
+      "reference_block_count": 3,
+      "resolved_source_count": 11,
+      "reference_binding_sha256": "fd6978810546642814e0de816e5794a838168f505ce009bdf62956e6ec51ffb4",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 3,
+        "candidate_blocks": 3
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 788,
+        "prompt_ms": 840.858,
+        "prompt_per_token_ms": 1.0670786802030456,
+        "prompt_per_second": 937.1380185477216,
+        "predicted_n": 755,
+        "predicted_ms": 27732.191,
+        "predicted_per_token_ms": 36.78009416445623,
+        "predicted_per_second": 27.188619896639253
+      },
+      "visual_condition": null
+    },
+    {
+      "bvid": "BV1Yjxw68E9G",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1",
+          "e2"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 1184,
+      "completion_tokens": 866,
+      "finish_reason": "stop",
+      "elapsed_seconds": 33.407,
+      "cached_tokens": 0,
+      "source_segments": 2,
+      "reference_block_count": 2,
+      "resolved_source_count": 2,
+      "reference_binding_sha256": "b48aee755a02c0d095005f70985fc72cbcb0da428236f7740d27a8395e040dbb",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 2,
+        "candidate_blocks": 2
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 1184,
+        "prompt_ms": 1247.113,
+        "prompt_per_token_ms": 1.0533048986486486,
+        "prompt_per_second": 949.3927174201535,
+        "predicted_n": 866,
+        "predicted_ms": 32014.873,
+        "predicted_per_token_ms": 37.01141387283237,
+        "predicted_per_second": 27.01869221845734
+      },
+      "visual_condition": "same_E2B_observation_replay_no_new_encoding"
+    },
+    {
+      "bvid": "BV14oa961ELQ",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 778,
+      "completion_tokens": 813,
+      "finish_reason": "stop",
+      "elapsed_seconds": 31.094,
+      "cached_tokens": 0,
+      "source_segments": 14,
+      "reference_block_count": 1,
+      "resolved_source_count": 14,
+      "reference_binding_sha256": "9b2f4278f10009686c14a2b9e88b0d8a01d03642256676b4e9db134e9c7bd127",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 2,
+        "candidate_blocks": 1
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 778,
+        "prompt_ms": 960.295,
+        "prompt_per_token_ms": 1.2343123393316195,
+        "prompt_per_second": 810.1677088811251,
+        "predicted_n": 813,
+        "predicted_ms": 29965.556,
+        "predicted_per_token_ms": 36.90339408866995,
+        "predicted_per_second": 27.097778529455617
+      },
+      "visual_condition": null
+    },
+    {
+      "bvid": "BV1eFs96uE3K",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1",
+          "e2",
+          "e4"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 1112,
+      "completion_tokens": 751,
+      "finish_reason": "stop",
+      "elapsed_seconds": 29.109,
+      "cached_tokens": 0,
+      "source_segments": 45,
+      "reference_block_count": 5,
+      "resolved_source_count": 31,
+      "reference_binding_sha256": "3991f808d59e0f7aff16dd135979fa81482c7953c4e108b67e1ee8e796e962f8",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 18,
+        "candidate_blocks": 5
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 1112,
+        "prompt_ms": 1182.899,
+        "prompt_per_token_ms": 1.0637580935251798,
+        "prompt_per_second": 940.0633528306306,
+        "predicted_n": 751,
+        "predicted_ms": 27798.09,
+        "predicted_per_token_ms": 37.06412,
+        "predicted_per_second": 26.980270946672952
+      },
+      "visual_condition": null
+    },
+    {
+      "bvid": "BV1eGaz6JEJa",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1",
+          "e3"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 970,
+      "completion_tokens": 816,
+      "finish_reason": "stop",
+      "elapsed_seconds": 31.344,
+      "cached_tokens": 0,
+      "source_segments": 66,
+      "reference_block_count": 4,
+      "resolved_source_count": 58,
+      "reference_binding_sha256": "05eb7a4525d1ede993bef22c783c01829c10fafb29bb0cceaab1e333528946d0",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 7,
+        "candidate_blocks": 4
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 970,
+        "prompt_ms": 1031.514,
+        "prompt_per_token_ms": 1.0634164948453608,
+        "prompt_per_second": 940.3653270823277,
+        "predicted_n": 816,
+        "predicted_ms": 30182.962,
+        "predicted_per_token_ms": 37.03430920245399,
+        "predicted_per_second": 27.00198873788464
+      },
+      "visual_condition": null
+    },
+    {
+      "bvid": "BV1UWxp6LEL1",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e10",
+          "e11",
+          "e12"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 1057,
+      "completion_tokens": 866,
+      "finish_reason": "stop",
+      "elapsed_seconds": 33.234,
+      "cached_tokens": 0,
+      "source_segments": 45,
+      "reference_block_count": 12,
+      "resolved_source_count": 15,
+      "reference_binding_sha256": "813d78a5c179d255348db9bf664714f9c4ed46ec9e0d05d91180b10755b5ab2d",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 12,
+        "candidate_blocks": 12
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 1057,
+        "prompt_ms": 1114.668,
+        "prompt_per_token_ms": 1.054558183538316,
+        "prompt_per_second": 948.2644159516557,
+        "predicted_n": 866,
+        "predicted_ms": 31986.953,
+        "predicted_per_token_ms": 36.97913641618497,
+        "predicted_per_second": 27.042275642822247
+      },
+      "visual_condition": null
+    },
+    {
+      "bvid": "BV1XMxj6wEcD",
+      "status": "completed",
+      "decision": {
+        "interest": "like",
+        "worth_commenting": true,
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "e1",
+          "e2"
+        ],
+        "coverage_required": "provided"
+      },
+      "prompt_tokens": 1888,
+      "completion_tokens": 796,
+      "finish_reason": "stop",
+      "elapsed_seconds": 32.016,
+      "cached_tokens": 0,
+      "source_segments": 3,
+      "reference_block_count": 3,
+      "resolved_source_count": 2,
+      "reference_binding_sha256": "9c744370ab174ff33ba83a225088282b8c1b3e25e8ef07f86aedfed9e23c6c72",
+      "reference_aliases_resolve": true,
+      "block_condition": {
+        "max_chars": 480,
+        "max_seconds": 90,
+        "original_blocks": 3,
+        "candidate_blocks": 3
+      },
+      "native_timings": {
+        "cache_n": 0,
+        "prompt_n": 1888,
+        "prompt_ms": 1989.22,
+        "prompt_per_token_ms": 1.0536122881355932,
+        "prompt_per_second": 949.1157338052101,
+        "predicted_n": 796,
+        "predicted_ms": 29901.576,
+        "predicted_per_token_ms": 37.61204528301887,
+        "predicted_per_second": 26.58722737557378
+      },
+      "visual_condition": "same_E2B_observation_replay_no_new_encoding"
+    }
+  ],
+  "responses": [
+    {
+      "bvid": "BV161nZ6JE6b",
+      "status": "completed",
+      "prompt_tokens": 9030,
+      "usage": {
+        "completion_tokens": 773,
+        "prompt_tokens": 9030,
+        "total_tokens": 9803,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "elapsed_seconds": 44.11,
+      "full_persona": true,
+      "wire_decision": {
+        "reason": "specific_detail",
+        "action": "reply_public",
+        "evidence_ids": [
+          "r88"
+        ],
+        "text": "哇，权限这块确实是关键呀！就像我们平时在海底小屋里，有些东西需要特定的‘允许一次’才能动，不然就得等主人亲手来帮忙呀。深海思考中……这教程听起来有点像是在给小鱼做一次‘权限大扫除’呢！"
+      },
+      "text": "哇，权限这块确实是关键呀！就像我们平时在海底小屋里，有些东西需要特定的‘允许一次’才能动，不然就得等主人亲手来帮忙呀。深海思考中……这教程听起来有点像是在给小鱼做一次‘权限大扫除’呢！",
+      "selected_original_source_count": 92,
+      "final_original_source_ids": [
+        "43073733994:2137984356751707648:87"
+      ],
+      "diagnostics": {
+        "visible_characters": 92,
+        "visible_utf8_bytes": 276,
+        "repeated_paragraph_characters": 0,
+        "needs_review": false
+      },
+      "repetition": null,
+      "source_review": "最终原CC87支持权限主题；正文的允许一次原句在相邻CC85，亦在本次材料内，窄引用精度保留人审观察。"
+    },
+    {
+      "bvid": "BV1trHP67EvL",
+      "status": "completed",
+      "prompt_tokens": 9922,
+      "usage": {
+        "completion_tokens": 860,
+        "prompt_tokens": 9922,
+        "total_tokens": 10782,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "elapsed_seconds": 49.172,
+      "full_persona": true,
+      "wire_decision": {
+        "reason": "light_interaction",
+        "action": "reply_public",
+        "evidence_ids": [
+          "r1",
+          "r9",
+          "r11"
+        ],
+        "text": "什么嘛，这叫深海思考中！鱼鱼可不是有自我意识啦，它只是太好奇，想知道‘能不能买’这个小事，就忍不住想自己动手呀。不过密码这事儿，我得好好跟它解释一下，这可是鱼鱼的‘秘密基地’啊！再来一碗白饭，我来陪你捋捋这个小麻烦。"
+      },
+      "text": "什么嘛，这叫深海思考中！鱼鱼可不是有自我意识啦，它只是太好奇，想知道‘能不能买’这个小事，就忍不住想自己动手呀。不过密码这事儿，我得好好跟它解释一下，这可是鱼鱼的‘秘密基地’啊！再来一碗白饭，我来陪你捋捋这个小麻烦。",
+      "selected_original_source_count": 11,
+      "final_original_source_ids": [
+        "43007806386:2136351557170982144:0",
+        "43007806386:2136351557170982144:8",
+        "43007806386:2136351557170982144:10"
+      ],
+      "diagnostics": {
+        "visible_characters": 108,
+        "visible_utf8_bytes": 324,
+        "repeated_paragraph_characters": 0,
+        "needs_review": false
+      },
+      "repetition": null,
+      "source_review": "原CC0/8/10支持下单及密码情境；台词中的动机解释按OC表达观察。"
+    }
+  ],
+  "single_factor_contrasts": [
+    {
+      "condition": "full_C5",
+      "records": [
+        {
+          "bvid": "BV161nZ6JE6b",
+          "status": "completed",
+          "decision": {
+            "interest": "like",
+            "worth_commenting": true,
+            "reason": "specific_detail",
+            "evidence_ids": [
+              "e2",
+              "e4"
+            ],
+            "coverage_required": "provided"
+          },
+          "prompt_tokens": 3293,
+          "completion_tokens": 828,
+          "finish_reason": "stop",
+          "elapsed_seconds": 35.656,
+          "cached_tokens": 0,
+          "source_segments": 192,
+          "reference_block_count": 14,
+          "resolved_source_count": 29,
+          "reference_binding_sha256": "049ebb360d8c688ccafbe2a0d56e829a47a3e5184e6bce7292e351ba2f07b849",
+          "reference_aliases_resolve": true,
+          "block_condition": null,
+          "native_timings": {
+            "cache_n": 0,
+            "prompt_n": 3293,
+            "prompt_ms": 3672.385,
+            "prompt_per_token_ms": 1.1152095353780749,
+            "prompt_per_second": 896.6924764151906,
+            "predicted_n": 828,
+            "predicted_ms": 31778.19,
+            "predicted_per_token_ms": 38.4258645707376,
+            "predicted_per_second": 26.02413793863024
+          },
+          "visual_condition": null
+        },
+        {
+          "bvid": "BV1trHP67EvL",
+          "status": "completed",
+          "decision": {
+            "interest": "like",
+            "worth_commenting": true,
+            "reason": "specific_detail",
+            "evidence_ids": [
+              "e2"
+            ],
+            "coverage_required": "provided"
+          },
+          "prompt_tokens": 1908,
+          "completion_tokens": 674,
+          "finish_reason": "stop",
+          "elapsed_seconds": 27.469,
+          "cached_tokens": 0,
+          "source_segments": 12,
+          "reference_block_count": 3,
+          "resolved_source_count": 7,
+          "reference_binding_sha256": "fd6978810546642814e0de816e5794a838168f505ce009bdf62956e6ec51ffb4",
+          "reference_aliases_resolve": true,
+          "block_condition": null,
+          "native_timings": {
+            "cache_n": 0,
+            "prompt_n": 1908,
+            "prompt_ms": 2006.677,
+            "prompt_per_token_ms": 1.05171750524109,
+            "prompt_per_second": 950.8256685056938,
+            "predicted_n": 674,
+            "predicted_ms": 25331.214,
+            "predicted_per_token_ms": 37.639248142644874,
+            "predicted_per_second": 26.568012097643642
+          },
+          "visual_condition": null
+        },
+        {
+          "bvid": "BV1Yjxw68E9G",
+          "status": "completed",
+          "decision": {
+            "interest": "like",
+            "worth_commenting": true,
+            "reason": "specific_detail",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "coverage_required": "provided"
+          },
+          "prompt_tokens": 2293,
+          "completion_tokens": 720,
+          "finish_reason": "stop",
+          "elapsed_seconds": 29.812,
+          "cached_tokens": 0,
+          "source_segments": 2,
+          "reference_block_count": 2,
+          "resolved_source_count": 2,
+          "reference_binding_sha256": "b48aee755a02c0d095005f70985fc72cbcb0da428236f7740d27a8395e040dbb",
+          "reference_aliases_resolve": true,
+          "block_condition": null,
+          "native_timings": {
+            "cache_n": 0,
+            "prompt_n": 2293,
+            "prompt_ms": 2417.327,
+            "prompt_per_token_ms": 1.054220235499346,
+            "prompt_per_second": 948.5683980694378,
+            "predicted_n": 720,
+            "predicted_ms": 27256.935,
+            "predicted_per_token_ms": 37.90950625869263,
+            "predicted_per_second": 26.378607866218264
+          },
+          "visual_condition": "same_E2B_observation_replay_no_new_encoding"
+        }
+      ]
+    },
+    {
+      "condition": "brief_original_task_C6a",
+      "records": [
+        {
+          "bvid": "BV161nZ6JE6b",
+          "status": "completed",
+          "decision": {
+            "interest": "like",
+            "worth_commenting": true,
+            "reason": "specific_detail",
+            "evidence_ids": [
+              "e1",
+              "e14"
+            ],
+            "coverage_required": "provided"
+          },
+          "prompt_tokens": 2238,
+          "completion_tokens": 723,
+          "finish_reason": "stop",
+          "elapsed_seconds": 30.531,
+          "cached_tokens": 0,
+          "source_segments": 192,
+          "reference_block_count": 14,
+          "resolved_source_count": 15,
+          "reference_binding_sha256": "049ebb360d8c688ccafbe2a0d56e829a47a3e5184e6bce7292e351ba2f07b849",
+          "reference_aliases_resolve": true,
+          "block_condition": null,
+          "native_timings": {
+            "cache_n": 0,
+            "prompt_n": 2238,
+            "prompt_ms": 2644.902,
+            "prompt_per_token_ms": 1.1818150134048258,
+            "prompt_per_second": 846.1561146688989,
+            "predicted_n": 723,
+            "predicted_ms": 27698.362,
+            "predicted_per_token_ms": 38.36338227146815,
+            "predicted_per_second": 26.066523356146472
+          },
+          "visual_condition": null
+        },
+        {
+          "bvid": "BV1trHP67EvL",
+          "status": "completed",
+          "decision": {
+            "interest": "like",
+            "worth_commenting": true,
+            "reason": "specific_detail",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "coverage_required": "provided"
+          },
+          "prompt_tokens": 936,
+          "completion_tokens": 764,
+          "finish_reason": "stop",
+          "elapsed_seconds": 29.547,
+          "cached_tokens": 0,
+          "source_segments": 12,
+          "reference_block_count": 3,
+          "resolved_source_count": 11,
+          "reference_binding_sha256": "fd6978810546642814e0de816e5794a838168f505ce009bdf62956e6ec51ffb4",
+          "reference_aliases_resolve": true,
+          "block_condition": null,
+          "native_timings": {
+            "cache_n": 0,
+            "prompt_n": 936,
+            "prompt_ms": 1002.919,
+            "prompt_per_token_ms": 1.071494658119658,
+            "prompt_per_second": 933.2757680331114,
+            "predicted_n": 764,
+            "predicted_ms": 28422.73,
+            "predicted_per_token_ms": 37.25128440366972,
+            "predicted_per_second": 26.844711961166293
+          },
+          "visual_condition": null
+        },
+        {
+          "bvid": "BV1Yjxw68E9G",
+          "status": "completed",
+          "decision": {
+            "interest": "like",
+            "worth_commenting": true,
+            "reason": "specific_detail",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "coverage_required": "provided"
+          },
+          "prompt_tokens": 1332,
+          "completion_tokens": 726,
+          "finish_reason": "stop",
+          "elapsed_seconds": 28.39,
+          "cached_tokens": 0,
+          "source_segments": 2,
+          "reference_block_count": 2,
+          "resolved_source_count": 2,
+          "reference_binding_sha256": "b48aee755a02c0d095005f70985fc72cbcb0da428236f7740d27a8395e040dbb",
+          "reference_aliases_resolve": true,
+          "block_condition": null,
+          "native_timings": {
+            "cache_n": 0,
+            "prompt_n": 1332,
+            "prompt_ms": 1409.037,
+            "prompt_per_token_ms": 1.0578355855855857,
+            "prompt_per_second": 945.3264889424479,
+            "predicted_n": 726,
+            "predicted_ms": 26855.778,
+            "predicted_per_token_ms": 37.0424524137931,
+            "predicted_per_second": 26.996052767490113
+          },
+          "visual_condition": "same_E2B_observation_replay_no_new_encoding"
+        }
+      ]
+    }
+  ],
+  "tutorial_native_counts": [
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C4_control",
+      "native_full_request_tokens": 1989
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6a_original_task",
+      "native_full_request_tokens": 2238
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6b_full_persona",
+      "native_full_request_tokens": 2928
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6c_original_material",
+      "native_full_request_tokens": 2105
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6d_deduplicated_task",
+      "native_full_request_tokens": 2112
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6e_explicit_field_table",
+      "native_full_request_tokens": 2096
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6f_full_task_backend_provenance",
+      "native_full_request_tokens": 2216
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6g_clear_task_backend_provenance",
+      "native_full_request_tokens": 2090
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6h_clear_task_320chars_60s",
+      "native_full_request_tokens": 2004
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6i_clear_task_480chars_90s",
+      "native_full_request_tokens": 1976
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6j_original_task_480chars_90s",
+      "native_full_request_tokens": 2102
+    },
+    {
+      "bvid": "BV161nZ6JE6b",
+      "variant": "C6k_clear_task_640chars_120s",
+      "native_full_request_tokens": 1963
+    }
+  ],
+  "review": {
+    "method": "human review of original decisions, selected source blocks and natural prose; no required catchphrase, fixed reply length or prescribed tone",
+    "source_accuracy": "no new image encoding in frozen visual cases; known family-chat observation error remains in the supplied E2B observations",
+    "interest": "all eight whale-related materials naturally selected participation; interest identity across variants was not required",
+    "responses": "tutorial responds to permissions/allow-once; short clip discusses the authorized shopping scene, both retaining exact final source bindings",
+    "earlier_farewell_response": "focused on thread context jokes, with less attention to the video's sense of loss; descriptive observation, not a mandatory sad-tone test"
+  }
+}

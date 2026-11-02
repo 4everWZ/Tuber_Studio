@@ -8,8 +8,22 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings
+from tuber_studio.deployment_profiles import business_configuration, mode_configuration
 from tuber_studio.inference import RESOURCES
-from tuber_studio.provider_settings import ProviderConfigurationError, apply_settings
+from tuber_studio.provider_settings import ProviderConfigurationError, apply_settings, proposal
+
+
+def test_paired_provider_settings_survive_restart_and_live_round_trip(settings):
+    settings.data = business_configuration(settings.data, "http://jetson.local:9012")
+    live = json.loads(json.dumps(settings.data["work_mode_profiles"]["live"]))
+    updated, _ = proposal(settings, {"llm": {"operations_max_tokens": 16384}})
+    settings.save_public(updated)
+    reloaded = Settings(runtime=settings.runtime)
+    returned = mode_configuration(mode_configuration(reloaded.data, "live"), "text")
+    assert returned["llm"]["operations_max_tokens"] == 16384
+    assert returned["llm"]["model"] == "Gemma4-E2B"
+    assert returned["llm"]["context_tokens"] == 131072
+    assert returned["work_mode_profiles"]["live"] == live
 
 
 def api_patch(**extra):

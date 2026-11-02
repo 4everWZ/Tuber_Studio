@@ -80,10 +80,13 @@ class BilibiliAccountUI {
   }
   number(value) { return typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("zh-CN", {maximumFractionDigits: 2}).format(value) : "—"; }
   render() {
-    const value = this.value, profile = this.requestError ? null : value?.profile;
+    const value = this.value, profile = value?.profile;
     const name = typeof profile?.name === "string" && profile.name ? profile.name : profile ? "用户名未提供" : "B站账号";
     this.h("[data-name]").textContent = name;
-    this.h("[data-profile-note]").hidden = !profile || value?.state === "logged_in";
+    const checked = typeof value?.checked_at === "number" ? new Date(value.checked_at * 1000) : null;
+    const checkedText = checked && !Number.isNaN(checked.getTime()) ? checked.toLocaleString("zh-CN", {hour12: false}) : "";
+    this.h("[data-profile-note]").hidden = !profile || (value?.state === "logged_in" && !this.requestError);
+    this.h("[data-profile-note]").textContent = checkedText ? `上次资料 ${checkedText}` : "上次核验资料";
     this.h("[data-uid]").textContent = `UID ${profile?.uid ?? "—"}`;
     this.h("[data-coins]").textContent = `硬币 ${this.number(profile?.coins)}`;
     this.h("[data-fans]").textContent = `粉丝 ${this.number(profile?.fans)}`;
@@ -102,8 +105,7 @@ class BilibiliAccountUI {
     if (this.settings) {
       this.s("[data-sessdata-state]").textContent = value ? value.configured?.sessdata ? "已保存（不回显）" : "未保存" : "待读取";
       this.s("[data-csrf-state]").textContent = value ? value.configured?.csrf ? "已保存（不回显）" : "未保存" : "待读取";
-      const checked = typeof value?.checked_at === "number" ? new Date(value.checked_at * 1000) : null;
-      this.s("[data-checked]").textContent = checked && !Number.isNaN(checked.getTime()) ? checked.toLocaleString("zh-CN", {hour12: false}) : "尚未核验";
+      this.s("[data-checked]").textContent = checkedText || "尚未核验";
       const warnings = Array.isArray(value?.warnings) ? value.warnings.filter(item => typeof item === "string").join("；") : "";
       this.s("[data-account-warnings]").textContent = warnings; this.s("[data-account-warnings]").hidden = !warnings;
     }
@@ -163,7 +165,12 @@ class BilibiliAccountUI {
   async refreshProfile() {
     await this.action(async () => {
       this.lastRefreshAttempt = Date.now();
-      const value = await this.api("/api/account/bilibili/refresh", {method: "POST"});
+      let value;
+      try { value = await this.api("/api/account/bilibili/refresh", {method: "POST"}); }
+      catch (error) {
+        if (this.active) { this.requestError = this.safeError(error); this.render(); }
+        throw error;
+      }
       if (!this.active) return;
       this.accept(value, true);
       this.feedback(value.state === "logged_in" ? "账号资料已核验并更新。" : value.error || `核验结果：${this.stateLabel()}。`, value.state !== "logged_in");

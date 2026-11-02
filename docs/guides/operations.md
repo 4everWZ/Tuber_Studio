@@ -1,6 +1,6 @@
 # 评论、私信与动态运营
 
-本机运营选定 **Gemma 4 E2B**（Q4主模型、Q8视觉、128K、Q4 KV、开启思考）；完整参数、模型取舍及实测见[最终运营选型](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)。直播继续使用MiniCPM5＋Genie。选型已确定，现有固定broker的Gemma装配尚未实现，当前安装不会自动切换；旧版[五模型实测](../../evaluations/results/operations-vlm-20261101-oc-v4.md)保留为历史对照。
+运营使用 **Gemma 4 E2B**（Q4主模型、Q8视觉、128K、Q4 KV、开启思考、8192正常输出额度）；完整参数、模型取舍及实测见[最终运营选型](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)。独立节点已支持这一Profile；在设置中配对后，运营与MiniCPM5＋Genie直播可按资源模式切换。配对及数据目录见[双机部署](deployment.md#电脑业务主机与独立推理节点)，旧版[五模型实测](../../evaluations/results/operations-vlm-20261101-oc-v4.md)保留为历史对照。
 
 ## 账号与登录
 

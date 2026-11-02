@@ -23,7 +23,9 @@ const commentContinuation = new OperationContinuationView($("comment-continuatio
 const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
 const dynamicDecisionContinuation = new OperationContinuationView($("dynamic-decision-continuation"), api, notice, refreshDynamics);
 const cachePanel = new CachePanel($("cache-panel"), api, notice);
+const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api, notice);
 setInterval(() => { if (model.authenticated) cachePanel.refresh(); }, 5000);
+setInterval(() => { if (model.authenticated) inferenceNodePanel.refresh(); }, 10000);
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => { model.dynamicMemeCache.clear(); messagesPanel.memeCache.clear(); });
@@ -177,7 +179,7 @@ function renderLiveFeatures() {
   const enabled = liveEnabled();
   $("live-nav-label").textContent = enabled ? "Mock 直播" : "直播（后续）";
   document.querySelector('[data-inference-mode="live"]').textContent = enabled ? "直播模式" : "直播（后续）";
-  $("live-feature-notice").textContent = enabled ? "本地 Mock 直播已开放：启动会加载直播资源；仅处理手动注入事件，不连接 B站或抖音。停止直播后，切回文本模式才会卸载 TTS。" : "直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。";
+  $("live-feature-notice").textContent = enabled ? `本地 Mock 直播已开放：启动会加载直播资源；仅处理手动注入事件，不连接 B站或抖音。停止直播后，切回${resourceModeName("text")}模式才会卸载 TTS。` : "直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。";
   $("live-feature-notice").hidden = false;
   $("overlay-heading").textContent = enabled ? "OBS / Mock 播放器配置" : "OBS 播放器配置（直播后续）";
   $("overlay-help").textContent = enabled ? "手动打开播放器后，在 Mock 直播中注入事件即可播报。仅一个 overlay 页面获得播放权，第二个页面进入待机；不会连接真实直播平台。" : "直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。";
@@ -223,9 +225,12 @@ function resourceMode(inference) {
   if (inference?.mode === "exclusive") return "text";
   return ["text", "live"].includes(inference?.mode) ? inference.mode : null;
 }
+function resourceModeName(mode) {
+  return mode === "live" ? "直播" : model.settings?.work_mode_profiles ? "运营" : "文本";
+}
 function resourceName(key) {
   if (key === "tts" && model.settings?.tts?.local_backend === "genie_onnx_int8") return "Genie TTS";
-  return ({llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", llmqwen35: "Qwen3.5-2B", qwen35: "Qwen3.5-2B", tts: "TTS"})[key] || key;
+  return ({llmgemma4e2b: "Gemma 4 E2B", gemma4e2b: "Gemma 4 E2B", llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", llmqwen35: "Qwen3.5-2B", qwen35: "Qwen3.5-2B", tts: "TTS"})[key] || key;
 }
 function inferenceResidents(inference) {
   if (inference.mode === "standalone") {
@@ -244,7 +249,7 @@ function inferenceResidents(inference) {
 }
 function inferenceLabel(inference) {
   const mode = resourceMode(inference);
-  const prefix = mode === "live" ? "直播 · " : mode === "text" ? "文本 · " : inference.mode === "standalone" ? "独立Provider · " : "";
+  const prefix = mode ? `${resourceModeName(mode)} · ` : inference.mode === "standalone" ? "独立Provider · " : "";
   const residents = inferenceResidents(inference);
   if (inference.switching_to) return `${prefix}正在加载 ${resourceName(inference.switching_to)}… · ${residents}`;
   if (inference.error) return `${prefix}资源切换失败 · ${residents}`;
@@ -256,16 +261,17 @@ function renderModeControls(inference) {
   const transitioning = !!inference?.switching_to || ["loading", "switching", "starting"].includes(inference?.state);
   const selected = pending ? pending.previousMode : actual;
   document.querySelectorAll("[data-inference-mode]").forEach(button => {
+    if (button.dataset.inferenceMode === "text") button.textContent = `${resourceModeName("text")}模式`;
     button.setAttribute("aria-pressed", String(button.dataset.inferenceMode === selected));
     button.disabled = !actual || !!pending || transitioning || (button.dataset.inferenceMode === "live" && !liveEnabled()) || (button.dataset.inferenceMode === actual && !inference?.error);
     button.setAttribute("aria-busy", String(!!pending || transitioning));
   });
   const feedback = $("resource-mode-feedback");
   const result = model.modeResult?.mode === actual ? model.modeResult : null;
-  $("resource-mode-help").textContent = liveEnabled() ? "切回文本会停止当前直播并卸载TTS；直播模式预加载并共驻LLM与TTS。" : "首版以评论与文本为主；直播和本地动态语音后续开放。默认 MiniCPM 模型只处理文本。";
-  const text = pending ? `正在切换到${pending.target === "live" ? "直播" : "文本"}，等待模型就绪…` : inference?.error ? `资源错误：${inference.error}` :
+  $("resource-mode-help").textContent = model.settings?.work_mode_profiles ? `运营使用 ${model.settings.work_mode_profiles.text.llm.model}，直播使用 ${model.settings.work_mode_profiles.live.llm.model}＋语音模型。切回运营会停止直播并卸载语音模型。` : liveEnabled() ? "切回文本会停止当前直播并卸载TTS；直播模式预加载并共驻LLM与TTS。" : "首版以评论与文本为主；直播和本地动态语音后续开放。默认 MiniCPM 模型只处理文本。";
+  const text = pending ? `正在切换到${resourceModeName(pending.target)}，等待模型就绪…` : inference?.error ? `资源错误：${inference.error}` :
     inference?.mode === "standalone" ? "当前独立Provider不支持资源模式切换。" : !actual ? "等待资源模式状态。" :
-    transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${actual === "live" ? "直播" : "文本"}`;
+    transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${resourceModeName(actual)}`;
   if (feedback.textContent !== text) feedback.textContent = text;
   feedback.classList.toggle("error-text", !!(result?.error || inference?.error) && !pending);
 }
@@ -289,10 +295,11 @@ async function switchResourceMode(target) {
     const result = await api("/api/inference/mode", {method: "POST", body: {mode: target}});
     if (resourceMode(result) !== target) throw new Error("接口返回的资源模式与请求不符，请检查实际资源状态。");
     model.modeSwitch = null;
-    model.modeResult = {mode: target, error: false, text: `已切换到${target === "live" ? "直播" : "文本"}模式。`};
+    model.modeResult = {mode: target, error: false, text: `已切换到${resourceModeName(target)}模式。`};
     renderStatus({...model.status, inference: result});
     try { renderStatus(await api("/api/status")); }
     catch (error) { notice(`模式已切换，状态刷新失败：${error.message}`, true); }
+    await loadSettings();
   } catch (error) {
     model.modeSwitch = null; model.modeResult = {mode: previousMode, error: true, text: `切换失败：${error.message}`};
     renderModeControls(model.status?.inference);
@@ -1047,7 +1054,7 @@ async function changePage() {
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page; link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
   document.title = `${({comments: "评论工作台", automation: "自主浏览与互动", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await refreshComments(); else if (model.page === "automation") await automationPanel.refresh(); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened()]); }
+  try { if (model.page === "comments") await refreshComments(); else if (model.page === "automation") await automationPanel.refresh(); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh()]); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {

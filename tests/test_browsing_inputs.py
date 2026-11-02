@@ -2,6 +2,7 @@
 
 import copy
 import json
+from itertools import product
 
 import httpx
 import pytest
@@ -9,11 +10,20 @@ from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
 from tuber_studio.browsing_inputs import (
+    CLASSIFICATION_INSTRUCTION,
     ContentDecisionInput,
+    ResponseDecisionInput,
     bind_content_decision,
+    classification_source_groups,
+    classification_view,
+    compact_content_input,
+    encode_repeated_command_prefix,
     format_content_input,
+    join_content_sources,
+    persona_fingerprint,
 )
-from tuber_studio.browsing_models import ContentDecision
+from tuber_studio.browsing_models import BrowsingPolicy, ContentDecision, content_decision_schema
+from tuber_studio.operation_text import operation_character
 from tuber_studio.providers import LlamaCppProvider
 
 
@@ -62,6 +72,121 @@ def test_prepared_intent_combination_has_specific_field_feedback():
 )
 def test_other_participation_choices_remain_available(choice):
     assert ContentDecision.model_validate(choice).model_dump() == choice | {"evidence_ids": []}
+
+
+def schema_branch_matches(branch, value):
+    """Evaluate generated field constraints independently of the intent rule."""
+    if set(value) != set(branch["required"]):
+        return False
+    for name, rule in branch["properties"].items():
+        field = value[name]
+        if "const" in rule and field != rule["const"] or "enum" in rule and field not in rule["enum"]:
+            return False
+        if rule.get("type") == "array":
+            if not rule["minItems"] <= len(field) <= rule["maxItems"]:
+                return False
+            if "enum" in rule["items"] and any(item not in rule["items"]["enum"] for item in field):
+                return False
+    return True
+
+
+def test_content_decoder_accepts_exactly_the_existing_144_intent_combinations():
+    properties = ContentDecision.model_json_schema()["properties"]
+    schema = content_decision_schema({"e1"})
+    combinations = list(
+        product(
+            properties["interest"]["enum"],
+            (False, True),
+            properties["reason"]["enum"],
+            properties["coverage_required"]["enum"],
+        )
+    )
+    assert len(combinations) == 144
+    for interest, worth, reason, coverage in combinations:
+        value = {
+            "interest": interest,
+            "worth_commenting": worth,
+            "reason": reason,
+            "coverage_required": coverage,
+            "evidence_ids": ["e1"],
+        }
+        try:
+            ContentDecision.model_validate(value)
+            accepted = True
+        except ValueError:
+            accepted = False
+        matches = sum(schema_branch_matches(branch, value) for branch in schema["oneOf"])
+        assert matches == int(accepted), value
+
+
+def test_content_decoder_preserves_reference_bounds_and_empty_source_behavior():
+    value = {
+        "interest": "like",
+        "worth_commenting": True,
+        "reason": "specific_detail",
+        "coverage_required": "provided",
+        "evidence_ids": ["e1"],
+    }
+    schema = content_decision_schema({"e1"})
+    for refs, expected in ((["e1"], True), ([], False), (["unknown"], False), (["e1"] * 9, False)):
+        assert (
+            any(schema_branch_matches(branch, value | {"evidence_ids": refs}) for branch in schema["oneOf"])
+            is expected
+        )
+    no_sources = content_decision_schema(set())
+    assert len(no_sources["oneOf"]) == 1
+    assert not schema_branch_matches(no_sources["oneOf"][0], value)
+    declined = value | {
+        "interest": "skip",
+        "worth_commenting": False,
+        "reason": "no_interest",
+        "evidence_ids": [],
+    }
+    assert schema_branch_matches(no_sources["oneOf"][0], declined)
+
+
+def test_content_budget_new_default_keeps_explicit_saved_allowance(browsing):
+    assert BrowsingPolicy().decision_max_tokens == 8192
+    policy = browsing.policy() | {"decision_max_tokens": 2048}
+    browsing.store.set("browsing_policy", policy)
+    assert browsing.policy()["decision_max_tokens"] == 2048
+
+
+def test_repeated_command_prefix_is_generic_multiline_and_reversible():
+    text = "\r\n".join(
+        [
+            "  python worker.py --mode train a",
+            "python worker.py --mode train b",
+            "python worker.py --mode train c",
+        ]
+    )
+    encoded, mapping = encode_repeated_command_prefix(text)
+    assert mapping == ("§", "python worker.py --mode train")
+    assert encoded.replace(*mapping) == text
+    assert len(encoded) + len("=".join(mapping)) + 1 < len(text)
+    assert encoded.startswith("  § a\r\n")
+
+
+def test_command_prefix_never_factors_only_part_of_a_quoted_argument():
+    text = "\n".join(f'python worker.py --mode "train {name}"' for name in ("alpha", "beta", "gamma"))
+    encoded, mapping = encode_repeated_command_prefix(text)
+    assert mapping == ("§", "python worker.py --mode")
+    assert encoded.replace(*mapping) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "python worker.py --mode train a\npython worker.py --mode train b",
+        "a b --x\na b --y\na b --z",  # Mapping overhead equals the characters saved.
+        "python worker.py --mode train a b c",
+        "§\npython worker.py --mode train a\npython worker.py --mode train b\npython worker.py --mode train c",
+        "hello friends today\nhello friends tomorrow\nhello friends again",
+        None,
+    ],
+)
+def test_command_factoring_keeps_small_single_line_and_plain_text_intact(text):
+    assert encode_repeated_command_prefix(text) == (text, None)
 
 
 def material():
@@ -158,6 +283,170 @@ def test_compact_packet_keeps_every_text_time_part_track_and_current_visual_sour
     assert value == snapshot
 
 
+def test_optional_cjk_renderer_keeps_source_characters_ascii_boundaries_and_default_rendering():
+    value = material()
+    original = copy.deepcopy(value)
+    default, _ = ContentDecisionInput(value).present(segments(value))
+    compact, aliases = ContentDecisionInput(value, text_renderer=join_content_sources).present(
+        segments(value)
+    )
+    assert "全部保留。 第二段。" in default["content"]
+    assert "全部保留。第二段。" in compact["content"]
+    assert "原文与空白  全部保留。" in compact["content"]
+    assert compact["segments"] == default["segments"]
+    assert value == original
+    assert [s.id for b in aliases.values() for s in b.sources] == [s["id"] for s in segments(value)]
+    for first, second, expected in [
+        ("hello", "world", "hello world"),
+        ("12", "34", "12 34"),
+        ("你好", " 世界", "你好 世界"),
+    ]:
+        local = material()
+        local["parts"] = local["parts"][:1]
+        local["parts"][0]["segments"][0]["text"] = first
+        local["parts"][0]["segments"][1]["text"] = second
+        presented, _ = ContentDecisionInput(local, text_renderer=join_content_sources).present(
+            segments(local)
+        )
+        assert expected in presented["content"]
+
+
+def test_wider_classification_groups_expand_back_to_exact_individual_response_sources():
+    value = material()
+    value["parts"] = value["parts"][:1]
+    value["parts"][0]["segments"] = [
+        {
+            "id": f"original-{i}",
+            "start": i,
+            "end": i + 0.5,
+            "text": "贝壳灯亮起以后鱼鱼坐在窗边讲一段海底故事呀",
+        }
+        for i in range(30)
+    ]
+    source = copy.deepcopy(value)
+    chunk = segments(value)
+    _, regular = ContentDecisionInput(value).present(chunk)
+    _, grouped = ContentDecisionInput(
+        value, source_grouper=classification_source_groups, text_renderer=join_content_sources
+    ).present(chunk)
+    assert len(grouped) < len(regular)
+    assert [s for block in grouped.values() for s in block.sources] == [
+        s for block in regular.values() for s in block.sources
+    ]
+    bound = bind_content_decision(decision(["e1"]), grouped)
+    selected = [segment for segment in chunk if segment["id"] in set(bound.evidence_ids)]
+    response = ResponseDecisionInput({"kind": "top_level", "evidence": selected})
+    assert len(response.references) == len(selected) > 8
+    wire = {
+        "action": "reply_public",
+        "text": "鱼鱼也想听听这盏灯下的故事。",
+        "reason": "specific_detail",
+        "evidence_ids": [response.references[0].alias, response.references[-1].alias],
+    }
+    assert response.resolve(wire).evidence_ids == [selected[0]["id"], selected[-1]["id"]]
+    assert value == source
+
+
+@pytest.mark.parametrize("second_start", [0.5, 3])
+def test_classification_groups_keep_overlapping_and_gapped_source_boundaries(second_start):
+    value = material()
+    value["parts"] = value["parts"][:1]
+    first, second = value["parts"][0]["segments"]
+    first.update(start=0, end=1)
+    second.update(start=second_start, end=second_start + 1)
+    _, grouped = ContentDecisionInput(value, source_grouper=classification_source_groups).present(
+        segments(value)
+    )
+    assert len(grouped) == 2
+
+
+def test_compact_input_keeps_process_metadata_in_backend_without_mutating_source():
+    value = material()
+    value["metadata"].update(fetched_at=123, published_at=456, tags=[], tags_missing=True)
+    data, _ = ContentDecisionInput(value).present(segments(value))
+    original = copy.deepcopy(data)
+    rendered = compact_content_input(data)
+    assert "读取Unix:" not in rendered and "标签:[]" not in rendered
+    assert "发布Unix:456" in rendered and "标签缺失:true" in rendered
+    assert data == original
+    assert data["metadata"]["fetched_at"] == 123 and data["metadata"]["tags"] == []
+
+
+def test_compact_metadata_keeps_description_facts_and_expands_command_prefix_reversibly():
+    value = material()
+    prefix = "dsh plugin --profile desktop add"
+    description = "\n".join(prefix + " " + plugin for plugin in ("one", "two", "three"))
+    value["metadata"].update(description=description, fetched_at=123.25, published_at=100, tags_missing=False)
+    data, _ = ContentDecisionInput(value).present(segments(value))
+    before = copy.deepcopy(data)
+    text = compact_content_input(data)
+    assert "§=" + prefix in text
+    assert "简介:\n§ one\n§ two\n§ three" in text
+    encoded = text.split("简介:\n", 1)[1].split('\n{"missing_parts"', 1)[0]
+    assert encoded.replace("§", prefix) == description
+    assert "读取Unix:" not in text
+    assert data["metadata"]["fetched_at"] == 123.25
+    assert "发布Unix:100" in text
+    assert "标签缺失:false" in text
+    assert data == before
+
+
+def test_registered_classification_view_is_opt_in_and_follows_complete_persona_changes(tmp_path):
+    character = {
+        "id": "whale",
+        "core": {"identity": "whale", "examples": ["full dialogue"]},
+        "style": {"language": "zh"},
+        "rules": ["listen"],
+    }
+    directory = tmp_path / "config"
+    directory.mkdir()
+    view = {"character_id": "whale", "persona_sha256": persona_fingerprint(character), "brief": "compact"}
+    path = directory / "operations-persona-views.json"
+    path.write_text(json.dumps({"format": 1, "enabled": False, "views": [view]}))
+    assert classification_view(tmp_path, character) is None
+    path.write_text(json.dumps({"format": 1, "enabled": True, "views": [view]}))
+    assert classification_view(tmp_path, character) == view
+    for field, changed in (
+        ("core", {"identity": "edited"}),
+        ("style", {"language": "en"}),
+        ("rules", ["different rules"]),
+    ):
+        assert classification_view(tmp_path, character | {field: changed}) is None
+
+
+def test_content_view_does_not_replace_full_persona_for_response_generation(browsing, monkeypatch):
+    import tuber_studio.browsing_inputs as inputs
+    from tuber_studio.browsing_models import ResponseDecision
+    from tuber_studio.providers import SYSTEM_RULES
+
+    character = operation_character(browsing.runtime.character)
+    view = {
+        "character_id": character["id"],
+        "persona_sha256": persona_fingerprint(character),
+        "brief": "我喜欢新鲜故事与朋友。",
+    }
+    monkeypatch.setattr(
+        inputs, "classification_registry", lambda root: {"format": 1, "enabled": True, "views": [view]}
+    )
+    row = {"character_id": character["id"], "character_version": character["version"]}
+    value = material()
+    data, _ = browsing._content_presentation(value, row).present(segments(value))
+    _, messages, schema = browsing._model_input(row, ContentDecision, data, browsing._content_instruction())
+    assert messages[0]["content"] == "角色：" + view["brief"]
+    assert messages[1]["content"] == CLASSIFICATION_INSTRUCTION
+    assert messages[-1]["content"] == "公开来源材料：" + compact_content_input(data)
+    assert schema == browsing._model_input(row, ContentDecision, data, "same invocation")[2]
+    response = {
+        "kind": "top_level",
+        "evidence": [{"id": "source", "text": "原始素材", "start": 0, "end": 2}],
+        "allowed_evidence_ids": ["source"],
+    }
+    _, body_messages, _ = browsing._model_input(row, ResponseDecision, response, "写角色回应")
+    assert body_messages[0]["content"].startswith(SYSTEM_RULES)
+    assert character["core"]["identity"] in body_messages[0]["content"]
+    assert character["core"]["examples"][0]["reply"] in body_messages[0]["content"]
+
+
 def test_chunk_local_aliases_bind_to_different_originals_and_reject_other_chunk_refs():
     value = material()
     presentation = ContentDecisionInput(value)
@@ -220,6 +509,7 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
     controlled = browsing.runtime.llm
     browsing.runtime.llm = native
     browsing.settings.data["llm"]["context_tokens"] = 4096
+    browsing.store.set("browsing_policy", browsing.policy() | {"decision_max_tokens": 1024})
     try:
         row = await finished(browsing, preview=True)
         assert row["status"] == "completed"
@@ -318,6 +608,9 @@ async def test_one_group_expands_to_twelve_real_segments_through_sqlite_intent(b
 
 @pytest.mark.parametrize("correction", ["prepare", "skip"])
 async def test_inconsistent_intent_reaches_generation_feedback_and_can_change_choice(browsing, correction):
+    # This mock intentionally provides no usage. Three calls must therefore
+    # reserve their full allowances; production still uses reported native usage.
+    browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
     bad = {
         "interest": "like",
         "worth_commenting": True,

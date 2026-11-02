@@ -3,6 +3,7 @@
 import asyncio
 import json
 import secrets
+import socket
 import time
 from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from .api_providers import VisionService, create_llm
 from .browsing_store import BrowsingRepository
 from .context import ContextManager
 from .generation_meter import budgeted_call
+from .inference_node_client import refresh_capabilities
 from .live_media import LiveMedia
 from .media_cache import MediaCache
 from .memory import missing_slots
@@ -27,6 +29,8 @@ from .operations_control import OperationsControl
 from .providers import VoiceService, public_error
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
+from .runtime_modes import ObservationOwner, apply_mode_profile, inference_transition, profile_alignment_error
+from .video_vision_service import restore_admission
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
 
@@ -43,7 +47,7 @@ class Runtime:
         self.llm = create_llm(settings)
         self.voices = VoiceService(settings)
         self.vision = VisionService(
-            settings.data.get("vision", {"kind": "disabled"}), settings.provider_key("vision")
+            settings.data.get("vision", {"kind": "disabled"}), settings.endpoint_key("vision")
         )
         self.context = ContextManager(settings, store, self.llm)
         self.retention = RetentionManager(settings, store)
@@ -89,6 +93,10 @@ class Runtime:
         self.inference_status = {"mode": "text" if mode == "exclusive" else mode, "active": None}
         self.inference_observer = None
         self.mode_lock = asyncio.Lock()
+        self.client_cleanup = set()
+        self.node_capabilities = None
+        self.inference_revision = 0
+        self.profile_alignment_failed = False
 
     @property
     def character(self):
@@ -97,10 +105,10 @@ class Runtime:
     @asynccontextmanager
     async def offline_generation(self):
         while True:
-            while self.state in {"live", "paused"} and (self.current_id or self.queue):
+            while self.operations_waiting():
                 await asyncio.sleep(0.2)
             await self.generation_lock.acquire()
-            if self.state in {"live", "paused"} and (self.current_id or self.queue):
+            if self.operations_waiting():
                 self.generation_lock.release()
                 continue
             try:
@@ -109,12 +117,33 @@ class Runtime:
                 self.generation_lock.release()
             return
 
+    def operations_waiting(self):
+        profiles = self.settings.data.get("work_mode_profiles")
+        if profiles and (
+            self.inference_status.get("mode") != "text"
+            or self.inference_status.get("state") in {"error", "loading", "starting", "switching"}
+            or profile_alignment_error(self, self.inference_status)
+        ):
+            return True
+        return self.state in {"live", "paused"} and bool(self.current_id or self.queue)
+
     async def open(self):
         await self.online_songs.open()
         try:
+            if self.settings.data.get("work_mode_profiles") and self.inference_client:
+                observed = await self.refresh_inference()
+                async with self.generation_lock:
+                    await apply_mode_profile(self, observed["mode"])
+                if observed.get("provider_alignment_error"):
+                    await self.refresh_inference()
             await self.llm.health()
         except Exception as error:
             self.error = public_error(error)
+        if getattr(self, "browsing", None):
+            try:
+                await restore_admission(self)
+            except Exception:
+                pass
         await self.cleanup_retention(automatic=True)
         self.retention_worker = asyncio.create_task(self._retention_loop())
         self.worker = asyncio.create_task(self._loop())
@@ -139,6 +168,7 @@ class Runtime:
         await self.vision.close()
         if self.inference_client:
             await self.inference_client.aclose()
+        await asyncio.gather(*self.client_cleanup, return_exceptions=True)
 
     async def cleanup_retention(self, before=None, *, automatic=False):
         if automatic and self.retention.days is None:
@@ -187,33 +217,74 @@ class Runtime:
             "timings": self.timings,
             "context": self.context.status(),
             "inference": self.inference_status,
+            "inference_node": self.node_capabilities,
+            "deployment": {
+                "mode": self.settings.data.get("inference_broker", {}).get("deployment", "local"),
+                "business_data": str(self.settings.runtime),
+                "business_host": socket.gethostname(),
+                "inference_url": self.settings.data.get("inference_broker", {}).get("base_url"),
+            },
             "playback": self.playback,
+            "operations_waiting": self.operations_waiting(),
         }
 
     async def refresh_inference(self):
-        if self.inference_client is None:
+        owner = ObservationOwner.capture(self)
+        if owner.client is None:
             raise ValueError("当前运行方式未启用设备资源模式")
-        response = await self.inference_client.get("/health", timeout=httpx.Timeout(2, connect=1))
-        response.raise_for_status()
-        observed = response.json()
+        try:
+            response = await owner.client.get("/health", timeout=httpx.Timeout(2, connect=1))
+            response.raise_for_status()
+            observed = response.json()
+        except Exception:
+            if not owner.current(self):
+                return self.inference_status
+            raise
+        if not owner.current(self):
+            return self.inference_status
         if observed.get("mode") == "exclusive":
             observed["mode"] = "text"
         observed["active"] = observed.get("active_provider")
+        if error := profile_alignment_error(self, observed):
+            self.profile_alignment_failed = True
+            observed = observed | {"state": "error", "error": error, "provider_alignment_error": True}
         self.inference_status = observed
         if observed.get("mode") in {"text", "live"}:
             self.settings.data["inference_broker"]["mode"] = observed["mode"]
         return observed
 
     async def _observe_inference(self):
+        iteration = 0
         while True:
+            owner = ObservationOwner.capture(self)
             try:
                 await self.refresh_inference()
             except Exception as error:
-                self.inference_status = self.inference_status | {
-                    "state": "error",
-                    "active": None,
-                    "error": public_error(error),
-                }
+                if owner.current(self):
+                    self.inference_status = self.inference_status | {
+                        "state": "error",
+                        "active": None,
+                        "error": public_error(error),
+                    }
+            if (
+                self.settings.data.get("inference_broker", {}).get("deployment") == "remote"
+                and iteration % 5 == 0
+            ):
+                owner = ObservationOwner.capture(self)
+                try:
+                    await refresh_capabilities(self)
+                    if (
+                        owner.current(self)
+                        and self.inference_status.get("mode") == "text"
+                        and getattr(self, "browsing", None)
+                    ):
+                        await restore_admission(self)
+                except Exception as error:
+                    if owner.current(self) and self.node_capabilities is not None:
+                        self.node_capabilities = self.node_capabilities | {
+                            "monitoring_error": public_error(error)
+                        }
+            iteration += 1
             await asyncio.sleep(2)
 
     async def set_work_mode(self, mode):
@@ -224,29 +295,56 @@ class Runtime:
         if self.inference_client is None:
             raise ValueError("当前运行方式未启用设备资源模式")
         async with self.mode_lock:
-            if mode == "text":
-                # Stop producers and invalidate playback before releasing TTS.
-                await self.control("stop")
-            async with self.generation_lock:
-                try:
-                    response = await self.inference_client.post("/mode", json={"mode": mode})
-                    response.raise_for_status()
-                    observed = response.json()
-                    if observed.get("mode") != mode:
-                        raise ValueError("设备未确认目标工作模式")
-                    observed["active"] = observed.get("active_provider")
-                    self.inference_status = observed
-                    self.settings.data["inference_broker"]["mode"] = mode
-                    return observed
-                except Exception as error:
+            with inference_transition(self):
+                if mode == "text":
+                    # Stop producers and invalidate playback before releasing TTS.
+                    await self.control("stop")
+                async with self.generation_lock:
+                    previous_mode = self.settings.data.get("inference_broker", {}).get("mode", "text")
                     try:
-                        await self.refresh_inference()
-                    except Exception:
-                        self.inference_status = self.inference_status | {
-                            "state": "error",
-                            "error": "工作模式结果待设备重新确认",
-                        }
-                    raise ValueError("工作模式切换失败：" + public_error(error)) from None
+                        response = await self.inference_client.post("/mode", json={"mode": mode})
+                        response.raise_for_status()
+                        observed = response.json()
+                        if observed.get("mode") != mode:
+                            raise ValueError("设备未确认目标工作模式")
+                        await apply_mode_profile(self, mode)
+                        observed["active"] = observed.get("active_provider")
+                        self.inference_status = observed
+                        self.settings.data["inference_broker"]["mode"] = mode
+                        return observed
+                    except BaseException as error:
+                        if self.settings.data.get("work_mode_profiles"):
+
+                            async def rollback():
+                                response = await self.inference_client.post(
+                                    "/mode", json={"mode": previous_mode}
+                                )
+                                response.raise_for_status()
+                                if response.json().get("mode") != previous_mode:
+                                    raise ValueError("原工作模式未恢复")
+
+                            cleanup = asyncio.create_task(rollback())
+                            while not cleanup.done():
+                                try:
+                                    await asyncio.shield(cleanup)
+                                except asyncio.CancelledError:
+                                    continue
+                                except Exception:
+                                    break
+                            try:
+                                cleanup.result()
+                            except BaseException:
+                                self.error = "模式切换结果待核对，请恢复推理节点连接"
+                        try:
+                            await self.refresh_inference()
+                        except Exception:
+                            self.inference_status = self.inference_status | {
+                                "state": "error",
+                                "error": "工作模式结果待设备重新确认",
+                            }
+                        if isinstance(error, asyncio.CancelledError):
+                            raise
+                        raise ValueError("工作模式切换失败：" + public_error(error)) from None
 
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):
         """Generate once with source memory; lexical diagnostics never rewrite speech."""

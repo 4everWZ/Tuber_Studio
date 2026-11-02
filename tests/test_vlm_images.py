@@ -96,7 +96,7 @@ def test_official_280_token_spatial_sizes(size, expected):
 
 def test_gemma_missing_extra_does_not_silently_use_native(monkeypatch):
     block_pillow(monkeypatch)
-    with pytest.raises(RuntimeError, match="pillow==13.0.0"):
+    with pytest.raises(RuntimeError, match="pillow==10.4.0"):
         images.prepare_image(png(), "image/png", "gemma4_image_280")
 
 

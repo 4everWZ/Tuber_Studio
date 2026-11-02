@@ -19,6 +19,13 @@ BV = "BV1d8pU6xEZX"
 
 def model_packet(source):
     body = source.split("：", 1)[1]
+    if not body.startswith("{"):
+        header, content = body.split("\n内容:\n", 1)
+        value = json.loads(header.rsplit("\n", 1)[-1])
+        value["metadata"] = {"title": header.split("\n", 1)[0].removeprefix("标题:")}
+        value["content"] = content
+        value["segments"] = [{"id": reference} for reference in re.findall(r"(?m)^\[(e\d+)\|", content)]
+        return value
     if "\n\n所选材料：\n" in body:
         header, content = body.split("\n\n所选材料：\n", 1)
         value = json.loads(header)
@@ -535,6 +542,7 @@ async def test_cache_pins_drafts_and_clear_does_not_clear_audit(browsing):
 async def test_long_cc_chunks_use_provider_tokens_and_keep_every_reference(browsing):
     await browsing.preflight()
     browsing.settings.data["llm"]["context_tokens"] = 4096
+    browsing.store.set("browsing_policy", browsing.policy() | {"decision_max_tokens": 1024})
     segments = [{"id": str(i), "start": i, "end": i + 1, "text": "盐水实验浮力测试" * 70} for i in range(30)]
     material = {
         "metadata": {"parts": [{"cid": "11", "title": "第一P"}]},

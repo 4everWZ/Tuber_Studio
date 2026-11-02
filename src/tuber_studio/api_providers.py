@@ -10,6 +10,7 @@ from typing import Protocol
 from .compaction import ContextWindowExceeded, IncompleteCompaction
 from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, models_health, response_json
+from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
 from .providers import (
     DemoProvider,
@@ -299,7 +300,21 @@ class VisionService:
         if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 8000:
             raise ValueError("图片问题须为1到8000字")
         validate_image(image, mime_type)
+        prepared = (
+            await asyncio.to_thread(
+                prepare_image, image, mime_type, self.config.get("image_profile", "server_native")
+            )
+            if self.config.get("image_profile", "server_native") != "server_native"
+            else {"data": image, "mime_type": mime_type}
+        )
+        image, mime_type = prepared["data"], prepared["mime_type"]
         data_url = f"data:{mime_type};base64," + base64.b64encode(image).decode("ascii")
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]
+        if self.config.get("image_order") == "image_first":
+            content.reverse()
         result = await response_json(
             self.client,
             "POST",
@@ -309,14 +324,17 @@ class VisionService:
                 "messages": [
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": data_url}},
-                        ],
+                        "content": content,
                     }
                 ],
-                "max_tokens": 1024,
+                "max_tokens": self.config.get("max_tokens", 1024),
                 "stream": False,
+                **(
+                    {"chat_template_kwargs": {"enable_thinking": self.config["enable_thinking"]}}
+                    if "enable_thinking" in self.config
+                    else {}
+                ),
+                **llama_cpp_sampling(self.config),
             },
         )
         choices = result.get("choices", [])

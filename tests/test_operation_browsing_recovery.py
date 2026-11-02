@@ -12,6 +12,7 @@ from tuber_studio.browsing_models import BrowsingPolicy
 
 async def test_generation_wait_checkpoint_resumes_original_material_and_stays_preview(browsing):
     service = browsing
+    service.store.set("browsing_policy", service.policy() | {"max_output_tokens": 32768})
     platform, model = service.adapter, service.runtime.llm
     original = model.generate_json
     repairing = False

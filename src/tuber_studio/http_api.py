@@ -30,7 +30,10 @@ def endpoint(value):
     if parsed.scheme == "http":
         host = parsed.hostname
         try:
-            local = ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback
+            address = ipaddress.ip_address(host)
+            local = (
+                address.is_private or address.is_loopback or address in ipaddress.ip_network("100.64.0.0/10")
+            )
         except ValueError:
             local = host in {"localhost", "host.docker.internal", "jetson"} or host.endswith(".local")
         if not local:

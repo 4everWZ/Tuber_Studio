@@ -669,13 +669,20 @@ async def test_process_runner_owns_session_and_confirms_group_stop(tmp_path, mon
         return process
 
     runner._advise_owned_model_cache = lambda: calls.append("cache_advice")
+    original_stop = runner.stop
+
+    async def observed_stop(key):
+        calls.append(("stop", key))
+        await original_stop(key)
+
+    runner.stop = observed_stop
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
     monkeypatch.setattr(os, "killpg", lambda pid, sig: calls.append((pid, sig)), raising=False)
     monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
     runner.validate_all = profiles
     await runner.start("llm2b")
-    assert calls[0] == "cache_advice"
-    args, options = calls[1]
+    assert calls[:2] == [("stop", "llm2b"), "cache_advice"]
+    args, options = calls[2]
     assert args[0] == str(runner.llama_binary)
     assert options["start_new_session"] is True and "shell" not in options
     assert options["env"]["TUBER_GPT_SOVITS_ROOT"] == "/opt/GPT-SoVITS-v2"
@@ -1405,12 +1412,18 @@ def cache_advice_support(monkeypatch, implementation):
 def test_cache_advice_only_touches_fixed_model_directories_and_suffixes(tmp_path, monkeypatch):
     wanted = {
         "models/a.gguf",
+        "node-assets/vision-only-Q8.gguf",
         "tts/weights/b.pth",
         "tts/weights/c.ckpt",
         "tts/pretrained/d.bin",
         "tts/pretrained/e.safetensors",
     }
-    ignored = {"models/config.json", "tts/ref/reference.wav", "private/other.gguf"}
+    ignored = {
+        "models/config.json",
+        "node-assets/settings.json",
+        "tts/ref/reference.wav",
+        "private/other.gguf",
+    }
     for relative in wanted | ignored:
         path = tmp_path / "runtime" / relative
         path.parent.mkdir(parents=True, exist_ok=True)

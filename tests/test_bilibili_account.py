@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.bilibili_account import avatar_url
+from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, avatar_url
 from tuber_studio.bilibili_browsing import BrowsingAdapter
 
 PNG = base64.b64decode(
@@ -125,14 +125,17 @@ def test_credentials_survive_restart_but_login_status_requires_new_verification(
     with TestClient(create_app(settings)) as first:
         first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         configure(first)
-        assert first.post("/api/account/bilibili/refresh").json()["state"] == "logged_in"
+        original = first.post("/api/account/bilibili/refresh").json()
+        assert original["state"] == "logged_in"
     count = len(network[0])
     with TestClient(create_app(settings)) as second:
         second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         response = second.get("/api/account/bilibili")
         assert response.json()["state"] == "unverified"
         assert response.json()["configured"] == {"sessdata": True, "csrf": True}
-        assert response.json()["profile"] is None
+        assert response.json()["profile"] == original["profile"]
+        assert response.json()["checked_at"] == original["checked_at"]
+        assert response.json()["attempted_at"] is None
         assert len(network[0]) == count
 
 
@@ -180,6 +183,52 @@ def test_expired_restricted_and_exception_states_are_sanitized(account_client, c
     assert response.json()["state"] == expected
     assert response.json()["profile"] is None
     assert all(secret not in response.text for secret in SECRET.values())
+
+
+@pytest.mark.parametrize(("code", "error", "expected"), [(-352, False, "restricted"), (0, True, "error")])
+def test_transient_refresh_retains_last_verified_profile_and_time(account_client, code, error, expected):
+    client, app, _, state = account_client
+    configure(client)
+    original = client.post("/api/account/bilibili/refresh").json()
+    assert client.get("/api/account/bilibili/avatar").content == PNG
+    state.update(nav_code=code, network_error=error)
+    failed = client.post("/api/account/bilibili/refresh").json()
+    assert failed["state"] == expected
+    assert failed["profile"] == original["profile"]
+    assert failed["checked_at"] == original["checked_at"]
+    assert failed["attempted_at"] >= original["attempted_at"]
+    assert failed["error"]
+    # A temporary platform failure also keeps the already-fetched avatar.
+    assert client.get("/api/account/bilibili/avatar").content == PNG
+    cached = app.state.store.get(PROFILE_CACHE_KEY)
+    assert cached["profile"] == original["profile"]
+    assert all(secret not in json.dumps(cached) for secret in SECRET.values())
+
+
+def test_confirmed_expiry_clears_last_profile_and_verified_account_binding(account_client):
+    client, app, _, state = account_client
+    configure(client)
+    assert client.post("/api/account/bilibili/refresh").json()["state"] == "logged_in"
+    state["nav_code"] = -101
+    failed = client.post("/api/account/bilibili/refresh").json()
+    assert failed["state"] == "expired"
+    assert failed["profile"] is None
+    assert app.state.store.get(PROFILE_CACHE_KEY) is None
+    assert app.state.comments.display_account_id() == ""
+
+
+def test_unchanged_credentials_keep_profile_but_replacement_and_clear_drop_it(account_client):
+    client, app, _, _ = account_client
+    configure(client)
+    original = client.post("/api/account/bilibili/refresh").json()
+    unchanged = client.put("/api/account/bilibili", json={"sessdata": " ", "csrf": ""}).json()
+    assert unchanged["profile"] == original["profile"]
+    replaced = client.put("/api/account/bilibili", json={"sessdata": "new-account"}).json()
+    assert replaced["profile"] is None
+    assert app.state.store.get(PROFILE_CACHE_KEY) is None
+    assert client.post("/api/account/bilibili/refresh").json()["profile"]
+    assert client.put("/api/account/bilibili", json={"clear": True}).json()["profile"] is None
+    assert app.state.store.get(PROFILE_CACHE_KEY) is None
 
 
 def test_avatar_proxy_has_no_platform_cookies_and_caches_only_current_identity(account_client):

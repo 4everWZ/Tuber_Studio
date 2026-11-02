@@ -1,8 +1,12 @@
 """Compact model input and invocation-local, typed evidence bindings."""
 
+import hashlib
 import json
+import re
+import shlex
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 
 from .browsing_models import ContentDecision, ResponseDecision
 from .subtitle_presentation import (
@@ -21,6 +25,210 @@ def format_content_input(data):
     # identifiers and headings already occur once in the readable body.
     header = {key: value for key, value in data.items() if key not in {"content", "segments", "parts"}}
     return json.dumps(header, ensure_ascii=False, separators=(",", ":")) + "\n\n内容：\n" + data["content"]
+
+
+CLASSIFICATION_INPUT_VERSION = "content-c6i-v1"
+CLASSIFICATION_INSTRUCTION = (
+    "按角色兴趣决定是否准备回应，本阶段不选公私信。interest=like表示想参与，worth_commenting表示有具体想说的话；吐槽、共情、轻互动与分享都算。"
+    "reason：specific_detail有回应点；no_interest无兴趣；nothing_to_add读懂无补充；insufficient_evidence想回应的内容缺材料；visual_required想回应的内容需新画面；unsafe_interaction涉及骚扰、伤害他人或公开隐私而略过。"
+    "各字段表达同一意图。准备回应：interest=like,worth_commenting=true,reason=specific_detail；想补读：interest=need_more,worth_commenting=false；不发言worth_commenting=false。"
+    "source_kinds与has_visual描述已有材料，字幕和画面观察均可作为依据。coverage_required表示还需补充什么：provided当前够用，visual需新画面，unread_part需其它分P。"
+    "evidence_ids选相关[eN|起始时码]块，准备回应选1–8项；字幕/画面按分P与类型区分。"
+)
+
+
+def persona_fingerprint(character):
+    value = {key: character[key] for key in ("core", "style", "rules")}
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def classification_registry(root: Path):
+    path = root / "config/operations-persona-views.json"
+    if not path.is_file():
+        return {"format": 1, "enabled": False, "views": []}
+    if path.is_symlink() or path.stat().st_size > 65536:
+        raise ValueError("内容分类角色视图须为受控的小型配置文件")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(value, dict)
+        or value.get("format") != 1
+        or type(value.get("enabled")) is not bool
+        or not isinstance(value.get("views"), list)
+    ):
+        raise ValueError("内容分类角色视图配置无效")
+    return value
+
+
+def classification_view(root: Path, character):
+    registry = classification_registry(root)
+    if not registry["enabled"]:
+        return None
+    fingerprint = persona_fingerprint(character)
+    for view in registry["views"]:
+        if (
+            isinstance(view, dict)
+            and view.get("character_id") == character["id"]
+            and view.get("persona_sha256") == fingerprint
+            and isinstance(view.get("brief"), str)
+            and view["brief"].strip()
+        ):
+            return view
+    return None
+
+
+def join_content_sources(block):
+    """Remove added Chinese separators, retaining all source characters."""
+
+    def cjk(char):
+        return any(
+            lo <= ord(char) <= hi
+            for lo, hi in (
+                (0x3400, 0x4DBF),
+                (0x4E00, 0x9FFF),
+                (0xF900, 0xFAFF),
+                (0x3000, 0x303F),
+                (0xFF00, 0xFFEF),
+            )
+        )
+
+    pieces = [source.text for source in block.sources if source.text.strip()]
+    if not pieces:
+        return ""
+    result = pieces[0]
+    for piece in pieces[1:]:
+        separator = (
+            "" if result[-1].isspace() or piece[0].isspace() or cjk(result[-1]) and cjk(piece[0]) else " "
+        )
+        result += separator + piece
+    return result
+
+
+def classification_source_groups(sources):
+    """Use wider intermediate citations; final responses retain original rN."""
+    groups, current, characters = [], [], 0
+    for sources_in_block in paragraph_sources(sources):
+        added = sum(len(source.text) for source in sources_in_block)
+        if current:
+            first, last, following = current[0], current[-1], sources_in_block[0]
+            if (
+                last.part != following.part
+                or last.part.kind == "visual_observation"
+                or following.position != last.position + 1
+                or following.start < last.end
+                or following.start - last.end > 1.2
+                or sources_in_block[-1].end - first.start > 90
+                or characters + added > 480
+            ):
+                groups.append(tuple(current))
+                current, characters = [], 0
+        current.extend(sources_in_block)
+        characters += added
+    if current:
+        groups.append(tuple(current))
+    return groups
+
+
+def encode_repeated_command_prefix(description):
+    """Factor a repeated shell-word prefix; return a literal reversible map."""
+    alias = "§"
+    if not isinstance(description, str) or alias in description:
+        return description, None
+    lines = description.splitlines(keepends=True)
+    groups = {}
+    for index, line in enumerate(lines):
+        command = line.lstrip(" \t").rstrip("\r\n")
+        try:
+            lexer = shlex.shlex(command, posix=False)
+            lexer.whitespace_split, lexer.commenters = True, ""
+            words = list(lexer)
+        except ValueError:
+            continue
+        if len(words) < 3 or not re.fullmatch(r"[A-Za-z0-9_./\\-]+", words[0]):
+            continue
+        if not any(re.match(r"--?[A-Za-z]", word) for word in words[1:]):
+            continue
+        groups.setdefault(tuple(words[:2]), []).append((index, command, words))
+    ranked = []
+    for group in groups.values():
+        if len(group) < 3:
+            continue
+        shared_words = []
+        for aligned in zip(*(words for _, _, words in group), strict=False):
+            if len(set(aligned)) != 1:
+                break
+            shared_words.append(aligned[0])
+        if len(shared_words) < 2:
+            continue
+        first, end = group[0][1], 0
+        for word in shared_words:
+            end = first.index(word, end) + len(word)
+        prefix = first[:end]
+        if not all(command.startswith(prefix) for _, command, _ in group):
+            continue
+        indices = {index for index, _, _ in group}
+        ranked.append(((len(prefix) - len(alias)) * len(indices) - len(prefix) - 3, prefix, indices))
+    if not ranked:
+        return description, None
+    savings, prefix, indices = max(ranked, key=lambda candidate: (candidate[0], len(candidate[1])))
+    if savings <= 0:
+        return description, None
+    encoded = list(lines)
+    for index in indices:
+        line = lines[index]
+        start = len(line) - len(line.lstrip(" \t"))
+        encoded[index] = line[:start] + alias + line[start + len(prefix) :]
+    return "".join(encoded), (alias, prefix)
+
+
+def compact_content_input(data):
+    """Keep source facts, using one reversible spelling for repeated commands."""
+    metadata = deepcopy(data["metadata"])
+    metadata.pop("fetched_at", None)
+    if metadata.get("tags") == []:
+        metadata.pop("tags")
+    lines = []
+    labels = {
+        "title": "标题",
+        "owner": "作者",
+        "duration": "时长秒",
+        "category_id": "分区",
+        "description_complete": "简介完整",
+        "published_at": "发布Unix",
+        "tags": "标签",
+        "tags_missing": "标签缺失",
+    }
+    for key, label in labels.items():
+        if key in metadata:
+            value = metadata.pop(key)
+            text = (
+                value
+                if isinstance(value, str)
+                else json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            )
+            lines.append(label + ":" + text)
+    if "description" in metadata:
+        description = metadata.pop("description")
+        description, substitution = encode_repeated_command_prefix(description)
+        if substitution:
+            alias, prefix = substitution
+            lines.append(alias + "=" + prefix)
+        if not isinstance(description, str):
+            description = json.dumps(description, ensure_ascii=False, separators=(",", ":"))
+        lines.append("简介:\n" + description)
+    if metadata:
+        lines.append("其它元数据:" + json.dumps(metadata, ensure_ascii=False, separators=(",", ":")))
+    other = {
+        key: value for key, value in data.items() if key not in {"metadata", "content", "parts", "segments"}
+    }
+    lines.append(json.dumps(other, ensure_ascii=False, separators=(",", ":")))
+    content = data["content"]
+    title = data["metadata"].get("title")
+    prefix = "视频第1部分（P1） " + title if isinstance(title, str) and title else None
+    if prefix and content.startswith(prefix):
+        content = "P1" + content[len(prefix) :]
+    return "\n".join(lines) + "\n内容:\n" + content
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,7 +375,9 @@ class ResolvedContentDecision:
 
 
 class ContentDecisionInput:
-    def __init__(self, material):
+    def __init__(self, material, *, text_renderer=None, source_grouper=None):
+        self.text_renderer = text_renderer
+        self.source_grouper = source_grouper or paragraph_sources
         self.metadata = deepcopy(material["metadata"])
         self.coverage = deepcopy(material["coverage"])
         self.missing_parts = deepcopy(material["missing_parts"])
@@ -230,7 +440,7 @@ class ContentDecisionInput:
             seen.add(key)
             selected.append(source)
         blocks = tuple(
-            CitationBlock(f"e{index}", group) for index, group in enumerate(paragraph_sources(selected), 1)
+            CitationBlock(f"e{index}", group) for index, group in enumerate(self.source_grouper(selected), 1)
         )
         used_parts = sorted({block.part.index for block in blocks})
         kinds = sorted({self.parts[index].kind for index in used_parts})
@@ -253,7 +463,7 @@ class ContentDecisionInput:
             )
         return {
             "metadata": metadata,
-            "content": render_blocks(blocks),
+            "content": render_blocks(blocks, text_renderer=self.text_renderer),
             "segments": [{"id": block.alias, "part": block.part.index} for block in blocks],
             "parts": [self.parts[index].wire() for index in used_parts],
             "missing_parts": missing,

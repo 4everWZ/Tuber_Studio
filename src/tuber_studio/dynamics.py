@@ -33,6 +33,7 @@ from .operation_text import MAX_OPERATION_TEXT_BYTES, operation_character, opera
 from .operations_control import OperationsControl, canonical_intent
 from .operations_memory import OperationsMemory
 from .publication_errors import PlatformRejected, UnknownPublication
+from .runtime_modes import operation_generation_context
 
 DEFAULT_POLICY = {
     "enabled": False,
@@ -1034,7 +1035,7 @@ class Dynamics:
             ]
             selected, selection_failed = None, False
             try:
-                async with self.runtime.generation_lock:
+                async with operation_generation_context(self.runtime, self.settings):
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])

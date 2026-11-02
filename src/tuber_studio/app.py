@@ -6,6 +6,7 @@ import binascii
 import json
 import secrets
 import time
+import weakref
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -30,6 +31,8 @@ from .comments import Comments
 from .config import Settings
 from .direct_messages import DirectMessages
 from .dynamics import Dynamics
+from .inference_node_client import pair_node, refresh_capabilities
+from .inference_node_client import status as inference_node_status
 from .live_api import register_live_api
 from .live_media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
@@ -41,7 +44,9 @@ from .operation_recovery_api import register_operation_recovery_api
 from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
 from .runtime import Runtime
+from .runtime_authority import acquire_business_writer
 from .store import Store
+from .video_vision_service import configured_video_provider, probe_visual
 
 
 def create_app(
@@ -53,9 +58,15 @@ def create_app(
     video_evidence_factory=None,
 ):
     settings = settings or Settings()
-    AuthSessions.prepare_runtime(settings)
-    seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
-    store = Store(settings.runtime / "studio.sqlite3", seeds)
+    writer = acquire_business_writer(settings.runtime)
+    writer.__enter__()
+    try:
+        AuthSessions.prepare_runtime(settings)
+        seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
+        store = Store(settings.runtime / "studio.sqlite3", seeds)
+    except BaseException:
+        writer.__exit__(None, None, None)
+        raise
     sessions = AuthSessions(settings, store)
     runtime = Runtime(settings, store, singing_provider=singing_provider)
     comments = Comments(settings, store, runtime, adapter)
@@ -64,7 +75,11 @@ def create_app(
     dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
     messages = DirectMessages(settings, store, runtime, comments, message_adapter, memes=memes)
     comments.direct_messages = messages
-    visual = video_evidence_factory(runtime) if video_evidence_factory is not None else None
+    visual = (
+        video_evidence_factory(runtime)
+        if video_evidence_factory is not None
+        else configured_video_provider(runtime)
+    )
     browsing = BrowsingService(settings, store, runtime, comments, messages, dynamics, visual=visual)
     runtime.browsing = browsing
     login_attempts = {}
@@ -94,9 +109,13 @@ def create_app(
                             try:
                                 await runtime.close()
                             finally:
-                                store.close()
+                                try:
+                                    store.close()
+                                finally:
+                                    release_writer()
 
     app = FastAPI(title="Tuber Studio", lifespan=lifespan, docs_url=None, redoc_url=None)
+    release_writer = weakref.finalize(app, writer.__exit__, None, None, None)
     app.state.runtime, app.state.comments, app.state.store = runtime, comments, store
     app.state.dynamics = dynamics
     app.state.messages = messages
@@ -285,6 +304,40 @@ def create_app(
     @app.post("/api/inference/mode", dependencies=[Depends(require_admin)])
     async def work_mode(mode: Literal["text", "live"] = Body(embed=True)):
         return await runtime.set_work_mode(mode)
+
+    @app.get("/api/inference/node", dependencies=[Depends(require_admin)])
+    async def inference_node():
+        return inference_node_status(runtime)
+
+    @app.post("/api/inference/node/check", dependencies=[Depends(require_admin)])
+    async def check_inference_node():
+        await refresh_capabilities(runtime)
+        return inference_node_status(runtime)
+
+    @app.put("/api/inference/node", dependencies=[Depends(require_admin)])
+    async def configure_inference_node(data: dict = Body(...)):
+        return await pair_node(runtime, data)
+
+    @app.post("/api/inference/node/vision-probe", dependencies=[Depends(require_admin)])
+    async def probe_inference_vision():
+        return await probe_visual(runtime)
+
+    @app.post("/api/inference/node/idle", dependencies=[Depends(require_admin)])
+    async def release_inference_cache():
+        if not runtime.inference_client:
+            raise ValueError("尚未配置推理节点")
+        if runtime.state != "stopped" or runtime.generation_lock.locked() or runtime.mode_lock.locked():
+            raise ValueError("请先停止直播并等待当前任务结束")
+        if runtime.inference_status.get("mode") != "text":
+            raise ValueError("请先切到运营模式")
+        async with runtime.mode_lock, runtime.generation_lock:
+            response = await runtime.inference_client.post("/idle", json={})
+            response.raise_for_status()
+            runtime.inference_status = response.json()
+            cleared = await runtime.inference_client.post("/cache/clear", json={})
+            cleared.raise_for_status()
+            result = cleared.json()
+        return {"cache_result": result, "capabilities": await refresh_capabilities(runtime)}
 
     @app.post("/api/live/mock-event", dependencies=[Depends(require_admin)])
     async def mock_event(event: Event):

@@ -132,6 +132,7 @@
               <div id="retention-preview-panel" class="retention-preview" hidden><p id="retention-preview-cutoff" class="hint"></p><dl id="retention-preview-counts" class="description-list"></dl><details><summary>完整预览结果</summary><pre id="retention-preview-detail" class="code-small"></pre></details><label class="check-field"><input id="retention-confirm" type="checkbox" disabled>我已核对以上范围与数量，确认永久清理这些记录</label><button id="retention-cleanup" class="danger" type="button" disabled>确认清理预览范围</button></div><p id="retention-cleanup-state" class="hint" role="status">请先预览待清理范围，再明确确认。</p>
             </div>
           </article>
+          <section class="panel" id="inference-node-panel"></section>
           <section class="panel" id="cache-panel"></section>
           <details class="panel"><summary id="overlay-heading">OBS 播放器配置（直播后续）</summary><p id="overlay-help" class="muted">直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
           <details class="panel"><summary>当前已保存配置（脱敏，只读）</summary><p class="hint">API Key 不会回显；上方表单的未保存修改不会出现在此处。</p><pre id="settings-json" class="code-small"></pre></details>
@@ -141,6 +142,7 @@
     </div>
   </div>
   <script src="/static/cache-panel.js" defer></script>
+  <script src="/static/inference-node.js" defer></script>
   <script src="/static/memes.js" defer></script>
   <script src="/static/continuation.js" defer></script>
   <script src="/static/messages.js" defer></script>

@@ -61,24 +61,30 @@ def test_cookie_persists_across_app_restart_and_browser_clear_requires_login(set
 
 def test_reset_token_revokes_all_clients_and_old_bearers_without_changing_overlay(settings):
     old, overlay = settings.admin_token, settings.overlay_token
-    app_one, app_two = create_app(settings, ReadOnlyPlatform()), create_app(settings, ReadOnlyPlatform())
-    with TestClient(app_one) as one, TestClient(app_two) as two:
-        one.post("/api/auth", json={"token": old}).raise_for_status()
-        two.post("/api/auth", json={"token": old}).raise_for_status()
-        assert (
-            one.post("/api/auth/reset-token", headers={"Origin": "https://other.example"}).status_code == 403
-        )
-        reset = one.post("/api/auth/reset-token")
-        assert reset.status_code == 200
-        new = reset.json()["token"]
-        assert reset.json()["authenticated"] is False and new != old
-        assert one.cookies.get("tuber_admin") is None
-        assert two.get("/api/status").status_code == 401
-        assert two.get("/api/status", headers={"Authorization": "Bearer " + old}).status_code == 401
-        assert two.post("/api/auth", json={"token": old}).status_code == 401
-        assert two.post("/api/auth", json={"token": new}).status_code == 200
-        assert new not in two.get("/api/status").text
-        assert two.post("/api/overlay/auth", json={"token": overlay}).status_code == 200
+    app = create_app(settings, ReadOnlyPlatform())
+    # Independent browser cookies share one authoritative business application.
+    with TestClient(app) as one:
+        two = TestClient(app)
+        try:
+            one.post("/api/auth", json={"token": old}).raise_for_status()
+            two.post("/api/auth", json={"token": old}).raise_for_status()
+            assert (
+                one.post("/api/auth/reset-token", headers={"Origin": "https://other.example"}).status_code
+                == 403
+            )
+            reset = one.post("/api/auth/reset-token")
+            assert reset.status_code == 200
+            new = reset.json()["token"]
+            assert reset.json()["authenticated"] is False and new != old
+            assert one.cookies.get("tuber_admin") is None
+            assert two.get("/api/status").status_code == 401
+            assert two.get("/api/status", headers={"Authorization": "Bearer " + old}).status_code == 401
+            assert two.post("/api/auth", json={"token": old}).status_code == 401
+            assert two.post("/api/auth", json={"token": new}).status_code == 200
+            assert new not in two.get("/api/status").text
+            assert two.post("/api/overlay/auth", json={"token": overlay}).status_code == 200
+        finally:
+            two.close()
 
 
 def test_external_token_replacement_is_observed_without_restart(client, settings):

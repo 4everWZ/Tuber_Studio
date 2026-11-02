@@ -5,6 +5,8 @@ checks keep its internal servers' wider file/tool APIs out of the broker surface
 Ordinary prompt text is never interpreted as a command or inspected for keywords.
 """
 
+import base64
+import binascii
 import math
 from pathlib import Path
 
@@ -121,6 +123,67 @@ def validate_llm_request(path, body, *, context_tokens=131072):
     _finite_numbers(body)
 
 
+def validate_vision_request(body, *, context_tokens=131072):
+    """Allow bounded inline images at the dedicated vision route only."""
+    if not isinstance(body, dict):
+        raise ValueError("Vision inference requires an object")
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        raise ValueError("Vision inference requires messages")
+    plain, images, image_bytes = [], 0, 0
+    for message in messages:
+        if not isinstance(message, dict) or set(message) != {"role", "content"}:
+            raise ValueError("Vision messages accept only role and content")
+        content = message["content"]
+        if isinstance(content, str):
+            plain.append(message)
+            continue
+        if message["role"] != "user" or not isinstance(content, list):
+            raise ValueError("Only user messages can carry inline image parts")
+        texts = []
+        for part in content:
+            if not isinstance(part, dict):
+                raise ValueError("Invalid inline image part")
+            if part.get("type") == "text" and set(part) == {"type", "text"}:
+                if not isinstance(part["text"], str):
+                    raise ValueError("Image prompt must be text")
+                texts.append(part["text"])
+                continue
+            if part.get("type") != "image_url" or set(part) != {"type", "image_url"}:
+                raise ValueError("Only text and inline image parts are supported")
+            image = part["image_url"]
+            if not isinstance(image, dict) or set(image) != {"url"} or not isinstance(image["url"], str):
+                raise ValueError("Inline image needs one data URL")
+            encoded = image["url"]
+            prefixes = {
+                "data:image/png;base64,": "png",
+                "data:image/jpeg;base64,": "jpeg",
+                "data:image/webp;base64,": "webp",
+            }
+            kind = next((kind for prefix, kind in prefixes.items() if encoded.startswith(prefix)), None)
+            if kind is None or len(encoded) > 11_000_000:
+                raise ValueError("Only bounded inline PNG, JPEG or WebP is supported")
+            try:
+                raw = base64.b64decode(encoded.split(",", 1)[1], validate=True)
+            except (ValueError, binascii.Error):
+                raise ValueError("Invalid inline image encoding") from None
+            valid = (
+                kind == "png"
+                and raw.startswith(b"\x89PNG\r\n\x1a\n")
+                or kind == "jpeg"
+                and raw.startswith(b"\xff\xd8\xff")
+                or kind == "webp"
+                and raw[:4] == b"RIFF"
+                and raw[8:12] == b"WEBP"
+            )
+            images += 1
+            image_bytes += len(raw)
+            if not valid or images > 6 or image_bytes > 8_000_000:
+                raise ValueError("Inline image data exceeds the supported format or size")
+        plain.append({"role": message["role"], "content": "\n".join(texts)})
+    validate_llm_request("v1/chat/completions", body | {"messages": plain}, context_tokens=context_tokens)
+
+
 def validate_speech_request(body):
     if not isinstance(body, dict) or set(body) - SPEECH_FIELDS:
         raise ValueError("Unsupported speech fields; arbitrary files and control operations are disabled")
@@ -163,24 +226,28 @@ def _local_schema(schema):
             pending.extend((child, depth + 1) for child in value)
 
 
-def project_wav(root, value):
+def project_wav(root, value, *, runtime=None):
     """Resolve an existing WAV without following links or escaping fixed assets."""
     if not isinstance(value, str) or not value or "://" in value:
         raise ValueError("Reference must be a configured project WAV")
     root = root.resolve()
+    runtime_root = Path(runtime).resolve() if runtime is not None else root / "runtime"
     raw = Path(value)
     if ".." in raw.parts:
         raise ValueError("Reference traversal is disabled")
-    path = raw if raw.is_absolute() else root / raw
-    if not path.is_relative_to(root):
+    if runtime is not None and raw.parts[:3] == ("runtime", "tts", "ref"):
+        path = runtime_root / Path(*raw.parts[1:])
+    else:
+        path = raw if raw.is_absolute() else root / raw
+    if not path.is_relative_to(root) and not path.is_relative_to(runtime_root):
         raise ValueError("Reference must stay inside this project")
     for component in [path, *path.parents]:
-        if component == root:
+        if component in {root, runtime_root}:
             break
         if component.is_symlink():
             raise ValueError("Reference links are disabled")
     path = path.resolve(strict=True)
-    allowed = (root / "assets", root / "runtime/tts/ref")
+    allowed = (root / "assets", runtime_root / "tts/ref")
     if (
         not any(path.is_relative_to(base) for base in allowed)
         or path.suffix.lower() != ".wav"

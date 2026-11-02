@@ -12,6 +12,7 @@ import httpx
 from .api_providers import validate_image
 
 AVATAR_HOSTS = {"i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}
+PROFILE_CACHE_KEY = "bilibili_account_last_profile"
 
 
 def signature(credentials):
@@ -52,6 +53,25 @@ class BilibiliAccount:
         self.checked_signature = None
         self.observed = None
         self.avatar = None
+        cached = comments.store.get(PROFILE_CACHE_KEY, {})
+        if (
+            isinstance(cached, dict)
+            and cached.get("format") == 1
+            and cached.get("credential_signature") == signature(comments.credentials)
+            and isinstance(cached.get("profile"), dict)
+            and type(cached.get("checked_at")) in {int, float}
+            and math.isfinite(cached["checked_at"])
+            and cached["checked_at"] > 0
+        ):
+            self.checked_signature = cached["credential_signature"]
+            self.observed = {
+                "state": "unverified",
+                "profile": cached["profile"],
+                "checked_at": cached["checked_at"],
+                "attempted_at": None,
+                "error": None,
+                "warnings": [],
+            }
 
     def status(self):
         credential = self.comments.credentials
@@ -64,6 +84,7 @@ class BilibiliAccount:
                 "state": "unverified" if configured["sessdata"] else "not_configured",
                 "profile": None,
                 "checked_at": None,
+                "attempted_at": None,
                 "error": None,
                 "warnings": [],
             }
@@ -92,7 +113,9 @@ class BilibiliAccount:
                     if value.strip():
                         credential[field] = value.strip()
             await self.comments.replace_credentials(credential, expected=before)
-            self.observed = self.checked_signature = self.avatar = None
+            if credential != before or body.get("clear"):
+                self.observed = self.checked_signature = self.avatar = None
+                self.comments.store.set(PROFILE_CACHE_KEY, None)
             return self.status()
 
     async def refresh(self):
@@ -103,7 +126,14 @@ class BilibiliAccount:
             adapter = self.comments.adapter
             if not hasattr(adapter, "account_profile"):
                 return self.status() | {"error": "当前平台适配器尚未提供账号资料读取"}
-            result = {"profile": None, "checked_at": time.time(), "error": None, "warnings": []}
+            previous = self.status()
+            result = {
+                "profile": None,
+                "checked_at": None,
+                "attempted_at": time.time(),
+                "error": None,
+                "warnings": [],
+            }
             try:
                 async with asyncio.timeout(15):
                     profile = await adapter.account_profile()
@@ -125,6 +155,7 @@ class BilibiliAccount:
                     raise ValueError("平台粉丝数量无效")
                 result.update(
                     state="logged_in",
+                    checked_at=time.time(),
                     profile={
                         "uid": uid,
                         "name": name,
@@ -150,12 +181,28 @@ class BilibiliAccount:
                         "error": "账号资料读取失败，请稍后重试",
                     }[state],
                 )
+                if state != "expired" and previous.get("profile"):
+                    result.update(profile=previous["profile"], checked_at=previous["checked_at"])
             if self.comments.credentials != credential or self.comments.adapter is not adapter:
                 return self.status()
-            self.checked_signature, self.observed, self.avatar = signature(credential), result, None
+            self.checked_signature, self.observed = signature(credential), result
             if result["state"] == "logged_in":
                 self.comments.verified_account_id = result["profile"]["uid"]
                 self.comments.verified_credential = credential
+                self.comments.store.set(
+                    PROFILE_CACHE_KEY,
+                    {
+                        "format": 1,
+                        "credential_signature": self.checked_signature,
+                        "profile": result["profile"],
+                        "checked_at": result["checked_at"],
+                    },
+                )
+            elif result["state"] == "expired":
+                self.avatar = None
+                self.comments.verified_account_id = ""
+                self.comments.verified_credential = None
+                self.comments.store.set(PROFILE_CACHE_KEY, None)
             return self.status()
 
     async def avatar_image(self):

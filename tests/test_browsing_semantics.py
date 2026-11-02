@@ -90,7 +90,7 @@ def test_default_cli_keeps_configured_sampling_thinking_and_decision_budget(eval
     before = {path.name: path.read_bytes() for path in production.iterdir()}
     settings, policy, overrides = semantics.evaluation_settings(args)
     assert settings.data["llm"] == config["llm"]
-    assert policy["decision_max_tokens"] == 2048
+    assert policy["decision_max_tokens"] == 8192
     assert settings.data["llm"]["max_tokens"] == 1024
     assert overrides == {}
     assert args.response_strategy == "combined"
@@ -159,7 +159,7 @@ def test_production_runtime_output_and_native_window_mislabels_are_rejected(eval
     args.context_tokens = 128000
     settings, policy, _ = semantics.evaluation_settings(args)
     assert settings.data["llm"]["native_context_tokens"] == 128000
-    assert policy["decision_max_tokens"] == 2048
+    assert policy["decision_max_tokens"] == 8192
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,220 @@
+{
+  "date": "2026-11-02",
+  "scope": "PC B/S business, tools and media; Jetson inference only; games and optional C/S shell TBD",
+  "environment_image": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
+  "environment_updated": false,
+  "environment_identity": "ff99292f7ae1efb88a7a367d2008b404b1c50a5a16303f3a53801df644036143",
+  "program_release": "distributed-operations-20261102-node-r5",
+  "program_archive_sha256": "09d1cab790842e97e7dd5b405060a01c8e09813d0cf8f531b572cc54febafd74",
+  "source_file_count": 199,
+  "source_matches_main": "all files equal after normalizing CRLF; only three source files differ by line endings",
+  "runtime": {
+    "operations_model": "Gemma4-E2B",
+    "context_tokens": 131072,
+    "model_quantization": "Q4_0",
+    "vision_projector_quantization": "Q8_0 vision-only",
+    "kv_cache": "q4_0",
+    "thinking": true,
+    "operations_max_tokens": 8192,
+    "extra_reasoning_cap": null,
+    "mtp": false,
+    "live_model": "MiniCPM5-2B Q4_K_M + Genie"
+  },
+  "migration": {
+    "files": 24,
+    "uncompressed_bytes": 32622971,
+    "archive_bytes": 31706806,
+    "archive_sha256": "79cbdabc0c3adeff8ecb5667cc89499bf28eea6ee870ffa49033c118cd65a271",
+    "all_restored_rows_equal_before_start": true,
+    "credential_and_token_bytes_preserved": true,
+    "original_users": 5,
+    "original_jobs": 6,
+    "source_authority": "retired",
+    "canonical_authority": "active",
+    "rehearsal_authority": "staged",
+    "canonical_contains_rehearsal_comments_drafts_rounds": false
+  },
+  "recovery": {
+    "second_writer_rejected": true,
+    "node_children_exited": true,
+    "node_business_route_http": 404,
+    "same_cookie_after": 200,
+    "profile_after": true,
+    "same_checked_at": true,
+    "account_state_after": "unverified",
+    "vision_admitted_after": true,
+    "online_running_after": true
+  },
+  "mode_switch": {
+    "first_live_failed_cuda_weight_allocation_mib": 1512.02,
+    "failed_live_seconds": 33.98499999998603,
+    "fix": "include node-assets in owned file-cache DONTNEED after workers stop; no model parameter or load order change",
+    "live_retest_seconds": 20.454,
+    "live_system_ram_peak_mib": 5421,
+    "live_swap_growth_mib": 0,
+    "live_lfb_min_blocks_4mib": 68,
+    "return_to_gemma_seconds": 10.766000000061467
+  },
+  "tts": {
+    "seconds": 4.0,
+    "duration": 3.48,
+    "rate": 32000,
+    "channels": 1,
+    "width": 2,
+    "bytes": 222764,
+    "peak": 21221,
+    "rms": 4318.7120291706615
+  },
+  "music": {
+    "sources": [
+      "bodian",
+      "migu"
+    ],
+    "migu_configured": false,
+    "usage": "local_test",
+    "fresh_flac_bytes": 31386542,
+    "fresh_flac_bitrate": 936836,
+    "sample_rate": 44100,
+    "channels": 2,
+    "bits_per_sample": 16,
+    "cached_enqueue_to_browser_playing_seconds": 0.2024827003479004,
+    "media_range": {
+      "http": 206,
+      "type": "audio/flac",
+      "range": "bytes 0-63/29149100",
+      "is_flac": true
+    },
+    "pause": {
+      "first": 295.015087,
+      "second": 295.015087,
+      "paused": true
+    },
+    "component_disabled_stopped_playback_and_exited": true,
+    "restart_created_new_helper": true,
+    "pool_max_mib": 15360,
+    "over_limit_http": 422,
+    "active_cleanup_freed_bytes": 29149100,
+    "active_cleanup_protected_bytes": 31386542,
+    "independence": {
+      "samples": 120,
+      "all_local_routes_http_200": true,
+      "all_samples_playing": true,
+      "error_state_samples": 45,
+      "progress_start": 58.331545,
+      "progress_end": 121.334895,
+      "progress_during_inference_error": [
+        97.819554,
+        121.334895
+      ],
+      "platform_writes": 0
+    }
+  },
+  "visual_resource_probe": {
+    "elapsed_seconds": 175.0,
+    "admitted": true,
+    "frames": 3,
+    "source_pixels_per_frame": 1048576,
+    "source_total_bytes": 1048576,
+    "source_kind": "existing_artwork_upscaled_with_explicit_PNG_padding",
+    "quality_acceptance": false,
+    "sample_count": 168,
+    "min_available_bytes": 2984493056,
+    "max_swap_growth_bytes": 0,
+    "monitoring_error": null,
+    "request_retries": 0,
+    "request_error_count": 0,
+    "max_sample_interval_seconds": 2.062999999965541,
+    "sampling_span_seconds": 174.73400000005495
+  },
+  "real_PC_platform_preview": {
+    "tutorial": {
+      "status": "completed",
+      "elapsed_seconds": 83.5,
+      "peak_backend_rss_bytes": 89169920,
+      "material": {
+        "parts_read": 1,
+        "coverage": "all_available_cc",
+        "decisions": 1,
+        "cited_source_count": 47
+      }
+    },
+    "visual": {
+      "status": "completed",
+      "elapsed_seconds": 183.76600000006147,
+      "peak_backend_rss_bytes": 94654464,
+      "material": {
+        "parts_read": 1,
+        "coverage": "sampled_visual",
+        "decisions": 1,
+        "cited_source_count": 2
+      }
+    }
+  },
+  "review": {
+    "visual_coarse_features": "Blue/purple hair, interior and white T-shirt match source frames. First-frame bow size/color overstated; fine visual accuracy remains uneven.",
+    "actual_frames": 2,
+    "frame_times_seconds": [
+      5,
+      10
+    ],
+    "frame_dimensions": [
+      480,
+      270
+    ],
+    "intents": "two pending_review; natural OC wording reviewed descriptively; no word-list score",
+    "subtitle_report": "subtitle-input-e2b-20261102.md"
+  },
+  "performance": {
+    "capabilities_ms": {
+      "min": 11.202099965885282,
+      "max": 35.95859999768436,
+      "mean": 26.851670013274997,
+      "count": 10
+    },
+    "health_ms": {
+      "min": 7.754000020213425,
+      "max": 33.99939998053014,
+      "mean": 20.46042998554185,
+      "count": 10
+    },
+    "timeout_seconds_unchanged": 5,
+    "old_Jetson_business_python_rss_bytes": 64741376,
+    "PC_media_warm_loopback": {
+      "scope": "PC loopback HTTP media payload, warm file cache, n3; not WAN/CDN speed",
+      "measurements": [
+        {
+          "bytes": 31386542,
+          "first_byte_seconds": 0.026331800036132336,
+          "total_seconds": 0.2681449999799952,
+          "payload_mib_per_second": 111.62818247007833
+        },
+        {
+          "bytes": 31386542,
+          "first_byte_seconds": 0.01175509998574853,
+          "total_seconds": 0.2589372999500483,
+          "payload_mib_per_second": 115.5976330639902
+        },
+        {
+          "bytes": 31386542,
+          "first_byte_seconds": 0.011595400050282478,
+          "total_seconds": 0.23126699996646494,
+          "payload_mib_per_second": 129.42849170243247
+        }
+      ],
+      "median_mib_per_second": 115.5976330639902,
+      "median_first_byte_seconds": 0.01175509998574853
+    },
+    "model_conditions_differ_from_pre_migration_baseline": true
+  },
+  "verification": {
+    "pytest_passed": 2004,
+    "pytest_skipped": 1,
+    "skip": "Windows does not run the POSIX permission test",
+    "ruff_formatted_files": 226,
+    "song_node_tests": 4,
+    "account_JS_tests": 3,
+    "program_only_audit": true,
+    "Docker_node_health": "healthy"
+  },
+  "platform_writes": 0
+}

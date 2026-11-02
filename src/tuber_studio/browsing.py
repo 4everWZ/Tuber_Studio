@@ -14,10 +14,17 @@ import psutil
 from .bilibili import PublishUncertain
 from .browsing_evidence import BrowsingEvidence, EvidenceUnavailable
 from .browsing_inputs import (
+    CLASSIFICATION_INPUT_VERSION,
+    CLASSIFICATION_INSTRUCTION,
     ContentDecisionInput,
     ResponseDecisionInput,
     bind_content_decision,
+    classification_registry,
+    classification_source_groups,
+    classification_view,
+    compact_content_input,
     format_content_input,
+    join_content_sources,
 )
 from .browsing_models import (
     CONTENT_DECISION_INTENT_GLOSS,
@@ -697,6 +704,8 @@ class BrowsingService:
             self.repo.heartbeat(identity, owner, generation)
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
+        character = operation_character(self.store.character(row["character_id"], row["character_version"]))
+        view = classification_view(self.settings.root, character) if schema is ContentDecision else None
         if schema is ResponseDecision:
             response_input = response_input or ResponseDecisionInput(data)
             instruction += RESPONSE_REFERENCE_INSTRUCTION
@@ -707,11 +716,15 @@ class BrowsingService:
             if schema is ContentDecision
             else dump(data)
         )
-        character = operation_character(self.store.character(row["character_id"], row["character_version"]))
+        role = SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")})
+        if view is not None:
+            content = compact_content_input(data)
+            role = "角色：" + view["brief"]
+            instruction = CLASSIFICATION_INSTRUCTION
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")}),
+                "content": role,
             },
             {
                 "role": "system",
@@ -1003,13 +1016,16 @@ class BrowsingService:
                 "system": SYSTEM_RULES,
                 "packing_protocol": "full-message-v1",
                 "response_input_format": ResponseDecisionInput.FORMAT_VERSION,
+                "classification_input_format": CLASSIFICATION_INPUT_VERSION,
+                "classification_instruction": CLASSIFICATION_INSTRUCTION,
+                "classification_views": classification_registry(self.settings.root),
             }
         )
 
     async def _chunks(self, material, row):
         # Count the same role, source and decoder schema that generation uses.
         segments = self._segments(material)
-        presentation = ContentDecisionInput(material)
+        presentation = self._content_presentation(material, row)
         output = row["config"]["decision_max_tokens"]
         context = self.settings.data["llm"]["context_tokens"]
         available = min(context // 2, context * 95 // 100 - output, row["config"]["max_input_tokens"] // 2)
@@ -1048,9 +1064,18 @@ class BrowsingService:
             start = best
         return chunks
 
+    def _content_presentation(self, material, row):
+        character = operation_character(self.store.character(row["character_id"], row["character_version"]))
+        view = classification_view(self.settings.root, character)
+        return ContentDecisionInput(
+            material,
+            text_renderer=join_content_sources if view else None,
+            source_grouper=classification_source_groups if view else None,
+        )
+
     async def _content_decisions(self, material, row, metrics):
         decisions = []
-        presentation = ContentDecisionInput(material)
+        presentation = self._content_presentation(material, row)
         for chunk in await self._chunks(material, row):
             data, aliases = presentation.present(chunk)
             decision = await self._model(

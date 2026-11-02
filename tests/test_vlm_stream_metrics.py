@@ -2,12 +2,19 @@
 
 import asyncio
 import hashlib
+import importlib.util
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 
-from tools.jetson.vlm_stream_metrics import NativeStreamTap, StageTapTransport
+SPEC = importlib.util.spec_from_file_location(
+    "vlm_stream_metrics", Path(__file__).resolve().parents[1] / "tools/jetson/vlm_stream_metrics.py"
+)
+metrics = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(metrics)
+NativeStreamTap, StageTapTransport = metrics.NativeStreamTap, metrics.StageTapTransport
 
 
 class Chunks(httpx.AsyncByteStream):

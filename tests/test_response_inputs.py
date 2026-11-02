@@ -128,6 +128,7 @@ async def prepared_row(browsing):
 
 
 async def test_wire_error_is_recoverable_and_normalization_happens_only_at_final_boundary(browsing):
+    browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
     row = await prepared_row(browsing)
     data = packet(1)
     calls = []

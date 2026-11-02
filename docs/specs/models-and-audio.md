@@ -25,7 +25,7 @@
 
 运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)；本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断；通用兼容API使用JSON模式与程序schema校验。输入和输出仍受真实token预算、完整结束和禁止工具调用约束；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
 
-本地 MiniCPM 的 Think 模式通过原生 chat template 和 reasoning_format=deepseek 分离推理与正式内容；所有 Provider 只解析 message.content 进入台词／摘要，不将 reasoning_content 播报、存入对话或当作回复 JSON，不靠字符串裁掉思考标签补成功。本地模板默认正式输出预算 1024 tokens，包含模型推理与最终 JSON，台词仍受角色字数上限约束；摘要预算独立，未完整 stop 即失败。延迟须实测，不能从 NoThink 短句推断 Think 实时性。
+本地 MiniCPM 的 Think 模式通过原生 chat template 和 reasoning_format=deepseek 分离推理与正式内容；所有 Provider 只解析 message.content 进入台词／摘要。直播短句模板默认输出预算1024 tokens，包含推理与最终JSON，并沿用直播角色的短句设置；运营使用独立的8192输出额度，正文长短由Agent按情境选择。摘要预算独立；运营遇到未完整stop时保留实际输出进入续处理，直播短句按失败处理。延迟按实际思考配置测量。
 
 预录限于允许资产目录，字幕对应实际录音，不冒充动态台词。缓存还覆盖 Provider 和参考音频内容，防止同路径换文件串用。合成失败按配置退回预录／静音且显示原因，不伪造成功。动态TTS的全静音结果必须拒绝，即使上游返回HTTP200；缓存命中也检查，静音缓存删除后重新合成，不能算成功播报。音色持久语义含 ID、Provider、版本、权重、参考资产、许可和有效参数；音频、训练数据、权重及下游用途分别核对，原型允许现有内容不授额外商用权。
 
@@ -57,7 +57,7 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 运营选用 **Gemma 4 E2B**：QAT来源Q4_0主权重、Q8_0视觉投影器、实际131072上下文、q4_0 K/V、思考开启，正常运营输出额度8192且不加独立思考上限。文本采用已测temperature=0.2、top_p=0.95、top_k=40、min_p=0、repeat_penalty=1；额度可按现有设置调整。运营独占推理资源，不要求与TTS共驻；直播继续使用已准入的MiniCPM5＋Genie。文件身份由[候选清单](../../evaluations/candidates/vlm-operations.json)维护，选型理由及边界见[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)。
 
-运营选型与已部署资源分开维护：当前固定broker尚未注册Gemma，源码模板与新安装预设仍使用MiniCPM5，不因选型静默改写已有安装。Gemma可复用现有文本／视觉接口；固定Profile、启动装配及直播回切的产品集成须另行完成。实验先释放既有推理资源，候选逐个运行，结束须恢复原模式、驻留和生产配置；互斥测试不称为共驻。原生窗口、实际运行窗口、显式扩窗、真实长输入接收与召回分别记录，不用模型卡或成功加载替代实测。
+独立推理节点已注册固定Gemma Profile，提供原生文本桥、兼容视觉接口和Genie语音接口。电脑在设置中配对节点后，将运营和直播保存为两套Provider配置；实际切换成功、别名与131072窗口核对后才同时替换客户端，失败恢复原模式。普通全本地安装预设继续使用MiniCPM5，已有安装不因配对模板变化被改写。实验仍先释放既有推理资源，逐个运行；原生窗口、实际运行窗口、显式扩窗、真实长输入接收与召回分别记录。
 
 源码模板和当前固定broker默认采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式缩小或放大配置窗口，最小 4096，实际不得超过所选本地模型的真实 native；MiniCPM5-2B的 native 为 131072，不能靠填写更大的声明突破它。本地从真实 GGUF／运行时核对 native 和实际 n_ctx，API 则区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切 Provider 或窗口后重新计数；较小窗口不冒称已接收 128K。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成 1B。
 

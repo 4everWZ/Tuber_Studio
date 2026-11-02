@@ -11,11 +11,49 @@
 
 首次登录后浏览器保留管理会话。保留runtime/studio.sqlite3和admin-token即可跨服务重启及代码更新继续使用；不要把数据卷当程序更新目录清空。主动退出仅撤销当前管理会话；设置页重置令牌会退出所有管理会话并一次性显示新令牌，OBS不受影响。TUBER_ADMIN_TOKEN配置的令牌需在环境中更新。旧版内存会话不能迁移恢复，首次升级可能需要登录一次；之后活动会话按日续期，不要求每次启动重新输入。浏览器清除登录数据后重新登录。
 
-B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留空不覆盖；显式清除才移除。顶部验证实际UID、头像、硬币和粉丝数，未知统计显示“—”；自动状态读取只查本地缓存，验证及刷新才只读访问平台。重启或验证超过5分钟显示待验证，不把保存Cookie当登录成功。退出管理界面不清除B站凭证，平台Cookie失效后仍需在设置更新。
+B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留空不覆盖；显式清除才移除。顶部验证实际UID、头像、硬币和粉丝数，未知统计显示“—”；自动状态读取只查本地缓存，验证及刷新才只读访问平台。同一凭据的上次成功资料与核验时间持久保存，重启或暂时查询失败仍可查看，超过5分钟标注待验证；明确失效、换账号或清除凭据才移除旧资料。退出管理界面不清除B站凭证。
 
 离线诊断可用llm.kind=demo、tts.kind=prerecorded并选预录音色；界面必须标明固定台词／预录，不能冒称真实推理、动态配音或128K能力。
 
-## Jetson目标部署
+## 电脑业务主机与独立推理节点
+
+推荐由电脑运行B/S后端、Agent、联网与B站工具、在线点歌Node、业务缓存和OBS，Jetson只运行受认证的推理节点。业务数据库、角色／关系、平台凭据和登录会话保存在电脑，模型、声音模型及推理缓存保留在Jetson。数据归属与恢复约束见[跨主机规范](../specs/distributed-runtime.md)。
+
+电脑使用项目Python环境，Gemma官方图像预处理另装业务端依赖；它不改变Jetson环境镜像：
+
+    uv sync --python 3.12
+    uv pip install --python .venv/Scripts/python.exe -r tools/deployment/business-requirements.txt
+    npm --prefix components/song_requests ci --ignore-scripts
+
+Node是可选组件；不使用在线点歌时可以省略最后一行。电脑安装Node.js 22或更高版本后，现有开关、搜索、队列、歌词及缓存管理继续使用同一套界面。
+
+迁移采用`tools/deployment/migrate_business.py`。先停止旧业务服务，再依次`inventory`、`snapshot`、`verify`，传输备份并核对其SHA，最后`restore`到新目录。恢复目录初始为staged，先在隔离副本演练，核对原数据、引用文件及未知发送状态；切换时将旧目录标记retired，再在电脑显式激活正式目录。命令参数可用各子命令`--help`查询。不要通过复制单个SQLite文件迁移正在使用WAL的数据。
+
+电脑启动示例：
+
+    & tools/deployment/run-business.ps1 -Data runtime/desktop/business -Background
+
+默认地址为[电脑工作台](http://127.0.0.1:9020)，数据目录通过`TUBER_RUNTIME`传给子进程；`-Source`、`-Python`、`-Config`可显式选择程序与环境，`-BindAddress`可选电脑的局域网地址。启动器不安装依赖或拉取镜像。同一数据目录的第二个业务进程会在数据库初始化前被拒绝。
+
+在“设置 → 推理节点”填写节点地址及一次性配对凭据，配对后凭据保存在业务私有数据目录，后续启动不重复输入。支持局域网或Tailscale HTTP地址，公网端点使用HTTPS。页面显示实际模型／窗口、两端数据位置、节点内存与推理缓存；修改地址时须提供新节点的凭据。节点更换失败保留原配置，任务保持可核对。
+
+推理宿主的可复用Docker启动器为：
+
+    python3 PROGRAM/tools/deployment/run_inference.py --source PROGRAM --data NODE_DATA --assets MODEL_DATA --image ENV_IMAGE --host NODE_LAN_IP --replace
+
+`NODE_DATA`必须独立于程序和模型目录，不能含业务数据库或平台凭据。`MODEL_DATA`只挂载models／engines／tts／nltk_data子目录；永久投影器可放`NODE_DATA/node-assets`，或用`--node-assets`指定另一只读目录。固定模型、投影器与完整引擎须已准备。镜像存在则直接固定其ID，缺失才拉取；`--dry-run`仅检查并打印装配。替换核对同一数据目录、保留旧容器，启动失败恢复旧容器；Docker健康检查只访问推理节点，不启动业务。
+
+容器中的纯推理入口为：
+
+    python tools/jetson/inference-node.py --root /workspace/tuber --host 0.0.0.0 --port 9012
+
+节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。固定Gemma引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及Q8 vision-only投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体实装与恢复记录见[当前计划](../plans/game-livestream.md)。
+
+运营模式加载Gemma，直播模式先加载Genie再加载MiniCPM5。电脑切换Provider前验证实际别名与窗口；直播期间运营模型任务等待回到运营模式。视频视觉先在设置中做真实资源验证，再按同一模型／投影器／引擎和图像配置恢复准入；该验证使用已有素材测传输和资源，实际视频理解质量仍看原视频任务。释放推理缓存会卸载模型及KV，不清除电脑上的关系、记忆或历史。
+
+OBS使用电脑后端生成的播放器链接，音频直接从电脑媒体目录读取，不经Jetson转发。电脑后端关闭后节点不继续浏览、执行Agent或发送平台消息。代码更新先停对应服务、换程序版本，再用原数据目录和环境启动；回退先核对切换后的新增数据，再变更权威标记，不能直接启动旧副本覆盖进度。
+
+## 全本地Jetson可选部署
 
 Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Python锁定依赖及固定Genie转换／图骨架依赖。应用源码、WebUI、角色素材、初始化清单和配置预设随独立程序包或宿主源码目录交付，以只读挂载运行；模型、音色包、缓存、配置、令牌和数据库保存在独立数据目录。普通程序修改不重建镜像，也不在启动时安装依赖。
 
@@ -77,7 +115,7 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 此前[程序内置镜像的设备证据](../../evaluations/results/ready-program-image-20261030.json)证明原资源链路的首次下载、断网复用与真实推理。环境分离后的[CI发布与Jetson迁移](../../evaluations/results/reusable-environment-release-20261031.json)已验证独立程序只读挂载、已有资源复用、实际131072模型回复和32kHz真实语音，原配置、令牌及业务记录保留；这次使用既有模型／音色数据，没有重复空卷完整下载。本地回归见[环境交付检查](../../evaluations/results/environment-delivery-20261031.json)。
 
-当前设备程序目录为/home/weizheng/code/Tuber_Studio/releases/2b452cae235a435f3e4a242a026e35cfaecddd33/program，current指向该目录；数据仍在原项目runtime。已安装online环境扩展ghcr.io/4everwz/tuber_studio:online-env-be6441607ae064398b0ee271，镜像摘要为sha256:4b3d0deb9bd9608e801f7c202748e69a84d55ef8cc096d54b3f5053894c7e4ee；其基础仍为env-ff99292f7ae1efb88a7a367d。在线点歌已启用，按Operator选择仅用于本机／OBS技术测试，直播／商业用途未确认。真实搜索、波点FLAC、浏览器播放器、歌词和普通重启后保留组件均见[设备点歌验收](../../evaluations/results/online-song-component-device-20261031.json)；咪咕仍未配置凭证，OBS本体未计为已验。
+2026-10-31全本地部署的程序目录为/home/weizheng/code/Tuber_Studio/releases/2b452cae235a435f3e4a242a026e35cfaecddd33/program，数据当时在原项目runtime。该次安装的online环境扩展为ghcr.io/4everwz/tuber_studio:online-env-be6441607ae064398b0ee271，镜像摘要为sha256:4b3d0deb9bd9608e801f7c202748e69a84d55ef8cc096d54b3f5053894c7e4ee；其基础仍为env-ff99292f7ae1efb88a7a367d。在线点歌已启用，按Operator选择仅用于本机／OBS技术测试，直播／商业用途未确认。真实搜索、波点FLAC、浏览器播放器、歌词和普通重启后保留组件均见[设备点歌验收](../../evaluations/results/online-song-component-device-20261031.json)；咪咕仍未配置凭证，OBS本体未计为已验。
 
 ### 环境镜像何时更新
 
@@ -96,11 +134,11 @@ build-image.sh是同一环境构建的兼容入口；Dockerfile保留program-bas
 
 ## 存储目录与维护
 
-模型、数据库、评论数据集、配置和凭证保存在持久数据目录中，随容器更新继续复用。`models/`、`tts/`下的模型原件、参考特征与永久Genie包，以及`nltk_data/`共同构成离线启动所需资源；常驻程序使用镜像内的`/opt/studio-venv`。
+双机部署分别保留电脑业务目录与Jetson推理目录；全本地模式将模型、数据库、评论数据集、配置和凭证保存在同一持久目录中。更新程序继续复用对应目录。`models/`、`tts/`下的模型原件、参考特征与永久Genie包，以及`nltk_data/`共同构成离线启动所需资源；常驻程序使用镜像内的`/opt/studio-venv`。
 
 历史实验保留结果、来源回执和试听音频。重复的ONNX转换文件、传输分片及退役Python环境可回收，需要重现实验时使用保留的模型原件和维护工具重新生成。Docker清理按本项目的具体容器、镜像与缓存ID执行，保留当前镜像和一个已验证的回退版本。
 
-## 本地访问Jetson后台
+## 全本地模式的SSH访问
 
 后台准备好后，在Windows保持SSH转发运行：
 
@@ -108,7 +146,7 @@ build-image.sh是同一环境构建的兼容入口；Dockerfile保留program-bas
 
 默认本地8021转发Jetson回环9020；可用-LocalPort改本地端口。打开 [Jetson工作台](http://127.0.0.1:8021)，从Jetson项目runtime/admin-token在本机终端取得管理令牌，不复制到公开配置。无需公开9011／9012／9013，OBS使用同一后台生成的独立overlay链接。
 
-也可在PC运行后台并经受保护转发使用设备broker；此时后台和设备必须共享正确的内部认证配置，界面CPU／RAM统计来自PC，不能冒称Jetson数据。设备另观察tegrastats／vmstat。
+电脑业务模式按上文直接访问电脑后端，不需要把整套Jetson后台转发回来；设置页分别显示业务主机与推理节点资源。
 
 ## 首次操作
 

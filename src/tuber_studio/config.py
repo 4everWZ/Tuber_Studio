@@ -107,10 +107,26 @@ class Settings:
     def provider_key(self, name):
         return self.provider_keys.get(name)
 
+    def endpoint_key(self, name):
+        """A paired node credential is scoped to its exact configured routes."""
+        base = self.data.get(name, {}).get("base_url", "")
+        return self.broker_key_for(base) or self.provider_key(name)
+
     def broker_key_for(self, base_url):
         broker = self.data.get("inference_broker", {})
         base = broker.get("base_url", "").rstrip("/")
-        allowed = {base + path for path in ("/tts", "/llm/2b", "/llm/1b", "/llm/1bq8", "/llm/qwen35")}
+        allowed = {
+            base + path
+            for path in (
+                "/tts",
+                "/llm/2b",
+                "/llm/1b",
+                "/llm/1bq8",
+                "/llm/qwen35",
+                "/llm/gemma4e2b",
+                "/vlm/gemma4e2b/v1",
+            )
+        }
         return self.inference_token if broker.get("enabled") and base_url.rstrip("/") in allowed else None
 
     def public_data(self):
@@ -149,7 +165,10 @@ class Settings:
             raise ValueError("参考音频须属于已配置的本地音色")
         if Path(relative).anchor:
             raise ValueError("参考音频须使用项目相对路径")
-        return project_wav(self.root, relative)
+        data_root = (
+            self.runtime if self.data.get("inference_broker", {}).get("deployment") == "remote" else None
+        )
+        return project_wav(self.root, relative, runtime=data_root)
 
     def voices(self) -> list[dict]:
         return json.loads((self.root / "config/voices.json").read_text(encoding="utf-8"))
