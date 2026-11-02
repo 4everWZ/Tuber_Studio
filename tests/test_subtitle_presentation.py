@@ -13,7 +13,7 @@ from tuber_studio.browsing_inputs import (
     format_content_input,
 )
 from tuber_studio.browsing_models import ContentDecision, content_decision_schema
-from tuber_studio.subtitle_presentation import timestamp
+from tuber_studio.subtitle_presentation import clean_stutter, deduplicate_subtitles, timestamp
 
 
 def material(texts, *, track="human-track-v1", cid="101"):
@@ -209,3 +209,34 @@ def test_blank_only_source_kept_backend_and_timestamp_rounding_does_not_change_o
     assert aliases["e1"].sources[0].start == 59.999999
     assert aliases["e1"].sources[0].end == 61.234567
     assert timestamp(3600) == "01:00:00"
+
+
+def test_clean_stutter_collapses_excessive_repeats():
+    assert clean_stutter("对对对对对对对对对") == "对对"
+    assert clean_stutter("好的好的好的好的好的") == "好的好的"
+    assert clean_stutter("正常词汇天天向上") == "正常词汇天天向上"
+    assert clean_stutter("") == ""
+
+
+def test_deduplicate_subtitles_handles_asr_artifacts():
+    raw = [
+        {"id": "c:t:0", "start": 0.0, "end": 1.0, "text": "大家好"},
+        {"id": "c:t:1", "start": 0.8, "end": 2.0, "text": "大家好"},  # Exact duplicate
+        {"id": "c:t:2", "start": 2.0, "end": 3.0, "text": "今天我们"},
+        {"id": "c:t:3", "start": 2.5, "end": 4.5, "text": "今天我们来聊一聊"},  # Progressive prefix
+        {"id": "c:t:4", "start": 5.0, "end": 6.5, "text": "在这个世界上有很多"},
+        {"id": "c:t:5", "start": 6.0, "end": 7.5, "text": "有很多有趣的事情"},  # Suffix-prefix overlap
+        {"id": "c:t:6", "start": 8.0, "end": 9.0, "text": "飞升走了也行"},
+        {"id": "c:t:7", "start": 8.5, "end": 9.2, "text": "飞升走了"},  # Progressive truncation
+        {"id": "c:t:8", "start": 10.0, "end": 11.0, "text": "对对对对对对对对对"},  # Stutter
+    ]
+    res = deduplicate_subtitles(raw)
+    texts = [s["text"] for s in res]
+    assert "大家好" in texts
+    assert texts.count("大家好") == 1
+    assert "今天我们来聊一聊" in texts
+    assert "今天我们" not in texts
+    assert "有趣的事情" in texts
+    assert "飞升走了也行" in texts
+    assert "飞升走了" not in texts
+    assert "对对" in texts

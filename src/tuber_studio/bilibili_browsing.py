@@ -22,6 +22,7 @@ import httpx
 from .bilibili import _BV, BilibiliAdapter, PublishUncertain, _positive_id, _video_params
 from .operation_text import validate_operation_text
 from .publication_errors import platform_rejection
+from .subtitle_presentation import deduplicate_subtitles
 
 MAX_SUBTITLE_BYTES = 2 * 1024 * 1024
 MAX_API_BYTES = 4 * 1024 * 1024
@@ -420,6 +421,11 @@ class BrowsingAdapter(BilibiliAdapter):
                         "text": text,
                     }
                 )
+        if not segments or all(CREDIT.match(row["text"]) for row in segments):
+            raise PlatformReadError("empty", "字幕没有有效正文（空白或仅署名）")
+        segments = deduplicate_subtitles(segments)
+        for clean_idx, seg in enumerate(segments):
+            seg["id"] = f"{track['cid']}:{track['track_id']}:{clean_idx}"
         if not segments or all(CREDIT.match(row["text"]) for row in segments):
             raise PlatformReadError("empty", "字幕没有有效正文（空白或仅署名）")
         return {
