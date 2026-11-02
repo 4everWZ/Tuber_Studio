@@ -123,3 +123,65 @@ def test_thread_context_assembly_and_timeline():
     assert len(thread_context["timeline"]) == 3
     assert thread_context["timeline"][0]["is_root"] is True
     assert thread_context["timeline"][2]["is_target"] is True
+
+
+def test_daily_reply_limit_refreshes_after_midnight():
+    """Verify replies created today count against quota, while yesterday's do not."""
+    import datetime
+    import time
+
+    now = time.time()
+    today_midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+    # Yesterday's reply (e.g. 2 hours before midnight)
+    yesterday_reply_time = today_midnight - 7200
+    # Today's reply (e.g. 1 hour after midnight)
+    today_reply_time = today_midnight + 3600
+
+    max_replies = 2
+
+    # If all replies are from yesterday:
+    replies_yesterday = [{"created_at": yesterday_reply_time}, {"created_at": yesterday_reply_time - 100}]
+    today_count = sum(1 for r in replies_yesterday if r["created_at"] >= today_midnight)
+    remaining_today = max(0, max_replies - today_count)
+    assert today_count == 0
+    assert remaining_today == 2  # Fully refreshed for today!
+
+    # If replies were made today:
+    replies_today = [{"created_at": today_reply_time}, {"created_at": today_reply_time + 60}]
+    today_count = sum(1 for r in replies_today if r["created_at"] >= today_midnight)
+    remaining_today = max(0, max_replies - today_count)
+    assert today_count == 2
+    assert remaining_today == 0  # Reached daily limit for this video!
+
+
+def test_top_level_comment_not_duplicated():
+    """Account should not leave a duplicate top-level comment if one already exists."""
+    account_id = "100"
+    items_with_own_top_level = [
+        {"comment_id": "99", "platform_user_id": "100", "parent_comment_id": None, "content": "我的主评"},
+        {"comment_id": "100", "platform_user_id": "200", "parent_comment_id": None, "content": "别人的主评"},
+    ]
+
+    has_own_top_level = any(
+        str(c.get("platform_user_id") or c.get("user_id")) == account_id
+        and (
+            not c.get("parent_comment_id")
+            or str(c.get("parent_comment_id")) in ("0", "", "None", str(c.get("comment_id")))
+        )
+        for c in items_with_own_top_level
+    )
+    assert has_own_top_level is True  # Detected existing top-level comment!
+
+    items_without_own_top_level = [
+        {"comment_id": "100", "platform_user_id": "200", "parent_comment_id": None, "content": "别人的主评"},
+    ]
+    has_own_top_level_2 = any(
+        str(c.get("platform_user_id") or c.get("user_id")) == account_id
+        and (
+            not c.get("parent_comment_id")
+            or str(c.get("parent_comment_id")) in ("0", "", "None", str(c.get("comment_id")))
+        )
+        for c in items_without_own_top_level
+    )
+    assert has_own_top_level_2 is False

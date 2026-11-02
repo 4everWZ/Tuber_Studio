@@ -2,6 +2,7 @@
 
 import asyncio
 import contextvars
+import datetime
 import json
 import re
 import time
@@ -1190,9 +1191,11 @@ class BrowsingService:
             }
             if followup is not None:
                 payload["visual_followup"] = followup
+            bvid = material["metadata"]["bvid"]
+            aid = str(material["metadata"]["aid"])
             status = "viewed_without_comment"
             source_key = canonical_intent(
-                "bilibili", material["metadata"]["bvid"], "top-level", row["character_id"]
+                "bilibili", bvid, "top-level", row["character_id"]
             )
             existing = self.store.one(
                 "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
@@ -1200,24 +1203,49 @@ class BrowsingService:
             )
             context = None
             chosen = {ref for d in actionable for ref in d.evidence_ids} if actionable else set()
+
+            # Pre-fetch comments to verify if account already left a top-level comment on Bilibili
+            need_comments = (
+                actionable
+                and (row["config"]["top_level_enabled"] or row["config"].get("reply_enabled", False))
+            )
+            if need_comments and not existing:
+                context = await self._read(
+                    self.adapter.fetch,
+                    bvid,
+                    1,
+                )
+
+            items_list = context.get("items", []) if isinstance(context, dict) else []
+            has_own_top_level = any(
+                str(c.get("platform_user_id") or c.get("user_id")) == str(row["account_id"])
+                and (
+                    not c.get("parent_comment_id")
+                    or str(c.get("parent_comment_id")) in ("0", "", "None", str(c.get("comment_id")))
+                )
+                for c in items_list
+            )
+            already_commented = bool(existing or has_own_top_level)
+
             if (
                 actionable
                 and row["config"]["top_level_enabled"]
-                and not existing
+                and not already_commented
                 and self.repo.round(row["id"])["budget"]["top_levels"] < row["config"]["top_level_limit"]
             ):
                 self.repo.reserve_budget(row["id"], top_levels=1)
-                context = await self._read(
-                    self.adapter.fetch,
-                    material["metadata"]["bvid"],
-                    1,
-                )
+                if context is None:
+                    context = await self._read(
+                        self.adapter.fetch,
+                        bvid,
+                        1,
+                    )
                 response = await self._response(row, material, context, chosen, "top_level", metrics)
                 if response.action == "reply_public":
                     target = {
                         "type": 1,
-                        "oid": str(material["metadata"]["aid"]),
-                        "bvid": material["metadata"]["bvid"],
+                        "oid": aid,
+                        "bvid": bvid,
                         "root": "0",
                         "parent": "0",
                     }
@@ -1309,9 +1337,20 @@ class BrowsingService:
                     rid = str(it.get("thread_id") or cid)
                     threads_by_root.setdefault(rid, []).append(it)
 
+                now = time.time()
+                today_midnight = datetime.datetime.now().replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ).timestamp()
+                # Single video reply limit refreshed daily (since midnight today)
+                daily_replies_count = self.store.one(
+                    "SELECT COUNT(*) FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' AND source_key LIKE 'bilibili:' || ? || ':%' AND status != 'rejected' AND created_at >= ?",
+                    (row["account_id"], row["character_id"], material["metadata"]["bvid"], today_midnight),
+                )[0]
+                remaining_replies = max(0, max_replies - daily_replies_count)
+
                 replies_created = 0
                 for item in items:
-                    if replies_created >= max_replies:
+                    if replies_created >= remaining_replies:
                         break
                     author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
                     if author_uid == str(row["account_id"]):
