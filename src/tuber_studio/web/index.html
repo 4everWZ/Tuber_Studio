@@ -268,6 +268,36 @@
               </div>
             </fieldset>
 
+            <details class="subsection experimental-settings-hub" style="margin-top: 18px;">
+              <summary style="font-weight:600;font-size:13px;color:var(--ink);cursor:pointer;">🔬 隐藏实验性与深度调优参数 (Advanced Experimental Settings)</summary>
+              <div class="form-grid" style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line);">
+                <label>单视频候选检索上限 (Candidate Limit)
+                  <input id="exp-candidate-limit" type="number" min="1" max="50" value="20">
+                  <small class="hint">每轮从发现来源抓取的最大视频数（默认 20）</small>
+                </label>
+                <label>单视频深度细看上限 (Inspect Limit)
+                  <input id="exp-inspect-limit" type="number" min="1" max="20" value="4">
+                  <small class="hint">单轮内深入准备字幕与视觉材料的视频数（默认 4）</small>
+                </label>
+                <label>单视频决策最大输出 Token (Decision Max Tokens)
+                  <input id="exp-decision-max-tokens" type="number" min="512" max="65536" value="8192">
+                  <small class="hint">单次模型决策思考与台词的最大 Token 配额（默认 8192）</small>
+                </label>
+                <label>单轮运行超时时间 (Round Deadline Seconds)
+                  <input id="exp-deadline-seconds" type="number" min="60" max="3600" value="1800">
+                  <small class="hint">单轮后台任务的最长生命周期（默认 1800 秒）</small>
+                </label>
+                <label class="check-field" style="grid-column: 1 / -1;">
+                  <input id="exp-autonomous-topics" type="checkbox">
+                  允许大肥鱼自主生成视频搜索主题与拓展关键词 (Autonomous Topics)
+                </label>
+                <label class="check-field" style="grid-column: 1 / -1;">
+                  <input id="exp-visual-enabled" type="checkbox" checked>
+                  启用实验性视觉多帧分析 (Visual Analysis - 需要 Gemma 4 E2B 等多模态模型)
+                </label>
+              </div>
+            </details>
+
             <div class="actions">
               <button id="matrix-save" type="button" class="primary">保存权限矩阵配置</button>
               <span id="matrix-save-feedback" class="hint" role="status"></span>

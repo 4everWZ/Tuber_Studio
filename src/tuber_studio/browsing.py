@@ -60,6 +60,7 @@ from .store import dump
 
 read_round = contextvars.ContextVar("browsing_read_round", default=None)
 generation_resume = contextvars.ContextVar("browsing_generation_resume", default=False)
+agent_depth = contextvars.ContextVar("browsing_agent_depth", default=0)
 
 
 def normalized(text):
@@ -308,6 +309,7 @@ class BrowsingService:
         for child in children:
             child.cancel()
         await asyncio.gather(*children, return_exceptions=True)
+        self.active.clear()
         await self.evidence.cancel_pending()
         self.notifications.discard_pending(self.account)
         if self.account:
@@ -605,36 +607,43 @@ class BrowsingService:
         return browsing_filter_reason(item, config)
 
     async def _prepare_task(self, identity, row, semaphore, metrics):
-        for attempt in range(row["config"]["max_takeovers"] + 1):
-            owner = str(uuid4())
-            try:
-                return await self._prepare_attempt(identity, row, semaphore, metrics, owner)
-            except Exception as error:
-                task = self.store.one("SELECT * FROM browsing_tasks WHERE id=?", (identity,))
-                if (
-                    not task
-                    or task["owner"] != owner
-                    or self.repo.round(row["id"])["status"] not in {"queued", "running"}
-                ):
-                    metrics["late_results_rejected"] = metrics.get("late_results_rejected", 0) + 1
-                    return None
-                if attempt < row["config"]["max_takeovers"]:
-                    self.store.execute(
-                        "UPDATE browsing_tasks SET lease_until=0 WHERE id=? AND owner=? AND generation=?",
-                        (identity, owner, task["generation"]),
+        current_depth = agent_depth.get()
+        if current_depth >= 1:
+            raise PermissionError("Subagent nesting prohibited; depth must not exceed 1")
+        token = agent_depth.set(current_depth + 1)
+        try:
+            for attempt in range(row["config"]["max_takeovers"] + 1):
+                owner = str(uuid4())
+                try:
+                    return await self._prepare_attempt(identity, row, semaphore, metrics, owner)
+                except Exception as error:
+                    task = self.store.one("SELECT * FROM browsing_tasks WHERE id=?", (identity,))
+                    if (
+                        not task
+                        or task["owner"] != owner
+                        or self.repo.round(row["id"])["status"] not in {"queued", "running"}
+                    ):
+                        metrics["late_results_rejected"] = metrics.get("late_results_rejected", 0) + 1
+                        return None
+                    if attempt < row["config"]["max_takeovers"]:
+                        self.store.execute(
+                            "UPDATE browsing_tasks SET lease_until=0 WHERE id=? AND owner=? AND generation=?",
+                            (identity, owner, task["generation"]),
+                        )
+                        metrics["takeovers"] = metrics.get("takeovers", 0) + 1
+                        continue
+                    metrics["failures"] += 1
+                    self.repo.complete(
+                        identity,
+                        owner,
+                        task["generation"],
+                        "failed",
+                        {"reason": "worker_failed"},
+                        error=public_error(error),
                     )
-                    metrics["takeovers"] = metrics.get("takeovers", 0) + 1
-                    continue
-                metrics["failures"] += 1
-                self.repo.complete(
-                    identity,
-                    owner,
-                    task["generation"],
-                    "failed",
-                    {"reason": "worker_failed"},
-                    error=public_error(error),
-                )
-                return None
+                    return None
+        finally:
+            agent_depth.reset(token)
 
     async def _prepare_attempt(self, identity, row, semaphore, metrics, owner):
         async with semaphore:
@@ -1293,13 +1302,22 @@ class BrowsingService:
                         1,
                     )
                 items = context.get("items", []) if isinstance(context, dict) else []
+                comments_by_id = {str(it.get("comment_id")): it for it in items if it.get("comment_id")}
+                threads_by_root = {}
+                for it in items:
+                    cid = str(it.get("comment_id"))
+                    rid = str(it.get("thread_id") or cid)
+                    threads_by_root.setdefault(rid, []).append(it)
+
                 replies_created = 0
                 for item in items:
                     if replies_created >= max_replies:
                         break
-                    if str(item.get("user_id")) == str(row["account_id"]):
+                    author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
+                    if author_uid == str(row["account_id"]):
                         continue
-                    if category(item.get("text", "")) == "spam" or len(item.get("text", "").strip()) < 2:
+                    item_text = str(item.get("text") or item.get("content") or "")
+                    if category(item_text) == "spam" or len(item_text.strip()) < 2:
                         continue
                     comment_id = str(item["comment_id"])
                     canonical = canonical_intent(
@@ -1310,20 +1328,62 @@ class BrowsingService:
                         (row["account_id"], row["character_id"], canonical),
                     ):
                         continue
+                    root_id = str(item.get("thread_id") or comment_id)
+                    author_name = str(item.get("username") or item.get("display_name") or "")
+                    root_item = comments_by_id.get(root_id, item)
+                    root_author_name = str(root_item.get("username") or root_item.get("display_name") or "")
+                    root_text = str(root_item.get("text") or root_item.get("content") or "")
+
+                    parent_id = str(item.get("parent_comment_id") or root_id)
+                    parent_item = comments_by_id.get(parent_id) if parent_id != root_id else root_item
+                    parent_author_name = (
+                        str(parent_item.get("username") or parent_item.get("display_name") or "")
+                        if parent_item
+                        else ""
+                    )
+                    parent_text = (
+                        str(parent_item.get("text") or parent_item.get("content") or "")
+                        if parent_item
+                        else ""
+                    )
+
+                    timeline_items = threads_by_root.get(root_id, [item])
                     thread_context = {
                         "source": {
                             "comment_id": comment_id,
-                            "author_uid": str(item.get("user_id")),
-                            "text": item.get("text", ""),
+                            "author_uid": author_uid,
+                            "author_name": author_name,
+                            "text": item_text,
                         },
                         "target": {
                             "type": 1,
                             "oid": str(material["metadata"]["aid"]),
                             "bvid": material["metadata"]["bvid"],
-                            "root": str(item.get("thread_id") or comment_id),
+                            "root": root_id,
                             "parent": comment_id,
                         },
-                        "items": [item],
+                        "root": {
+                            "comment_id": root_id,
+                            "author_name": root_author_name,
+                            "text": root_text,
+                        },
+                        "parent": {
+                            "comment_id": parent_id,
+                            "author_name": parent_author_name,
+                            "text": parent_text,
+                        }
+                        if comment_id != root_id
+                        else None,
+                        "timeline": [
+                            {
+                                "author_name": str(c.get("username") or c.get("display_name") or "观众"),
+                                "text": str(c.get("text") or c.get("content") or ""),
+                                "is_root": str(c.get("comment_id")) == root_id,
+                                "is_target": str(c.get("comment_id")) == comment_id,
+                            }
+                            for c in timeline_items[:8]
+                        ],
+                        "items": timeline_items,
                     }
                     thread_response = await self._response(
                         row, material, thread_context, chosen, "reply_public", metrics
@@ -1333,10 +1393,11 @@ class BrowsingService:
                             "type": 1,
                             "oid": str(material["metadata"]["aid"]),
                             "bvid": material["metadata"]["bvid"],
-                            "root": str(item.get("thread_id") or comment_id),
+                            "root": root_id,
                             "parent": comment_id,
-                            "recipient": str(item.get("user_id")),
-                            "source_text": item.get("text", ""),
+                            "recipient": author_uid,
+                            "recipient_name": author_name,
+                            "source_text": item_text,
                         }
                         thread_intent = self._intent(
                             row, "reply_public", target, thread_response, [result["material_key"]], chosen
@@ -2105,6 +2166,31 @@ class BrowsingService:
             account_id=row["account_id"],
         )
         thread["confirmed_relationship"] = relationship
+        items_list = thread.get("items", [])
+        root_id = str(target.get("root") or "")
+        parent_id = str(target.get("parent") or "")
+        root_row = next((r for r in items_list if str(r.get("comment_id")) == root_id), None)
+        parent_row = next((r for r in items_list if str(r.get("comment_id")) == parent_id), None)
+        thread["root"] = {
+            "comment_id": root_id,
+            "author_name": root_row.get("display_name", "") if root_row else "",
+            "text": root_row.get("content", "") if root_row else "",
+        }
+        if parent_id and parent_id != root_id:
+            thread["parent"] = {
+                "comment_id": parent_id,
+                "author_name": parent_row.get("display_name", "") if parent_row else "",
+                "text": parent_row.get("content", "") if parent_row else "",
+            }
+        thread["timeline"] = [
+            {
+                "author_name": r.get("display_name", "观众"),
+                "text": r.get("content", ""),
+                "is_root": str(r.get("comment_id")) == root_id,
+                "is_target": str(r.get("comment_id")) == str(source.get("comment_id")),
+            }
+            for r in items_list[:8]
+        ]
         reply = await self._response(row, material, thread, allowed, "reply_public", metrics)
         if reply.action in {"skip", "wait"}:
             self.store.execute(
