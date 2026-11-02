@@ -252,7 +252,7 @@ function inferenceLabel(inference) {
   const prefix = mode ? `${resourceModeName(mode)} · ` : inference.mode === "standalone" ? "独立Provider · " : "";
   const residents = inferenceResidents(inference);
   if (inference.switching_to) return `${prefix}正在加载 ${resourceName(inference.switching_to)}… · ${residents}`;
-  if (inference.error) return `${prefix}资源切换失败 · ${residents}`;
+  if (inference.error) return `${prefix}${inference.error.includes("transition") ? "资源切换失败" : "推理节点异常"} · ${residents}`;
   if (["loading", "switching", "starting"].includes(inference.state)) return `${prefix}模型加载中… · ${residents}`;
   return `${prefix}${inference.busy ? "资源忙 · " : ""}${residents}`;
 }
@@ -283,7 +283,7 @@ function renderInference(inference) {
   $("inference-state").classList.toggle("bad", !!inference.error);
   $("inference-state").title = inference.mode === "standalone" ? "独立 API 的模型驻留由服务方管理；容量声明与实际 token 用量分别显示。" : inference.switching_to ? "资源切换期间任务等待模型加载。上下文容量验证与模型驻留状态分别记录。" : "驻留或休眠表示模型资源状态，不改变已验证的上下文容量。";
   $("inference-error").hidden = !inference.error;
-  $("inference-error").textContent = inference.error ? `推理资源切换失败：${inference.error}` : "";
+  $("inference-error").textContent = inference.error ? (inference.error.includes("transition") ? `推理资源切换失败：${inference.error}` : `推理节点异常：${inference.error}`) : "";
 }
 async function switchResourceMode(target) {
   if (target === "live" && !liveEnabled()) { notice("直播与本地动态语音后续开放。"); return; }
@@ -1549,6 +1549,26 @@ function renderPermissionMatrix(status) {
   if ($("matrix-auto-downgrade") && document.activeElement !== $("matrix-auto-downgrade")) {
     $("matrix-auto-downgrade").checked = settings.auto_downgrade_on_error !== false;
   }
+
+  // 7. Experimental settings
+  if ($("exp-candidate-limit") && document.activeElement !== $("exp-candidate-limit")) {
+    $("exp-candidate-limit").value = settings.candidate_limit ?? 20;
+  }
+  if ($("exp-inspect-limit") && document.activeElement !== $("exp-inspect-limit")) {
+    $("exp-inspect-limit").value = settings.inspect_limit ?? 4;
+  }
+  if ($("exp-decision-max-tokens") && document.activeElement !== $("exp-decision-max-tokens")) {
+    $("exp-decision-max-tokens").value = settings.decision_max_tokens ?? 8192;
+  }
+  if ($("exp-deadline-seconds") && document.activeElement !== $("exp-deadline-seconds")) {
+    $("exp-deadline-seconds").value = settings.deadline_seconds ?? 1800;
+  }
+  if ($("exp-autonomous-topics") && document.activeElement !== $("exp-autonomous-topics")) {
+    $("exp-autonomous-topics").checked = !!settings.autonomous_topics;
+  }
+  if ($("exp-visual-enabled") && document.activeElement !== $("exp-visual-enabled")) {
+    $("exp-visual-enabled").checked = settings.visual_enabled !== false;
+  }
 }
 
 async function savePermissionMatrix() {
@@ -1579,6 +1599,14 @@ async function savePermissionMatrix() {
   const autoDowngrade = !!$("matrix-auto-downgrade")?.checked;
 
   const current = currentAutomationStatus?.settings || {};
+
+  const candidateLimit = $("exp-candidate-limit") ? parseInt($("exp-candidate-limit").value || "20", 10) : current.candidate_limit;
+  const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : current.inspect_limit;
+  const decisionTokens = $("exp-decision-max-tokens") ? parseInt($("exp-decision-max-tokens").value || "8192", 10) : current.decision_max_tokens;
+  const deadlineSec = $("exp-deadline-seconds") ? parseInt($("exp-deadline-seconds").value || "1800", 10) : current.deadline_seconds;
+  const autonomousTopics = $("exp-autonomous-topics") ? !!$("exp-autonomous-topics").checked : current.autonomous_topics;
+  const visualEnabled = $("exp-visual-enabled") ? !!$("exp-visual-enabled").checked : current.visual_enabled;
+
   const payload = {
     ...current,
     top_level_enabled: topLevelEnabled,
@@ -1594,6 +1622,12 @@ async function savePermissionMatrix() {
     max_per_day: Math.max(1, Math.min(200, maxPerDay)),
     auto_downgrade_on_error: autoDowngrade,
     comment_handoff_enabled: dmHandoff,
+    candidate_limit: Math.max(1, Math.min(50, candidateLimit)),
+    inspect_limit: Math.max(1, Math.min(20, inspectLimit)),
+    decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens)),
+    deadline_seconds: Math.max(60, Math.min(3600, deadlineSec)),
+    autonomous_topics: autonomousTopics,
+    visual_enabled: visualEnabled,
   };
 
   const fb = $("matrix-save-feedback");
@@ -1622,11 +1656,26 @@ function renderOperationsQuickBar(status) {
   if ($("op-max-replies") && document.activeElement !== $("op-max-replies")) {
     $("op-max-replies").value = settings.max_replies_per_video ?? 2;
   }
+  const policyEnabled = status.policy?.enabled === true;
+  const hasActiveRound = Boolean(status.active_round || (status.rounds && status.rounds.length) || (status.state === "running" && !policyEnabled));
+
   const toggleBtn = $("op-toggle-auto");
   if (toggleBtn) {
-    const isRunning = status.state === "running";
-    toggleBtn.textContent = isRunning ? "停止自主运营" : "开启自主运营";
-    toggleBtn.className = isRunning ? "danger" : "primary";
+    toggleBtn.textContent = policyEnabled ? "停止自主运营" : "开启自主运营";
+    toggleBtn.className = policyEnabled ? "danger" : "primary";
+    toggleBtn.title = policyEnabled ? "点击关闭后台周期性自主运营" : "点击开启后台周期性自主运营";
+  }
+
+  const stopRoundBtn = $("op-stop-round");
+  if (stopRoundBtn) {
+    stopRoundBtn.disabled = !hasActiveRound;
+    stopRoundBtn.title = hasActiveRound ? "点击中止当前正在执行的这一轮运营任务" : "当前无正在运行的轮次";
+  }
+
+  const previewBtn = $("op-preview-round");
+  if (previewBtn) {
+    previewBtn.disabled = hasActiveRound;
+    previewBtn.textContent = hasActiveRound ? "轮次执行中…" : "单轮运营预览";
   }
 }
 
@@ -1676,9 +1725,10 @@ if ($("op-preview-round")) {
 if ($("op-toggle-auto")) {
   $("op-toggle-auto").onclick = async () => {
     try {
-      const isRunning = currentAutomationStatus?.state === "running";
-      await api("/api/automation/enable", { method: "POST", body: { enabled: !isRunning } });
-      notice(!isRunning ? "自主运营已开启。" : "自主运营已停止。");
+      const isEnabled = currentAutomationStatus?.policy?.enabled === true;
+      const target = !isEnabled;
+      await api("/api/automation/enable", { method: "POST", body: { enabled: target } });
+      notice(target ? "自主运营已开启。" : "自主运营已停止。");
       await automationPanel.refresh();
       await updatePermissionCapsule();
     } catch (e) {

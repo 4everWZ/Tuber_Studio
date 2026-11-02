@@ -869,7 +869,7 @@ class InferenceBroker:
             else:
                 self.state = "active" if residents else "cold"
                 self.error = (
-                    "Resource transition cancelled"
+                    None
                     if isinstance(failure, asyncio.CancelledError)
                     else "Resource transition failed"
                 )
@@ -1135,6 +1135,7 @@ class InferenceBroker:
                 self.state, self.error = "stopping", "Inference request was cancelled"
                 cleanup = asyncio.create_task(self.runner.stop(key)) if self._target_touched else None
                 if cleanup is None:
+                    self.active, self.state, self.error = None, "cold", None
                     raise
                 while not cleanup.done():
                     try:
@@ -1142,7 +1143,7 @@ class InferenceBroker:
                     except asyncio.CancelledError:
                         continue
                 cleanup.result()
-                self.active, self.state = None, "cold"
+                self.active, self.state, self.error = None, "cold", None
                 raise
             except Exception:
                 self.state, self.error = "error", "Inference request failed"
