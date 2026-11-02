@@ -99,11 +99,13 @@ def _number(value):
 
 
 def missing_slots(answer, evidence):
-    """Check only requested slots for which retrieved sources offer evidence.
+    """Return requested source slots without a recognized lexical expression.
 
-    This is a bounded omission check, not a truth classifier. It does not require
-    facts during casual chat, invent facts when retrieval is empty, or equate an
-    uncertain quantity expression with a definite failure.
+    This diagnostic is not a semantic verdict: synonyms can be unmatched, and
+    matching words can still occur in an incorrect or negated statement. Callers
+    keep the answer and source evidence for review instead of rewriting speech
+    or declaring factual success/failure from this list. Casual chat, unsupported
+    slots and uncertain quantity forms impose no lexical requirement.
     """
     sources = evidence.get("evidence", [])
     requested = evidence.get("required_slots", [])

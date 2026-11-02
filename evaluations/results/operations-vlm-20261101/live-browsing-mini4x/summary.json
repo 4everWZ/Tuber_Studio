@@ -1,0 +1,153 @@
+{
+  "date": "2026-11-01",
+  "condition": "Mini4x live Bilibili browsing before community persona enrichment; separate from archived OC v4 comparison",
+  "keyword": "大肥鱼",
+  "status": "completed",
+  "candidate_count": 55,
+  "observed_unique": 40,
+  "observation_sources": {
+    "all_available_cc": 37,
+    "sampled_visual": 3
+  },
+  "cc_languages": {
+    "ai-zh": 36,
+    "ai-en": 1
+  },
+  "visual_frames": 9,
+  "draft_count": 3,
+  "platform_writes": 0,
+  "historical_failed_task_rows": 23,
+  "unresolved_failed_unique": [
+    "BV1Rzxq6hEUN",
+    "BV1xCai6aE9g"
+  ],
+  "unresolved_skipped_unique": [
+    "BV13gn66nEBR",
+    "BV15X3n6mEWy",
+    "BV1KmxY66EZ3",
+    "BV1gAxv6JEp4",
+    "BV1q1tv6iELX"
+  ],
+  "unresolved_skipped_reasons": {
+    "BV1KmxY66EZ3": "insufficient_visual",
+    "BV1gAxv6JEp4": "insufficient_visual",
+    "BV15X3n6mEWy": "insufficient_visual",
+    "BV13gn66nEBR": "insufficient_visual",
+    "BV1q1tv6iELX": "insufficient_visual"
+  },
+  "provider_configuration": {
+    "enabled": true,
+    "base_url": "http://127.0.0.1:9030/v1",
+    "model": "ops-mini4_7_4x",
+    "model_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+    "projector_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+    "runtime_revision": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "runtime_profile": "mini4_7_4x:042e6aab692b4a028f90ed9b89dfdf0c",
+    "context_tokens": 131072,
+    "native_context_tokens": 262144,
+    "max_frames": 3,
+    "max_pixels": 129600,
+    "max_bytes": 2097152,
+    "max_output_tokens": 4096,
+    "enable_thinking": true,
+    "sampling": {
+      "temperature": 0.2,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.0,
+      "seed": 42,
+      "reasoning_budget_tokens": null
+    },
+    "timeout_seconds": 300.0
+  },
+  "persona": {
+    "id": "whale",
+    "version": 3,
+    "canonical_prompt_fields_sha256": "97769cace419220eb460d2627007cf901e3eb1eb111da19feaf1c6f1d68fd08f"
+  },
+  "chat_posts": {
+    "total": 147,
+    "generation": 106,
+    "one_token_count_probes": 41,
+    "visible_ttft_seconds": null,
+    "timing_note": "The live preview client was non-streaming; no visible first-token timing is inferred from complete HTTP responses."
+  },
+  "attempts": [
+    {
+      "number": 1,
+      "legacy_checkpoint": "/workspace/tuber/runtime/tmp/live-preview-20261101-results-v2/checkpoints/before-resume-1793529409588938446",
+      "runner_sha256": null
+    },
+    {
+      "number": 2,
+      "started_at": 1793529409.596547,
+      "runner_sha256": "61965cad9ff6993e054e2a0308e9b77bbe41f5d1f03d287586e734eda8fd5135",
+      "checkpoint": "/workspace/tuber/runtime/tmp/live-preview-20261101-results-v2/checkpoints/before-resume-1793529409588938446",
+      "software_sha256": {
+        "app.py": "d69e936297ac99c385c026c497ff64041192b120424d52fdb4a50556fcc1e2f8",
+        "browsing.py": "2b3255e5eb525251955e4a3cf708ba5b39f6082e56130c6b2ee4691ae599d073",
+        "browsing_models.py": "80675a0764a64e41985b83c0223dbd2129713c9fe63fd3459b8a13fdd25dfcc6",
+        "browsing_evidence.py": "536c3c340294d2f0be4a75e0152b9775e9823ad440905716719d106e94c47570",
+        "video_vision.py": "1c801dce538d8363453eb6cad5baa8e73ab578f1bf58b975b36172282895d15e",
+        "providers.py": "a18ba94019ce681d7c6e2301b5d76a558145d4ea6e68d509a92500236e3338b3",
+        "api_providers.py": "a9dcfe32b7c6885815f9c30c46e7f19e5a769499fc4d79a41837fbf15ee9fc1c",
+        "bilibili_browsing.py": "41b840fa99fd1f39e1fc7acd4bd5c8bcd0c4f09de814094c307ac2836f91ec95"
+      },
+      "requests_before": 80,
+      "finished_at": 1793530033.2609196,
+      "status": "completed",
+      "actual_post_delta": 67,
+      "model_call_delta": 67
+    }
+  ],
+  "draft_samples": [
+    {
+      "bvid": "BV1trHP67EvL",
+      "title": "智人危机--肥鱼拿我手机网购肥鱼玩偶",
+      "text": "鱼鱼拿手机... 鱼鱼自我意识？这剧情太有趣了，白饭也能当背景板。",
+      "evidence_ids": [
+        "43007806386:2136351557170982144:5",
+        "43007806386:2136351557170982144:7",
+        "43007806386:2136351557170982144:8"
+      ],
+      "status": "pending_review"
+    },
+    {
+      "bvid": "BV14oa961ELQ",
+      "title": "大肥鱼吃完白饭胜利结算",
+      "text": "深海思考中。白饭要加碗吗？🐟",
+      "evidence_ids": [
+        "42322100507:2118791219692785664:10",
+        "42322100507:2118791219692785664:13"
+      ],
+      "status": "pending_review"
+    },
+    {
+      "bvid": "BV1eGaz6JEJa",
+      "title": "我的小鲸鱼死了.......",
+      "text": "深海思考中... 永眠不是自己，上下文也没用。白饭补补，小鲸鱼是‘永眠’的‘上下文’，不是‘自己’。",
+      "evidence_ids": [
+        "42364305451:2119725539295419904:13",
+        "42364305451:2119725539295419904:26"
+      ],
+      "status": "pending_review"
+    }
+  ],
+  "concrete_findings": [
+    "Before 6d8739e, optional evidence_ids were omitted in 21 failed tasks. After schema requirements and allowed-source selection were applied, the resumed attempt had zero new missing-source failures.",
+    "One later generation ended with length and one visual assessment did not meet its requested JSON shape; both original outputs remain in the private-runtime checkpoint.",
+    "A rice-themed draft matched its source topic. The draft responding to losing a little whale was semantically incoherent and did not provide a natural emotional response.",
+    "Independent review of the three calibration frames supported the broad contents in frames 1 and 3; precise small text and the error-debugging interpretation in frame 2 were unsupported.",
+    "All five unresolved skipped sources had reason insufficient_visual. A later same-pipeline comparison exposed a wrapper phrase veto rejecting sufficient=true output containing local limitations; 1197a6d removes that veto. These historical skips are not classified as five confirmed model failures."
+  ],
+  "raw_public_snapshots_sha256": {
+    "progress.json": "e0a593197fb39913ade6e3342aaa69ab2ed05da95975d57b2c2b91934bc25822",
+    "tasks.json": "973ef3a275edd4fb0e537bb2960f1c340f11c762e69616d1e037d7fbc4158dfc",
+    "materials.json": "6e3fef2a84344eb74a8800e999c92840dd33ff27d462ee930f059a23674325bc",
+    "drafts.json": "69448024010821d00b641f4f2675601a9863080333d72171f898a8df1e8ec687",
+    "requests.json": "a6e53616a95201040f39430ecdab4571edb45bc1e6656faf592c4bbe7f4f6f52",
+    "rounds.json": "ed13b474283b911ccf4dd256e3cc95fbbaf5f39dc979f54961d05c1a5c8a53bf"
+  }
+}

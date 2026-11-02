@@ -1,0 +1,12 @@
+{
+  "evaluations/vlm_operations.py": "e472f511b58b09cb894e24bc2e3a68266cb229e753dc1a361677721bb44cb4cb",
+  "evaluations/vlm_images.py": "100318e6e5f1167b478d401403777fbef11c14f791fe574fa4ac1694d1581e2b",
+  "evaluations/cases/vlm-operations.json": "20e68f6817bd15de87aba3eab74f08ea92394fa95d234a1cecf121196481a010",
+  "config/characters.json": "942a2c15e957184d9e138952003e4c299a0292babdc8449e6caa5382d2af6328",
+  "tmp/operations-vlm/resume2/plain-frame-probe.py": "6ab6c72fae96739483a4c6fa991e33277c1c687acd3ae2d780296a06c6263efa",
+  "tmp/operations-vlm/resume2/genie-cohost.py": "e6859e112053e90b27a8ecf7168cf01d00b5f735b3aa07cedc3110717b7cdca1",
+  "tmp/operations-vlm/provider-wiring.py": "abf6c25d3a6de45762beb6ae8cf7ef0e09753154c0e8e83d7827c53d20681f43",
+  "src/tuber_studio/video_vision.py": "f34684c4ce276ce826bef33a4468c8888f209dc0c84a7c79b8c925e86f92b879",
+  "src/tuber_studio/api_providers.py": "d6f195f48eaab23f1c30c0e8e64267de6df1f537177aa08e0bb880389d0477d3",
+  "src/tuber_studio/llama_sampling.py": "c50ca3c71e5580486c86b89550f71574810a4af34cb6824aeffed50b33eaff05"
+}

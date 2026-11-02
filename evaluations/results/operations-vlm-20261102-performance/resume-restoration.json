@@ -1,0 +1,156 @@
+{
+  "time": 1793589091.411596,
+  "platform_writes": 0,
+  "configuration_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "available": 3183431680,
+  "swap": {
+    "total": 12584906752,
+    "used": 749731840,
+    "free": 11835174912,
+    "percent": 6.0,
+    "sin": 664293376,
+    "sout": 3831332864
+  },
+  "owned_runs": [
+    {
+      "run": "e4b-Q8-object",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q4-v2-object-r2",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "gemma4_e4b-Q8-blue280",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e2b-F16KV-MTP-u1-repeat",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e2b-Q4-v2-GPU-MTP",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q4-v2-gpu",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "gemma4_e2b-Q8-blue280",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e2b-Q4-v2-backend-probe",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "gemma4_e4b-Q4-blue280",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q4-v2-object",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q4-v2-CPUdraft",
+      "state": "failed",
+      "reason": "minimum_available_memory_threshold",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q4-v2-MTP",
+      "state": "failed",
+      "reason": "minimum_available_memory_threshold",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q4-v2-backend-probe",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e2b-F16KV-MTP-u1",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "e4b-Q8-object-r2",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    },
+    {
+      "run": "gemma4_e2b-Q4-blue280",
+      "state": "stopped",
+      "reason": "operator_stop",
+      "remaining": [],
+      "same_identity_alive": false
+    }
+  ],
+  "broker": {
+    "mode": "text",
+    "state": "active",
+    "active_provider": "llm2b",
+    "busy": false,
+    "requested_context_tokens": 131072,
+    "kv_cache_type": "q4_0"
+  },
+  "tts_running": false,
+  "original_health": 200,
+  "models": [
+    "MiniCPM5-2B"
+  ],
+  "candidate_endpoint_closed": true,
+  "thermal_labels": {
+    "/sys/class/thermal/thermal_zone2/temp": "cv0-thermal",
+    "/sys/class/thermal/thermal_zone0/temp": "cpu-thermal",
+    "/sys/class/thermal/thermal_zone7/temp": "soc2-thermal",
+    "/sys/class/thermal/thermal_zone5/temp": "soc0-thermal",
+    "/sys/class/thermal/thermal_zone3/temp": "cv1-thermal",
+    "/sys/class/thermal/thermal_zone1/temp": "gpu-thermal",
+    "/sys/class/thermal/thermal_zone8/temp": "tj-thermal",
+    "/sys/class/thermal/thermal_zone6/temp": "soc1-thermal",
+    "/sys/class/thermal/thermal_zone4/temp": "cv2-thermal"
+  },
+  "restoration_verified": true,
+  "docker_image_id": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
+  "image_verified_by": "host docker inspect after final restoration"
+}

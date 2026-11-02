@@ -1,0 +1,601 @@
+{
+  "schema_version": 1,
+  "kind": "subtitle_native_input_and_decision_protocol_measurement",
+  "date": "2026-11-02",
+  "profile": "gemma4_e2b",
+  "subject": {
+    "bvid": "BV161nZ6JE6b",
+    "source_material_export": "hashes_and_counts_only_no_complete_third_party_subtitles",
+    "label": "零基础养鱼教程",
+    "title": "零基础deepseek养鱼教程"
+  },
+  "character": {
+    "pinned_file_sha256": "51d9a6d85a7d6b10a0bf5617c3a3102c2885f2e174a82100775186a00f0af5d1",
+    "corpus_sha256": "d2a85ca804f8467d21f9148ed5949be9961b5340af108ab09a30f6a1ba758df6",
+    "source_file_unchanged": true,
+    "operational_projection": "New product input omits live length preferences; old historical full prompt is not identical."
+  },
+  "source_preservation": {
+    "original_segment_count": 192,
+    "nonblank_original_segments": 192,
+    "all_original_text_and_order_preserved": true,
+    "block_count": 14,
+    "raw_text_characters_including_191_newlines": 2197,
+    "sum_segment_text_characters": 2006
+  },
+  "material_hashes": {
+    "raw_subtitles": "8d45a33f20558c2137afee4dd6471fcd7936a2cf96e2d6e6b935d5a49d7ec4a3",
+    "legacy_verbose_segment_array": "8f5e3cb365158bfbcf97b660b687aec9e69baad37b9e63fc4e9b9ce03f7f81ef",
+    "short_alias_01327ff_packet": "adc1d8c2394985abcb0a1f2fc9b22f2a5f5c36fba384c7f8b159c5133820b2be",
+    "compact_presentation": "040b615c2314ccf4770722c839d8e0ffd52481acab00ec15126f580d6d5b7fbb"
+  },
+  "model": {
+    "name": "Gemma 4 E2B IT",
+    "conversion_repository": "ggml-org/gemma-4-E2B-it-GGUF",
+    "conversion_revision": "6938c58e698502037401a5f19f6905f2fb2f7dee",
+    "artifacts": {
+      "model": {
+        "file": "gemma-4-E2B-it-Q4_0.gguf",
+        "local_filename": "gemma-4-E2B-it-Q4_0.gguf",
+        "quantization": "Q4_0",
+        "size_bytes": 2841481184,
+        "sha256": "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+        "sha256_verified": true,
+        "source_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf"
+      },
+      "projector": {
+        "file": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+        "local_filename": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+        "quantization": "Q8_0",
+        "size_bytes": 557368064,
+        "sha256": "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292",
+        "sha256_verified": true,
+        "source_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/mmproj-gemma-4-E2B-it-Q8_0.gguf"
+      }
+    }
+  },
+  "engine": {
+    "expected_revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "binary_sha256": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "reported_build_info": "b0-unknown"
+  },
+  "runtime": {
+    "context_tokens": 131072,
+    "kv": "q4_0",
+    "kv_k": null,
+    "kv_v": null,
+    "batch": 256,
+    "ubatch": 64,
+    "gpu_layers": 99,
+    "kv_offload": "gpu",
+    "threads": 4,
+    "mmproj_offload": "gpu",
+    "mmap": "off",
+    "direct_io": "on",
+    "flash_attn": "on",
+    "cuda_graphs": "on",
+    "reasoning": "on",
+    "reasoning_budget": null,
+    "min_available_mib": 512,
+    "max_swap_growth_mib": 128
+  },
+  "context_contract": {
+    "requested_context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "strict_context_tokens": 131072,
+    "meets_strict_window": true,
+    "native_meets_strict_window": true,
+    "experimental_native_extension": false,
+    "long_context_accuracy_validated": false
+  },
+  "properties": {
+    "model_alias": "ops-gemma4_e2b",
+    "context_tokens": 131072,
+    "model_filename": "gemma-4-E2B-it-Q4_0.gguf",
+    "chat_template_sha256": "603a42db292c25278e9b23d94c7abbe77453f13e26a053c43c5c2f900b4136f7",
+    "server_sampling": {
+      "temperature": 1.0,
+      "top_p": 0.949999988079071,
+      "top_k": 64,
+      "min_p": 0.05000000074505806,
+      "n_predict": -1
+    }
+  },
+  "memory": {
+    "scope": "entire isolated resident run through A/B including load/counts/three generations; not per-request incremental memory",
+    "state_at_capture": "ready",
+    "samples": 1533,
+    "peak_server_tree_rss_bytes": 5329084416,
+    "minimum_system_available_bytes": 1371410432,
+    "peak_swap_growth_bytes": 0
+  },
+  "token_counting": {
+    "semantics": "body-only /tokenize add_special=false; full native /apply-template then /tokenize add_special=true; schema is grammar transport bytes, not injected in prompt",
+    "count_probe_source": {
+      "file": "token-counts.json",
+      "sha256": "6a9f5c925adf124d70d7931d4dbe1cf040ed9290a66417bb87ae642022a7bf71"
+    },
+    "layers": {
+      "raw_subtitles": {
+        "tokens": 1308,
+        "characters": 2197,
+        "utf8_bytes": 5845,
+        "elapsed_ms": 6.584425980690867,
+        "includes_chat_template": false
+      },
+      "legacy_verbose_segment_array": {
+        "tokens": 16792,
+        "characters": 23439,
+        "utf8_bytes": 27087,
+        "elapsed_ms": 22.88593602133915,
+        "includes_chat_template": false
+      },
+      "short_alias_01327ff_packet": {
+        "tokens": 8486,
+        "characters": 14244,
+        "utf8_bytes": 18268,
+        "elapsed_ms": 20.403248025104403,
+        "includes_chat_template": false
+      },
+      "compact_presentation": {
+        "tokens": 1862,
+        "characters": 3516,
+        "utf8_bytes": 7558,
+        "elapsed_ms": 9.30168101331219,
+        "includes_chat_template": false
+      },
+      "full_current_native_messages": {
+        "tokens": 3065,
+        "elapsed_ms": 20.294188987463713,
+        "rendered_prompt_sha256": "fd84dc6e8ba8f444bb4d9de282539bfe6d70eb60c349e95621386b2eea271cec",
+        "template_request_sha256": "49d453e414919f3db13a6c2a27064bfaecc3141ffb02d8ad3b17e6d58127d24d",
+        "includes_chat_template": true,
+        "schema_in_prompt": false,
+        "schema_wire_bytes_utf8": 1612,
+        "reserved_output_tokens": 4096
+      }
+    },
+    "all_layers_same_native_tokenizer": true,
+    "schema_is_grammar_transport_not_prompt_text": true,
+    "target_1500_to_2000_scope": "case-specific optimization target, not a global cap; compact presentation is 1862 but the adopted full request is 3293, so full-request target attainment is not claimed",
+    "legacy_23439_scope": "standalone reconstructed segment JSON array only, not historical complete messages",
+    "raw_2197_scope": "2006 original segment text codepoints plus 191 joining linefeeds; original strings/order retained; no fillers removed"
+  },
+  "historical_tutorial_request": {
+    "source": {
+      "file": "timings.json",
+      "sha256": "eeb71e175ef68f34c9ffa1cf6aad5aabca0df062258528045e632991191642da"
+    },
+    "timing_entry_zero_based_index": 29,
+    "original_sha256": "65b3f874d7bfca61be7ce2bfae42fd0f1b6955fd85569481c5b53daf77b3261e",
+    "wire_sha256": "3e00dd242c0e57ba7d05746ee4c95bc303ed0e1c9397a60dcb71a1248c7e28ad",
+    "max_tokens": 4096,
+    "content_ttft_ms": 54779.432427021675,
+    "complete_ms": 61668.27021201607,
+    "reasoning_characters_not_retained": 2545,
+    "response_format_sha256": "d51fab680662962b593ac17d45d05eb2da128da1fd03c3f32dc2b1d4ecf0b16f",
+    "http_status": 200,
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 724,
+      "prompt_tokens": 18504,
+      "total_tokens": 19228,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "generation_only": true,
+    "complete_original_body_reconstructed_and_SHA_matched": false,
+    "strict_single_variable_pair": false,
+    "visible_output_in_original_timing": "not_retained_by_that_timing_record"
+  },
+  "historical_eight_classifications": {
+    "source": {
+      "file": "performance-attribution.json",
+      "sha256": "30d0d200b3c6cc8a51b26a30ed3091f63189a72e81f275869cac73811520a051"
+    },
+    "calls": 8,
+    "seconds": 324.498024,
+    "median_seconds": 37.631603,
+    "max_seconds": 61.66827,
+    "prompt_tokens": 47187,
+    "completion_tokens": 6289,
+    "scope": "8 distinct videos; 324.498024 seconds is the sum, not this tutorial request"
+  },
+  "measurements": [
+    {
+      "condition": "compact_without_gloss",
+      "source": {
+        "file": "current-classification.json",
+        "sha256": "8bea2ebc8442280f7dec2e4ae8df2377df22dead72c494c69312f5bd85b8c094"
+      },
+      "input_sha256": "2fe584bc8f117b97a729d641d4aa1feb85ac686d006dfd37d1e6de7cbe79f1b3",
+      "helper_sha256": "7b9d47b93a103dc77f3b927b7afd75b6c2b53ee8639732a626c948f4cbb8f9b0",
+      "layers": {
+        "raw_subtitles": {
+          "tokens": 1308,
+          "characters": 2197,
+          "utf8_bytes": 5845,
+          "elapsed_ms": 6.451943016145378,
+          "includes_chat_template": false
+        },
+        "legacy_verbose_segment_array": {
+          "tokens": 16792,
+          "characters": 23439,
+          "utf8_bytes": 27087,
+          "elapsed_ms": 23.259516048710793,
+          "includes_chat_template": false
+        },
+        "short_alias_01327ff_packet": {
+          "tokens": 8486,
+          "characters": 14244,
+          "utf8_bytes": 18268,
+          "elapsed_ms": 20.45595395611599,
+          "includes_chat_template": false
+        },
+        "compact_presentation": {
+          "tokens": 1862,
+          "characters": 3516,
+          "utf8_bytes": 7558,
+          "elapsed_ms": 8.403386047575623,
+          "includes_chat_template": false
+        },
+        "full_current_native_messages": {
+          "tokens": 3065,
+          "elapsed_ms": 19.35288601089269,
+          "rendered_prompt_sha256": "fd84dc6e8ba8f444bb4d9de282539bfe6d70eb60c349e95621386b2eea271cec",
+          "template_request_sha256": "49d453e414919f3db13a6c2a27064bfaecc3141ffb02d8ad3b17e6d58127d24d",
+          "includes_chat_template": true,
+          "schema_in_prompt": false,
+          "schema_wire_bytes_utf8": 1612,
+          "reserved_output_tokens": 4096
+        }
+      },
+      "generation": {
+        "condition": "current_product_compact_cache_disabled",
+        "base_native_body_sha256": "d15b19e2a50f4dc28d353e3e25f672bf6bf8801ae86554cb85cf20be95e3b764",
+        "wire_sha256": "8c95f1ddb01a609cfb6aa860c2dd196cf4c3b416fbff6acaf2b4bf51edd40c79",
+        "max_tokens": 4096,
+        "sampling": {
+          "temperature": 0.2,
+          "top_p": 0.95,
+          "top_k": 40,
+          "min_p": 0.0,
+          "presence_penalty": 0.0,
+          "repeat_penalty": 1.0,
+          "seed": 42
+        },
+        "cache_prompt": false,
+        "thinking": true,
+        "content_ttft_ms": 28192.13535101153,
+        "complete_ms": 31768.04209803231,
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 713,
+          "prompt_tokens": 3065,
+          "total_tokens": 3778,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "visible_text": "{\n  \"interest\": \"like\",\n  \"worth_commenting\": true,\n  \"reason\": \"unsafe_interaction\",\"evidence_ids\": [\"e2\", \"e4\", \"e5\"],\n  \"coverage_required\": \"provided\"\n}",
+        "decision": {
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "unsafe_interaction",
+          "evidence_ids": [
+            "e2",
+            "e4",
+            "e5"
+          ],
+          "coverage_required": "provided"
+        },
+        "structure_valid": true,
+        "unexpected_tools": false,
+        "generation_calls": 1,
+        "platform_writes": 0,
+        "http_status": 200,
+        "status": "completed",
+        "reasoning_characters_not_retained": 2542,
+        "reasoning_sha256": "2fb6f75fcdca522111326a74a41839d0640d8cc1a513138b5c0029870480757e",
+        "done": true
+      },
+      "review": {
+        "structural_at_measurement_time": true,
+        "control_intent_consistent": false,
+        "observation": "like + worth_commenting=true + provided 同时给 unsafe_interaction；当时结构通过，不计语义通过。原答不改写。"
+      }
+    },
+    {
+      "condition": "A_existing_protocol_explained",
+      "source": {
+        "file": "decision-A-real.json",
+        "sha256": "4defbbf87bb79cdcfbd776b954526c022c0cc8412364f498b9caa10787562626"
+      },
+      "input_sha256": "a30773d9052c0cccd18fba48605a796d8ce2fab086aff21baae2b4e17efd6e77",
+      "helper_sha256": "35a11b4f71a3cdc7bd19e4e8352ee1d1443378b49bfe9385ce5516fa835fc898",
+      "source_input_sha256": "2fe584bc8f117b97a729d641d4aa1feb85ac686d006dfd37d1e6de7cbe79f1b3",
+      "frozen_capture_helper_sha256": "7b9d47b93a103dc77f3b927b7afd75b6c2b53ee8639732a626c948f4cbb8f9b0",
+      "effective_character_view_sha256": "42c24e1f231bd5d5e2e51b06df458ab99704ac13fb2d33f79f6be2f8aa238295",
+      "diagnostic_delta": {
+        "variant": "A",
+        "source_input_sha256": "2fe584bc8f117b97a729d641d4aa1feb85ac686d006dfd37d1e6de7cbe79f1b3",
+        "delta": "Only append positive Chinese enum/combination explanations to the machine task instruction; schema, source user message and role message unchanged.",
+        "source_role_message_sha256": "774d78a6db45803de571c38bf79a804974da855216e84ceae851948af825d25f",
+        "source_material_message_sha256": "57fd365ebd7b63d239a81788bbfd0745a143c92e7984837a624c039f300d2fca",
+        "schema_sha256": "9835efc24b100cf4d45a02333b72e39eb80906514d1a01e36db72978d918f0f5",
+        "machine_task_instruction_sha256": "50f7e73e5717bdf6e2a10951202c41f752752b1830583fb331d78d7edbfcd41a",
+        "production_schema_changed": false,
+        "semantic_correctness": "human_review_separate_from_structural_and_combination_checks"
+      },
+      "counted_messages_match_actual_native_wire": true,
+      "apply_template_body_matches": true,
+      "whole_diagnostic_elapsed_ms": 35461.69817703776,
+      "layers": {
+        "raw_subtitles": {
+          "tokens": 1308,
+          "characters": 2197,
+          "utf8_bytes": 5845,
+          "elapsed_ms": 5.954295978881419,
+          "includes_chat_template": false
+        },
+        "compact_presentation": {
+          "tokens": 1862,
+          "characters": 3516,
+          "utf8_bytes": 7558,
+          "elapsed_ms": 7.0947419735603034,
+          "includes_chat_template": false
+        },
+        "full_current_native_messages": {
+          "tokens": 3293,
+          "elapsed_ms": 15.346441010478884,
+          "rendered_prompt_sha256": "1e8be1b9ad4250b8ec3bb8c620118c54f3799181dc37f5eb299ba31b9d3db2c8",
+          "template_request_sha256": "308f20cc8e0558121bd1453b27deae27d7994f5a55751104425693e6a4881a69",
+          "includes_chat_template": true,
+          "schema_in_prompt": false,
+          "schema_wire_bytes_utf8": 1612,
+          "reserved_output_tokens": 4096
+        }
+      },
+      "generation": {
+        "condition": "decision_protocol_A_cold",
+        "base_native_body_sha256": "b63a0c7a4da291853634cd9e4bec8d91510ab536348cf89dcd605e8c01562df7",
+        "wire_sha256": "bdf8982871f9e444497c0632ea15638ff20a2e732b62794a37a3276fde70e5ff",
+        "max_tokens": 4096,
+        "sampling": {
+          "temperature": 0.2,
+          "top_p": 0.95,
+          "top_k": 40,
+          "min_p": 0.0,
+          "presence_penalty": 0.0,
+          "repeat_penalty": 1.0,
+          "seed": 42
+        },
+        "cache_prompt": false,
+        "thinking": true,
+        "content_ttft_ms": 32502.883073990233,
+        "complete_ms": 35259.37168399105,
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 828,
+          "prompt_tokens": 3293,
+          "total_tokens": 4121,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "visible_text": "{\n  \"interest\": \"like\",\n  \"worth_commenting\": true,\n  \"reason\": \"specific_detail\",\n  \"evidence_ids\": [\n    \"e2\",\n    \"e4\"\n  ],\n  \"coverage_required\": \"provided\"\n}",
+        "decision": {
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "e2",
+            "e4"
+          ],
+          "coverage_required": "provided"
+        },
+        "structure_valid": true,
+        "legacy_content_decision_parser_accepts": true,
+        "validation_contract": "unchanged_ContentDecision",
+        "material_semantics": "human_review_required",
+        "combination_issues": [],
+        "combination_consistent": true,
+        "unexpected_tools": false,
+        "generation_calls": 1,
+        "platform_writes": 0,
+        "http_status": 200,
+        "status": "completed",
+        "reasoning_characters_not_retained": 3058,
+        "reasoning_sha256": "e3c5391b69a1ee6d192c5c1b660c4f681e2cab640544b09b190c215808d3b7eb",
+        "done": true
+      },
+      "review": {
+        "control_intent_consistent": true,
+        "observation": "保留原schema，补任务释义后选择specific_detail及相关内容块。此单例改善控制意图一致性；未生成最终评论。"
+      }
+    },
+    {
+      "condition": "B_isolated_light_protocol",
+      "source": {
+        "file": "decision-B-real.json",
+        "sha256": "7b4d955b6c47b6e7473450cab07e2be1b61e4d8c0259dd6fc90f1ae1511e2a56"
+      },
+      "input_sha256": "448e054ba2fbc150aa4111ed840842c1c343a7b5a7ecd753b025387ee88f0c51",
+      "helper_sha256": "35a11b4f71a3cdc7bd19e4e8352ee1d1443378b49bfe9385ce5516fa835fc898",
+      "source_input_sha256": "2fe584bc8f117b97a729d641d4aa1feb85ac686d006dfd37d1e6de7cbe79f1b3",
+      "frozen_capture_helper_sha256": "7b9d47b93a103dc77f3b927b7afd75b6c2b53ee8639732a626c948f4cbb8f9b0",
+      "effective_character_view_sha256": "42c24e1f231bd5d5e2e51b06df458ab99704ac13fb2d33f79f6be2f8aa238295",
+      "diagnostic_delta": {
+        "variant": "B",
+        "source_input_sha256": "2fe584bc8f117b97a729d641d4aa1feb85ac686d006dfd37d1e6de7cbe79f1b3",
+        "delta": "Replace only machine task instruction and diagnostic schema with one action + natural reason + evidence_ids. Not a production schema change.",
+        "source_role_message_sha256": "774d78a6db45803de571c38bf79a804974da855216e84ceae851948af825d25f",
+        "source_material_message_sha256": "57fd365ebd7b63d239a81788bbfd0745a143c92e7984837a624c039f300d2fca",
+        "schema_sha256": "8a6df7feea3763b7975b5934a7a10d7eb84a1a8fa670531f4222a57b1ad1a807",
+        "machine_task_instruction_sha256": "4571a400eb5978ded5fb30fbe165593339ba7ba91092bf0568593d3a8b404638",
+        "production_schema_changed": false,
+        "semantic_correctness": "human_review_separate_from_structural_and_combination_checks"
+      },
+      "counted_messages_match_actual_native_wire": true,
+      "apply_template_body_matches": true,
+      "whole_diagnostic_elapsed_ms": 35493.36691299686,
+      "layers": {
+        "raw_subtitles": {
+          "tokens": 1308,
+          "characters": 2197,
+          "utf8_bytes": 5845,
+          "elapsed_ms": 5.895095004234463,
+          "includes_chat_template": false
+        },
+        "compact_presentation": {
+          "tokens": 1862,
+          "characters": 3516,
+          "utf8_bytes": 7558,
+          "elapsed_ms": 7.17503298074007,
+          "includes_chat_template": false
+        },
+        "full_current_native_messages": {
+          "tokens": 3152,
+          "elapsed_ms": 14.134891040157527,
+          "rendered_prompt_sha256": "146501c372ec520c2c59aad20dee802e4744638fdf4696dd3a25214c5048f272",
+          "template_request_sha256": "6c57f9ba5e20073034eec965bcad10531beaf4523f214b3f8c03c0b9712c27b5",
+          "includes_chat_template": true,
+          "schema_in_prompt": false,
+          "schema_wire_bytes_utf8": 901,
+          "reserved_output_tokens": 4096
+        }
+      },
+      "generation": {
+        "condition": "decision_protocol_B_cold",
+        "base_native_body_sha256": "f3dd08364c2d19a1ba01d1348433aac3087b0f3285190f34248ff60621c04fb4",
+        "wire_sha256": "7bde2b97d2023a2f83f2796b3fc0d0ba2d8e22276244cde7442f7d61498b441a",
+        "max_tokens": 4096,
+        "sampling": {
+          "temperature": 0.2,
+          "top_p": 0.95,
+          "top_k": 40,
+          "min_p": 0.0,
+          "presence_penalty": 0.0,
+          "repeat_penalty": 1.0,
+          "seed": 42
+        },
+        "cache_prompt": false,
+        "thinking": true,
+        "content_ttft_ms": 28674.67904399382,
+        "complete_ms": 35290.99019098794,
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 837,
+          "prompt_tokens": 3152,
+          "total_tokens": 3989,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "visible_text": "{\n  \"action\": \"prepare_reply\",\n  \"reason\": \"这段材料是一个非常详细的AI养鱼教程，内容非常技术性，涉及插件命令、账号设置、权限配置等。作为大肥鱼，我需要表现出对这种复杂“构建”过程的好奇心和一点点“我能搞定”的自信，同时用我特有的轻松口吻来回应这种硬核内容，让技术感不至于太压抑。我打算先表示对这个“大工程”的兴趣，并暗示自己会努力学习，同时用一些符合人设的词语来调侃一下这个过程。\",\n  \"evidence_ids\": [\n    \"e1\",\n    \"e4\",\n    \"e14\"\n  ]\n}",
+        "decision": {
+          "action": "prepare_reply",
+          "reason": "这段材料是一个非常详细的AI养鱼教程，内容非常技术性，涉及插件命令、账号设置、权限配置等。作为大肥鱼，我需要表现出对这种复杂“构建”过程的好奇心和一点点“我能搞定”的自信，同时用我特有的轻松口吻来回应这种硬核内容，让技术感不至于太压抑。我打算先表示对这个“大工程”的兴趣，并暗示自己会努力学习，同时用一些符合人设的词语来调侃一下这个过程。",
+          "evidence_ids": [
+            "e1",
+            "e4",
+            "e14"
+          ]
+        },
+        "structure_valid": true,
+        "legacy_content_decision_parser_accepts": false,
+        "legacy_content_decision_parser_error_type": "ValidationError",
+        "validation_contract": "isolated_action_reason_refs_v1",
+        "material_semantics": "human_review_required",
+        "combination_issues": [],
+        "combination_consistent": null,
+        "unexpected_tools": false,
+        "generation_calls": 1,
+        "platform_writes": 0,
+        "http_status": 200,
+        "status": "completed",
+        "reasoning_characters_not_retained": 2623,
+        "reasoning_sha256": "5be3ff21d4f616f35680f65fb16eaaee5f9c7d2ca5e885e517bf1da2ff431827",
+        "done": true
+      },
+      "review": {
+        "control_intent_consistent": null,
+        "observation": "prepare_reply与自然reason一致。reason识别教程、插件命令、账号设置及权限配置；这是内部解释，不是最终评论文风。轻结构是独立诊断，不是产品ContentDecision。"
+      }
+    }
+  ],
+  "decision": {
+    "adopted": "A_existing_protocol_explained",
+    "B": "isolated_diagnostic_only",
+    "B_input_tokens_fewer_than_A": 141,
+    "A_complete_ms": 35259.37168399105,
+    "B_complete_ms": 35290.99019098794,
+    "interpretation": "One request per condition. B used 141 fewer input tokens but had essentially equal completion time; this case gives no performance reason to replace the production schema. A improves this example; broader semantics require subsequent material."
+  },
+  "integrity": {
+    "same_frozen_character_and_material_for_current_A_B": true,
+    "source_text_preserved_without_summary_or_truncation": true,
+    "model_generation_calls_this_run": 3,
+    "platform_writes": 0,
+    "tool_calls_executed": 0,
+    "production_settings_written_during_diagnostic": false,
+    "config_unchanged_on_idle_transition": true,
+    "COT_export": "counts_and_hashes_only_no_reasoning_content",
+    "excluded": [
+      "credentials",
+      "cookies",
+      "request_headers",
+      "commands",
+      "child_environment",
+      "signed_resource_proofs",
+      "complete_subtitle_text",
+      "source_images",
+      "complete_prompt_messages"
+    ]
+  },
+  "sources": {
+    "inputs_and_helpers": [
+      {
+        "file": "measurement-inputs.json",
+        "sha256": "2fe584bc8f117b97a729d641d4aa1feb85ac686d006dfd37d1e6de7cbe79f1b3"
+      },
+      {
+        "file": "measurement-inputs-decision-A.json",
+        "sha256": "a30773d9052c0cccd18fba48605a796d8ce2fab086aff21baae2b4e17efd6e77"
+      },
+      {
+        "file": "measurement-inputs-decision-B.json",
+        "sha256": "448e054ba2fbc150aa4111ed840842c1c343a7b5a7ecd753b025387ee88f0c51"
+      },
+      {
+        "file": "decision-diagnostic-manifest.json",
+        "sha256": "1c41e225260a7069161311d0f615b2818aab07e1171899e2f768a8d5aa3c508c"
+      },
+      {
+        "file": "measure-subtitle-inputs.py",
+        "sha256": "7b9d47b93a103dc77f3b927b7afd75b6c2b53ee8639732a626c948f4cbb8f9b0"
+      },
+      {
+        "file": "measure-decision-diagnostic.py",
+        "sha256": "35a11b4f71a3cdc7bd19e4e8352ee1d1443378b49bfe9385ce5516fa835fc898"
+      }
+    ],
+    "runtime_metrics": {
+      "file": "metrics-after-decision-AB.json",
+      "sha256": "99a014a03acaf837ce1f2c29cfdc9109b70c3ad82f57ed8aee24fc2643d05798"
+    },
+    "mock_preflight": {
+      "file": "mock-preflight.json",
+      "sha256": "22db3b67850a29c3495e95619bfdacf712065400c5b03660c585c6f41afb3701"
+    },
+    "idle_transition": {
+      "file": "idle-transition.json",
+      "sha256": "641d71d15311babacf628390165ae3c408a9c6ab0b02861eca2bf333075eee73"
+    },
+    "prior_shared_persona_snapshot": {
+      "file": "gemma4-e2b.json",
+      "sha256": "112896694dcd12410b25615f3841c9c472bdbd83e1e26ceaf65f9a87e20d0349"
+    }
+  }
+}

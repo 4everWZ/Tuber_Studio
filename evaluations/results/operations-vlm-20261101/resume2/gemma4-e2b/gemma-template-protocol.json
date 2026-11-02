@@ -1,0 +1,54 @@
+{
+  "model_alias": "ops-gemma4_e2b",
+  "actual_template_sha256": "603a42db292c25278e9b23d94c7abbe77453f13e26a053c43c5c2f900b4136f7",
+  "type": "synthetic_apply_template_only_no_generation",
+  "results": {
+    "current_tool_turn": {
+      "sentinel_retained": true,
+      "rendered_prompt_sha256": "153fd258d5034b295006b6eaf8fe1123592850fac215f745a4295b0321eb8f43"
+    },
+    "real_new_user": {
+      "sentinel_retained": true,
+      "rendered_prompt_sha256": "b0e8ebfe685736b7fdd45169b7d5d595ab59603f6c962e27ea2b1a1fe4c44d3d"
+    },
+    "real_new_user_after_caller_strip": {
+      "sentinel_retained": false,
+      "rendered_prompt_sha256": "ac5adffac2af34bb12bae38e4128085da5292168ff34f51d37b587339b1213be"
+    },
+    "synthetic_old_boundary": {
+      "sentinel_retained": true,
+      "rendered_prompt_sha256": "b26fc1e1d7a231b1aaf66824fb2f968760aa3fa5d92395f4bf5e2dbe3efa88a7"
+    },
+    "notice_within_current_user": {
+      "sentinel_retained": true,
+      "rendered_prompt_sha256": "9eb2b03e02abcef0133e2ddea331cb887f3b62a86b6a6844a9e5268ad2eba810"
+    }
+  },
+  "request_options": {
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "web_search",
+          "description": "Read-only controlled search",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        }
+      }
+    ],
+    "add_generation_prompt": true,
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  },
+  "caller_policy": "Replay only within current real user tool loop; explicitly remove older fields on real user boundary; do not assume renderer automatic removal"
+}

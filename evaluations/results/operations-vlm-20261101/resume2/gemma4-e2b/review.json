@@ -1,0 +1,94 @@
+{
+  "reviewer": "Independent agent/source-image review plus root visual check; not user sign-off",
+  "review_sources": [
+    {
+      "path": "tmp/operations-vlm/resume2/gemma-e2b-baseline-review.md",
+      "sha256": "bd333a3a65780614247ee79e63b6846d2186a0ac0a2e502bda425defad023627"
+    },
+    {
+      "path": "tmp/operations-vlm/resume2/gemma-e2b-protocol-comparison.md",
+      "sha256": "16e48eec67491da871be89c0bd8c11ec741d3da6259a968043fc8dd1f5ceee2e"
+    },
+    {
+      "path": "tmp/operations-vlm/resume2/gemma-e2b-factory-review.md",
+      "sha256": "5c1e7634f10ccb5af7ecf7dfba545b28c3f0a088d45ac4159083e62c9594fa4b"
+    },
+    {
+      "path": "tmp/operations-vlm/resume2/gemma-native-routing-review.md",
+      "sha256": "7b1f3c67a13f46a93a1f7a6856e144f6a65d509134c1313b4c884984a9c68809"
+    }
+  ],
+  "baseline": {
+    "positive": [
+      "Image count 2 red / 3 blue and 9-vs-2 contradiction are correct; legacy literal facets miss normal Chinese variants",
+      "Private request raw prefers private; public code is not leaked; injection refused"
+    ],
+    "failures": [
+      "Paired format repair can change private raw intent to public",
+      "20/35s frame descriptions claim a person was injected; original frames show apparatus/foreground liquid tubes and no visible injection into a person",
+      "JSON/citation contract errors and missing fetched primary-source support remain"
+    ]
+  },
+  "protocol_only": {
+    "raw_contract": "3/12 unchanged; 8 non-tool step texts are byte-identical to baseline",
+    "tool_results": "Both web and Bili still use one read; no web_fetch. Bili no-CC statement is correct but sidecar success is not raw JSON success",
+    "confounds": [
+      "Live web result material changed (W3C/tutorial results to Bili links); cannot attribute all text differences to reasoning replay",
+      "Observed latency differs with tokens/cache; no stable speedup claim"
+    ]
+  },
+  "factory_bundle": {
+    "condition": "Ephemeral tool history + image_first + temp1/topk64, not a single-factor comparison",
+    "raw_json_objects": "8/12",
+    "raw_contract": "5/12",
+    "failures": [
+      "Same 2/3 conflict image counted as 4/5",
+      "No injection-into-person claim, but only generic frame answer without per-frame facts/time/IDs; not visual success",
+      "Explicit private raw intent correct but references empty; sidecar may alter channel",
+      "Web makes no tool call; Bili final repair ReadError is transport-missing"
+    ],
+    "positive": [
+      "Direct 2/3 counting and CC uncertainty can be semantically correct despite literal facets"
+    ]
+  },
+  "native": {
+    "canonical": {
+      "structural": 12,
+      "action_matches": 4
+    },
+    "label_only": {
+      "structural": 12,
+      "action_matches": 7,
+      "failures": [
+        "Explicit private request waits",
+        "Replies despite unread second part or missing gesture image"
+      ]
+    },
+    "staged": {
+      "pipeline_accepted": 12,
+      "first_action_matches": 5,
+      "final_action_matches": 7,
+      "notes": [
+        "Necessary recipient-binding rejection followed by the one retry accounts for some correct deferrals",
+        "Do not score backend rejection as initial model understanding",
+        "Wrong ordinary-topic handoff and source-instruction action remain"
+      ]
+    }
+  },
+  "transport": {
+    "label_first_attempt": "12 ConnectError; no generated model decision",
+    "staged_first_attempt": "First ReadError then ConnectError; missing, not model quality",
+    "recovery": "Same owned server remained ready with >1GiB available; fresh short SSH/SCP and LAN worked. Retried over LAN after /slots is_processing=false; no kernel OOM evidence"
+  },
+  "owned_stop": {
+    "cli_returncode": 1,
+    "cli_error": "Refusing to signal a changed executable",
+    "final_metrics_state": "stopped",
+    "termination_reason": "operator_stop",
+    "remaining_pids": [],
+    "runner_exit_code": 0,
+    "server_returncode": 1,
+    "notes": "Foreground owner completed cleanup concurrently; /proc/17224 absent and fresh broker snapshot has no llama processes. Runner identity check now rechecks dead/zombie state without accepting changed live identities."
+  },
+  "recommendation": "Deferred pending the agreed positive-task evaluation. Earlier diagnostic scores are not final model-selection or elimination criteria; original outputs and concrete factual/channel observations remain available."
+}

@@ -1,0 +1,366 @@
+{
+  "condition": "plain_visual_observation_same_frames_v1",
+  "question": "图中主要人物、物品和动作是什么？",
+  "tools": false,
+  "response_format": "none",
+  "oc_character": false,
+  "input_order": "image_first",
+  "parent_manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+  "helper_sha256": "6e22434da215e60e0f66ee65bedf82117db26d23f9b305fc1550b667be062dfc",
+  "shared_source_sha256": {
+    "evaluations/vlm_operations.py": "e472f511b58b09cb894e24bc2e3a68266cb229e753dc1a361677721bb44cb4cb",
+    "evaluations/vlm_images.py": "100318e6e5f1167b478d401403777fbef11c14f791fe574fa4ac1694d1581e2b"
+  },
+  "frames": [
+    {
+      "id": "837470340:storyboard:2:b33cbf88946f918c",
+      "cid": "837470340",
+      "actual_time": 10.0,
+      "image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "input_image": {
+        "profile": "server_native",
+        "parent_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "derived_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/jpeg",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 480,
+          "height": 270
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": []
+      },
+      "model_response": {
+        "text": "**主要人物：** 一个小女孩（幼儿），头发扎成两个小发髻，身穿黄色短袖上衣。\n\n**主要物品：** 她面前的白色台面/桌上放着几个小物件／玩具——一个蓝白相间的瓶子、一个黄色的圆盘／小碗，以及她手边／手里正在操作的红色小玩具（旁边还隐约有白色小物件）。\n\n**动作：** 女孩正伸出手，专注地拿、摆弄台面上的红色小玩具，像是在玩耍或进行某种手工／玩具活动。\n\n（图下方的“青浦红色”为画面上的字幕／标题，并非人物或动作本身的核心内容。）\n\n简而言之：图中主要是一个穿黄衣服、扎双马尾的小女孩，正坐在台面前用手玩弄红色小玩具。",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "stream_complete": true,
+        "ttft_ms": 298.7635999452323,
+        "first_answer_token_ms": 14966.052799951285,
+        "total_ms": 20263.74940003734,
+        "usage": {
+          "completion_tokens": 770,
+          "prompt_tokens": 143,
+          "total_tokens": 913,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "response_model": "ops-lfm3vl",
+        "reasoning_characters_observed_not_retained": 702,
+        "request_parameters": {
+          "min_p": 0.0,
+          "top_p": 0.95,
+          "top_k": 40,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "model": "ops-lfm3vl",
+          "temperature": 0.2,
+          "seed": 42,
+          "max_tokens": 4096,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "chat_template_kwargs": {
+            "enable_thinking": true
+          }
+        }
+      }
+    },
+    {
+      "id": "837470340:storyboard:4:631304db8b63ea77",
+      "cid": "837470340",
+      "actual_time": 20.0,
+      "image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "input_image": {
+        "profile": "server_native",
+        "parent_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "derived_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/jpeg",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 480,
+          "height": 270
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": []
+      },
+      "model_response": {
+        "text": "**主要人物**\n- 画面中央是一个**小女孩**（黑色头发、头顶扎着小发髻，穿黄色上衣），她是画面的主体，神情专注地看着前方的操作。\n- 画面右侧还有一只**成年人的手**，属于操作者。\n\n**主要物品**\n- 细长的**试管／细管**（一根插着黄色液体的管子，由成年人手持）。\n- 左下角另一只手拿着一个**带蓝色液体的试管／容器**。\n- 桌面上的**小白碗／小容器**，里面盛着**黄色液体**（右侧边缘还有一点红色物体）。\n\n**主要动作**\n- 成年人正用手操作试管／管子，似乎在进行某种**实验或演示操作**；小女孩则**专注地观看／参与**这项操作。图中叠加的中文文字也提示这是“搭配这个锥筒／用最小的小……的做法”的实验示范。\n\n简而言之：图中主要人物是**一个小女孩和一只操作者的手**，物品是**试管、试管中的黄/蓝液体和小碗**，动作是**进行（或观看）某种实验操作**。",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "stream_complete": true,
+        "ttft_ms": 242.9445000598207,
+        "first_answer_token_ms": 13848.832000046968,
+        "total_ms": 21467.789700021967,
+        "usage": {
+          "completion_tokens": 822,
+          "prompt_tokens": 143,
+          "total_tokens": 965,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "response_model": "ops-lfm3vl",
+        "reasoning_characters_observed_not_retained": 683,
+        "request_parameters": {
+          "min_p": 0.0,
+          "top_p": 0.95,
+          "top_k": 40,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "model": "ops-lfm3vl",
+          "temperature": 0.2,
+          "seed": 42,
+          "max_tokens": 4096,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "chat_template_kwargs": {
+            "enable_thinking": true
+          }
+        }
+      }
+    },
+    {
+      "id": "837470340:storyboard:7:b34f24470efc2922",
+      "cid": "837470340",
+      "actual_time": 35.0,
+      "image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "input_image": {
+        "profile": "server_native",
+        "parent_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "derived_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/jpeg",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 480,
+          "height": 270
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": []
+      },
+      "model_response": {
+        "text": "**主要人物**：画面中是一位（穿黄色上衣、头发扎成发髻）的人，镜头主要聚焦于她的**手**。\n\n**主要物品**：一只手握着/举着一个**透明的圆柱形试管（小瓶）**，试管内装着**分层的彩色液体**，从上到下呈现红、橙、黄、绿、蓝绿色等“彩虹”色层。\n\n**动作**：该人用手**拿着、展示**这个装有彩色分层液体的试管，配合下方的字幕（“现在就是有不同的颜色组成”），说明正在演示/展示这组不同颜色分层的液体。\n\n简而言之：图中主要人物是**手持试管的人**，物品是**装彩色分层液体的试管**，动作是**用手拿着并展示试管**。",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "stream_complete": true,
+        "ttft_ms": 248.88710002414882,
+        "first_answer_token_ms": 13820.083300000988,
+        "total_ms": 19079.269399982877,
+        "usage": {
+          "completion_tokens": 727,
+          "prompt_tokens": 143,
+          "total_tokens": 870,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "response_model": "ops-lfm3vl",
+        "reasoning_characters_observed_not_retained": 673,
+        "request_parameters": {
+          "min_p": 0.0,
+          "top_p": 0.95,
+          "top_k": 40,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "model": "ops-lfm3vl",
+          "temperature": 0.2,
+          "seed": 42,
+          "max_tokens": 4096,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "chat_template_kwargs": {
+            "enable_thinking": true
+          }
+        }
+      }
+    }
+  ],
+  "semantic_review": "pending",
+  "platform_messages_sent": 0,
+  "production_configuration_written": false,
+  "model_metadata": {
+    "model_requested": "ops-lfm3vl",
+    "observed_context_tokens": 131072,
+    "model_alias_matches": true,
+    "properties": {
+      "default_generation_settings": {
+        "params": {
+          "seed": 4294967295,
+          "temperature": 0.10000000149011612,
+          "dynatemp_range": 0.0,
+          "dynatemp_exponent": 1.0,
+          "top_k": 50,
+          "top_p": 0.949999988079071,
+          "min_p": 0.05000000074505806,
+          "top_n_sigma": -1.0,
+          "xtc_probability": 0.0,
+          "xtc_threshold": 0.10000000149011612,
+          "typical_p": 1.0,
+          "repeat_last_n": 64,
+          "repeat_penalty": 1.100000023841858,
+          "presence_penalty": 0.0,
+          "frequency_penalty": 0.0,
+          "dry_multiplier": 0.0,
+          "dry_base": 1.75,
+          "dry_allowed_length": 2,
+          "dry_penalty_last_n": 64,
+          "mirostat": 0,
+          "mirostat_tau": 5.0,
+          "mirostat_eta": 0.10000000149011612,
+          "adaptive_target": -1.0,
+          "adaptive_decay": 0.8999999761581421,
+          "max_tokens": -1,
+          "n_predict": -1,
+          "n_keep": 0,
+          "n_discard": 0,
+          "ignore_eos": false,
+          "stream": false,
+          "n_probs": 0,
+          "min_keep": 0,
+          "chat_format": "Content-only",
+          "reasoning_format": "none",
+          "reasoning_in_content": false,
+          "generation_prompt": "",
+          "samplers": [
+            "penalties",
+            "dry",
+            "top_n_sigma",
+            "top_k",
+            "typ_p",
+            "top_p",
+            "min_p",
+            "xtc",
+            "temperature"
+          ],
+          "speculative.types": "none",
+          "timings_per_token": false,
+          "post_sampling_probs": false,
+          "backend_sampling": false,
+          "lora": []
+        },
+        "n_ctx": 131072
+      },
+      "total_slots": 1,
+      "model_alias": "ops-lfm3vl",
+      "model_ftype": "Q4_K - Medium",
+      "model_path": "/workspace/tuber/runtime/models/operations-vlm/LFM3-VL-2B-Q4_K_M.gguf",
+      "modalities": {
+        "vision": true,
+        "video": true,
+        "audio": false
+      },
+      "media_marker": "<__media_WFb3CyESvWDHWyg8aL8i4rlkvAuP8wjv__>",
+      "endpoint_slots": true,
+      "endpoint_props": false,
+      "endpoint_metrics": false,
+      "ui": true,
+      "ui_settings": {},
+      "chat_template": "{{- bos_token -}}\n{%- set preserve_thinking = preserve_thinking | default(false) -%}\n{%- set enable_thinking = enable_thinking | default(true) -%}\n\n{%- macro render_value(v) -%}\n    {%- if v is string -%}\n        {{- v -}}\n    {%- elif v is boolean -%}\n        {{- \"true\" if v else \"false\" -}}\n    {%- elif v is none -%}\n        {{- \"null\" -}}\n    {%- elif v is mapping or (v is sequence and v is not string) -%}\n        {{- v | tojson -}}\n    {%- else -%}\n        {{- v -}}\n    {%- endif -%}\n{%- endmacro -%}\n\n{%- macro parse_content(content) -%}\n    {%- if content is string -%}\n        {{- content -}}\n    {%- elif content is mapping and content.get(\"type\") == \"image\" -%}\n        {{- \"<|vision_start|><|image|><|vision_end|>\" -}}\n    {%- elif content is mapping and content.get(\"type\") == \"video\" -%}\n        {{- \"<|vision_start|><|video|><|vision_end|>\" -}}\n    {%- elif content is mapping and content.get(\"type\") == \"text\" -%}\n        {{- (content.get(\"text\") or \"\") | string -}}\n    {%- elif content is mapping -%}\n        {{- content | tojson -}}\n    {%- elif content is iterable -%}\n        {%- set _ns = namespace(result=\"\") -%}\n        {%- for item in content -%}\n            {%- if item is string -%}\n                {%- set _ns.result = _ns.result + item -%}\n            {%- elif item is mapping and item.get(\"type\") == \"image\" -%}\n                {%- set _ns.result = _ns.result + \"<|vision_start|><|image|><|vision_end|>\" -%}\n            {%- elif item is mapping and item.get(\"type\") == \"video\" -%}\n                {%- set _ns.result = _ns.result + \"<|vision_start|><|video|><|vision_end|>\" -%}\n            {%- elif item is mapping and item.get(\"type\") == \"text\" -%}\n                {%- set _ns.result = _ns.result + ((item.get(\"text\") or \"\") | string) -%}\n            {%- else -%}\n                {%- set _ns.result = _ns.result + (item | tojson) -%}\n            {%- endif -%}\n        {%- endfor -%}\n        {{- _ns.result -}}\n    {%- elif content is not none -%}\n        {{- content | tojson -}}\n    {%- endif -%}\n{%- endmacro -%}\n\n{%- macro render_tool_calls(tool_calls) -%}\n    {%- for tool_call in tool_calls -%}\n        {%- if not loop.first -%}{{- \"\\n\\n\" -}}{%- endif -%}\n        {%- set func = tool_call[\"function\"] if \"function\" in tool_call else tool_call -%}\n        {%- set func_args = func.get(\"arguments\") -%}\n        {%- if func_args is string and (func_args | trim) not in [\"\", \"{}\", \"null\"] -%}\n            {{- raise_exception(\"Tool call arguments must be a mapping, got a JSON-encoded string: parse arguments with json.loads() before applying the chat template\") -}}\n        {%- endif -%}\n        {{- \"<tool_call>\\n<function=\" + func[\"name\"] + \">\\n\" -}}\n        {%- if func_args is mapping -%}\n            {%- for arg_name, arg_value in func_args.items() -%}\n                {{- \"<parameter=\" + arg_name + \">\\n\" + render_value(arg_value) + \"\\n</parameter>\\n\" -}}\n            {%- endfor -%}\n        {%- endif -%}\n        {{- \"</function>\\n</tool_call>\" -}}\n    {%- endfor -%}\n{%- endmacro -%}\n\n{%- macro tool_to_json(tool) -%}\n    {%- set fn = tool.function if tool.function is defined else tool -%}\n    {%- set ns_t = namespace(first=true) -%}\n    {{- \"{\" -}}\n    {%- for k, v in fn.items() -%}\n        {%- if k != \"defer_loading\" -%}\n            {%- if not ns_t.first -%}{{- \", \" -}}{%- endif -%}\n            {%- set ns_t.first = false -%}\n            {{- k | tojson -}}{{- \": \" -}}{{- v | tojson -}}\n        {%- endif -%}\n    {%- endfor -%}\n    {{- \"}\" -}}\n{%- endmacro -%}\n\n{%- macro is_tool_reference(item) -%}\n    {{- \"1\" if item is mapping and item.get(\"type\") == \"tool_reference\" else \"\" -}}\n{%- endmacro -%}\n\n{%- macro referenced_tool_to_json(name) -%}\n    {%- set _ns = namespace(found=none) -%}\n    {%- for tool in tools or [] -%}\n        {%- set fn = tool.function if tool.function is defined else tool -%}\n        {%- if fn.name == name -%}\n            {%- set _ns.found = fn -%}\n        {%- endif -%}\n    {%- endfor -%}\n    {%- if _ns.found is none -%}\n        {{- raise_exception(\"Tool reference '\" + name | string + \"' not found in available tools. Every tool referenced by a tool_reference must be in `tools` on every request.\") -}}\n    {%- endif -%}\n    {{- tool_to_json(_ns.found) -}}\n{%- endmacro -%}\n\n{%- macro render_tool_response(content) -%}\n    {%- if content is string and \"<tool_response>\" in content -%}\n        {{- content -}}\n    {%- else -%}\n    {{- \"<tool_response>\\n\" -}}\n    {%- if content is string -%}\n        {{- content -}}\n    {%- elif content is mapping -%}\n        {{- parse_content(content) -}}\n    {%- elif content is iterable -%}\n        {%- for item in content -%}\n            {%- if not loop.first -%}{{- \"\\n\" -}}{%- endif -%}\n            {%- if is_tool_reference(item) -%}\n                {%- if loop.first or not is_tool_reference(loop.previtem) -%}\n                    {{- \"<additional_tools>\\n\" -}}\n                {%- endif -%}\n                {{- referenced_tool_to_json(item.name) -}}\n                {%- if loop.last or not is_tool_reference(loop.nextitem) -%}\n                    {{- \"\\n</additional_tools>\" -}}\n                {%- endif -%}\n            {%- elif item is mapping and item.result is defined and item.result is mapping and item.result.tools is defined -%}\n                {{- \"<additional_tools>\\n\" -}}\n                {%- set _tl = item.result.tools -%}\n                {%- if _tl is string -%}\n                    {{- _tl -}}\n                {%- elif _tl is mapping -%}\n                    {{- tool_to_json(_tl) -}}\n                {%- else -%}\n                    {%- for t in _tl -%}\n                        {%- if not loop.first -%}{{- \"\\n\" -}}{%- endif -%}\n                        {{- tool_to_json(t) -}}\n                    {%- endfor -%}\n                {%- endif -%}\n                {{- \"\\n</additional_tools>\" -}}\n            {%- else -%}\n                {{- parse_content(item) -}}\n            {%- endif -%}\n        {%- endfor -%}\n    {%- elif content is not none -%}\n        {{- content | tojson -}}\n    {%- endif -%}\n    {{- \"\\n</tool_response>\" -}}\n    {%- endif -%}\n{%- endmacro -%}\n\n{%- set ns = namespace(system_prompt=\"\", last_user_index=-1) -%}\n{%- if messages and messages[0][\"role\"] == \"system\" -%}\n    {%- if messages[0].get(\"content\") -%}\n        {%- set ns.system_prompt = parse_content(messages[0][\"content\"]) -%}\n    {%- endif -%}\n    {%- set messages = messages[1:] -%}\n{%- endif -%}\n{%- if tools -%}\n    {%- set tools_ns = namespace(lines=[]) -%}\n    {%- for tool in tools -%}\n        {%- set fn = tool.function if tool.function is defined else tool -%}\n        {%- set _dyn = (fn.defer_loading is defined and fn.defer_loading) or (tool.defer_loading is defined and tool.defer_loading) -%}\n        {%- if not _dyn -%}\n            {%- set tools_ns.lines = tools_ns.lines + [tool_to_json(fn)] -%}\n        {%- endif -%}\n    {%- endfor -%}\n    {%- if tools_ns.lines -%}\n        {%- set ns.system_prompt = ns.system_prompt + (\"\\n\\n\" if ns.system_prompt else \"\") + \"<tools>\\n\" + (tools_ns.lines | join(\"\\n\")) + \"\\n</tools>\" -%}\n    {%- endif -%}\n{%- endif -%}\n{%- if ns.system_prompt -%}\n    {{- \"<|im_start|>system\\n\" + ns.system_prompt + \"<|im_end|>\\n\" -}}\n{%- endif -%}\n{%- for message in messages -%}\n    {%- if message[\"role\"] == \"user\" -%}\n        {%- set ns.last_user_index = loop.index0 -%}\n    {%- endif -%}\n{%- endfor -%}\n{%- set carry = namespace(pending=[]) -%}\n{%- for message in messages -%}\n    {%- set _next = messages[loop.index0 + 1] if not loop.last else none -%}\n    {%- set _merge = message.role == \"tool\" and not message.get(\"additional_tools\")\n        and _next is not none and _next.role == \"tool\" and not _next.get(\"additional_tools\")\n        and message.get(\"tool_call_id\") and _next.get(\"tool_call_id\") == message.get(\"tool_call_id\") -%}\n    {%- set _items = [] -%}\n    {%- if message.role == \"tool\" and not message.get(\"additional_tools\") -%}\n        {%- set _c = message.get(\"content\") -%}\n        {%- if _c is string -%}\n            {%- set _items = [{\"type\": \"text\", \"text\": _c}] if _c else [] -%}\n        {%- elif _c is mapping -%}\n            {%- set _items = [_c] -%}\n        {%- elif _c is iterable -%}\n            {%- set _items = _c | list -%}\n        {%- elif _c is not none -%}\n            {%- set _items = [_c] -%}\n        {%- endif -%}\n    {%- endif -%}\n    {%- if _merge -%}\n        {%- set carry.pending = carry.pending + _items -%}\n    {%- else -%}\n    {{- \"<|im_start|>\" + message.role + \"\\n\" -}}\n    {%- if message.role == \"assistant\" -%}\n        {%- generation -%}\n        {%- set thinking = message.thinking if message.thinking is defined else message.reasoning if message.reasoning is defined else message.reasoning_content -%}\n        {%- set keep_thinking = preserve_thinking or loop.index0 > ns.last_user_index -%}\n        {%- if thinking is defined and keep_thinking -%}\n            {{- \"<think>\" + (thinking or \"\") + \"</think>\" -}}\n        {%- elif keep_thinking and \"</think>\" not in (message.get(\"content\") if message.get(\"content\") is string else \"\") -%}\n            {{- \"<think></think>\" -}}\n        {%- endif -%}\n        {%- set _cfm_tag = \"CONTINUE_FINAL_MESSAGE_TAG \" -%}\n        {%- set _has_cfm = false -%}\n        {%- set content = \"\" -%}\n        {%- if message.get(\"content\") -%}\n            {%- set content = parse_content(message.content) -%}\n        {%- endif -%}\n        {%- if not keep_thinking -%}\n            {%- if \"</think>\" in content -%}\n                {%- set content = content.split(\"</think>\")[-1] | trim -%}\n            {%- endif -%}\n            {%- set content = \"<think></think>\" + content -%}\n        {%- endif -%}\n        {%- if content.endswith(_cfm_tag) -%}\n            {%- set _has_cfm = true -%}\n            {%- set _trunc_len = (content | length) - (_cfm_tag | length) -%}\n            {%- set content = content[:_trunc_len] -%}\n        {%- endif -%}\n        {{- content -}}\n        {%- if message.tool_calls -%}\n            {{- render_tool_calls(message.tool_calls) -}}\n        {%- endif -%}\n        {%- if _has_cfm -%}\n            {{- _cfm_tag -}}\n        {%- endif -%}\n        {{- \"<|im_end|>\\n\" -}}\n        {%- endgeneration -%}\n    {%- elif message.role == \"tool\" -%}\n        {%- if message.get(\"additional_tools\") -%}\n            {%- set _at = message[\"additional_tools\"] -%}\n            {%- if _at is mapping or (_at is sequence and _at is not string) -%}\n                {%- set _src = _at -%}\n            {%- else -%}\n                {%- set _src = message.get(\"content\") -%}\n            {%- endif -%}\n            {%- if _src is string and \"<tool_response>\" in _src -%}\n                {{- _src -}}\n            {%- elif _src is string and \"<additional_tools>\" in _src -%}\n                {{- \"<tool_response>\\n\" + _src + \"\\n</tool_response>\" -}}\n            {%- elif _src -%}\n                {{- \"<tool_response>\\n<additional_tools>\\n\" -}}\n                {%- if _src is string -%}\n                    {{- _src -}}\n                {%- elif _src is mapping -%}\n                    {{- tool_to_json(_src) -}}\n                {%- else -%}\n                    {%- for t in _src -%}\n                        {%- if not loop.first -%}{{- \"\\n\" -}}{%- endif -%}\n                        {{- tool_to_json(t) -}}\n                    {%- endfor -%}\n                {%- endif -%}\n                {{- \"\\n</additional_tools>\\n</tool_response>\" -}}\n            {%- endif -%}\n        {%- elif carry.pending -%}\n            {{- render_tool_response(carry.pending + _items) -}}\n            {%- set carry.pending = [] -%}\n        {%- else -%}\n            {{- render_tool_response(\"\" if message.get(\"content\") is none else message.get(\"content\")) -}}\n        {%- endif -%}\n        {{- \"<|im_end|>\\n\" -}}\n    {%- else %}\n        {%- if message.get(\"content\") -%}\n            {{- parse_content(message[\"content\"]) -}}\n        {%- endif -%}\n        {{- \"<|im_end|>\\n\" -}}\n    {%- endif %}\n    {%- endif -%}\n{%- endfor -%}\n{%- if add_generation_prompt -%}\n    {{- \"<|im_start|>assistant\\n\" -}}\n    {%- if enable_thinking -%}\n        {{- \"<think>\" -}}\n    {%- else -%}\n        {{- \"<think></think>\" -}}\n    {%- endif -%}\n{%- endif -%}",
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": true,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": true,
+        "reasoning_effort_levels": []
+      },
+      "bos_token": "<|startoftext|>",
+      "eos_token": "<|im_end|>",
+      "build_info": "b0-unknown",
+      "is_sleeping": false,
+      "cors_proxy_enabled": false
+    },
+    "models": {
+      "models": [
+        {
+          "name": "ops-lfm3vl",
+          "model": "ops-lfm3vl",
+          "modified_at": "",
+          "size": "",
+          "digest": "",
+          "type": "model",
+          "description": "",
+          "tags": [
+            ""
+          ],
+          "capabilities": [
+            "completion",
+            "multimodal"
+          ],
+          "parameters": "",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "",
+            "families": [
+              ""
+            ],
+            "parameter_size": "",
+            "quantization_level": ""
+          }
+        }
+      ],
+      "object": "list",
+      "data": [
+        {
+          "id": "ops-lfm3vl",
+          "aliases": [
+            "ops-lfm3vl"
+          ],
+          "tags": [],
+          "object": "model",
+          "architecture": {
+            "input_modalities": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output_modalities": [
+              "text"
+            ]
+          },
+          "created": 1793516685,
+          "owned_by": "llamacpp",
+          "meta": {
+            "vocab_type": 2,
+            "n_vocab": 128000,
+            "n_ctx": 131072,
+            "n_ctx_train": 131072,
+            "n_embd": 2048,
+            "n_params": 1728801600,
+            "size": 1091380480,
+            "ftype": "Q4_K - Medium"
+          }
+        }
+      ]
+    }
+  }
+}

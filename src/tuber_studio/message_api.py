@@ -12,6 +12,7 @@ from .live_media import StrictModel
 class ReviewMessage(StrictModel):
     action: Literal["approve", "reject", "edit", "copy"]
     text: str | None = Field(default=None, min_length=1, max_length=1000)
+    meme_id: str | None = Field(default=None, pattern=r"^meme_[a-f0-9]{32}$")
 
 
 def register_message_api(app, messages, require_admin):
@@ -41,7 +42,8 @@ def register_message_api(app, messages, require_admin):
 
     @app.post("/api/messages/drafts/{identity}/review", dependencies=auth)
     async def review(identity: int, value: ReviewMessage):
-        return messages.review(identity, value.action, value.text)
+        options = {"meme_id": value.meme_id} if "meme_id" in value.model_fields_set else {}
+        return messages.review(identity, value.action, value.text, **options)
 
     @app.post("/api/messages/drafts/{identity}/send", dependencies=auth)
     async def send(identity: int):

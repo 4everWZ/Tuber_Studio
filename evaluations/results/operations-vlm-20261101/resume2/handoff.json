@@ -1,0 +1,17 @@
+{
+  "checkpoint_utc": "2026-11-01T02:36:19.666304+00:00",
+  "supersedes_recovery_uncertainty_in": "operations-vlm-20261101/resumed/handoff.json",
+  "prior_candidate_exit_verified": true,
+  "remaining_pids": [],
+  "candidate_exit_condition": "operator_stop",
+  "candidate_process_returncode": 1,
+  "candidate_returncode_note": "Exit observed during explicit operator stop; not evidence of a spontaneous model failure",
+  "original_model_restoration_verified": true,
+  "original_model": "llm2b / MiniCPM5-2B",
+  "mode": "text",
+  "production_config_unchanged": true,
+  "tts_original_standby_retained": true,
+  "available_ram_after_restore_bytes": 3140161536,
+  "full_evaluation_complete": false,
+  "next_step": "Capture new baseline, explicitly idle original model, then run remaining candidates one at a time with final restoration"
+}

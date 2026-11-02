@@ -5,6 +5,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from .character_presets import upgrade_bundled_characters
 from .models import Character
 
 
@@ -94,6 +95,7 @@ class Store:
         for seed in seeds:
             if not self.one("SELECT id FROM characters WHERE id=?", (seed["id"],)):
                 self.save_character(seed)
+        upgrade_bundled_characters(self, seeds)
         if self.get("active_character") is None:
             self.set("active_character", seeds[0]["id"])
 

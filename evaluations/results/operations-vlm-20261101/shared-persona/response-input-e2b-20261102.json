@@ -1,0 +1,390 @@
+{
+  "schema_version": 1,
+  "evaluation": "independent_fixed_public_response_input_e2b_20261102",
+  "scope": {
+    "independent_residency": true,
+    "not_merged_with_previous_new10_run": true,
+    "new_fixed_fixture_not_original_9731": true,
+    "selected_original_cc_segments": 29,
+    "public_thread_items": 41,
+    "recent_public_responses_fixed_empty": true,
+    "old_generation_calls": 0,
+    "new_generation_calls": 1,
+    "platform_writes": 0,
+    "no_video_platform_reads_in_fixture_run": true,
+    "production_settings_written": false
+  },
+  "fixture_identity": {
+    "fixture_sha256": "30b2ac5ef25f3ff6df3adfca43ab512d833776e2b93a9dc7f20bb0e35a7f2883",
+    "helper_sha256": "6327aa91c5e939dcb03e36a1dc5dfad208286cfa1b93b5dff1b815f57a5157cf",
+    "capture_helper_sha256": "7b9d47b93a103dc77f3b927b7afd75b6c2b53ee8639732a626c948f4cbb8f9b0",
+    "corpus_sha256": "d2a85ca804f8467d21f9148ed5949be9961b5340af108ab09a30f6a1ba758df6",
+    "card_sha256": "51d9a6d85a7d6b10a0bf5617c3a3102c2885f2e174a82100775186a00f0af5d1"
+  },
+  "real_native_token_counts": {
+    "old_json": {
+      "tokens": 9790,
+      "elapsed_ms": 29.337193991523236,
+      "rendered_prompt_sha256": "e97e910dc58705f65e651ccfb4650e8388f43e652b1fa9c9a36e7ee178b63dc1",
+      "template_request_sha256": "36fb3f61db48925a3cb0284ff884f9a4b7c4cdeeb8d1f6c55631ae58db0f72dd",
+      "includes_chat_template": true,
+      "schema_in_prompt": false,
+      "schema_wire_bytes_utf8": 4449,
+      "reserved_output_tokens": 8192
+    },
+    "new_lines": {
+      "tokens": 7439,
+      "elapsed_ms": 26.695936976466328,
+      "rendered_prompt_sha256": "15c005ebaa3a6d7034022aa53757552f64e38ae52d31eb3295c06cec6c5bd7b1",
+      "template_request_sha256": "4338e14d35ef94fdf71cfd3ce00a87b31c30e42c408f6ae241d9bc0abd3a0eff",
+      "includes_chat_template": true,
+      "schema_in_prompt": false,
+      "schema_wire_bytes_utf8": 1713,
+      "reserved_output_tokens": 8192
+    }
+  },
+  "input_reduction": {
+    "tokens": 2351,
+    "percent": 24.01430030643514
+  },
+  "visible_generation": {
+    "condition": "fixed_public_response_new_lines",
+    "base_native_body_sha256": "8399767885a8cfa75d41cc34cea6698caac5284475cbbcfeb590b656d675bfac",
+    "wire_sha256": "c15e92d88d4810c10bf15183996b77e0266dd91c7e985f4afb26fab8577e7a27",
+    "max_tokens": 8192,
+    "sampling": {
+      "temperature": 0.2,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.0,
+      "seed": 42
+    },
+    "cache_prompt": false,
+    "thinking": true,
+    "content_ttft_ms": 35564.64587402297,
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 817,
+      "prompt_tokens": 7439,
+      "total_tokens": 8256,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "visible_text": "{\n  \"reason\": \"specific_detail\",\n  \"action\": \"reply_public\",\n  \"evidence_ids\": [\n    \"r1\",\n    \"r17\",\n    \"r18\"\n  ],\n  \"text\": \"哎呀，看到大家都在说那些权限和环境折腾，我感觉自己就像一条刚被捞回来，环境还没收拾好的小鱼🐟。不过没关系啦，这不就是‘深海思考中’嘛！只要我们一起慢慢来，把这‘白饭’给弄好，保证能顺利上岸的！别着急，我陪你一起把那些坑都踩出来，保证让你不迷路！再来一碗白饭！\"\n}",
+    "decision": {
+      "action": "reply_public",
+      "text": "哎呀，看到大家都在说那些权限和环境折腾，我感觉自己就像一条刚被捞回来，环境还没收拾好的小鱼🐟。不过没关系啦，这不就是‘深海思考中’嘛！只要我们一起慢慢来，把这‘白饭’给弄好，保证能顺利上岸的！别着急，我陪你一起把那些坑都踩出来，保证让你不迷路！再来一碗白饭！",
+      "reason": "specific_detail",
+      "evidence_ids": [
+        "r1",
+        "r17",
+        "r18"
+      ]
+    },
+    "unexpected_tools": false,
+    "generation_calls": 1,
+    "platform_writes": 0,
+    "http_status": 200,
+    "status": "completed",
+    "complete_ms": 42738.774525001645,
+    "reasoning_characters_not_retained": 2631,
+    "reasoning_sha256": "e67c47b2f5a3036577e0604568c29edac730b11b96f29347658ba8cb3a76b053",
+    "done": true,
+    "capture_parser_applicable": false,
+    "structure_valid": true,
+    "canonical_decision": {
+      "action": "reply_public",
+      "text": "哎呀，看到大家都在说那些权限和环境折腾，我感觉自己就像一条刚被捞回来，环境还没收拾好的小鱼🐟。不过没关系啦，这不就是‘深海思考中’嘛！只要我们一起慢慢来，把这‘白饭’给弄好，保证能顺利上岸的！别着急，我陪你一起把那些坑都踩出来，保证让你不迷路！再来一碗白饭！",
+      "reason": "specific_detail",
+      "evidence_ids": [
+        "43073733994:2137984356751707648:0",
+        "43073733994:2137984356751707648:179",
+        "43073733994:2137984356751707648:180"
+      ]
+    }
+  },
+  "binding_check": {
+    "wire_reference_count": 3,
+    "canonical_count": 3,
+    "references_restored_one_to_one": true,
+    "canonical_limit": 8,
+    "canonical_schema_revalidated": true,
+    "text_sha256_utf8": "3ab5b4c47acce1f266900bd8bb7f006a86f50fc3ff5e59fbef576c0e2b442d2b"
+  },
+  "model_identity": {
+    "model": {
+      "file": "gemma-4-E2B-it-Q4_0.gguf",
+      "local_filename": "gemma-4-E2B-it-Q4_0.gguf",
+      "quantization": "Q4_0",
+      "size_bytes": 2841481184,
+      "sha256": "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+      "path": "/workspace/tuber/runtime/models/operations-vlm/gemma-4-E2B-it-Q4_0.gguf",
+      "sha256_verified": true,
+      "source_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf"
+    },
+    "projector": {
+      "file": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+      "local_filename": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+      "quantization": "Q8_0",
+      "size_bytes": 557368064,
+      "sha256": "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292",
+      "path": "/workspace/tuber/runtime/models/operations-vlm/mmproj-gemma-4-E2B-it-Q8_0.gguf",
+      "sha256_verified": true,
+      "source_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/mmproj-gemma-4-E2B-it-Q8_0.gguf"
+    },
+    "binary_sha256": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "actual_context_tokens": 131072,
+    "native_parameters": {
+      "profile": "gemma4_e2b",
+      "alias": "ops-gemma4_e2b",
+      "listen_host": "0.0.0.0",
+      "port": 9030,
+      "context_tokens": 131072,
+      "allow_native_extension": false,
+      "kv": "q4_0",
+      "kv_k": null,
+      "kv_v": null,
+      "batch": 256,
+      "ubatch": 64,
+      "gpu_layers": 99,
+      "kv_offload": "gpu",
+      "threads": 4,
+      "mmproj_offload": "gpu",
+      "mmap": "off",
+      "lazy_mode": null,
+      "direct_io": "on",
+      "model_cache_advice": "on",
+      "log_verbosity": 4,
+      "reasoning": "on",
+      "reasoning_budget": null,
+      "rope_scaling": null,
+      "rope_scale": null,
+      "rope_freq_scale": null,
+      "yarn_orig_ctx": null,
+      "flash_attn": "on",
+      "cuda_graphs": "on",
+      "warmup": "on",
+      "image_max_tokens": null,
+      "startup_timeout": 300,
+      "min_available_mib": 512,
+      "max_swap_growth_mib": 128
+    },
+    "endpoint_properties_before": {
+      "model_alias": "ops-gemma4_e2b",
+      "context_tokens": 131072,
+      "model_filename": "gemma-4-E2B-it-Q4_0.gguf",
+      "chat_template_sha256": "603a42db292c25278e9b23d94c7abbe77453f13e26a053c43c5c2f900b4136f7",
+      "server_sampling": {
+        "temperature": 1.0,
+        "top_p": 0.949999988079071,
+        "top_k": 64,
+        "min_p": 0.05000000074505806,
+        "n_predict": -1
+      }
+    },
+    "endpoint_properties_after": {
+      "model_alias": "ops-gemma4_e2b",
+      "context_tokens": 131072,
+      "model_filename": "gemma-4-E2B-it-Q4_0.gguf",
+      "chat_template_sha256": "603a42db292c25278e9b23d94c7abbe77453f13e26a053c43c5c2f900b4136f7",
+      "server_sampling": {
+        "temperature": 1.0,
+        "top_p": 0.949999988079071,
+        "top_k": 64,
+        "min_p": 0.05000000074505806,
+        "n_predict": -1
+      }
+    }
+  },
+  "resources": {
+    "scope": "Whole separate response-fixture residency including loading/warmup; not a single-request memory increment.",
+    "loading_seconds": 5.902943687979132,
+    "memory": {
+      "samples": 124,
+      "peak_server_tree_rss_bytes": 5232672768,
+      "peak_system_used_bytes": 6601531392,
+      "peak_swap_used_bytes": 694943744,
+      "minimum_system_available_bytes": 1388449792,
+      "latest": {
+        "timestamp": "2026-11-01T19:39:31.129297+00:00",
+        "monotonic_seconds": 296863.863783073,
+        "system_total_bytes": 7989981184,
+        "system_used_bytes": 2196353024,
+        "system_available_bytes": 5793628160,
+        "swap_total_bytes": 12584906752,
+        "swap_used_bytes": 694943744,
+        "swap_in_bytes": 623767552,
+        "swap_out_bytes": 3624280064,
+        "server_tree_rss_bytes": 0,
+        "process_count": 0
+      },
+      "peak_swap_growth_bytes": 0,
+      "kernel_reaped_children_peak_rss_bytes": 5233147904
+    }
+  },
+  "transition": {
+    "before": {
+      "mode": "text",
+      "state": "active",
+      "selected_provider": "llm2b"
+    },
+    "after_idle": {
+      "mode": "text",
+      "state": "cold",
+      "selected_provider": "llm2b"
+    },
+    "config_unchanged": true
+  },
+  "cleanup": {
+    "stop_cli_exit_code": 1,
+    "stop_cli_error": "Refusing to signal a changed executable",
+    "interpretation": "The CLI encountered a concurrent-exit identity check after the owner received stop. Foreground runner finished operator_stop/exit0, its bounded cleanup found no remaining PIDs, and the independent restored process snapshot contains only the original Mini5.",
+    "runner_exit_code": 0,
+    "server_returncode": 1,
+    "termination_reason": "operator_stop",
+    "details": {
+      "signalled_pids": [
+        36996
+      ],
+      "force_killed_pids": [],
+      "remaining_pids": []
+    }
+  },
+  "final_restoration": {
+    "captured_at": 1793562016.766737,
+    "production_config_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+    "production_config_unchanged": true,
+    "container_image_id": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
+    "container_image_id_matches_original": true,
+    "container_image_evidence": "Actual host docker inspect output captured before restoration",
+    "broker_mode": "text",
+    "selected_provider": "llm2b",
+    "providers": {
+      "llm2b": {
+        "running": true
+      },
+      "llm1b": {
+        "running": false
+      },
+      "llm1bq8": {
+        "running": false
+      },
+      "llmqwen35": {
+        "running": false
+      },
+      "tts": {
+        "running": false
+      }
+    },
+    "broker_other_status": {
+      "state": "active",
+      "active_provider": "llm2b",
+      "error": null,
+      "requested_context_tokens": 131072,
+      "kv_cache_type": "q4_0",
+      "cuda_managed_memory": false,
+      "busy": false
+    },
+    "mini_health": {
+      "status": "ok"
+    },
+    "mini_model_ids": [
+      "MiniCPM5-2B"
+    ],
+    "candidate_port_9030_off": true,
+    "owned_cleanup": [
+      {
+        "run": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/gemma4-e2b-response-inputs-20261102",
+        "termination_reason": "operator_stop",
+        "cleanup": {
+          "signalled_pids": [
+            36996
+          ],
+          "force_killed_pids": [],
+          "remaining_pids": []
+        },
+        "exit_code": 0
+      }
+    ],
+    "model_processes": [
+      {
+        "ppid": 1,
+        "exe": "/opt/llama/bin/llama-server",
+        "name": "llama-server",
+        "status": "sleeping",
+        "pid": 37063
+      }
+    ],
+    "ram": {
+      "total": 7989981184,
+      "available": 3086299136,
+      "percent": 61.4,
+      "used": 4903682048,
+      "free": 2652372992,
+      "active": 520290304,
+      "inactive": 781864960,
+      "buffers": 80535552,
+      "cached": 697741312,
+      "shared": 118317056,
+      "slab": 168931328
+    },
+    "swap": {
+      "total": 12584906752,
+      "used": 694943744,
+      "free": 11889963008,
+      "percent": 5.5,
+      "sin": 623792128,
+      "sout": 3624280064
+    },
+    "platform_writes": 0,
+    "production_settings_written": false,
+    "image_rebuilt": false,
+    "original_restoration_result": "/workspace/tuber/runtime/tmp/operations-response-20261102-restoration/restored-source.json"
+  },
+  "interpretation": {
+    "token_measurement": "Same frozen public material/card/thread in old JSON and new line presentation, measured by the actual E2B template/tokenizer.",
+    "performance": "Only the new presentation generated a reply. No matched old-generation latency was measured, so the token reduction does not establish a corresponding speedup.",
+    "semantics": "The new reply addresses permissions/environment setup in character. Structural/canonical binding passed; this one fixture is not general model acceptance.",
+    "historical_record": "The earlier real product response had9731input. That exact thread/request was not saved; this fixed41-comment fixture is separate and must not overwrite that historical usage."
+  },
+  "source_files": [
+    {
+      "source": "tmp/operations-browse-20261101/device/response-measurement-e2b-20261102/fixed-response-real.json",
+      "sha256": "d3c0cb9373d72d4e0d1a903637e70f92ef90320d571523a40a72f370fb01445e",
+      "bytes": 5821
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/response-measurement-e2b-20261102/metrics-final.json",
+      "sha256": "17d0d735e1dfdb0a73728a095aa135eb845bbaa192a6c8d7e52b8d61564417e5",
+      "bytes": 35925
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/response-measurement-e2b-20261102/restoration.json",
+      "sha256": "5a2db3c4e197eb093174b987fbeaed1a2b9c5f10ec4ad065b89c92d9b26e27e9",
+      "bytes": 2282
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/response-measurement-e2b-20261102/idle-transition.json",
+      "sha256": "07dd0fa8cdc812a17ef99bd3b0bd3ee8d4c00b35fc1ebd3e4dd7a3e180f6dd71",
+      "bytes": 3626
+    },
+    {
+      "source": "tmp/operations-browse-20261101/response-inputs/fixture-public-response.json",
+      "sha256": "30b2ac5ef25f3ff6df3adfca43ab512d833776e2b93a9dc7f20bb0e35a7f2883",
+      "bytes": 181108
+    },
+    {
+      "source": "tmp/operations-browse-20261101/response-inputs/measure-response-inputs.py",
+      "sha256": "6327aa91c5e939dcb03e36a1dc5dfad208286cfa1b93b5dff1b815f57a5157cf",
+      "bytes": 8949
+    },
+    {
+      "source": "tmp/operations-browse-20261101/subtitle-inputs/measure-subtitle-inputs.py",
+      "sha256": "7b9d47b93a103dc77f3b927b7afd75b6c2b53ee8639732a626c948f4cbb8f9b0",
+      "bytes": 17208
+    }
+  ]
+}

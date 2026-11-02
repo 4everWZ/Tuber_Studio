@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "configuration": {
+    "base_url": "http://127.0.0.1:18096/v1",
+    "model": "ops-mini4_7_4x",
+    "model_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+    "projector_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+    "runtime_revision": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "runtime_profile": "mini4_7_4x:4889f45f5bcf45caaa6d63a2985f74d0",
+    "context_tokens": 131072,
+    "native_context_tokens": 262144,
+    "max_frames": 3,
+    "max_pixels": 129600,
+    "max_bytes": 23792,
+    "max_output_tokens": 4096,
+    "enable_thinking": true,
+    "sampling": {
+      "temperature": 0.2,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.0,
+      "seed": 42,
+      "reasoning_budget_tokens": null
+    }
+  },
+  "context_tokens": 131072,
+  "max_frames": 3,
+  "max_pixels": 129600,
+  "max_bytes": 23792,
+  "measurement": {
+    "run_id": "4889f45f5bcf45caaa6d63a2985f74d0",
+    "owner_sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7",
+    "metrics_sha256": "bcbbebd8724e63ca4de536214dee237963ecc0c7715717623c09da1082031118",
+    "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+    "owned_server_pid": 24376,
+    "method": "Real same-run sequential 119991-token text prefill plus 8192 output reserve, joint original three-frame encoding, natural single-frame generation; whole-run one-second system RAM telemetry",
+    "scope": "Resource compatibility for this declared model/context/image envelope; semantic observations and Genie coexistence are recorded independently",
+    "evidence": [
+      {
+        "path": "tmp\\operations-vlm\\resume2\\mini4_7-4x-v4-capacity.json",
+        "sha256": "4dc88c66b2496942f62fed0cfeae3ff62f601d819415c8f6694f392428b4852c"
+      },
+      {
+        "path": "tmp\\operations-vlm\\resume2\\mini4_7-4x-three-original-frames-resource.json",
+        "sha256": "f31ed4e858f8de2c86adf30289b1f8784d58de6b06563d97fd3100e0c203edce"
+      },
+      {
+        "path": "tmp\\operations-vlm\\resume2\\mini4_7-4x-v4-plain-frames.json",
+        "sha256": "a16c7e3080267591a3cc34c5133c7a6adbacbb2196d330deba6412f01b11d2da"
+      }
+    ]
+  }
+}

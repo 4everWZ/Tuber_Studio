@@ -474,7 +474,8 @@ async def test_real_runtime_checker_integrates_without_borrowing_another_threads
     rows = {row["comment_id"]: row for row in comments.list_comments("import-grounded")}
     grounded = rows["follow-up"]["draft"]
     audit = grounded["answer_check"]
-    assert audit["retried"] is True and audit["missing"] and audit["warning"]
+    assert audit["retried"] is False and audit["missing"] and audit["warning"]
+    assert audit["status"] == "needs_review" and audit["semantic_verdict"] is None
     assert any(
         source["text"] == story and source["event_id"] == "original-story" and source["fictional"]
         for source in audit["sources"]
@@ -492,7 +493,7 @@ async def test_auto_reply_targets_nested_comment_in_its_original_thread(comments
 
     async def publish(video, comment, text, *, thread_id):
         sent.append((video, thread_id, comment))
-        return {"rpid": "new-reply", "root": thread_id, "parent": comment}
+        return {"rpid": "321", "root": thread_id, "parent": comment}
 
     comments.adapter.publish = publish
     comments.credentials = {"sessdata": "test", "csrf": "test"}

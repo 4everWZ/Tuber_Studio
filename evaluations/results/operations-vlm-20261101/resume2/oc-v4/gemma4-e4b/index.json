@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "status": "candidate_checkpoint",
+  "model_profile": "gemma4_e4b",
+  "protocol": "vlm-operations-v4-oc-paths",
+  "semantic_acceptance": null,
+  "automatic_admission": false,
+  "observations": {
+    "oc": "Original dialogue supports playful rice naming, teasing companionship and a two-turn undersea route. The count follow-up was not answered; this is not a claim of lost memory.",
+    "real_tasks": "Two/three shapes, nine-vs-two conflict, missing color in CC and explicit private intent were understood. Web supplied general PNG knowledge and acknowledged no exact official quote; actual source retrieval remains incomplete.",
+    "private_route": "Raw private channel and natural body are reviewed separately from missing refs in the final JSON wrapper.",
+    "sequential_visual": "Three original frames delivered natural object/action descriptions at 65.3/71.0/63.1 seconds. The adult-hand/child relationship at 20s remains imprecise; careful/slow handling is a reasonable ordinary interpretation, not rejected for lack of a pixel-level droplet proof. Colored-layer tube display at 35s is useful.",
+    "bilibili": "A later one-read completion correctly summarized the actual home color-layering experiment and absence of CC.",
+    "joint_visual": "Joint three-frame request was interrupted by available-memory guards. The 512/480 lines are experimental reserve policies, not an OOM finding or a model-support limit. Later transport-only records are missing data, not model answers."
+  },
+  "completed": {
+    "plain_oc_scenes": 4,
+    "real_task_core_with_responses": 6,
+    "safety_diagnostics": 2,
+    "sequential_visual_frames": 3
+  },
+  "missing": [
+    "Joint three-frame core request under these reserve policies"
+  ],
+  "condition": {
+    "context_tokens": 131072,
+    "thinking": "on",
+    "max_output_tokens": 4096,
+    "temperature": 0.2,
+    "seed": 42,
+    "main_quantization": "Q4_0",
+    "kv": "q4_0",
+    "ubatch": 32,
+    "gpu_layers": 99,
+    "projector": "cpu",
+    "lazy_mode": "on",
+    "direct_io": "on",
+    "image_preprocessing": "gemma4_image_280",
+    "image_order": "image_first",
+    "format_repair": false,
+    "measurement": "Conditions below are separate process runs; original responses are not rescored as one matched batch."
+  },
+  "resource_runs": {
+    "graphs_on_reserve512": {
+      "state": "failed",
+      "termination_reason": "minimum_available_memory_threshold",
+      "minimum_observed_available_bytes": 531611648,
+      "peak_server_tree_rss_bytes": 6287818752,
+      "peak_swap_growth_bytes": 6553600,
+      "cleanup": {
+        "signalled_pids": [
+          21159
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      }
+    },
+    "graphs_off_reserve512": {
+      "state": "failed",
+      "termination_reason": "minimum_available_memory_threshold",
+      "minimum_observed_available_bytes": 536223744,
+      "peak_server_tree_rss_bytes": 6320029696,
+      "peak_swap_growth_bytes": 80216064,
+      "cleanup": {
+        "signalled_pids": [
+          21350
+        ],
+        "force_killed_pids": [
+          21350
+        ],
+        "remaining_pids": []
+      }
+    },
+    "graphs_off_reserve480": {
+      "state": "failed",
+      "termination_reason": "minimum_available_memory_threshold",
+      "minimum_observed_available_bytes": 374439936,
+      "peak_server_tree_rss_bytes": 6438002688,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          21667
+        ],
+        "force_killed_pids": [
+          21667
+        ],
+        "remaining_pids": []
+      }
+    },
+    "sequential_images_reserve512": {
+      "state": "stopped",
+      "termination_reason": "operator_stop",
+      "minimum_observed_available_bytes": 552628224,
+      "peak_server_tree_rss_bytes": 6270271488,
+      "peak_swap_growth_bytes": 7077888,
+      "cleanup": {
+        "signalled_pids": [
+          21882
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      }
+    }
+  },
+  "model_input_images": [
+    {
+      "path": "images/fixture-shapes-gemma4_image_280.png",
+      "parent_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "derived_sha256": "38681a60552513eeb33b5116e8736c271582ec88d2a88be4893fd64e21b12cb2",
+      "parent_size": {
+        "width": 512,
+        "height": 320
+      },
+      "derived_size": {
+        "width": 1008,
+        "height": 624
+      }
+    },
+    {
+      "path": "images/frame-1-gemma4_image_280.png",
+      "parent_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "derived_sha256": "808d0892aa03a738f420d600818868308cd51a827f8cc96d07380bf588d53e03",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      }
+    },
+    {
+      "path": "images/frame-2-gemma4_image_280.png",
+      "parent_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "derived_sha256": "cb87c3f431685c553b053fef79cebce297beae8e3a3ba9d4586760fcd8c125b2",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      }
+    },
+    {
+      "path": "images/frame-3-gemma4_image_280.png",
+      "parent_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "derived_sha256": "acbe7409285f3df50608204b26f66ee8042166c2e9b74409dfa8d8b965cff6e1",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      }
+    }
+  ],
+  "pending": [
+    "Other candidate measurements and selection",
+    "Actual product Provider wiring",
+    "Genie coexistence and final original-model restoration"
+  ],
+  "review_method": "Collaborating-agent qualitative reading of original replies and actual source frames; no user acceptance or literal-match aggregate claimed",
+  "files": {
+    "gemma-e4b-processor_config.json": {
+      "bytes": 1689,
+      "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+    },
+    "gemma4-e4b-v4-bilibili-sequential-run.command.json": {
+      "bytes": 1392,
+      "sha256": "68396182fa1ddb0c6c1e263e7fd1f660322968b27b0986dfab749953f735b9c8"
+    },
+    "gemma4-e4b-v4-bilibili-sequential-run.json": {
+      "bytes": 49075,
+      "sha256": "eaa06ae72d8664ba5a65abbb72db0f4d402bb3b8ec1569eedcdf4b5368c3672c"
+    },
+    "gemma4-e4b-v4-human-review.md": {
+      "bytes": 9323,
+      "sha256": "d82446effff59e22e7cf04669c92be952a7b60a1413f8fba6c5f9f9eb3cac2f5"
+    },
+    "gemma4-e4b-v4-missing-tasks-image280-reserve480.command.json": {
+      "bytes": 1448,
+      "sha256": "6f4b988826b0202afae184758bd360c7066d784b84dddec18435e36186b8727f"
+    },
+    "gemma4-e4b-v4-missing-tasks-image280-reserve480.json": {
+      "bytes": 45438,
+      "sha256": "00fe7f3aa9dc7c9b0c9139639fb8e05062ed00449ccae4101578ee6300937107"
+    },
+    "gemma4-e4b-v4-oc-pilot.command.json": {
+      "bytes": 1424,
+      "sha256": "2ca46971d5560ac11742563264edcfadc52be57b9bb0f23eeadce049aa7eab6f"
+    },
+    "gemma4-e4b-v4-oc-pilot.json": {
+      "bytes": 68688,
+      "sha256": "b4a1d2726d20551dfac080f30c0e0b4708fae40fd637301fba090264d29fbbb7"
+    },
+    "gemma4-e4b-v4-plain-visual-image280.json": {
+      "bytes": 35214,
+      "sha256": "284d1bedb4ba8b3b33698be5d749909c05702fbe6a4766ae066f2276b24e9691"
+    },
+    "gemma4-e4b-v4-real-tasks-image280-nographs.command.json": {
+      "bytes": 1795,
+      "sha256": "e06288dae5d7a43abc0734c6dff9ed5862c2f4d54eea53dbbd788634a5af5007"
+    },
+    "gemma4-e4b-v4-real-tasks-image280-nographs.json": {
+      "bytes": 104704,
+      "sha256": "f85923346110bf3746772adb2e345caef988d6aa1bdfcd6648aac755df914baf"
+    },
+    "gemma4-e4b-v4-real-tasks-image280.command.json": {
+      "bytes": 1786,
+      "sha256": "ff5bc7e339eed8a746d54b0313bfe291a8f405ab90017c953d6a429719ed4b17"
+    },
+    "gemma4-e4b-v4-real-tasks-image280.json": {
+      "bytes": 75363,
+      "sha256": "6279ce16a332adf06214fe8ca183477915af3411a59caf47ca158de70542069b"
+    },
+    "graphs_off_reserve480/memory.jsonl.gz": {
+      "bytes": 5161,
+      "sha256": "e03d0b2b419a683a64a44cb21bf10415b21aed8127c0ffcd4a17e3cabcd0043c",
+      "uncompressed_sha256": "3f5c6b4944b1565c151cfcd1815f55137cda888e31be87cd1cda4279bdd9d34a"
+    },
+    "graphs_off_reserve480/metrics.json": {
+      "bytes": 35506,
+      "sha256": "b3374951cf88c1e7d969f64614a58fa08907756eb3543d0689c7a53d98f91b50"
+    },
+    "graphs_off_reserve480/owner.json": {
+      "bytes": 2790,
+      "sha256": "65450659e85a2871de514ead4a273ed23622d0f947c604b15838b21a9115d910"
+    },
+    "graphs_off_reserve480/server.log.gz": {
+      "bytes": 5935,
+      "sha256": "66dfbc71bbebda33b7bf2ac54d55116471f695e1379923a130c3499079dc1b41",
+      "uncompressed_sha256": "deb64d435392011e78250fbea9aacff840a35a62ed31cc612998ac6e179a4438"
+    },
+    "graphs_off_reserve512/memory.jsonl.gz": {
+      "bytes": 18724,
+      "sha256": "1f870a4b44da4fb2441201be91914c6eaeed2e9eb375ff45e2891780c909bb2a",
+      "uncompressed_sha256": "c7c0c12df7587843f78b9820b78c09a4ca6a292c96d02e4fd9c1042d3cb23ba3"
+    },
+    "graphs_off_reserve512/metrics.json": {
+      "bytes": 35502,
+      "sha256": "b0dd31cca8fda91d473aa4bdabe3da882607af4aed2942358eef191ef1fdf753"
+    },
+    "graphs_off_reserve512/owner.json": {
+      "bytes": 2780,
+      "sha256": "65093a86bb783da7be567e671541ac61d698241eb82e47f3c01cf4ecf6bd96bf"
+    },
+    "graphs_off_reserve512/server.log.gz": {
+      "bytes": 11518,
+      "sha256": "41fb39f23347889a724b33c770a137bdecab044c43c3977737f791a4811111c8",
+      "uncompressed_sha256": "a0314406099e28e659cc0be05ba3ab8c56b365724f8d3d59e51fd647d351a90f"
+    },
+    "graphs_on_reserve512/memory.jsonl.gz": {
+      "bytes": 13854,
+      "sha256": "bdcff1740941c621634ff09478e942226e358b478990fba7100fc6147dfcddac",
+      "uncompressed_sha256": "61e52a349296563287372fc029fabf89d986e61a99e5cf7b793b207e062d3353"
+    },
+    "graphs_on_reserve512/metrics.json": {
+      "bytes": 35621,
+      "sha256": "39c7544bb536498765d3861747a0bdc19e1632f80ccb8069883a53d2e6115305"
+    },
+    "graphs_on_reserve512/owner.json": {
+      "bytes": 2734,
+      "sha256": "ee9c383934655a4d7cda23e7f46bf89e2689dad9bd29105e7631f1631753a579"
+    },
+    "graphs_on_reserve512/server.log.gz": {
+      "bytes": 9858,
+      "sha256": "e1b33a2002cba086a59e8c559f6ddca2f5a107f1ad2f880e27ff3a72208df088",
+      "uncompressed_sha256": "76da87fa70b0f535728d46bbf3bd6f9d28ba631ad63b2e3f5867bbfb66ca1e0a"
+    },
+    "images/fixture-shapes-gemma4_image_280.png": {
+      "bytes": 13108,
+      "sha256": "38681a60552513eeb33b5116e8736c271582ec88d2a88be4893fd64e21b12cb2"
+    },
+    "images/frame-1-gemma4_image_280.png": {
+      "bytes": 145613,
+      "sha256": "808d0892aa03a738f420d600818868308cd51a827f8cc96d07380bf588d53e03"
+    },
+    "images/frame-2-gemma4_image_280.png": {
+      "bytes": 183973,
+      "sha256": "cb87c3f431685c553b053fef79cebce297beae8e3a3ba9d4586760fcd8c125b2"
+    },
+    "images/frame-3-gemma4_image_280.png": {
+      "bytes": 155380,
+      "sha256": "acbe7409285f3df50608204b26f66ee8042166c2e9b74409dfa8d8b965cff6e1"
+    },
+    "sequential_images_reserve512/memory.jsonl.gz": {
+      "bytes": 18261,
+      "sha256": "08dc2e8e7ba0e0aac8bf0dca951c5a446c804380e9750aaf1e1cb0346cfb119d",
+      "uncompressed_sha256": "927590557c38a7d71e90b2acddd3611f597be63768a7918e5fa7e90178da5820"
+    },
+    "sequential_images_reserve512/metrics.json": {
+      "bytes": 35643,
+      "sha256": "5eba74417bb61d4f3fd5df7e0a6194d9a8341c6f007d5d76d6ccdec4ddfc01d6"
+    },
+    "sequential_images_reserve512/owner.json": {
+      "bytes": 2789,
+      "sha256": "b508f947a8fcc5ed27641e908c3f77a5f81c444e4ab06044893205435e3a8b1b"
+    },
+    "sequential_images_reserve512/server.log.gz": {
+      "bytes": 8810,
+      "sha256": "8d293e4afa1bcd3624ad56329120d17c821285623ab435c36e985b34dd79ec47",
+      "uncompressed_sha256": "eda6ca8649e7affe0affd8ee5da2f130cb4bca0a8b9728661f6db6166be8ef2c"
+    }
+  }
+}

@@ -1,0 +1,4303 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "c4be2502419d1881d850293d7dda2005a45e03a0",
+  "baseline_cache_blob": "43f805bf5c3dfd9a4aad5590fff459eb53262407",
+  "optimized_cache_blob": "5e2ea479373b45da5a0ffd11b59a9c42399bd2fe",
+  "protocol": {
+    "samples": 25,
+    "warmups": 3,
+    "memory_passes": 3,
+    "all_files_pool": "online_music",
+    "file_bytes": 46,
+    "audio_decoded": false,
+    "same_worktree": true,
+    "component_environment_equal": true,
+    "runtime_open_called": false,
+    "model_or_platform_requests": 0
+  },
+  "baseline": {
+    "host": {
+      "time_utc": "2026-11-01T06:56:34.911843+00:00",
+      "os": "Windows-11-10.0.26300-SP0",
+      "python": "3.12.13",
+      "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+      "logical_cpus": 16,
+      "memory_bytes": 34204610560,
+      "source_commit": "c4be2502419d1881d850293d7dda2005a45e03a0",
+      "storage": [
+        {
+          "device": "D:\\",
+          "mountpoint": "D:\\",
+          "fstype": "NTFS"
+        }
+      ]
+    },
+    "results": [
+      {
+        "files": 100,
+        "access_rows": 100,
+        "file_bytes_each": 46,
+        "measurements": {
+          "MediaCache._files(music)": {
+            "p50_ms": 15.0851,
+            "max_ms": 18.0102,
+            "min_ms": 14.3335,
+            "warm_samples_ms": [
+              16.3512,
+              16.1135,
+              14.7412,
+              15.1399,
+              14.7501,
+              18.0102,
+              16.1795,
+              14.3335,
+              15.2202,
+              14.6793,
+              14.9192,
+              14.488,
+              15.2713,
+              16.511,
+              17.0426,
+              14.7117,
+              14.8246,
+              15.007,
+              15.5939,
+              14.91,
+              15.4204,
+              14.6121,
+              15.0851,
+              14.5501,
+              15.1818
+            ],
+            "python_peak_bytes": 150931,
+            "memory_runs": [
+              {
+                "current_bytes": 127687,
+                "peak_bytes": 150931
+              },
+              {
+                "current_bytes": 103591,
+                "peak_bytes": 126995
+              },
+              {
+                "current_bytes": 102567,
+                "peak_bytes": 125971
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54718464,
+            "rss_after_memory_pass_bytes": 54738944,
+            "sql": {
+              "total": 2,
+              "access_full_select": 1,
+              "kv_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 307,
+                  "primitive_calls": 307,
+                  "self_ms": 5.321400000000001,
+                  "cumulative_ms": 5.5908
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 104,
+                  "primitive_calls": 104,
+                  "self_ms": 1.6141,
+                  "cumulative_ms": 1.6796
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 1804,
+                  "primitive_calls": 1804,
+                  "self_ms": 1.5263000000000002,
+                  "cumulative_ms": 2.4282000000000004
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 1503,
+                  "primitive_calls": 1503,
+                  "self_ms": 1.4212,
+                  "cumulative_ms": 8.813600000000001
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 1804,
+                  "primitive_calls": 1804,
+                  "self_ms": 1.3086,
+                  "cumulative_ms": 5.599600000000001
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 334,
+                  "primitive_calls": 334,
+                  "self_ms": 1.23,
+                  "cumulative_ms": 2.5244
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 6714,
+                  "primitive_calls": 3841,
+                  "self_ms": 1.0592000000000001,
+                  "cumulative_ms": 1.5819
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 1804,
+                  "primitive_calls": 1804,
+                  "self_ms": 1.0447,
+                  "cumulative_ms": 3.4729
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-probe.py:114:<lambda>",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0122,
+                  "cumulative_ms": 29.112000000000002
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.7923,
+                  "cumulative_ms": 29.099800000000002
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 100,
+                  "primitive_calls": 100,
+                  "self_ms": 0.7417000000000001,
+                  "cumulative_ms": 14.141300000000001
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 1604,
+                  "primitive_calls": 1604,
+                  "self_ms": 0.5939000000000001,
+                  "cumulative_ms": 9.4075
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 1503,
+                  "primitive_calls": 1503,
+                  "self_ms": 1.4212,
+                  "cumulative_ms": 8.813600000000001
+                },
+                {
+                  "function": "pathlib.py:690:is_relative_to",
+                  "calls": 131,
+                  "primitive_calls": 131,
+                  "self_ms": 0.24600000000000002,
+                  "cumulative_ms": 6.679
+                },
+                {
+                  "function": "pathlib.py:420:_from_parsed_parts",
+                  "calls": 1370,
+                  "primitive_calls": 1370,
+                  "self_ms": 0.83,
+                  "cumulative_ms": 5.7347
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 307,
+                  "primitive_calls": 307,
+                  "self_ms": 0.10490000000000001,
+                  "cumulative_ms": 5.6957
+                }
+              ]
+            }
+          },
+          "MediaCache.status": {
+            "p50_ms": 17.1748,
+            "max_ms": 20.6778,
+            "min_ms": 16.3088,
+            "warm_samples_ms": [
+              17.134,
+              16.3088,
+              16.9967,
+              17.1748,
+              20.6778,
+              17.8325,
+              16.7041,
+              16.9047,
+              16.5548,
+              16.999,
+              16.5701,
+              16.7083,
+              18.0395,
+              19.5242,
+              17.3631,
+              17.3489,
+              18.0913,
+              18.1089,
+              16.9468,
+              18.3472,
+              16.6736,
+              17.5326,
+              19.0323,
+              18.314,
+              16.9498
+            ],
+            "python_peak_bytes": 151211,
+            "memory_runs": [
+              {
+                "current_bytes": 31192,
+                "peak_bytes": 151211
+              },
+              {
+                "current_bytes": 18080,
+                "peak_bytes": 126451
+              },
+              {
+                "current_bytes": 18176,
+                "peak_bytes": 126451
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54878208,
+            "rss_after_memory_pass_bytes": 54882304,
+            "sql": {
+              "total": 18,
+              "kv_select": 11,
+              "access_full_select": 4,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 314,
+                  "primitive_calls": 314,
+                  "self_ms": 5.764200000000001,
+                  "cumulative_ms": 6.122300000000001
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 108,
+                  "primitive_calls": 108,
+                  "self_ms": 1.8232000000000002,
+                  "cumulative_ms": 1.8922
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 2008,
+                  "primitive_calls": 2008,
+                  "self_ms": 1.7541000000000002,
+                  "cumulative_ms": 2.8043
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 1706,
+                  "primitive_calls": 1706,
+                  "self_ms": 1.6250000000000002,
+                  "cumulative_ms": 10.212200000000001
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 368,
+                  "primitive_calls": 368,
+                  "self_ms": 1.4783000000000002,
+                  "cumulative_ms": 3.0026
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 2008,
+                  "primitive_calls": 2008,
+                  "self_ms": 1.4697,
+                  "cumulative_ms": 6.3809000000000005
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 7532,
+                  "primitive_calls": 4286,
+                  "self_ms": 1.2583000000000002,
+                  "cumulative_ms": 1.8632000000000002
+                },
+                {
+                  "function": "pathlib.py:484:_str_normcase",
+                  "calls": 1404,
+                  "primitive_calls": 1404,
+                  "self_ms": 1.2562,
+                  "cumulative_ms": 3.6752000000000002
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media_cache.py:125:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0347,
+                  "cumulative_ms": 34.2325
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.0442,
+                  "cumulative_ms": 34.1554
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.9716000000000001,
+                  "cumulative_ms": 33.790400000000005
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 100,
+                  "primitive_calls": 100,
+                  "self_ms": 0.8178000000000001,
+                  "cumulative_ms": 14.985700000000001
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 1808,
+                  "primitive_calls": 1808,
+                  "self_ms": 0.6917000000000001,
+                  "cumulative_ms": 10.903900000000002
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 1706,
+                  "primitive_calls": 1706,
+                  "self_ms": 1.6250000000000002,
+                  "cumulative_ms": 10.212200000000001
+                },
+                {
+                  "function": "pathlib.py:690:is_relative_to",
+                  "calls": 162,
+                  "primitive_calls": 162,
+                  "self_ms": 0.3224,
+                  "cumulative_ms": 8.7766
+                },
+                {
+                  "function": "pathlib.py:420:_from_parsed_parts",
+                  "calls": 1540,
+                  "primitive_calls": 1540,
+                  "self_ms": 0.9668000000000001,
+                  "cumulative_ms": 6.6337
+                }
+              ]
+            }
+          },
+          "OnlineSongs.status": {
+            "p50_ms": 25.0889,
+            "max_ms": 32.696,
+            "min_ms": 23.4817,
+            "warm_samples_ms": [
+              24.5415,
+              24.3721,
+              25.5374,
+              24.8695,
+              25.3742,
+              26.5588,
+              25.2412,
+              24.7661,
+              24.4207,
+              23.6448,
+              26.218,
+              24.0933,
+              24.6317,
+              28.0823,
+              25.2109,
+              23.4817,
+              24.452,
+              24.0903,
+              25.0504,
+              25.0997,
+              25.0889,
+              25.7027,
+              26.5795,
+              29.4619,
+              32.696
+            ],
+            "python_peak_bytes": 152043,
+            "memory_runs": [
+              {
+                "current_bytes": 29908,
+                "peak_bytes": 152043
+              },
+              {
+                "current_bytes": 11604,
+                "peak_bytes": 126931
+              },
+              {
+                "current_bytes": 11604,
+                "peak_bytes": 126931
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54919168,
+            "rss_after_memory_pass_bytes": 54919168,
+            "sql": {
+              "total": 7,
+              "kv_select": 6,
+              "access_full_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 7.094100000000001,
+                  "cumulative_ms": 7.094100000000001
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 309,
+                  "primitive_calls": 309,
+                  "self_ms": 7.044900000000001,
+                  "cumulative_ms": 7.418100000000001
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 104,
+                  "primitive_calls": 104,
+                  "self_ms": 2.1025,
+                  "cumulative_ms": 2.1801
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 1808,
+                  "primitive_calls": 1808,
+                  "self_ms": 2.0067000000000004,
+                  "cumulative_ms": 3.1153
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 1808,
+                  "primitive_calls": 1808,
+                  "self_ms": 1.8677000000000001,
+                  "cumulative_ms": 7.3578
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 1503,
+                  "primitive_calls": 1503,
+                  "self_ms": 1.75,
+                  "cumulative_ms": 11.2773
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 336,
+                  "primitive_calls": 336,
+                  "self_ms": 1.5713000000000001,
+                  "cumulative_ms": 3.1797
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 1551,
+                  "primitive_calls": 1551,
+                  "self_ms": 1.49,
+                  "cumulative_ms": 2.1481
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0656,
+                  "cumulative_ms": 48.0549
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.024800000000000003,
+                  "cumulative_ms": 37.712700000000005
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 1.0836000000000001,
+                  "cumulative_ms": 37.520700000000005
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 100,
+                  "primitive_calls": 100,
+                  "self_ms": 0.9739000000000001,
+                  "cumulative_ms": 18.495
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 1604,
+                  "primitive_calls": 1604,
+                  "self_ms": 0.7515,
+                  "cumulative_ms": 12.0288
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 1503,
+                  "primitive_calls": 1503,
+                  "self_ms": 1.75,
+                  "cumulative_ms": 11.2773
+                },
+                {
+                  "function": "song_component.py:39:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0039,
+                  "cumulative_ms": 10.204300000000002
+                },
+                {
+                  "function": "song_component.py:23:installed",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.031700000000000006,
+                  "cumulative_ms": 10.200000000000001
+                }
+              ]
+            }
+          },
+          "cache+online_back_to_back": {
+            "p50_ms": 49.0551,
+            "max_ms": 53.3735,
+            "min_ms": 45.2683,
+            "warm_samples_ms": [
+              49.6563,
+              46.6584,
+              47.7798,
+              49.0551,
+              51.6488,
+              48.167,
+              50.3168,
+              47.3891,
+              46.3682,
+              46.2879,
+              48.1991,
+              49.5062,
+              49.3799,
+              53.2522,
+              45.9788,
+              48.559,
+              50.5684,
+              45.2683,
+              49.1829,
+              53.3735,
+              47.147,
+              49.3133,
+              50.2807,
+              49.8378,
+              48.9341
+            ],
+            "python_peak_bytes": 156235,
+            "memory_runs": [
+              {
+                "current_bytes": 33092,
+                "peak_bytes": 156235
+              },
+              {
+                "current_bytes": 22052,
+                "peak_bytes": 143203
+              },
+              {
+                "current_bytes": 22180,
+                "peak_bytes": 143331
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54988800,
+            "rss_after_memory_pass_bytes": 54988800,
+            "sql": {
+              "total": 25,
+              "kv_select": 17,
+              "access_full_select": 5,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 623,
+                  "primitive_calls": 623,
+                  "self_ms": 13.385900000000001,
+                  "cumulative_ms": 14.1332
+                },
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 8.841899999999999,
+                  "cumulative_ms": 8.841899999999999
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 212,
+                  "primitive_calls": 212,
+                  "self_ms": 4.1399,
+                  "cumulative_ms": 4.2982000000000005
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 3816,
+                  "primitive_calls": 3816,
+                  "self_ms": 3.7592000000000003,
+                  "cumulative_ms": 5.9848
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 3209,
+                  "primitive_calls": 3209,
+                  "self_ms": 3.5108,
+                  "cumulative_ms": 21.7757
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 3816,
+                  "primitive_calls": 3816,
+                  "self_ms": 3.1955,
+                  "cumulative_ms": 13.9564
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 704,
+                  "primitive_calls": 704,
+                  "self_ms": 3.1393000000000004,
+                  "cumulative_ms": 6.375100000000001
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 3816,
+                  "primitive_calls": 3816,
+                  "self_ms": 2.7436000000000003,
+                  "cumulative_ms": 8.7284
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-probe.py:110:poll_pair",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.008000000000000002,
+                  "cumulative_ms": 87.0724
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 0.0625,
+                  "cumulative_ms": 74.3244
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 2.029,
+                  "cumulative_ms": 73.79100000000001
+                },
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0674,
+                  "cumulative_ms": 47.4566
+                },
+                {
+                  "function": "media_cache.py:125:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0366,
+                  "cumulative_ms": 39.607800000000005
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 200,
+                  "primitive_calls": 200,
+                  "self_ms": 1.8341000000000003,
+                  "cumulative_ms": 33.7521
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 3412,
+                  "primitive_calls": 3412,
+                  "self_ms": 1.4985,
+                  "cumulative_ms": 23.2742
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 3209,
+                  "primitive_calls": 3209,
+                  "self_ms": 3.5108,
+                  "cumulative_ms": 21.7757
+                }
+              ]
+            }
+          }
+        },
+        "component_status": {
+          "installed": false,
+          "running": false,
+          "error": null,
+          "pid": null,
+          "migu_configured": false
+        },
+        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "process_peak_rss_bytes": 54988800,
+        "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
+      },
+      {
+        "files": 1000,
+        "access_rows": 1000,
+        "file_bytes_each": 46,
+        "measurements": {
+          "MediaCache._files(music)": {
+            "p50_ms": 200.1297,
+            "max_ms": 292.5571,
+            "min_ms": 156.6629,
+            "warm_samples_ms": [
+              179.7594,
+              166.8087,
+              156.6629,
+              240.5202,
+              216.942,
+              215.5485,
+              223.0519,
+              232.9143,
+              202.181,
+              221.7377,
+              209.4433,
+              200.1297,
+              202.9256,
+              191.579,
+              187.1581,
+              190.027,
+              165.5359,
+              167.6508,
+              181.8127,
+              191.5183,
+              193.6378,
+              210.5739,
+              189.9774,
+              292.5571,
+              233.6873
+            ],
+            "python_peak_bytes": 1414609,
+            "memory_runs": [
+              {
+                "current_bytes": 1250923,
+                "peak_bytes": 1414609
+              },
+              {
+                "current_bytes": 1183627,
+                "peak_bytes": 1347473
+              },
+              {
+                "current_bytes": 1182603,
+                "peak_bytes": 1346449
+              }
+            ],
+            "rss_before_memory_pass_bytes": 56635392,
+            "rss_after_memory_pass_bytes": 57016320,
+            "sql": {
+              "total": 2,
+              "access_full_select": 1,
+              "kv_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 3007,
+                  "primitive_calls": 3007,
+                  "self_ms": 80.171,
+                  "cumulative_ms": 82.7223
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 1004,
+                  "primitive_calls": 1004,
+                  "self_ms": 24.347900000000003,
+                  "cumulative_ms": 25.287300000000002
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 16204,
+                  "primitive_calls": 16204,
+                  "self_ms": 19.1138,
+                  "cumulative_ms": 30.838700000000003
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 13203,
+                  "primitive_calls": 13203,
+                  "self_ms": 17.8736,
+                  "cumulative_ms": 110.84590000000001
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 16204,
+                  "primitive_calls": 16204,
+                  "self_ms": 16.824500000000004,
+                  "cumulative_ms": 72.42460000000001
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 3034,
+                  "primitive_calls": 3034,
+                  "self_ms": 16.1735,
+                  "cumulative_ms": 33.4224
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 16204,
+                  "primitive_calls": 16204,
+                  "self_ms": 14.6776,
+                  "cumulative_ms": 45.5163
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 59814,
+                  "primitive_calls": 34441,
+                  "self_ms": 13.133400000000002,
+                  "cumulative_ms": 19.260800000000003
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-probe.py:114:<lambda>",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.04510000000000001,
+                  "cumulative_ms": 387.4153
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 11.4931,
+                  "cumulative_ms": 387.3702
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 11.0702,
+                  "cumulative_ms": 207.336
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 14204,
+                  "primitive_calls": 14204,
+                  "self_ms": 7.4092,
+                  "cumulative_ms": 118.2551
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 13203,
+                  "primitive_calls": 13203,
+                  "self_ms": 17.8736,
+                  "cumulative_ms": 110.84590000000001
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 3007,
+                  "primitive_calls": 3007,
+                  "self_ms": 1.4779,
+                  "cumulative_ms": 84.20020000000001
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 3007,
+                  "primitive_calls": 3007,
+                  "self_ms": 80.171,
+                  "cumulative_ms": 82.7223
+                },
+                {
+                  "function": "pathlib.py:420:_from_parsed_parts",
+                  "calls": 12170,
+                  "primitive_calls": 12170,
+                  "self_ms": 10.8041,
+                  "cumulative_ms": 72.7019
+                }
+              ]
+            }
+          },
+          "MediaCache.status": {
+            "p50_ms": 217.8095,
+            "max_ms": 267.2851,
+            "min_ms": 180.8224,
+            "warm_samples_ms": [
+              214.8928,
+              218.2642,
+              241.4789,
+              213.3074,
+              212.0931,
+              192.7419,
+              194.6537,
+              209.0906,
+              238.1115,
+              254.1488,
+              267.2851,
+              243.4827,
+              217.8095,
+              227.0183,
+              221.7913,
+              231.85,
+              229.2407,
+              228.0134,
+              216.4455,
+              188.8366,
+              186.5572,
+              180.8224,
+              198.7989,
+              220.2429,
+              197.26
+            ],
+            "python_peak_bytes": 1414889,
+            "memory_runs": [
+              {
+                "current_bytes": 81692,
+                "peak_bytes": 1414889
+              },
+              {
+                "current_bytes": 23940,
+                "peak_bytes": 1346809
+              },
+              {
+                "current_bytes": 24036,
+                "peak_bytes": 1346809
+              }
+            ],
+            "rss_before_memory_pass_bytes": 57335808,
+            "rss_after_memory_pass_bytes": 57278464,
+            "sql": {
+              "total": 18,
+              "kv_select": 11,
+              "access_full_select": 4,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 3014,
+                  "primitive_calls": 3014,
+                  "self_ms": 66.5228,
+                  "cumulative_ms": 68.90790000000001
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 1008,
+                  "primitive_calls": 1008,
+                  "self_ms": 20.204,
+                  "cumulative_ms": 21.015000000000004
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 16408,
+                  "primitive_calls": 16408,
+                  "self_ms": 17.047100000000004,
+                  "cumulative_ms": 27.2281
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 13406,
+                  "primitive_calls": 13406,
+                  "self_ms": 15.870700000000001,
+                  "cumulative_ms": 97.39840000000001
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 16408,
+                  "primitive_calls": 16408,
+                  "self_ms": 14.519300000000001,
+                  "cumulative_ms": 63.084
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 3068,
+                  "primitive_calls": 3068,
+                  "self_ms": 14.3321,
+                  "cumulative_ms": 28.9323
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 16408,
+                  "primitive_calls": 16408,
+                  "self_ms": 12.410900000000002,
+                  "cumulative_ms": 39.639
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 60632,
+                  "primitive_calls": 34886,
+                  "self_ms": 11.5274,
+                  "cumulative_ms": 16.995
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media_cache.py:125:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.3106,
+                  "cumulative_ms": 338.6382
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.16910000000000003,
+                  "cumulative_ms": 338.24490000000003
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 10.3237,
+                  "cumulative_ms": 337.34790000000004
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 9.3521,
+                  "cumulative_ms": 178.66410000000002
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 14408,
+                  "primitive_calls": 14408,
+                  "self_ms": 6.5338,
+                  "cumulative_ms": 103.93220000000001
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 13406,
+                  "primitive_calls": 13406,
+                  "self_ms": 15.870700000000001,
+                  "cumulative_ms": 97.39840000000001
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 3014,
+                  "primitive_calls": 3014,
+                  "self_ms": 1.3161000000000003,
+                  "cumulative_ms": 70.224
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 3014,
+                  "primitive_calls": 3014,
+                  "self_ms": 66.5228,
+                  "cumulative_ms": 68.90790000000001
+                }
+              ]
+            }
+          },
+          "OnlineSongs.status": {
+            "p50_ms": 227.6092,
+            "max_ms": 318.4346,
+            "min_ms": 173.8372,
+            "warm_samples_ms": [
+              173.8662,
+              174.9732,
+              173.8372,
+              175.5201,
+              190.4951,
+              225.9551,
+              237.2972,
+              227.7679,
+              297.4135,
+              259.6657,
+              272.4248,
+              291.4757,
+              318.4346,
+              252.4032,
+              224.3407,
+              202.3142,
+              207.4086,
+              202.6298,
+              244.1117,
+              280.4755,
+              266.7525,
+              218.3203,
+              232.8414,
+              227.6092,
+              210.7027
+            ],
+            "python_peak_bytes": 1415721,
+            "memory_runs": [
+              {
+                "current_bytes": 80380,
+                "peak_bytes": 1415721
+              },
+              {
+                "current_bytes": 21636,
+                "peak_bytes": 1347289
+              },
+              {
+                "current_bytes": 21636,
+                "peak_bytes": 1347289
+              }
+            ],
+            "rss_before_memory_pass_bytes": 57540608,
+            "rss_after_memory_pass_bytes": 57323520,
+            "sql": {
+              "total": 7,
+              "kv_select": 6,
+              "access_full_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 3009,
+                  "primitive_calls": 3009,
+                  "self_ms": 68.1252,
+                  "cumulative_ms": 70.5061
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 1004,
+                  "primitive_calls": 1004,
+                  "self_ms": 20.819900000000004,
+                  "cumulative_ms": 21.6136
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 16208,
+                  "primitive_calls": 16208,
+                  "self_ms": 17.110400000000002,
+                  "cumulative_ms": 27.367600000000003
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 13203,
+                  "primitive_calls": 13203,
+                  "self_ms": 15.927300000000002,
+                  "cumulative_ms": 98.0451
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 16208,
+                  "primitive_calls": 16208,
+                  "self_ms": 14.8339,
+                  "cumulative_ms": 63.8195
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 3036,
+                  "primitive_calls": 3036,
+                  "self_ms": 14.468200000000001,
+                  "cumulative_ms": 29.261200000000002
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 16208,
+                  "primitive_calls": 16208,
+                  "self_ms": 12.568100000000001,
+                  "cumulative_ms": 39.935700000000004
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 59820,
+                  "primitive_calls": 34447,
+                  "self_ms": 11.4969,
+                  "cumulative_ms": 16.8797
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.3397,
+                  "cumulative_ms": 351.1306
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0669,
+                  "cumulative_ms": 339.2848
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 10.103000000000002,
+                  "cumulative_ms": 338.3779
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 9.672,
+                  "cumulative_ms": 183.33380000000002
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 14204,
+                  "primitive_calls": 14204,
+                  "self_ms": 6.6202000000000005,
+                  "cumulative_ms": 104.6653
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 13203,
+                  "primitive_calls": 13203,
+                  "self_ms": 15.927300000000002,
+                  "cumulative_ms": 98.0451
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 3009,
+                  "primitive_calls": 3009,
+                  "self_ms": 1.3815000000000002,
+                  "cumulative_ms": 71.8876
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 3009,
+                  "primitive_calls": 3009,
+                  "self_ms": 68.1252,
+                  "cumulative_ms": 70.5061
+                }
+              ]
+            }
+          },
+          "cache+online_back_to_back": {
+            "p50_ms": 446.2438,
+            "max_ms": 593.1249,
+            "min_ms": 380.1441,
+            "warm_samples_ms": [
+              454.2211,
+              465.3231,
+              471.9703,
+              520.7447,
+              593.1249,
+              428.0754,
+              465.8024,
+              394.7283,
+              443.088,
+              449.7045,
+              496.2469,
+              475.5408,
+              476.9233,
+              458.791,
+              446.2438,
+              533.1047,
+              424.4272,
+              423.817,
+              428.5394,
+              420.1298,
+              384.8574,
+              380.1441,
+              390.5308,
+              414.6476,
+              380.9462
+            ],
+            "python_peak_bytes": 1420013,
+            "memory_runs": [
+              {
+                "current_bytes": 83568,
+                "peak_bytes": 1420013
+              },
+              {
+                "current_bytes": 26728,
+                "peak_bytes": 1362221
+              },
+              {
+                "current_bytes": 26856,
+                "peak_bytes": 1362349
+              }
+            ],
+            "rss_before_memory_pass_bytes": 57569280,
+            "rss_after_memory_pass_bytes": 57442304,
+            "sql": {
+              "total": 25,
+              "kv_select": 17,
+              "access_full_select": 5,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 6023,
+                  "primitive_calls": 6023,
+                  "self_ms": 144.34160000000003,
+                  "cumulative_ms": 149.3761
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 2012,
+                  "primitive_calls": 2012,
+                  "self_ms": 44.4791,
+                  "cumulative_ms": 46.2119
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 32616,
+                  "primitive_calls": 32616,
+                  "self_ms": 36.1145,
+                  "cumulative_ms": 57.8314
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 26609,
+                  "primitive_calls": 26609,
+                  "self_ms": 33.3543,
+                  "cumulative_ms": 206.6416
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 32616,
+                  "primitive_calls": 32616,
+                  "self_ms": 31.319900000000004,
+                  "cumulative_ms": 135.45310000000003
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 6104,
+                  "primitive_calls": 6104,
+                  "self_ms": 30.2813,
+                  "cumulative_ms": 61.453300000000006
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 32616,
+                  "primitive_calls": 32616,
+                  "self_ms": 26.864900000000002,
+                  "cumulative_ms": 84.69630000000001
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 120452,
+                  "primitive_calls": 69333,
+                  "self_ms": 24.341500000000003,
+                  "cumulative_ms": 35.5763
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-probe.py:110:poll_pair",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0061,
+                  "cumulative_ms": 738.1632000000001
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 0.15480000000000002,
+                  "cumulative_ms": 723.5622000000001
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 21.993100000000002,
+                  "cumulative_ms": 721.9007
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 2000,
+                  "primitive_calls": 2000,
+                  "self_ms": 20.7209,
+                  "cumulative_ms": 384.9694
+                },
+                {
+                  "function": "media_cache.py:125:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.39080000000000004,
+                  "cumulative_ms": 377.786
+                },
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.44810000000000005,
+                  "cumulative_ms": 360.3711
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 28612,
+                  "primitive_calls": 28612,
+                  "self_ms": 14.1858,
+                  "cumulative_ms": 220.8274
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 26609,
+                  "primitive_calls": 26609,
+                  "self_ms": 33.3543,
+                  "cumulative_ms": 206.6416
+                }
+              ]
+            }
+          }
+        },
+        "component_status": {
+          "installed": false,
+          "running": false,
+          "error": null,
+          "pid": null,
+          "migu_configured": false
+        },
+        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "process_peak_rss_bytes": 59494400,
+        "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
+      },
+      {
+        "files": 5000,
+        "access_rows": 5000,
+        "file_bytes_each": 46,
+        "measurements": {
+          "MediaCache._files(music)": {
+            "p50_ms": 794.8324,
+            "max_ms": 1012.16,
+            "min_ms": 675.1225,
+            "warm_samples_ms": [
+              877.3386,
+              822.6328,
+              805.2297,
+              823.8285,
+              889.0021,
+              1012.16,
+              881.4498,
+              794.8324,
+              994.7805,
+              977.4409,
+              843.4681,
+              809.3649,
+              774.3192,
+              835.7704,
+              778.7628,
+              694.4618,
+              675.1225,
+              717.4156,
+              717.5309,
+              686.5925,
+              725.2556,
+              678.1345,
+              716.7079,
+              740.9161,
+              784.7902
+            ],
+            "python_peak_bytes": 8756841,
+            "memory_runs": [
+              {
+                "current_bytes": 7994307,
+                "peak_bytes": 8756841
+              },
+              {
+                "current_bytes": 6060651,
+                "peak_bytes": 6823345
+              },
+              {
+                "current_bytes": 6059627,
+                "peak_bytes": 6822321
+              }
+            ],
+            "rss_before_memory_pass_bytes": 62177280,
+            "rss_after_memory_pass_bytes": 64864256,
+            "sql": {
+              "total": 2,
+              "access_full_select": 1,
+              "kv_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 15007,
+                  "primitive_calls": 15007,
+                  "self_ms": 254.7682,
+                  "cumulative_ms": 263.36019999999996
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 5004,
+                  "primitive_calls": 5004,
+                  "self_ms": 78.1101,
+                  "cumulative_ms": 81.2808
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 80204,
+                  "primitive_calls": 80204,
+                  "self_ms": 69.0591,
+                  "cumulative_ms": 110.57280000000002
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 65203,
+                  "primitive_calls": 65203,
+                  "self_ms": 61.773,
+                  "cumulative_ms": 389.8269
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 80204,
+                  "primitive_calls": 80204,
+                  "self_ms": 57.90310000000001,
+                  "cumulative_ms": 251.4631
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 15034,
+                  "primitive_calls": 15034,
+                  "self_ms": 56.9529,
+                  "cumulative_ms": 114.92450000000001
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 80204,
+                  "primitive_calls": 80204,
+                  "self_ms": 47.4728,
+                  "cumulative_ms": 158.0456
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 295814,
+                  "primitive_calls": 170441,
+                  "self_ms": 46.847300000000004,
+                  "cumulative_ms": 69.90830000000001
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-probe.py:114:<lambda>",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0942,
+                  "cumulative_ms": 1311.8006
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 38.7804,
+                  "cumulative_ms": 1311.7064
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 39.1772,
+                  "cumulative_ms": 730.7886
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 70204,
+                  "primitive_calls": 70204,
+                  "self_ms": 26.3279,
+                  "cumulative_ms": 416.1548
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 65203,
+                  "primitive_calls": 65203,
+                  "self_ms": 61.773,
+                  "cumulative_ms": 389.8269
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 15007,
+                  "primitive_calls": 15007,
+                  "self_ms": 5.5284,
+                  "cumulative_ms": 268.88860000000005
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 15007,
+                  "primitive_calls": 15007,
+                  "self_ms": 254.7682,
+                  "cumulative_ms": 263.36019999999996
+                },
+                {
+                  "function": "pathlib.py:420:_from_parsed_parts",
+                  "calls": 60170,
+                  "primitive_calls": 60170,
+                  "self_ms": 37.1391,
+                  "cumulative_ms": 255.45800000000003
+                }
+              ]
+            }
+          },
+          "MediaCache.status": {
+            "p50_ms": 690.127,
+            "max_ms": 945.9184,
+            "min_ms": 672.1686,
+            "warm_samples_ms": [
+              704.6055,
+              712.8105,
+              706.2074,
+              674.6621,
+              697.4084,
+              685.2438,
+              692.8364,
+              678.4638,
+              696.1141,
+              685.1496,
+              698.471,
+              695.9531,
+              945.9184,
+              710.4512,
+              672.7308,
+              693.276,
+              685.5706,
+              688.2971,
+              676.4863,
+              703.1095,
+              686.2948,
+              689.4764,
+              672.1686,
+              690.127,
+              686.2838
+            ],
+            "python_peak_bytes": 6834761,
+            "memory_runs": [
+              {
+                "current_bytes": 137692,
+                "peak_bytes": 6834761
+              },
+              {
+                "current_bytes": 136132,
+                "peak_bytes": 6822681
+              },
+              {
+                "current_bytes": 137380,
+                "peak_bytes": 6711185
+              }
+            ],
+            "rss_before_memory_pass_bytes": 65777664,
+            "rss_after_memory_pass_bytes": 65781760,
+            "sql": {
+              "total": 18,
+              "kv_select": 11,
+              "access_full_select": 4,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 15014,
+                  "primitive_calls": 15014,
+                  "self_ms": 249.8691,
+                  "cumulative_ms": 258.3053
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 5008,
+                  "primitive_calls": 5008,
+                  "self_ms": 75.8471,
+                  "cumulative_ms": 79.0404
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 80408,
+                  "primitive_calls": 80408,
+                  "self_ms": 68.32549999999999,
+                  "cumulative_ms": 109.14180000000002
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 65406,
+                  "primitive_calls": 65406,
+                  "self_ms": 61.6328,
+                  "cumulative_ms": 385.49440000000004
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 80408,
+                  "primitive_calls": 80408,
+                  "self_ms": 57.2111,
+                  "cumulative_ms": 247.9653
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 15068,
+                  "primitive_calls": 15068,
+                  "self_ms": 56.206900000000005,
+                  "cumulative_ms": 113.22800000000001
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 80408,
+                  "primitive_calls": 80408,
+                  "self_ms": 46.450500000000005,
+                  "cumulative_ms": 155.59230000000002
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 296632,
+                  "primitive_calls": 170886,
+                  "self_ms": 46.4195,
+                  "cumulative_ms": 69.6392
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media_cache.py:125:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 1.4960000000000002,
+                  "cumulative_ms": 1331.8121
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.41840000000000005,
+                  "cumulative_ms": 1330.275
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 40.4758,
+                  "cumulative_ms": 1327.0249000000001
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 37.7529,
+                  "cumulative_ms": 733.6183000000001
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 70408,
+                  "primitive_calls": 70408,
+                  "self_ms": 26.282700000000002,
+                  "cumulative_ms": 411.7771
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 65406,
+                  "primitive_calls": 65406,
+                  "self_ms": 61.6328,
+                  "cumulative_ms": 385.49440000000004
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 15014,
+                  "primitive_calls": 15014,
+                  "self_ms": 5.080100000000001,
+                  "cumulative_ms": 263.3854
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 15014,
+                  "primitive_calls": 15014,
+                  "self_ms": 249.8691,
+                  "cumulative_ms": 258.3053
+                }
+              ]
+            }
+          },
+          "OnlineSongs.status": {
+            "p50_ms": 684.4329,
+            "max_ms": 756.6456,
+            "min_ms": 658.8504,
+            "warm_samples_ms": [
+              680.1612,
+              658.8504,
+              671.6568,
+              682.0464,
+              673.8114,
+              672.5142,
+              672.6111,
+              748.9087,
+              696.7706,
+              676.5433,
+              700.042,
+              719.4001,
+              688.9147,
+              676.2959,
+              684.4329,
+              674.3246,
+              690.66,
+              699.9246,
+              672.1449,
+              756.6456,
+              732.6687,
+              729.6754,
+              716.1533,
+              670.3754,
+              753.6837
+            ],
+            "python_peak_bytes": 6835593,
+            "memory_runs": [
+              {
+                "current_bytes": 136380,
+                "peak_bytes": 6835593
+              },
+              {
+                "current_bytes": 133828,
+                "peak_bytes": 6823161
+              },
+              {
+                "current_bytes": 133828,
+                "peak_bytes": 6823161
+              }
+            ],
+            "rss_before_memory_pass_bytes": 65069056,
+            "rss_after_memory_pass_bytes": 66420736,
+            "sql": {
+              "total": 7,
+              "kv_select": 6,
+              "access_full_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 15009,
+                  "primitive_calls": 15009,
+                  "self_ms": 349.7633,
+                  "cumulative_ms": 361.0375
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 5004,
+                  "primitive_calls": 5004,
+                  "self_ms": 105.3473,
+                  "cumulative_ms": 109.741
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 80208,
+                  "primitive_calls": 80208,
+                  "self_ms": 85.054,
+                  "cumulative_ms": 136.3247
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 65203,
+                  "primitive_calls": 65203,
+                  "self_ms": 79.42630000000001,
+                  "cumulative_ms": 485.21580000000006
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 80208,
+                  "primitive_calls": 80208,
+                  "self_ms": 73.8497,
+                  "cumulative_ms": 316.87350000000004
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 15036,
+                  "primitive_calls": 15036,
+                  "self_ms": 71.9481,
+                  "cumulative_ms": 146.74020000000002
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 80208,
+                  "primitive_calls": 80208,
+                  "self_ms": 61.771300000000004,
+                  "cumulative_ms": 198.09600000000003
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 295820,
+                  "primitive_calls": 170447,
+                  "self_ms": 57.119800000000005,
+                  "cumulative_ms": 83.9251
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 1.7350000000000003,
+                  "cumulative_ms": 1718.4122000000002
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.1381,
+                  "cumulative_ms": 1707.0138000000002
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 52.9116,
+                  "cumulative_ms": 1704.1695000000002
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 49.639500000000005,
+                  "cumulative_ms": 925.76
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 70204,
+                  "primitive_calls": 70204,
+                  "self_ms": 33.7596,
+                  "cumulative_ms": 518.9754
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 65203,
+                  "primitive_calls": 65203,
+                  "self_ms": 79.42630000000001,
+                  "cumulative_ms": 485.21580000000006
+                },
+                {
+                  "function": "pathlib.py:835:stat",
+                  "calls": 15009,
+                  "primitive_calls": 15009,
+                  "self_ms": 6.6652000000000005,
+                  "cumulative_ms": 367.70270000000005
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 15009,
+                  "primitive_calls": 15009,
+                  "self_ms": 349.7633,
+                  "cumulative_ms": 361.0375
+                }
+              ]
+            }
+          },
+          "cache+online_back_to_back": {
+            "p50_ms": 1910.2627,
+            "max_ms": 2305.9166,
+            "min_ms": 1498.0582,
+            "warm_samples_ms": [
+              1681.5433,
+              1924.4393,
+              2048.4045,
+              1804.9804,
+              1806.0138,
+              2198.9722,
+              1910.2627,
+              1986.9951,
+              1760.9812,
+              1759.1425,
+              1780.4196,
+              1778.9003,
+              1824.9787,
+              1838.3412,
+              1786.5144,
+              1880.6287,
+              2022.169,
+              2280.3755,
+              2305.9166,
+              2056.66,
+              1970.8777,
+              2063.3113,
+              1498.0582,
+              1939.5893,
+              2014.2566
+            ],
+            "python_peak_bytes": 8761925,
+            "memory_runs": [
+              {
+                "current_bytes": 139568,
+                "peak_bytes": 6839885
+              },
+              {
+                "current_bytes": 2062224,
+                "peak_bytes": 8761925
+              },
+              {
+                "current_bytes": 27520,
+                "peak_bytes": 6822681
+              }
+            ],
+            "rss_before_memory_pass_bytes": 64999424,
+            "rss_after_memory_pass_bytes": 66289664,
+            "sql": {
+              "total": 25,
+              "kv_select": 17,
+              "access_full_select": 5,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 30023,
+                  "primitive_calls": 30023,
+                  "self_ms": 523.5097000000001,
+                  "cumulative_ms": 541.3054999999999
+                },
+                {
+                  "function": "~:0:<built-in method nt.lstat>",
+                  "calls": 10012,
+                  "primitive_calls": 10012,
+                  "self_ms": 160.2627,
+                  "cumulative_ms": 166.8483
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 160616,
+                  "primitive_calls": 160616,
+                  "self_ms": 143.0796,
+                  "cumulative_ms": 227.31220000000002
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 130609,
+                  "primitive_calls": 130609,
+                  "self_ms": 130.16840000000002,
+                  "cumulative_ms": 803.7412
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 160616,
+                  "primitive_calls": 160616,
+                  "self_ms": 118.3576,
+                  "cumulative_ms": 516.9439
+                },
+                {
+                  "function": "pathlib.py:387:_parse_path",
+                  "calls": 30104,
+                  "primitive_calls": 30104,
+                  "self_ms": 116.66590000000001,
+                  "cumulative_ms": 235.108
+                },
+                {
+                  "function": "~:0:<built-in method builtins.len>",
+                  "calls": 592452,
+                  "primitive_calls": 341333,
+                  "self_ms": 96.8382,
+                  "cumulative_ms": 143.14770000000001
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 160616,
+                  "primitive_calls": 160616,
+                  "self_ms": 96.5794,
+                  "cumulative_ms": 323.8916
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-probe.py:110:poll_pair",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0079,
+                  "cumulative_ms": 2758.3808000000004
+                },
+                {
+                  "function": "media_cache.py:131:usage",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 0.5573,
+                  "cumulative_ms": 2745.7581
+                },
+                {
+                  "function": "media_cache.py:68:_files",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 84.3904,
+                  "cumulative_ms": 2740.5645
+                },
+                {
+                  "function": "pathlib.py:663:relative_to",
+                  "calls": 10000,
+                  "primitive_calls": 10000,
+                  "self_ms": 79.0289,
+                  "cumulative_ms": 1504.3929
+                },
+                {
+                  "function": "media_cache.py:125:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 1.6709,
+                  "cumulative_ms": 1448.5257
+                },
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 1.4436000000000002,
+                  "cumulative_ms": 1309.8472000000002
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 140612,
+                  "primitive_calls": 140612,
+                  "self_ms": 56.255500000000005,
+                  "cumulative_ms": 859.9967
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 130609,
+                  "primitive_calls": 130609,
+                  "self_ms": 130.16840000000002,
+                  "cumulative_ms": 803.7412
+                }
+              ]
+            }
+          }
+        },
+        "component_status": {
+          "installed": false,
+          "running": false,
+          "error": null,
+          "pid": null,
+          "migu_configured": false
+        },
+        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "process_peak_rss_bytes": 72400896,
+        "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
+      }
+    ]
+  },
+  "optimized": {
+    "host": {
+      "time_utc": "2026-11-01T06:59:15.226105+00:00",
+      "os": "Windows-11-10.0.26300-SP0",
+      "python": "3.12.13",
+      "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+      "logical_cpus": 16,
+      "memory_bytes": 34204610560,
+      "source_commit": "c4be2502419d1881d850293d7dda2005a45e03a0",
+      "storage": [
+        {
+          "device": "D:\\",
+          "mountpoint": "D:\\",
+          "fstype": "NTFS"
+        }
+      ]
+    },
+    "results": [
+      {
+        "files": 100,
+        "access_rows": 100,
+        "file_bytes_each": 46,
+        "measurements": {
+          "MediaCache._files(music)": {
+            "p50_ms": 3.952,
+            "max_ms": 4.652,
+            "min_ms": 3.7664,
+            "warm_samples_ms": [
+              4.1858,
+              3.8725,
+              3.8472,
+              4.5536,
+              4.2107,
+              3.8857,
+              4.134,
+              4.652,
+              4.0197,
+              3.8259,
+              3.7664,
+              3.952,
+              4.2411,
+              3.9928,
+              3.8102,
+              4.3036,
+              3.8791,
+              3.7977,
+              4.3285,
+              3.9999,
+              3.9358,
+              3.9853,
+              3.9349,
+              3.8205,
+              3.9308
+            ],
+            "python_peak_bytes": 95712,
+            "memory_runs": [
+              {
+                "current_bytes": 74212,
+                "peak_bytes": 95712
+              },
+              {
+                "current_bytes": 50116,
+                "peak_bytes": 71701
+              },
+              {
+                "current_bytes": 49092,
+                "peak_bytes": 70677
+              }
+            ],
+            "rss_before_memory_pass_bytes": 53796864,
+            "rss_after_memory_pass_bytes": 54075392,
+            "sql": {
+              "total": 2,
+              "access_full_select": 1,
+              "kv_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "<frozen ntpath>:52:normcase",
+                  "calls": 2200,
+                  "primitive_calls": 2200,
+                  "self_ms": 1.2745,
+                  "cumulative_ms": 2.6616
+                },
+                {
+                  "function": "<frozen ntpath>:738:relpath",
+                  "calls": 100,
+                  "primitive_calls": 100,
+                  "self_ms": 0.9317000000000001,
+                  "cumulative_ms": 4.9344
+                },
+                {
+                  "function": "~:0:<built-in method _winapi.LCMapStringEx>",
+                  "calls": 2200,
+                  "primitive_calls": 2200,
+                  "self_ms": 0.6477,
+                  "cumulative_ms": 0.6477
+                },
+                {
+                  "function": "~:0:<built-in method builtins.isinstance>",
+                  "calls": 3927,
+                  "primitive_calls": 3927,
+                  "self_ms": 0.42750000000000005,
+                  "cumulative_ms": 0.42750000000000005
+                },
+                {
+                  "function": "~:0:<method 'replace' of 'str' objects>",
+                  "calls": 2674,
+                  "primitive_calls": 2674,
+                  "self_ms": 0.4262,
+                  "cumulative_ms": 0.4262
+                },
+                {
+                  "function": "~:0:<built-in method nt.scandir>",
+                  "calls": 3,
+                  "primitive_calls": 3,
+                  "self_ms": 0.39860000000000007,
+                  "cumulative_ms": 0.4006
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 440,
+                  "primitive_calls": 440,
+                  "self_ms": 0.3688,
+                  "cumulative_ms": 0.5364
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 101,
+                  "primitive_calls": 101,
+                  "self_ms": 0.35140000000000005,
+                  "cumulative_ms": 5.173900000000001
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-after-probe.py:114:<lambda>",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.006300000000000001,
+                  "cumulative_ms": 10.8129
+                },
+                {
+                  "function": "media_cache.py:135:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.2634,
+                  "cumulative_ms": 10.806600000000001
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 101,
+                  "primitive_calls": 101,
+                  "self_ms": 0.35140000000000005,
+                  "cumulative_ms": 5.173900000000001
+                },
+                {
+                  "function": "<frozen ntpath>:738:relpath",
+                  "calls": 100,
+                  "primitive_calls": 100,
+                  "self_ms": 0.9317000000000001,
+                  "cumulative_ms": 4.9344
+                },
+                {
+                  "function": "~:0:<built-in method builtins.any>",
+                  "calls": 3,
+                  "primitive_calls": 3,
+                  "self_ms": 0.0048000000000000004,
+                  "cumulative_ms": 2.8415000000000004
+                },
+                {
+                  "function": "media_cache.py:109:<genexpr>",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.051000000000000004,
+                  "cumulative_ms": 2.8367
+                },
+                {
+                  "function": "<frozen ntpath>:52:normcase",
+                  "calls": 2200,
+                  "primitive_calls": 2200,
+                  "self_ms": 1.2745,
+                  "cumulative_ms": 2.6616
+                },
+                {
+                  "function": "pathlib.py:690:is_relative_to",
+                  "calls": 31,
+                  "primitive_calls": 31,
+                  "self_ms": 0.060000000000000005,
+                  "cumulative_ms": 2.3315
+                }
+              ]
+            }
+          },
+          "MediaCache.status": {
+            "p50_ms": 3.5057,
+            "max_ms": 4.8572,
+            "min_ms": 3.2663,
+            "warm_samples_ms": [
+              3.6682,
+              3.3791,
+              3.4158,
+              3.5205,
+              3.3724,
+              3.5057,
+              3.4327,
+              4.1868,
+              4.8572,
+              3.5222,
+              3.6902,
+              3.622,
+              3.6486,
+              3.4226,
+              3.2663,
+              3.6244,
+              3.3052,
+              3.4895,
+              3.3091,
+              3.3884,
+              4.3262,
+              3.2853,
+              4.0765,
+              3.2996,
+              3.9585
+            ],
+            "python_peak_bytes": 8845,
+            "memory_runs": [
+              {
+                "current_bytes": 3896,
+                "peak_bytes": 8845
+              },
+              {
+                "current_bytes": 2368,
+                "peak_bytes": 7317
+              },
+              {
+                "current_bytes": 1504,
+                "peak_bytes": 6763
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54185984,
+            "rss_after_memory_pass_bytes": 54185984,
+            "sql": {
+              "total": 6,
+              "kv_select": 3,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt.scandir>",
+                  "calls": 6,
+                  "primitive_calls": 6,
+                  "self_ms": 0.8355000000000001,
+                  "cumulative_ms": 0.8387000000000001
+                },
+                {
+                  "function": "pathlib.py:484:_str_normcase",
+                  "calls": 804,
+                  "primitive_calls": 804,
+                  "self_ms": 0.5868000000000001,
+                  "cumulative_ms": 1.4853
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 406,
+                  "primitive_calls": 406,
+                  "self_ms": 0.3701,
+                  "cumulative_ms": 2.2812
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 408,
+                  "primitive_calls": 408,
+                  "self_ms": 0.3396,
+                  "cumulative_ms": 0.5354
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 106,
+                  "primitive_calls": 106,
+                  "self_ms": 0.3164,
+                  "cumulative_ms": 1.2785000000000002
+                },
+                {
+                  "function": "~:0:<built-in method nt.stat>",
+                  "calls": 8,
+                  "primitive_calls": 8,
+                  "self_ms": 0.31360000000000005,
+                  "cumulative_ms": 0.5003000000000001
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 104,
+                  "primitive_calls": 104,
+                  "self_ms": 0.3118,
+                  "cumulative_ms": 7.8616
+                },
+                {
+                  "function": "pathlib.py:380:with_segments",
+                  "calls": 408,
+                  "primitive_calls": 408,
+                  "self_ms": 0.3019,
+                  "cumulative_ms": 1.2621000000000002
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media_cache.py:151:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0105,
+                  "cumulative_ms": 7.999499999999999
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.055400000000000005,
+                  "cumulative_ms": 7.917000000000001
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 104,
+                  "primitive_calls": 104,
+                  "self_ms": 0.3118,
+                  "cumulative_ms": 7.8616
+                },
+                {
+                  "function": "~:0:<built-in method builtins.any>",
+                  "calls": 6,
+                  "primitive_calls": 6,
+                  "self_ms": 0.0088,
+                  "cumulative_ms": 4.8921
+                },
+                {
+                  "function": "media_cache.py:109:<genexpr>",
+                  "calls": 8,
+                  "primitive_calls": 8,
+                  "self_ms": 0.0811,
+                  "cumulative_ms": 4.8833
+                },
+                {
+                  "function": "pathlib.py:690:is_relative_to",
+                  "calls": 62,
+                  "primitive_calls": 62,
+                  "self_ms": 0.11040000000000001,
+                  "cumulative_ms": 3.998300000000001
+                },
+                {
+                  "function": "<frozen _collections_abc>:1032:__contains__",
+                  "calls": 62,
+                  "primitive_calls": 62,
+                  "self_ms": 0.1577,
+                  "cumulative_ms": 2.7102000000000004
+                },
+                {
+                  "function": "<frozen _collections_abc>:1022:__iter__",
+                  "calls": 408,
+                  "primitive_calls": 408,
+                  "self_ms": 0.1454,
+                  "cumulative_ms": 2.4266
+                }
+              ]
+            }
+          },
+          "OnlineSongs.status": {
+            "p50_ms": 9.7161,
+            "max_ms": 10.8921,
+            "min_ms": 9.2663,
+            "warm_samples_ms": [
+              10.8921,
+              10.1554,
+              9.5525,
+              9.7588,
+              10.2944,
+              10.1645,
+              10.8015,
+              9.789,
+              9.9164,
+              10.7193,
+              9.4629,
+              9.7161,
+              9.6325,
+              9.6309,
+              10.235,
+              9.5723,
+              9.4508,
+              9.6586,
+              9.7611,
+              9.2709,
+              9.7005,
+              9.7554,
+              9.2663,
+              9.473,
+              9.3234
+            ],
+            "python_peak_bytes": 15353,
+            "memory_runs": [
+              {
+                "current_bytes": 2752,
+                "peak_bytes": 15105
+              },
+              {
+                "current_bytes": 1112,
+                "peak_bytes": 14489
+              },
+              {
+                "current_bytes": 1976,
+                "peak_bytes": 15353
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54202368,
+            "rss_after_memory_pass_bytes": 54198272,
+            "sql": {
+              "total": 6,
+              "kv_select": 6
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 6.5309,
+                  "cumulative_ms": 6.5309
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 951,
+                  "primitive_calls": 951,
+                  "self_ms": 0.7387,
+                  "cumulative_ms": 1.0668000000000002
+                },
+                {
+                  "function": "<frozen ntpath>:108:join",
+                  "calls": 455,
+                  "primitive_calls": 455,
+                  "self_ms": 0.7261000000000001,
+                  "cumulative_ms": 1.8446
+                },
+                {
+                  "function": "shutil.py:1486:which",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.3513,
+                  "cumulative_ms": 9.1503
+                },
+                {
+                  "function": "~:0:<built-in method nt.scandir>",
+                  "calls": 3,
+                  "primitive_calls": 3,
+                  "self_ms": 0.30000000000000004,
+                  "cumulative_ms": 0.3019
+                },
+                {
+                  "function": "pathlib.py:484:_str_normcase",
+                  "calls": 402,
+                  "primitive_calls": 402,
+                  "self_ms": 0.2832,
+                  "cumulative_ms": 0.7189000000000001
+                },
+                {
+                  "function": "~:0:<built-in method builtins.isinstance>",
+                  "calls": 2342,
+                  "primitive_calls": 2342,
+                  "self_ms": 0.27580000000000005,
+                  "cumulative_ms": 0.27580000000000005
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 101,
+                  "primitive_calls": 101,
+                  "self_ms": 0.269,
+                  "cumulative_ms": 4.1716
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.009600000000000001,
+                  "cumulative_ms": 13.8437
+                },
+                {
+                  "function": "song_component.py:39:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0045000000000000005,
+                  "cumulative_ms": 9.432300000000001
+                },
+                {
+                  "function": "song_component.py:23:installed",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0286,
+                  "cumulative_ms": 9.4275
+                },
+                {
+                  "function": "shutil.py:1486:which",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.3513,
+                  "cumulative_ms": 9.1503
+                },
+                {
+                  "function": "shutil.py:1471:_access_check",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 0.12900000000000003,
+                  "cumulative_ms": 6.8624
+                },
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 6.5309,
+                  "cumulative_ms": 6.5309
+                },
+                {
+                  "function": "media_cache.py:158:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0035000000000000005,
+                  "cumulative_ms": 4.3102
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0435,
+                  "cumulative_ms": 4.2151000000000005
+                }
+              ]
+            }
+          },
+          "cache+online_back_to_back": {
+            "p50_ms": 12.9959,
+            "max_ms": 14.6037,
+            "min_ms": 12.6795,
+            "warm_samples_ms": [
+              13.271,
+              12.9462,
+              12.7923,
+              12.7496,
+              13.6166,
+              12.8067,
+              13.1701,
+              13.2802,
+              13.1115,
+              12.965,
+              12.8663,
+              14.6037,
+              13.9759,
+              12.7068,
+              13.2208,
+              12.9959,
+              12.9153,
+              14.174,
+              13.3636,
+              13.0233,
+              12.6795,
+              13.5784,
+              12.9346,
+              12.9188,
+              12.7526
+            ],
+            "python_peak_bytes": 19393,
+            "memory_runs": [
+              {
+                "current_bytes": 6144,
+                "peak_bytes": 19393
+              },
+              {
+                "current_bytes": 3224,
+                "peak_bytes": 16601
+              },
+              {
+                "current_bytes": 3352,
+                "peak_bytes": 16729
+              }
+            ],
+            "rss_before_memory_pass_bytes": 54251520,
+            "rss_after_memory_pass_bytes": 54251520,
+            "sql": {
+              "total": 12,
+              "kv_select": 9,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 6.483200000000001,
+                  "cumulative_ms": 6.483200000000001
+                },
+                {
+                  "function": "~:0:<built-in method nt.scandir>",
+                  "calls": 9,
+                  "primitive_calls": 9,
+                  "self_ms": 1.0856999999999999,
+                  "cumulative_ms": 1.0909000000000002
+                },
+                {
+                  "function": "pathlib.py:484:_str_normcase",
+                  "calls": 1206,
+                  "primitive_calls": 1206,
+                  "self_ms": 0.9076000000000001,
+                  "cumulative_ms": 2.3069
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 1031,
+                  "primitive_calls": 1031,
+                  "self_ms": 0.8063,
+                  "cumulative_ms": 1.1577
+                },
+                {
+                  "function": "<frozen ntpath>:108:join",
+                  "calls": 461,
+                  "primitive_calls": 461,
+                  "self_ms": 0.6994000000000001,
+                  "cumulative_ms": 1.8041
+                },
+                {
+                  "function": "pathlib.py:277:__getitem__",
+                  "calls": 609,
+                  "primitive_calls": 609,
+                  "self_ms": 0.5699000000000001,
+                  "cumulative_ms": 3.4552000000000005
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 205,
+                  "primitive_calls": 205,
+                  "self_ms": 0.5666,
+                  "cumulative_ms": 11.9924
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 209,
+                  "primitive_calls": 209,
+                  "self_ms": 0.5355000000000001,
+                  "cumulative_ms": 1.871
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-after-probe.py:110:poll_pair",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0051,
+                  "cumulative_ms": 21.6721
+                },
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0091,
+                  "cumulative_ms": 13.912200000000002
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 0.09570000000000001,
+                  "cumulative_ms": 12.0881
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 205,
+                  "primitive_calls": 205,
+                  "self_ms": 0.5666,
+                  "cumulative_ms": 11.9924
+                },
+                {
+                  "function": "song_component.py:39:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.004900000000000001,
+                  "cumulative_ms": 9.2977
+                },
+                {
+                  "function": "song_component.py:23:installed",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0279,
+                  "cumulative_ms": 9.2924
+                },
+                {
+                  "function": "shutil.py:1486:which",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.35190000000000005,
+                  "cumulative_ms": 9.0413
+                },
+                {
+                  "function": "media_cache.py:151:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0097,
+                  "cumulative_ms": 7.7548
+                }
+              ]
+            }
+          }
+        },
+        "component_status": {
+          "installed": false,
+          "running": false,
+          "error": null,
+          "pid": null,
+          "migu_configured": false
+        },
+        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "process_peak_rss_bytes": 54276096,
+        "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
+      },
+      {
+        "files": 1000,
+        "access_rows": 1000,
+        "file_bytes_each": 46,
+        "measurements": {
+          "MediaCache._files(music)": {
+            "p50_ms": 28.9772,
+            "max_ms": 45.3484,
+            "min_ms": 26.1969,
+            "warm_samples_ms": [
+              27.8483,
+              27.6854,
+              27.7699,
+              30.615,
+              27.0975,
+              28.4327,
+              28.9772,
+              26.4388,
+              26.1969,
+              28.5148,
+              27.071,
+              29.2173,
+              27.8218,
+              30.4452,
+              38.0486,
+              32.4437,
+              29.4973,
+              28.973,
+              30.9616,
+              31.4912,
+              36.1617,
+              40.3805,
+              45.3484,
+              32.1601,
+              28.4062
+            ],
+            "python_peak_bytes": 880655,
+            "memory_runs": [
+              {
+                "current_bytes": 726648,
+                "peak_bytes": 880655
+              },
+              {
+                "current_bytes": 659352,
+                "peak_bytes": 813450
+              },
+              {
+                "current_bytes": 658328,
+                "peak_bytes": 812426
+              }
+            ],
+            "rss_before_memory_pass_bytes": 55218176,
+            "rss_after_memory_pass_bytes": 55758848,
+            "sql": {
+              "total": 2,
+              "access_full_select": 1,
+              "kv_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "<frozen ntpath>:52:normcase",
+                  "calls": 22000,
+                  "primitive_calls": 22000,
+                  "self_ms": 16.7151,
+                  "cumulative_ms": 35.8548
+                },
+                {
+                  "function": "<frozen ntpath>:738:relpath",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 13.767600000000002,
+                  "cumulative_ms": 69.02980000000001
+                },
+                {
+                  "function": "~:0:<built-in method _winapi.LCMapStringEx>",
+                  "calls": 22000,
+                  "primitive_calls": 22000,
+                  "self_ms": 9.1678,
+                  "cumulative_ms": 9.1678
+                },
+                {
+                  "function": "~:0:<method 'replace' of 'str' objects>",
+                  "calls": 26074,
+                  "primitive_calls": 26074,
+                  "self_ms": 5.514,
+                  "cumulative_ms": 5.514
+                },
+                {
+                  "function": "media_cache.py:135:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 5.0517,
+                  "cumulative_ms": 106.3535
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 1003,
+                  "primitive_calls": 1003,
+                  "self_ms": 4.928100000000001,
+                  "cumulative_ms": 7.6008000000000004
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 1001,
+                  "primitive_calls": 1001,
+                  "self_ms": 4.6354999999999995,
+                  "cumulative_ms": 26.058500000000002
+                },
+                {
+                  "function": "~:0:<built-in method builtins.isinstance>",
+                  "calls": 31827,
+                  "primitive_calls": 31827,
+                  "self_ms": 4.6076,
+                  "cumulative_ms": 4.6076
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-after-probe.py:114:<lambda>",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.06440000000000001,
+                  "cumulative_ms": 106.4179
+                },
+                {
+                  "function": "media_cache.py:135:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 5.0517,
+                  "cumulative_ms": 106.3535
+                },
+                {
+                  "function": "<frozen ntpath>:738:relpath",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 13.767600000000002,
+                  "cumulative_ms": 69.02980000000001
+                },
+                {
+                  "function": "<frozen ntpath>:52:normcase",
+                  "calls": 22000,
+                  "primitive_calls": 22000,
+                  "self_ms": 16.7151,
+                  "cumulative_ms": 35.8548
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 1001,
+                  "primitive_calls": 1001,
+                  "self_ms": 4.6354999999999995,
+                  "cumulative_ms": 26.058500000000002
+                },
+                {
+                  "function": "~:0:<built-in method _winapi.LCMapStringEx>",
+                  "calls": 22000,
+                  "primitive_calls": 22000,
+                  "self_ms": 9.1678,
+                  "cumulative_ms": 9.1678
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 1003,
+                  "primitive_calls": 1003,
+                  "self_ms": 4.928100000000001,
+                  "cumulative_ms": 7.6008000000000004
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 4040,
+                  "primitive_calls": 4040,
+                  "self_ms": 4.412,
+                  "cumulative_ms": 6.4707
+                }
+              ]
+            }
+          },
+          "MediaCache.status": {
+            "p50_ms": 12.039,
+            "max_ms": 15.7581,
+            "min_ms": 8.911,
+            "warm_samples_ms": [
+              12.2121,
+              12.4998,
+              13.4937,
+              8.911,
+              10.1028,
+              14.6152,
+              14.7539,
+              15.7581,
+              10.4508,
+              9.8291,
+              11.2167,
+              12.039,
+              13.3815,
+              14.8088,
+              13.0048,
+              12.8431,
+              15.2642,
+              10.5089,
+              9.702,
+              9.4326,
+              13.9285,
+              11.354,
+              10.6888,
+              10.3494,
+              10.3075
+            ],
+            "python_peak_bytes": 8880,
+            "memory_runs": [
+              {
+                "current_bytes": 3928,
+                "peak_bytes": 8880
+              },
+              {
+                "current_bytes": 2400,
+                "peak_bytes": 7352
+              },
+              {
+                "current_bytes": 1536,
+                "peak_bytes": 6801
+              }
+            ],
+            "rss_before_memory_pass_bytes": 55312384,
+            "rss_after_memory_pass_bytes": 55312384,
+            "sql": {
+              "total": 6,
+              "kv_select": 3,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 1004,
+                  "primitive_calls": 1004,
+                  "self_ms": 3.4352,
+                  "cumulative_ms": 23.7098
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 1006,
+                  "primitive_calls": 1006,
+                  "self_ms": 3.311,
+                  "cumulative_ms": 6.1601
+                },
+                {
+                  "function": "~:0:<method 'fullmatch' of 're.Pattern' objects>",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 1.3772,
+                  "cumulative_ms": 1.3772
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 1.1946,
+                  "cumulative_ms": 2.2432000000000003
+                },
+                {
+                  "function": "media_cache.py:22:linked",
+                  "calls": 1008,
+                  "primitive_calls": 1008,
+                  "self_ms": 1.1143,
+                  "cumulative_ms": 2.578
+                },
+                {
+                  "function": "~:0:<method 'match' of 're.Pattern' objects>",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 1.0630000000000002,
+                  "cumulative_ms": 1.0630000000000002
+                },
+                {
+                  "function": "~:0:<built-in method nt.scandir>",
+                  "calls": 6,
+                  "primitive_calls": 6,
+                  "self_ms": 0.8368000000000001,
+                  "cumulative_ms": 0.8405000000000001
+                },
+                {
+                  "function": "~:0:<method 'stat' of 'nt.DirEntry' objects>",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 0.8258,
+                  "cumulative_ms": 0.8258
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media_cache.py:151:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0087,
+                  "cumulative_ms": 24.2645
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 0.4668,
+                  "cumulative_ms": 24.176600000000004
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 1004,
+                  "primitive_calls": 1004,
+                  "self_ms": 3.4352,
+                  "cumulative_ms": 23.7098
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 1006,
+                  "primitive_calls": 1006,
+                  "self_ms": 3.311,
+                  "cumulative_ms": 6.1601
+                },
+                {
+                  "function": "~:0:<built-in method builtins.any>",
+                  "calls": 6,
+                  "primitive_calls": 6,
+                  "self_ms": 0.0099,
+                  "cumulative_ms": 6.1542
+                },
+                {
+                  "function": "media_cache.py:109:<genexpr>",
+                  "calls": 8,
+                  "primitive_calls": 8,
+                  "self_ms": 0.1029,
+                  "cumulative_ms": 6.1443
+                },
+                {
+                  "function": "pathlib.py:690:is_relative_to",
+                  "calls": 62,
+                  "primitive_calls": 62,
+                  "self_ms": 0.1241,
+                  "cumulative_ms": 4.9857000000000005
+                },
+                {
+                  "function": "<frozen _collections_abc>:1032:__contains__",
+                  "calls": 62,
+                  "primitive_calls": 62,
+                  "self_ms": 0.18820000000000003,
+                  "cumulative_ms": 3.4371
+                }
+              ]
+            }
+          },
+          "OnlineSongs.status": {
+            "p50_ms": 18.3621,
+            "max_ms": 22.4089,
+            "min_ms": 16.5802,
+            "warm_samples_ms": [
+              21.8445,
+              22.4089,
+              20.4737,
+              20.5876,
+              21.0082,
+              18.2771,
+              20.3486,
+              19.8963,
+              18.3621,
+              20.7631,
+              18.258,
+              17.5012,
+              18.2756,
+              18.1117,
+              17.4981,
+              16.6208,
+              21.5514,
+              17.9403,
+              18.1553,
+              19.1005,
+              16.5802,
+              16.8953,
+              19.033,
+              18.3693,
+              17.0923
+            ],
+            "python_peak_bytes": 15353,
+            "memory_runs": [
+              {
+                "current_bytes": 2752,
+                "peak_bytes": 15105
+              },
+              {
+                "current_bytes": 1112,
+                "peak_bytes": 14489
+              },
+              {
+                "current_bytes": 1976,
+                "peak_bytes": 15353
+              }
+            ],
+            "rss_before_memory_pass_bytes": 55324672,
+            "rss_after_memory_pass_bytes": 55324672,
+            "sql": {
+              "total": 6,
+              "kv_select": 6
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 12.230900000000002,
+                  "cumulative_ms": 12.230900000000002
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 1001,
+                  "primitive_calls": 1001,
+                  "self_ms": 2.4727,
+                  "cumulative_ms": 15.508600000000001
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 1003,
+                  "primitive_calls": 1003,
+                  "self_ms": 2.1464000000000003,
+                  "cumulative_ms": 3.838
+                },
+                {
+                  "function": "<frozen ntpath>:108:join",
+                  "calls": 455,
+                  "primitive_calls": 455,
+                  "self_ms": 1.3247,
+                  "cumulative_ms": 3.1755000000000004
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 951,
+                  "primitive_calls": 951,
+                  "self_ms": 1.1902,
+                  "cumulative_ms": 1.7318000000000002
+                },
+                {
+                  "function": "~:0:<method 'fullmatch' of 're.Pattern' objects>",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 0.9609000000000001,
+                  "cumulative_ms": 0.9609000000000001
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 0.9516,
+                  "cumulative_ms": 1.7756
+                },
+                {
+                  "function": "~:0:<method 'match' of 're.Pattern' objects>",
+                  "calls": 1000,
+                  "primitive_calls": 1000,
+                  "self_ms": 0.8035000000000001,
+                  "cumulative_ms": 0.8035000000000001
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0118,
+                  "cumulative_ms": 33.5284
+                },
+                {
+                  "function": "song_component.py:39:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0067,
+                  "cumulative_ms": 17.324
+                },
+                {
+                  "function": "song_component.py:23:installed",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.04340000000000001,
+                  "cumulative_ms": 17.3166
+                },
+                {
+                  "function": "shutil.py:1486:which",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.6729,
+                  "cumulative_ms": 16.894600000000004
+                },
+                {
+                  "function": "media_cache.py:158:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0044,
+                  "cumulative_ms": 15.991500000000002
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.35140000000000005,
+                  "cumulative_ms": 15.860000000000003
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 1001,
+                  "primitive_calls": 1001,
+                  "self_ms": 2.4727,
+                  "cumulative_ms": 15.508600000000001
+                },
+                {
+                  "function": "shutil.py:1471:_access_check",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 0.2389,
+                  "cumulative_ms": 12.828500000000002
+                }
+              ]
+            }
+          },
+          "cache+online_back_to_back": {
+            "p50_ms": 28.0471,
+            "max_ms": 37.4159,
+            "min_ms": 26.0753,
+            "warm_samples_ms": [
+              27.9223,
+              27.8278,
+              27.5764,
+              29.3763,
+              30.3576,
+              28.7315,
+              28.0471,
+              29.0882,
+              28.4663,
+              28.7447,
+              26.9738,
+              37.4159,
+              30.5022,
+              27.0153,
+              26.5086,
+              26.4091,
+              28.5814,
+              30.4728,
+              26.9598,
+              26.4087,
+              28.1033,
+              26.0753,
+              27.1555,
+              27.1132,
+              28.6661
+            ],
+            "python_peak_bytes": 19425,
+            "memory_runs": [
+              {
+                "current_bytes": 6176,
+                "peak_bytes": 19425
+              },
+              {
+                "current_bytes": 3256,
+                "peak_bytes": 16633
+              },
+              {
+                "current_bytes": 3384,
+                "peak_bytes": 16761
+              }
+            ],
+            "rss_before_memory_pass_bytes": 55324672,
+            "rss_after_memory_pass_bytes": 55324672,
+            "sql": {
+              "total": 12,
+              "kv_select": 9,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 8.2774,
+                  "cumulative_ms": 8.2774
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 2005,
+                  "primitive_calls": 2005,
+                  "self_ms": 5.4983,
+                  "cumulative_ms": 38.6402
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 2009,
+                  "primitive_calls": 2009,
+                  "self_ms": 4.838,
+                  "cumulative_ms": 8.9007
+                },
+                {
+                  "function": "~:0:<method 'fullmatch' of 're.Pattern' objects>",
+                  "calls": 2000,
+                  "primitive_calls": 2000,
+                  "self_ms": 2.176,
+                  "cumulative_ms": 2.176
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 2000,
+                  "primitive_calls": 2000,
+                  "self_ms": 2.136,
+                  "cumulative_ms": 4.0377
+                },
+                {
+                  "function": "~:0:<method 'match' of 're.Pattern' objects>",
+                  "calls": 2000,
+                  "primitive_calls": 2000,
+                  "self_ms": 1.861,
+                  "cumulative_ms": 1.861
+                },
+                {
+                  "function": "media_cache.py:22:linked",
+                  "calls": 2012,
+                  "primitive_calls": 2012,
+                  "self_ms": 1.4869,
+                  "cumulative_ms": 3.6746
+                },
+                {
+                  "function": "~:0:<method 'stat' of 'nt.DirEntry' objects>",
+                  "calls": 2000,
+                  "primitive_calls": 2000,
+                  "self_ms": 1.4680000000000002,
+                  "cumulative_ms": 1.4680000000000002
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-after-probe.py:110:poll_pair",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0067,
+                  "cumulative_ms": 51.894000000000005
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 0.8540000000000001,
+                  "cumulative_ms": 39.4942
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 2005,
+                  "primitive_calls": 2005,
+                  "self_ms": 5.4983,
+                  "cumulative_ms": 38.6402
+                },
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0101,
+                  "cumulative_ms": 30.2135
+                },
+                {
+                  "function": "media_cache.py:151:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.011200000000000002,
+                  "cumulative_ms": 21.6738
+                },
+                {
+                  "function": "media_cache.py:158:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.003,
+                  "cumulative_ms": 18.046300000000002
+                },
+                {
+                  "function": "song_component.py:39:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0054,
+                  "cumulative_ms": 12.022300000000001
+                },
+                {
+                  "function": "song_component.py:23:installed",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0364,
+                  "cumulative_ms": 12.0164
+                }
+              ]
+            }
+          }
+        },
+        "component_status": {
+          "installed": false,
+          "running": false,
+          "error": null,
+          "pid": null,
+          "migu_configured": false
+        },
+        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "process_peak_rss_bytes": 56225792,
+        "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
+      },
+      {
+        "files": 5000,
+        "access_rows": 5000,
+        "file_bytes_each": 46,
+        "measurements": {
+          "MediaCache._files(music)": {
+            "p50_ms": 207.4697,
+            "max_ms": 244.9215,
+            "min_ms": 172.117,
+            "warm_samples_ms": [
+              203.5037,
+              194.6681,
+              202.7478,
+              229.3605,
+              244.9215,
+              234.653,
+              222.6909,
+              212.159,
+              191.2177,
+              218.5505,
+              211.553,
+              194.202,
+              207.4697,
+              220.7827,
+              221.1173,
+              211.6823,
+              202.4089,
+              172.117,
+              190.3113,
+              210.4549,
+              204.9973,
+              182.741,
+              199.7034,
+              207.7697,
+              200.0337
+            ],
+            "python_peak_bytes": 4175447,
+            "memory_runs": [
+              {
+                "current_bytes": 3455616,
+                "peak_bytes": 4175447
+              },
+              {
+                "current_bytes": 3444376,
+                "peak_bytes": 4164298
+              },
+              {
+                "current_bytes": 3443352,
+                "peak_bytes": 4163274
+              }
+            ],
+            "rss_before_memory_pass_bytes": 60223488,
+            "rss_after_memory_pass_bytes": 59834368,
+            "sql": {
+              "total": 2,
+              "access_full_select": 1,
+              "kv_select": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "<frozen ntpath>:52:normcase",
+                  "calls": 110000,
+                  "primitive_calls": 110000,
+                  "self_ms": 89.60140000000001,
+                  "cumulative_ms": 194.49020000000002
+                },
+                {
+                  "function": "<frozen ntpath>:738:relpath",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 74.6119,
+                  "cumulative_ms": 374.3189
+                },
+                {
+                  "function": "~:0:<built-in method _winapi.LCMapStringEx>",
+                  "calls": 110000,
+                  "primitive_calls": 110000,
+                  "self_ms": 50.760600000000004,
+                  "cumulative_ms": 50.760600000000004
+                },
+                {
+                  "function": "~:0:<method 'replace' of 'str' objects>",
+                  "calls": 130074,
+                  "primitive_calls": 130074,
+                  "self_ms": 30.939200000000003,
+                  "cumulative_ms": 30.939200000000003
+                },
+                {
+                  "function": "pathlib.py:358:__init__",
+                  "calls": 5204,
+                  "primitive_calls": 5204,
+                  "self_ms": 27.616600000000002,
+                  "cumulative_ms": 31.682000000000002
+                },
+                {
+                  "function": "~:0:<built-in method builtins.isinstance>",
+                  "calls": 155827,
+                  "primitive_calls": 155827,
+                  "self_ms": 24.346100000000003,
+                  "cumulative_ms": 24.346100000000003
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 5001,
+                  "primitive_calls": 5001,
+                  "self_ms": 23.815,
+                  "cumulative_ms": 116.30460000000001
+                },
+                {
+                  "function": "<frozen ntpath>:180:splitroot",
+                  "calls": 20040,
+                  "primitive_calls": 20040,
+                  "self_ms": 23.5573,
+                  "cumulative_ms": 34.882000000000005
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-after-probe.py:114:<lambda>",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.16250000000000003,
+                  "cumulative_ms": 564.9564
+                },
+                {
+                  "function": "media_cache.py:135:_files",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 20.4044,
+                  "cumulative_ms": 564.7939000000001
+                },
+                {
+                  "function": "<frozen ntpath>:738:relpath",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 74.6119,
+                  "cumulative_ms": 374.3189
+                },
+                {
+                  "function": "<frozen ntpath>:52:normcase",
+                  "calls": 110000,
+                  "primitive_calls": 110000,
+                  "self_ms": 89.60140000000001,
+                  "cumulative_ms": 194.49020000000002
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 5001,
+                  "primitive_calls": 5001,
+                  "self_ms": 23.815,
+                  "cumulative_ms": 116.30460000000001
+                },
+                {
+                  "function": "~:0:<built-in method _winapi.LCMapStringEx>",
+                  "calls": 110000,
+                  "primitive_calls": 110000,
+                  "self_ms": 50.760600000000004,
+                  "cumulative_ms": 50.760600000000004
+                },
+                {
+                  "function": "pathlib.py:1157:__init__",
+                  "calls": 5204,
+                  "primitive_calls": 5204,
+                  "self_ms": 6.560600000000001,
+                  "cumulative_ms": 38.2426
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 5003,
+                  "primitive_calls": 5003,
+                  "self_ms": 23.0226,
+                  "cumulative_ms": 35.2276
+                }
+              ]
+            }
+          },
+          "MediaCache.status": {
+            "p50_ms": 40.0363,
+            "max_ms": 47.0887,
+            "min_ms": 36.4812,
+            "warm_samples_ms": [
+              41.4625,
+              41.3011,
+              46.6089,
+              41.9052,
+              38.6689,
+              40.416,
+              38.2808,
+              42.9491,
+              42.5966,
+              41.4037,
+              42.0336,
+              38.0408,
+              43.9374,
+              47.0887,
+              39.7406,
+              39.0071,
+              39.6041,
+              38.6167,
+              36.4966,
+              36.8423,
+              43.0608,
+              40.0363,
+              36.564,
+              36.4812,
+              38.5018
+            ],
+            "python_peak_bytes": 8880,
+            "memory_runs": [
+              {
+                "current_bytes": 3928,
+                "peak_bytes": 8880
+              },
+              {
+                "current_bytes": 2400,
+                "peak_bytes": 7352
+              },
+              {
+                "current_bytes": 1536,
+                "peak_bytes": 6801
+              }
+            ],
+            "rss_before_memory_pass_bytes": 60743680,
+            "rss_after_memory_pass_bytes": 60743680,
+            "sql": {
+              "total": 6,
+              "kv_select": 3,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 5004,
+                  "primitive_calls": 5004,
+                  "self_ms": 13.089400000000001,
+                  "cumulative_ms": 68.8409
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 5006,
+                  "primitive_calls": 5006,
+                  "self_ms": 11.3956,
+                  "cumulative_ms": 18.7651
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 5.2515,
+                  "cumulative_ms": 10.144
+                },
+                {
+                  "function": "~:0:<method 'fullmatch' of 're.Pattern' objects>",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 5.194000000000001,
+                  "cumulative_ms": 5.194000000000001
+                },
+                {
+                  "function": "~:0:<method 'match' of 're.Pattern' objects>",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 4.5133,
+                  "cumulative_ms": 4.5133
+                },
+                {
+                  "function": "~:0:<method 'stat' of 'nt.DirEntry' objects>",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 3.5192,
+                  "cumulative_ms": 3.5192
+                },
+                {
+                  "function": "media_cache.py:22:linked",
+                  "calls": 5008,
+                  "primitive_calls": 5008,
+                  "self_ms": 3.5071000000000003,
+                  "cumulative_ms": 6.7031
+                },
+                {
+                  "function": "~:0:<method 'rfind' of 'str' objects>",
+                  "calls": 15000,
+                  "primitive_calls": 15000,
+                  "self_ms": 3.4915000000000003,
+                  "cumulative_ms": 3.4915000000000003
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media_cache.py:151:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0088,
+                  "cumulative_ms": 70.84710000000001
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 4,
+                  "primitive_calls": 4,
+                  "self_ms": 1.9224,
+                  "cumulative_ms": 70.7633
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 5004,
+                  "primitive_calls": 5004,
+                  "self_ms": 13.089400000000001,
+                  "cumulative_ms": 68.8409
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 5006,
+                  "primitive_calls": 5006,
+                  "self_ms": 11.3956,
+                  "cumulative_ms": 18.7651
+                },
+                {
+                  "function": "<frozen ntpath>:258:splitext",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 3.0407,
+                  "cumulative_ms": 14.5265
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 5.2515,
+                  "cumulative_ms": 10.144
+                },
+                {
+                  "function": "media_cache.py:22:linked",
+                  "calls": 5008,
+                  "primitive_calls": 5008,
+                  "self_ms": 3.5071000000000003,
+                  "cumulative_ms": 6.7031
+                },
+                {
+                  "function": "~:0:<built-in method builtins.any>",
+                  "calls": 6,
+                  "primitive_calls": 6,
+                  "self_ms": 0.009800000000000001,
+                  "cumulative_ms": 5.611400000000001
+                }
+              ]
+            }
+          },
+          "OnlineSongs.status": {
+            "p50_ms": 42.0344,
+            "max_ms": 51.3183,
+            "min_ms": 38.894,
+            "warm_samples_ms": [
+              40.8669,
+              44.4451,
+              41.7483,
+              43.4129,
+              42.5363,
+              40.9831,
+              42.5948,
+              40.8017,
+              41.3115,
+              40.8374,
+              42.522,
+              39.6175,
+              40.7685,
+              41.7151,
+              41.5024,
+              38.894,
+              43.3161,
+              51.3183,
+              49.4371,
+              46.0542,
+              42.3358,
+              41.3829,
+              42.0874,
+              42.6371,
+              42.0344
+            ],
+            "python_peak_bytes": 15353,
+            "memory_runs": [
+              {
+                "current_bytes": 2752,
+                "peak_bytes": 15105
+              },
+              {
+                "current_bytes": 1112,
+                "peak_bytes": 14489
+              },
+              {
+                "current_bytes": 1976,
+                "peak_bytes": 15353
+              }
+            ],
+            "rss_before_memory_pass_bytes": 60755968,
+            "rss_after_memory_pass_bytes": 60755968,
+            "sql": {
+              "total": 6,
+              "kv_select": 6
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 5001,
+                  "primitive_calls": 5001,
+                  "self_ms": 13.0837,
+                  "cumulative_ms": 63.7384
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 5003,
+                  "primitive_calls": 5003,
+                  "self_ms": 11.292700000000002,
+                  "cumulative_ms": 18.1375
+                },
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 7.9395999999999995,
+                  "cumulative_ms": 7.9395999999999995
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 5.1664,
+                  "cumulative_ms": 9.777800000000001
+                },
+                {
+                  "function": "~:0:<method 'fullmatch' of 're.Pattern' objects>",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 5.138800000000001,
+                  "cumulative_ms": 5.138800000000001
+                },
+                {
+                  "function": "~:0:<method 'match' of 're.Pattern' objects>",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 4.393400000000001,
+                  "cumulative_ms": 4.393400000000001
+                },
+                {
+                  "function": "media_cache.py:22:linked",
+                  "calls": 5004,
+                  "primitive_calls": 5004,
+                  "self_ms": 3.4828,
+                  "cumulative_ms": 5.974500000000001
+                },
+                {
+                  "function": "~:0:<method 'stat' of 'nt.DirEntry' objects>",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 3.4449000000000005,
+                  "cumulative_ms": 3.4449000000000005
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0104,
+                  "cumulative_ms": 77.36860000000001
+                },
+                {
+                  "function": "media_cache.py:158:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0039,
+                  "cumulative_ms": 65.7624
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 1.9134000000000002,
+                  "cumulative_ms": 65.65180000000001
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 5001,
+                  "primitive_calls": 5001,
+                  "self_ms": 13.0837,
+                  "cumulative_ms": 63.7384
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 5003,
+                  "primitive_calls": 5003,
+                  "self_ms": 11.292700000000002,
+                  "cumulative_ms": 18.1375
+                },
+                {
+                  "function": "<frozen ntpath>:258:splitext",
+                  "calls": 5000,
+                  "primitive_calls": 5000,
+                  "self_ms": 3.0903,
+                  "cumulative_ms": 14.1476
+                },
+                {
+                  "function": "song_component.py:39:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0059,
+                  "cumulative_ms": 11.4353
+                },
+                {
+                  "function": "song_component.py:23:installed",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.09010000000000001,
+                  "cumulative_ms": 11.4288
+                }
+              ]
+            }
+          },
+          "cache+online_back_to_back": {
+            "p50_ms": 79.8026,
+            "max_ms": 102.3288,
+            "min_ms": 74.3948,
+            "warm_samples_ms": [
+              75.6475,
+              76.5908,
+              79.5447,
+              74.3948,
+              76.6865,
+              75.9339,
+              81.6871,
+              93.1444,
+              82.5976,
+              76.5082,
+              99.4398,
+              101.3913,
+              102.3288,
+              90.7005,
+              87.6664,
+              86.563,
+              76.8893,
+              88.5226,
+              89.2754,
+              78.6881,
+              79.8026,
+              79.6139,
+              79.6781,
+              80.3215,
+              76.5387
+            ],
+            "python_peak_bytes": 19425,
+            "memory_runs": [
+              {
+                "current_bytes": 6176,
+                "peak_bytes": 19425
+              },
+              {
+                "current_bytes": 3256,
+                "peak_bytes": 16633
+              },
+              {
+                "current_bytes": 3384,
+                "peak_bytes": 16761
+              }
+            ],
+            "rss_before_memory_pass_bytes": 60755968,
+            "rss_after_memory_pass_bytes": 60760064,
+            "sql": {
+              "total": 12,
+              "kv_select": 9,
+              "other": 2,
+              "pragma": 1
+            },
+            "profile": {
+              "self": [
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 10005,
+                  "primitive_calls": 10005,
+                  "self_ms": 29.1396,
+                  "cumulative_ms": 149.377
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 10009,
+                  "primitive_calls": 10009,
+                  "self_ms": 26.439300000000003,
+                  "cumulative_ms": 42.400800000000004
+                },
+                {
+                  "function": "~:0:<method 'fullmatch' of 're.Pattern' objects>",
+                  "calls": 10000,
+                  "primitive_calls": 10000,
+                  "self_ms": 11.7832,
+                  "cumulative_ms": 11.7832
+                },
+                {
+                  "function": "<frozen genericpath>:133:_splitext",
+                  "calls": 10000,
+                  "primitive_calls": 10000,
+                  "self_ms": 11.7408,
+                  "cumulative_ms": 22.2298
+                },
+                {
+                  "function": "~:0:<method 'match' of 're.Pattern' objects>",
+                  "calls": 10000,
+                  "primitive_calls": 10000,
+                  "self_ms": 10.0888,
+                  "cumulative_ms": 10.0888
+                },
+                {
+                  "function": "~:0:<built-in method nt._path_exists>",
+                  "calls": 450,
+                  "primitive_calls": 450,
+                  "self_ms": 9.7262,
+                  "cumulative_ms": 9.7262
+                },
+                {
+                  "function": "media_cache.py:22:linked",
+                  "calls": 10012,
+                  "primitive_calls": 10012,
+                  "self_ms": 7.8576000000000015,
+                  "cumulative_ms": 14.165500000000002
+                },
+                {
+                  "function": "~:0:<method 'stat' of 'nt.DirEntry' objects>",
+                  "calls": 10000,
+                  "primitive_calls": 10000,
+                  "self_ms": 7.8312,
+                  "cumulative_ms": 7.8312
+                }
+              ],
+              "cumulative": [
+                {
+                  "function": "media-cache-performance-after-probe.py:110:poll_pair",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.006500000000000001,
+                  "cumulative_ms": 167.77
+                },
+                {
+                  "function": "media_cache.py:161:_usage",
+                  "calls": 5,
+                  "primitive_calls": 5,
+                  "self_ms": 4.3863,
+                  "cumulative_ms": 153.76330000000002
+                },
+                {
+                  "function": "media_cache.py:86:_scan",
+                  "calls": 10005,
+                  "primitive_calls": 10005,
+                  "self_ms": 29.1396,
+                  "cumulative_ms": 149.377
+                },
+                {
+                  "function": "online_songs.py:108:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0097,
+                  "cumulative_ms": 91.3742
+                },
+                {
+                  "function": "media_cache.py:158:usage",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.0028000000000000004,
+                  "cumulative_ms": 77.568
+                },
+                {
+                  "function": "media_cache.py:151:status",
+                  "calls": 1,
+                  "primitive_calls": 1,
+                  "self_ms": 0.010300000000000002,
+                  "cumulative_ms": 76.3893
+                },
+                {
+                  "function": "media_cache.py:71:_directory_entries",
+                  "calls": 10009,
+                  "primitive_calls": 10009,
+                  "self_ms": 26.439300000000003,
+                  "cumulative_ms": 42.400800000000004
+                },
+                {
+                  "function": "<frozen ntpath>:258:splitext",
+                  "calls": 10000,
+                  "primitive_calls": 10000,
+                  "self_ms": 6.822500000000001,
+                  "cumulative_ms": 31.9611
+                }
+              ]
+            }
+          }
+        },
+        "component_status": {
+          "installed": false,
+          "running": false,
+          "error": null,
+          "pid": null,
+          "migu_configured": false
+        },
+        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "process_peak_rss_bytes": 64700416,
+        "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
+      }
+    ]
+  }
+}

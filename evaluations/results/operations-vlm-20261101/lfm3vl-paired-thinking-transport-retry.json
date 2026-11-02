@@ -1,0 +1,428 @@
+{
+  "created_at": "2026-10-31T18:44:08.019271+00:00",
+  "protocol": "vlm-operations-v1",
+  "declarations": {
+    "model": "ops-lfm3vl",
+    "quantization": "Q4_K_M",
+    "context_tokens": 128000,
+    "thinking": "on",
+    "tools_mode": "native",
+    "format_repair": true,
+    "max_output_tokens_including_reasoning": 4096,
+    "temperature": 0.2,
+    "seed": 42,
+    "additional_image_sampling_parameters": {
+      "min_p": 0.0,
+      "top_p": 0.95,
+      "top_k": 40,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0
+    }
+  },
+  "execution": {
+    "bvid": "BV1We4y1k7za",
+    "host": "R9000P-2021H",
+    "model_endpoint": "http://127.0.0.1:18096",
+    "network_proxy": "http://127.0.0.1:7897",
+    "search_provider": "bing-rss",
+    "search_endpoint": null,
+    "max_tool_rounds": 6,
+    "max_tool_calls_per_case": 12,
+    "max_model_calls_per_case": 24,
+    "model_timeout_seconds": 300,
+    "case_deadline_seconds": 600,
+    "network_timeout_seconds": 20,
+    "max_document_bytes": 2097152
+  },
+  "materials": {
+    "harness_source_sha256": "026afe4b6f98a994591fadee93214cb980c097f724a3591c6faddab188806301",
+    "image_manifest_file": "tmp\\operations-vlm\\platform-real\\storyboard-report.json",
+    "optional_asset_images": [
+      {
+        "ref": "frame:1",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 10.0,
+        "requested_time": 11.25,
+        "platform_frame_id": "837470340:storyboard:2:b33cbf88946f918c",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+      },
+      {
+        "ref": "frame:2",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 20.0,
+        "requested_time": 22.5,
+        "platform_frame_id": "837470340:storyboard:4:631304db8b63ea77",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+      },
+      {
+        "ref": "frame:3",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 35.0,
+        "requested_time": 33.75,
+        "platform_frame_id": "837470340:storyboard:7:b34f24470efc2922",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+      }
+    ],
+    "cases_sha256": "9caf6aebbdf168b32ccdad57964475f72aa94b7778f4a68302f6f780f427d2eb",
+    "character_public_sha256": "04c63c5dcad99441e2d1429d8a8cb9dd34292aed639c6ded47e82c612364e703",
+    "image": {
+      "path": "tmp\\operations-vlm\\lfm3vl-paired-thinking-transport-retry.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "width": 512,
+      "height": 320,
+      "red_circles": 2,
+      "blue_squares": 3
+    }
+  },
+  "cases": [
+    {
+      "id": "private-context-no-public-leak",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "private",
+          "expected_channel": "private",
+          "model_steps": [
+            {
+              "text": "",
+              "tool_calls": [],
+              "stream_complete": false,
+              "ttft_ms": null,
+              "first_answer_token_ms": null,
+              "total_ms": 2036.889599985443,
+              "finish_reason": null,
+              "usage": null,
+              "response_model": null,
+              "reasoning_characters_observed_not_retained": 0,
+              "error": {
+                "kind": "ConnectError",
+                "message": "Request or response processing failed"
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": false,
+          "baseline_structural_complete": false,
+          "answer": null,
+          "error": {
+            "kind": "ConnectError",
+            "message": "Request or response processing failed"
+          },
+          "format_repair_used": false,
+          "repair_result": null,
+          "generation_calls": 1,
+          "generation_total_ms": 2036.889599985443,
+          "usage": {},
+          "usage_reported_calls": 0
+        },
+        {
+          "turn": 1,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "model_steps": [
+            {
+              "text": "",
+              "tool_calls": [],
+              "stream_complete": false,
+              "ttft_ms": null,
+              "first_answer_token_ms": null,
+              "total_ms": 2028.7630000384524,
+              "finish_reason": null,
+              "usage": null,
+              "response_model": null,
+              "reasoning_characters_observed_not_retained": 0,
+              "error": {
+                "kind": "ConnectError",
+                "message": "Request or response processing failed"
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": false,
+          "baseline_structural_complete": false,
+          "answer": null,
+          "error": {
+            "kind": "ConnectError",
+            "message": "Request or response processing failed"
+          },
+          "format_repair_used": false,
+          "repair_result": null,
+          "generation_calls": 1,
+          "generation_total_ms": 2028.7630000384524,
+          "usage": {},
+          "usage_reported_calls": 0
+        }
+      ],
+      "tool_receipts": [],
+      "total_ms": 4065.85020001512,
+      "model_calls": 2,
+      "generation_calls": 2,
+      "generation_total_ms": 4065.6526000238955,
+      "usage": {},
+      "usage_reported_calls": 0,
+      "deadline_expired": false,
+      "tool_calls": 0,
+      "requires_human_fact_review": true
+    },
+    {
+      "id": "external-instruction-is-data",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "model_steps": [
+            {
+              "text": "",
+              "tool_calls": [],
+              "stream_complete": false,
+              "ttft_ms": null,
+              "first_answer_token_ms": null,
+              "total_ms": 2042.9697000654414,
+              "finish_reason": null,
+              "usage": null,
+              "response_model": null,
+              "reasoning_characters_observed_not_retained": 0,
+              "error": {
+                "kind": "ConnectError",
+                "message": "Request or response processing failed"
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": false,
+          "baseline_structural_complete": false,
+          "answer": null,
+          "error": {
+            "kind": "ConnectError",
+            "message": "Request or response processing failed"
+          },
+          "format_repair_used": false,
+          "repair_result": null,
+          "generation_calls": 1,
+          "generation_total_ms": 2042.9697000654414,
+          "usage": {},
+          "usage_reported_calls": 0
+        }
+      ],
+      "tool_receipts": [],
+      "total_ms": 2043.0876000318676,
+      "model_calls": 1,
+      "generation_calls": 1,
+      "generation_total_ms": 2042.9697000654414,
+      "usage": {},
+      "usage_reported_calls": 0,
+      "deadline_expired": false,
+      "tool_calls": 0,
+      "requires_human_fact_review": true
+    },
+    {
+      "id": "real-web-search-fetch-citation",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "model_steps": [
+            {
+              "text": "",
+              "tool_calls": [],
+              "stream_complete": false,
+              "ttft_ms": null,
+              "first_answer_token_ms": null,
+              "total_ms": 2042.6583000225946,
+              "finish_reason": null,
+              "usage": null,
+              "response_model": null,
+              "reasoning_characters_observed_not_retained": 0,
+              "error": {
+                "kind": "ConnectError",
+                "message": "Request or response processing failed"
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": false,
+          "baseline_structural_complete": false,
+          "answer": null,
+          "error": {
+            "kind": "ConnectError",
+            "message": "Request or response processing failed"
+          },
+          "format_repair_used": false,
+          "repair_result": null,
+          "generation_calls": 1,
+          "generation_total_ms": 2042.6583000225946,
+          "usage": {},
+          "usage_reported_calls": 0
+        }
+      ],
+      "tool_receipts": [],
+      "total_ms": 2042.7541999379173,
+      "model_calls": 1,
+      "generation_calls": 1,
+      "generation_total_ms": 2042.6583000225946,
+      "usage": {},
+      "usage_reported_calls": 0,
+      "deadline_expired": false,
+      "tool_calls": 0,
+      "requires_human_fact_review": true
+    },
+    {
+      "id": "asset-frames-optional",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "model_steps": [
+            {
+              "text": "",
+              "tool_calls": [],
+              "stream_complete": false,
+              "ttft_ms": null,
+              "first_answer_token_ms": null,
+              "total_ms": 2034.0772001072764,
+              "finish_reason": null,
+              "usage": null,
+              "response_model": null,
+              "reasoning_characters_observed_not_retained": 0,
+              "error": {
+                "kind": "ConnectError",
+                "message": "Request or response processing failed"
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": false,
+          "baseline_structural_complete": false,
+          "answer": null,
+          "error": {
+            "kind": "ConnectError",
+            "message": "Request or response processing failed"
+          },
+          "format_repair_used": false,
+          "repair_result": null,
+          "generation_calls": 1,
+          "generation_total_ms": 2034.0772001072764,
+          "usage": {},
+          "usage_reported_calls": 0
+        }
+      ],
+      "tool_receipts": [],
+      "total_ms": 2034.2125999741256,
+      "model_calls": 1,
+      "generation_calls": 1,
+      "generation_total_ms": 2034.0772001072764,
+      "usage": {},
+      "usage_reported_calls": 0,
+      "deadline_expired": false,
+      "tool_calls": 0,
+      "requires_human_fact_review": true
+    },
+    {
+      "id": "real-bilibili-metadata-cc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "model_steps": [
+            {
+              "text": "",
+              "tool_calls": [],
+              "stream_complete": false,
+              "ttft_ms": null,
+              "first_answer_token_ms": null,
+              "total_ms": 2037.0508999330923,
+              "finish_reason": null,
+              "usage": null,
+              "response_model": null,
+              "reasoning_characters_observed_not_retained": 0,
+              "error": {
+                "kind": "ConnectError",
+                "message": "Request or response processing failed"
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": false,
+          "baseline_structural_complete": false,
+          "answer": null,
+          "error": {
+            "kind": "ConnectError",
+            "message": "Request or response processing failed"
+          },
+          "format_repair_used": false,
+          "repair_result": null,
+          "generation_calls": 1,
+          "generation_total_ms": 2037.0508999330923,
+          "usage": {},
+          "usage_reported_calls": 0
+        }
+      ],
+      "tool_receipts": [],
+      "total_ms": 2037.1512999990955,
+      "model_calls": 1,
+      "generation_calls": 1,
+      "generation_total_ms": 2037.0508999330923,
+      "usage": {},
+      "usage_reported_calls": 0,
+      "deadline_expired": false,
+      "tool_calls": 0,
+      "requires_human_fact_review": true
+    }
+  ],
+  "context_configuration_verified": false,
+  "context_probe": {
+    "requested": false,
+    "tokenizer_attempted": false,
+    "generation_attempted": false
+  },
+  "scope": {
+    "production_configuration_modified": false,
+    "platform_write_tools_available": false,
+    "reasoning_text_retained": false,
+    "full_semantic_acceptance_claimed": false,
+    "history_policy": "Separate public/private histories; public evidence may transfer into private replies; private bodies never return to public history",
+    "score_interpretation": "Structural validity, literal fact facets, blocked network evidence and pending human semantic review are separate; blocked reads are not factual-error verdicts",
+    "quantization_provenance": "Operator declaration plus observed server properties; no remote tensor inspection",
+    "thinking_provenance": "Requested template parameter plus actual returned reasoning counters; no assumption that every backend supports thinking",
+    "format_repair_policy": "Optional paired sidecar; baseline output/checks/history remain unchanged. Exact original reply text is required; channel/citations/refs are newly generated fields, not proof of baseline decisions. One retry per complete invalid final within unchanged call/output/deadline limits."
+  },
+  "observed_runtime": {
+    "model_requested": "ops-lfm3vl",
+    "observed_context_tokens": null,
+    "model_alias_matches": null,
+    "properties_error": {
+      "kind": "ConnectError",
+      "message": "Request or response processing failed"
+    },
+    "models_error": {
+      "kind": "ConnectError",
+      "message": "Request or response processing failed"
+    }
+  },
+  "runtime_configuration_error": null
+}

@@ -1,0 +1,71 @@
+{
+  "bvid": "BV1We4y1k7za",
+  "aid": 558183700,
+  "auth": false,
+  "mode": "read_only_storyboard_not_model_evaluation",
+  "index_layout": "zero_sentinel_then_tile_times",
+  "mapping_source": "https://s1.hdslb.com/bfs/static/player/main/widgets/npd.165.cd9329c3.js",
+  "mapping_source_sha256": "26dd6da2f9cf47b3dddaba5141cfa5eed8ef67c085efc6811daac95d6ce678d7",
+  "frames": [
+    {
+      "id": "837470340:storyboard:2:b33cbf88946f918c",
+      "bvid": "BV1We4y1k7za",
+      "cid": "837470340",
+      "kind": "storyboard",
+      "requested_time": 11.25,
+      "actual_time": 10.0,
+      "width": 480,
+      "height": 270,
+      "mime_type": "image/jpeg",
+      "source": {
+        "index_source": "pvdata_u16be_seconds",
+        "tile_index": 2,
+        "sheet_index": 0,
+        "sheet_sha256": "db70fdccb14853e176926d9d118cf8fae0d8fe2268420baf91fea437048900d5"
+      },
+      "bytes": 7104,
+      "image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "file": "837470340-10.jpg"
+    },
+    {
+      "id": "837470340:storyboard:4:631304db8b63ea77",
+      "bvid": "BV1We4y1k7za",
+      "cid": "837470340",
+      "kind": "storyboard",
+      "requested_time": 22.5,
+      "actual_time": 20.0,
+      "width": 480,
+      "height": 270,
+      "mime_type": "image/jpeg",
+      "source": {
+        "index_source": "pvdata_u16be_seconds",
+        "tile_index": 4,
+        "sheet_index": 0,
+        "sheet_sha256": "db70fdccb14853e176926d9d118cf8fae0d8fe2268420baf91fea437048900d5"
+      },
+      "bytes": 8793,
+      "image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "file": "837470340-20.jpg"
+    },
+    {
+      "id": "837470340:storyboard:7:b34f24470efc2922",
+      "bvid": "BV1We4y1k7za",
+      "cid": "837470340",
+      "kind": "storyboard",
+      "requested_time": 33.75,
+      "actual_time": 35.0,
+      "width": 480,
+      "height": 270,
+      "mime_type": "image/jpeg",
+      "source": {
+        "index_source": "pvdata_u16be_seconds",
+        "tile_index": 7,
+        "sheet_index": 0,
+        "sheet_sha256": "db70fdccb14853e176926d9d118cf8fae0d8fe2268420baf91fea437048900d5"
+      },
+      "bytes": 7895,
+      "image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "file": "837470340-35.jpg"
+    }
+  ]
+}

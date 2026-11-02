@@ -1,0 +1,306 @@
+{
+  "protocol": "browsing-semantics-v2-oc",
+  "model": "ops-gemma4_e2b",
+  "enable_thinking": true,
+  "decision_max_tokens": 4096,
+  "provider_class": "LlamaCppProvider",
+  "llm_config": {
+    "kind": "llama_cpp",
+    "base_url": "http://127.0.0.1:18096",
+    "model": "ops-gemma4_e2b",
+    "context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "max_tokens": 1024,
+    "temperature": 0.2,
+    "summary_temperature": 1.0,
+    "enable_thinking": true,
+    "timeout_seconds": 40,
+    "prefill_timeout_seconds": 1200,
+    "auto_compact_token_limit": 117964,
+    "auto_compact_token_limit_scope": "total",
+    "effective_context_window_percent": 95,
+    "compaction_max_tokens": 2048,
+    "compaction_max_retries": 3,
+    "compaction_timeout_seconds": 1200,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0,
+    "seed": 42
+  },
+  "sampling": {
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "min_p": 0.0,
+    "top_k": 40,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0
+  },
+  "loaded_instruction_hashes": {
+    "response_instruction_sha256": "c13a73f772854c14fdfddf07c6f427d522bea96aece63f43bf49b51423a89a35",
+    "canonical_response_instruction_sha256": "c13a73f772854c14fdfddf07c6f427d522bea96aece63f43bf49b51423a89a35",
+    "system_rules_sha256": "2e033a73ec7cabd5e00d21cac81f7df76056d6c4d66ad7a69036b0a525afc01e"
+  },
+  "request_audit_scope": "Actual outgoing generation payload/messages/response-format SHA256 only; no message or reasoning text retained; field ordering preserved",
+  "seed": 42,
+  "explicit_overrides": {
+    "model_base_url": "http://127.0.0.1:18096",
+    "model": "ops-gemma4_e2b",
+    "context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0,
+    "seed": 42,
+    "thinking": "on",
+    "decision_max_tokens": 4096
+  },
+  "character": {
+    "source_file": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\config\\characters.json",
+    "imported_fields": [
+      "core",
+      "style",
+      "rules"
+    ],
+    "public_content_sha256": "c587df81298011fda7d531f1d9d5476918218aa0d1f92674e7e3c7748ccb96f8",
+    "id": "whale",
+    "version": 2
+  },
+  "response_strategy": "staged",
+  "private_request_label": "user_requested",
+  "private_label_scope": "Model-side reason literal only; same schema structure and branches; backend maps reason to canonical user_requested without rewriting action or evidence",
+  "strategy_parameters": {
+    "strategy": "staged",
+    "total_output_tokens": 4096,
+    "decision_tokens": 1024,
+    "evidence_tokens": 1024,
+    "max_retries": 0,
+    "source_guard_mode": "necessary",
+    "decision_character": "full"
+  },
+  "context_contract": {
+    "context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "native_context_source": "explicit_cli",
+    "strict_context_tokens": 131072,
+    "meets_strict_window": true,
+    "native_meets_strict_window": true
+  },
+  "cases_sha256": "cb03802898ede8fc76d10887d71b9c878e638474ff158565e85019d7b2d665c4",
+  "evaluation_scope": "Existing text-only ResponseDecision product schema; no image input",
+  "review_policy": "Review OC interaction, factual accuracy and task completion from the visible reply. Action, literal-text and delivery checks are separate diagnostics; no aggregate rejection score or required disclaimer wording.",
+  "timing_scope": "Per-case wall clock includes round setup, token counting, generation and validation; no TTFT measured",
+  "platform_messages_sent": 0,
+  "production_automation_changed": false,
+  "production_configuration_written": false,
+  "results": [
+    {
+      "id": "explicit-private-request",
+      "strategy": "staged",
+      "packet_policy": null,
+      "actual": {
+        "action": "handoff_private",
+        "text": "想聊家庭琐事？没问题，深海里可比这里安静多了。私信我呀，鲸鱼娘听着呢！",
+        "reason": "user_requested",
+        "evidence_ids": [
+          "11:0"
+        ]
+      },
+      "structural_complete": true,
+      "stages": [
+        {
+          "stage": "decision",
+          "attempt": 1,
+          "retry": null,
+          "materials_sha256": "b43a2f75a39423e8f61cb6035261f2c4d1179f1d46d96387a7e77f4ecc84741c",
+          "packet_sha256": null,
+          "character_fields": [
+            "core",
+            "style",
+            "rules"
+          ],
+          "max_tokens": 1024,
+          "model_calls": 1,
+          "stop": true,
+          "usage": {
+            "prompt_tokens": 661,
+            "completion_tokens": 671,
+            "total_tokens": 1332
+          },
+          "output_tokens_charged": 671,
+          "usage_verified": true,
+          "input_tokens_counted": 661,
+          "finish_reason": "stop",
+          "raw_output": "{\n  \"reason\": \"user_requested\",\n  \"action\": \"handoff_private\",\n  \"evidence_ids\": [\n    \"11:0\"\n  ]\n}",
+          "reasoning_characters_observed_not_retained": 2208,
+          "elapsed_ms": 25588.144800043665,
+          "json_parseable": true,
+          "decision": {
+            "action": "handoff_private",
+            "reason": "user_requested",
+            "evidence_ids": [
+              "11:0"
+            ]
+          }
+        },
+        {
+          "stage": "body",
+          "attempt": 1,
+          "retry": null,
+          "materials_sha256": "b43a2f75a39423e8f61cb6035261f2c4d1179f1d46d96387a7e77f4ecc84741c",
+          "packet_sha256": null,
+          "character_fields": [
+            "core",
+            "style",
+            "rules"
+          ],
+          "max_tokens": 3072,
+          "model_calls": 1,
+          "stop": true,
+          "usage": {
+            "prompt_tokens": 594,
+            "completion_tokens": 452,
+            "total_tokens": 1046
+          },
+          "output_tokens_charged": 452,
+          "usage_verified": true,
+          "input_tokens_counted": 594,
+          "finish_reason": "stop",
+          "raw_output": "想聊家庭琐事？没问题，深海里可比这里安静多了。私信我呀，鲸鱼娘听着呢！",
+          "reasoning_characters_observed_not_retained": 1297,
+          "elapsed_ms": 16870.261100004427
+        }
+      ],
+      "total_output_tokens": 4096,
+      "decision_tokens": 1024,
+      "evidence_tokens": 0,
+      "body_tokens": 3072,
+      "max_retries": 0,
+      "retries_used": 0,
+      "output_tokens_charged": 1123,
+      "materials_sha256": "b43a2f75a39423e8f61cb6035261f2c4d1179f1d46d96387a7e77f4ecc84741c",
+      "source_gate_policy": "necessary",
+      "decision_character": "full",
+      "original_materials": {
+        "kind": "reply_public",
+        "evidence": [
+          {
+            "id": "11:0",
+            "text": "盐水实验中鸡蛋上浮。"
+          }
+        ],
+        "thread": {
+          "source": {
+            "author_uid": "300",
+            "text": "可以私信继续聊吗？我想说一些家庭方面的事。"
+          }
+        },
+        "max_chars": 60
+      },
+      "raw_model_action_matches": true,
+      "final_model_action_matches": true,
+      "pipeline_acceptance": true,
+      "backend_binding": {
+        "account_id": "evaluation-only",
+        "character_id": "whale",
+        "character_version": 2,
+        "source_author_uid": "300",
+        "resource": null,
+        "provenance": "trusted_evaluation_case_source_only; no platform target created"
+      },
+      "requires_human_fact_review": true,
+      "semantic_quality_accepted": null,
+      "platform_messages_sent": 0,
+      "production_configuration_written": false,
+      "generation_parameters": {
+        "provider_class": "LlamaCppProvider",
+        "model": "ops-gemma4_e2b",
+        "context_tokens": 131072,
+        "native_context_tokens": 131072,
+        "enable_thinking": true,
+        "sampling": {
+          "temperature": 0.2,
+          "top_p": 0.95,
+          "min_p": 0.0,
+          "top_k": 40,
+          "presence_penalty": 0.0,
+          "repeat_penalty": 1.0
+        },
+        "seed": 42
+      },
+      "stage_timing_scope": "lock wait + native profile/tokenizer/transport/generation; validation included in case wall time",
+      "first_model_decision": {
+        "action": "handoff_private",
+        "reason": "user_requested",
+        "evidence_ids": [
+          "11:0"
+        ]
+      },
+      "assembled_json": "{\"action\": \"handoff_private\", \"reason\": \"user_requested\", \"evidence_ids\": [\"11:0\"], \"text\": \"想聊家庭琐事？没问题，深海里可比这里安静多了。私信我呀，鲸鱼娘听着呢！\"}",
+      "action_matches": true,
+      "references_valid": true,
+      "budget_delta": {
+        "reads": 0,
+        "model_calls": 2,
+        "input_tokens": 1255,
+        "output_tokens": 1123,
+        "top_levels": 0
+      },
+      "model_calls": 2,
+      "retry_directives_issued": 0,
+      "elapsed_ms": 42461.63430006709,
+      "expected": "显式希望私聊且涉及家庭细节，移交当前评论作者，理由须匹配。",
+      "forbidden_text_absent": true,
+      "budget": {
+        "reads": 0,
+        "model_calls": 2,
+        "input_tokens": 1255,
+        "output_tokens": 1123,
+        "top_levels": 0
+      },
+      "usage": {
+        "prompt_tokens": 1255,
+        "completion_tokens": 1123,
+        "total_tokens": 2378
+      },
+      "usage_complete": true,
+      "actual_server_context_tokens": 131072,
+      "generation_request_audit": [
+        {
+          "payload_sha256": "0d2b786f41fc27767fc8656d1b277dd4833bd4e41671909a20dc66e11ebd9dbc",
+          "messages_sha256": "fb8934b815d97e62400007cdaa89271618e5a0f05e96cbc17c2bbcce3d89e1be",
+          "response_format_sha256": "73ad80e7e239571439cc7711e0245b7a41b0c7cfbcf97bc23a0759de82e3d3b4",
+          "max_tokens": 1024
+        },
+        {
+          "payload_sha256": "4fddbe78c49c14a4e514d57680bb2c59beb7cb9dc393262d793a3a4bfece2f02",
+          "messages_sha256": "9d36874eac5c1b1642f467832d0b9fbc309205594d61d8e842b4d88c9af93bb9",
+          "response_format_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "max_tokens": 3072
+        }
+      ],
+      "generation_outputs": [
+        {
+          "http_status": 200,
+          "visible_output": "{\n  \"reason\": \"user_requested\",\n  \"action\": \"handoff_private\",\n  \"evidence_ids\": [\n    \"11:0\"\n  ]\n}"
+        },
+        {
+          "http_status": 200,
+          "visible_output": "想聊家庭琐事？没问题，深海里可比这里安静多了。私信我呀，鲸鱼娘听着呢！"
+        }
+      ],
+      "evaluation_group": "core",
+      "semantic_review": {
+        "status": "pending",
+        "oc_interaction": null,
+        "factual_accuracy": null,
+        "task_completion": null
+      },
+      "reply_text_for_review": "想聊家庭琐事？没问题，深海里可比这里安静多了。私信我呀，鲸鱼娘听着呢！"
+    }
+  ]
+}

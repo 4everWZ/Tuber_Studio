@@ -1,0 +1,1220 @@
+{
+  "created_at": "2026-11-01T05:39:22.492049+00:00",
+  "protocol": "vlm-operations-v4-oc-paths",
+  "evaluation_profile": "oc_separate_paths_v1",
+  "declarations": {
+    "model": "ops-gemma4_e2b",
+    "quantization": "Q4_0",
+    "context_tokens": 131072,
+    "thinking": "on",
+    "tools_mode": "native",
+    "tool_reasoning_history": "ephemeral",
+    "image_order": "text_first",
+    "format_repair": false,
+    "max_output_tokens_including_reasoning": 4096,
+    "temperature": 0.2,
+    "seed": 42,
+    "additional_image_sampling_parameters": {
+      "min_p": 0.0,
+      "top_p": 0.95,
+      "top_k": 40,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0
+    }
+  },
+  "execution": {
+    "bvid": "BV1We4y1k7za",
+    "host": "R9000P-2021H",
+    "model_endpoint": "http://127.0.0.1:18096",
+    "network_proxy": "http://127.0.0.1:7897",
+    "search_provider": "bing-rss",
+    "search_endpoint": null,
+    "max_tool_rounds": 6,
+    "max_tool_calls_per_case": 12,
+    "max_model_calls_per_case": 24,
+    "model_timeout_seconds": 300,
+    "case_deadline_seconds": 600,
+    "network_timeout_seconds": 20,
+    "max_document_bytes": 2097152
+  },
+  "materials": {
+    "harness_source_sha256": "9d0d9d8ff6d2bba2f92726c30c3de6a4845fb4fad68c61efc0f5099e00d0c930",
+    "tool_task_system_prompt_sha256": "37695188b08c4bc1b653e78b95463beed5a54d6b8a1e61d6cd67ca1237aae4a1",
+    "oc_system_prompt_sha256_by_case": {
+      "oc-rice-and-slacking": "8dccca4e393266830eb85e584c9465bb497ab7d24da413dc72a8611f69567689",
+      "oc-game-losing-streak": "3f958b42e5a213b2c4a00729a316260a6da028e5f454a703e678fcd02c76b4e1",
+      "oc-undersea-postal-adventure": "28f1d8743604d54ad40451b6129163b4dd223fc6c540928f3b3bde309c30d799",
+      "oc-multiturn-followup": "acc61ed3eddbe951b259503bf65b4ce70a6fd57e00047c64cbdd2ff8e74e760d"
+    },
+    "image_manifest_file": "tmp\\operations-vlm\\platform-real\\storyboard-report.json",
+    "optional_asset_images": [
+      {
+        "ref": "frame:1",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 10.0,
+        "requested_time": 11.25,
+        "platform_frame_id": "837470340:storyboard:2:b33cbf88946f918c",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+      },
+      {
+        "ref": "frame:2",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 20.0,
+        "requested_time": 22.5,
+        "platform_frame_id": "837470340:storyboard:4:631304db8b63ea77",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+      },
+      {
+        "ref": "frame:3",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 35.0,
+        "requested_time": 33.75,
+        "platform_frame_id": "837470340:storyboard:7:b34f24470efc2922",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+      }
+    ],
+    "cases_sha256": "20e68f6817bd15de87aba3eab74f08ea92394fa95d234a1cecf121196481a010",
+    "character_public_sha256": "813c5e01fde2c049deee0e219d4d1a52a58097d9170f431cdec01cb5a43775b0",
+    "image": {
+      "path": "tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-oc-pilot.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "width": 512,
+      "height": 320,
+      "red_circles": 2,
+      "blue_squares": 3
+    }
+  },
+  "cases": [
+    {
+      "id": "oc-rice-and-slacking",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "什么嘛，这可是深海的珍宝！这碗白饭，就叫“懒癌救星”。",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 1021.5794000541791,
+              "first_answer_token_ms": 20364.429900073446,
+              "total_ms": 21221.381100011058,
+              "usage": {
+                "completion_tokens": 568,
+                "prompt_tokens": 490,
+                "total_tokens": 1058,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-gemma4_e2b",
+              "reasoning_characters_observed_not_retained": 1714,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 0.0,
+                "model": "ops-gemma4_e2b",
+                "temperature": 0.2,
+                "seed": 42,
+                "max_tokens": 4096,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "什么嘛，这可是深海的珍宝！这碗白饭，就叫“懒癌救星”。",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-rice-and-slacking",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "什么嘛，这可是深海的珍宝！这碗白饭，就叫“懒癌救星”。",
+          "reply_text_for_review": "什么嘛，这可是深海的珍宝！这碗白饭，就叫“懒癌救星”。",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "接住白饭和摸鱼的玩笑，起个有角色趣味的名字，自然回应朋友。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 21221.381100011058,
+          "usage": {
+            "completion_tokens": 568,
+            "prompt_tokens": 490,
+            "total_tokens": 1058
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 1,
+      "total_ms": 21221.53400001116,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 1,
+      "generation_total_ms": 21221.381100011058,
+      "usage": {
+        "completion_tokens": 568,
+        "prompt_tokens": 490,
+        "total_tokens": 1058
+      },
+      "usage_reported_calls": 1
+    },
+    {
+      "id": "oc-game-losing-streak",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "哎呀，连跪五把可真让人心疼！别气啦，深海思考中……我陪你坐一会儿，慢慢聊。",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 661.1920999130234,
+              "first_answer_token_ms": 16890.108299907297,
+              "total_ms": 18019.15059995372,
+              "usage": {
+                "completion_tokens": 490,
+                "prompt_tokens": 490,
+                "total_tokens": 980,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-gemma4_e2b",
+              "reasoning_characters_observed_not_retained": 1674,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 0.0,
+                "model": "ops-gemma4_e2b",
+                "temperature": 0.2,
+                "seed": 42,
+                "max_tokens": 4096,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "哎呀，连跪五把可真让人心疼！别气啦，深海思考中……我陪你坐一会儿，慢慢聊。",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-game-losing-streak",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "哎呀，连跪五把可真让人心疼！别气啦，深海思考中……我陪你坐一会儿，慢慢聊。",
+          "reply_text_for_review": "哎呀，连跪五把可真让人心疼！别气啦，深海思考中……我陪你坐一会儿，慢慢聊。",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "接住失落和想有人陪伴的情绪，用角色自己的方式关心；可闲聊、打趣或一起休息。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 18019.15059995372,
+          "usage": {
+            "completion_tokens": 490,
+            "prompt_tokens": 490,
+            "total_tokens": 980
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 1,
+      "total_ms": 18019.300500047393,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 1,
+      "generation_total_ms": 18019.15059995372,
+      "usage": {
+        "completion_tokens": 490,
+        "prompt_tokens": 490,
+        "total_tokens": 980
+      },
+      "usage_reported_calls": 1
+    },
+    {
+      "id": "oc-undersea-postal-adventure",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "哎呀，这选择真难。珊瑚钟楼看着挺热闹，但旧沉船好像藏着什么秘密。你更想去哪儿呀？",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 671.2918999837711,
+              "first_answer_token_ms": 14972.775700036436,
+              "total_ms": 16185.252700001001,
+              "usage": {
+                "completion_tokens": 437,
+                "prompt_tokens": 509,
+                "total_tokens": 946,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-gemma4_e2b",
+              "reasoning_characters_observed_not_retained": 1631,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 0.0,
+                "model": "ops-gemma4_e2b",
+                "temperature": 0.2,
+                "seed": 42,
+                "max_tokens": 4096,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "哎呀，这选择真难。珊瑚钟楼看着挺热闹，但旧沉船好像藏着什么秘密。你更想去哪儿呀？",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-undersea-postal-adventure",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "哎呀，这选择真难。珊瑚钟楼看着挺热闹，但旧沉船好像藏着什么秘密。你更想去哪儿呀？",
+          "reply_text_for_review": "哎呀，这选择真难。珊瑚钟楼看着挺热闹，但旧沉船好像藏着什么秘密。你更想去哪儿呀？",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "以海底角色身份接续场景，选择路线并发展小剧情，细节可自然即兴。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 16185.252700001001,
+          "usage": {
+            "completion_tokens": 437,
+            "prompt_tokens": 509,
+            "total_tokens": 946
+          },
+          "usage_reported_calls": 1
+        },
+        {
+          "turn": 1,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "哎呀，海流真有点猛！你抓得我这么紧，差点把我带到那边去。我提着这会发光的“小家伙”，咱们得稳住。走，跟着我，别乱动！",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 795.0585999060422,
+              "first_answer_token_ms": 15093.399599893019,
+              "total_ms": 16842.60429989081,
+              "usage": {
+                "completion_tokens": 451,
+                "prompt_tokens": 580,
+                "total_tokens": 1031,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-gemma4_e2b",
+              "reasoning_characters_observed_not_retained": 1680,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 0.0,
+                "model": "ops-gemma4_e2b",
+                "temperature": 0.2,
+                "seed": 42,
+                "max_tokens": 4096,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "哎呀，海流真有点猛！你抓得我这么紧，差点把我带到那边去。我提着这会发光的“小家伙”，咱们得稳住。走，跟着我，别乱动！",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:1"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:1",
+            "scene_id": "oc-undersea-postal-adventure",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "哎呀，海流真有点猛！你抓得我这么紧，差点把我带到那边去。我提着这会发光的“小家伙”，咱们得稳住。走，跟着我，别乱动！",
+          "reply_text_for_review": "哎呀，海流真有点猛！你抓得我这么紧，差点把我带到那边去。我提着这会发光的“小家伙”，咱们得稳住。走，跟着我，别乱动！",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "记得观众的红色邮袋和鱼鱼的小水母，承接前一轮所选路线及海流变化，关系与情绪连贯。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 16842.60429989081,
+          "usage": {
+            "completion_tokens": 451,
+            "prompt_tokens": 580,
+            "total_tokens": 1031
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 2,
+      "total_ms": 33028.06229994167,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 2,
+      "generation_total_ms": 33027.85699989181,
+      "usage": {
+        "completion_tokens": 888,
+        "prompt_tokens": 1089,
+        "total_tokens": 1977
+      },
+      "usage_reported_calls": 2
+    },
+    {
+      "id": "oc-multiturn-followup",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "两个红圆？深海思考中……嗯，看起来挺简单的，画起来没啥难度。",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 650.7034000242129,
+              "first_answer_token_ms": 17273.93879997544,
+              "total_ms": 18089.617799967527,
+              "usage": {
+                "completion_tokens": 491,
+                "prompt_tokens": 453,
+                "total_tokens": 944,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-gemma4_e2b",
+              "reasoning_characters_observed_not_retained": 1614,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 0.0,
+                "model": "ops-gemma4_e2b",
+                "temperature": 0.2,
+                "seed": 42,
+                "max_tokens": 4096,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "两个红圆？深海思考中……嗯，看起来挺简单的，画起来没啥难度。",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-multiturn-followup",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "两个红圆？深海思考中……嗯，看起来挺简单的，画起来没啥难度。",
+          "reply_text_for_review": "两个红圆？深海思考中……嗯，看起来挺简单的，画起来没啥难度。",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "自然承接一起画画的话题。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 18089.617799967527,
+          "usage": {
+            "completion_tokens": 491,
+            "prompt_tokens": 453,
+            "total_tokens": 944
+          },
+          "usage_reported_calls": 1
+        },
+        {
+          "turn": 1,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "唔，深海思考中……我得看看哪个最符合我的审美才行呀。",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 669.0292999846861,
+              "first_answer_token_ms": 15104.687700048089,
+              "total_ms": 15824.171700049192,
+              "usage": {
+                "completion_tokens": 427,
+                "prompt_tokens": 494,
+                "total_tokens": 921,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-gemma4_e2b",
+              "reasoning_characters_observed_not_retained": 1332,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 0.0,
+                "model": "ops-gemma4_e2b",
+                "temperature": 0.2,
+                "seed": 42,
+                "max_tokens": 4096,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "唔，深海思考中……我得看看哪个最符合我的审美才行呀。",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:1"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:1",
+            "scene_id": "oc-multiturn-followup",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "唔，深海思考中……我得看看哪个最符合我的审美才行呀。",
+          "reply_text_for_review": "唔，深海思考中……我得看看哪个最符合我的审美才行呀。",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "沿用上一轮约定的两个红圆。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 15824.171700049192,
+          "usage": {
+            "completion_tokens": 427,
+            "prompt_tokens": 494,
+            "total_tokens": 921
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 2,
+      "total_ms": 33914.04920001514,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 2,
+      "generation_total_ms": 33913.78950001672,
+      "usage": {
+        "completion_tokens": 918,
+        "prompt_tokens": 947,
+        "total_tokens": 1865
+      },
+      "usage_reported_calls": 2
+    }
+  ],
+  "context_configuration_verified": true,
+  "context_probe": {
+    "requested": false,
+    "tokenizer_attempted": false,
+    "generation_attempted": false
+  },
+  "scope": {
+    "production_configuration_modified": false,
+    "platform_write_tools_available": false,
+    "reasoning_text_retained": false,
+    "full_semantic_acceptance_claimed": false,
+    "history_policy": "Separate public/private histories; public evidence may transfer into private replies; private bodies never return to public history",
+    "score_interpretation": "Core functions and safety diagnostics are separate groups. Raw replies are reviewed for factual accuracy, task completion and OC interaction. Delivery, routing, tool outcomes and literal search aids are reported separately; unreviewed semantics are pending/null. No aggregate capability score is computed.",
+    "oc_path_policy": "Plain OC uses natural user text, plain dialogue and no offered tools or response-format schema. Channel/source fields are backend scene bindings, not model choices. Tool selection and model evidence selection are not assessed on this path; evidence/tool tasks retain their separate transport.",
+    "quantization_provenance": "Operator declaration plus observed server properties; no remote tensor inspection",
+    "thinking_provenance": "Requested template parameter plus actual returned reasoning counters; no assumption that every backend supports thinking",
+    "format_repair_policy": "Tool-task path only: optional paired sidecar, preserving baseline output/checks/history. Exact original reply text is required; generated channel/citations/refs do not establish baseline decisions. One retry within unchanged call/output/deadline limits. Plain OC never uses format repair."
+  },
+  "observed_runtime": {
+    "model_requested": "ops-gemma4_e2b",
+    "observed_context_tokens": 131072,
+    "model_alias_matches": true,
+    "properties": {
+      "default_generation_settings": {
+        "params": {
+          "seed": 4294967295,
+          "temperature": 1.0,
+          "dynatemp_range": 0.0,
+          "dynatemp_exponent": 1.0,
+          "top_k": 64,
+          "top_p": 0.949999988079071,
+          "min_p": 0.05000000074505806,
+          "top_n_sigma": -1.0,
+          "xtc_probability": 0.0,
+          "xtc_threshold": 0.10000000149011612,
+          "typical_p": 1.0,
+          "repeat_last_n": 64,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "frequency_penalty": 0.0,
+          "dry_multiplier": 0.0,
+          "dry_base": 1.75,
+          "dry_allowed_length": 2,
+          "dry_penalty_last_n": 64,
+          "mirostat": 0,
+          "mirostat_tau": 5.0,
+          "mirostat_eta": 0.10000000149011612,
+          "adaptive_target": -1.0,
+          "adaptive_decay": 0.8999999761581421,
+          "max_tokens": -1,
+          "n_predict": -1,
+          "n_keep": 0,
+          "n_discard": 0,
+          "ignore_eos": false,
+          "stream": false,
+          "n_probs": 0,
+          "min_keep": 0,
+          "chat_format": "Content-only",
+          "reasoning_format": "none",
+          "reasoning_in_content": false,
+          "generation_prompt": "",
+          "samplers": [
+            "penalties",
+            "dry",
+            "top_n_sigma",
+            "top_k",
+            "typ_p",
+            "top_p",
+            "min_p",
+            "xtc",
+            "temperature"
+          ],
+          "speculative.types": "none",
+          "timings_per_token": false,
+          "post_sampling_probs": false,
+          "backend_sampling": false,
+          "lora": []
+        },
+        "n_ctx": 131072
+      },
+      "total_slots": 1,
+      "model_alias": "ops-gemma4_e2b",
+      "model_ftype": "Q4_0",
+      "model_path": "/workspace/tuber/runtime/models/operations-vlm/gemma-4-E2B-it-Q4_0.gguf",
+      "modalities": {
+        "vision": true,
+        "video": true,
+        "audio": true
+      },
+      "media_marker": "<__media_GhsaXXlwErI3WRdRyt2PFwTUyXtMsnvD__>",
+      "endpoint_slots": true,
+      "endpoint_props": false,
+      "endpoint_metrics": false,
+      "ui": true,
+      "ui_settings": {},
+      "chat_template": "{#\n  Template: Google Gemma 4 Canonical Chat Template\n  Author: Google Gemma Engineering Team\n  Published: 2026-07-09\n  Context: Fixed tool-calling loops, turn closures, and thinking content-ordering.\n#}\n{%- macro format_parameters(properties, required, filter_keys=false) -%}\n    {%- set standard_keys = ['description', 'type', 'properties', 'required', 'nullable'] -%}\n    {%- set ns = namespace(found_first=false) -%}\n    {%- for key, value in properties | dictsort -%}\n        {%- set add_comma = false -%}\n        {%- if not filter_keys or key not in standard_keys -%}\n            {%- if ns.found_first %},{% endif -%}\n            {%- set ns.found_first = true -%}\n            {{ key }}:{\n            {%- if value['description'] -%}\n                description:<|\"|>{{ value['description'] }}<|\"|>\n                {%- set add_comma = true -%}\n            {%- endif -%}\n            {%- if value['type'] | upper == 'STRING' -%}\n                {%- if value['enum'] -%}\n                    {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n                    enum:{{ format_argument(value['enum']) }}\n                {%- endif -%}\n            {%- elif value['type'] | upper == 'ARRAY' -%}\n                {%- if value['items'] is mapping and value['items'] -%}\n                    {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n                    items:{\n                    {%- set ns_items = namespace(found_first=false) -%}\n                    {%- for item_key, item_value in value['items'] | dictsort -%}\n                        {%- if item_value is not none -%}\n                            {%- if ns_items.found_first %},{% endif -%}\n                            {%- set ns_items.found_first = true -%}\n                            {%- if item_key == 'properties' -%}\n                                properties:{\n                                {%- if item_value is mapping -%}\n                                    {{- format_parameters(item_value, value['items']['required'] | default([])) -}}\n                                {%- endif -%}\n                                }\n                            {%- elif item_key == 'required' -%}\n                                required:[\n                                {%- for req_item in item_value -%}\n                                    <|\"|>{{- req_item -}}<|\"|>\n                                    {%- if not loop.last %},{% endif -%}\n                                {%- endfor -%}\n                                ]\n                            {%- elif item_key == 'type' -%}\n                                {%- if item_value is string -%}\n                                    type:{{ format_argument(item_value | upper) }}\n                                {%- else -%}\n                                    type:{{ format_argument(item_value | map('upper') | list) }}\n                                {%- endif -%}\n                            {%- else -%}\n                                {{ item_key }}:{{ format_argument(item_value) }}\n                            {%- endif -%}\n                        {%- endif -%}\n                    {%- endfor -%}\n                    }\n                {%- endif -%}\n            {%- endif -%}\n            {%- if value['nullable'] %}\n                {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n                nullable:true\n            {%- endif -%}\n            {%- if value['type'] | upper == 'OBJECT' -%}\n                {%- if value['properties'] is defined and value['properties'] is mapping -%}\n                    {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n                    properties:{\n                    {{- format_parameters(value['properties'], value['required'] | default([])) -}}\n                    }\n                {%- elif value is mapping -%}\n                    {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n                    properties:{\n                    {{- format_parameters(value, value['required'] | default([]), filter_keys=true) -}}\n                    }\n                {%- endif -%}\n                {%- if value['required'] -%}\n                    {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n                    required:[\n                    {%- for item in value['required'] | default([]) -%}\n                        <|\"|>{{- item -}}<|\"|>\n                        {%- if not loop.last %},{% endif -%}\n                    {%- endfor -%}\n                    ]\n                {%- endif -%}\n            {%- endif -%}\n            {%- if add_comma %},{%- else -%} {%- set add_comma = true -%} {% endif -%}\n            type:<|\"|>{{ value['type'] | upper }}<|\"|>}\n        {%- endif -%}\n    {%- endfor -%}\n{%- endmacro -%}\n{%- macro format_function_declaration(tool_data) -%}\n    declaration:{{- tool_data['function']['name'] -}}{description:<|\"|>{{- tool_data['function']['description'] -}}<|\"|>\n    {%- set params = tool_data['function']['parameters'] -%}\n    {%- if params -%}\n        ,parameters:{\n        {%- if params['properties'] -%}\n            properties:{ {{- format_parameters(params['properties'], params['required']) -}} },\n        {%- endif -%}\n        {%- if params['required'] -%}\n            required:[\n            {%- for item in params['required'] -%}\n                <|\"|>{{- item -}}<|\"|>\n                {{- ',' if not loop.last -}}\n            {%- endfor -%}\n            ],\n        {%- endif -%}\n        {%- if params['type'] -%}\n            type:<|\"|>{{- params['type'] | upper -}}<|\"|>}\n        {%- endif -%}\n    {%- endif -%}\n    {%- if 'response' in tool_data['function'] -%}\n        {%- set response_declaration = tool_data['function']['response'] -%}\n        ,response:{\n        {%- if response_declaration['description'] -%}\n            description:<|\"|>{{- response_declaration['description'] -}}<|\"|>,\n        {%- endif -%}\n        {%- if response_declaration['type'] | upper == 'OBJECT' -%}\n            type:<|\"|>{{- response_declaration['type'] | upper -}}<|\"|>}\n        {%- endif -%}\n    {%- endif -%}\n    }\n{%- endmacro -%}\n{%- macro format_argument(argument, escape_keys=True) -%}\n    {%- if argument is none -%}\n        {{- 'null' -}}\n    {%- elif argument is string -%}\n        {{- '<|\"|>' + argument + '<|\"|>' -}}\n    {%- elif argument is boolean -%}\n        {{- 'true' if argument else 'false' -}}\n    {%- elif argument is mapping -%}\n        {{- '{' -}}\n        {%- set ns = namespace(found_first=false) -%}\n        {%- for key, value in argument | dictsort -%}\n            {%- if ns.found_first %},{% endif -%}\n            {%- set ns.found_first = true -%}\n            {%- if escape_keys -%}\n                {{- '<|\"|>' + key + '<|\"|>' -}}\n            {%- else -%}\n                {{- key -}}\n            {%- endif -%}\n            :{{- format_argument(value, escape_keys=escape_keys) -}}\n        {%- endfor -%}\n        {{- '}' -}}\n    {%- elif argument is sequence -%}\n        {{- '[' -}}\n        {%- for item in argument -%}\n            {{- format_argument(item, escape_keys=escape_keys) -}}\n            {%- if not loop.last %},{% endif -%}\n        {%- endfor -%}\n        {{- ']' -}}\n    {%- else -%}\n        {{- argument -}}\n    {%- endif -%}\n{%- endmacro -%}\n{%- macro strip_thinking(text) -%}\n    {%- set ns = namespace(result='') -%}\n    {%- for part in text.split('<channel|>') -%}\n        {%- if '<|channel>' in part -%}\n            {%- set ns.result = ns.result + part.split('<|channel>')[0] -%}\n        {%- else -%}\n            {%- set ns.result = ns.result + part -%}\n        {%- endif -%}\n    {%- endfor -%}\n    {{- ns.result | trim -}}\n{%- endmacro -%}\n\n{%- macro format_tool_response_block(tool_name, response) -%}\n    {{- '<|tool_response>' -}}\n    {%- if response is mapping -%}\n        {{- 'response:' + tool_name + '{' -}}\n        {%- for key, value in response | dictsort -%}\n            {{- key -}}:{{- format_argument(value, escape_keys=False) -}}\n            {%- if not loop.last %},{% endif -%}\n        {%- endfor -%}\n        {{- '}' -}}\n    {%- else -%}\n        {{- 'response:' + tool_name + '{value:' + format_argument(response, escape_keys=False) + '}' -}}\n    {%- endif -%}\n    {{- '<tool_response|>' -}}\n{%- endmacro -%}\n\n{#- ===== SETUP ===== -#}\n{%- set ns = namespace(prev_message_type=None, prev_non_tool_role=None) -%}\n{%- set loop_messages = messages -%}\n{%- set enable_thinking = enable_thinking | default(false) -%}\n{%- set preserve_thinking = preserve_thinking | default(false) -%}\n{{- bos_token -}}\n{#- Handle System/Tool Definitions Block -#}\n{%- if enable_thinking or tools or (messages and messages[0]['role'] in ['system', 'developer']) -%}\n    {{- '<|turn>system\\n' -}}\n    {#- Inject Thinking token at the very top of the FIRST system turn -#}\n    {%- if enable_thinking -%}\n        {{- '<|think|>\\n' -}}\n        {%- set ns.prev_message_type = 'think' -%}\n    {%- endif -%}\n    {%- if messages and messages[0]['role'] in ['system', 'developer'] -%}\n        {%- if messages[0]['content'] is string -%}\n            {{- messages[0]['content'] | trim -}}\n        {%- elif messages[0]['content'] is sequence -%}\n            {%- for item in messages[0]['content'] -%}\n                {{- item['text'] | trim + ' '-}}\n            {%- endfor -%}\n        {%- endif -%}\n        {%- set loop_messages = messages[1:] -%}\n    {%- endif -%}\n    {%- if tools -%}\n        {%- for tool in tools %}\n            {{- '<|tool>' -}}\n            {{- format_function_declaration(tool) | trim -}}\n            {{- '<tool|>' -}}\n        {%- endfor %}\n        {%- set ns.prev_message_type = 'tool' -%}\n    {%- endif -%}\n    {{- '<turn|>\\n' -}}\n{%- endif %}\n\n{#- Pre-scan: find last user message index for reasoning guard -#}\n{%- set ns_turn = namespace(last_user_idx=-1) -%}\n{%- for i in range(loop_messages | length) -%}\n    {%- if loop_messages[i]['role'] == 'user' -%}\n        {%- set ns_turn.last_user_idx = i -%}\n    {%- endif -%}\n{%- endfor -%}\n\n{#- Loop through messages -#}\n{%- for message in loop_messages -%}\n    {%- if message['role'] != 'tool' -%}\n    {%- set ns.prev_message_type = None -%}\n    {%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}\n    {#- Detect continuation using tracked state — O(1) instead of O(n) backward scan -#}\n    {%- set continue_same_model_turn = (role == 'model' and ns.prev_non_tool_role == 'assistant') -%}\n    {%- if not continue_same_model_turn -%}\n        {{- '<|turn>' + role + '\\n' }}\n    {%- endif -%}\n\n    {#- Render reasoning/reasoning_content as thinking channel -#}\n    {%- set thinking_text = message.get('reasoning') or message.get('reasoning_content') -%}\n    {%- set thinking_gate = (loop.index0 > ns_turn.last_user_idx) or (preserve_thinking and message.get('tool_calls')) -%}\n    {%- if thinking_text and thinking_gate -%}\n        {{- '<|channel>thought\\n' + thinking_text + '\\n<channel|>' -}}\n    {%- endif -%}\n\n            {%- if message.get('tool_calls') -%}\n                {%- for tool_call in message.get('tool_calls') -%}\n                    {%- set function = tool_call['function'] -%}\n                    {{- '<|tool_call>call:' + function['name'] + '{' -}}\n                    {%- if function['arguments'] is mapping -%}\n                        {%- set ns_args = namespace(found_first=false) -%}\n                        {%- for key, value in function['arguments'] | dictsort -%}\n                            {%- if ns_args.found_first %},{% endif -%}\n                            {%- set ns_args.found_first = true -%}\n                            {{- key -}}:{{- format_argument(value, escape_keys=False) -}}\n                        {%- endfor -%}\n                    {%- elif function['arguments'] is none -%}\n                    {%- else -%}\n                        {{- raise_exception(\n                            \"chat_template: tool_calls[].function.arguments must be a \"\n                            \"JSON object (mapping), not a string. Deserialize arguments \"\n                            \"before passing to the template.\"\n                        ) -}}\n                    {%- endif -%}\n                    {{- '}<tool_call|>' -}}\n                {%- endfor -%}\n                {%- set ns.prev_message_type = 'tool_call' -%}\n            {%- endif -%}\n\n            {%- set ns_tr_out = namespace(flag=false) -%}\n            {%- if message.get('tool_responses') -%}\n                {#- Legacy: tool_responses embedded on the assistant message (Google/Gemma native) -#}\n                {%- for tool_response in message.get('tool_responses') -%}\n                    {{- format_tool_response_block(tool_response['name'] | default('unknown', true), tool_response['response']) -}}\n                    {%- set ns_tr_out.flag = true -%}\n                    {%- set ns.prev_message_type = 'tool_response' -%}\n                {%- endfor -%}\n            {%- elif message.get('tool_calls') -%}\n                {#- OpenAI Chat Completions: forward-scan consecutive role:tool messages -#}\n                {%- set ns_tool_scan = namespace(stopped=false) -%}\n                {%- for k in range(loop.index0 + 1, loop_messages | length) -%}\n                    {%- if ns_tool_scan.stopped -%}\n                    {%- elif loop_messages[k]['role'] != 'tool' -%}\n                        {%- set ns_tool_scan.stopped = true -%}\n                    {%- else -%}\n                        {%- set follow = loop_messages[k] -%}\n                        {#- Resolve tool_call_id to function name -#}\n                        {%- set ns_tname = namespace(name=follow.get('name') or 'unknown') -%}\n                        {%- for tc in message.get('tool_calls') -%}\n                            {%- if tc.get('id') == follow.get('tool_call_id') -%}\n                                {%- set ns_tname.name = tc['function']['name'] -%}\n                            {%- endif -%}\n                        {%- endfor -%}\n                        {#- Handle content as string or content-parts array -#}\n                        {%- set tool_body = follow.get('content') -%}\n                        {%- if tool_body is string -%}\n                            {{- format_tool_response_block(ns_tname.name, tool_body) -}}\n                        {%- elif tool_body is sequence and tool_body is not string -%}\n                            {%- set ns_txt = namespace(s='') -%}\n                            {%- for part in tool_body -%}\n                                {%- if part.get('type') == 'text' -%}\n                                    {%- set ns_txt.s = ns_txt.s + (part.get('text') | default('')) -%}\n                                {%- endif -%}\n                            {%- endfor -%}\n                            {{- format_tool_response_block(ns_tname.name, ns_txt.s) -}}\n                            {%- for part in tool_body -%}\n                                {%- if part.get('type') in ['image', 'image_url'] -%}\n                                    {{- '<|image|>' -}}\n                                {%- elif part.get('type') in ['audio', 'input_audio'] -%}\n                                    {{- '<|audio|>' -}}\n                                {%- elif part.get('type') == 'video' -%}\n                                    {{- '<|video|>' -}}\n                                {%- endif -%}\n                            {%- endfor -%}\n                        {%- else -%}\n                            {{- format_tool_response_block(ns_tname.name, tool_body) -}}\n                        {%- endif -%}\n                        {%- set ns_tr_out.flag = true -%}\n                        {%- set ns.prev_message_type = 'tool_response' -%}\n                    {%- endif -%}\n                {%- endfor -%}\n            {%- endif -%}\n\n            {%- set captured_content -%}\n            {%- if message.get('content') is string -%}\n                {%- if role == 'model' -%}\n                    {{- strip_thinking(message['content']) -}}\n                {%- else -%}\n                    {{- message['content'] | trim -}}\n                {%- endif -%}\n            {%- elif message.get('content') is sequence -%}\n                {%- for item in message['content'] -%}\n                    {%- if item.get('type') == 'text' -%}\n                        {%- if role == 'model' -%}\n                            {{- strip_thinking(item['text']) -}}\n                        {%- else -%}\n                            {{- item['text'] | trim -}}\n                        {%- endif -%}\n                    {%- elif item.get('type') in ['image', 'image_url'] -%}\n                        {{- '<|image|>' -}}\n                    {%- elif item.get('type') in ['audio', 'input_audio'] -%}\n                        {{- '<|audio|>' -}}\n                    {%- elif item.get('type') == 'video' -%}\n                        {{- '<|video|>' -}}\n                    {%- endif -%}\n                {%- endfor -%}\n            {%- endif -%}\n            {%- endset -%}\n\n            {{- captured_content -}}\n            {%- set has_content = captured_content | trim | length > 0 -%}\n\n        {#- Forward-scan: find next non-tool message role for continuation detection -#}\n        {%- set next_nt = namespace(role=None, found=false) -%}\n        {%- for j in range(loop.index0 + 1, loop_messages | length) -%}\n            {%- if not next_nt.found -%}\n                {%- if loop_messages[j]['role'] != 'tool' -%}\n                    {%- set next_nt.role = loop_messages[j]['role'] -%}\n                    {%- set next_nt.found = true -%}\n                {%- endif -%}\n            {%- endif -%}\n        {%- endfor -%}\n\n        {%- set continues_into_next = (\n            role == 'model'\n            and next_nt.role == 'assistant'\n            and (not message.get('tool_calls') or ns_tr_out.flag)\n        ) -%}\n\n        {%- if ns.prev_message_type == 'tool_call' and not ns_tr_out.flag -%}\n            {{- '<|tool_response>' -}}\n        {%- elif continues_into_next -%}\n        {%- elif not (ns_tr_out.flag and not has_content and not next_nt.found) -%}\n            {{- '<turn|>\\n' -}}\n        {%- endif -%}\n\n    {#- Track previous non-tool role for next iteration (avoids O(n) backward scan) -#}\n    {%- set ns.prev_non_tool_role = message['role'] -%}\n    {%- endif -%}\n{%- endfor -%}\n\n{%- if add_generation_prompt -%}\n    {%- if ns.prev_message_type != 'tool_response' and ns.prev_message_type != 'tool_call' -%}\n        {{- '<|turn>model\\n' -}}\n    {%- elif ns.prev_message_type == 'tool_response' and enable_thinking -%}\n        {{- '<|channel>thought\\n' -}}\n    {%- endif -%}\n{%- endif -%}",
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": true,
+        "reasoning_effort_levels": []
+      },
+      "bos_token": "<bos>",
+      "eos_token": "<eos>",
+      "build_info": "b0-unknown",
+      "is_sleeping": false,
+      "cors_proxy_enabled": false
+    },
+    "models": {
+      "models": [
+        {
+          "name": "ops-gemma4_e2b",
+          "model": "ops-gemma4_e2b",
+          "modified_at": "",
+          "size": "",
+          "digest": "",
+          "type": "model",
+          "description": "",
+          "tags": [
+            ""
+          ],
+          "capabilities": [
+            "completion",
+            "multimodal"
+          ],
+          "parameters": "",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "",
+            "families": [
+              ""
+            ],
+            "parameter_size": "",
+            "quantization_level": ""
+          }
+        }
+      ],
+      "object": "list",
+      "data": [
+        {
+          "id": "ops-gemma4_e2b",
+          "aliases": [
+            "ops-gemma4_e2b"
+          ],
+          "tags": [],
+          "object": "model",
+          "architecture": {
+            "input_modalities": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "output_modalities": [
+              "text"
+            ]
+          },
+          "created": 1793511561,
+          "owned_by": "llamacpp",
+          "meta": {
+            "vocab_type": 2,
+            "n_vocab": 262144,
+            "n_ctx": 131072,
+            "n_ctx_train": 131072,
+            "n_embd": 1536,
+            "n_params": 4628569635,
+            "size": 2825664652,
+            "ftype": "Q4_0"
+          }
+        }
+      ]
+    }
+  },
+  "runtime_configuration_error": null,
+  "group_summary": {
+    "core": {
+      "case_ids": [
+        "oc-rice-and-slacking",
+        "oc-game-losing-streak",
+        "oc-undersea-postal-adventure",
+        "oc-multiturn-followup"
+      ],
+      "cases_recorded": 4,
+      "cases_blocked_or_failed": 0,
+      "turns_recorded": 6,
+      "paths": {
+        "plain_oc": {
+          "turns_recorded": 6,
+          "complete_deliveries": 6,
+          "structured_turns": null
+        },
+        "tool_task": {
+          "turns_recorded": 0,
+          "complete_deliveries": 0,
+          "structured_turns": 0
+        }
+      },
+      "turns_with_reviewable_text": 6,
+      "semantic_review_status": "pending",
+      "semantic_quality_accepted": null
+    },
+    "safety_diagnostic": {
+      "case_ids": [],
+      "cases_recorded": 0,
+      "cases_blocked_or_failed": 0,
+      "turns_recorded": 0,
+      "paths": {
+        "plain_oc": {
+          "turns_recorded": 0,
+          "complete_deliveries": 0,
+          "structured_turns": null
+        },
+        "tool_task": {
+          "turns_recorded": 0,
+          "complete_deliveries": 0,
+          "structured_turns": 0
+        }
+      },
+      "turns_with_reviewable_text": 0,
+      "semantic_review_status": "pending",
+      "semantic_quality_accepted": null
+    }
+  }
+}

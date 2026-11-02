@@ -1,0 +1,199 @@
+{
+  "kind": "frozen_visual_input_archive_manifest",
+  "created_date": "2026-11-02",
+  "intended_archive_directory": "evaluations/results/operations-vlm-20261102-performance/fixtures",
+  "artifact_action": "Archived unchanged file bytes; verified SHA256 against the input used for the experiment.",
+  "files": [
+    {
+      "id": "phone12_original",
+      "repository_relative_path": "tmp/operations-browse-20261101/device/online-final-new10-20261102/native-frames/BV1kPWA66EoV/42702733760_storyboard_2_cb5038796a6a7a85.jpg",
+      "suggested_archive_basename": "phone12-original.jpg",
+      "bvid": "BV1kPWA66EoV",
+      "cid": "42702733760",
+      "actual_time_seconds": 12.0,
+      "source_video_url": "https://www.bilibili.com/video/BV1kPWA66EoV",
+      "source_origin": "既有公开视频的本地冻结storyboard帧；派生图只来自所列父帧。",
+      "representation": "existing_original_storyboard_JPEG",
+      "usage_status": "model_tested_this_performance_round",
+      "sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "expected_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "bytes": 8489,
+      "size_px": [
+        480,
+        270
+      ],
+      "parent_frame_sha256": null,
+      "immediate_parent_sha256": null,
+      "source_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "availability": "present_verified",
+      "archive_path": "fixtures/phone12-original.jpg"
+    },
+    {
+      "id": "phone12_full280",
+      "repository_relative_path": "tmp/game-livestream-stage-20261102/e2b-chat12-inputs/full280.png",
+      "suggested_archive_basename": "phone12-full280.png",
+      "bvid": "BV1kPWA66EoV",
+      "cid": "42702733760",
+      "actual_time_seconds": 12.0,
+      "source_video_url": "https://www.bilibili.com/video/BV1kPWA66EoV",
+      "source_origin": "既有公开视频的本地冻结storyboard帧；派生图只来自所列父帧。",
+      "representation": "existing_full_frame_official_spatial_resize_PNG",
+      "usage_status": "model_tested_this_performance_round",
+      "sha256": "046934dffbd12fbc540fb721388ac89d8885ac058ccbdb930d3f17a860f7d57b",
+      "expected_sha256": "046934dffbd12fbc540fb721388ac89d8885ac058ccbdb930d3f17a860f7d57b",
+      "bytes": 115026,
+      "size_px": [
+        1056,
+        576
+      ],
+      "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "immediate_parent_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "source_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "availability": "present_verified",
+      "archive_path": "fixtures/phone12-full280.png"
+    },
+    {
+      "id": "phone12_crop280",
+      "repository_relative_path": "tmp/game-livestream-stage-20261102/e2b-chat12-inputs/crop280.png",
+      "suggested_archive_basename": "phone12-crop280.png",
+      "bvid": "BV1kPWA66EoV",
+      "cid": "42702733760",
+      "actual_time_seconds": 12.0,
+      "source_video_url": "https://www.bilibili.com/video/BV1kPWA66EoV",
+      "source_origin": "既有公开视频的本地冻结storyboard帧；派生图只来自所列父帧。",
+      "representation": "existing_black_margin_crop_then_official_spatial_resize_PNG",
+      "usage_status": "model_tested_this_performance_round",
+      "sha256": "8928707713968c3ee70607f1aef417aa5f3ff1f681324ac2ef8a623142e45d0b",
+      "expected_sha256": "8928707713968c3ee70607f1aef417aa5f3ff1f681324ac2ef8a623142e45d0b",
+      "bytes": 229385,
+      "size_px": [
+        528,
+        1152
+      ],
+      "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "immediate_parent_sha256": "017c26b3a95d1f28aad67cd85da8091bef46adc6418c4d44f17007c3feb2f8dc",
+      "source_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+      "availability": "present_verified",
+      "crop_box_on_original_frame": [
+        176,
+        0,
+        304,
+        270
+      ],
+      "archive_path": "fixtures/phone12-crop280.png"
+    },
+    {
+      "id": "family176_original",
+      "repository_relative_path": "tmp/operations-browse-20261101/device/operations-corpus-20261101/BV1XMxj6wEcD/2.jpg",
+      "suggested_archive_basename": "family176-original.jpg",
+      "bvid": "BV1XMxj6wEcD",
+      "cid": "43120657507",
+      "actual_time_seconds": 176.0,
+      "source_video_url": "https://www.bilibili.com/video/BV1XMxj6wEcD",
+      "source_origin": "既有公开视频的本地冻结storyboard帧；派生图只来自所列父帧。",
+      "representation": "existing_original_storyboard_JPEG",
+      "usage_status": "parent_of_model_tested_condition_A_input",
+      "sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+      "expected_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+      "bytes": 8967,
+      "size_px": [
+        480,
+        270
+      ],
+      "parent_frame_sha256": null,
+      "immediate_parent_sha256": null,
+      "source_frame_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+      "availability": "present_verified",
+      "archive_path": "fixtures/family176-original.jpg"
+    },
+    {
+      "id": "family176_condition_A_full",
+      "repository_relative_path": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-u16-384/derived-frames/BV1XMxj6wEcD-2.png",
+      "suggested_archive_basename": "family176-condition-A-full280.png",
+      "bvid": "BV1XMxj6wEcD",
+      "cid": "43120657507",
+      "actual_time_seconds": 176.0,
+      "source_video_url": "https://www.bilibili.com/video/BV1XMxj6wEcD",
+      "source_origin": "既有公开视频的本地冻结storyboard帧；派生图只来自所列父帧。",
+      "representation": "existing_condition_A_full_frame_PNG",
+      "usage_status": "model_tested_this_performance_round",
+      "sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+      "expected_sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+      "bytes": 117040,
+      "size_px": [
+        1056,
+        576
+      ],
+      "parent_frame_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+      "immediate_parent_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+      "source_frame_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+      "availability": "present_verified",
+      "archive_path": "fixtures/family176-condition-A-full280.png"
+    },
+    {
+      "id": "blue_chibi10_future",
+      "repository_relative_path": "tmp/operations-browse-20261101/device/operations-corpus-20261101/BV14oa961ELQ/0.jpg",
+      "suggested_archive_basename": "blue-chibi10-original.jpg",
+      "bvid": "BV14oa961ELQ",
+      "cid": "42322100507",
+      "actual_time_seconds": 10.0,
+      "source_video_url": "https://www.bilibili.com/video/BV14oa961ELQ",
+      "source_origin": "既有公开视频的本地冻结storyboard帧；派生图只来自所列父帧。",
+      "representation": "existing_original_storyboard_JPEG",
+      "usage_status": "model_tested_in_resume_native_and_official280",
+      "sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+      "expected_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+      "bytes": 12624,
+      "size_px": [
+        480,
+        270
+      ],
+      "parent_frame_sha256": null,
+      "immediate_parent_sha256": null,
+      "source_frame_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+      "availability": "present_verified",
+      "usage_scope_note": "Initial phase selected this input; resumed Q8/Q4 comparisons have now used its unchanged original and official280 derivative.",
+      "archive_path": "fixtures/blue-chibi10-original.jpg",
+      "status_at_initial_archive": "selected_for_future_Q4_not_model_tested"
+    },
+    {
+      "id": "blue10_full280_resume",
+      "archive_path": "fixtures/blue10-full280.png",
+      "usage_status": "model_tested_in_resume",
+      "sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+      "bytes": 293678,
+      "size_px": [
+        1056,
+        576
+      ],
+      "bvid": "BV14oa961ELQ",
+      "cid": "42322100507",
+      "actual_time_seconds": 10.0,
+      "parent_frame_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+      "preprocessing": {
+        "operation": "official_spatial_resize_and_rgb",
+        "resize_performed": true,
+        "rgb_conversion_performed": false,
+        "max_soft_tokens": 280,
+        "patch_size": 16,
+        "pooling_kernel_size": 3,
+        "expected_visual_tokens_from_grid": 264,
+        "interpolation": "Pillow.Resampling.BICUBIC",
+        "pillow_version": "10.4.0",
+        "output_encoding": "lossless_png",
+        "runtime_pixel_normalization": true,
+        "crop": null
+      }
+    }
+  ],
+  "source_and_scope": {
+    "origin": "既有B站公开视频帧及其既存预处理派生文件，来源BV/CID/时间逐项列出。",
+    "new_downloads": 0,
+    "new_image_generation": 0,
+    "file_bytes_modified": false,
+    "license_claim_made": false,
+    "phone24_and_36_not_included": "本轮未对这两帧推理，不在本清单新增。",
+    "not_actual_game_acceptance": true
+  },
+  "lineage_note": "原始JPEG无本清单内父文件，parent字段为null；source_frame_sha256仍指自身。crop280另列中间裁图SHA，避免把原始帧SHA误称唯一直接编码父文件。"
+}

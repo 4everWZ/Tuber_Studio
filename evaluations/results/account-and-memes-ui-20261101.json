@@ -1,0 +1,136 @@
+{
+  "date": "2026-11-01",
+  "browser": "real Chromium via Playwright",
+  "scope": {
+    "actual_pages": [
+      "index.html",
+      "live.html"
+    ],
+    "actual_backend": "create_app + isolated SQLite + real auth/account/catalog/DM/dynamic APIs",
+    "runtime": "isolated disposable runtime under repository tmp/; removed after QA",
+    "model": "demo; no Jetson request",
+    "tts": "prerecorded",
+    "account_profile": "synthetic read-only adapter",
+    "incoming_dm": "synthetic source-bound received message",
+    "dynamic_source": "synthetic public fictional role story",
+    "production_changed": false,
+    "platform_messages_sent": 0,
+    "platform_posts_published": 0,
+    "clipboard": "copy handler tested with intercepted clipboard sink; no OS clipboard change"
+  },
+  "checks": {
+    "all_six_account_states": true,
+    "null_stats_show_dash_and_actual_zero_preserved": true,
+    "credential_inputs_clear_after_success": true,
+    "credential_failure_keeps_input": true,
+    "avatar_failure_placeholder_and_no_external_tracking_request": true,
+    "account_settings_separated_from_comment_policy": true,
+    "existing_comment_policy_save_works": true,
+    "reset_409_keeps_session_and_reports_reason": true,
+    "real_reset_revokes_cookie_and_once_reveals_token": true,
+    "copy_uses_exact_token_and_return_clears_value": true,
+    "new_token_login_works": true,
+    "management_cookie_survives_actual_server_restart": true,
+    "real_catalog_six_seed_assets_preview_and_enable": true,
+    "json_file_reader_upload_preserves_original_gif_bytes": true,
+    "disabled_meme_hidden_from_picker": true,
+    "dm_pick_review_and_return_to_text_via_real_api": true,
+    "dm_alternative_text_preserved": true,
+    "dm_image_copy_disabled": true,
+    "dm_final_transport_fixture_records_one_send": true,
+    "disabled_selected_dm_meme_can_be_cleared": true,
+    "dynamic_image_retains_body_and_requires_review": true,
+    "dynamic_use_memes_policy_saved": true,
+    "dynamic_disabled_image_blocks_publish_but_can_be_cleared": true,
+    "dynamic_final_publish_request_intercepted_once_and_duplicate_click_blocked": true,
+    "dynamic_does_not_offer_fake_image_copy": true,
+    "main_and_live_shared_header_load": true,
+    "desktop_and_390px_no_horizontal_overflow": true,
+    "live_header_no_overlap": true,
+    "runtime_element_ids_unique": true,
+    "local_storage_and_session_storage_empty": true,
+    "five_javascript_syntax_checks": "passed",
+    "git_diff_whitespace_check": "passed",
+    "credential_failure_allows_retry": true
+  },
+  "preview_bounds": {
+    "source": [
+      384,
+      384
+    ],
+    "before": {
+      "gallery": {
+        "image": [
+          187,
+          187
+        ],
+        "frame": [
+          187,
+          148
+        ],
+        "cropped": true
+      },
+      "picker": {
+        "image": [
+          171,
+          171
+        ],
+        "frame": [
+          171,
+          132
+        ],
+        "cropped": true
+      }
+    },
+    "after": {
+      "gallery": [
+        187,
+        148
+      ],
+      "picker": [
+        171,
+        132
+      ],
+      "dm": [
+        180,
+        180
+      ],
+      "dynamic_desktop": [
+        357,
+        180
+      ],
+      "dynamic_390px": [
+        292,
+        180
+      ],
+      "all_contained": true,
+      "object_fit": "contain"
+    }
+  },
+  "observed_console": "Only expected initial 401, deliberate avatar/fixture errors, and connection-refused during owned server restart; no observed uncaught JS exception",
+  "limitations": [
+    "Synthetic platform/account data is not proof of actual Bilibili login or delivery.",
+    "No real model image selection quality measured.",
+    "Final dynamic publish intercepted before backend publisher; backend delivery covered separately by root tests."
+  ],
+  "screenshots": [
+    "account-and-memes-ui-20261101/settings-desktop.png",
+    "account-and-memes-ui-20261101/gallery-desktop.png",
+    "account-and-memes-ui-20261101/dynamic-mobile.png",
+    "account-and-memes-ui-20261101/live-mobile.png"
+  ],
+  "artifact_kind": "UI regression evidence; not a model-quality or real-platform result",
+  "screenshots_total_bytes": 451880,
+  "final_revision_notes": [
+    "Settings entry explicitly covers private messages and image+text dynamics.",
+    "Grid previews use definite fractional tracks and explicit 100% image dimensions with object-fit:contain.",
+    "Final settings credential and management-token input fields were confirmed empty before capture."
+  ],
+  "cleanup": {
+    "owned_servers_stopped": true,
+    "owned_browser_tabs_closed": true,
+    "temporary_tokens_and_databases_removed": true,
+    "temporary_scripts_removed": true,
+    "temporary_debug_logs_removed": true
+  }
+}

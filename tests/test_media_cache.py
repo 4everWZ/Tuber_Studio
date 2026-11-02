@@ -2,6 +2,8 @@
 
 import hashlib
 import os
+import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -98,3 +100,95 @@ def test_music_lru_access_preserves_etag_and_conditional_ranges(settings):
         second = client.get(url, headers={"Range": "bytes=0-31", "If-Range": first.headers["etag"]})
         assert second.status_code == 206 and second.content == data[:32]
         assert second.headers["etag"] == first.headers["etag"]
+
+
+def test_status_streams_current_protection_without_reading_lru(runtime):
+    music = put(runtime.online_songs.directory, "c" * 64 + ".flac", 17)
+    put(runtime.settings.audio, "a" * 64 + ".wav", 11)
+    put(runtime.settings.runtime / "singing/output/job/nested", "arbitrary.work", 31)
+    runtime.cache.leases[str(music)] = time.monotonic() + 60
+    runtime.store.execute("INSERT INTO media_cache_access VALUES('unmanaged/missing.wav',0)")
+    statements = []
+    runtime.store.db.set_trace_callback(statements.append)
+    try:
+        first = runtime.cache.status()
+        runtime.cache.leases[str(music)] = time.monotonic() - 1
+        music.write_bytes(b"x" * 23)
+        second = runtime.cache.usage("music")
+    finally:
+        runtime.store.db.set_trace_callback(None)
+    assert first["categories"]["music"]["protected_bytes"] == 17
+    assert second["protected_bytes"] == 0 and second["reclaimable_bytes"] == 23
+    assert first["categories"]["speech"]["bytes"] == 11
+    assert first["categories"]["temporary"]["bytes"] == 31
+    assert not any("media_cache_access" in statement.lower() for statement in statements)
+
+
+async def test_lru_uses_touch_after_status_not_just_modification_time(runtime):
+    older = put(runtime.settings.audio, "a" * 64 + ".wav", 9 * MIB)
+    newer = put(runtime.settings.audio, "b" * 64 + ".wav", 9 * MIB)
+    os.utime(older, (1, 1))
+    os.utime(newer, (2, 2))
+    runtime.cache.status()
+    runtime.cache.touch(older)
+    await runtime.cache.configure({"speech_limit_mib": 16})
+    assert older.exists() and not newer.exists()
+
+
+def test_only_temporary_pool_recurses_and_arbitrary_source_names_are_ignored(runtime):
+    root = runtime.settings.runtime
+    put(runtime.online_songs.directory / "nested", "a" * 64 + ".wav", 13)
+    put(runtime.online_songs.directory, "source-original.wav", 19)
+    put(root / "singing/output/a/b/c", "source-original.wav", 23)
+    assert runtime.cache.usage("music")["files"] == 0
+    assert runtime.cache.usage("temporary")["bytes"] == 23
+
+
+@pytest.fixture
+def directory_link():
+    links = []
+
+    def create(link, target):
+        link.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            if os.name != "nt":
+                pytest.skip("Directory symlink unavailable")
+            # Junctions need no Developer Mode/admin privilege and exercise the
+            # Windows boundary. Removing the link below never traverses its target.
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            if result.returncode:
+                pytest.skip("Directory symlink/junction unavailable")
+        links.append(link)
+
+    yield create
+    for link in links:
+        if link.is_symlink():
+            link.unlink()
+        else:
+            link.rmdir()
+
+
+@pytest.mark.parametrize("placement", ["root", "unrecognized_entry", "nested_temporary"])
+def test_directory_links_are_rejected_before_following_or_filtering(runtime, directory_link, placement):
+    root = runtime.settings.runtime
+    sentinel = put(root / "unmanaged", "a" * 64 + ".wav", 29)
+    if placement == "root":
+        link = runtime.online_songs.directory
+        link.rmdir()
+        category = "music"
+    elif placement == "unrecognized_entry":
+        link, category = runtime.online_songs.directory / "not-a-cache-file", "music"
+    else:
+        link, category = root / "singing/output/job/deep/alias", "temporary"
+    directory_link(link, sentinel.parent)
+    with pytest.raises(ValueError, match="不能使用链接"):
+        runtime.cache.usage(category)
+    with pytest.raises(ValueError, match="不能使用链接"):
+        runtime.cache.enforce(category, clear=True)
+    assert sentinel.exists() and sentinel.stat().st_size == 29

@@ -1,0 +1,660 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-11-01",
+  "verification_source": "Hugging Face revision API with blobs=true and original publisher config.json",
+  "strict_context_tokens": 131072,
+  "llama_cpp_revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+  "notes": [
+    "Native context is the original publisher text_config.max_position_embeddings; a loaded window is not proof of useful long-context accuracy.",
+    "All local_filename values are relative to the single directory passed as --model-root.",
+    "Quantization and provenance are pinned separately from the original model. Conversions must not be described as publisher weights.",
+    "Original model revisions pin inspected context and license metadata; they do not attest a conversion's input revision unless the converter explicitly supplies that attestation.",
+    "Gemma uses the smaller ggml-org conversion, not the larger Google QAT GGUF export. Mini uses thinking weights and the default official f16-named projector (actual BF16/F32 header), not the optional 4x file."
+  ],
+  "profiles": {
+    "mini4_7": {
+      "name": "MiniCPM-V-4.7-1B thinking",
+      "native_context_tokens": 262144,
+      "original_model": {
+        "repository": "openbmb/MiniCPM-V-4.7-1B",
+        "revision": "ad9bf379feb71204c888b22923d63322452407f9",
+        "license": "apache-2.0",
+        "config_url": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B/resolve/ad9bf379feb71204c888b22923d63322452407f9/config.json"
+      },
+      "provenance": "publisher_conversion",
+      "conversion_repository": "openbmb/MiniCPM-V-4.7-1B-gguf",
+      "conversion_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+      "license": "apache-2.0",
+      "license_metadata_url": "https://huggingface.co/api/models/openbmb/MiniCPM-V-4.7-1B-gguf/revision/345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+      "artifacts": {
+        "model": {
+          "file": "thinking/MiniCPM-V-4_7-1B-Q4_K_M-thinking.gguf",
+          "local_filename": "MiniCPM-V-4_7-1B-Q4_K_M-thinking.gguf",
+          "quantization": "Q4_K_M",
+          "size_bytes": 672003680,
+          "sha256": "661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051"
+        },
+        "projector": {
+          "file": "mmproj-model-f16.gguf",
+          "local_filename": "MiniCPM-V-4_7-1B-mmproj-f16.gguf",
+          "quantization": "BF16",
+          "size_bytes": 1110117984,
+          "sha256": "fb9cc047a3cdad5317fd8433a4aeda2d22f00f02ca4bd93b34ad84165b25a900",
+          "filename_quantization_label": "F16",
+          "quantization_note": "The official file is named f16, but its actual GGUF file_type=32 and tensors are BF16/F32."
+        }
+      },
+      "gguf_observed": {
+        "observed_at": "2026-11-01",
+        "method": "Bounded HTTP Range read; decoded GGUF v3 metadata and complete tensor-info table; no inference",
+        "source_url": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B-gguf/resolve/345adbfa02c4a4671e61b7c75502dc9bf24fa93d/thinking/MiniCPM-V-4_7-1B-Q4_K_M-thinking.gguf",
+        "source_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+        "expected_whole_file_sha256": "661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+        "whole_file_sha256_verified_by_this_observation": false,
+        "http_status": 206,
+        "content_range": "bytes 0-16777215/672003680",
+        "partial_read_bytes": 16777216,
+        "parsed_metadata_and_tensor_info_bytes": 10955586,
+        "tensor_data_decoded": false,
+        "gguf_version": 3,
+        "architecture": "qwen35",
+        "general_file_type": 15,
+        "file_type_name": "Q4_K_M",
+        "general_quantization_version": 2,
+        "native_context_tokens": 262144,
+        "attention_key_head_dim": 256,
+        "attention_value_head_dim": 256,
+        "tensor_count": 321,
+        "tensor_type_histogram": {
+          "F32": 133,
+          "Q4_K": 163,
+          "Q6_K": 25
+        },
+        "template": {
+          "sha256_utf8": "49c37bcc86c7f7f20ed2ebf79e9f872be41ba2b5f9d0d51e6712cc038ef51d6c",
+          "characters": 7249,
+          "enable_thinking_gate_present": true,
+          "parser": "qwen3-coder/peg-native",
+          "parser_detection_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/chat.cpp#L1386",
+          "thinking_gate": "enable_thinking is true",
+          "thinking_delimiters": [
+            "<think>",
+            "</think>"
+          ],
+          "tool_syntax": "<tool_call>\\n<function=NAME>\\n<parameter=ARG>...",
+          "modern_openai_tool_response_template": null
+        },
+        "projector": {
+          "method": "Bounded HTTP 206 Range read; GGUF metadata and complete tensor-info table; tensor data not decoded",
+          "source_url": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B-gguf/resolve/345adbfa02c4a4671e61b7c75502dc9bf24fa93d/mmproj-model-f16.gguf",
+          "source_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+          "expected_whole_file_sha256": "fb9cc047a3cdad5317fd8433a4aeda2d22f00f02ca4bd93b34ad84165b25a900",
+          "whole_file_sha256_verified_by_this_observation": false,
+          "http_status": 206,
+          "content_range": "bytes 0-1048575/1110117984",
+          "partial_read_bytes": 1048576,
+          "parsed_metadata_and_tensor_info_bytes": 26514,
+          "architecture": "clip",
+          "general_file_type": 32,
+          "file_type_name": "BF16",
+          "tensor_count": 460,
+          "tensor_type_histogram": {
+            "F32": 290,
+            "BF16": 170
+          },
+          "image_size": 448,
+          "patch_size": 14,
+          "vision_embedding_length": 1152,
+          "vision_head_count": 16,
+          "projector_type": "minicpmv4_7",
+          "scale_factor": 4,
+          "max_slice_nums": 9
+        }
+      },
+      "projector_mode": "16x"
+    },
+    "lfm3vl": {
+      "name": "LFM3-VL-2B",
+      "native_context_tokens": 128000,
+      "original_model": {
+        "repository": "LiquidAI/LFM3-VL-2B",
+        "revision": "ba44bd51db20a2753f28c273a1571ccaa210d954",
+        "license": "lfm1.0",
+        "license_url": "https://huggingface.co/LiquidAI/LFM3-VL-2B/blob/ba44bd51db20a2753f28c273a1571ccaa210d954/LICENSE",
+        "config_url": "https://huggingface.co/LiquidAI/LFM3-VL-2B/resolve/ba44bd51db20a2753f28c273a1571ccaa210d954/config.json"
+      },
+      "provenance": "publisher_conversion",
+      "conversion_repository": "LiquidAI/LFM3-VL-2B-GGUF",
+      "conversion_revision": "b36554cfd35854b06429900131730cd80f092cdb",
+      "license": "lfm1.0",
+      "license_metadata_tag": "other",
+      "license_metadata_url": "https://huggingface.co/api/models/LiquidAI/LFM3-VL-2B-GGUF/revision/b36554cfd35854b06429900131730cd80f092cdb",
+      "artifacts": {
+        "model": {
+          "file": "LFM3-VL-2B-Q4_K_M.gguf",
+          "local_filename": "LFM3-VL-2B-Q4_K_M.gguf",
+          "quantization": "Q4_K_M",
+          "size_bytes": 1099627808,
+          "sha256": "56dac2e192ff0d9ab8507f4f1aeb4aed0463449bbbefaac79497f041c95f21eb"
+        },
+        "projector": {
+          "file": "mmproj-LFM3-VL-2B-F16.gguf",
+          "local_filename": "mmproj-LFM3-VL-2B-F16.gguf",
+          "quantization": "F16",
+          "size_bytes": 378996032,
+          "sha256": "1d8e6e58eefc093e09d6332f081516e1ddbd5b35cfca7f35463fb270db230b1e"
+        }
+      },
+      "gguf_observed": {
+        "observed_at": "2026-11-01",
+        "method": "Bounded HTTP Range read; decoded GGUF v3 metadata and complete tensor-info table; no inference",
+        "source_url": "https://huggingface.co/LiquidAI/LFM3-VL-2B-GGUF/resolve/b36554cfd35854b06429900131730cd80f092cdb/LFM3-VL-2B-Q4_K_M.gguf",
+        "source_revision": "b36554cfd35854b06429900131730cd80f092cdb",
+        "expected_whole_file_sha256": "56dac2e192ff0d9ab8507f4f1aeb4aed0463449bbbefaac79497f041c95f21eb",
+        "whole_file_sha256_verified_by_this_observation": false,
+        "http_status": 206,
+        "content_range": "bytes 0-16777215/1099627808",
+        "partial_read_bytes": 16777216,
+        "parsed_metadata_and_tensor_info_bytes": 8247321,
+        "tensor_data_decoded": false,
+        "gguf_version": 3,
+        "architecture": "lfm3",
+        "general_file_type": 15,
+        "file_type_name": "Q4_K_M",
+        "general_quantization_version": 2,
+        "native_context_tokens": 128000,
+        "attention_key_head_dim": 128,
+        "attention_value_head_dim": 128,
+        "tensor_count": 287,
+        "tensor_type_histogram": {
+          "F32": 133,
+          "Q4_K": 136,
+          "Q6_K": 18
+        },
+        "template": {
+          "sha256_utf8": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818",
+          "characters": 12129,
+          "enable_thinking_gate_present": true,
+          "parser": "qwen3-coder/peg-native",
+          "parser_detection_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/chat.cpp#L1386",
+          "thinking_gate": "enable_thinking defaults true",
+          "thinking_delimiters": [
+            "<think>",
+            "</think>"
+          ],
+          "tool_syntax": "<tool_call>\\n<function=NAME>\\n<parameter=ARG>...",
+          "modern_openai_tool_response_template": null
+        },
+        "projector": {
+          "method": "Bounded HTTP 206 Range read; GGUF metadata and complete tensor-info table; tensor data not decoded",
+          "source_url": "https://huggingface.co/LiquidAI/LFM3-VL-2B-GGUF/resolve/b36554cfd35854b06429900131730cd80f092cdb/mmproj-LFM3-VL-2B-F16.gguf",
+          "source_revision": "b36554cfd35854b06429900131730cd80f092cdb",
+          "expected_whole_file_sha256": "1d8e6e58eefc093e09d6332f081516e1ddbd5b35cfca7f35463fb270db230b1e",
+          "whole_file_sha256_verified_by_this_observation": false,
+          "http_status": 206,
+          "content_range": "bytes 0-1048575/378996032",
+          "partial_read_bytes": 1048576,
+          "parsed_metadata_and_tensor_info_bytes": 10535,
+          "architecture": "clip",
+          "general_file_type": 1,
+          "file_type_name": "F16",
+          "tensor_count": 139,
+          "tensor_type_histogram": {
+            "F32": 53,
+            "F16": 86
+          },
+          "image_size": 512,
+          "patch_size": 16,
+          "vision_embedding_length": 1024,
+          "vision_head_count": 16,
+          "projector_type": "lfm3vl"
+        }
+      }
+    },
+    "qwen35_4b": {
+      "name": "Qwen3.5-4B",
+      "native_context_tokens": 262144,
+      "original_model": {
+        "repository": "Qwen/Qwen3.5-4B",
+        "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+        "license": "apache-2.0",
+        "config_url": "https://huggingface.co/Qwen/Qwen3.5-4B/resolve/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/config.json"
+      },
+      "provenance": "third_party_conversion",
+      "conversion_repository": "unsloth/Qwen3.5-4B-GGUF",
+      "conversion_revision": "e87f176479d0855a907a41277aca2f8ee7a09523",
+      "license": "apache-2.0",
+      "license_metadata_url": "https://huggingface.co/api/models/unsloth/Qwen3.5-4B-GGUF/revision/e87f176479d0855a907a41277aca2f8ee7a09523",
+      "artifacts": {
+        "model": {
+          "file": "Qwen3.5-4B-Q4_K_M.gguf",
+          "local_filename": "Qwen3.5-4B-Q4_K_M.gguf",
+          "quantization": "Q4_K_M",
+          "size_bytes": 2740937888,
+          "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
+        },
+        "projector": {
+          "file": "mmproj-F16.gguf",
+          "local_filename": "Qwen3.5-4B-mmproj-F16.gguf",
+          "quantization": "F16",
+          "size_bytes": 672423616,
+          "sha256": "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"
+        }
+      },
+      "gguf_observed": {
+        "observed_at": "2026-11-01",
+        "method": "Bounded HTTP Range read; decoded GGUF v3 metadata and complete tensor-info table; no inference",
+        "source_url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+        "source_revision": "e87f176479d0855a907a41277aca2f8ee7a09523",
+        "expected_whole_file_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        "whole_file_sha256_verified_by_this_observation": false,
+        "http_status": 206,
+        "content_range": "bytes 0-16777215/2740937888",
+        "partial_read_bytes": 16777216,
+        "parsed_metadata_and_tensor_info_bytes": 10968206,
+        "tensor_data_decoded": false,
+        "gguf_version": 3,
+        "architecture": "qwen35",
+        "general_file_type": 15,
+        "file_type_name": "Q4_K_M",
+        "general_quantization_version": 2,
+        "native_context_tokens": 262144,
+        "attention_key_head_dim": 256,
+        "attention_value_head_dim": 256,
+        "tensor_count": 426,
+        "tensor_type_histogram": {
+          "F32": 177,
+          "Q4_K": 131,
+          "Q5_K": 48,
+          "Q6_K": 22,
+          "Q8_0": 48
+        },
+        "template": {
+          "sha256_utf8": "7f0e529032c25183bcd66c7f238da2d377f43be754a94e2725a58c4e16d2ed67",
+          "characters": 7816,
+          "enable_thinking_gate_present": true,
+          "parser": "qwen3-coder/peg-native",
+          "parser_detection_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/chat.cpp#L1386",
+          "thinking_gate": "enable_thinking is true",
+          "thinking_delimiters": [
+            "<think>",
+            "</think>"
+          ],
+          "tool_syntax": "<tool_call>\\n<function=NAME>\\n<parameter=ARG>...",
+          "modern_openai_tool_response_template": null
+        },
+        "projector": {
+          "method": "Bounded HTTP 206 Range read; GGUF metadata and complete tensor-info table; tensor data not decoded",
+          "source_url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
+          "source_revision": "e87f176479d0855a907a41277aca2f8ee7a09523",
+          "expected_whole_file_sha256": "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
+          "whole_file_sha256_verified_by_this_observation": false,
+          "http_status": 206,
+          "content_range": "bytes 0-1048575/672423616",
+          "partial_read_bytes": 1048576,
+          "parsed_metadata_and_tensor_info_bytes": 18081,
+          "architecture": "clip",
+          "general_file_type": 1,
+          "file_type_name": "F16",
+          "tensor_count": 298,
+          "tensor_type_histogram": {
+            "F32": 198,
+            "F16": 100
+          },
+          "image_size": 768,
+          "patch_size": 16,
+          "vision_embedding_length": 1024,
+          "vision_head_count": 16,
+          "projector_type": "qwen3vl_merger"
+        }
+      }
+    },
+    "gemma4_e2b": {
+      "name": "Gemma 4 E2B IT",
+      "native_context_tokens": 131072,
+      "original_model": {
+        "repository": "google/gemma-4-E2B-it",
+        "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        "license": "apache-2.0",
+        "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+        "config_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/config.json"
+      },
+      "provenance": "llama_cpp_maintainer_conversion",
+      "conversion_repository": "ggml-org/gemma-4-E2B-it-GGUF",
+      "conversion_revision": "6938c58e698502037401a5f19f6905f2fb2f7dee",
+      "license": "apache-2.0",
+      "license_metadata_url": "https://huggingface.co/api/models/ggml-org/gemma-4-E2B-it-GGUF/revision/6938c58e698502037401a5f19f6905f2fb2f7dee",
+      "compatibility_notes": [
+        "Use llama.cpp containing E2B/E4B visual noncausal fix 163a40796f0ebaae246325f8d2e15028b413fa9d.",
+        "For no-mmap partial offload, use embedding allocation fix 344846b4fc6fff5988f215e7cf839f880d04decf."
+      ],
+      "artifacts": {
+        "model": {
+          "file": "gemma-4-E2B-it-Q4_0.gguf",
+          "local_filename": "gemma-4-E2B-it-Q4_0.gguf",
+          "quantization": "Q4_0",
+          "size_bytes": 2841481184,
+          "sha256": "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52"
+        },
+        "projector": {
+          "file": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+          "local_filename": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+          "quantization": "Q8_0",
+          "size_bytes": 557368064,
+          "sha256": "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292"
+        }
+      },
+      "gguf_observed": {
+        "observed_at": "2026-11-01",
+        "method": "Bounded HTTP Range read; decoded GGUF v3 metadata and complete tensor-info table; no inference",
+        "source_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
+        "source_revision": "6938c58e698502037401a5f19f6905f2fb2f7dee",
+        "expected_whole_file_sha256": "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+        "whole_file_sha256_verified_by_this_observation": false,
+        "http_status": 206,
+        "content_range": "bytes 0-16777215/2841481184",
+        "partial_read_bytes": 16777216,
+        "parsed_metadata_and_tensor_info_bytes": 15815546,
+        "tensor_data_decoded": false,
+        "gguf_version": 3,
+        "architecture": "gemma4",
+        "general_file_type": 2,
+        "file_type_name": "Q4_0",
+        "general_quantization_version": 2,
+        "native_context_tokens": 131072,
+        "attention_key_head_dim": 512,
+        "attention_value_head_dim": 512,
+        "tensor_count": 541,
+        "tensor_type_histogram": {
+          "F32": 263,
+          "BF16": 1,
+          "Q4_0": 276,
+          "Q8_0": 1
+        },
+        "template": {
+          "sha256_utf8": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+          "characters": 18567,
+          "enable_thinking_gate_present": true,
+          "parser": "peg-gemma4",
+          "parser_detection_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/chat.cpp#L1386",
+          "thinking_gate": "enable_thinking adds system <|think|>",
+          "thinking_delimiters": [
+            "<|channel>thought",
+            "<channel|>"
+          ],
+          "tool_syntax": "<|tool_call>call:NAME{...}<tool_call|>",
+          "modern_openai_tool_response_template": true
+        },
+        "projector": {
+          "method": "Bounded HTTP 206 Range read; GGUF metadata and complete tensor-info table; tensor data not decoded",
+          "source_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/mmproj-gemma-4-E2B-it-Q8_0.gguf",
+          "source_revision": "6938c58e698502037401a5f19f6905f2fb2f7dee",
+          "expected_whole_file_sha256": "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292",
+          "whole_file_sha256_verified_by_this_observation": false,
+          "http_status": 206,
+          "content_range": "bytes 0-1048575/557368064",
+          "partial_read_bytes": 1048576,
+          "parsed_metadata_and_tensor_info_bytes": 84596,
+          "architecture": "clip",
+          "general_file_type": 7,
+          "file_type_name": "Q8_0",
+          "tensor_count": 1411,
+          "tensor_type_histogram": {
+            "F32": 1164,
+            "Q8_0": 247
+          },
+          "image_size": 224,
+          "patch_size": 16,
+          "vision_embedding_length": 768,
+          "vision_head_count": 12,
+          "projector_type": "gemma4v",
+          "audio_projector_type": "gemma4a"
+        }
+      },
+      "speculative": {
+        "type": "draft-mtp",
+        "target_model_sha256": "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+        "artifact": {
+          "file": "mtp-gemma-4-E2B-it-Q4_0.gguf",
+          "local_filename": "mtp-gemma-4-E2B-it-Q4_0.gguf",
+          "size_bytes": 59235872,
+          "sha256": "718d3a44057924d5840c65a0aeedf7929366adeeda92a2006955ccabaf645ef4",
+          "quantization": "Q4_0"
+        },
+        "source_model": {
+          "repository": "google/gemma-4-E2B-it-qat-q4_0-unquantized-assistant",
+          "revision": "ebc7e1a211354561464cb82ed6d886792138dcb6",
+          "qat": true,
+          "precision": "Q4_0"
+        },
+        "conversion_log_url": "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/raw/6938c58e698502037401a5f19f6905f2fb2f7dee/convert.log",
+        "conversion_log_sha256": "6c809d1279adf6949b04fe9f50a59e99453293012a6adeb272f588bd05545199"
+      }
+    },
+    "gemma4_e4b": {
+      "name": "Gemma 4 E4B IT",
+      "native_context_tokens": 131072,
+      "original_model": {
+        "repository": "google/gemma-4-E4B-it",
+        "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+        "license": "apache-2.0",
+        "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+        "config_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/config.json"
+      },
+      "provenance": "llama_cpp_maintainer_conversion",
+      "conversion_repository": "ggml-org/gemma-4-E4B-it-GGUF",
+      "conversion_revision": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc",
+      "license": "apache-2.0",
+      "license_metadata_url": "https://huggingface.co/api/models/ggml-org/gemma-4-E4B-it-GGUF/revision/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc",
+      "compatibility_notes": [
+        "Use llama.cpp containing E2B/E4B visual noncausal fix 163a40796f0ebaae246325f8d2e15028b413fa9d.",
+        "For no-mmap partial offload, use embedding allocation fix 344846b4fc6fff5988f215e7cf839f880d04decf."
+      ],
+      "artifacts": {
+        "model": {
+          "file": "gemma-4-E4B-it-Q4_0.gguf",
+          "local_filename": "gemma-4-E4B-it-Q4_0.gguf",
+          "quantization": "Q4_0",
+          "size_bytes": 4590807392,
+          "sha256": "a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2"
+        },
+        "projector": {
+          "file": "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+          "local_filename": "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+          "quantization": "Q8_0",
+          "size_bytes": 559874816,
+          "sha256": "197f49a93027f9843772bd24a6a9e0be2a32a788de5a3def330e9c585d86edd1"
+        }
+      },
+      "gguf_observed": {
+        "observed_at": "2026-11-01",
+        "method": "Bounded HTTP Range read; decoded GGUF v3 metadata and complete tensor-info table; no inference",
+        "source_url": "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q4_0.gguf",
+        "source_revision": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc",
+        "expected_whole_file_sha256": "a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2",
+        "whole_file_sha256_verified_by_this_observation": false,
+        "http_status": 206,
+        "content_range": "bytes 0-16777215/4590807392",
+        "partial_read_bytes": 16777216,
+        "parsed_metadata_and_tensor_info_bytes": 15822864,
+        "tensor_data_decoded": false,
+        "gguf_version": 3,
+        "architecture": "gemma4",
+        "general_file_type": 2,
+        "file_type_name": "Q4_0",
+        "general_quantization_version": 2,
+        "native_context_tokens": 131072,
+        "attention_key_head_dim": 512,
+        "attention_value_head_dim": 512,
+        "tensor_count": 666,
+        "tensor_type_histogram": {
+          "F32": 321,
+          "BF16": 1,
+          "Q4_0": 343,
+          "Q8_0": 1
+        },
+        "template": {
+          "sha256_utf8": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+          "characters": 18567,
+          "enable_thinking_gate_present": true,
+          "parser": "peg-gemma4",
+          "parser_detection_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/chat.cpp#L1386",
+          "thinking_gate": "enable_thinking adds system <|think|>",
+          "thinking_delimiters": [
+            "<|channel>thought",
+            "<channel|>"
+          ],
+          "tool_syntax": "<|tool_call>call:NAME{...}<tool_call|>",
+          "modern_openai_tool_response_template": true
+        },
+        "projector": {
+          "method": "Bounded HTTP 206 Range read; GGUF metadata and complete tensor-info table; tensor data not decoded",
+          "source_url": "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/mmproj-gemma-4-E4B-it-Q8_0.gguf",
+          "source_revision": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc",
+          "expected_whole_file_sha256": "197f49a93027f9843772bd24a6a9e0be2a32a788de5a3def330e9c585d86edd1",
+          "whole_file_sha256_verified_by_this_observation": false,
+          "http_status": 206,
+          "content_range": "bytes 0-1048575/559874816",
+          "partial_read_bytes": 1048576,
+          "parsed_metadata_and_tensor_info_bytes": 84596,
+          "architecture": "clip",
+          "general_file_type": 7,
+          "file_type_name": "Q8_0",
+          "tensor_count": 1411,
+          "tensor_type_histogram": {
+            "F32": 1164,
+            "Q8_0": 247
+          },
+          "image_size": 224,
+          "patch_size": 16,
+          "vision_embedding_length": 768,
+          "vision_head_count": 12,
+          "projector_type": "gemma4v",
+          "audio_projector_type": "gemma4a"
+        }
+      },
+      "speculative": {
+        "type": "draft-mtp",
+        "target_model_sha256": "a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2",
+        "artifact": {
+          "file": "mtp-gemma-4-E4B-it-Q4_0.gguf",
+          "local_filename": "mtp-gemma-4-E4B-it-Q4_0.gguf",
+          "size_bytes": 59678240,
+          "sha256": "d19a11e4fd5019967d9296f77f4d3e139c8903909f70c3a9cf009c9af4b9b88d",
+          "quantization": "Q4_0"
+        },
+        "source_model": {
+          "repository": "google/gemma-4-E4B-it-qat-q4_0-unquantized-assistant",
+          "revision": "27f8d204f09f2be353d6ff0bf0d012792b13c79f",
+          "qat": true,
+          "precision": "Q4_0"
+        },
+        "conversion_log_url": "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/raw/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/convert.log",
+        "conversion_log_sha256": "0e76ddce871f45007c117c8d7da561e48d091319446fc12f25b65d697f5966de"
+      }
+    },
+    "mini4_7_4x": {
+      "name": "MiniCPM-V-4.7-1B thinking — official 4x projector condition",
+      "native_context_tokens": 262144,
+      "original_model": {
+        "repository": "openbmb/MiniCPM-V-4.7-1B",
+        "revision": "ad9bf379feb71204c888b22923d63322452407f9",
+        "license": "apache-2.0",
+        "config_url": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B/resolve/ad9bf379feb71204c888b22923d63322452407f9/config.json"
+      },
+      "provenance": "publisher_conversion",
+      "conversion_repository": "openbmb/MiniCPM-V-4.7-1B-gguf",
+      "conversion_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+      "license": "apache-2.0",
+      "license_metadata_url": "https://huggingface.co/api/models/openbmb/MiniCPM-V-4.7-1B-gguf/revision/345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+      "artifacts": {
+        "model": {
+          "file": "thinking/MiniCPM-V-4_7-1B-Q4_K_M-thinking.gguf",
+          "local_filename": "MiniCPM-V-4_7-1B-Q4_K_M-thinking.gguf",
+          "quantization": "Q4_K_M",
+          "size_bytes": 672003680,
+          "sha256": "661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051"
+        },
+        "projector": {
+          "file": "mmproj-model-f16-4x.gguf",
+          "local_filename": "MiniCPM-V-4_7-1B-mmproj-f16-4x.gguf",
+          "quantization": "BF16",
+          "size_bytes": 901033888,
+          "sha256": "1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+          "filename_quantization_label": "F16",
+          "quantization_note": "The official file is named f16, but its actual GGUF file_type=32 and tensors are BF16/F32."
+        }
+      },
+      "gguf_observed": {
+        "observed_at": "2026-11-01",
+        "method": "Bounded HTTP Range read; decoded GGUF v3 metadata and complete tensor-info table; no inference",
+        "source_url": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B-gguf/resolve/345adbfa02c4a4671e61b7c75502dc9bf24fa93d/thinking/MiniCPM-V-4_7-1B-Q4_K_M-thinking.gguf",
+        "source_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+        "expected_whole_file_sha256": "661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+        "whole_file_sha256_verified_by_this_observation": false,
+        "http_status": 206,
+        "content_range": "bytes 0-16777215/672003680",
+        "partial_read_bytes": 16777216,
+        "parsed_metadata_and_tensor_info_bytes": 10955586,
+        "tensor_data_decoded": false,
+        "gguf_version": 3,
+        "architecture": "qwen35",
+        "general_file_type": 15,
+        "file_type_name": "Q4_K_M",
+        "general_quantization_version": 2,
+        "native_context_tokens": 262144,
+        "attention_key_head_dim": 256,
+        "attention_value_head_dim": 256,
+        "tensor_count": 321,
+        "tensor_type_histogram": {
+          "F32": 133,
+          "Q4_K": 163,
+          "Q6_K": 25
+        },
+        "template": {
+          "sha256_utf8": "49c37bcc86c7f7f20ed2ebf79e9f872be41ba2b5f9d0d51e6712cc038ef51d6c",
+          "characters": 7249,
+          "enable_thinking_gate_present": true,
+          "parser": "qwen3-coder/peg-native",
+          "parser_detection_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/chat.cpp#L1386",
+          "thinking_gate": "enable_thinking is true",
+          "thinking_delimiters": [
+            "<think>",
+            "</think>"
+          ],
+          "tool_syntax": "<tool_call>\\n<function=NAME>\\n<parameter=ARG>...",
+          "modern_openai_tool_response_template": null
+        },
+        "projector": {
+          "method": "Decoded a 65536-byte local prefix matching the official HTTP Range header; whole-file SHA verified independently on PC and Jetson",
+          "source_url": "https://huggingface.co/openbmb/MiniCPM-V-4.7-1B-gguf/resolve/345adbfa02c4a4671e61b7c75502dc9bf24fa93d/mmproj-model-f16-4x.gguf",
+          "source_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+          "expected_whole_file_sha256": "1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+          "whole_file_sha256_verified_by_this_observation": true,
+          "partial_read_bytes": 65536,
+          "partial_read_sha256": "da133037d81da13cc6400f4a537f4b0934bf05b8c16e61b097d20fb9e0816811",
+          "parsed_metadata_and_tensor_info_bytes": 25545,
+          "tensor_data_decoded": false,
+          "architecture": "clip",
+          "general_file_type": 32,
+          "file_type_name": "BF16",
+          "tensor_count": 444,
+          "tensor_type_histogram": {
+            "F32": 280,
+            "BF16": 164
+          },
+          "image_size": 448,
+          "patch_size": 14,
+          "vision_embedding_length": 1152,
+          "vision_head_count": 16,
+          "projector_type": "minicpmv4_7",
+          "scale_factor": 2,
+          "max_slice_nums": 9,
+          "query_num_metadata_present": false
+        }
+      },
+      "projector_mode": "4x",
+      "variant_of": "mini4_7"
+    }
+  }
+}

@@ -4,7 +4,7 @@ import asyncio
 import json
 import secrets
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -12,11 +12,18 @@ import httpx
 import psutil
 
 from .api_providers import VisionService, create_llm
+from .browsing_store import BrowsingRepository
 from .context import ContextManager
+from .generation_meter import budgeted_call
 from .live_media import LiveMedia
 from .media_cache import MediaCache
 from .memory import missing_slots
+from .models import OperationReply
 from .online_songs import OnlineSongs
+from .operation_continuations import ContinuationCoordinator, content_hash
+from .operation_generation import generate_with_recovery, reply_generation_binding
+from .operation_text import operation_output_diagnostics
+from .operations_control import OperationsControl
 from .providers import VoiceService, public_error
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
@@ -27,6 +34,11 @@ TERMINAL = {"completed", "failed", "cancelled", "expired"}
 class Runtime:
     def __init__(self, settings, store, *, singing_provider=None):
         self.settings, self.store = settings, store
+        self.operations = OperationsControl(store)
+        self.browsing_repository = BrowsingRepository(store)
+        self.continuations = ContinuationCoordinator(
+            store, self.operations, parent_repository=self.browsing_repository
+        )
         self.relationships = Relationships(store)
         self.llm = create_llm(settings)
         self.voices = VoiceService(settings)
@@ -237,42 +249,113 @@ class Runtime:
                     raise ValueError("工作模式切换失败：" + public_error(error)) from None
 
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):
-        """Caller owns generation_lock; evidence and one repair remain in its lease."""
+        """Generate once with source memory; lexical diagnostics never rewrite speech."""
         context = context or self.context
         evidence = context.memory.retrieve(scope, character, event["text"])
         messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence)
-        reply = await self.llm.generate(messages, character, event["event_id"], event["text"])
+        operation = mode in {"comment_draft", "direct_message"}
+        generate = (
+            getattr(self.llm, "generate_operation", self.llm.generate) if operation else self.llm.generate
+        )
+        continuation = None
+        if operation:
+            maximum = self.settings.data["llm"].get("operations_max_tokens", 8192)
+            binding = reply_generation_binding(scope, character, event, mode)
+            identity = event["event_id"] + ":" + content_hash(binding)
+
+            async def invoke(packet):
+                return await budgeted_call(
+                    self.llm,
+                    lambda: generate(packet, character, event["event_id"], event["text"]),
+                    packet,
+                    max_tokens=maximum,
+                )
+
+            def validate(value):
+                reply = OperationReply.model_validate(
+                    value.model_dump() if hasattr(value, "model_dump") else value
+                )
+                if any(reference != event["event_id"] for reference in reply.reply_to):
+                    raise ValueError("模型引用了其他事件")
+                return reply
+
+            def guard():
+                current = self.store.character()
+                if (current["id"], current["version"]) != (
+                    character["id"],
+                    character["version"],
+                ) or reply_generation_binding(scope, character, event, mode) != binding:
+                    raise ValueError("生成期间角色或原始事件已变化")
+
+            def diagnose(value):
+                return (
+                    "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓"
+                    if operation_output_diagnostics(value.spoken_text)["needs_review"]
+                    else None
+                )
+
+            reply, continuation = await generate_with_recovery(
+                self,
+                channel="generation." + mode,
+                identity=identity,
+                binding=binding,
+                character=character,
+                messages=messages,
+                generate=invoke,
+                validate=validate,
+                max_tokens=maximum,
+                guard=guard,
+                diagnose=diagnose,
+                generation_context=nullcontext,
+                context_data={
+                    "event": event,
+                    "relationship": relationship,
+                    "memory_evidence": evidence,
+                    "history": json.loads(context.existing(scope, character)["history"])
+                    if context.existing(scope, character)
+                    else [],
+                },
+            )
+        else:
+            reply = await generate(messages, character, event["event_id"], event["text"])
         missing = missing_slots(reply.spoken_text, evidence)
+        supported = [
+            slot
+            for slot in evidence["required_slots"]
+            if any(
+                fact["slot"] == slot for source in evidence["evidence"] for fact in source.get("facts", [])
+            )
+        ]
         audit = {
             "sources": evidence["evidence"],
             "required_slots": evidence["required_slots"],
+            "supported_slots": supported,
+            "method": "lexical_coverage",
+            "status": "not_applicable" if not supported else "needs_review" if missing else "lexical_match",
+            "semantic_verdict": None,
             "missing": missing,
             "retried": False,
             "warning": None,
             "memory_kind": "derived_reply" if evidence["evidence"] else "role_story",
         }
         if missing:
-            audit["retried"] = True
-            repair = messages + [
-                {
-                    "role": "system",
-                    "content": "上一次回答没有完整回应当前明确问题。只根据已补回的带来源原句补齐这些所问字段："
-                    + ", ".join(missing)
-                    + "。不要新增没有原句依据的细节，不需要复述问题未问的全部事实；仍按原JSON结构和字数回答。",
-                }
-            ]
-            try:
-                revised = await self.llm.generate(repair, character, event["event_id"], event["text"])
-                remaining = missing_slots(revised.spoken_text, evidence)
-                if len(remaining) < len(missing):
-                    reply, missing = revised, remaining
-                audit["missing"] = missing
-            except Exception as error:
-                audit["warning"] = "证据补答未完成：" + public_error(error)
-        if missing:
             labels = {"location": "地点", "person": "人物", "item": "物品", "quantity": "数量"}
-            warning = "回答可能仍遗漏所问的" + "、".join(labels.get(slot, slot) for slot in missing)
-            audit["warning"] = "; ".join(filter(None, [audit["warning"], warning]))
+            audit["warning"] = "待核对：" + "、".join(labels.get(slot, slot) for slot in missing)
+        if operation:
+            audit["output"] = operation_output_diagnostics(reply.spoken_text) | {
+                "finish_reason": getattr(self.llm, "last_finish_reason", None),
+                "usage": dict(getattr(self.llm, "last_usage", {})),
+            }
+            if audit["output"]["needs_review"]:
+                if continuation:
+                    audit["output"] |= {
+                        "diagnostic_needs_review": True,
+                        "needs_review": False,
+                        "agent_checked": True,
+                    }
+                else:
+                    audit["warning"] = "长正文含大量重复段落，保留原文待审"
+            audit["continuation"] = continuation
         return reply, audit
 
     async def send_overlay(self, message):

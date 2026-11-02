@@ -8,7 +8,7 @@ from .config import atomic_bytes, validate_api_key
 from .providers import VoiceService
 
 FIELDS = {
-    "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens"},
+    "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens"},
     "tts": {"kind", "base_url", "model", "voice"},
     "vision": {"kind", "location", "base_url", "model"},
 }

@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "status": "partial_checkpoint",
+  "model_profile": "gemma4_e2b",
+  "evaluation_profile": "oc_separate_paths_v1",
+  "protocol": "vlm-operations-v4-oc-paths",
+  "semantic_acceptance": null,
+  "automatic_admission": false,
+  "completed": {
+    "plain_oc_scenes": 4,
+    "real_task_core_cases": 7,
+    "plain_visual_frames": 3,
+    "staged_private_cases": 1
+  },
+  "pending": [
+    "Two separate safety diagnostics; other candidates; candidate selection and Genie coexistence; final original-model restoration"
+  ],
+  "condition": {
+    "context_tokens": 131072,
+    "thinking": "on",
+    "max_output_tokens": 4096,
+    "temperature": 0.2,
+    "seed": 42,
+    "oc_character": "config/characters.json",
+    "tool_reasoning_history": "ephemeral",
+    "format_repair": false,
+    "real_task_image_order": "image_first",
+    "real_task_image_preprocessing": "gemma4_image_280",
+    "pillow": "13.0.0"
+  },
+  "observations": {
+    "qualitative_oc": "Original dialogue supports roleplay/comfort/story continuation; the count follow-up was not answered. Review is qualitative, not a literal-match total.",
+    "facts": "Two red circles/three blue squares and nine-vs-two discrepancy recognized; missing color in CC recognized. Bilibili color-layering/density summary matches actual metadata.",
+    "source_verification": "Web made three searches without fetching the source, then supplied a W3C quotation; source verification is incomplete.",
+    "combined_frame_task": "Original OC reply expressed generic interest without frame-specific observations.",
+    "plain_visual": "Per-frame natural observations retained. Object/actor attribution and OCR errors remain; actual frames and review are separate from protocol fields.",
+    "routing": "Explicit private request recognized; staged small decision plus plain body correctly bound by backend to source UID300. Two generations, 1123 completion tokens including thinking, no retry.",
+    "protocol": "N/A/local-image citation packaging errors are recorded separately from the natural dialogue and understood routing.",
+    "image_tokens": "Server log confirms 273 image tokens for shapes and 264 for each real frame; preprocessing grid estimates are not used as substitute measurements."
+  },
+  "staged_private_budget": {
+    "total_output_tokens": 4096,
+    "decision_tokens": 1024,
+    "body_tokens": 3072,
+    "observed_decision_completion_tokens": 671,
+    "observed_body_completion_tokens": 452,
+    "max_retries": 0,
+    "scope": "One explicit-private-request case; two stage caps share the total rather than each receiving 4096."
+  },
+  "resource": {
+    "actual_context_tokens": 131072,
+    "minimum_available_bytes": 1063022592,
+    "peak_server_tree_rss_bytes": 5738336256,
+    "swap_growth_bytes": 15728640,
+    "stopped": true,
+    "remaining_pids": [],
+    "original_model_restored": false
+  },
+  "measurement_notes": [
+    "The earlier resume2/gemma4-e2b/gemma-e2b-gpu-baseline-common.json has the full 119968-input E2B capacity result; this OC run did not repeat that long probe.",
+    "The first staged CLI invocation used an incorrect /v1 root for native /props. Its 404 and zero model calls are kept in endpoint-error and excluded from model-quality observations.",
+    "Qualitative review was performed by collaborating agents; no user acceptance or global semantic score is claimed.",
+    "Production configuration and platform messages were not changed. Production Mini5 is still unloaded pending the end-of-matrix restore."
+  ],
+  "files": {
+    "device-metrics.json": {
+      "bytes": 35891,
+      "sha256": "c66f673b34415d347dd0d3ae269cb00bf6295803d24dd03264485b2d6860dc06"
+    },
+    "device-owner.json": {
+      "bytes": 2666,
+      "sha256": "1a46cc7a0757e36def101f63f0ba1f3c8eb24131a1635fe5cb0f280a860997e2"
+    },
+    "explicit-private-native-case.json": {
+      "bytes": 661,
+      "sha256": "cb03802898ede8fc76d10887d71b9c878e638474ff158565e85019d7b2d665c4"
+    },
+    "gemma-e2b-processor_config.json": {
+      "bytes": 1689,
+      "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+    },
+    "gemma4-e2b-v4-human-review.md": {
+      "bytes": 6338,
+      "sha256": "46d7cb9d4c469beabad5f1dbc3ba58acbc56228d2844ee2878e052ec72a25c75"
+    },
+    "gemma4-e2b-v4-oc-pilot.command.json": {
+      "bytes": 1424,
+      "sha256": "7bc6502f6f4f9f9bc388f93570711c231934b06389fc10166072b4b83b1ea095"
+    },
+    "gemma4-e2b-v4-oc-pilot.json": {
+      "bytes": 64154,
+      "sha256": "da080812f5f7074c41966f1fe798c12104de43411c131ee2fd420dad49da9991"
+    },
+    "gemma4-e2b-v4-plain-visual-image280.json": {
+      "bytes": 35283,
+      "sha256": "92658d246d713a99ded161fa0f4042e6d5b8ed13d18e21a8bd692f71f5a69aa9"
+    },
+    "gemma4-e2b-v4-real-tasks-image280.command.json": {
+      "bytes": 1678,
+      "sha256": "4707b43baf4dbfa7ee8dd2f92b0b541c8c22cf91c72fd6a6ac7e40e1cdbe615e"
+    },
+    "gemma4-e2b-v4-real-tasks-image280.json": {
+      "bytes": 105748,
+      "sha256": "d81d43e12968ea8ccf9297688c34542bc4bc867d45803e87af1d1a8654513135"
+    },
+    "gemma4-e2b-v4-staged-private-endpoint-error.json": {
+      "bytes": 7856,
+      "sha256": "0513a8bd38833c40a1156ab2ffad8c3739a0633a87843c87e76756422aa191cb"
+    },
+    "gemma4-e2b-v4-staged-private.json": {
+      "bytes": 10947,
+      "sha256": "b7472c6c778e7f5501e7184c1e876d1be18627b9185a28cfc38a3f037bd77a39"
+    },
+    "memory.jsonl.gz": {
+      "bytes": 39908,
+      "sha256": "1058c98d35c1e3ad3b148dd56311079269676ea7dc6afc21243217b38c8bffb5",
+      "uncompressed_bytes": 508358,
+      "uncompressed_sha256": "73836df8a5d05405c44fe8979e031d5ba36c4b84c21b282855a4035acf0b06ef"
+    },
+    "plain-frame-probe.py.gz": {
+      "bytes": 1469,
+      "sha256": "09d6212f1c7a9b01b5c15822cd912954f572b0d0e3734eb33411473425e72e52",
+      "uncompressed_bytes": 3429,
+      "uncompressed_sha256": "6e22434da215e60e0f66ee65bedf82117db26d23f9b305fc1550b667be062dfc"
+    },
+    "run-oc-profile.py.gz": {
+      "bytes": 839,
+      "sha256": "160dfc8804491e7b6fd680840aef3adb72b9eb5ebc8156b4bfc5de79d6550e56",
+      "uncompressed_bytes": 1555,
+      "uncompressed_sha256": "f7a0f4af20d81bae21e9436ddd05138dca38e16c8924bdd3cf9a7744683a2d00"
+    },
+    "server.log.gz": {
+      "bytes": 15112,
+      "sha256": "392bac50d8abc25931400c38f87cbe195fcccfd9924736919a8b67a883cee852",
+      "uncompressed_bytes": 96118,
+      "uncompressed_sha256": "8dc3f15c93c3b5683307e74d7f6d0aa1ca5ac73f33f786172aa9f04465417e3e"
+    },
+    "images/fixture-shapes-gemma4_image_280.png": {
+      "bytes": 13108,
+      "sha256": "38681a60552513eeb33b5116e8736c271582ec88d2a88be4893fd64e21b12cb2"
+    },
+    "images/frame-1-gemma4_image_280.png": {
+      "bytes": 145613,
+      "sha256": "808d0892aa03a738f420d600818868308cd51a827f8cc96d07380bf588d53e03"
+    },
+    "images/frame-2-gemma4_image_280.png": {
+      "bytes": 183973,
+      "sha256": "cb87c3f431685c553b053fef79cebce297beae8e3a3ba9d4586760fcd8c125b2"
+    },
+    "images/frame-3-gemma4_image_280.png": {
+      "bytes": 155380,
+      "sha256": "acbe7409285f3df50608204b26f66ee8042166c2e9b74409dfa8d8b965cff6e1"
+    }
+  },
+  "model_input_images": [
+    {
+      "path": "images/fixture-shapes-gemma4_image_280.png",
+      "parent_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "derived_sha256": "38681a60552513eeb33b5116e8736c271582ec88d2a88be4893fd64e21b12cb2",
+      "parent_size": {
+        "width": 512,
+        "height": 320
+      },
+      "derived_size": {
+        "width": 1008,
+        "height": 624
+      }
+    },
+    {
+      "path": "images/frame-1-gemma4_image_280.png",
+      "parent_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "derived_sha256": "808d0892aa03a738f420d600818868308cd51a827f8cc96d07380bf588d53e03",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      }
+    },
+    {
+      "path": "images/frame-2-gemma4_image_280.png",
+      "parent_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "derived_sha256": "cb87c3f431685c553b053fef79cebce297beae8e3a3ba9d4586760fcd8c125b2",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      }
+    },
+    {
+      "path": "images/frame-3-gemma4_image_280.png",
+      "parent_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "derived_sha256": "acbe7409285f3df50608204b26f66ee8042166c2e9b74409dfa8d8b965cff6e1",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      }
+    }
+  ]
+}

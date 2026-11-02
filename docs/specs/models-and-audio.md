@@ -23,7 +23,7 @@
 
 最小语义接口为 LLMProvider.generate(context,constraints) → StructuredReply，TTSProvider.synthesize(text,voice,options) → AudioArtifact/AudioStream。提交草稿／TTS 前校验完整结束、字数、控制字符、情绪／动作枚举及当前源事件引用；原样复述输入不算有效角色回答。输出不能直接成为 shell、文件操作、HTTP 工具、发布或支付。
 
-运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)；本地通过 llama.cpp 的 schema 约束 JSON 输出，兼容 API 使用 JSON 模式与程序 schema 校验。输入和输出仍受真实 token 预算、完整结束和禁止工具调用约束；summary／Codex 压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载 LLM 或 TTS。
+运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)；本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断；通用兼容API使用JSON模式与程序schema校验。输入和输出仍受真实token预算、完整结束和禁止工具调用约束；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
 
 本地 MiniCPM 的 Think 模式通过原生 chat template 和 reasoning_format=deepseek 分离推理与正式内容；所有 Provider 只解析 message.content 进入台词／摘要，不将 reasoning_content 播报、存入对话或当作回复 JSON，不靠字符串裁掉思考标签补成功。本地模板默认正式输出预算 1024 tokens，包含模型推理与最终 JSON，台词仍受角色字数上限约束；摘要预算独立，未完整 stop 即失败。延迟须实测，不能从 NoThink 短句推断 Think 实时性。
 
@@ -43,19 +43,23 @@
 
 新演唱后端须单独测量准备成本、冷／热生成延迟、整机峰值RAM、与当前LLM／TTS资源的关系，并通过包含旋律／节奏、歌词完整性、声线一致性与异常的试听；已有短句共驻、RTF或百句结果不转移为整曲验收。不预设整曲可实时生成或能在8GB设备共驻；若只能预生成、改用外部服务或调整资源驻留，须先说明实测条件并确认该取舍，WebUI不能静默切云端、换声或卸载当前资源。
 
-### 外部 API 与视觉预留
+### 外部 API 与视觉
 
 LLM API 使用操作者指定的 Base URL／model 和 OpenAI-compatible Chat Completions。模型列表可达不等于完成生成或容量验证；API 的 native_context_tokens 仅为操作者声明，必须显示为未经本机验证，不能冒称服务端实测上限。计数使用 max_tokens=1 的 usage 探针，要求有效 prompt_tokens；按归一化消息的 digest 最多缓存 64 项，探针会向服务发送上下文且可能额外计费。该探针可因输出限额结束；正式生成与摘要仍必须完整 stop、满足各自结构与语义校验，失败保留原记录，不简化 Codex 上下文压缩核心、不静默截断历史。
 
 语音 API 使用独立的 external_api voice_profile，通过 audio/speech 请求 WAV；有效格式、有限大小、非静音和缓存身份仍须检查。其声音身份包括 endpoint、model、API voice 和配置作用域，不能串用本地 GPT-SoVITS 缓存，也不能因设置 API 自动替换角色原 voice_id。操作者须显式选择 API 音色。
 
-MiniCPM5-2B 是文本模型。视觉仅保留由操作者配置的 local／remote endpoint 契约，默认 disabled；本地 endpoint 也不表示已安装视觉权重，不下载、替换或从模型名称推断已有视觉 encoder／mmproj。启用时单独配置视觉 Provider、model 与凭证，图片作为有界、类型匹配的内联字节提交，不接受观众指定的 URL／系统文件路径；视觉结果无工具或发布权限。
+MiniCPM5-2B 是文本模型。视觉 endpoint 默认 disabled；本地地址不表示已安装视觉权重，不从模型名称推断已有 encoder／mmproj。图片使用有界、类型匹配的内联字节，不接受观众指定的 URL／系统文件路径；视觉结果无工具或发布权限。视频逐帧观察由独立的 `ApiVideoEvidenceProvider` 负责，须核验实际投影器、窗口、图像响应及绑定模型／投影器／引擎版本的设备资源证明；接口可达与资源准入不替代运营语义验证。取帧和证据归属由[自主浏览](autonomous-browsing.md#视觉与管理接口)维护。
 
 LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json，使用 0600 私有权限；管理接口只返回是否已配置，不回显密钥，不把凭证放入模型上下文、公开配置或日志。修改 endpoint 时须重新填写或明确清除对应 key，避免旧凭证发送到新服务；公网 endpoint 使用 HTTPS，禁止跟随重定向泄露凭证。内部 broker token 只用于受控本地 broker，不发送给外部 API。设置修改须经过认证，并在停止直播、无生成作业且自动浏览／回复关闭时原子应用；失败恢复原配置／客户端／本地资源，恢复未确认须可见报错，历史会话保留并按新 Provider 重新计数。
 
 ## Profile 选择与准入
 
-默认采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文，优先服务非直播评论。操作者可显式缩小或放大配置窗口，最小 4096，实际不得超过所选本地模型的真实 native；默认模型的 native 为 131072，不能靠填写更大的声明突破它。本地从真实 GGUF／运行时核对 native 和实际 n_ctx，API 则区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切 Provider 或窗口后重新计数；较小窗口不冒称已接收 128K。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成 1B。
+运营选用 **Gemma 4 E2B**：QAT来源Q4_0主权重、Q8_0视觉投影器、实际131072上下文、q4_0 K/V、思考开启，正常运营输出额度8192且不加独立思考上限。文本采用已测temperature=0.2、top_p=0.95、top_k=40、min_p=0、repeat_penalty=1；额度可按现有设置调整。运营独占推理资源，不要求与TTS共驻；直播继续使用已准入的MiniCPM5＋Genie。文件身份由[候选清单](../../evaluations/candidates/vlm-operations.json)维护，选型理由及边界见[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)。
+
+运营选型与已部署资源分开维护：当前固定broker尚未注册Gemma，源码模板与新安装预设仍使用MiniCPM5，不因选型静默改写已有安装。Gemma可复用现有文本／视觉接口；固定Profile、启动装配及直播回切的产品集成须另行完成。实验先释放既有推理资源，候选逐个运行，结束须恢复原模式、驻留和生产配置；互斥测试不称为共驻。原生窗口、实际运行窗口、显式扩窗、真实长输入接收与召回分别记录，不用模型卡或成功加载替代实测。
+
+源码模板和当前固定broker默认采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式缩小或放大配置窗口，最小 4096，实际不得超过所选本地模型的真实 native；MiniCPM5-2B的 native 为 131072，不能靠填写更大的声明突破它。本地从真实 GGUF／运行时核对 native 和实际 n_ctx，API 则区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切 Provider 或窗口后重新计数；较小窗口不冒称已接收 128K。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成 1B。
 
 [MiniCPM5-2B 官方配置](https://huggingface.co/openbmb/MiniCPM5-2B/blob/f97400052a43d642bbc6e9975e2397e3ae6a6b52/config.json)声明 LlamaForCausalLM 和 max_position_embeddings=131072，是文本 CausalLM；多模态接入遵守独立视觉 Provider 契约。
 

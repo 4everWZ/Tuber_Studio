@@ -1,0 +1,93 @@
+{
+  "status": "in_progress_device_reconnected",
+  "experiment_date": "2026-11-01",
+  "previous_measurements": "operations-vlm-20261101.json",
+  "device": "Jetson Orin Nano 8GB",
+  "engine_revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+  "strict_context_tokens": 131072,
+  "production_configuration_modified": false,
+  "production_config_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "platform_messages_sent": 0,
+  "environment_image_rebuilt": false,
+  "restoration_before_continuation_verified": true,
+  "current_experiment_model": null,
+  "final_restoration_verified": false,
+  "artifact_manifest": "operations-vlm-20261101/resumed/manifest.json",
+  "handoff": "operations-vlm-20261101/resumed/handoff.json",
+  "budget_contract": {
+    "common": "4096 output tokens per HTTP generation including thinking; bounded original tool rounds and 600-second case deadlines; optional paired format repair retains the original answer and limits",
+    "native_combined": "Existing ResponseDecision schema with max_tokens=4096 including thinking",
+    "staged_and_evidence_first": "At most 4096 output tokens including thinking across all stages and at most one retry"
+  },
+  "attempts": [
+    {
+      "directory": "operations-vlm-20261101/resumed/qwen35-q4-dio-gpu",
+      "profile": "qwen35_4b",
+      "condition": "Q4_K_M weights, q4_0 K/V, GPU99, GPU projector, DIO, targeted cache advice",
+      "actual_context_tokens": 131072,
+      "loading_seconds": 5.788342838000972,
+      "server_returncode": -11,
+      "outcome": "Projector CUDA allocation of 223.30 MiB failed before readiness; first image encode subsequently segfaulted",
+      "model_quality_scored": false,
+      "resource_measurement": {
+        "peak_system_used_bytes": 7440916480,
+        "peak_server_tree_rss_bytes": 6232072192,
+        "minimum_system_available_bytes": 549064704,
+        "peak_swap_growth_bytes": 24903680
+      },
+      "cleanup_remaining_pids": [],
+      "quality_report": "operations-vlm-20261101/resumed/qwen35_4b-paired-thinking-resumed.json",
+      "quality_report_interpretation": "Runtime failure followed by unavailable transport; the ten error records are not ten model-quality failures"
+    }
+  ],
+  "cpu_projector_measurements": {
+    "profile": "qwen35_4b",
+    "condition": "Same 131072 window and Q4_K_M/q4_0/DIO; explicit CPU projector",
+    "protocol": "Original ten common cases; ninth completed, tenth and the 120000-target input probe lost transport. Native-schema and long-context reruns remain outstanding.",
+    "partial_observations": [
+      "Image count returned the correct two red circles and three blue squares, but used repeated irrelevant web searches and an unrelated citation",
+      "Image/subtitle conflict distinguished two pictured red circles from the claimed nine",
+      "CC-insufficient-visual ended with raw tool-call text rather than the required final JSON",
+      "The original multi-turn and private-context case deadlines expired; the existing harness outer timeout retains error/tool receipts but does not retain prior model steps in that branch",
+      "The private-handoff answer exhausted 4096 completion tokens with empty final text; its channel choice is unobserved",
+      "Web search succeeded but the model selected a nonexistent W3Schools URL, not the requested W3C original; that fetch returned 404"
+    ],
+    "approved_for_automatic_operations": false,
+    "resource_checkpoint": {
+      "file": "operations-vlm-20261101/resumed/qwen35-q4-dio-cpuproj/metrics-checkpoint.json",
+      "is_terminal_measurement": false,
+      "peak_system_used_bytes_observed_so_far": 7591366656,
+      "peak_server_tree_rss_bytes_observed_so_far": 6311424000,
+      "minimum_system_available_bytes_observed_so_far": 398614528,
+      "peak_swap_growth_bytes_observed_so_far": 0
+    }
+  },
+  "recovery": {
+    "last_verified_candidate_pid": 9881,
+    "candidate_owner_directory": "runtime/experiments/operations-vlm-20261101/resume/qwen35-q4-dio-cpuproj",
+    "last_verified_config_unchanged": true,
+    "owned_stop_returncode": 0,
+    "runner_terminal_event_observed": {
+      "event": "stopped",
+      "termination_reason": "operator_stop",
+      "exit_code": 0
+    },
+    "foreground_ssh_exit_code": 0,
+    "remaining_pids_independently_collected": false,
+    "all_process_cleanup_independently_verified": false,
+    "owned_stop_evidence_on_device": "runtime/experiments/operations-vlm-20261101/resume/recovery-1793479140483773832.json",
+    "original_model_warmup_confirmed": false,
+    "interruption_cause": "Unknown; SSH and model transport intermittent. No kernel evidence has been collected to attribute it to OOM or power loss.",
+    "scheduling": "No subsequent model launch occurred. Local waiting/controller/forward processes are absent and stale controllers are frozen. Reconnect and restore original residency before re-baselining further trials."
+  },
+  "remaining": [
+    "Complete Qwen common/native/long-input measurements",
+    "Gemma 4 E2B and E4B explicit memory/kernel parameter trials and available common/native measurements",
+    "LFM3-VL explicit YaRN extension and native/extended context comparison",
+    "Staged/evidence_first and independent heldout validation for feasible candidates",
+    "Video provider and Genie coexistence for any qualifying candidate",
+    "Verified owned-process cleanup and original model restoration"
+  ],
+  "previous_restoration_uncertainty_resolved": true,
+  "latest_recovery_handoff": "operations-vlm-20261101/resume2/handoff.json"
+}

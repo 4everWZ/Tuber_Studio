@@ -31,6 +31,7 @@ class Settings:
         self.data["tts"].setdefault("model", "")
         self.data["tts"].setdefault("voice", "")
         self.data["tts"].setdefault("local_backend", "compact")
+        self.data["llm"].setdefault("operations_max_tokens", 8192)
         self._validate()
         self.path = path
         self.admin_token = os.getenv("TUBER_ADMIN_TOKEN") or self._secret("admin-token")
@@ -69,6 +70,9 @@ class Settings:
             raise ValueError("上下文须为至少4096的整数，且不能超过服务或模型上限")
         if not 1 <= llm.get("max_tokens", 1024) < window * 95 // 100:
             raise ValueError("输出预算须小于有效上下文")
+        operations = llm.get("operations_max_tokens", 8192)
+        if type(operations) is not int or not 1 <= operations <= 65536:
+            raise ValueError("运营输出额度须为1到65536 tokens，实际生成仍受真实输入与窗口约束")
         if llm["kind"] != "demo":
             endpoint(llm["base_url"])
             if not isinstance(llm.get("model"), str) or not llm["model"].strip():

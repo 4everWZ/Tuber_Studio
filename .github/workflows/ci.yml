@@ -58,6 +58,10 @@ jobs:
         run: |
           uv run --locked ruff check src tests tools
           uv run --locked ruff format --check src tests tools
+      - name: Image decoder for catalog contracts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Unit and CPU graph contracts
         run: |
           mkdir -p tmp/ci-results

@@ -2,9 +2,12 @@
 
 import asyncio
 import json
+import os
 import re
+import stat
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from pydantic import Field
 
@@ -24,13 +27,14 @@ class CachePolicy(StrictModel):
     music_limit_mib: int = Field(default=MUSIC_MAX_MIB, ge=96, le=MUSIC_MAX_MIB)
     speech_limit_mib: int = Field(default=512, ge=16, le=MUSIC_MAX_MIB)
     temporary_limit_mib: int = Field(default=1024, ge=16, le=4096)
+    browsing_limit_mib: int = Field(default=512, ge=16, le=4096)
 
 
 class MediaCache:
     def __init__(self, runtime):
         self.runtime, self.store = runtime, runtime.store
         self.root = runtime.settings.runtime
-        self.locks = {name: asyncio.Lock() for name in ("music", "speech", "temporary")}
+        self.locks = {name: asyncio.Lock() for name in ("music", "speech", "temporary", "browsing")}
         self.leases = {}
         self.writing = set()
         self.store.execute(
@@ -64,18 +68,34 @@ class MediaCache:
                 identities.add(task.result()["song"]["audio"])
         return identities
 
-    def _files(self, category):
-        accessed = {
-            row["path"]: row["last_used"] for row in self.store.all("SELECT * FROM media_cache_access")
-        }
+    @staticmethod
+    def _directory_entries(directory, recursive):
+        try:
+            entries = os.scandir(directory)
+        except FileNotFoundError:
+            return
+        with entries:
+            for entry in entries:
+                if linked(entry):
+                    raise ValueError("缓存文件不能使用链接")
+                if entry.is_file(follow_symlinks=False):
+                    yield entry
+                elif recursive and entry.is_dir(follow_symlinks=False):
+                    yield from MediaCache._directory_entries(entry.path, recursive=True)
+
+    def _scan(self, category):
+        """Fresh metadata/protection stream shared by summaries and LRU callers."""
         paths = {
             "music": ["music", "online_music", "singing/cache"],
             "speech": ["audio"],
             "temporary": ["singing/output"],
+            "browsing": ["browsing"],
         }
         if category not in paths:
             raise ValueError("未知缓存类别")
         pinned = self.music_ids() if category == "music" else set()
+        if category == "browsing":
+            pinned = self.runtime.browsing_repository.protected_materials()
         speech = set()
         for identity in ([self.runtime.current_id] if self.runtime.current_id else []) + self.runtime.queue:
             job = self.store.job(identity)
@@ -84,7 +104,6 @@ class MediaCache:
         now = time.monotonic()
         self.leases = {path: expires for path, expires in self.leases.items() if expires > now}
         busy_temp = "temporary" in self.writing
-        result = []
         for relative in paths[category]:
             directory = self.root / relative
             if linked(directory) or any(
@@ -93,45 +112,67 @@ class MediaCache:
                 if parent != self.root and parent.is_relative_to(self.root)
             ):
                 raise ValueError("缓存目录不能使用链接")
-            if not directory.exists():
-                continue
-            entries = directory.rglob("*") if category == "temporary" else directory.iterdir()
-            for path in entries:
-                if linked(path):
+            for entry in self._directory_entries(directory, recursive=category == "temporary"):
+                if category != "temporary" and not (
+                    FINAL.fullmatch(entry.name) or TRANSIENT.match(entry.name)
+                ):
+                    continue
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(info.st_mode) or getattr(info, "st_reparse_tag", 0) == getattr(
+                    stat, "IO_REPARSE_TAG_MOUNT_POINT", -1
+                ):
                     raise ValueError("缓存文件不能使用链接")
-                if not path.is_file():
+                if not stat.S_ISREG(info.st_mode):
                     continue
-                if category != "temporary" and not (FINAL.fullmatch(path.name) or TRANSIENT.match(path.name)):
-                    continue
-                stat = path.stat()
-                transient = bool(TRANSIENT.match(path.name))
-                protected = str(path) in self.leases or path.stem in pinned or path.name in speech
+                transient = bool(TRANSIENT.match(entry.name))
+                stem = os.path.splitext(entry.name)[0]
+                protected = entry.path in self.leases or stem in pinned or entry.name in speech
                 protected |= transient and category in self.writing
                 protected |= category == "temporary" and busy_temp
-                result.append(
-                    {
-                        "path": path,
-                        "bytes": stat.st_size,
-                        "used_at": accessed.get(str(path.relative_to(self.root)), stat.st_mtime),
-                        "protected": protected,
-                    }
-                )
-        return result
+                yield entry.path, info, protected
+
+    def _files(self, category):
+        # Only eviction needs access times. Always read them anew, including
+        # touches since the most recent status request; summaries never cache LRU.
+        accessed = {
+            row["path"]: row["last_used"] for row in self.store.all("SELECT * FROM media_cache_access")
+        }
+        return [
+            {
+                "path": Path(path),
+                "bytes": info.st_size,
+                "used_at": accessed.get(os.path.relpath(path, self.root), info.st_mtime),
+                "protected": protected,
+            }
+            for path, info, protected in self._scan(category)
+        ]
 
     def status(self):
+        policy = self.policy()
         return {
-            "settings": self.policy(),
-            "categories": {category: self.usage(category) for category in self.locks},
+            "settings": policy,
+            "categories": {category: self._usage(category, policy) for category in self.locks},
         }
 
     def usage(self, category):
-        files = self._files(category)
+        return self._usage(category, self.policy())
+
+    def _usage(self, category, policy):
+        size = count = protected_size = 0
+        for _path, info, protected in self._scan(category):
+            count += 1
+            size += info.st_size
+            if protected:
+                protected_size += info.st_size
         return {
-            "bytes": sum(row["bytes"] for row in files),
-            "files": len(files),
-            "protected_bytes": sum(row["bytes"] for row in files if row["protected"]),
-            "reclaimable_bytes": sum(row["bytes"] for row in files if not row["protected"]),
-            "limit_bytes": self.policy()[category + "_limit_mib"] * MIB,
+            "bytes": size,
+            "files": count,
+            "protected_bytes": protected_size,
+            "reclaimable_bytes": size - protected_size,
+            "limit_bytes": policy[category + "_limit_mib"] * MIB,
             "writing": category in self.writing,
         }
 

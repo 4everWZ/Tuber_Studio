@@ -1,0 +1,15 @@
+{
+  "status": "invalid_selection_never_loaded",
+  "reason": "The broad mm. prefix included audio-only mm.a.input_projection.weight. This violates the intended all-audio-byte preservation. No inference or registry used these v1 files.",
+  "invalid_artifacts": [
+    {
+      "model": "gemma4_e2b",
+      "sha256": "7ff6dae2176fc26cb75fe951da73ab48a9ac1d3f59201a395debbac889fbe1c1"
+    },
+    {
+      "model": "gemma4_e4b",
+      "sha256": "d249888051bd3eeb999e6c6645338c25d0c205b2841dd798bf89397e73cb377e"
+    }
+  ],
+  "correction": "Restrict projection quantization to exact mm.input_projection.weight; retain mm.a.* and all a.* original types and bytes. Derive new v2 filenames while all inference is off."
+}

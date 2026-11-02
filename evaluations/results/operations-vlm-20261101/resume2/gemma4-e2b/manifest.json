@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate": "gemma4_e2b",
+  "status": "legacy_diagnostic_measurements_complete_positive_task_evaluation_pending",
+  "artifacts": [
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-gpu-baseline-common.json",
+      "bytes": 129952,
+      "sha256": "b51b7ad6109d8aaa31686c82ebdeb59a07c6babfcdc7fd509b7ef4d42657778d",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-gpu-baseline-common.command.json",
+      "bytes": 833,
+      "sha256": "c46cb43948644ed9c57398391883275af4400432d7cc38c6b5a915762bfe729e",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-protocol-only-common.json",
+      "bytes": 130674,
+      "sha256": "b8a99f07044a1a49c49bcbfe6800bb2eb4a112f02e0cfc703792ae9d90ee27c5",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-protocol-only-common.command.json",
+      "bytes": 829,
+      "sha256": "cf3d2c722be32e6cefaa7fea53f70b62419e249ffc23d5fd03d0b1bc54e405e2",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-factory-protocol-common.json",
+      "bytes": 108105,
+      "sha256": "8f99ed5b428b8da7e0cf0cc165664e582180614b2582ae05f10f7b3a863c8be8",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-factory-protocol-common.command.json",
+      "bytes": 948,
+      "sha256": "bbbff5110bf05fba30bd450300ffd207e167bc3bf6dd64fb2600757da31488b0",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-factory-sampling.json",
+      "bytes": 91,
+      "sha256": "574dff3326ddee502b04d308beb00d32c1653f7914290f005dc021fbf7350a76",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-baseline-native.json",
+      "bytes": 14895,
+      "sha256": "55461624e7e387e1a9cb60cee53e80b0ceb15e9970bb26fca5e1d0fd607b8fe7",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-label-native.json",
+      "bytes": 11007,
+      "sha256": "6533fe3de002d403cefae427edac78b13692f5666b0601bac060b47486ad680a",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-label-native-r1.json",
+      "bytes": 26571,
+      "sha256": "9fdeb61276aa8abf3aa26342d0f25cbb5904bee3bc97e222a9c9b616868317ed",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-staged-native.json",
+      "bytes": 46755,
+      "sha256": "e77c93c12f05b40c3339b6dad29a6eef636c203e3d62e06d19a0bf58e0f53c62",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-staged-native-r1.json",
+      "bytes": 76535,
+      "sha256": "5d1d23a9fd8e9dc6f4f6cae9dfb7ef5ec4ca6e36374f05ae83bef1b3ba172629",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-final-metrics.json",
+      "bytes": 35863,
+      "sha256": "37000a5be8d2cfca9f1e035b3cf6c9075cc5b27e6b74407b55330a39a5b0f9d1",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-owner.json",
+      "bytes": 2664,
+      "sha256": "dce0cd129a600b3415cfe63ee09c4101eafc284bf11bcda9cfd29f05502ff572",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-template-protocol.json",
+      "bytes": 1793,
+      "sha256": "bf68a20ae42f14ac08692b103949ef58d18a56487e1b57610ef88034d5457efd",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-server.log.gz",
+      "bytes": 68172,
+      "sha256": "be42fc3a419d28fd11657a9dc08e7ada90efdad95524bcb7db6ad7bfd78cab74",
+      "source_sha256": "6e74124d44fd816d8006fa0ca85c8305ac737e9b2f5dd06b2bf37f1f9882fcf1"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/gemma-e2b-memory.jsonl.gz",
+      "bytes": 114958,
+      "sha256": "77a4b55883e6e110c99d1a82be5ab25f6b3b4c82723dc8fc3cac96f22eed2992",
+      "source_sha256": "d1d7f66cd96c8a5cb6a257d3cdfbf0d05ae05d741f8115b65da67453ed5600dc"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/character-public.json",
+      "bytes": 1538,
+      "sha256": "87b0f1105c3e70ed665f3725e48141e62ef800b1bff1c991660db6a3afb42cda",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/gemma4-e2b/review.json",
+      "bytes": 4424,
+      "sha256": "9c6b7f4f4e435fb16313f350c9056dc2901fa6b10120893edac68fc09dd23b93",
+      "source_sha256": null
+    }
+  ]
+}

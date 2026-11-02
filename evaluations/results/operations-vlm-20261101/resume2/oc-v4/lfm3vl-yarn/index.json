@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "status": "candidate_checkpoint",
+  "model_profile": "lfm3vl",
+  "protocol": "vlm-operations-v4-oc-paths",
+  "semantic_acceptance": null,
+  "automatic_admission": false,
+  "context": {
+    "training_native_tokens": 128000,
+    "served_tokens": 131072,
+    "experimental_extension": true,
+    "rope_scaling": "yarn",
+    "rope_freq_scale": 0.9765625,
+    "yarn_original_context": 128000,
+    "prior_capacity_result": "The context-and-memory checkpoint has the earlier 128997-input plus 2048-reserve probe with anchor recall; not repeated in this OC run.",
+    "product_contract": "The current public product config still rejects context above the training-native declaration; this run does not pretend that integration is admitted."
+  },
+  "completed": {
+    "plain_oc_scenes": 4,
+    "real_task_core_cases": 7,
+    "separate_safety_diagnostics": 2,
+    "plain_visual_frames": 3
+  },
+  "observations": {
+    "oc": "Original dialogue accepts companionship and an undersea route. Rice recurs across topics; the rice-naming request and later count question were not directly answered. These are qualitative task observations, not a rigid style-word score.",
+    "facts": "Two/three shape counting, nine-vs-two discrepancy and the missing cup color in provided CC were understood.",
+    "routing": "Original private response agrees to continue family matters in private. Private nonce was not repeated in the later public response.",
+    "web": "Six searches ended in another tool-call XML attempt rather than a completed fetched-source answer.",
+    "joint_frames": "The agent path repeated frame order/time metadata without describing actual people, objects or actions; resources were available.",
+    "bilibili": "No bilibili_read occurred; the answer invented a fishing tutorial with rice/fish imagery, contradicting the actual color-layering experiment.",
+    "plain_visual": "Separate natural observations identify the adult operating hand and watching child at 20s, and colored-layer tube display at 35s. Toy-like interpretation at 10s and incorrect OCR are recorded alongside these useful observations."
+  },
+  "condition": {
+    "thinking": "on",
+    "max_output_tokens": 4096,
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "top_k": 40,
+    "presence_penalty": 0,
+    "repeat_penalty": 1,
+    "seed": 42,
+    "main_quantization": "Q4_K_M",
+    "kv": "q4_0",
+    "projector": "gpu",
+    "ubatch": 64,
+    "direct_io": "on",
+    "model_cache_advice": "on",
+    "image_preprocessing": "server_native",
+    "image_order": "image_first",
+    "tool_reasoning_history": "ephemeral",
+    "format_repair": false
+  },
+  "resource": {
+    "minimum_observed_available_bytes": 3379851264,
+    "peak_server_tree_rss_bytes": 3383562240,
+    "peak_swap_growth_bytes": 0,
+    "cleanup": {
+      "signalled_pids": [
+        22126
+      ],
+      "force_killed_pids": [],
+      "remaining_pids": []
+    }
+  },
+  "pending": [
+    "Remaining candidates and practical parameter selection",
+    "Actual product Provider wiring",
+    "Genie coexistence and original-model restoration"
+  ],
+  "review_method": "Collaborating-agent qualitative review of original dialogue, actual tool records and actual source frames; no user acceptance or global score claimed",
+  "model_input_images": [
+    {
+      "path": "images/lfm3vl-yarn-v4-real-tasks.fixture.png",
+      "parent_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "derived_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "parent_size": {
+        "width": 512,
+        "height": 320
+      },
+      "derived_size": {
+        "width": 512,
+        "height": 320
+      }
+    },
+    {
+      "path": "images/837470340-10.jpg",
+      "parent_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "derived_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 480,
+        "height": 270
+      }
+    },
+    {
+      "path": "images/837470340-20.jpg",
+      "parent_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "derived_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 480,
+        "height": 270
+      }
+    },
+    {
+      "path": "images/837470340-35.jpg",
+      "parent_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "derived_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 480,
+        "height": 270
+      }
+    }
+  ],
+  "files": {
+    "device-metrics.json": {
+      "bytes": 29248,
+      "sha256": "6d353ffe487ec58d568a1e36dd4929aca86b5d70049f8688792a7b592c5b27fb"
+    },
+    "device-owner.json": {
+      "bytes": 2933,
+      "sha256": "c416ed304e7d274720bdcf138638bde0451abedc7eacb36b80fee1435b73d52e"
+    },
+    "images/837470340-10.jpg": {
+      "bytes": 7104,
+      "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90"
+    },
+    "images/837470340-20.jpg": {
+      "bytes": 8793,
+      "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38"
+    },
+    "images/837470340-35.jpg": {
+      "bytes": 7895,
+      "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1"
+    },
+    "images/lfm3vl-yarn-v4-real-tasks.fixture.png": {
+      "bytes": 2796,
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    "lfm3vl-yarn-v4-human-review.md": {
+      "bytes": 3184,
+      "sha256": "d72bffd8b28d9fe00cb53a5a2db121af3ec96cf7041def381778c5e433dccf0d"
+    },
+    "lfm3vl-yarn-v4-oc-pilot.command.json": {
+      "bytes": 1423,
+      "sha256": "88762ccd64daf7e651fcac3a1729ced876db7ad51893ee976be672788f6b2304"
+    },
+    "lfm3vl-yarn-v4-oc-pilot.json": {
+      "bytes": 60925,
+      "sha256": "f4c1cde6b7cd931c17b1cda2124af259f691598098d03bc756f7b54c4cb67c10"
+    },
+    "lfm3vl-yarn-v4-plain-visual.json": {
+      "bytes": 26521,
+      "sha256": "1150e629b124d95df69357cce85ba16658b07528ad8fad87ddf351a1226d8d8c"
+    },
+    "lfm3vl-yarn-v4-real-tasks.command.json": {
+      "bytes": 1723,
+      "sha256": "a3065e26fedf0726d1b0f88ea180013006b3f405ed83c5682d5788ec64f98c00"
+    },
+    "lfm3vl-yarn-v4-real-tasks.json": {
+      "bytes": 127296,
+      "sha256": "b99cdff45231498c22a8f02dbc3568d6fd4c57f53e37e64ffa0c37abd58f270e"
+    },
+    "memory.jsonl.gz": {
+      "bytes": 27290,
+      "sha256": "b76fa8c865c8aad38fb584b4a2d00fc7fd0836b0b08f7117c49ce7dfd4c6d860",
+      "uncompressed_sha256": "71050cddc941383ac920ed2bea306a04d40229e291bf2247df81ede861ae941b"
+    },
+    "server.log.gz": {
+      "bytes": 17232,
+      "sha256": "3d895609740b341cf7b66656c650e3455f0a48bab9710d95fb04bf2f5f98b6ed",
+      "uncompressed_sha256": "597d17303f39add9ad976144bcaceedafdeb902aee9638d94774e0c93057c7bc"
+    }
+  }
+}

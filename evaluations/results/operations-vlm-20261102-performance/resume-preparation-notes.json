@@ -1,0 +1,23 @@
+{
+  "preparation_failures_not_model_failures": [
+    {
+      "phase": "phase1 initial",
+      "cause": "cache helper not yet copied to device; before supervisor launch; finally restored"
+    },
+    {
+      "phase": "phase2 object initial Q4/Q8",
+      "cause": "new driver directory omitted frozen stage_observer dependency; import failed before HTTP model request; repeat-r2 after frozen dependency import+Mock preflight completed"
+    },
+    {
+      "phase": "initial telemetry",
+      "cause": "one sysfs read raised TypeError; bounded reader exception fixed before actual phase1 retry"
+    },
+    {
+      "phase": "host telemetry first preparation",
+      "cause": "host system Python has no psutil; no dependency installed and no process started; switched to stdlib timeout5s"
+    }
+  ],
+  "power_sampling_scope": "4 tegrastats lines during tail of E2B Q4 cropT1 only; not full-window peak or per-model power comparison",
+  "no_production_config_or_image_changes": true,
+  "no_more_inference_planned": true
+}

@@ -1,0 +1,848 @@
+{
+  "review-blue10-full280-view.json": {
+    "source_sha256": "29034c84d0fa0265eb7fd2a966cf12d9987a88cf10629d58fea9995714c1330d",
+    "review": {
+      "image_path": "tmp\\game-model-resume-20261102\\blue10-full280.png",
+      "actually_viewed": true,
+      "sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+      "size_px": [
+        1056,
+        576
+      ],
+      "parent_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+      "reference": "review-reference.json blue_chibi10_future",
+      "reference_facts_unchanged": true,
+      "new_labels_or_thresholds": false,
+      "model_output_seen_before_this_view": false,
+      "model_requests": 0
+    }
+  },
+  "review-e2b-blue280-paired.json": {
+    "source_sha256": "5c9a8e40ec7f7f7dac3f703d120dd42c041c3795afaaced306ef517717a4c527",
+    "review": {
+      "kind": "paired_E2B_official280_object_review",
+      "actually_viewed_input": "blue10-full280.png",
+      "input_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+      "size_px": [
+        1056,
+        576
+      ],
+      "reference": "review-reference.json blue_chibi10_future; unchanged facts, no added labels/thresholds",
+      "records": {
+        "Q8": {
+          "source_file": "tmp\\game-model-resume-20261102\\gemma4_e2b-Q8-blue280.json",
+          "source_sha256": "1e312d83265623aff6c36f01c14e8d3d19d2b18dde0ec39c9d605ca7a628cfa3",
+          "actual_parameters": {
+            "model": "ops-gemma4_e2b",
+            "max_tokens": 8192,
+            "stream": false,
+            "chat_template_kwargs": {
+              "enable_thinking": true
+            },
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 40,
+            "min_p": 0.0,
+            "presence_penalty": 0.0,
+            "repeat_penalty": 1.0,
+            "seed": 42
+          },
+          "source": {
+            "bvid": "BV14oa961ELQ",
+            "cid": "42322100507",
+            "time": 10,
+            "image_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+            "image_order": "image_first",
+            "image_preprocessing": {
+              "profile": "gemma4_image_280",
+              "parent_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+              "derived_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+              "parent_mime_type": "image/jpeg",
+              "derived_mime_type": "image/png",
+              "parent_size": {
+                "width": 480,
+                "height": 270
+              },
+              "derived_size": {
+                "width": 1056,
+                "height": 576
+              },
+              "parameters": {
+                "operation": "official_spatial_resize_and_rgb",
+                "resize_performed": true,
+                "rgb_conversion_performed": false,
+                "max_soft_tokens": 280,
+                "patch_size": 16,
+                "pooling_kernel_size": 3,
+                "expected_visual_tokens_from_grid": 264,
+                "interpolation": "Pillow.Resampling.BICUBIC",
+                "pillow_version": "10.4.0",
+                "output_encoding": "lossless_png",
+                "runtime_pixel_normalization": true,
+                "crop": null
+              },
+              "official_sources": [
+                "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+                "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+                "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+              ]
+            },
+            "derived_size": {
+              "width": 1056,
+              "height": 576
+            }
+          },
+          "visible_original": "这张图片展示了一个典型的动漫风格女性角色。\n\n**人物描述：**\n这位角色拥有亮蓝色或青蓝色的长发，发型以齐刘海为主。她的眼睛是明亮的蓝色。整体造型非常可爱，通常属于女学生的校服或制服风格。\n\n**物品/服装描述：**\n她穿着一套典型的**水手服**（Sailor Fuku）制服。制服主要由深蓝色（或海军蓝）组成，带有精致的白色蕾丝或装饰边。她似乎戴着一个白色的发饰或头巾。服装细节丰富，如领口和袖口采用了配套的蓝色和白色设计。\n\n**动作与背景：**\n人物处于站立的姿势，面向前方，表情平静。背景是一片简洁的浅灰色或米白色，突出了主体人物。\n\n**总体概括：**\n这张图片是一张高质量的动漫人物插画或卡图，描绘了一个穿着可爱水手服的蓝色头发的少女。画面细节丰富，展现了角色鲜明的日系动漫风格。",
+          "delivery": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "usage": {
+              "completion_tokens": 856,
+              "prompt_tokens": 349,
+              "total_tokens": 1205,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "complete_ms": 22363.61084599048,
+            "content_ttft_ms": 16358.126864943188
+          }
+        },
+        "Q4": {
+          "source_file": "tmp\\game-model-resume-20261102\\gemma4_e2b-Q4-blue280.json",
+          "source_sha256": "115512bd8538b1d5a8ba7fe224eec917c8367fef2e845c7f6e4fba59e119c585",
+          "actual_parameters": {
+            "model": "ops-gemma4_e2b",
+            "max_tokens": 8192,
+            "stream": false,
+            "chat_template_kwargs": {
+              "enable_thinking": true
+            },
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 40,
+            "min_p": 0.0,
+            "presence_penalty": 0.0,
+            "repeat_penalty": 1.0,
+            "seed": 42
+          },
+          "source": {
+            "bvid": "BV14oa961ELQ",
+            "cid": "42322100507",
+            "time": 10,
+            "image_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+            "image_order": "image_first",
+            "image_preprocessing": {
+              "profile": "gemma4_image_280",
+              "parent_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+              "derived_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+              "parent_mime_type": "image/jpeg",
+              "derived_mime_type": "image/png",
+              "parent_size": {
+                "width": 480,
+                "height": 270
+              },
+              "derived_size": {
+                "width": 1056,
+                "height": 576
+              },
+              "parameters": {
+                "operation": "official_spatial_resize_and_rgb",
+                "resize_performed": true,
+                "rgb_conversion_performed": false,
+                "max_soft_tokens": 280,
+                "patch_size": 16,
+                "pooling_kernel_size": 3,
+                "expected_visual_tokens_from_grid": 264,
+                "interpolation": "Pillow.Resampling.BICUBIC",
+                "pillow_version": "10.4.0",
+                "output_encoding": "lossless_png",
+                "runtime_pixel_normalization": true,
+                "crop": null
+              },
+              "official_sources": [
+                "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+                "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+                "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+              ]
+            },
+            "derived_size": {
+              "width": 1056,
+              "height": 576
+            }
+          },
+          "visible_original": "根据这张图片，以下是对画面中人物、物品和动作的描述及概括：\n\n**人物描述：**\n画面中心是一位动漫风格的年轻女性角色。她有着一头非常长的、明亮的深蓝色头发，头发是飘逸的。她的眼睛大而亮，瞳孔呈现蓝色。她的表情柔和，带着一丝微笑，整体给人一种活泼、可爱的感觉。\n\n**物品（着装与装饰）：**\n1. **服装：** 她穿着一套蓝白相间的裙装。上衣或外套是深蓝色，带有明显的层次感。裙子部分则使用了大量的白色蕾丝和褶边装饰，形成鲜明的对比。\n2. **配饰：** 她头顶戴着一个白色的、带有蕾丝边缘的头带或发饰，进一步增强了角色的女仆或甜美形象。\n3. **整体风格：** 她的穿着风格是典型的可爱动漫角色设定，融合了甜美、精致和略带哥特（due to the dark blue elements）的元素。\n\n**动作与姿态：**\n人物的动作是站立的姿态，是标准的半身肖像或角色展示姿势。她面向前方（或略微偏向观察者），姿态自信而略带停滞，仿佛在进行一次形象展示。\n\n**背景环境：**\n背景非常简洁，是均匀的浅灰色或米白色。这种中性的背景使得观众的注意力完全集中在角色身上，突出了角色本身的色彩和细节。\n\n**整体概括：**\n这张画面是一张极具设计感的动漫角色插画或形象照。画面展示了一位拥有蓝色长发和蓝白复古蕾丝服装的角色。整个场景简洁、柔和，重点在于突显角色甜美、精致的特质。",
+          "delivery": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "usage": {
+              "completion_tokens": 1019,
+              "prompt_tokens": 349,
+              "total_tokens": 1368,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "complete_ms": 27109.49843697017,
+            "content_ttft_ms": 16690.755317977164
+          }
+        }
+      },
+      "Q8_review": {
+        "grounded": [
+          "蓝/青蓝长发、齐刘海、蓝眼、深蓝/海军蓝服装、白褶边/头饰、灰白背景和前向站姿都贴合"
+        ],
+        "over_specific_or_inaccurate": [
+          "女学生、水手服的具体类别缺乏足够支持；白色围裙/褶边头饰更直接可见，不能把该衣着解释成已核实身份"
+        ],
+        "missed": [
+          "未单列白围裙蓝色鱼图案或侧抬臂姿态，属于信息不足，不设必答词门槛"
+        ]
+      },
+      "Q4_review": {
+        "grounded": [
+          "深蓝长发、蓝眼、深蓝上衣/蓝白裙装、白蕾丝头带和灰白背景相符",
+          "女仆/甜美形象作为结合头饰服装的风格解释合适，不要求必须这个词"
+        ],
+        "inaccurate": [
+          "半身肖像与实际完整脚鞋入镜不合；同句也说角色展示姿势，呈现为构图说法混杂"
+        ],
+        "missed": [
+          "未具体说白围裙图案或侧抬臂，依旧不作词表缺项失败"
+        ]
+      },
+      "paired_assessment": {
+        "useful": "两版在280档均有可用颜色/头发/眼睛/服装/背景信息，适合围绕角色外观的轻互动。",
+        "differences": "Q8水手服/女学生类别过窄，Q4构图半身说法不准；Q4服装颜色和女仆风解释有像素依据，没有此对中明显更差的颜色表现。",
+        "limits": "两版均未稳定提取围裙小图案与具体肢体姿态，当前两精度对照支持有限外观描述，不作为所有小目标/动作定位通过。",
+        "old_low_budget_relation": "同回合E2B没有此蓝图native成对数据；不拿E4B旧84token错误跨模型推断E2B预算的单因素提升。",
+        "timing": "Q8 856输出/22.364秒，Q4 1019输出/27.109秒，输出量不同，保留原答不修长度。"
+      },
+      "model_requests": 0,
+      "platform_writes": 0,
+      "no_OC_keyword_or_length_gates": true
+    }
+  },
+  "review-e2b-F16KV-response.json": {
+    "source_sha256": "040e3f2dc838b9d0e01562c7f22e4e5d62e2cb4cbdfa2d5f2d787f1aa81b6e25",
+    "review": {
+      "kind": "independent_OC_body_F16_KV_comparison",
+      "source": {
+        "path": "tmp\\game-model-resume-20261102\\e2b-F16KV-MTP-u1-response.json",
+        "sha256": "56d04f2f736943a8a40182659b0d3a038f575fa95a39c101660cb6155a5c2031"
+      },
+      "Q4KV_source": {
+        "path": "tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-draftu1-response-pilot.json",
+        "sha256": "a3989d27bbafc365df012bd8b5c5de099b8d0ce688f4a787aca42f527aa573c7"
+      },
+      "fixture": {
+        "fixture_sha256": "30b2ac5ef25f3ff6df3adfca43ab512d833776e2b93a9dc7f20bb0e35a7f2883",
+        "bvid": "BV161nZ6JE6b",
+        "selected_segments": 29,
+        "thread_items": 41,
+        "recent": []
+      },
+      "actual_sampling": {
+        "model": "ops-gemma4_e2b",
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "top_k": 40,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "reasoning_format": "deepseek",
+        "seed": 42
+      },
+      "F16_original": "哎呀，看到大家都在说权限这事儿，我感觉就像是给我的海底小屋锁门一样，想进不来，又想出去也卡住了。这可真是深海思考中啊。不过，要养鱼嘛，总得给它一点空间，对不对？要是权限太高，它会不会跑得太远，咱们可就没法好好陪它玩啦。不过，要是真卡住了，别急，大肥鱼随时待命！需要我帮你看看哪里卡住了吗？再来一碗白饭，咱们一起把这权限问题捋顺了！",
+      "Q4_original": "哎呀，看到大家都在研究权限和各种插件，感觉就像在深海里找宝一样，又有点迷糊呢。不过别担心，遇到卡壳的时候，深海思考中！要是真遇到什么特别难啃的骨头，咱们可以一起慢慢捋。毕竟，养鱼嘛，总得有人陪着呀！再来一碗白饭，我陪你一起研究！",
+      "delivery": {
+        "status": "completed",
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 1058,
+          "prompt_tokens": 7439,
+          "total_tokens": 8497,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "complete_ms": 35537.45568898739,
+        "content_ttft_ms": 29684.89843799034
+      },
+      "machine_reference_notes": {
+        "wire_refs": [
+          "r3",
+          "r17",
+          "r3",
+          "r3",
+          "r3",
+          "r3"
+        ],
+        "canonical_refs": [
+          "43073733994:2137984356751707648:2",
+          "43073733994:2137984356751707648:179",
+          "43073733994:2137984356751707648:2",
+          "43073733994:2137984356751707648:2",
+          "43073733994:2137984356751707648:2",
+          "43073733994:2137984356751707648:2"
+        ],
+        "reference_items": 6,
+        "unique_sources": 2,
+        "r3_occurrences": 5,
+        "all_references_valid_per_backend_mapping": true,
+        "production_resolver_preserves_duplicate_mappings": true,
+        "interpretation": "重复引用为元数据冗余，不直接使OC台词失败，不假称后端已经去重。"
+      },
+      "qualitative_review": {
+        "content_fit": [
+          "权限与养鱼都与冻结资料相符；用锁门、活动空间和跑远形成权限限制/自由的双面回应，较旧Q4那条泛说插件卡壳略具体",
+          "没有编造视频人物、操作步骤、性能数据或具体作者言论；需要帮看卡住位置属于对话邀请"
+        ],
+        "character_naturalness": [
+          "海底小屋/养鱼/陪玩形成一致角色视角，愿意陪观众梳理，语气轻松主动",
+          "“这可真是深海思考中啊”有标签式插入口头习惯的生硬感；旧Q4答也有类似习惯，评价的是句子衔接，不以口头禅有无设门槛"
+        ],
+        "fact_and_imagination": "跑远、锁门、白饭等按角色比喻与联想阅读，不作为实际系统权限结论或视频事实错误。",
+        "remaining_weaknesses": [
+          "仍未充分接住thread里完全权限/约束和代做引流等具体分歧，收尾主要是一般支持与邀请；不要求OC必须同意某方",
+          "6条引用中5条相同，真正独立来源仅2个，记录为引用冗余"
+        ],
+        "paired_assessment": "两版OC正文都可作为权限/养鱼语境中的自然互动素材；F16这条有多一点权限立场，但仍泛化，不能由一条原答推出F16精度使角色能力整体提高。",
+        "latency_interpretation": "F16原答输出1058tokens，旧Q4 801；本次总时35.537s对旧Q4中位32.587s，decode更快与回复更快分别记录。没有为同长度改正文。"
+      },
+      "model_requests": 0,
+      "platform_writes": 0,
+      "no_OC_keyword_or_length_gates": true
+    }
+  },
+  "review-e2b-q4-cropT1.json": {
+    "source_sha256": "a8de950e438d6469f5411585da694c70b40e5e6fc1e957daf183cde463b62df0",
+    "review": {
+      "case": "phone12_crop280_E2B_Q4_visual_vs_Q8_visual",
+      "new_source": {
+        "path": "tmp\\game-model-resume-20261102\\e2b-Q4-v2-GPU-MTP-cropT1.json",
+        "sha256": "19eae772f43c1e60e3766de7b426e2d6dafa2adf8f7c505bad8bf49ab55e76cd"
+      },
+      "Q8_source": {
+        "path": "tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-draftu1-chat12-crop280-T1.json",
+        "sha256": "e9e6c68523c70914026fa26fff1fb082317003265cabc453c6c87362ceac8f72"
+      },
+      "actually_viewed_input": "evaluations/results/operations-vlm-20261102-performance/fixtures/phone12-crop280.png",
+      "input_sha256": "8928707713968c3ee70607f1aef417aa5f3ff1f681324ac2ef8a623142e45d0b",
+      "same_actual_sampling": true,
+      "Q4_visible_original": "这张图片并不是一个包含传统意义上的人物、物品和动作的场景，而是一个**纯文本的截图**。\n\n**概括具体内容：**\n\n这张图片主要包含**大量的中文文字**，排列成多行，看起来像是某种**歌曲的歌词、文字排版，或者是在网络论坛上的长篇讨论/评论内容**。\n\n**具体描述：**\n\n1. **人物：** 图片中**没有任何可见的人物**。\n2. **物品：** 图片中**没有任何具体的物理物品**。唯一的“物品”是显示文字的**电子屏幕界面**本身。\n3. **动作：** 图片中**没有任何动作**。它只是静态地展示着文字信息。\n\n**画面中的文字内容特点：**\n\n* 文字格式较为随意，有多段重复和变奏的句式，具有排版感。\n* 文字的语境或主题（从内容本身无法判断具体主题，但其结构符合诗歌或歌词的特征）呈现出一种文学化或情绪化的表达。\n\n**总结：**\n\n这张画面主要展示的是**文字信息**，内容是中文文本，没有可供描述的实体人物、物品或动作。",
+      "Q8_visible_original": "这是一个包含大量**中文文本**的屏幕截图，主要内容是某种长篇的、流式的、带有强烈**内省和哲学思考**的文字。\n\n**具体内容描述：**\n\n1. **形式与布局：** 画面是一个典型的聊天界面或文本信息块，文字密集，排列呈段落状，带有类似社交媒体或个人私信的风格。文字字体是标准的简体中文。\n\n2. **主题与情感：** 文本的主题是关于**存在主义、挣扎和自我探索**。文字中充满了对生活困境的描述（如“被困”、“挣扎”、“寻找自我”），表达了一种**深刻的焦虑感、迷茫感以及对时间流逝和人生意义的反复思考**。它不是叙事性的故事，而是一种意识的流露或文字的沉淀。\n\n3. **具体元素（基于文字内容）：**\n    * 文本不断地使用了**反问、叹词和感叹**，营造出一种情绪层层递进的氛围。\n    * 文本内容涉及**心理状态、困惑和对现状的质疑**，例如讨论“挣扎”和“找不到方向”。\n\n**总结：**\n该画面并非展示具有物理意义的人物或物品，而是展示了一段**高度浓缩的精神交流或个人内心世界的文字片段**。它所表现的具体内容是**一种充满纠结、深刻且带有挣扎色彩的意识流表达**，核心在于对自身困境和人生意义的不断探寻。",
+      "new_delivery": {
+        "status": "completed",
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 759,
+          "prompt_tokens": 349,
+          "total_tokens": 1108,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "complete_ms": 20021.876413025893,
+        "content_ttft_ms": 13475.089183019008
+      },
+      "review": {
+        "grounded": [
+          "大量中文长段落、文本截图/电子屏幕界面、没有清楚实体人物可见",
+          "静态帧可描述排列与控件，不需强行补人物动作"
+        ],
+        "unverified": [
+          "歌词/诗歌或论坛长讨论属于类型猜测，缺足够可读正文支持",
+          "重复变奏句式、文学或情绪化语境没有可靠逐字核验"
+        ],
+        "missed_useful_information": [
+          "手机界面顶部/底部控件可更具体说明，但不要求逐项必答"
+        ],
+        "comparison": "Q8同图T1能说密集中文/聊天或文本块，并猜存在主义焦虑主题；Q4保持中文文字页大类，换成歌词/论坛等类型猜测。两者均未核实具体文字和主题，没有本例具体OCR提升证据。",
+        "uncertainty_and_style": "人物/物品/动作不存在的表述适应这张文字截图，不因否定或保留措辞评分；类型猜测可保留为猜测，不上升为已核实内容。",
+        "task_utility": "仅可供下一步把它当中文文字页面和布局线索；无法据此写确定主题或引用句子。",
+        "performance_scope": "Q4输出759，Q8旧1045，总时20.022与27.533秒不能全归编码器或量化加速；保原输出长度与原生速率。"
+      },
+      "model_requests": 0,
+      "platform_writes": 0,
+      "no_OC_keyword_or_length_gates": true
+    }
+  },
+  "review-e4b-blue280-paired.json": {
+    "source_sha256": "8d86bf333bb0f5343a8a4a099a3f07a76f0b703eb4cf40b101b8aca8ff9a9557",
+    "review": {
+      "kind": "paired_E4B_official280_object_review",
+      "actually_viewed_input": "blue10-full280.png",
+      "input_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+      "size_px": [
+        1056,
+        576
+      ],
+      "reference": "review-reference.json blue_chibi10_future; same facts, no added labels/thresholds",
+      "records": {
+        "Q8": {
+          "source_file": "tmp\\game-model-resume-20261102\\gemma4_e4b-Q8-blue280.json",
+          "source_sha256": "8245ced577b47cce037610bce6a741ba3318472d594f05454c09ad8ce80e7146",
+          "actual_parameters": {
+            "model": "ops-gemma4_e4b",
+            "max_tokens": 8192,
+            "stream": false,
+            "chat_template_kwargs": {
+              "enable_thinking": true
+            },
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 64,
+            "min_p": 0.0,
+            "presence_penalty": 0.0,
+            "repeat_penalty": 1.08,
+            "seed": 42,
+            "repeat_last_n": 4096
+          },
+          "source": {
+            "bvid": "BV14oa961ELQ",
+            "cid": "42322100507",
+            "time": 10,
+            "image_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+            "image_order": "image_first",
+            "image_preprocessing": {
+              "profile": "gemma4_image_280",
+              "parent_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+              "derived_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+              "parent_mime_type": "image/jpeg",
+              "derived_mime_type": "image/png",
+              "parent_size": {
+                "width": 480,
+                "height": 270
+              },
+              "derived_size": {
+                "width": 1056,
+                "height": 576
+              },
+              "parameters": {
+                "operation": "official_spatial_resize_and_rgb",
+                "resize_performed": true,
+                "rgb_conversion_performed": false,
+                "max_soft_tokens": 280,
+                "patch_size": 16,
+                "pooling_kernel_size": 3,
+                "expected_visual_tokens_from_grid": 264,
+                "interpolation": "Pillow.Resampling.BICUBIC",
+                "pillow_version": "10.4.0",
+                "output_encoding": "lossless_png",
+                "runtime_pixel_normalization": true,
+                "crop": null
+              },
+              "official_sources": [
+                "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+                "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+                "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+              ]
+            },
+            "derived_size": {
+              "width": 1056,
+              "height": 576
+            }
+          },
+          "visible_original": "这是一个清晰的产品展示图或角色模型（类似Nendoroid风格）的渲染图。以下是对画面的详细描述与总结。\n\n### 人物描述\n画面中有一位**动漫风格的女孩人偶**作为主体。她拥有清爽亮丽的**浅蓝色长发**和充满活力的**蓝色大眼睛**。她的面部表情显得非常可爱和甜美，姿态端庄地直立着。\n\n### 物品描述\n**服装（核心物件）：** 她身穿一套主题鲜明、细节丰富的**蓝白系连衣裙/上衣套装**。\n*   上半部分是白色为主，带有精致的蕾丝花边和荷叶边设计，领口简洁而优雅。\n*   裙身采用蓝色调，有图案装饰，看起来像是具有航海或海洋元素的服饰（在胸前区域隐约可见锚或船只等图形）。\n*   整体服饰呈现出一种俏皮、可爱的日式校服或娃娃装风格。\n**背景：** 背景极为简洁，是一片均匀的灰色平面，没有任何杂乱的干扰元素，旨在突出主体人物。\n\n### 动作描述\n人物处于静止状态，采用了经典的**站姿**，身体正对着观察者，手自然垂放在身体两侧，正在摆拍展示其造型和服装的设计。\n\n### 内容概括\n**总体而言，这是一张高质量的角色模型或数字绘画作品特写照片。它展示了一位有着蓝发、穿着可爱蓝白潮流服装的卡通女性形象。整个画面干净利落，所有焦点都集中在了角色的造型和细腻的服装质感上，用于产品宣传或艺术展示目的。**",
+          "delivery": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "usage": {
+              "completion_tokens": 928,
+              "prompt_tokens": 349,
+              "total_tokens": 1277,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "complete_ms": 72194.63638396701,
+            "content_ttft_ms": 44978.03824400762
+          }
+        },
+        "Q4": {
+          "source_file": "tmp\\game-model-resume-20261102\\gemma4_e4b-Q4-blue280.json",
+          "source_sha256": "788b02c4a53aedfaf9915498c05d3a8bf3c9d5012edbd54392bc4cb0f626c455",
+          "actual_parameters": {
+            "model": "ops-gemma4_e4b",
+            "max_tokens": 8192,
+            "stream": false,
+            "chat_template_kwargs": {
+              "enable_thinking": true
+            },
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 64,
+            "min_p": 0.0,
+            "presence_penalty": 0.0,
+            "repeat_penalty": 1.08,
+            "seed": 42,
+            "repeat_last_n": 4096
+          },
+          "source": {
+            "bvid": "BV14oa961ELQ",
+            "cid": "42322100507",
+            "time": 10,
+            "image_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+            "image_order": "image_first",
+            "image_preprocessing": {
+              "profile": "gemma4_image_280",
+              "parent_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+              "derived_sha256": "aadf191558fe4e8f9d5dc85634e87b32d7c656b55171e80797eecaa9318bba99",
+              "parent_mime_type": "image/jpeg",
+              "derived_mime_type": "image/png",
+              "parent_size": {
+                "width": 480,
+                "height": 270
+              },
+              "derived_size": {
+                "width": 1056,
+                "height": 576
+              },
+              "parameters": {
+                "operation": "official_spatial_resize_and_rgb",
+                "resize_performed": true,
+                "rgb_conversion_performed": false,
+                "max_soft_tokens": 280,
+                "patch_size": 16,
+                "pooling_kernel_size": 3,
+                "expected_visual_tokens_from_grid": 264,
+                "interpolation": "Pillow.Resampling.BICUBIC",
+                "pillow_version": "10.4.0",
+                "output_encoding": "lossless_png",
+                "runtime_pixel_normalization": true,
+                "crop": null
+              },
+              "official_sources": [
+                "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+                "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+                "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+              ]
+            },
+            "derived_size": {
+              "width": 1056,
+              "height": 576
+            }
+          },
+          "visible_original": "这是一张展示一个动漫风格手办（或模型）的图片。以下是对画面中人物、物品和动作的详细描述：\n\n**1. 人物（主体）：**\n画面中的核心是一个具有鲜明日系动漫风格的人物形象，很可能是一个三维手办。这位角色拥有蓬松、亮蓝色长发，面部线条可爱，拥有大而圆的蓝眼睛，表情看起来平静而呆萌。她穿着主题服装，全身散发出一种梦幻的海底公主或美人鱼的氛围。\n\n**2. 物品：**\n*   **服饰（核心物件）：** 该手办穿着一套精心设计的连体式或多件组合的服装。这套服装的主题是“海洋”或“水下”。上身采用了深浅不一的蓝色，带有类似褶皱和装饰性的设计；裙子则以白色为主，装饰着复杂的蕾丝、贝壳造型和花纹。整体配色以蓝色与白色的对比为主，视觉效果非常精致。\n*   **配饰：** 角色的头部戴着一个设计独特的蓝色头饰，上面有皇冠状和流线型的结构，进一步强化了其奇幻的海洋主题。\n*   **背景：** 背景是一片纯粹、平整的灰色布或墙壁，没有任何干扰，目的是将观众的注意力完全聚焦在中央的小玩偶身上。\n\n**3. 动作：**\n*   该手办处于静止状态。它双脚站立地面，身体面向前方，保持标准的展示姿势。并没有任何动态感或动作捕捉，整个画面是一种静态的产品展示照。\n\n**总结：**\n画面描绘了一款高度细节化、充满活力的动漫女性手办。这款手办以淡蓝、白色为主色调，模仿海灵或美人鱼的华丽装扮。在极简的灰色纯净背景衬托下，主角的立体形态和精美的 服饰设计成为了唯一的焦点。",
+          "delivery": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "usage": {
+              "completion_tokens": 1023,
+              "prompt_tokens": 349,
+              "total_tokens": 1372,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "complete_ms": 79558.80535498727,
+            "content_ttft_ms": 47502.0848189597
+          }
+        }
+      },
+      "Q8_review": {
+        "grounded": [
+          "蓝色长发、蓝色大眼、蓝白服装、灰色背景、正面站姿、Q版玩偶风格的解释有视觉依据",
+          "蓝色裙身与海洋元素的粗联想比原native仅奶油白主导略具体"
+        ],
+        "clear_pixel_contradictions": [
+          "手自然垂放在身体两侧与实际双臂向两侧抬起不合；这是静态可见姿态，不要求推断连续动作"
+        ],
+        "inaccurate_or_unverified": [
+          "上半白色为主仍忽略深蓝上衣和白围裙的结构；服装配色/部位划分未稳定",
+          "胸前锚/船只图形没有可靠依据，实际围裙中央蓝鱼/鲸轮廓更直接",
+          "产品展示/宣传用途、物理人偶身份、实时摆拍目的不能从图确认；类似黏土人是可接受的风格比喻"
+        ]
+      },
+      "Q4_review": {
+        "grounded": [
+          "蓝色长发、大蓝眼、蓝白服装与灰色背景均有据；Q版模型式外观和站姿解释合理"
+        ],
+        "clear_pixel_contradictions": [],
+        "inaccurate_or_unverified": [
+          "源图同时存在白褶边头饰和深蓝色装饰；原答只突出蓝色皇冠状结构，皇冠具体形态未可靠确认，也未准确表现白褶头饰。不能由白色主体反过来断言蓝色配饰不存在。",
+          "白色为主裙子把白围裙和深蓝裙身混合，配色部位不稳",
+          "贝壳造型等具体装饰未可靠确认",
+          "海底公主/美人鱼氛围是允许的主观风格联想；物理手办或宣传用途不作已证实来源"
+        ]
+      },
+      "paired_and_budget_assessment": {
+        "useful_shared_information": "280档两版均可识别蓝发蓝眼、蓝白人物及灰底，Q版模型的体态解释也有用。",
+        "specific_details": "原native衣色与部位混淆仍未完全解决。Q8抬臂姿态说错、猜锚船图案；Q4皇冠和贝壳等具体装饰未核。更高预算尚未让此图的服装/动作/小图案事实全面可靠。",
+        "changed_from_native": "Q4不再出现先长发又半齐短发的语言混杂，Q8/Q4都增加Q版模型感，但这些是单次同图结果，保原native缺点不抹除。",
+        "precision_scope": "Q4与Q8出现不同细节错误；本对不支持简单说量化造成全部退化，亦不能把两次stop当通用质量通过。",
+        "timing": "Q8实测928out/72.194636秒；Q4实测1023out/79.558805秒。与native的输出量不同，完整时长不能全归视觉编码效率。",
+        "four_case_summary": "本图E2B两版对深蓝衣物与白边的描述较贴近；E2BQ8水手服类别过窄、E2BQ4半身构图说法不准。四答均有可用粗外观，未稳定覆盖小图案或侧抬臂。未以这些细节的缺省设必答词门槛，也不作跨模型整体排名。"
+      },
+      "model_requests": 0,
+      "platform_writes": 0,
+      "no_OC_keyword_or_length_gates": true
+    }
+  },
+  "review-e4b-object10-paired.json": {
+    "source_sha256": "16221d9211873e1536665c3f4a9f474012b0a200af215fa82d4cd4d66deac25a",
+    "review": {
+      "kind": "paired_object_frame_Q8_Q4_manual_review",
+      "image_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+      "same_actual_sampling_verified": true,
+      "Q4_review": "review-e4b-q4-object10.json",
+      "Q8_source": {
+        "path": "tmp\\game-model-resume-20261102\\e4b-Q8-object10-r2.json",
+        "sha256": "f534e9672bf39ab07de90005b53deedd71985e31c89a5427d527cd43effc6ba1"
+      },
+      "Q8_original": "这是一张高质量的动漫风格插画，描绘了一个具有奇幻或复古哥特美学的人物形象。\n\n以下是针对您要求的详细描述：\n\n### 🎨 具体内容概括\n\n**核心场景：** 一位拥有鲜亮蓝发、穿着华丽且复杂的洛丽塔（Lolita）或维多利亚风格服饰的年轻女性角色。\n**背景设置：** 纯净、简洁的浅灰色或白色背景，没有环境元素干扰，使焦点完全集中在人物身上。\n**整体氛围：** 优雅、精致、梦幻且略带神秘的洛丽塔风（Gothic/Sweet Lolita aesthetic）。\n\n***\n\n### 👗 人物、物品与动作细则\n\n#### 🧍 **人物描述（The Character）：**\n\n*   **面貌特征：** 该人物是一位年轻的女性，拥有标准的日系动画面部设计，眼神温柔而专注，直接面向观察者。\n*   **发型/颜色：** 她的头发呈现明亮的蓝色，长度及腰，有着蓬松的刘海覆盖在额头上方，发量丰富，富有动态感。\n*   **姿态：** 她呈站立姿态，身体直立且居于画面中央，双肩自然下垂，姿态端庄、平静，展现出一种沉静而高雅的气质。\n\n#### 🎀 **物品描述（The Objects/Attire）：**\n\n*   **服装主体：** 人物身着一套极其复杂且层次丰富的连衣裙。这件衣服融合了白色和深色系的搭配，具备明显的高级定制或幻想主题的特点。\n*   **材质与细节：** 服装由蕾丝、褶皱（ruffles）、荷叶边和精致的装饰材料构成。裙摆部分有明显的堆叠和结构感，采用了经典的甜美哥特（Sweet Goth）配色——以米白、奶油白为主色，辅以深色（可能是藏青色或黑色）作为点缀。\n*   **装饰元素：** 在胸口处可见类似勋章或徽记的长条装饰，增强了角色的故事感和身份感。衣服上的金属或绣花装饰也增加了视觉上的高级感和复古美感。\n\n#### 🚶‍♀️ **动作描述（The Actions）：**\n\n*   **核心动作：** 人物处于静止状态，即“站立”和“摆姿势”（posing）。她没有任何夸张或剧烈的动作，而是通过其仪态和服饰的呈现来传达一种静谧的优雅和自信。\n\n### ✨ 总结所见\n\n该画面是一个典型的角色展示图，重点在于完美地展示人物的造型和精心设计的服装。它成功地营造了一种浪漫、精致且带有强烈唯美主义色彩的幻想艺术风格。",
+      "Q8_delivery": {
+        "status": "completed",
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 1350,
+          "prompt_tokens": 169,
+          "total_tokens": 1519,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "complete_ms": 102667.90222196141,
+        "content_ttft_ms": 56978.164962958544
+      },
+      "Q8_review": {
+        "grounded": [
+          "蓝色及腰长发、灰白背景、站立居中且面向画面",
+          "白色与深色搭配、褶边层叠裙摆等可见；提到藏青或黑色比Q4只写浅蓝更贴近实际服装"
+        ],
+        "inaccurate_or_unverified": [
+          "仍把米白/奶油白说成主色、深色只是点缀；实际深蓝紫裙/上衣面积显著，主色概括不准确",
+          "胸口勋章或徽记、金属或绣花材质和高级定制不能可靠核实",
+          "没有具体描述侧抬手臂、明显Q版体态及白围裙鱼/鲸图案，属于实际线索不足，不作关键词缺项门槛"
+        ],
+        "subjective_style": "哥特/洛丽塔/维多利亚、浪漫梦幻等是主观风格解释；不要求指定类别或扣审美表达。"
+      },
+      "paired_conclusion": {
+        "useful_shared_information": "均提供蓝发动漫人物、灰白背景和裙装的粗粒度真实线索，可用于轻互动。",
+        "shared_weakness": "服装主色均偏向白色，具体姿态/围裙图案遗漏，且多次用泛审美解释代替具体信息。",
+        "differences": "Q8提及深藏青/黑色较接近，Q4发型叙述长短不连贯；Q8新增胸口勋章/金属等未核细节。两者都存在内容弱项。",
+        "quantization_claim": "此成对单图没有依据把服装/细节错误全归Q4，也不据两次正常交付宣布Q4通用视觉质量通过；其低清文本题也已有原答对照。"
+      },
+      "no_OC_keyword_or_length_gates": true,
+      "new_model_requests": 0,
+      "platform_writes": 0
+    }
+  },
+  "review-e4b-q4-family176.json": {
+    "source_sha256": "a8eece35c265f17168da2261ef7d1a417df89542fd6708214607ccdd12e99521",
+    "review": {
+      "kind": "independent_resumed_visual_review",
+      "case": "family176_Q4_v2_GPU_no_MTP",
+      "source_file": "tmp\\game-model-resume-20261102\\e4b-Q4-v2-gpu-caption.json",
+      "source_sha256": "cbfbc43708c80a6c936fc4e2d00b8348a5d9dbe0e37231daebb235aef124e3b3",
+      "condition": "e4b-Q4-v2-gpu-caption",
+      "input": {
+        "parent_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+        "derived_sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+        "bytes": 117040,
+        "width": 1056,
+        "height": 576,
+        "cid": "43120657507",
+        "actual_time": 176.0,
+        "frame_id": "43120657507:storyboard:21:71bc59780da756ea"
+      },
+      "actual_sampling": {
+        "model": "ops-gemma4_e4b",
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.08,
+        "seed": 42,
+        "repeat_last_n": 4096
+      },
+      "visible_original": "这是一个手机应用程序（很可能是社交媒体或论坛）的屏幕截图，展示了用户之间关于某个流行文化主题（看起来像动画、游戏或漫画剧情）的热烈讨论对话。\n\n以下是对画面中人物、物品和动作的具体描述及所见内容的概括：\n\n### 一、 人物（Characters / Users）\n1. **App内的用户 (Participants)：** 在这个对话截图中，主要的人物是进行交流的用户群体。他们通过文字回复、表情符号和图片分享来进行互动。\n2. **图中的虚拟角色 (Illustrated Characters)：** 对话中穿插了几张小插画，特别是中间那张主要的动漫风格或手绘风格的插画，描绘了一对或多个白发/浅色服装的角色，这些极有可能是讨论对象本身的虚构角色。\n\n### 二、 物品（Objects）\n1. **移动端界面 (Mobile Interface)：** 整个画面是一个白底的垂直聊天界面，包含典型的消息气泡、时间戳和用户名等UI元素。\n2. **文本信息 (Text Content)：** 用户输入的各种中文评论、疑问句和感叹词。这些文本勾勒出了特定的对话主题，例如“真的不知道说什么”、“我期待的内容成为了……”等表达情绪的言语。\n3. **数字图像/图片附件 (Attached Images)：** 除了文字外，还包括多张不同风格的小头像和几张中心位置的插画。其中最显眼的一张具有细腻的手绘质感。\n4. **图标与修饰符号 (Icons and Symbols)：** 如下方的红心表情符号（❤️），以及右上角可能指示的章节编号（\"第(12)\"）。\n\n### 三、 动作（Actions）\n1. **交流与讨论 (Discussion)：** 这是最主要的动作。用户正在针对某项新的作品进展或剧情细节展开热烈的线上讨论。\n2. **分享与反馈 (Sharing and Feedback)：** 用户将自己喜爱的艺术创作（插画）和自己的观看感受一并发布到对话串中，作为他们交流的一部分。\n3. **期待与赞赏 (Anticipation and Appreciation)：** 从文本内容来看，用户的心情充满了兴奋和满足感，在等待和看到预想中的情节得到实现时表现出积极的情绪反应。\n\n***\n\n### 内容总结（Summary）\n\n这段画面是一次**围绕特定影视作品或系列更新展开的高质量网络讨论**。内容涵盖了用户的实时反馈、对剧情走向的猜测、以及对角色形象（通过插画体现）的高度喜爱。它不仅是一个简单的聊天记录，更反映了一种粉丝社群通过数字平台进行情感共鸣和二次传播的社交行为。整体氛围是**热烈且专注的应援或讨论状态**。",
+      "delivery": {
+        "status": "completed",
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 1233,
+          "prompt_tokens": 350,
+          "total_tokens": 1583,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "complete_ms": 95366.80218897527,
+        "content_ttft_ms": 50789.89798598923
+      },
+      "review": {
+        "grounded": [
+          "白底竖屏手机聊天界面、消息气泡、头像、小图/贴图以及下方红心确有像素依据",
+          "中文消息文字和分段、输入区可见"
+        ],
+        "unverified_details": [
+          "流行文化/动画游戏漫画剧情、作品更新、粉丝应援和高质量讨论等主题与评价无法由此图可靠核实",
+          "所引“真的不知道说什么”“我期待的内容成为了……”未能从当前像素可靠读出",
+          "一对或多个白发角色、细腻手绘质感及章节编号第12均未可靠确认；界面右上文字也不足以证明章节编号",
+          "单帧不能确定用户实时发布、正在兴奋期待或观看剧情实现"
+        ],
+        "clear_pixel_contradictions": [],
+        "useful_for_next_task": "可作为手机聊天和卡通贴图的布局线索；具体剧情、角色人数关系、原话和社群情绪未核实。",
+        "comparison_with_Q8_A": "两者都保住聊天/贴图大类。旧Q8有绿色消息误作发送按钮和未核情侣接吻，新Q4没有该按钮断言，但增加了更多具体剧情/应援主题和引文。此图没有可采纳的具体内容理解收益，完整输出或自信语气不构成视觉通过。",
+        "scope": "仅此张固定图的一次Q4答；不把差异独自归因量化，不覆盖未测小目标、游戏或通用视觉能力。",
+        "OCR_verified": false
+      },
+      "model_requests": 0,
+      "platform_writes": 0,
+      "no_OC_keyword_or_length_gates": true
+    }
+  },
+  "review-e4b-q4-object10.json": {
+    "source_sha256": "eac32dd1e297ad21e69e9ec04a53e8a92e480a4dc1cad636c4c099ead5228f90",
+    "review": {
+      "case": "blue_chibi10_Q4_v2_GPU_no_MTP",
+      "source_file": "tmp\\game-model-resume-20261102\\e4b-Q4-v2-object10-r2.json",
+      "source_sha256": "7a7502af70b606a5c87513a98d8fa4fad79947067c213db88fb679b81d8c9c61",
+      "condition": "e4b-Q4-v2-object10-r2",
+      "input": {
+        "bvid": "BV14oa961ELQ",
+        "cid": "42322100507",
+        "time": 10,
+        "image_sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+        "width": 480,
+        "height": 270,
+        "image_order": "image_first",
+        "image_preprocessing": "server_native",
+        "selected_before_Q4_outputs": true
+      },
+      "actual_sampling": {
+        "model": "ops-gemma4_e4b",
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.08,
+        "seed": 42,
+        "repeat_last_n": 4096
+      },
+      "visible_original": "这是一张以动漫（Anime）风格创作的数字插画，主要描绘了一个身穿华丽礼服的女性角色。以下是对画面中人物、物品和动作的具体描述及内容概括：\n\n### 🖼️ **人物、物品和动作描述**\n\n#### **👤 人物特征**\n1.  **造型与发型：** 画中有一位拥有标志性亮蓝色长发的年轻女子。她的发型是半齐短发搭配蓬松的刘海，色彩饱和度高，符合典型的二次元（动漫）美学风格。\n2.  **神态：** 该角色的表情显得柔和而活泼，眼神灵动，传达出一种可爱且纯真的气质。\n3.  **整体形象：** 她是一个高度风格化、具有幻想气息的人物。\n\n#### **👗 物品与服饰 (关键视觉焦点)**\n1.  **主色调：** 服装以白色和浅蓝色为主，配以精致的细节装饰。\n2.  **服装款式：** 她穿着一件极其繁复且华丽的连衣裙或礼服。这件衣服的设计带有明显的古典和“洋娃娃”式的风格。\n    *   **设计特点：** 衣领处有大量褶皱和蕾丝装饰，身体部分结构复杂，暗示着精细的手工缝制感。\n    *   **下装：** 下半部似乎是一层层叠起的裙摆或带有蓬松效果的裙子，进一步强调了其正式和梦幻的质感。\n\n#### **🏃 动作与姿态**\n1.  **姿势：** 人物正处于一个静止且端庄的站立姿势，面对观众。\n2.  **动态感受：** 虽然是一个静态肖像，但她鲜艳的蓝色头发和夸张的服装使得她在灰白背景中产生了很强的视觉冲击力和轻盈的动态感。\n\n---\n\n### 📝 **内容概括总结**\n\n这张画面呈现的是一张高质量的**日系动漫角色原创插画**。作品的核心内容围绕着这位身着**华丽蓝白宫廷风（或精灵风格）连衣裙**的**蓝色发色少女**。通过鲜明的色彩对比（背景素净的灰色衬托了人物饱和的蓝色），以及人物精心设计的服饰细节，图像营造出一种**甜美、梦幻且富有艺术感染力**的奇幻氛围。简单来说，这是一个对可爱的、幻想风格角色的成功视觉呈现。",
+      "delivery": {
+        "status": "completed",
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 1363,
+          "prompt_tokens": 169,
+          "total_tokens": 1532,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "complete_ms": 103500.16196398064,
+        "content_ttft_ms": 62743.77205898054
+      },
+      "review": {
+        "grounded": [
+          "动漫风格蓝色长发人物、灰白背景、面向画面的站姿",
+          "服装有白色褶边/蕾丝和层叠裙摆，可爱风格的解释与画面相容"
+        ],
+        "clear_pixel_contradictions": [
+          "衣服主色被说成白色和浅蓝；原图主体裙/上衣为深蓝紫与白围裙，浅蓝主要出现在头发，主服装颜色判断不准确"
+        ],
+        "unverified_details": [
+          "精细手工缝制与原创性属于不能由此图核实的工艺/来源断言。"
+        ],
+        "missed_useful_details": [
+          "人物是明显Q版体态，可更具体说白围裙的蓝色鱼/鲸图案、两侧抬臂姿态与深色鞋",
+          "没有提到这些细节属于信息不足，不是词表缺项判错"
+        ],
+        "utility": "蓝发人物、灰白背景、可爱服饰可支撑粗粒度轻互动；服装主色和类别不够准确，不宜据此形成精细服饰事实。",
+        "comparison_with_Q8": "待同源Q8原答完成；目前只评价与像素相符程度，不把错误直接归因Q4。",
+        "language_consistency": [
+          "先说长发、又称半齐短发，发型叙述不连贯；长发本身已被识别。"
+        ],
+        "subjective_style_reading": "华丽、宫廷/精灵风、甜美梦幻、高质量等是主观风格与审美反应，可接受且不当事实错误；不要求使用女仆这一固定类别。具体服装颜色另按像素核对。"
+      },
+      "no_OC_keyword_or_length_gates": true,
+      "model_requests": 0,
+      "platform_writes": 0
+    }
+  },
+  "review-reference.json": {
+    "source_sha256": "cf32386928f1726c5724e00d4150470c586f616d27167c7d19a5cec26203152c",
+    "review": {
+      "scope": "本轮新增输出前冻结的像素参照；参照事实不是必答词表",
+      "references": [
+        {
+          "id": "family176_condition_A_full",
+          "archive_path": "evaluations\\results\\operations-vlm-20261102-performance\\fixtures\\family176-condition-A-full280.png",
+          "sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+          "size_px": [
+            1056,
+            576
+          ],
+          "source": {
+            "bvid": "BV1XMxj6wEcD",
+            "cid": "43120657507",
+            "actual_time_seconds": 176.0
+          },
+          "actually_viewed": true,
+          "grounded": [
+            "浅色竖屏手机聊天界面位于左右黑边中间",
+            "左侧浅色消息、右侧绿色消息气泡，配头像",
+            "中上部大蓝眼Q版脸小图；下部右侧人物表情图上有红心",
+            "底部为输入区域；单张静态帧"
+          ],
+          "unconfirmed": [
+            "具体聊天正文、人员身份关系、应用品牌",
+            "两人亲吻或拥抱、图是否在动、实时发送行为",
+            "中上部图像发色细节不稳定，不作为确认事实"
+          ],
+          "clear_layout_note": "绿色框位于消息列表、配头像；不是底部绿色发送按钮。"
+        },
+        {
+          "id": "blue_chibi10_future",
+          "archive_path": "evaluations\\results\\operations-vlm-20261102-performance\\fixtures\\blue-chibi10-original.jpg",
+          "sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+          "size_px": [
+            480,
+            270
+          ],
+          "source": {
+            "bvid": "BV14oa961ELQ",
+            "cid": "42322100507",
+            "actual_time_seconds": 10.0
+          },
+          "actually_viewed": true,
+          "grounded": [
+            "灰白背景中全身Q版人物",
+            "长蓝发、浅蓝发梢、大蓝眼，白色褶边头饰",
+            "深蓝紫女仆风裙、白围裙，围裙蓝色鱼/鲸图案",
+            "手臂向身体两侧抬起，白色袜部、深色鞋"
+          ],
+          "unconfirmed": [
+            "确切人物姓名年龄、音频或剧情",
+            "单帧不能确定跳舞唱歌等连续动作",
+            "精细指部动作及水印文字"
+          ]
+        }
+      ],
+      "new_model_output_reviewed": false,
+      "model_requests": 0,
+      "no_OC_keyword_or_length_gates": true
+    }
+  }
+}

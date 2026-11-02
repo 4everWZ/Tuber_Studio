@@ -52,7 +52,23 @@ class RetentionManager:
         }
 
     def preserved(self):
-        names = ["dm_inbox", "dm_drafts", "dm_attempts", "relation_events"]
+        names = [
+            "dm_inbox",
+            "dm_drafts",
+            "dm_attempts",
+            "relation_events",
+            "account_relations",
+            "account_relation_events",
+            "account_writes",
+            "operation_write_bindings",
+            "operation_write_retries",
+            "operation_revision_tickets",
+            "operation_write_resolutions",
+            "operation_channel_blocks",
+            "browsing_intents",
+            "browsing_events",
+            "browsing_cursors",
+        ]
         return PRESERVED + [
             name
             for name in names

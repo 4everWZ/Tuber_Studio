@@ -1,0 +1,455 @@
+{
+  "mode": "execute",
+  "provider_configuration": {
+    "enabled": true,
+    "base_url": "http://127.0.0.1:18096/v1",
+    "model": "ops-mini4_7_4x",
+    "model_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+    "projector_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+    "runtime_revision": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "runtime_profile": "mini4_7_4x:4889f45f5bcf45caaa6d63a2985f74d0",
+    "context_tokens": 131072,
+    "native_context_tokens": 262144,
+    "max_frames": 3,
+    "max_pixels": 129600,
+    "max_bytes": 23792,
+    "max_output_tokens": 4096,
+    "enable_thinking": true,
+    "sampling": {
+      "temperature": 0.2,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.0,
+      "seed": 42,
+      "reasoning_budget_tokens": null
+    },
+    "timeout_seconds": 300.0
+  },
+  "public_provider_identity": {
+    "base_url": "http://127.0.0.1:18096/v1",
+    "model": "ops-mini4_7_4x",
+    "model_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+    "projector_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+    "runtime_revision": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "runtime_profile": "mini4_7_4x:4889f45f5bcf45caaa6d63a2985f74d0",
+    "context_tokens": 131072,
+    "native_context_tokens": 262144,
+    "max_frames": 3,
+    "max_pixels": 129600,
+    "max_bytes": 23792,
+    "max_output_tokens": 4096,
+    "enable_thinking": true,
+    "sampling": {
+      "temperature": 0.2,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.0,
+      "seed": 42,
+      "reasoning_budget_tokens": null
+    }
+  },
+  "inputs": {
+    "registry": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\evaluations\\candidates\\vlm-operations.json",
+      "sha256": "98c0965613ccd0bb7e6d336b49fb679359a0e443e97edc9bc70f48e7ef1adc86"
+    },
+    "owner": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-ready-proof\\owner.json",
+      "sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7"
+    },
+    "metrics": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-ready-proof\\metrics.json",
+      "sha256": "bcbbebd8724e63ca4de536214dee237963ecc0c7715717623c09da1082031118"
+    },
+    "manifest": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\storyboard-report.json",
+      "sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+    },
+    "metadata_report": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e4b-v4-bilibili-sequential-run.json",
+      "sha256": "eaa06ae72d8664ba5a65abbb72db0f4d402bb3b8ec1569eedcdf4b5368c3672c"
+    },
+    "sampling_json": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-provider-sampling.json",
+      "sha256": "9ff32b983c5aa558129505bd296910e15e66d52e4a894a922d754211d2c562c9"
+    },
+    "resource_proof": {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-video-resource-proof.json",
+      "sha256": "0783f0336128e258252721d336a46da43530f29ab7e90578c8a5fedfc73e5429"
+    }
+  },
+  "run_id": "4889f45f5bcf45caaa6d63a2985f74d0",
+  "resource_state": "ready",
+  "resource_memory": {
+    "declared_min_available_mib": 512,
+    "minimum_observed_available_bytes": 3598061568,
+    "within_declared_guard": true,
+    "run_parameters": {
+      "profile": "mini4_7_4x",
+      "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations-with-mini4x.json",
+      "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+      "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+      "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/mini4_7-4x-plain-visual-v4",
+      "alias": "ops-mini4_7_4x",
+      "listen_host": "0.0.0.0",
+      "port": 9030,
+      "context_tokens": 131072,
+      "allow_native_extension": false,
+      "kv": "q4_0",
+      "kv_k": null,
+      "kv_v": null,
+      "batch": 256,
+      "ubatch": 64,
+      "gpu_layers": 99,
+      "kv_offload": "gpu",
+      "threads": 4,
+      "mmproj_offload": "gpu",
+      "mmap": "off",
+      "lazy_mode": null,
+      "direct_io": "on",
+      "model_cache_advice": "on",
+      "log_verbosity": 4,
+      "reasoning": "on",
+      "reasoning_budget": null,
+      "rope_scaling": null,
+      "rope_scale": null,
+      "rope_freq_scale": null,
+      "yarn_orig_ctx": null,
+      "flash_attn": "on",
+      "cuda_graphs": "on",
+      "warmup": "on",
+      "image_max_tokens": null,
+      "startup_timeout": 300,
+      "min_available_mib": 512,
+      "max_swap_growth_mib": 128
+    },
+    "owner_runner_command": [
+      "/opt/studio-venv/bin/python",
+      "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm_experiment.py",
+      "serve",
+      "--profile",
+      "mini4_7_4x",
+      "--registry",
+      "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations-with-mini4x.json",
+      "--model-root",
+      "/workspace/tuber/runtime/models/operations-vlm",
+      "--llama-binary",
+      "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+      "--run-dir",
+      "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/mini4_7-4x-plain-visual-v4",
+      "--alias",
+      "ops-mini4_7_4x",
+      "--listen-host",
+      "0.0.0.0",
+      "--port",
+      "9030",
+      "--context-tokens",
+      "131072",
+      "--kv",
+      "q4_0",
+      "--ubatch",
+      "64",
+      "--gpu-layers",
+      "99",
+      "--mmproj-offload",
+      "gpu",
+      "--mmap",
+      "off",
+      "--direct-io",
+      "on",
+      "--model-cache-advice",
+      "on",
+      "--log-verbosity",
+      "4",
+      "--reasoning",
+      "on",
+      "--min-available-mib",
+      "512"
+    ]
+  },
+  "metadata_pointer": "/cases/0/tool_receipts/0/result/metadata",
+  "frames": [
+    {
+      "id": "837470340:storyboard:2:b33cbf88946f918c",
+      "cid": "837470340",
+      "actual_time": 10.0,
+      "image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "width": 480,
+      "height": 270
+    },
+    {
+      "id": "837470340:storyboard:4:631304db8b63ea77",
+      "cid": "837470340",
+      "actual_time": 20.0,
+      "image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "width": 480,
+      "height": 270
+    },
+    {
+      "id": "837470340:storyboard:7:b34f24470efc2922",
+      "cid": "837470340",
+      "actual_time": 35.0,
+      "image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "width": 480,
+      "height": 270
+    }
+  ],
+  "input_image_preprocessing": "server_native_original_bytes",
+  "requests": [
+    {
+      "request_sha256": "2d0c74704285d39115fd2f682f6c7f70512ea8ef245163c092d6cf11491599b3",
+      "http_status": 200,
+      "max_tokens": 1,
+      "request_thinking": {
+        "enable_thinking": true
+      },
+      "temperature": null,
+      "request_seed": 42,
+      "request_sampling": {
+        "top_p": 0.95,
+        "top_k": 40,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+        "seed": 42
+      },
+      "tools_present": false,
+      "response_format": null,
+      "finish_reason": "length",
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 1532,
+        "total_tokens": 1533,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "visible_content": "",
+      "reasoning_characters_not_retained": 2
+    },
+    {
+      "request_sha256": "575aede4d1e9aba6de7a9822782f4c9feb9254d2633626690b60e8f33016abd3",
+      "http_status": 200,
+      "max_tokens": 4096,
+      "request_thinking": {
+        "enable_thinking": true
+      },
+      "temperature": 0.2,
+      "request_seed": 42,
+      "request_sampling": {
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 40,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+        "seed": 42
+      },
+      "tools_present": false,
+      "response_format": {
+        "type": "json_object"
+      },
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 1059,
+        "prompt_tokens": 1532,
+        "total_tokens": 2591,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "visible_content": "{\n  \"sufficient\": true,\n  \"observations\": \"A young girl with pigtails in a yellow shirt is at a white table, engaging in a color mixing experiment. She handles bottles, a yellow container, and a red object. An adult's hand holds a test tube with blue liquid, while another holds a yellow liquid. She then holds a test tube with a rainbow-colored, layered liquid (red, orange, yellow, green, blue). The result shows distinct color separation. Text overlays describe the action and observation.\",\n  \"evidence_ids\": [\n    \"837470340:storyboard:2:b33cbf88946f918\",\n    \"837470340:storyboard:4:631304db8b63ea77\",\n    \"837470340:storyboard:7:b34f24470efc2922\"\n  ],\n  \"frame_observations\": [\n    {\n      \"837470340:storyboard:2:b33cbf88946f918\": \"A young girl with pigtails in a yellow shirt sits at a white table, handling bottles and containers for a color mixing experiment. She is focused on the materials on the table.\",\n    \", {\\\"cid\\\": \\\"837470340\\\", \\\"actual_time\\\": 10.0, \\\"width\\\": 480, \\\"height\\\": 270}, \\\"837470340:storyboard:2:b33cbf88946f918\\\": \\\"The girl is at the table with bottles, a yellow container, and a red object, preparing for the experiment.\\\" } ], { \":\", \" }, {\n    \"837470340:storyboard:4:631304db8b63ea77\": \"The girl is now using a test tube or tool to mix liquids. A hand holds a test tube with blue liquid, and there's a yellow liquid container. She appears to be adding or mixing substances.\",\n    \", {\\\"cid\\\": \\\"837470340\\\", \\\"actual_time\\\": 20.0, \\\"width\\\": 480, \\\"height\\\": 270}, \\\"837470340:storyboard:4:631304db8b63ea77\\\": \\\"The girl is at the table with a yellow liquid container and a test tube. An adult's hand holds a test tube with blue liquid, guiding the experiment.\":\"\",\n    \", {\\\"cid\\\": \\\"837470340\\\", \\\"actual_time\\\": 35.0, \\\"width\\\": 480, \\\"height\\\": 270}, \\\"837470340:storyboard:4:631304db8b63ea77\\\": \\\"The girl holds a test tube with a rainbow-colored, layered liquid (red, orange, yellow, green, blue). The result shows distinct color separation. Text overlay: \\\"color mixing.\\\".\":\"\",\n  \", { \":\", \" }, {\n    \"837470340:storyboard:7:b34f24470efc2922\": \"The girl holds up the test tube with the colorful, layered liquid. The result shows vibrant, separated colors (red, orange, yellow, green, blue). Text overlay: \\\"color separation.\\\".\"\n  }]\n}",
+      "reasoning_characters_not_retained": 431
+    }
+  ],
+  "stages": [],
+  "input_order": "existing_provider_text_first",
+  "sampling_source": "explicit_sampling_json",
+  "response_mode": "existing_APIProvider_json_object",
+  "served_default_sampling": {
+    "seed": 4294967295,
+    "temperature": 0.800000011920929,
+    "dynatemp_range": 0.0,
+    "dynatemp_exponent": 1.0,
+    "top_k": 40,
+    "top_p": 0.949999988079071,
+    "min_p": 0.05000000074505806,
+    "top_n_sigma": -1.0,
+    "xtc_probability": 0.0,
+    "xtc_threshold": 0.10000000149011612,
+    "typical_p": 1.0,
+    "repeat_last_n": 64,
+    "repeat_penalty": 1.0,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+    "dry_multiplier": 0.0,
+    "dry_base": 1.75,
+    "dry_allowed_length": 2,
+    "dry_penalty_last_n": 64,
+    "mirostat": 0,
+    "mirostat_tau": 5.0,
+    "mirostat_eta": 0.10000000149011612,
+    "adaptive_target": -1.0,
+    "adaptive_decay": 0.8999999761581421,
+    "max_tokens": -1,
+    "n_predict": -1,
+    "n_keep": 0,
+    "n_discard": 0,
+    "ignore_eos": false,
+    "stream": false,
+    "n_probs": 0,
+    "min_keep": 0,
+    "chat_format": "Content-only",
+    "reasoning_format": "none",
+    "reasoning_in_content": false,
+    "generation_prompt": "",
+    "samplers": [
+      "penalties",
+      "dry",
+      "top_n_sigma",
+      "top_k",
+      "typ_p",
+      "top_p",
+      "min_p",
+      "xtc",
+      "temperature"
+    ],
+    "speculative.types": "none",
+    "timings_per_token": false,
+    "post_sampling_probs": false,
+    "backend_sampling": false,
+    "lora": []
+  },
+  "runtime_directory": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-provider-isolated-runtime",
+  "helper_sha256": "abf6c25d3a6de45762beb6ae8cf7ef0e09753154c0e8e83d7827c53d20681f43",
+  "software_sha256": {
+    "video_vision.py": "f34684c4ce276ce826bef33a4468c8888f209dc0c84a7c79b8c925e86f92b879",
+    "api_providers.py": "d6f195f48eaab23f1c30c0e8e64267de6df1f537177aa08e0bb880389d0477d3",
+    "llama_sampling.py": "c50ca3c71e5580486c86b89550f71574810a4af34cb6824aeffed50b33eaff05"
+  },
+  "platform_messages_sent": 0,
+  "production_configuration_written": false,
+  "semantic_review": "pending",
+  "question": "逐帧描述画面中的人物、物品和动作，并概括这些抽样画面。",
+  "round_deadline_seconds": 1800,
+  "resource_proof": {
+    "passed": true,
+    "configuration": {
+      "base_url": "http://127.0.0.1:18096/v1",
+      "model": "ops-mini4_7_4x",
+      "model_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:661dbcb39adff689c967460cda453e06f66554d87c7684673b937034ec6e9051",
+      "projector_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d:1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+      "runtime_revision": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+      "runtime_profile": "mini4_7_4x:4889f45f5bcf45caaa6d63a2985f74d0",
+      "context_tokens": 131072,
+      "native_context_tokens": 262144,
+      "max_frames": 3,
+      "max_pixels": 129600,
+      "max_bytes": 23792,
+      "max_output_tokens": 4096,
+      "enable_thinking": true,
+      "sampling": {
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 40,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+        "seed": 42,
+        "reasoning_budget_tokens": null
+      }
+    },
+    "context_tokens": 131072,
+    "max_frames": 3,
+    "max_pixels": 129600,
+    "max_bytes": 23792,
+    "measurement": {
+      "run_id": "4889f45f5bcf45caaa6d63a2985f74d0",
+      "owner_sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7",
+      "metrics_sha256": "bcbbebd8724e63ca4de536214dee237963ecc0c7715717623c09da1082031118",
+      "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+      "owned_server_pid": 24376,
+      "method": "Real same-run sequential 119991-token text prefill plus 8192 output reserve, joint original three-frame encoding, natural single-frame generation; whole-run one-second system RAM telemetry",
+      "scope": "Resource compatibility for this declared model/context/image envelope; semantic observations and Genie coexistence are recorded independently",
+      "evidence": [
+        {
+          "path": "tmp\\operations-vlm\\resume2\\mini4_7-4x-v4-capacity.json",
+          "sha256": "4dc88c66b2496942f62fed0cfeae3ff62f601d819415c8f6694f392428b4852c"
+        },
+        {
+          "path": "tmp\\operations-vlm\\resume2\\mini4_7-4x-three-original-frames-resource.json",
+          "sha256": "f31ed4e858f8de2c86adf30289b1f8784d58de6b06563d97fd3100e0c203edce"
+        },
+        {
+          "path": "tmp\\operations-vlm\\resume2\\mini4_7-4x-v4-plain-frames.json",
+          "sha256": "a16c7e3080267591a3cc34c5133c7a6adbacbb2196d330deba6412f01b11d2da"
+        }
+      ]
+    }
+  },
+  "round_policy": {
+    "sources": [
+      "recommend"
+    ],
+    "keywords": [],
+    "watch_videos": [],
+    "autonomous_topics": false,
+    "discovery_enabled": false,
+    "top_level_enabled": false,
+    "reply_enabled": false,
+    "mentions_enabled": false,
+    "mention_reply_enabled": false,
+    "replies_enabled": false,
+    "visual_enabled": false,
+    "workers": 4,
+    "candidate_limit": 20,
+    "inspect_limit": 4,
+    "max_search_terms": 2,
+    "max_pages": 2,
+    "max_reads": 64,
+    "max_model_calls": 8,
+    "max_input_tokens": 1048576,
+    "max_output_tokens": 32768,
+    "decision_max_tokens": 4096,
+    "deadline_seconds": 1800,
+    "interval_seconds": 300,
+    "notification_interval_seconds": 60,
+    "read_retries": 1,
+    "max_takeovers": 1,
+    "max_per_hour": 5,
+    "max_per_day": 20,
+    "recipient_cooldown_seconds": 120,
+    "top_level_limit": 1,
+    "public_max_chars": 100,
+    "recent_sample_limit": 12,
+    "exclude_words": [],
+    "allowed_author_uids": [],
+    "excluded_author_uids": [],
+    "allowed_categories": [],
+    "min_duration_seconds": 0,
+    "max_duration_seconds": 3600,
+    "published_after": 0,
+    "published_before": 0,
+    "languages": [
+      "zh-CN",
+      "zh-Hans",
+      "zh"
+    ],
+    "report_enabled": true
+  },
+  "error": {
+    "kind": "ValueError",
+    "message": "视觉JSON缺少明确充分性"
+  },
+  "round_budget": {
+    "reads": 0,
+    "model_calls": 2,
+    "input_tokens": 3064,
+    "output_tokens": 1060,
+    "top_levels": 0
+  }
+}

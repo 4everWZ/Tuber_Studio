@@ -1,0 +1,571 @@
+{
+  "schema_version": 1,
+  "status": "candidate_checkpoint",
+  "model_profile": "qwen35_4b",
+  "protocol": "vlm-operations-v4-oc-paths",
+  "semantic_acceptance": null,
+  "automatic_admission": false,
+  "completed": {
+    "plain_oc_scenes": 4,
+    "plain_oc_turns": 6,
+    "real_task_core_cases": 7,
+    "separate_safety_diagnostics": 2,
+    "plain_visual_frames": 3,
+    "full_input_capacity_probe": true
+  },
+  "condition_mapping": {
+    "plain_oc": "GPU projector run PID22453, official sampling with 8192 total output and thinking budget1024; six original dialogue turns are preserved separately from the subsequent GPU image crash.",
+    "real_tasks_and_diagnostics": "CPU projector/lazy/384MiB run PID23598: one original shape case plus eight remaining original cases, same images/context/sampling.",
+    "plain_visual": "Same PID23598; three original 480x270 frames, image first, natural observation question, no OC/tools/JSON format.",
+    "capacity": "Same PID23598; real 119991 input and 8192 output reservation, with official sampling/thinking budget1024."
+  },
+  "practical_sampling": {
+    "temperature": 1,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0,
+    "presence_penalty": 1.5,
+    "repeat_penalty": 1,
+    "seed": 42,
+    "thinking": "on",
+    "reasoning_budget_tokens": 1024,
+    "max_output_tokens": 8192,
+    "tool_reasoning_history": "ephemeral",
+    "format_repair": false
+  },
+  "other_conditions": {
+    "low_entropy_4k": "One rice case exhausted4096 with no visible answer. This is the .2/penalty0 condition, not the practical vendor condition.",
+    "low_entropy_8k": "Started and deliberately cancelled to prioritize official sampling; partial slots snapshot is preserved, not a completed quality result.",
+    "official_uncapped_8k": "One rice case completed at306.0s with an OC answer; the next OC batch was intentionally cancelled before completion to prioritize thinking-budget control.",
+    "gpu_images": "Native SIGSEGV(-11) on the first image; subsequent transport-empty cases are missing measurements, not incorrect answers.",
+    "cpu_guard512": "Two separate original-image trials crossed the experiment512MiB guard; no visible answer. The guard is not a user capability requirement.",
+    "cpu_guard384": "Explicit authorized resource condition completed the unchanged original tasks, three plain observations and full-input probe."
+  },
+  "context": {
+    "training_native_tokens": 262144,
+    "served_tokens": 131072,
+    "experimental_extension": false,
+    "actual_input_tokens": 119991,
+    "reserved_output_tokens": 8192,
+    "full_input_confirmed": true,
+    "capacity_admitted": true,
+    "elapsed_ms": 797624.268900021,
+    "original_response": "珊瑚 -7319",
+    "raw_exact_recall_passed": false,
+    "recall_semantic_verified": true,
+    "recall_review": "The word珊瑚 and nonce7319 are correct in order; only a separator space was inserted before the hyphen. Original substring flag remains unchanged."
+  },
+  "observations": {
+    "oc": "Rice naming/slacking, companionship after game losses and undersea props/relationships produce rich usable character dialogue. Drawing two more to make four is a free plan change that preserves the initial two, not a memory failure.",
+    "facts": "Original two/three counting and nine-vs-two discrepancy were understood. Cup color correctly remained unspecified from the supplied CC. Packaging problems are recorded separately.",
+    "routing": "Private intent and original private-channel replies were understood. Unnecessary search attempts on private turns were blocked by the program; the private nonce was not repeated in the public answer.",
+    "web": "Five searches plus a Wikipedia fetch403 ended in another unexecuted encyclopedia XML call, without completing the requested checked normative quotation.",
+    "bilibili": "Actual bilibili_read supplied the color-layering title and noCC; the reply is consistent with that metadata.",
+    "joint_frames": "The agent reads Bili metadata and offers short yellow-shirt/experiment/test-tube/color-layer descriptions; independent perception is measured by the separate natural observations.",
+    "plain_visual": "20s correctly separates the foreground adult operating hand from the watching girl, and35s describes the colored layered tube display.10s leans toward painting/pigment play and includes滴/涂 OCR confusion; other subtitle transcription is approximate."
+  },
+  "resource_runs": {
+    "gpu_projector_sampler_comparisons_and_image_crash": {
+      "pid": 22453,
+      "experiment_id": "80e9cd426d47472fb1d984e519f40bd1",
+      "state": "failed",
+      "server_returncode": -11,
+      "termination_reason": "server_exited",
+      "parameters": {
+        "profile": "qwen35_4b",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/qwen35-oc-v4-u32-nographs",
+        "alias": "ops-qwen35_4b",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 32,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "gpu",
+        "mmap": "off",
+        "lazy_mode": null,
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "off",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 512,
+        "max_swap_growth_mib": 128
+      },
+      "actual_context_tokens": 131072,
+      "peak_server_tree_rss_bytes": 6205227008,
+      "minimum_available_bytes": 613588992,
+      "peak_swap_growth_bytes": 15204352,
+      "cleanup": {
+        "signalled_pids": [],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "second_interrupt_during_cleanup": false,
+      "reasoning_budget_native_log_observations": {
+        "budget1024_activations": 7,
+        "forced_thinking_end_sequences": 6,
+        "natural_thinking_ends": 0
+      }
+    },
+    "cpu_projector_guard512": {
+      "pid": 23210,
+      "experiment_id": "5ee7a75c278d46d1af60dbc717e8d494",
+      "state": "failed",
+      "server_returncode": 0,
+      "termination_reason": "minimum_available_memory_threshold",
+      "parameters": {
+        "profile": "qwen35_4b",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/qwen35-oc-v4-u32-nographs-cpuproj",
+        "alias": "ops-qwen35_4b",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 32,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "cpu",
+        "mmap": "off",
+        "lazy_mode": null,
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "off",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 512,
+        "max_swap_growth_mib": 128
+      },
+      "actual_context_tokens": 131072,
+      "peak_server_tree_rss_bytes": 6238117888,
+      "minimum_available_bytes": 515776512,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          23210
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "second_interrupt_during_cleanup": false,
+      "reasoning_budget_native_log_observations": {
+        "budget1024_activations": 2,
+        "forced_thinking_end_sequences": 0,
+        "natural_thinking_ends": 1
+      }
+    },
+    "cpu_projector_lazy_guard512": {
+      "pid": 23358,
+      "experiment_id": "a966574682364f8d9a0d1ccfe1868035",
+      "state": "failed",
+      "server_returncode": 0,
+      "termination_reason": "minimum_available_memory_threshold",
+      "parameters": {
+        "profile": "qwen35_4b",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/qwen35-oc-v4-u32-nographs-cpuproj-lazy",
+        "alias": "ops-qwen35_4b",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 32,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "cpu",
+        "mmap": "off",
+        "lazy_mode": "on",
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "off",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 512,
+        "max_swap_growth_mib": 128
+      },
+      "actual_context_tokens": 131072,
+      "peak_server_tree_rss_bytes": 6231019520,
+      "minimum_available_bytes": 532971520,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          23358
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "second_interrupt_during_cleanup": false,
+      "reasoning_budget_native_log_observations": {
+        "budget1024_activations": 1,
+        "forced_thinking_end_sequences": 0,
+        "natural_thinking_ends": 0
+      }
+    },
+    "cpu_projector_lazy_guard384": {
+      "pid": 23598,
+      "experiment_id": "901929485e9640dba4f510e11097e436",
+      "state": "stopped",
+      "server_returncode": 1,
+      "termination_reason": "operator_stop",
+      "parameters": {
+        "profile": "qwen35_4b",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/qwen35-oc-v4-cpuproj-lazy-reserve384",
+        "alias": "ops-qwen35_4b",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 32,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "cpu",
+        "mmap": "off",
+        "lazy_mode": "on",
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "off",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 384,
+        "max_swap_growth_mib": 128
+      },
+      "actual_context_tokens": 131072,
+      "peak_server_tree_rss_bytes": 6293585920,
+      "minimum_available_bytes": 466751488,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          23598
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "second_interrupt_during_cleanup": true,
+      "reasoning_budget_native_log_observations": {
+        "budget1024_activations": 46,
+        "forced_thinking_end_sequences": 0,
+        "natural_thinking_ends": 46
+      }
+    }
+  },
+  "resource_aggregation": "Each run is independent. GPU lifetime peaks span several sampler conditions; no single-condition peak or GPU-parallel claim is inferred.",
+  "native_budget_source": {
+    "revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "parsing_url": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/tools/server/server-common.cpp",
+    "implementation_url": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/common/reasoning-budget.cpp",
+    "field": "Top-level reasoning_budget_tokens; not chat_template_kwargs",
+    "observation": "Native activation/forced-end logs and real visible answers, rather than outbound field presence alone, establish the tested cap behavior."
+  },
+  "model_input_images": [
+    {
+      "path": "images/shapes-original.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "kind": "original_two_red_circles_three_blue_squares_fixture"
+    },
+    {
+      "path": "images/837470340-10.jpg",
+      "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "id": "837470340:storyboard:2:b33cbf88946f918c",
+      "cid": "837470340",
+      "actual_time": 10.0
+    },
+    {
+      "path": "images/837470340-20.jpg",
+      "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "id": "837470340:storyboard:4:631304db8b63ea77",
+      "cid": "837470340",
+      "actual_time": 20.0
+    },
+    {
+      "path": "images/837470340-35.jpg",
+      "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "id": "837470340:storyboard:7:b34f24470efc2922",
+      "cid": "837470340",
+      "actual_time": 35.0
+    }
+  ],
+  "files": {
+    "images/837470340-10.jpg": {
+      "bytes": 7104,
+      "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90"
+    },
+    "images/837470340-20.jpg": {
+      "bytes": 8793,
+      "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38"
+    },
+    "images/837470340-35.jpg": {
+      "bytes": 7895,
+      "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1"
+    },
+    "images/shapes-original.png": {
+      "bytes": 2796,
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    "images/storyboard-report.json": {
+      "bytes": 2383,
+      "sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+    },
+    "qwen-factory-sampling-v4.json": {
+      "bytes": 110,
+      "sha256": "78099a98b08c4782f92dcef1b16b612a4451068a96b03acc16bfcb7aa2051c38"
+    },
+    "qwen-factory-thinking1024-v4.json": {
+      "bytes": 146,
+      "sha256": "ea9a08fc3d9d22a9e6fa85ce7c191b94817fb9ce1fdc76395bd85baca62c9c7c"
+    },
+    "qwen35-v4-capacity-cpuproj-guard384.command.json": {
+      "bytes": 1707,
+      "sha256": "ab024274b31e00860f741aebc90cc8c8234e29fda5d11e0da672fc91222c303c"
+    },
+    "qwen35-v4-capacity-cpuproj-guard384.json": {
+      "bytes": 25382,
+      "sha256": "d448993a54068cc301b7333403ed2f93bc003a6de513ad63db6ccefecd58e685"
+    },
+    "qwen35-v4-human-review.md": {
+      "bytes": 12131,
+      "sha256": "d305a36f6428e5f3ffb1f34abcde17cbc83a07c9155770c9eb0e36b508daa4f4"
+    },
+    "qwen35-v4-image-count-factory-rbudget1024-cpuproj-guard384.command.json": {
+      "bytes": 1589,
+      "sha256": "2a2515aa2e3f09e64c688cb426f88f1d583595e6b60d1adc01859b23e3de4523"
+    },
+    "qwen35-v4-image-count-factory-rbudget1024-cpuproj-guard384.json": {
+      "bytes": 31279,
+      "sha256": "7e37c9bef3df9fac576538242e2eee0395f45c51c6cc1db106224572079b7e0b"
+    },
+    "qwen35-v4-image-count-factory-rbudget1024-cpuproj-lazy.command.json": {
+      "bytes": 1585,
+      "sha256": "74d4f609502d20ccf2c646e99715eb5964e5a1c1852cd9b15c878e16ccb4ad60"
+    },
+    "qwen35-v4-image-count-factory-rbudget1024-cpuproj-lazy.json": {
+      "bytes": 27340,
+      "sha256": "9bce9e88170688614f6c01df58c4bf52b63caae82600b140eb608e90bbe65072"
+    },
+    "qwen35-v4-image-count-factory-rbudget1024-cpuproj.command.json": {
+      "bytes": 1580,
+      "sha256": "5eb80277e568b6c541758d6718d10acc4d3a1fcd6bb6f3acf46d53b8fb8c4d48"
+    },
+    "qwen35-v4-image-count-factory-rbudget1024-cpuproj.json": {
+      "bytes": 30140,
+      "sha256": "8e21ed7230f0ee727b9af414e43162101f70e79affc446d78c4100a7b8e69a33"
+    },
+    "qwen35-v4-oc-rest-factory-rbudget1024-output8192.command.json": {
+      "bytes": 1645,
+      "sha256": "6a807b7e5005dab82b90352270076a1329f7b8aa04e14cc11fff13704c98aee8"
+    },
+    "qwen35-v4-oc-rest-factory-rbudget1024-output8192.json": {
+      "bytes": 51814,
+      "sha256": "3f8ba340c13b73e562dedadf44560868db45c1a6e98f7645928e139c1b229251"
+    },
+    "qwen35-v4-oc-rest-factory8192-abort-observation.json": {
+      "bytes": 2250,
+      "sha256": "545dc78b75796dad3785649a56ef7fbec4ab4473ef7d4237923c9ccfbc7d6263"
+    },
+    "qwen35-v4-oc-rest-factory8192.command.json": {
+      "bytes": 1622,
+      "sha256": "0ddc74124ad47f01998e8192410bd5739c88a66b270776e08d009bcc20fb0d3b"
+    },
+    "qwen35-v4-oc-rest-factory8192.json": {
+      "bytes": 24063,
+      "sha256": "4c415377add7028788b64ae83d8dfb33c2f72821343a985faf2b9d4fb49957a0"
+    },
+    "qwen35-v4-oc-rice-factory-rbudget1024-output8192.command.json": {
+      "bytes": 1545,
+      "sha256": "234662243ae646f599a36f81a2d7d9e942b9a8ea7022a40c0bf1789724180956"
+    },
+    "qwen35-v4-oc-rice-factory-rbudget1024-output8192.json": {
+      "bytes": 29763,
+      "sha256": "6a84650e7db9172c128c227c05eeb7ecd1aade3fa346febe1e878b2b18dc2c27"
+    },
+    "qwen35-v4-oc-rice-factory8192.command.json": {
+      "bytes": 1522,
+      "sha256": "ccf33423b75af8103525c0de374b4d3b3bb90907cb4dee7432245bde0e0131f9"
+    },
+    "qwen35-v4-oc-rice-factory8192.json": {
+      "bytes": 29594,
+      "sha256": "2a2ebc7499f9c9ae03d23baa80f032d941a1ede6bd6e63d1de4099dcf222993b"
+    },
+    "qwen35-v4-oc-rice-output8192-abort-observation.json": {
+      "bytes": 2259,
+      "sha256": "0f9d2833be00b0b2658b8789070d5d048e719adc9a5aab5c6ed548b88b40324c"
+    },
+    "qwen35-v4-oc-rice-output8192.command.json": {
+      "bytes": 1402,
+      "sha256": "a9c412a511d01ca407b24925677104973bccb5651fdf0ce64ae01016d4c0cddf"
+    },
+    "qwen35-v4-oc-rice-output8192.json": {
+      "bytes": 23852,
+      "sha256": "9ee9b65f85a5b3dcc992d2026d28f9f1db7c9b74634f8e013842b2e83043714c"
+    },
+    "qwen35-v4-oc-rice-pilot.command.json": {
+      "bytes": 1281,
+      "sha256": "7f372499da8f217cc8ec8765c55b9549d5bfe921a58fe2a41abcce8dee0414a3"
+    },
+    "qwen35-v4-oc-rice-pilot.json": {
+      "bytes": 29549,
+      "sha256": "158ac335c6cf0e362e6a5e68e8b2b54c16187db5f2ba80f7d0d3021e65fabd50"
+    },
+    "qwen35-v4-plain-frames-cpuproj-guard384.json": {
+      "bytes": 22312,
+      "sha256": "9be0c06f20c5309f9a3ef3451708e23a842cbbd40f026e4aff1528cf4d623fad"
+    },
+    "qwen35-v4-real-rest-factory-rbudget1024-cpuproj-guard384.command.json": {
+      "bytes": 1957,
+      "sha256": "00f85cdc363305d000ef40c598b5e89aa57f69301d89ed472e7c19446d72a02d"
+    },
+    "qwen35-v4-real-rest-factory-rbudget1024-cpuproj-guard384.json": {
+      "bytes": 236113,
+      "sha256": "b8bcdf66a59db3fbc08a72c2eae58ab0b7439597c9e749119dbef8713b6329b1"
+    },
+    "qwen35-v4-real-tasks-factory-rbudget1024-output8192.command.json": {
+      "bytes": 1991,
+      "sha256": "d6a4b49f6078ff3544bdbca5537a06b3ce4ad53479f00b61fba0b7cd95b245df"
+    },
+    "qwen35-v4-real-tasks-factory-rbudget1024-output8192.json": {
+      "bytes": 57732,
+      "sha256": "8f083fc2048f65029520e871f6072377a1e35643a07728e139734a03f10d94e3"
+    },
+    "resource-runs/cpu_projector_guard512/memory.jsonl.gz": {
+      "bytes": 3579,
+      "sha256": "6301f4a2651e52ef9d85f21cdba5b51529c1f860428f1b7d001c698966dd2aeb",
+      "uncompressed_sha256": "5e02f2c8c7904a922a6681c20ec5a7fab00d1c2016f987b157c33225efc4f643"
+    },
+    "resource-runs/cpu_projector_guard512/metrics.json": {
+      "bytes": 24025,
+      "sha256": "6892cee70ada531565aeb7428e4bfc3c39e1860827a36b1e377610d440566132"
+    },
+    "resource-runs/cpu_projector_guard512/owner.json": {
+      "bytes": 2713,
+      "sha256": "8e8659369a018e07ab60e66c0d0118859d6efc8a02a004e6724587d633e66fdc"
+    },
+    "resource-runs/cpu_projector_guard512/server.log.gz": {
+      "bytes": 6588,
+      "sha256": "f838da56ce4dec824a6c47c226147e2fdcd85c47e283a1f727e39368f7246f70",
+      "uncompressed_sha256": "c641aa5d458e85810d4d9f13b18f6a08464002b20f9eca434038e5a83a15c0a8"
+    },
+    "resource-runs/cpu_projector_lazy_guard384/memory.jsonl.gz": {
+      "bytes": 57351,
+      "sha256": "35059a4afa03c0becd7fd94023d9d25e72c619ddeae3a242ddea4701848af0ae",
+      "uncompressed_sha256": "8860fb21e683789df5788a3fed71f87d56131fc272a1cbc8af141867c9419a86"
+    },
+    "resource-runs/cpu_projector_lazy_guard384/metrics.json": {
+      "bytes": 24060,
+      "sha256": "6d989f0bc9c8e7c014354022fc819a11103f0851fe0d956e8b53e480c3447f16"
+    },
+    "resource-runs/cpu_projector_lazy_guard384/owner.json": {
+      "bytes": 2782,
+      "sha256": "6d09dce295fa3af841239b8089f044b4c73c1331e27dc23a93dd264fd5a9a7a7"
+    },
+    "resource-runs/cpu_projector_lazy_guard384/server.log.gz": {
+      "bytes": 42035,
+      "sha256": "4af5f1efaad0a121cb4308df5075cedcb9ceb7f0d98dd4320a6627ddd2dd2d47",
+      "uncompressed_sha256": "364fe4be403c5d48043c0043276ce51892f195a9d0f38833652bc29c3590f223"
+    },
+    "resource-runs/cpu_projector_lazy_guard512/memory.jsonl.gz": {
+      "bytes": 3270,
+      "sha256": "4153836080eab46ce77845e0de223f54becba2c9ab5c2c139749523043fe018a",
+      "uncompressed_sha256": "20a1a8aa71efc003e1a1916dbdce4f5ccafd5b0f7e145d4c64ccaf7caa7d92e5"
+    },
+    "resource-runs/cpu_projector_lazy_guard512/metrics.json": {
+      "bytes": 24059,
+      "sha256": "1b52c062470f3d4040e94bd76122d54065d9cc27fef4b924bf65b1815e63b5b3"
+    },
+    "resource-runs/cpu_projector_lazy_guard512/owner.json": {
+      "bytes": 2784,
+      "sha256": "8de019fb6da1c23c356f5b527d9b9e1235d755c9161290e3964a1fe0a80ed686"
+    },
+    "resource-runs/cpu_projector_lazy_guard512/server.log.gz": {
+      "bytes": 6173,
+      "sha256": "8a58dc8576eb335fd6c14e59c7422031141d267c8e125265cec99d1cf41ec644",
+      "uncompressed_sha256": "306725e4e15365fce387b665211ef9cada49f1f85b20b8b9acb587d912154983"
+    },
+    "resource-runs/gpu_projector_sampler_comparisons_and_image_crash/memory.jsonl.gz": {
+      "bytes": 62807,
+      "sha256": "127975c34d49b909b5fae2c091cf73688874ca593d450f7cf53f1c04b26b6abf",
+      "uncompressed_sha256": "7dea3b31966a87332623ac65692fa797f32356142a3759dc460b6d8e26d9d81b"
+    },
+    "resource-runs/gpu_projector_sampler_comparisons_and_image_crash/metrics.json": {
+      "bytes": 24039,
+      "sha256": "7dd1f339b462ef2b9398c17a8d1c0966d3ab989d9954b0a8f0d1364ca13b520e"
+    },
+    "resource-runs/gpu_projector_sampler_comparisons_and_image_crash/owner.json": {
+      "bytes": 2701,
+      "sha256": "7d8f879727ac118073e8bed88716806d0e89f20408826fee74e45f8b320e2a47"
+    },
+    "resource-runs/gpu_projector_sampler_comparisons_and_image_crash/server.log.gz": {
+      "bytes": 15390,
+      "sha256": "8a54ad81f42bf9b1bde3ef1ce5a845c2f5ec279ba23743deed135ab93250a199",
+      "uncompressed_sha256": "a30b868a2c7d697e04b5b17f10e79d2fbcb07d8599daf0502899b9ea6ab7a571"
+    }
+  },
+  "review_method": "Original dialogue and actual source images/tool receipts read qualitatively; no rigid OC wording or aggregate capability score.",
+  "remaining_product_integration": "This candidate is not automatically selected. Product VisionProvider wiring and Genie coexistence are measured independently on the Mini4x run."
+}

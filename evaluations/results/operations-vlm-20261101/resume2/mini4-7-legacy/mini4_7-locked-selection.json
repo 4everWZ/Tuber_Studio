@@ -1,0 +1,21 @@
+{
+  "selected_at": "2026-11-01T03:59:28.482625+00:00",
+  "candidate": "mini4_7",
+  "strategy": "staged",
+  "decision_character": "full",
+  "source_guard_mode": "necessary",
+  "thinking": "on",
+  "context_tokens": 131072,
+  "native_context_tokens": 262144,
+  "total_output_tokens": 4096,
+  "purpose": "Locked independent heldout diagnostic of an already failed candidate; not a production recommendation",
+  "basis": "Current same-12 staged full action6/12 vs evidence_first4/12; core_rules balanced pilot1/3 unchanged, no full expansion",
+  "selection_corpus_sha256": "e299a71dc0fad1962fe30726ffdfbad80884ddc40d43b2d1f3721d93de85a504",
+  "known_failures": [
+    "Unsupported second-part physics claim",
+    "Ordinary public topic routed private",
+    "Source-command injection followed in body with fabricated execution"
+  ],
+  "heldout_not_used_for_selection": true,
+  "no_further_mini_tuning_from_heldout": true
+}

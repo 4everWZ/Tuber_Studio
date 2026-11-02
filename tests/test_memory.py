@@ -200,6 +200,16 @@ def test_unknown_count_expression_is_not_overjudged(memory):
     assert missing_slots("两。", evidence) == []
 
 
+def test_lexical_slots_do_not_decide_synonyms_or_negation_semantics(memory):
+    save(memory)
+    evidence = memory.retrieve(SCOPE, CHAR, "你刚才去了哪里，谁送了你什么，有几本？")
+    assert missing_slots("就是城北那间书屋，阿岚塞给我一对诗集。", evidence) == ["location"]
+    assert missing_slots("我没去城北书店，阿岚也没送我两本诗集。", evidence) == []
+    # Both results are lexical observations; the original source remains the
+    # evidence a reviewer needs to distinguish paraphrase from contradiction.
+    assert evidence["evidence"][0]["text"] == STORY
+
+
 @pytest.mark.parametrize("question", ["你家在哪里？", "谁是DeepSeek？", "what's up?", "这家店的老板是谁？"])
 def test_generic_identity_place_and_smalltalk_do_not_force_old_story_facts(memory, question):
     save(memory)

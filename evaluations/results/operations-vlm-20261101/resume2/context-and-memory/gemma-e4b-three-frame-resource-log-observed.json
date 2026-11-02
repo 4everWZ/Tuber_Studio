@@ -1,0 +1,17 @@
+{
+  "source_log_sha256": "7c35185fcad70e77a3f31d363fbc33a987171e2187cc6ab09aca598533e65dcf",
+  "encoding_chunks": 3,
+  "decoded_image_tokens": [
+    84,
+    84,
+    84
+  ],
+  "total_decoded_image_tokens": 252,
+  "source_line_numbers": [
+    1258,
+    1259,
+    1263,
+    1267
+  ],
+  "quality_cases": 0
+}

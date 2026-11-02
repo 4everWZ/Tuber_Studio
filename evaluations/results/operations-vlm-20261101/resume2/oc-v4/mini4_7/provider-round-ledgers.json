@@ -1,0 +1,47 @@
+{
+  "method": "Read-only isolated SQLite create/finish timestamps; includes public probe plus analysis and token-counting. This is not TTFT.",
+  "rounds": {
+    "v1": {
+      "id": "44d3dde3-8806-47a7-b153-a240d4f7858f",
+      "status": "failed",
+      "created_at": 1793523870.05961,
+      "updated_at": 1793523895.4106798,
+      "budget": {
+        "reads": 0,
+        "model_calls": 2,
+        "input_tokens": 3064,
+        "output_tokens": 1060,
+        "top_levels": 0
+      },
+      "elapsed_seconds_from_durable_round_timestamps": 25.351069927215576
+    },
+    "v2_9df": {
+      "id": "e347fa76-735a-4169-a620-e47febe1b511",
+      "status": "completed",
+      "created_at": 1793525269.8096163,
+      "updated_at": 1793525322.9580574,
+      "budget": {
+        "reads": 0,
+        "model_calls": 12,
+        "input_tokens": 4281,
+        "output_tokens": 2666,
+        "top_levels": 0
+      },
+      "elapsed_seconds_from_durable_round_timestamps": 53.14844107627869
+    },
+    "v2_700": {
+      "id": "09356af8-7445-42dd-b43d-b1ef6e0cf300",
+      "status": "completed",
+      "created_at": 1793525533.7054143,
+      "updated_at": 1793525572.790464,
+      "budget": {
+        "reads": 0,
+        "model_calls": 12,
+        "input_tokens": 4764,
+        "output_tokens": 1790,
+        "top_levels": 0
+      },
+      "elapsed_seconds_from_durable_round_timestamps": 39.085049629211426
+    }
+  }
+}

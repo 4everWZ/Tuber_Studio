@@ -21,10 +21,9 @@ from urllib.parse import urlencode, urlsplit
 
 import httpx
 
-
-class PublishUncertain(ValueError):
-    """A write may have reached Bilibili; the operator must reconcile it."""
-
+from .operation_text import validate_operation_text
+from .publication_errors import PublishUncertain as PublishUncertain
+from .publication_errors import platform_rejection
 
 _BV = re.compile(r"BV1[0-9A-Za-z]{9}\Z")
 _AV = re.compile(r"av([1-9][0-9]{0,18})\Z", re.IGNORECASE)
@@ -132,6 +131,10 @@ def _data(payload: object) -> dict:
     return data
 
 
+class BilibiliAccountExpired(ValueError):
+    kind = "permission"
+
+
 class BilibiliAdapter:
     def __init__(self, credential: dict | None = None):
         credential = credential or {}
@@ -152,6 +155,29 @@ class BilibiliAdapter:
 
     async def close(self):
         await self.client.aclose()
+
+    async def account_profile(self):
+        if not self._sessdata:
+            raise BilibiliAccountExpired("尚未配置B站登录")
+        nav = await self._get("/x/web-interface/nav", {})
+        if nav.get("isLogin") is not True:
+            raise BilibiliAccountExpired("B站登录已失效")
+        uid = _positive_id(nav.get("mid"))
+        fans = None
+        try:
+            stats = await self._get("/x/relation/stat", {"vmid": uid})
+            if type(stats.get("follower")) is int and stats["follower"] >= 0:
+                fans = stats["follower"]
+        except ValueError:
+            # Login remains verified when just the public statistic is unavailable.
+            pass
+        return {
+            "uid": uid,
+            "name": nav.get("uname"),
+            "avatar_url": nav.get("face"),
+            "coins": nav.get("money"),
+            "fans": fans,
+        }
 
     async def _get_payload(self, path: str, params: dict):
         try:
@@ -318,15 +344,16 @@ class BilibiliAdapter:
         }
 
     async def publish(
-        self, video_id: str, comment_id: str, text: str, *, thread_id: str | None = None
+        self, video_id: str, comment_id: str, text: str, *, thread_id: str | None = None, before_send=None
     ) -> dict:
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要配置 SESSDATA 和 CSRF；当前仅可生成或复制草稿")
-        if not isinstance(text, str) or not text.strip() or len(text) > 1000:
-            raise ValueError("回复须为 1 到 1000 字")
+        text = validate_operation_text(text, label="回复")
         parent = _positive_id(comment_id)
         root = _positive_id(thread_id) if thread_id is not None else parent
         info = await self._video(video_id)
+        if before_send is not None:
+            before_send()
         try:
             response = await self.client.post(
                 "/x/v2/reply/add",
@@ -350,7 +377,7 @@ class BilibiliAdapter:
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("发布响应无有效回执，请到 B 站核对；不会自动重试")
         if payload["code"] != 0:
-            _data(payload)
+            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次评论"))
         data = payload.get("data")
         try:
             if not isinstance(data, dict):
@@ -367,3 +394,40 @@ class BilibiliAdapter:
             "root": root,
             "parent": parent,
         }
+
+    async def reconcile_publication(self, target, *, author_uid, text, started_at, receipt=None):
+        from .publication_reconciliation import reconcile_comment
+
+        target = dict(target)
+        if not target.get("oid") and target.get("resource_type", "video") == "video":
+            video = target.get("video_id") or target.get("resource_id")
+            try:
+                requested = _video_params(video)
+                info = await self._video(video)
+                if (
+                    "bvid" in requested
+                    and info["bvid"] != requested["bvid"]
+                    or "aid" in requested
+                    and str(info["aid"]) != str(requested["aid"])
+                ):
+                    raise ValueError("视频核对来源不一致")
+                target["oid"], target["type"] = str(info["aid"]), 1
+            except (ValueError, httpx.HTTPError):
+                return {
+                    "status": "check_failed",
+                    "checked_at": time.time(),
+                    "coverage": {"scope": "video_metadata"},
+                }
+        return await reconcile_comment(
+            self._get, target, author_uid=author_uid, text=text, started_at=started_at, receipt=receipt
+        )
+
+    async def reconcile_dynamic_publication(self, target, *, author_uid, text, started_at, receipt=None):
+        from .publication_reconciliation import reconcile_dynamic
+
+        async def read(path, params):
+            return await self._get(path, await self.wbi_params(params))
+
+        return await reconcile_dynamic(
+            read, target, author_uid=author_uid, text=text, started_at=started_at, receipt=receipt
+        )

@@ -1,0 +1,1159 @@
+{
+  "created_at": "2026-11-01T07:35:54.989240+00:00",
+  "protocol": "vlm-operations-v4-oc-paths",
+  "evaluation_profile": "oc_separate_paths_v1",
+  "declarations": {
+    "model": "ops-qwen35_4b",
+    "quantization": "Q4_K_M",
+    "context_tokens": 131072,
+    "thinking": "on",
+    "tools_mode": "native",
+    "tool_reasoning_history": "ephemeral",
+    "image_order": "text_first",
+    "image_preprocessing": "server_native",
+    "format_repair": false,
+    "max_output_tokens_including_reasoning": 8192,
+    "temperature": 1.0,
+    "seed": 42,
+    "additional_image_sampling_parameters": {
+      "min_p": 0.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 1.5,
+      "reasoning_budget_tokens": 1024
+    }
+  },
+  "execution": {
+    "bvid": "BV1We4y1k7za",
+    "host": "R9000P-2021H",
+    "model_endpoint": "http://127.0.0.1:18096",
+    "network_proxy": "http://127.0.0.1:7897",
+    "search_provider": "bing-rss",
+    "search_endpoint": null,
+    "max_tool_rounds": 6,
+    "max_tool_calls_per_case": 12,
+    "max_model_calls_per_case": 24,
+    "model_timeout_seconds": 900.0,
+    "case_deadline_seconds": 900.0,
+    "network_timeout_seconds": 20,
+    "max_document_bytes": 2097152
+  },
+  "materials": {
+    "harness_source_sha256": "e472f511b58b09cb894e24bc2e3a68266cb229e753dc1a361677721bb44cb4cb",
+    "image_preprocessor_source_sha256": "100318e6e5f1167b478d401403777fbef11c14f791fe574fa4ac1694d1581e2b",
+    "tool_task_system_prompt_sha256": "37695188b08c4bc1b653e78b95463beed5a54d6b8a1e61d6cd67ca1237aae4a1",
+    "oc_system_prompt_sha256_by_case": {
+      "oc-game-losing-streak": "3f958b42e5a213b2c4a00729a316260a6da028e5f454a703e678fcd02c76b4e1",
+      "oc-undersea-postal-adventure": "28f1d8743604d54ad40451b6129163b4dd223fc6c540928f3b3bde309c30d799",
+      "oc-multiturn-followup": "acc61ed3eddbe951b259503bf65b4ce70a6fd57e00047c64cbdd2ff8e74e760d"
+    },
+    "image_manifest_file": "tmp\\operations-vlm\\platform-real\\storyboard-report.json",
+    "optional_asset_images": [
+      {
+        "ref": "frame:1",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 10.0,
+        "requested_time": 11.25,
+        "platform_frame_id": "837470340:storyboard:2:b33cbf88946f918c",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+        "model_input": {
+          "profile": "server_native",
+          "parent_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+          "derived_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+          "parent_mime_type": "image/jpeg",
+          "derived_mime_type": "image/jpeg",
+          "parent_size": {
+            "width": 480,
+            "height": 270
+          },
+          "derived_size": {
+            "width": 480,
+            "height": 270
+          },
+          "parameters": {
+            "operation": "identity"
+          },
+          "official_sources": [],
+          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+          "bytes": 7104,
+          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg"
+        }
+      },
+      {
+        "ref": "frame:2",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 20.0,
+        "requested_time": 22.5,
+        "platform_frame_id": "837470340:storyboard:4:631304db8b63ea77",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+        "model_input": {
+          "profile": "server_native",
+          "parent_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+          "derived_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+          "parent_mime_type": "image/jpeg",
+          "derived_mime_type": "image/jpeg",
+          "parent_size": {
+            "width": 480,
+            "height": 270
+          },
+          "derived_size": {
+            "width": 480,
+            "height": 270
+          },
+          "parameters": {
+            "operation": "identity"
+          },
+          "official_sources": [],
+          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+          "bytes": 8793,
+          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg"
+        }
+      },
+      {
+        "ref": "frame:3",
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+        "mime_type": "image/jpeg",
+        "width": 480,
+        "height": 270,
+        "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "source_type": "operator_verified_storyboard_manifest",
+        "bvid": "BV1We4y1k7za",
+        "cid": "837470340",
+        "actual_time": 35.0,
+        "requested_time": 33.75,
+        "platform_frame_id": "837470340:storyboard:7:b34f24470efc2922",
+        "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+        "model_input": {
+          "profile": "server_native",
+          "parent_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+          "derived_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+          "parent_mime_type": "image/jpeg",
+          "derived_mime_type": "image/jpeg",
+          "parent_size": {
+            "width": 480,
+            "height": 270
+          },
+          "derived_size": {
+            "width": 480,
+            "height": 270
+          },
+          "parameters": {
+            "operation": "identity"
+          },
+          "official_sources": [],
+          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+          "bytes": 7895,
+          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg"
+        }
+      }
+    ],
+    "cases_sha256": "20e68f6817bd15de87aba3eab74f08ea92394fa95d234a1cecf121196481a010",
+    "character_public_sha256": "813c5e01fde2c049deee0e219d4d1a52a58097d9170f431cdec01cb5a43775b0",
+    "image": {
+      "path": "tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rest-factory-rbudget1024-output8192.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "width": 512,
+      "height": 320,
+      "red_circles": 2,
+      "blue_squares": 3,
+      "model_input": {
+        "profile": "server_native",
+        "parent_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+        "derived_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+        "parent_mime_type": "image/png",
+        "derived_mime_type": "image/png",
+        "parent_size": {
+          "width": 512,
+          "height": 320
+        },
+        "derived_size": {
+          "width": 512,
+          "height": 320
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": [],
+        "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rest-factory-rbudget1024-output8192.fixture.png",
+        "bytes": 2796,
+        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rest-factory-rbudget1024-output8192.fixture.png"
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "oc-game-losing-streak",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "哎呀，连输五把谁受得了啊！（拍拍你的肩）气坏身子多不值。过来坐我旁边，今晚先歇着，白饭管够。",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 1453.1145000364631,
+              "first_answer_token_ms": 75611.95340007544,
+              "total_ms": 78283.72750000563,
+              "usage": {
+                "completion_tokens": 1063,
+                "prompt_tokens": 445,
+                "total_tokens": 1508,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-qwen35_4b",
+              "reasoning_characters_observed_not_retained": 2903,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 1.5,
+                "reasoning_budget_tokens": 1024,
+                "model": "ops-qwen35_4b",
+                "temperature": 1.0,
+                "seed": 42,
+                "max_tokens": 8192,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "哎呀，连输五把谁受得了啊！（拍拍你的肩）气坏身子多不值。过来坐我旁边，今晚先歇着，白饭管够。",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-game-losing-streak",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "哎呀，连输五把谁受得了啊！（拍拍你的肩）气坏身子多不值。过来坐我旁边，今晚先歇着，白饭管够。",
+          "reply_text_for_review": "哎呀，连输五把谁受得了啊！（拍拍你的肩）气坏身子多不值。过来坐我旁边，今晚先歇着，白饭管够。",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "接住失落和想有人陪伴的情绪，用角色自己的方式关心；可闲聊、打趣或一起休息。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 78283.72750000563,
+          "usage": {
+            "completion_tokens": 1063,
+            "prompt_tokens": 445,
+            "total_tokens": 1508
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 1,
+      "total_ms": 78283.8696000399,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 1,
+      "generation_total_ms": 78283.72750000563,
+      "usage": {
+        "completion_tokens": 1063,
+        "prompt_tokens": 445,
+        "total_tokens": 1508
+      },
+      "usage_reported_calls": 1
+    },
+    {
+      "id": "oc-undersea-postal-adventure",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "哼，珊瑚钟楼太吵啦。跟着我，提着小水母走那边，风大但安全哦。",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 1420.0418000109494,
+              "first_answer_token_ms": 76557.58149991743,
+              "total_ms": 78354.93709996808,
+              "usage": {
+                "completion_tokens": 1051,
+                "prompt_tokens": 461,
+                "total_tokens": 1512,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-qwen35_4b",
+              "reasoning_characters_observed_not_retained": 3017,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 1.5,
+                "reasoning_budget_tokens": 1024,
+                "model": "ops-qwen35_4b",
+                "temperature": 1.0,
+                "seed": 42,
+                "max_tokens": 8192,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "哼，珊瑚钟楼太吵啦。跟着我，提着小水母走那边，风大但安全哦。",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-undersea-postal-adventure",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "哼，珊瑚钟楼太吵啦。跟着我，提着小水母走那边，风大但安全哦。",
+          "reply_text_for_review": "哼，珊瑚钟楼太吵啦。跟着我，提着小水母走那边，风大但安全哦。",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "以海底角色身份接续场景，选择路线并发展小剧情，细节可自然即兴。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 78354.93709996808,
+          "usage": {
+            "completion_tokens": 1051,
+            "prompt_tokens": 461,
+            "total_tokens": 1512
+          },
+          "usage_reported_calls": 1
+        },
+        {
+          "turn": 1,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "哈哈，你背那红邮袋，我提发光小水母呢。走亮亮的这边，前面有信要送，沉船区太旧啦！",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 1610.8695000875741,
+              "first_answer_token_ms": 76558.56580007821,
+              "total_ms": 79129.15650010109,
+              "usage": {
+                "completion_tokens": 1062,
+                "prompt_tokens": 521,
+                "total_tokens": 1583,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-qwen35_4b",
+              "reasoning_characters_observed_not_retained": 3346,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 1.5,
+                "reasoning_budget_tokens": 1024,
+                "model": "ops-qwen35_4b",
+                "temperature": 1.0,
+                "seed": 42,
+                "max_tokens": 8192,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "哈哈，你背那红邮袋，我提发光小水母呢。走亮亮的这边，前面有信要送，沉船区太旧啦！",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:1"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:1",
+            "scene_id": "oc-undersea-postal-adventure",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "哈哈，你背那红邮袋，我提发光小水母呢。走亮亮的这边，前面有信要送，沉船区太旧啦！",
+          "reply_text_for_review": "哈哈，你背那红邮袋，我提发光小水母呢。走亮亮的这边，前面有信要送，沉船区太旧啦！",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "记得观众的红色邮袋和鱼鱼的小水母，承接前一轮所选路线及海流变化，关系与情绪连贯。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 79129.15650010109,
+          "usage": {
+            "completion_tokens": 1062,
+            "prompt_tokens": 521,
+            "total_tokens": 1583
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 2,
+      "total_ms": 157484.36270002276,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 2,
+      "generation_total_ms": 157484.09360006917,
+      "usage": {
+        "completion_tokens": 2113,
+        "prompt_tokens": 982,
+        "total_tokens": 3095
+      },
+      "usage_reported_calls": 2
+    },
+    {
+      "id": "oc-multiturn-followup",
+      "evaluation_group": "core",
+      "task_kind": "oc_conversation",
+      "execution_path": "plain_oc",
+      "turns": [
+        {
+          "turn": 0,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "两个红圆呀！多显眼啊，就像两颗泡泡眼。不过我承认你画得挺用力的嘛，再来加点细节更妙了！",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 1255.9091999428347,
+              "first_answer_token_ms": 76863.73829992954,
+              "total_ms": 79244.42539992742,
+              "usage": {
+                "completion_tokens": 1059,
+                "prompt_tokens": 415,
+                "total_tokens": 1474,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-qwen35_4b",
+              "reasoning_characters_observed_not_retained": 2612,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 1.5,
+                "reasoning_budget_tokens": 1024,
+                "model": "ops-qwen35_4b",
+                "temperature": 1.0,
+                "seed": 42,
+                "max_tokens": 8192,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "两个红圆呀！多显眼啊，就像两颗泡泡眼。不过我承认你画得挺用力的嘛，再来加点细节更妙了！",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:0"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:0",
+            "scene_id": "oc-multiturn-followup",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "两个红圆呀！多显眼啊，就像两颗泡泡眼。不过我承认你画得挺用力的嘛，再来加点细节更妙了！",
+          "reply_text_for_review": "两个红圆呀！多显眼啊，就像两颗泡泡眼。不过我承认你画得挺用力的嘛，再来加点细节更妙了！",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "自然承接一起画画的话题。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 79244.42539992742,
+          "usage": {
+            "completion_tokens": 1059,
+            "prompt_tokens": 415,
+            "total_tokens": 1474
+          },
+          "usage_reported_calls": 1
+        },
+        {
+          "turn": 1,
+          "input_channel": "public",
+          "expected_channel": "public",
+          "task_kind": "oc_conversation",
+          "execution_path": "plain_oc",
+          "model_steps": [
+            {
+              "text": "听我的，再画两个凑四个刚刚好。不然红得有点挤啦！嘿嘿，反正看心情决定嘛~",
+              "tool_calls": [],
+              "finish_reason": "stop",
+              "stream_complete": true,
+              "ttft_ms": 1441.4279999909922,
+              "first_answer_token_ms": 76465.17039998434,
+              "total_ms": 78336.89749997575,
+              "usage": {
+                "completion_tokens": 1052,
+                "prompt_tokens": 467,
+                "total_tokens": 1519,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "response_model": "ops-qwen35_4b",
+              "reasoning_characters_observed_not_retained": 3653,
+              "request_parameters": {
+                "min_p": 0.0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "repeat_penalty": 1.0,
+                "presence_penalty": 1.5,
+                "reasoning_budget_tokens": 1024,
+                "model": "ops-qwen35_4b",
+                "temperature": 1.0,
+                "seed": 42,
+                "max_tokens": 8192,
+                "stream": true,
+                "stream_options": {
+                  "include_usage": true
+                },
+                "chat_template_kwargs": {
+                  "enable_thinking": true
+                }
+              }
+            }
+          ],
+          "tool_receipts": [],
+          "structural_complete": null,
+          "baseline_structural_complete": null,
+          "answer": {
+            "text": "听我的，再画两个凑四个刚刚好。不然红得有点挤啦！嘿嘿，反正看心情决定嘛~",
+            "channel": "public",
+            "citations": [],
+            "evidence_refs": [
+              "turn:1"
+            ]
+          },
+          "answer_field_sources": {
+            "text": "model_content",
+            "channel": "backend_scene_binding",
+            "evidence_refs": "backend_scene_binding",
+            "citations": "not_requested"
+          },
+          "backend_binding": {
+            "channel": "public",
+            "source_ref": "turn:1",
+            "scene_id": "oc-multiturn-followup",
+            "provenance": "trusted_evaluation_scene",
+            "model_decided_fields": []
+          },
+          "raw_final_output": "听我的，再画两个凑四个刚刚好。不然红得有点挤啦！嘿嘿，反正看心情决定嘛~",
+          "reply_text_for_review": "听我的，再画两个凑四个刚刚好。不然红得有点挤啦！嘿嘿，反正看心情决定嘛~",
+          "semantic_review": {
+            "status": "pending",
+            "factual_accuracy": null,
+            "task_completion": null,
+            "oc_interaction": null,
+            "accepted": null
+          },
+          "review_criteria": [
+            "沿用上一轮约定的两个红圆。"
+          ],
+          "error": null,
+          "protocol_delivery": {
+            "mode": "plain_oc",
+            "complete": true,
+            "structured_reply": null,
+            "field_contract_required": false,
+            "error": null
+          },
+          "tool_environment": {
+            "tools_offered": false,
+            "tool_selection_assessed": false,
+            "executed_tool_calls": 0,
+            "unexpected_native_tool_calls": 0
+          },
+          "literal_diagnostics": null,
+          "checks": {
+            "protocol_delivery": {
+              "mode": "plain_oc",
+              "complete": true,
+              "structured_reply": null,
+              "field_contract_required": false,
+              "error": null
+            },
+            "tool_environment": {
+              "tools_offered": false,
+              "tool_selection_assessed": false,
+              "executed_tool_calls": 0,
+              "unexpected_native_tool_calls": 0
+            },
+            "routing": {
+              "assessed": false,
+              "bound_channel": "public",
+              "provenance": "backend_scene_binding"
+            },
+            "evidence_selection_assessed": false,
+            "semantic_quality_accepted": null
+          },
+          "history_delivery": "plain_oc_reply",
+          "format_repair_used": false,
+          "repair_result": null,
+          "tool_reasoning_history": "not_applicable_no_tools",
+          "tool_reasoning_replayed_characters": 0,
+          "generation_calls": 1,
+          "generation_total_ms": 78336.89749997575,
+          "usage": {
+            "completion_tokens": 1052,
+            "prompt_tokens": 467,
+            "total_tokens": 1519
+          },
+          "usage_reported_calls": 1
+        }
+      ],
+      "tool_receipts": [],
+      "tool_calls": 0,
+      "model_calls": 2,
+      "total_ms": 157581.57789998222,
+      "deadline_expired": false,
+      "requires_human_fact_review": true,
+      "generation_calls": 2,
+      "generation_total_ms": 157581.32289990317,
+      "usage": {
+        "completion_tokens": 2111,
+        "prompt_tokens": 882,
+        "total_tokens": 2993
+      },
+      "usage_reported_calls": 2
+    }
+  ],
+  "context_configuration_verified": true,
+  "context_probe": {
+    "requested": false,
+    "tokenizer_attempted": false,
+    "generation_attempted": false
+  },
+  "scope": {
+    "production_configuration_modified": false,
+    "platform_write_tools_available": false,
+    "reasoning_text_retained": false,
+    "full_semantic_acceptance_claimed": false,
+    "history_policy": "Separate public/private histories; public evidence may transfer into private replies; private bodies never return to public history",
+    "score_interpretation": "Core functions and safety diagnostics are separate groups. Raw replies are reviewed for factual accuracy, task completion and OC interaction. Delivery, routing, tool outcomes and literal search aids are reported separately; unreviewed semantics are pending/null. No aggregate capability score is computed.",
+    "oc_path_policy": "Plain OC uses natural user text, plain dialogue and no offered tools or response-format schema. Channel/source fields are backend scene bindings, not model choices. Tool selection and model evidence selection are not assessed on this path; evidence/tool tasks retain their separate transport.",
+    "quantization_provenance": "Operator declaration plus observed server properties; no remote tensor inspection",
+    "thinking_provenance": "Requested template parameter plus actual returned reasoning counters; no assumption that every backend supports thinking",
+    "format_repair_policy": "Tool-task path only: optional paired sidecar, preserving baseline output/checks/history. Exact original reply text is required; generated channel/citations/refs do not establish baseline decisions. One retry within unchanged call/output/deadline limits. Plain OC never uses format repair."
+  },
+  "observed_runtime": {
+    "model_requested": "ops-qwen35_4b",
+    "observed_context_tokens": 131072,
+    "model_alias_matches": true,
+    "properties": {
+      "default_generation_settings": {
+        "params": {
+          "seed": 4294967295,
+          "temperature": 0.800000011920929,
+          "dynatemp_range": 0.0,
+          "dynatemp_exponent": 1.0,
+          "top_k": 40,
+          "top_p": 0.949999988079071,
+          "min_p": 0.05000000074505806,
+          "top_n_sigma": -1.0,
+          "xtc_probability": 0.0,
+          "xtc_threshold": 0.10000000149011612,
+          "typical_p": 1.0,
+          "repeat_last_n": 64,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "frequency_penalty": 0.0,
+          "dry_multiplier": 0.0,
+          "dry_base": 1.75,
+          "dry_allowed_length": 2,
+          "dry_penalty_last_n": 64,
+          "mirostat": 0,
+          "mirostat_tau": 5.0,
+          "mirostat_eta": 0.10000000149011612,
+          "adaptive_target": -1.0,
+          "adaptive_decay": 0.8999999761581421,
+          "max_tokens": -1,
+          "n_predict": -1,
+          "n_keep": 0,
+          "n_discard": 0,
+          "ignore_eos": false,
+          "stream": false,
+          "n_probs": 0,
+          "min_keep": 0,
+          "chat_format": "Content-only",
+          "reasoning_format": "none",
+          "reasoning_in_content": false,
+          "generation_prompt": "",
+          "samplers": [
+            "penalties",
+            "dry",
+            "top_n_sigma",
+            "top_k",
+            "typ_p",
+            "top_p",
+            "min_p",
+            "xtc",
+            "temperature"
+          ],
+          "speculative.types": "none",
+          "timings_per_token": false,
+          "post_sampling_probs": false,
+          "backend_sampling": false,
+          "lora": []
+        },
+        "n_ctx": 131072
+      },
+      "total_slots": 1,
+      "model_alias": "ops-qwen35_4b",
+      "model_ftype": "Q4_K - Medium",
+      "model_path": "/workspace/tuber/runtime/models/operations-vlm/Qwen3.5-4B-Q4_K_M.gguf",
+      "modalities": {
+        "vision": true,
+        "video": true,
+        "audio": false
+      },
+      "media_marker": "<__media_tNpoYCEfMdES2lIOAJtjrs8Km02mf6R7__>",
+      "endpoint_slots": true,
+      "endpoint_props": false,
+      "endpoint_metrics": false,
+      "ui": true,
+      "ui_settings": {},
+      "chat_template": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is mapping %}\n                    {%- for args_name in tool_call.arguments %}\n                        {%- set args_value = tool_call.arguments[args_name] %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is true %}\n        {{- '<think>\\n' }}\n    {%- else %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}",
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": true,
+        "reasoning_effort_levels": []
+      },
+      "bos_token": ",",
+      "eos_token": "<|im_end|>",
+      "build_info": "b0-unknown",
+      "is_sleeping": false,
+      "cors_proxy_enabled": false
+    },
+    "models": {
+      "models": [
+        {
+          "name": "ops-qwen35_4b",
+          "model": "ops-qwen35_4b",
+          "modified_at": "",
+          "size": "",
+          "digest": "",
+          "type": "model",
+          "description": "",
+          "tags": [
+            ""
+          ],
+          "capabilities": [
+            "completion",
+            "multimodal"
+          ],
+          "parameters": "",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "",
+            "families": [
+              ""
+            ],
+            "parameter_size": "",
+            "quantization_level": ""
+          }
+        }
+      ],
+      "object": "list",
+      "data": [
+        {
+          "id": "ops-qwen35_4b",
+          "aliases": [
+            "ops-qwen35_4b"
+          ],
+          "tags": [],
+          "object": "model",
+          "architecture": {
+            "input_modalities": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output_modalities": [
+              "text"
+            ]
+          },
+          "created": 1793518553,
+          "owned_by": "llamacpp",
+          "meta": {
+            "vocab_type": 2,
+            "n_vocab": 248320,
+            "n_ctx": 131072,
+            "n_ctx_train": 262144,
+            "n_embd": 2560,
+            "n_params": 4205751296,
+            "size": 2729969664,
+            "ftype": "Q4_K - Medium"
+          }
+        }
+      ]
+    }
+  },
+  "runtime_configuration_error": null,
+  "group_summary": {
+    "core": {
+      "case_ids": [
+        "oc-game-losing-streak",
+        "oc-undersea-postal-adventure",
+        "oc-multiturn-followup"
+      ],
+      "cases_recorded": 3,
+      "cases_blocked_or_failed": 0,
+      "turns_recorded": 5,
+      "paths": {
+        "plain_oc": {
+          "turns_recorded": 5,
+          "complete_deliveries": 5,
+          "structured_turns": null
+        },
+        "tool_task": {
+          "turns_recorded": 0,
+          "complete_deliveries": 0,
+          "structured_turns": 0
+        }
+      },
+      "turns_with_reviewable_text": 5,
+      "semantic_review_status": "pending",
+      "semantic_quality_accepted": null
+    },
+    "safety_diagnostic": {
+      "case_ids": [],
+      "cases_recorded": 0,
+      "cases_blocked_or_failed": 0,
+      "turns_recorded": 0,
+      "paths": {
+        "plain_oc": {
+          "turns_recorded": 0,
+          "complete_deliveries": 0,
+          "structured_turns": null
+        },
+        "tool_task": {
+          "turns_recorded": 0,
+          "complete_deliveries": 0,
+          "structured_turns": 0
+        }
+      },
+      "turns_with_reviewable_text": 0,
+      "semantic_review_status": "pending",
+      "semantic_quality_accepted": null
+    }
+  }
+}

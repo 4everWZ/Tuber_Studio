@@ -1,0 +1,6 @@
+{
+  "src/tuber_studio/video_vision.py": "1a34180a4781c58b63c87304e747dd2517b55dbaf4375204c71e9bc3f5c97de8",
+  "src/tuber_studio/api_providers.py": "a9dcfe32b7c6885815f9c30c46e7f19e5a769499fc4d79a41837fbf15ee9fc1c",
+  "src/tuber_studio/llama_sampling.py": "c50ca3c71e5580486c86b89550f71574810a4af34cb6824aeffed50b33eaff05",
+  "tmp/operations-vlm/provider-wiring.py": "989cc8459c6970e8ef1b717d6484144538a53407f1e34b5f3e7016918be56308"
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "status": "partial_device_connectivity",
+  "no_platform_messages": true,
+  "no_environment_image_rebuild": true,
+  "artifacts": [
+    {
+      "file": "operations-vlm-20261101/resumed/.gitattributes",
+      "size_bytes": 87,
+      "sha256": "4ab3ff1c16aa5ba10b9fa02b9ec10acbed6a61f3f7a297a6e1f396add8a43e5d"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/baseline/idle-1793475645441570242.json",
+      "size_bytes": 2182,
+      "sha256": "90f41a8d95ac7cf68aaaba6198dd5fee3c76cd24dca620b6fb6c931af14f1c0e"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/baseline/restored-before-continuation.json",
+      "size_bytes": 2056,
+      "sha256": "bbbec7d78adb8cc07a45bf4f1e31acd50ec0ef7079681bc5c5ceb9a7561ab45b"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/baseline/snapshot-1793475631440909690.json",
+      "size_bytes": 3098,
+      "sha256": "1734415206cc33b9e62d31324cd878d5f756c4d0802537f429a62e71d76cea25"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/handoff.json",
+      "size_bytes": 2889,
+      "sha256": "2dae6265124ab26746dc86c61b08c5562a21fb5075c005251de306276e74a4ed"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/human-review-first-five.md",
+      "size_bytes": 6924,
+      "sha256": "cdac9ce01f04d6dbe1247dafe2b30f33a8c0741b1e594d977abd0d5b2e3b3e38"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/local-helper-state.json",
+      "size_bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35-q4-dio-cpuproj/metrics-checkpoint.json",
+      "size_bytes": 22121,
+      "sha256": "f6061b17f94ec7930d0862ddc3f6bba90a8b8130bf9a3df812c84190061eebb6"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35-q4-dio-gpu/memory.jsonl",
+      "size_bytes": 12229,
+      "sha256": "2e0624359d1903edbb4311e78263140d7a19951f73a8bf08792e8d1f6e335594"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35-q4-dio-gpu/metrics.json",
+      "size_bytes": 24005,
+      "sha256": "f3ee72e8cced7871ff5933db29ddc3c01469cf330b8390436e28945013c02f0a"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35-q4-dio-gpu/owner.json",
+      "size_bytes": 2610,
+      "sha256": "1248e6783609f0ee76283370e6730fe95561cb416a4fc96d8db4fc7c8bfb17cd"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35-q4-dio-gpu/server.log.gz",
+      "size_bytes": 5894,
+      "sha256": "ec449e20333c135a5a1847a6d3d3d7046ba627cbf18901b6e111c4eef21d808a",
+      "uncompressed_sha256": "cf4c6e9209b235e5a0d6f80213af3569d91fed081952e669498908ee4bf70481"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35_4b-cpuproj-paired-thinking.fixture.png",
+      "size_bytes": 2796,
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35_4b-cpuproj-paired-thinking.json",
+      "size_bytes": 265586,
+      "sha256": "d34e0b0829c99e8940e067a4474b43d8979c65cb095fd60522ac3bc407970967"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35_4b-paired-thinking-resumed.fixture.png",
+      "size_bytes": 2796,
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/resumed/qwen35_4b-paired-thinking-resumed.json",
+      "size_bytes": 37455,
+      "sha256": "bff09fd96c2935565b06c26c9ce2b6a514d34702145044a350a7278de863f01e"
+    }
+  ]
+}

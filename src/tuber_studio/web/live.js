@@ -17,13 +17,14 @@
   }
   const online = new OnlineSongRequests(api, feedback);
   const cachePanel = new CachePanel($("cache-panel"), api, feedback);
+  const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), api, notify: feedback});
   setInterval(() => { if (authenticated) cachePanel.refresh(); }, 5000);
   async function run(button, action) {
     button.disabled = true; button.setAttribute("aria-busy","true");
     try { await action(); } catch (error) { feedback(error.message,true); }
     finally { button.disabled = button.id === "save-layout" || button.id === "undo-layout" ? !dirty : false; button.removeAttribute("aria-busy"); if (authenticated) await poll(); }
   }
-  function login() { authenticated = false; $("login").hidden = false; $("workspace").hidden = true; }
+  function login() { authenticated = false; accountPanel.deactivate(); $("login").hidden = false; $("workspace").hidden = true; }
   function changed() {
     dirty = true; $("save-state").textContent = "布局尚未保存";
     $("save-layout").disabled = false; $("undo-layout").disabled = false; renderLayers();
@@ -114,7 +115,7 @@
       $("runtime-error").textContent = status.error || "";
     } catch(error) { feedback(error.message,true); } finally { polling = false; }
   }
-  async function boot() { authenticated = true; try { await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
+  async function boot() { authenticated = true; try { await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
   $("login-form").onsubmit = async event => { event.preventDefault(); try { await api("/api/auth",{method:"POST",body:{token:$("token").value}}); $("token").value = ""; await boot(); } catch(error) { $("login-error").textContent = error.message; } };
   $("save-layout").onclick = event => run(event.currentTarget, async () => { const value = await api("/api/live/scene",{method:"PUT",body:scene.scene}); loadScene(value); feedback("布局已保存，OBS画面将同步更新。"); });
   $("undo-layout").onclick = () => loadScene(saved);

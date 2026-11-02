@@ -1,0 +1,8 @@
+{
+  "file": "MiniCPM-V-4_7-1B-mmproj-f16-4x.gguf",
+  "size": 901033888,
+  "sha256": "1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+  "whole_file_verified": true,
+  "cache_advice": "POSIX_FADV_DONTNEED on this artifact only after hashing",
+  "original_16x_projector_untouched": true
+}

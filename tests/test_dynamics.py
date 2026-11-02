@@ -560,12 +560,20 @@ async def test_summary_reused_without_append_new_source_updates_and_budget_inval
     await service.evaluate(manual=True)
     initial = service.summary_status()
     await service.evaluate(manual=True)
-    assert len(service.runtime.llm.count_calls) == 1
+
+    def summary_counts():
+        return [
+            messages
+            for messages in service.runtime.llm.count_calls
+            if len(messages) == 1 and "entries" in json.loads(messages[0]["content"])
+        ]
+
+    assert len(summary_counts()) == 1
     assert service.summary_status()["updated_at"] == initial["updated_at"]
     public_memory(service, text="新的公开虚构故事")
     assert service.summary_status()["valid"] is False and service.summary_status()["entries"] == []
     await service.evaluate(manual=True)
-    assert len(service.runtime.llm.count_calls) == 2
+    assert len(summary_counts()) == 2
     assert service.store.one("SELECT COUNT(*) AS n FROM dynamic_memory_summaries")["n"] == 1
     await service.set_policy({"memory_summary_max_tokens": 512})
     assert service.summary_status()["max_tokens"] == 512 and not service.summary_status()["valid"]
@@ -661,7 +669,7 @@ async def test_summary_and_its_token_measurement_hold_same_gpu_generation_lock(s
     service.runtime.llm.hook = assert_summary
     monkeypatch.setattr(service.runtime.llm, "count_tokens", assert_count)
     await service.evaluate(manual=True)
-    assert len(service.runtime.llm.calls) == 2 and len(service.runtime.llm.count_calls) == 1
+    assert len(service.runtime.llm.calls) == 2 and len(service.runtime.llm.count_calls) == 2
 
 
 async def test_revoke_during_summary_generation_prevents_commit_and_decision(service):

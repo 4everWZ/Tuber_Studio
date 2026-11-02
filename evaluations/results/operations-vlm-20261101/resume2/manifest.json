@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "file": "operations-vlm-20261101/resume2/.gitattributes",
+      "size_bytes": 69,
+      "sha256": "476df5f337874095a32f5f4f37c48c1e427ea7823b13b22c0ea0b4eb46e5db48"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/earlier-recovery.json",
+      "size_bytes": 5213,
+      "sha256": "afd5b61701b7a89253671acccdc7fb988fcd8972a72971f62b5a63410f1e4ea4"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/handoff.json",
+      "size_bytes": 834,
+      "sha256": "02bc7f372e9a52db8485800cf666a27f22f6d7135975edfcd5a2145d03147def"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/qwen-prior-exit/memory.jsonl.gz",
+      "size_bytes": 81912,
+      "sha256": "36c372f369845852fddf85362e73a78b6c06ef673be9a21f48cd546b19f47c03",
+      "uncompressed_sha256": "af3b9fb658d433963163589cc5c2c6bbd07829f392c6eeed07ff69cdd104a9bf"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/qwen-prior-exit/metrics.json",
+      "size_bytes": 23989,
+      "sha256": "107d9ad988f442dfb0f0601816f4e3129e171788fb132ea8bf03c54fffb4f760"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/qwen-prior-exit/owner.json",
+      "size_bytes": 2618,
+      "sha256": "59113e81af7d785697a8d0e5e9e84230e4bfdc761379869c4fd13addb4940df1"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/qwen-prior-exit/server.log.gz",
+      "size_bytes": 46384,
+      "sha256": "db2f011886fe3b7b379018fa6e100ee718fbdd6983e05fe6dffd62b7f729a86e",
+      "uncompressed_sha256": "1e1009e194931df85814e1e761f1ac77c77343eb1a9e1f636e993f49c0c089ed"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/qwen-prior-exit/stop.request.json",
+      "size_bytes": 112,
+      "sha256": "55b996f6c4881768efacfcde44b5b938e6696e6abe1a5537c7f578cab16bcf88"
+    },
+    {
+      "file": "operations-vlm-20261101/resume2/restored-after-reconnect.json",
+      "size_bytes": 2055,
+      "sha256": "4efd767f34f1256b366122f6040be91440125fc821ae1d9cd642854ae18c07a2"
+    }
+  ]
+}

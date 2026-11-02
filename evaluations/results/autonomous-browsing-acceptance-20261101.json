@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-01",
+  "scope": "Text browsing implementation and fault verification; real model semantics retain manual review",
+  "python": {
+    "command": "uv run --locked pytest -q",
+    "passed": 1024,
+    "skipped": 3,
+    "failures": 0,
+    "skip_details": [
+      {
+        "test": "tests.test_genie_backend",
+        "reason": "collection skipped"
+      },
+      {
+        "test": "tests.test_genie_sampling",
+        "reason": "collection skipped"
+      },
+      {
+        "test": "test_fixed_action_revisions_and_publish_permission_scope",
+        "reason": "could not import 'yaml': No module named 'yaml'"
+      }
+    ]
+  },
+  "node": {
+    "command": "node --test components/song_requests/test/*.test.cjs",
+    "passed": 4
+  },
+  "static": {
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "all_frontend_javascript_syntax": "passed",
+    "git_diff_check": "passed"
+  },
+  "environment": {
+    "base_sha256": "ff99292f7ae1efb88a7a367d2008b404b1c50a5a16303f3a53801df644036143",
+    "online_sha256": "be6441607ae064398b0ee271f74c45fbe055a8d9828e716344fdd9ce5067e1de",
+    "new_dependencies": false,
+    "image_rebuilt_or_pulled": false,
+    "production_service": "healthy, previous release preserved"
+  },
+  "evidence": {
+    "browser": "autonomous-browsing-ui-20261101.json",
+    "jetson_preparation": "autonomous-browsing-preparation-20261101.json",
+    "native_model_baseline": "autonomous-browsing-mini-baseline-20261101.json",
+    "native_model_final": "autonomous-browsing-mini-20261101.json"
+  },
+  "default_behavior": {
+    "automation_enabled": false,
+    "visual_backend": "disabled",
+    "semantic_acceptance_passed": false,
+    "review_required": true,
+    "music_max_mib": 15360
+  },
+  "external_platform_messages_sent": 0,
+  "unverified": [
+    "Real account recommendation/CC/notifications/dynamic and private reads and write receipts.",
+    "Current Mini semantic quality: 7/12 human criteria passed, manual review remains required.",
+    "Real visual understanding, OBS application and long-running live load."
+  ],
+  "integration": "Local squash merge after passing checks; no push or production deployment requested."
+}

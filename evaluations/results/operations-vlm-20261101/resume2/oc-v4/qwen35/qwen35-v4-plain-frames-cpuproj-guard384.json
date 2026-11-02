@@ -1,0 +1,386 @@
+{
+  "condition": "plain_visual_observation_same_frames_v1",
+  "question": "图中主要人物、物品和动作是什么？",
+  "tools": false,
+  "response_format": "none",
+  "oc_character": false,
+  "input_order": "image_first",
+  "parent_manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+  "helper_sha256": "6ab6c72fae96739483a4c6fa991e33277c1c687acd3ae2d780296a06c6263efa",
+  "shared_source_sha256": {
+    "evaluations/vlm_operations.py": "e472f511b58b09cb894e24bc2e3a68266cb229e753dc1a361677721bb44cb4cb",
+    "evaluations/vlm_images.py": "100318e6e5f1167b478d401403777fbef11c14f791fe574fa4ac1694d1581e2b"
+  },
+  "model_parameters": {
+    "thinking": "on",
+    "max_output_tokens": 8192,
+    "temperature": 1.0,
+    "seed": 42,
+    "timeout_seconds": 600,
+    "extra_body": {
+      "min_p": 0.0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 1.5,
+      "reasoning_budget_tokens": 1024
+    },
+    "extra_body_file_sha256": "ea9a08fc3d9d22a9e6fa85ce7c191b94817fb9ce1fdc76395bd85baca62c9c7c"
+  },
+  "frames": [
+    {
+      "id": "837470340:storyboard:2:b33cbf88946f918c",
+      "cid": "837470340",
+      "actual_time": 10.0,
+      "image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "input_image": {
+        "profile": "server_native",
+        "parent_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "derived_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/jpeg",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 480,
+          "height": 270
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": []
+      },
+      "model_response": {
+        "text": "根据图片内容，主要人物、物品和动作如下：\n\n1.  **主要人物**：一位扎着双丸子头（小辫子）的小女孩，身穿一件黄色的上衣。\n2.  **物品**：桌上摆放着颜料或绘画工具。可以看到有红色、绿色和蓝色的颜料盒/盖子。\n3.  **动作**：小女孩正伸出右手，似乎在拿取或涂抹红色的颜料。图片上的字幕“再涂红色”也提示了她正在进行某种绘画或色彩填充的玩耍活动。",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "stream_complete": true,
+        "ttft_ms": 3985.3777999524027,
+        "first_answer_token_ms": 41032.65289997216,
+        "total_ms": 48867.32759990264,
+        "usage": {
+          "completion_tokens": 627,
+          "prompt_tokens": 141,
+          "total_tokens": 768,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "response_model": "ops-qwen35_4b",
+        "reasoning_characters_observed_not_retained": 950,
+        "request_parameters": {
+          "min_p": 0.0,
+          "top_p": 0.95,
+          "top_k": 20,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 1.5,
+          "reasoning_budget_tokens": 1024,
+          "model": "ops-qwen35_4b",
+          "temperature": 1.0,
+          "seed": 42,
+          "max_tokens": 8192,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "chat_template_kwargs": {
+            "enable_thinking": true
+          }
+        }
+      }
+    },
+    {
+      "id": "837470340:storyboard:4:631304db8b63ea77",
+      "cid": "837470340",
+      "actual_time": 20.0,
+      "image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "input_image": {
+        "profile": "server_native",
+        "parent_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "derived_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/jpeg",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 480,
+          "height": 270
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": []
+      },
+      "model_response": {
+        "text": "根据图片内容，主要元素如下：\n\n**1. 人物：**\n*   **一个小女孩**：她扎着两个可爱的丸子头（双马尾），穿着黄色的印花上衣，正专注地看着前方的操作，表情好奇且认真。\n\n**2. 物品：**\n*   **注射器/移液管**：前景有一只手握着透明的管状工具，里面装着蓝色的液体。\n*   **小杯子**：桌面上有一个透明的小塑料杯，里面盛着黄色的液体。\n*   **红色物体**：右下角似乎还有一个红色的盖子或小容器的一部分。\n\n**3. 动作：**\n*   **正在进行科学实验或手工操作**：一只成年人的手正拿着装有蓝色液体的注射器，准备将其中的液体小心翼翼地注入到装有黄色液体的杯子中（或者是为了混合这两种颜色）。\n*   **观看学习**：小女孩正在全神贯注地观察这个混合过程。\n\n图片上的文字提示“要非常小心的 / 用着这个轻轻地放下去”，进一步确认了这是一个需要精细操作的动作，很可能是在做颜色混合的实验。",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "stream_complete": true,
+        "ttft_ms": 3867.7305999444798,
+        "first_answer_token_ms": 43793.60629990697,
+        "total_ms": 60380.17299992498,
+        "usage": {
+          "completion_tokens": 777,
+          "prompt_tokens": 141,
+          "total_tokens": 918,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "response_model": "ops-qwen35_4b",
+        "reasoning_characters_observed_not_retained": 1049,
+        "request_parameters": {
+          "min_p": 0.0,
+          "top_p": 0.95,
+          "top_k": 20,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 1.5,
+          "reasoning_budget_tokens": 1024,
+          "model": "ops-qwen35_4b",
+          "temperature": 1.0,
+          "seed": 42,
+          "max_tokens": 8192,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "chat_template_kwargs": {
+            "enable_thinking": true
+          }
+        }
+      }
+    },
+    {
+      "id": "837470340:storyboard:7:b34f24470efc2922",
+      "cid": "837470340",
+      "actual_time": 35.0,
+      "image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "input_image": {
+        "profile": "server_native",
+        "parent_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "derived_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/jpeg",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 480,
+          "height": 270
+        },
+        "parameters": {
+          "operation": "identity"
+        },
+        "official_sources": []
+      },
+      "model_response": {
+        "text": "根据图片内容，主要元素如下：\n\n1.  **主要人物**：画面中是一个穿着黄色衣服的孩子（看起来像是一个小女孩），只露出了头部和部分手臂。\n2.  **主要物品**：孩子手中拿着一支细长的透明玻璃管（类似实验室用的试管）。管内装着彩色的、呈液态或凝胶状的物质，呈现出明显的彩虹色分层效果（从下往上是黄、绿、蓝、橙、红等颜色）。在画面下方边缘，还可以看到几个装有不同颜色颜料或液体的小容器。\n3.  **动作**：孩子正用手稳稳地拿着这支玻璃管，将其展示给镜头看。字幕“现在就是有不断的颜色分层”也说明她正在向观众展示试管内的这一物理现象。",
+        "tool_calls": [],
+        "finish_reason": "stop",
+        "stream_complete": true,
+        "ttft_ms": 3874.421800021082,
+        "first_answer_token_ms": 36500.251100049354,
+        "total_ms": 47868.76960005611,
+        "usage": {
+          "completion_tokens": 612,
+          "prompt_tokens": 141,
+          "total_tokens": 753,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "response_model": "ops-qwen35_4b",
+        "reasoning_characters_observed_not_retained": 816,
+        "request_parameters": {
+          "min_p": 0.0,
+          "top_p": 0.95,
+          "top_k": 20,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 1.5,
+          "reasoning_budget_tokens": 1024,
+          "model": "ops-qwen35_4b",
+          "temperature": 1.0,
+          "seed": 42,
+          "max_tokens": 8192,
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "chat_template_kwargs": {
+            "enable_thinking": true
+          }
+        }
+      }
+    }
+  ],
+  "frame_limit": null,
+  "semantic_review": "pending",
+  "platform_messages_sent": 0,
+  "production_configuration_written": false,
+  "model_metadata": {
+    "model_requested": "ops-qwen35_4b",
+    "observed_context_tokens": 131072,
+    "model_alias_matches": true,
+    "properties": {
+      "default_generation_settings": {
+        "params": {
+          "seed": 4294967295,
+          "temperature": 0.800000011920929,
+          "dynatemp_range": 0.0,
+          "dynatemp_exponent": 1.0,
+          "top_k": 40,
+          "top_p": 0.949999988079071,
+          "min_p": 0.05000000074505806,
+          "top_n_sigma": -1.0,
+          "xtc_probability": 0.0,
+          "xtc_threshold": 0.10000000149011612,
+          "typical_p": 1.0,
+          "repeat_last_n": 64,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "frequency_penalty": 0.0,
+          "dry_multiplier": 0.0,
+          "dry_base": 1.75,
+          "dry_allowed_length": 2,
+          "dry_penalty_last_n": 64,
+          "mirostat": 0,
+          "mirostat_tau": 5.0,
+          "mirostat_eta": 0.10000000149011612,
+          "adaptive_target": -1.0,
+          "adaptive_decay": 0.8999999761581421,
+          "max_tokens": -1,
+          "n_predict": -1,
+          "n_keep": 0,
+          "n_discard": 0,
+          "ignore_eos": false,
+          "stream": false,
+          "n_probs": 0,
+          "min_keep": 0,
+          "chat_format": "Content-only",
+          "reasoning_format": "none",
+          "reasoning_in_content": false,
+          "generation_prompt": "",
+          "samplers": [
+            "penalties",
+            "dry",
+            "top_n_sigma",
+            "top_k",
+            "typ_p",
+            "top_p",
+            "min_p",
+            "xtc",
+            "temperature"
+          ],
+          "speculative.types": "none",
+          "timings_per_token": false,
+          "post_sampling_probs": false,
+          "backend_sampling": false,
+          "lora": []
+        },
+        "n_ctx": 131072
+      },
+      "total_slots": 1,
+      "model_alias": "ops-qwen35_4b",
+      "model_ftype": "Q4_K - Medium",
+      "model_path": "/workspace/tuber/runtime/models/operations-vlm/Qwen3.5-4B-Q4_K_M.gguf",
+      "modalities": {
+        "vision": true,
+        "video": true,
+        "audio": false
+      },
+      "media_marker": "<__media_2VFPn0bqxbCjqL18WrNvwZ1JVPVgBgO9__>",
+      "endpoint_slots": true,
+      "endpoint_props": false,
+      "endpoint_metrics": false,
+      "ui": true,
+      "ui_settings": {},
+      "chat_template": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is mapping %}\n                    {%- for args_name in tool_call.arguments %}\n                        {%- set args_value = tool_call.arguments[args_name] %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is true %}\n        {{- '<think>\\n' }}\n    {%- else %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}",
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": true,
+        "reasoning_effort_levels": []
+      },
+      "bos_token": ",",
+      "eos_token": "<|im_end|>",
+      "build_info": "b0-unknown",
+      "is_sleeping": false,
+      "cors_proxy_enabled": false
+    },
+    "models": {
+      "models": [
+        {
+          "name": "ops-qwen35_4b",
+          "model": "ops-qwen35_4b",
+          "modified_at": "",
+          "size": "",
+          "digest": "",
+          "type": "model",
+          "description": "",
+          "tags": [
+            ""
+          ],
+          "capabilities": [
+            "completion",
+            "multimodal"
+          ],
+          "parameters": "",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "",
+            "families": [
+              ""
+            ],
+            "parameter_size": "",
+            "quantization_level": ""
+          }
+        }
+      ],
+      "object": "list",
+      "data": [
+        {
+          "id": "ops-qwen35_4b",
+          "aliases": [
+            "ops-qwen35_4b"
+          ],
+          "tags": [],
+          "object": "model",
+          "architecture": {
+            "input_modalities": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output_modalities": [
+              "text"
+            ]
+          },
+          "created": 1793522722,
+          "owned_by": "llamacpp",
+          "meta": {
+            "vocab_type": 2,
+            "n_vocab": 248320,
+            "n_ctx": 131072,
+            "n_ctx_train": 262144,
+            "n_embd": 2560,
+            "n_params": 4205751296,
+            "size": 2729969664,
+            "ftype": "Q4_K - Medium"
+          }
+        }
+      ]
+    }
+  }
+}

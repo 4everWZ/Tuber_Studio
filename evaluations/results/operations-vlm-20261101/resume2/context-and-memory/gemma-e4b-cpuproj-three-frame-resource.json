@@ -1,0 +1,52 @@
+{
+  "purpose": "Resource-only three-frame encode; one output token discarded, no answer quality evaluation",
+  "started_at": "2026-11-01T04:38:35.254930+00:00",
+  "model": "ops-gemma4_e4b",
+  "configured_context_tokens": 131072,
+  "manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+  "input_order": "image_first",
+  "frames": [
+    {
+      "id": "837470340:storyboard:2:b33cbf88946f918c",
+      "actual_time": 10.0,
+      "image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "width": 480,
+      "height": 270,
+      "bytes": 7104
+    },
+    {
+      "id": "837470340:storyboard:4:631304db8b63ea77",
+      "actual_time": 20.0,
+      "image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "width": 480,
+      "height": 270,
+      "bytes": 8793
+    },
+    {
+      "id": "837470340:storyboard:7:b34f24470efc2922",
+      "actual_time": 35.0,
+      "image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "width": 480,
+      "height": 270,
+      "bytes": 7895
+    }
+  ],
+  "payload_sha256": "3950ef76d3f96a3c6df3286409802fa2cc1b1b3e747d5d1e14418bb29a281f41",
+  "max_tokens": 1,
+  "thinking": true,
+  "quality_cases": 0,
+  "http_status": 200,
+  "usage": {
+    "completion_tokens": 1,
+    "prompt_tokens": 277,
+    "total_tokens": 278,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "finish_reason": "length",
+  "reasoning_characters": 0,
+  "response_content_retained": false,
+  "request_succeeded": true,
+  "elapsed_ms": 12245.700999977998
+}

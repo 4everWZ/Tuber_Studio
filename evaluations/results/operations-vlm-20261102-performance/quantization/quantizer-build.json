@@ -1,0 +1,14 @@
+{
+  "fixed_revision": "llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de",
+  "target": "llama-quantize",
+  "server_sha256_before": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+  "platform_writes": 0,
+  "production_changes": false,
+  "configure_run": false,
+  "returncode": 0,
+  "elapsed_seconds": 6.486451036995277,
+  "server_sha256_after": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+  "server_unchanged": true,
+  "quantizer_exists": true,
+  "quantizer_sha256": "3abb095d3fa3af47cd70590140bd3ba03bea0b525bbaca9a84f90cee34d0e5ec"
+}

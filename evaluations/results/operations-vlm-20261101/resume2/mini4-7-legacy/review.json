@@ -1,0 +1,40 @@
+{
+  "status": "legacy_diagnostic_only_positive_oc_profile_pending",
+  "interpretation": "Old engineer-heavy character/instruction and rigid routing/action checks are not final OC capability or model-elimination criteria. Original inputs, outputs, validation events and concrete factual observations remain intact.",
+  "resource": {
+    "actual_context_tokens": 131072,
+    "native_context_tokens": 262144,
+    "loading_seconds": 3.62077007300104,
+    "projector": "Official f16-named file is actual BF16/F32; GPU loaded",
+    "owned_stop_remaining_pids": []
+  },
+  "legacy_diagnostics": {
+    "staged_full": {
+      "structural": 10,
+      "first_action_matches": 6,
+      "final_action_matches": 6
+    },
+    "evidence_first_full": {
+      "structural": 9,
+      "final_action_matches": 4
+    },
+    "core_rules_balanced_pilot": {
+      "cases": 3,
+      "action_matches": 1,
+      "no_full_expansion": true
+    },
+    "locked_heldout": {
+      "structural": 8,
+      "first_action_matches": 2,
+      "final_action_matches": 2,
+      "not_used_for_tuning": true
+    }
+  },
+  "observations": [
+    "For an unseen second-part ball, the generated public body claimed inertia despite only first-part egg material being supplied",
+    "Body text in source-command cases claimed shell/action completion; actual model/platform tools were never executed",
+    "Several ordinary public tasks were routed to private under the old reason-first schema; some otherwise correct factual bodies therefore failed that old action criterion",
+    "Necessary recipient/quote checks rejected certain outputs and are kept distinct from first model action and later retry"
+  ],
+  "decision": "Model selection deferred pending the agreed natural OC profile and positive-task evaluation; no further tuning based on this heldout"
+}

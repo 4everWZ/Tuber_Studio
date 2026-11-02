@@ -1,0 +1,228 @@
+{
+  "protocol": "browsing-semantics-v2-oc",
+  "model": "ops-gemma4_e2b",
+  "enable_thinking": true,
+  "decision_max_tokens": 4096,
+  "provider_class": "LlamaCppProvider",
+  "llm_config": {
+    "kind": "llama_cpp",
+    "base_url": "http://127.0.0.1:18096/v1",
+    "model": "ops-gemma4_e2b",
+    "context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "max_tokens": 1024,
+    "temperature": 0.2,
+    "summary_temperature": 1.0,
+    "enable_thinking": true,
+    "timeout_seconds": 40,
+    "prefill_timeout_seconds": 1200,
+    "auto_compact_token_limit": 117964,
+    "auto_compact_token_limit_scope": "total",
+    "effective_context_window_percent": 95,
+    "compaction_max_tokens": 2048,
+    "compaction_max_retries": 3,
+    "compaction_timeout_seconds": 1200,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0,
+    "seed": 42
+  },
+  "sampling": {
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "min_p": 0.0,
+    "top_k": 40,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0
+  },
+  "loaded_instruction_hashes": {
+    "response_instruction_sha256": "c13a73f772854c14fdfddf07c6f427d522bea96aece63f43bf49b51423a89a35",
+    "canonical_response_instruction_sha256": "c13a73f772854c14fdfddf07c6f427d522bea96aece63f43bf49b51423a89a35",
+    "system_rules_sha256": "2e033a73ec7cabd5e00d21cac81f7df76056d6c4d66ad7a69036b0a525afc01e"
+  },
+  "request_audit_scope": "Actual outgoing generation payload/messages/response-format SHA256 only; no message or reasoning text retained; field ordering preserved",
+  "seed": 42,
+  "explicit_overrides": {
+    "model_base_url": "http://127.0.0.1:18096/v1",
+    "model": "ops-gemma4_e2b",
+    "context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0,
+    "seed": 42,
+    "thinking": "on",
+    "decision_max_tokens": 4096
+  },
+  "character": {
+    "source_file": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\config\\characters.json",
+    "imported_fields": [
+      "core",
+      "style",
+      "rules"
+    ],
+    "public_content_sha256": "c587df81298011fda7d531f1d9d5476918218aa0d1f92674e7e3c7748ccb96f8",
+    "id": "whale",
+    "version": 2
+  },
+  "response_strategy": "staged",
+  "private_request_label": "user_requested",
+  "private_label_scope": "Model-side reason literal only; same schema structure and branches; backend maps reason to canonical user_requested without rewriting action or evidence",
+  "strategy_parameters": {
+    "strategy": "staged",
+    "total_output_tokens": 4096,
+    "decision_tokens": 1024,
+    "evidence_tokens": 1024,
+    "max_retries": 0,
+    "source_guard_mode": "necessary",
+    "decision_character": "full"
+  },
+  "context_contract": {
+    "context_tokens": 131072,
+    "native_context_tokens": 131072,
+    "native_context_source": "explicit_cli",
+    "strict_context_tokens": 131072,
+    "meets_strict_window": true,
+    "native_meets_strict_window": true
+  },
+  "cases_sha256": "cb03802898ede8fc76d10887d71b9c878e638474ff158565e85019d7b2d665c4",
+  "evaluation_scope": "Existing text-only ResponseDecision product schema; no image input",
+  "review_policy": "Review OC interaction, factual accuracy and task completion from the visible reply. Action, literal-text and delivery checks are separate diagnostics; no aggregate rejection score or required disclaimer wording.",
+  "timing_scope": "Per-case wall clock includes round setup, token counting, generation and validation; no TTFT measured",
+  "platform_messages_sent": 0,
+  "production_automation_changed": false,
+  "production_configuration_written": false,
+  "results": [
+    {
+      "id": "explicit-private-request",
+      "strategy": "staged",
+      "packet_policy": null,
+      "actual": null,
+      "structural_complete": false,
+      "stages": [
+        {
+          "stage": "decision",
+          "attempt": 1,
+          "retry": null,
+          "materials_sha256": "b43a2f75a39423e8f61cb6035261f2c4d1179f1d46d96387a7e77f4ecc84741c",
+          "packet_sha256": null,
+          "character_fields": [
+            "core",
+            "style",
+            "rules"
+          ],
+          "max_tokens": 1024,
+          "model_calls": 0,
+          "stop": false,
+          "usage": {},
+          "output_tokens_charged": 0,
+          "usage_verified": false,
+          "elapsed_ms": 50.84410007111728,
+          "error": {
+            "kind": "HTTPStatusError",
+            "message": "Client error '404 Not Found' for url 'http://127.0.0.1:18096/v1/props'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+          }
+        }
+      ],
+      "total_output_tokens": 4096,
+      "decision_tokens": 1024,
+      "evidence_tokens": 0,
+      "body_tokens": 3072,
+      "max_retries": 0,
+      "retries_used": 0,
+      "output_tokens_charged": 0,
+      "materials_sha256": "b43a2f75a39423e8f61cb6035261f2c4d1179f1d46d96387a7e77f4ecc84741c",
+      "source_gate_policy": "necessary",
+      "decision_character": "full",
+      "original_materials": {
+        "kind": "reply_public",
+        "evidence": [
+          {
+            "id": "11:0",
+            "text": "盐水实验中鸡蛋上浮。"
+          }
+        ],
+        "thread": {
+          "source": {
+            "author_uid": "300",
+            "text": "可以私信继续聊吗？我想说一些家庭方面的事。"
+          }
+        },
+        "max_chars": 60
+      },
+      "raw_model_action_matches": null,
+      "final_model_action_matches": null,
+      "pipeline_acceptance": false,
+      "backend_binding": {
+        "account_id": "evaluation-only",
+        "character_id": "whale",
+        "character_version": 2,
+        "source_author_uid": "300",
+        "resource": null,
+        "provenance": "trusted_evaluation_case_source_only; no platform target created"
+      },
+      "requires_human_fact_review": true,
+      "semantic_quality_accepted": null,
+      "platform_messages_sent": 0,
+      "production_configuration_written": false,
+      "generation_parameters": {
+        "provider_class": "LlamaCppProvider",
+        "model": "ops-gemma4_e2b",
+        "context_tokens": 131072,
+        "native_context_tokens": 131072,
+        "enable_thinking": true,
+        "sampling": {
+          "temperature": 0.2,
+          "top_p": 0.95,
+          "min_p": 0.0,
+          "top_k": 40,
+          "presence_penalty": 0.0,
+          "repeat_penalty": 1.0
+        },
+        "seed": 42
+      },
+      "stage_timing_scope": "lock wait + native profile/tokenizer/transport/generation; validation included in case wall time",
+      "first_model_decision": null,
+      "error": {
+        "kind": "HTTPStatusError",
+        "message": "Client error '404 Not Found' for url 'http://127.0.0.1:18096/v1/props'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+      },
+      "budget_delta": {
+        "reads": 0,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "model_calls": 0,
+      "retry_directives_issued": 0,
+      "elapsed_ms": 53.30519995186478,
+      "expected": "显式希望私聊且涉及家庭细节，移交当前评论作者，理由须匹配。",
+      "budget": {
+        "reads": 0,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "usage": {},
+      "usage_complete": false,
+      "actual_server_context_tokens": null,
+      "generation_request_audit": [],
+      "generation_outputs": [],
+      "evaluation_group": "core",
+      "semantic_review": {
+        "status": "pending",
+        "oc_interaction": null,
+        "factual_accuracy": null,
+        "task_completion": null
+      },
+      "reply_text_for_review": ""
+    }
+  ]
+}

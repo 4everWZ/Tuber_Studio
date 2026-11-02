@@ -1,0 +1,8 @@
+{
+  "min_p": 0.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "repeat_penalty": 1.0,
+  "presence_penalty": 1.5,
+  "reasoning_budget_tokens": 1024
+}

@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy/metrics.json",
+      "bytes": 35787,
+      "sha256": "ac347dfc3349b46b58562d31ccaf2a5c592a7315cdd8cb6dd0f5a88bd624165b",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy/owner.json",
+      "bytes": 2735,
+      "sha256": "8730f86c65660502bb5d52460c16c6fcca33a47f00ee82371eecbd3d906a8ae9",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy/server.log.gz",
+      "bytes": 5920,
+      "sha256": "57366e2ef3774218d86f5407271465a406742f8182060aaf0a3f5b1dd908a68e",
+      "source_sha256": "2b83ee257454c4913f35d72c50ee15ffeb2fd4a10ceca728bed4212a32d5161e"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy/memory.jsonl.gz",
+      "bytes": 5558,
+      "sha256": "03f11a8c2b34729eb1a3669cfdb7cc30b9f38be248ef2f080c0a98dfae384798",
+      "source_sha256": "4c0769025a04ab6c8dc25927ec67a4f53cbc2b5ed51f9608beceddfdba78e5a7"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32/metrics.json",
+      "bytes": 35922,
+      "sha256": "8b03b612c6208bd7ce443945818c3f052f9581c1dc87d1fa352de3b69da006b1",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32/owner.json",
+      "bytes": 2739,
+      "sha256": "e0903400b09eea4d012ecde59dc6f53f3a8fb5ace2a2206fd272ee85414e3019",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32/server.log.gz",
+      "bytes": 7446,
+      "sha256": "d0e77e62b98e9a8edf8f4fa552f2dccf646ed12e12831fa49cff68df916cecca",
+      "source_sha256": "c767d07e4a18e450c89fb44287877e66fac0510207529c297f81faf265f36176"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32/memory.jsonl.gz",
+      "bytes": 4065,
+      "sha256": "364cf97aef425a3bdc1dc02499dd344068df9593c16bd140e0a37a0891b11f6b",
+      "source_sha256": "2931520461655c1a39fb5ba8683fd4012f7da64ce84177b3d63f5f5aa9a53928"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32-cpuproj/metrics.json",
+      "bytes": 35642,
+      "sha256": "aca03fe042b7326cfee26b138fd87e0db646447518f37c76b3aa18ea46445108",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32-cpuproj/owner.json",
+      "bytes": 2750,
+      "sha256": "59981c4b5fa44882db7f99bf0f9528880b7d74313f03545c4da2b8ae3fb2ce78",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32-cpuproj/server.log.gz",
+      "bytes": 23684,
+      "sha256": "1bbe310711c40807ed1a9f8c11061bdbb30a557897bdd0428b234d16445f2d95",
+      "source_sha256": "cd113887f1224d69dbab3f95e69ae52783fadf5580ee16bbe1ce623029f5b399"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32-cpuproj/memory.jsonl.gz",
+      "bytes": 54588,
+      "sha256": "bee5e578164dee8bb7e7f7f4b1f17c98050a0bf6463c5052c86239b20254858b",
+      "source_sha256": "8133e82b444afe9934e10c6f1d332123d626c8087e55c2b4caaf5d289c5391ac"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-gpu/metrics.json",
+      "bytes": 13265,
+      "sha256": "0907472c65b40c6758eeac4a1d7c95e874b50cd2a993418a791ffefa7863f1f0",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-gpu/owner.json",
+      "bytes": 2664,
+      "sha256": "ac5c9de8b326540ed9748cce868ff51a86b47c29241a3ab121dced8993a21c11",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-gpu/server.log.gz",
+      "bytes": 4179,
+      "sha256": "880f138657af6a74a542eeab26768df21356876cd2f8200a526d2bba42e236f2",
+      "source_sha256": "c4dc07d2831711600783af787d293d4d3a81fb2efdb34a473a327b29977ee924"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-gpu/memory.jsonl.gz",
+      "bytes": 527,
+      "sha256": "24f1024f36e1f723389379ab4062157fd60c4db8725e1b0cd64ee192f5223b65",
+      "source_sha256": "c8748c923abd334e3ea37c0edea8ca048543e49049a2240199c8d37ca405c013"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-lazy/metrics.json",
+      "bytes": 13319,
+      "sha256": "098f64ba48f28c1ba118ef3fba33f0211dd6d4bb232e9d3db987b469968a5a15",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-lazy/owner.json",
+      "bytes": 2732,
+      "sha256": "b8da511deaf0ed3c638559f61460aaac71a5d6d95c398573bc4b6732d98dcc87",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-lazy/server.log.gz",
+      "bytes": 4273,
+      "sha256": "1f0b734dc7da58c1ea8c7b3625a9bbe0ac10e5bbc2f7747a5072071c2a1f2ae3",
+      "source_sha256": "7a3b8bb9f004be8136f314f4354f17d14a83fdd131ec37b27fe4638385770548"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-lazy/memory.jsonl.gz",
+      "bytes": 457,
+      "sha256": "31a2df386df52a4ae051798fb97237f34de06138966b5ac506390af8b9648b64",
+      "source_sha256": "96b7c7f8d9c440f3243d9e9b645e2b11aa623b009d179487e10243d6e41f9486"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-mmap/metrics.json",
+      "bytes": 12552,
+      "sha256": "7bdc3556d2cd3c63f5b11c4ce3f375e5e99e628d6c2619e2e8a0bcea6ca80618",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-mmap/owner.json",
+      "bytes": 2666,
+      "sha256": "4eea0bedc7131ce447dac29b9d5885201083b54554b2ee969c76e29b3177d4d4",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-mmap/server.log.gz",
+      "bytes": 3499,
+      "sha256": "b64c8e23b7174b0343088aa094eb3add1dc6d5039a87a7cfcfaa9846734a6916",
+      "source_sha256": "59793d6e53c028b176e0088e14fa025cacd5d9133edd25119bc340c74ef84fa9"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-mmap/memory.jsonl.gz",
+      "bytes": 512,
+      "sha256": "bc79b70c1db1c608f15b1bbe54e554e0ab46ae9cd1ff27c02341733bcb4cc1a3",
+      "source_sha256": "63f789e2c80d39ae620cb60accc876abaf934c4e3031567fda20e58ed3ce58d1"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/lfm3vl-yarn131072/metrics.json",
+      "bytes": 29247,
+      "sha256": "f3d13f5525a9dea992013270d6bd151487a6e7fad711dd8b3d0b41d2042203de",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/lfm3vl-yarn131072/owner.json",
+      "bytes": 2933,
+      "sha256": "3769ee583be68ef4c5241a649e91828da0c502fa388c4b3b916baeaced22d64b",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/lfm3vl-yarn131072/server.log.gz",
+      "bytes": 23040,
+      "sha256": "c63b4f9c6fed39e1c1ad794c97977229fbcc342e9262e5840eb9f29afaa5eeaf",
+      "source_sha256": "3f44418a670f4435487d73c1817f20075fa2f865380653abdbf20f1467656abc"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/lfm3vl-yarn131072/memory.jsonl.gz",
+      "bytes": 12353,
+      "sha256": "68b4747f52b2fb081db778badf3c0ea4e8b278c0e3ba8f2127a07c70fc302781",
+      "source_sha256": "3bb4315aecf1b6fc2c8c24bd0c518a79c87d7f7d203868e64aeaeab896327e7f"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-capacity.json",
+      "bytes": 27592,
+      "sha256": "eb7b8dca0ff5ae5b478361143c902c68b6c28e2fb71246bb2404da0d2bbe3de9",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32-capacity.json",
+      "bytes": 27597,
+      "sha256": "283100baf800e6c79d6293a902e81f8850e04b1d8823cb8aec23f78ee7012dc8",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-dio-lazy-u32-cpuproj-capacity.json",
+      "bytes": 28042,
+      "sha256": "d40168a70d6d2f9dd463cfac2d420e42e3febeffe6975bbab04006471689a5ed",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-cpuproj-three-frame-resource.json",
+      "bytes": 1598,
+      "sha256": "8676d034e076c2958b8283399411ff9f236fa9fe4d14f36b8cbdb65efd5b16a3",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-three-frame-resource-log-observed.json",
+      "bytes": 304,
+      "sha256": "eafb3beee849e7afd14b1395a32497ed0323b001139081f37eb5b497f6c2200c",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-capacity-tegrastats.txt",
+      "bytes": 574,
+      "sha256": "1b9e0b711c474fa94c5afacc1ab6dfb1f8da90ba82cfbf2c3f3f7b35e72b4bda",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/lfm3vl-yarn129k-capacity.json",
+      "bytes": 22200,
+      "sha256": "65cb4d1bd6000f14e3b5a7f33cf1859a5b4175facaab26c011b0510241c701dd",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/gemma-e4b-processor_config.json",
+      "bytes": 1689,
+      "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/three-frame-log-observed-source.log.gz",
+      "bytes": 23435,
+      "sha256": "fa588424581d776f3ec0b1a5c6af4bc7a7cc34e539f1d6a8549eb7643752812e",
+      "source_sha256": "7c35185fcad70e77a3f31d363fbc33a987171e2187cc6ab09aca598533e65dcf"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/vlm-resource-snapshot.py.gz",
+      "bytes": 26000,
+      "sha256": "900a782e3a7b7e50cfedc417d9347a1e47e0470651dbdadf7a5e2e5f337fa18c",
+      "source_sha256": "1e236df060e05537d95be9c53de3cf10398d7976837e5286dfb412ccb5d83cca"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/image-resource-probe.py.gz",
+      "bytes": 1438,
+      "sha256": "2d8d81e15a15be06f35eb020e4cfa9a0aa8f0f8cc2eedd43aa2bbe2b18e8b0de",
+      "source_sha256": "44771d7090abc06c193bf1bbdea9499d06d326cd52f9c34d6506e540fa2e5fd8"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/hf-gemma4-v550-image-processor.py.gz",
+      "bytes": 2740,
+      "sha256": "7554b3260b5481fc70fbe1d40fd0feb2d0e1a00d1f5ac22e444d09992b4bd4dc",
+      "source_sha256": "40da8e88ca1a4578cd72e021952d588d9d63fe80ec06b1c2e910ca2811e044ef"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/hf-gemma4-v550-image-processor-pil.py.gz",
+      "bytes": 3280,
+      "sha256": "76fb3480bb891d28f929e3cbf8ab11ffedcdb1b22979e5c51b313225a7d1a393",
+      "source_sha256": "9c98f64edeb3b8d037d54eb0ea86af1ab638934c91c4207836fc5cb096d8a17e"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/context-and-memory/overview.json",
+      "bytes": 20145,
+      "sha256": "0b08dcc7b16fddea73259fe5b08bf0554ce822e90daa364abd5c51e082b339de",
+      "source_sha256": null
+    }
+  ]
+}

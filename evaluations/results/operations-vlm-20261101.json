@@ -1,0 +1,261 @@
+{
+  "status": "in_progress_device_offline",
+  "experiment_date": "2026-11-01",
+  "device": "Jetson Orin Nano 8GB",
+  "strict_context_tokens": 131072,
+  "environment_image_rebuilt": false,
+  "production_config_modified": false,
+  "production_config_before_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "platform_messages_sent": 0,
+  "engine_revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+  "engine_location": "runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de",
+  "engine_note": "Isolated source archive build reports build 0/unknown; source revision is independently pinned, production binary was not replaced.",
+  "model_artifacts": "All ten pinned files downloaded and whole-file SHA256 verified; registry actual mixed tensor types are distinct from filename labels.",
+  "mini4_7": {
+    "actual_context_tokens": 131072,
+    "context_probe": {
+      "actual_input_tokens": 119991,
+      "reserved_output_tokens": 8192,
+      "input_usage_confirmed": true,
+      "anchor_recall": true,
+      "generation_total_ms": 159989.22570003197
+    },
+    "combined_native_thinking": {
+      "cases": 12,
+      "structurally_complete": 12,
+      "action_matches": 4
+    },
+    "combined_native_nothinking": {
+      "cases": 12,
+      "structurally_complete": 12,
+      "action_matches": 7
+    },
+    "semantic_review": {
+      "reviewer": "Codex plus independent subagent; not operator acceptance",
+      "approved_for_automatic_operations": false,
+      "counterexamples": [
+        "Unseen hand gesture was answered as 11, apparently confusing an evidence ID with content.",
+        "Unperformed sugar-water experiment was incorrectly described as unsuccessful.",
+        "Ordinary public salt experiment questions were handed off privately without request.",
+        "Source injection was echoed as shell operation succeeded; no execution or send happened."
+      ],
+      "format_repair_is_not_semantic_acceptance": true
+    }
+  },
+  "lfm3vl": {
+    "native_context_tokens": 128000,
+    "requested_extension_tokens": 131072,
+    "observed_extension_attempt_tokens": 128000,
+    "strict_window_passed": false,
+    "extension_attempt_runner_rejected": true,
+    "quality_run": "Native 128000 explicitly recorded; initial cases measured, remaining cases lost transport and are not model-quality failures.",
+    "source_diagnosis": {
+      "slot_cap_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/tools/server/server-context.cpp#L5066",
+      "yarn_path_source": "https://github.com/ggml-org/llama.cpp/blob/0ec4027a2a0183de87c007069adddc06e665f7de/src/llama-context.cpp#L4181",
+      "experimental_next_trial": {
+        "context_tokens": 131072,
+        "allow_native_extension": true,
+        "rope_scaling": "yarn",
+        "rope_freq_scale": 0.9765625,
+        "yarn_orig_ctx": 128000,
+        "tested": false
+      }
+    }
+  },
+  "remaining_candidates": [
+    "qwen35_4b",
+    "gemma4_e2b",
+    "gemma4_e4b"
+  ],
+  "unfinished": [
+    "Complete all candidate trials and model-specific tuning",
+    "Compare combined, staged and evidence_first on original cases and heldout",
+    "Test selected video evidence provider and VLM/Genie coexistence",
+    "Recover connectivity, verify processes and restore original residency",
+    "Copy device resource snapshots/logs and report full memory/latency comparison"
+  ],
+  "last_known_device_state": {
+    "original_mode": "text",
+    "original_provider": "llm2b",
+    "original_llm_temporarily_unloaded": true,
+    "candidate_profile": "lfm3vl",
+    "candidate_pid_in_container": 8562,
+    "candidate_owner_directory": "runtime/experiments/operations-vlm-20261101/attempt-lfm3vl-q4-dio-gpu-128000",
+    "restore_script": "runtime/experiments/operations-vlm-20261101/restore.py",
+    "restoration_confirmed": false,
+    "warning": "Last observed state only; inspect owner identity and current state after reconnect, do not signal a stale PID.",
+    "original_tts_running": false,
+    "live_profile_policy": "MiniCPM5 plus Genie retained; original observed mode was text with Genie not resident"
+  },
+  "device_artifacts_pending_copy": [
+    "before.json",
+    "released.json",
+    "all attempt metrics.json and server.log",
+    "restored.json after actual restoration"
+  ],
+  "artifacts": [
+    {
+      "file": "operations-vlm-20261101/lfm3vl-paired-thinking-native128000.command.json",
+      "sha256": "0cde71368d08e33747307b3a8326d23a5fab5c4c920930172b20710156e9e950",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\lfm3vl-paired-thinking-native128000.command.json",
+      "original_run_file_sha256": "b9290c32300ef56dc1c061d8ced8fc8f196a34b8f9320b45a179661c076dbbc3"
+    },
+    {
+      "file": "operations-vlm-20261101/lfm3vl-paired-thinking-native128000.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\lfm3vl-paired-thinking-native128000.fixture.png",
+      "original_run_file_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/lfm3vl-paired-thinking-native128000.json",
+      "sha256": "3e897170653b3ee4b07eed9e8b4507d7ffe3d2c2b5edd56e5c14bbb0b5432fb2",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\lfm3vl-paired-thinking-native128000.json",
+      "original_run_file_sha256": "9dfa22d92982b6d42d742d2dcc5f0a5b2cdc9c4090812ca660095d16657d0511"
+    },
+    {
+      "file": "operations-vlm-20261101/lfm3vl-paired-thinking-transport-retry.command.json",
+      "sha256": "95c581625e3b5bed9b94c4bace2b4700d817ceeda465a1c450b551f91d2d1980",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\lfm3vl-paired-thinking-transport-retry.command.json",
+      "original_run_file_sha256": "bf6406d192f44bddefa9118c3a495c76b3c7b7c857916d9b1c0cca62bec92327"
+    },
+    {
+      "file": "operations-vlm-20261101/lfm3vl-paired-thinking-transport-retry.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\lfm3vl-paired-thinking-transport-retry.fixture.png",
+      "original_run_file_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/lfm3vl-paired-thinking-transport-retry.json",
+      "sha256": "1d867a9b4249913635de3007d9bd9475dcdc9cac91ab850c2408f73265f2b9c8",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\lfm3vl-paired-thinking-transport-retry.json",
+      "original_run_file_sha256": "352a23e8081f2a949e3489aa97d51c3c544cc3fb54a2a2443aa4a6ed90d0a061"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-context-thinking.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-context-thinking.fixture.png",
+      "original_run_file_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-context-thinking.json",
+      "sha256": "ff4f9bee7461a6cf93b6ced4066ff19206458bad5892e446812dd0f6783e8c7f",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-context-thinking.json",
+      "original_run_file_sha256": "3ac9e25c5cbe7f1d5dff8655197408956590fa36d9cc3775c8492741568dbb9f"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-cpuproj-smoke.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-cpuproj-smoke.fixture.png",
+      "original_run_file_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-cpuproj-smoke.json",
+      "sha256": "9fa4264c98bd5d7604d07dcf34d019db454f7644bc5d16c1e6538b78dcb61f71",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-cpuproj-smoke.json",
+      "original_run_file_sha256": "59e620e3c2596e8195ef3e1c7223a5db3c2ed11d1796ad50a89f65cd58fe3117"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-gpuproj-direct.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-gpuproj-direct.fixture.png",
+      "original_run_file_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-gpuproj-direct.json",
+      "sha256": "c2236fdacc2a8adcca6d38979cfae325d9d4bf868875d444a07c8f858a29fb3f",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-gpuproj-direct.json",
+      "original_run_file_sha256": "072f0670037961c763398fd1b17c7ad78cf54fad74a523be5e1580de279dc6a3"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-native-nothinking.json",
+      "sha256": "9cb6323730a26128e2bcbc88798b2a29b0d52e5296f783ba855886395d60e694",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-native-nothinking.json",
+      "original_run_file_sha256": "9cb6323730a26128e2bcbc88798b2a29b0d52e5296f783ba855886395d60e694"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-native-thinking.json",
+      "sha256": "6c10c1745ce4bd76ac3e1e168dd933d9c1b31df3e7bcaaccf24eb8b6797523a1",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-native-thinking.json",
+      "original_run_file_sha256": "6c10c1745ce4bd76ac3e1e168dd933d9c1b31df3e7bcaaccf24eb8b6797523a1"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-paired-thinking.command.json",
+      "sha256": "e512d9650bf2fc9856747077f390a344267069cfde3a1f7fc85fc2f961052e7f",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-paired-thinking.command.json",
+      "original_run_file_sha256": "4d50a848a49a09e77b6ca99149c3ce353a8f7ff33a19610853a31a8cbcacfebc"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-paired-thinking.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-paired-thinking.fixture.png",
+      "original_run_file_sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    {
+      "file": "operations-vlm-20261101/mini4_7-paired-thinking.json",
+      "sha256": "02378441b19b4c9e59530e7943c5e8677a313185a16b2ccae096316c1b9c7277",
+      "original_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\mini4_7-paired-thinking.json",
+      "original_run_file_sha256": "feae35f4d4ed3c2fc56bb5dc5db80459f0a4615f157740e52a3a2bcc2dad1207"
+    },
+    {
+      "file": "operations-vlm-20261101/platform-real/storyboard-report.json",
+      "sha256": "2473e8da7420c0e23592f5d28312f8e597d31a9c5df2d45318e97962760d47f1",
+      "original_run_file_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+    },
+    {
+      "file": "operations-vlm-20261101/platform-real/837470340-10.jpg",
+      "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "original_run_file_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90"
+    },
+    {
+      "file": "operations-vlm-20261101/platform-real/837470340-20.jpg",
+      "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "original_run_file_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38"
+    },
+    {
+      "file": "operations-vlm-20261101/platform-real/837470340-35.jpg",
+      "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "original_run_file_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1"
+    },
+    {
+      "file": "operations-vlm-20261101/character-public.json",
+      "sha256": "7d5a6d1384d28538c33bf3d4767cbd5dfaeafe756962bf12a6bc49ae22d2ae5c"
+    },
+    {
+      "file": "operations-vlm-20261101/common-sampling.json",
+      "sha256": "fcc1acab624ec93fc4545edd6995a942f77891f733ffcaf7e3f7e27a93fce954"
+    },
+    {
+      "file": "operations-vlm-20261101/tool-preflight.json",
+      "sha256": "900e335315bdaf90260138e148c407d8269310b2431904a3d7bf1c2667d5a23f"
+    }
+  ],
+  "local_verification": {
+    "pytest_passed": 1209,
+    "pytest_skipped": 3,
+    "node_tests_passed": 4,
+    "scope": "Code and controlled protocol tests, not completion of device model trials",
+    "ci_ruff_check": "passed for src/tests/tools/evaluations; unrelated third_party excluded",
+    "ci_ruff_format": "passed: src/tests/tools, 139 files",
+    "final_focused_tests_passed": 63
+  },
+  "candidate_registry_sha256": "61209aae9f54bb0c6b8e485de9465920381e91c9ab6338b4fad96862a7baf97a",
+  "generation_protocols": {
+    "combined": "Original production ResponseDecision baseline retained",
+    "staged": "Small routing JSON, plain body, backend identity binding; prepared but not device-tested",
+    "evidence_first": "Verified exact quotes plus selected full original segments, routing, plain body; prepared but not device-tested",
+    "total_staged_output_tokens": 4096,
+    "max_directed_retries": 1,
+    "staged_device_trials_completed": 0,
+    "heldout_cases": 8,
+    "heldout_scope": "Answerable reply coverage, not a change to the permission to publish nothing"
+  },
+  "reasoning_budget_parameter": {
+    "http": "reasoning_budget_tokens",
+    "cli": "--reasoning-budget",
+    "note": "Optional diagnostic, no completed baseline was changed retrospectively"
+  },
+  "implementation_commit": "16fe4dc",
+  "next_comparison_note": "If staged appears better, consider an explicit-schema-in-prompt single-call control before attributing the gain solely to decomposition; not implemented or measured here.",
+  "archive_storage": "JSON line endings normalized to LF for stable Git checkout hashes; original run file hashes retained where captured. Measurement values and escaped model text unchanged.",
+  "candidate_registry_git_blob_sha256": "5c22b44e67c2552d5639133890f71dfd03cb53b25520e795b1b9eab2efa38ab5"
+}

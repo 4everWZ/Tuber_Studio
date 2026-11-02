@@ -1,0 +1,114 @@
+{
+  "purpose": "Owned Mini VLM plus existing fixed-voice Genie CPU worker, sequential business-shaped inference",
+  "created_at": "2026-11-01T09:01:28.910556+00:00",
+  "model": "ops-mini4_7_4x",
+  "model_run": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/mini4_7-4x-plain-visual-v4",
+  "candidate_pid": 24376,
+  "candidate_create_time": 1793523191.1,
+  "candidate_owner_sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7",
+  "candidate_context_tokens": 131072,
+  "configuration_sha256_before": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "production_configuration_written": false,
+  "broker_mode_changed": false,
+  "platform_messages_sent": 0,
+  "audio_playback": false,
+  "helper_sha256": "e6859e112053e90b27a8ecf7168cf01d00b5f735b3aa07cedc3110717b7cdca1",
+  "messages_sha256": "234159a75351b4280a8ff6b06d19301ae3a7252dd78ae76f51e04703580c2836",
+  "parameters": {
+    "min_available_mib": 512,
+    "max_swap_growth_mib": 128
+  },
+  "phases": {
+    "tts_loading": {
+      "samples": 36,
+      "minimum_available_bytes": 2495377408,
+      "peak_combined_rss_bytes": 4511227904,
+      "peak_swap_growth_bytes": 0
+    },
+    "speech_with_vlm_resident": {
+      "samples": 22,
+      "minimum_available_bytes": 2474487808,
+      "peak_combined_rss_bytes": 4517138432,
+      "peak_swap_growth_bytes": 0
+    },
+    "llm_with_genie_resident": {
+      "samples": 4,
+      "minimum_available_bytes": 2459820032,
+      "peak_combined_rss_bytes": 4511223808,
+      "peak_swap_growth_bytes": 0
+    }
+  },
+  "cleanup": {
+    "worker_returncode": -15,
+    "owned_worker_reaped": true,
+    "candidate_left_running": true
+  },
+  "worker": {
+    "pid": 24539,
+    "create_time": 1793523688.64,
+    "command": [
+      "/opt/studio-venv/bin/python",
+      "/workspace/tuber/tools/jetson/tts/server.py",
+      "-a",
+      "127.0.0.1",
+      "-p",
+      "9041"
+    ],
+    "port": 9041,
+    "production_tts_port": 9011,
+    "independent_owned_worker": true,
+    "ready_seconds": 17.655420310009504,
+    "identity": {
+      "status": "ready",
+      "backend": "genie_onnx_int8",
+      "voice_id": "yaoyao_sovits_v2",
+      "bundle_identity": "513b9e1ea20bc6901d3c5e2f05bea5c202aa6290d805f30911297ebaecf4d8e8"
+    }
+  },
+  "llm": {
+    "text": "白饭将军，我这就叫它「鱼鱼饭」。  \n再给个名字，你听好了——「白饭将军」。  \n摸鱼？行，名字定下，饭定下，再摸鱼吧！",
+    "usage": {
+      "completion_tokens": 92,
+      "prompt_tokens": 445,
+      "total_tokens": 537,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "finish_reason": "stop",
+    "elapsed_seconds": 2.0084413219883572,
+    "reasoning_characters": 54,
+    "request_parameters": {
+      "model": "ops-mini4_7_4x",
+      "stream": false,
+      "max_tokens": 4096,
+      "temperature": 0.2,
+      "seed": 42,
+      "top_p": 0.95,
+      "top_k": 40,
+      "min_p": 0,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0,
+      "chat_template_kwargs": {
+        "enable_thinking": true
+      }
+    }
+  },
+  "speech": {
+    "channels": 1,
+    "sample_width": 2,
+    "rate": 32000,
+    "frames": 383360,
+    "seconds": 11.98,
+    "bytes": 766764,
+    "sha256": "7dc8c21578654e64b2d8e804be0b9197d328702063bfe5f39ee89bd6cd945c98",
+    "pcm_peak": 25511,
+    "elapsed_seconds": 11.022957327018958,
+    "text": "白饭将军，我这就叫它「鱼鱼饭」。  \n再给个名字，你听好了——「白饭将军」。  \n摸鱼？行，名字定下，饭定下，再摸鱼吧！",
+    "endpoint": "loopback-owned-worker",
+    "played": false
+  },
+  "pair_completed": true,
+  "configuration_sha256_after": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "configuration_unchanged": true
+}

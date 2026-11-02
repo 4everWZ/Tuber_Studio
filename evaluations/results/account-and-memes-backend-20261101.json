@@ -1,0 +1,104 @@
+{
+  "date": "2026-11-01",
+  "verified_at": "2026-10-31T20:22:16.686880+00:00",
+  "scope": "management sessions, Bilibili account settings, role meme catalog and DM/dynamic image delivery",
+  "platform": "Windows",
+  "python": "3.12.13",
+  "node": "v24.15.0",
+  "python_checks": {
+    "command": "uv run --locked --with numpy==2.2.6 --with onnx==1.17.0 --with PyYAML==6.0.2 pytest -q",
+    "passed": 1401,
+    "skipped": [
+      {
+        "case": "test_credentials_database_and_reset_file_keep_private_modes",
+        "reason": "POSIX private mode assertion"
+      }
+    ],
+    "failed": 0,
+    "elapsed_seconds": 133.41,
+    "lint": "uv run --locked ruff check src tests tools evaluations: passed",
+    "format": "uv run --locked ruff format --check src tests tools evaluations: passed (155 files)"
+  },
+  "node_song_component": {
+    "command": "npm test",
+    "passed": 4,
+    "failed": 0
+  },
+  "browser_script_syntax": {
+    "passed": [
+      "account.js",
+      "memes.js",
+      "messages.js",
+      "app.js",
+      "live.js"
+    ]
+  },
+  "browser_evidence": "account-and-memes-ui-20261101.json",
+  "environment": {
+    "application_dependencies_changed": false,
+    "lock_files_changed": false,
+    "environment_identity": "ff99292f7ae1efb88a7a367d2008b404b1c50a5a16303f3a53801df644036143",
+    "docker_image_rebuilt": false,
+    "note": "Existing environment already installs ffmpeg; only the CI host setup gains an explicit decoder install."
+  },
+  "feature_source_snapshot": {
+    "base_commit": "4f8c578e4f3268ffaf4e71a8e9483414c87c9506",
+    "files": {
+      "src/tuber_studio/app.py": "d69e936297ac99c385c026c497ff64041192b120424d52fdb4a50556fcc1e2f8",
+      "src/tuber_studio/auth_sessions.py": "5fa021936add35d4e18443c234ebdcd8e2584b1f5a63d817673743a38a91b062",
+      "src/tuber_studio/bilibili.py": "77aa5d90402230a5e84b8cf5218638811439ed941a7bedb2c24330c4dcde9a03",
+      "src/tuber_studio/bilibili_account.py": "e10307ce4fd760999e86d7c158d17b4b3ee4e7010030221bf797386c5652cced",
+      "src/tuber_studio/bilibili_images.py": "c4021f7f2f9aad7ca34ed83bc938c361a8be1b087602b621bda5aa0fdc40c4f0",
+      "src/tuber_studio/bilibili_messages.py": "656932dc68145831e53e789c2458de2363d7cc04cd05e02f83577598241882fd",
+      "src/tuber_studio/bilibili_dynamics.py": "3ea12f027d2bc4efeaf07c7fb79678600061011434bc404a655852aaafad2012",
+      "src/tuber_studio/comments.py": "6a256396c2afc03319556b0887fd2a2b0a4d3000a5190dbc3be441f04eaa62fb",
+      "src/tuber_studio/direct_messages.py": "54bf6fcdc1e2691bfb8acae8c15475f9acc0bdf837ac9493f49fe4dab15a00a8",
+      "src/tuber_studio/dynamics.py": "1ca0e3a023fde4bcbaf119b018517ee199a5325959eaaa7d6a2516936fe4fc30",
+      "src/tuber_studio/meme_api.py": "d4d92afb9abe3a239077f2252757757a838bd83a33b96dc8b121c7561fdb51e5",
+      "src/tuber_studio/meme_selection.py": "d7e5bbece5b7b9413d2879b823c118644a9cb5c6fbd90b6f6c697e029269665e",
+      "src/tuber_studio/memes.py": "e5d7b701df5cf0fe7ddebed3df06a5264b252b28e02a3e3a53558fc67ef0c39e",
+      "src/tuber_studio/message_api.py": "03271025bd0d3660d612982b91990a387c465fac817d26c69c45f2d420b7b91a",
+      "src/tuber_studio/web/account.js": "37c00116ba71bc19a1b132fd5813e8c5779774d65ec4427ed3924fe0a96ea4ca",
+      "src/tuber_studio/web/account.css": "da84cf51176789781005a0296e8bf63ecc2944b3cefd43c9ad775a5b4af23615",
+      "src/tuber_studio/web/app.js": "93142dd8175d63fcbf665a9fc51707d985232083579b4e9f6c95cec91d09a520",
+      "src/tuber_studio/web/index.html": "b400fdee3f8a9df73f322d8aeb1375e4d0f845048a7165df1521091787701f0a",
+      "src/tuber_studio/web/live.js": "c7464e60d3491e7c634da1aca84368da5bff1afb6109489f209c4fe60ee7c8e2",
+      "src/tuber_studio/web/live.html": "145228916f15c10bc28c2cce4f6ebc3b4498b8390a9512793d9bd17aa901a600",
+      "src/tuber_studio/web/memes.js": "ee7cbc0b414504513a4bb305aa6ba0c8c22f79b4036b5bc9627715767d404a0c",
+      "src/tuber_studio/web/memes.css": "3ecb5ac739d9cfc6dd92a8b0ca791a5ff2d5ec81ed2f57745d48c8fc20fe599d",
+      "src/tuber_studio/web/messages.js": "5a8e8e959f13f75894175a60752024c4902c0be202dcc381ac4f696c11cfa450",
+      "tests/test_auth.py": "81eeedf91d2811099d5c88abf7a809f5228edc8feeca141a043e24968e402e5d",
+      "tests/test_auth_sessions.py": "a562cdc4a3dce72a6276642ef81475fb86a6e4f15fea4d8a595bc00984595fa7",
+      "tests/test_bilibili_account.py": "7ee2015b96f3cdf61faac73a6d6889458c908598f8bbd04271999353105b1818",
+      "tests/test_memes.py": "bc725537525d67d5f8fa1ce214a3e5dc1412a70f7fd5026c5e02d97e27327ae5",
+      "tests/test_meme_api.py": "bbe4b4f1920108da442834779b0469fe718869ce0a23faa9f9c4effbb4d40963",
+      "tests/test_message_memes.py": "cec074440e6c68e83a1fd844a13f9f72fd6d3d37f1fe68d2d2c7399b891d632e",
+      "tests/test_dynamic_memes.py": "23503ea15aa09ee8c9fbddd6e8c47508b1dfa3a8b9bb03209b6138191413768f",
+      "tests/test_account_relationships.py": "14fab8d911ae4af808085940e881e4383fd064a2c9dae734b966420540ba0bb1"
+    },
+    "normalized_manifest_sha256": "89ce91e37c3b5e950f1b03338dea2326cc0afdd91e51c81c7d5474a06891b49e"
+  },
+  "boundaries": {
+    "github_ci_executed": false,
+    "platform_messages_sent": 0,
+    "platform_posts_published": 0,
+    "real_platform_image_permissions_verified": false,
+    "platform_gif_animation_verified": false,
+    "meme_selection_quality_with_device_model_verified": false,
+    "production_settings_changed": false,
+    "generation_provider": "catalog/provider boundary reserved; no image generation service connected",
+    "model_comparison": "separate, ongoing Jetson evaluation; these CPU/UI checks do not approve an operations VLM"
+  },
+  "followup_repository_check": {
+    "commit": "bddc3b27c1472e71a7e7888e20d5cd2a980a5093",
+    "verified_at": "2026-10-31T20:54:39.519615+00:00",
+    "scope": "Includes native failure diagnostics and explicit sampling CLI; feature source hashes unchanged",
+    "passed": 1416,
+    "skipped": 1,
+    "failed": 0,
+    "elapsed_seconds": 135.1,
+    "lint": "passed",
+    "format": "passed, 156 files",
+    "github_ci_executed": false
+  }
+}

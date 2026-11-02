@@ -1,0 +1,1263 @@
+{
+  "schema_version": 1,
+  "evaluation": "bounded_e4b_vision_only_diagnostics_v1",
+  "profile": "gemma4_e4b_visiononly",
+  "parent_result": "gemma4-e4b.json",
+  "scope": {
+    "new_eight_video_cohort": false,
+    "diagnostic_only": true,
+    "production_admission": false,
+    "production_evidence": false,
+    "drafts_generated": 0,
+    "platform_writes": 0,
+    "resource_sample": "One actual largest frozen 280-profile image; no new public max3 probe or long-context stress run.",
+    "request_count": 5,
+    "condition_count": 3,
+    "additional_requests": "One maximum-image resource observation and one same-video 58s confirmation.",
+    "character_used": false,
+    "question_kind": "Natural per-frame visual observation without OC, tools or result schema."
+  },
+  "corpus_sha256": "d2a85ca804f8467d21f9148ed5949be9961b5340af108ab09a30f6a1ba758df6",
+  "original_model": {
+    "file": "gemma-4-E4B-it-Q4_0.gguf",
+    "local_filename": "gemma-4-E4B-it-Q4_0.gguf",
+    "quantization": "Q4_0",
+    "size_bytes": 4590807392,
+    "sha256": "a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2",
+    "path": "/workspace/tuber/runtime/models/operations-vlm/gemma-4-E4B-it-Q4_0.gguf",
+    "sha256_verified": true,
+    "source_url": "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/a69f018d7678a2b9f5e705f8903d6fb29b9b25dc/gemma-4-E4B-it-Q4_0.gguf"
+  },
+  "model_provenance": {
+    "original_model": {
+      "repository": "google/gemma-4-E4B-it",
+      "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+      "license": "apache-2.0",
+      "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+      "config_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/config.json"
+    },
+    "conversion_repository": "ggml-org/gemma-4-E4B-it-GGUF",
+    "conversion_revision": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc",
+    "license": "apache-2.0"
+  },
+  "projector_derivation": {
+    "source": {
+      "path": "/workspace/tuber/runtime/models/operations-vlm/mmproj-gemma-4-E4B-it-Q8_0.gguf",
+      "bytes": 559874816,
+      "sha256": "197f49a93027f9843772bd24a6a9e0be2a32a788de5a3def330e9c585d86edd1",
+      "modalities": {
+        "clip.has_vision_encoder": true,
+        "clip.has_audio_encoder": true
+      },
+      "tensor_groups": {
+        "a": {
+          "tensors": 751,
+          "bytes": 327584768
+        },
+        "mm": {
+          "tensors": 2,
+          "bytes": 6266880
+        },
+        "v": {
+          "tensors": 658,
+          "bytes": 225912576
+        }
+      },
+      "tensor_count": 1411,
+      "tensor_data_offset": 84608
+    },
+    "derived": {
+      "path": "/workspace/tuber/runtime/tmp/operations-compare-20261101-gemma4-e4b-visiononly/artifacts/mmproj-gemma-4-E4B-it-Q8_0-vision-only.gguf",
+      "bytes": 559874816,
+      "sha256": "c213f30785c70e3e3bc58b7f2b6064da4b1078ed66b510d565c054e5b96a44f9",
+      "modalities": {
+        "clip.has_vision_encoder": true,
+        "clip.has_audio_encoder": false
+      },
+      "tensor_groups": {
+        "a": {
+          "tensors": 751,
+          "bytes": 327584768
+        },
+        "mm": {
+          "tensors": 2,
+          "bytes": 6266880
+        },
+        "v": {
+          "tensors": 658,
+          "bytes": 225912576
+        }
+      },
+      "tensor_count": 1411,
+      "tensor_data_offset": 84608
+    },
+    "changed_byte_offsets": [
+      1253
+    ],
+    "all_tensor_bytes_unchanged": true,
+    "original_file_unchanged": true,
+    "gguf_tool_version": "source-tree"
+  },
+  "projector_provenance_note": "The derived projector is a local one-BOOL metadata variant of the original pinned upstream Q8 file. It is not an upstream-published artifact; all tensor bytes and the original source file are unchanged.",
+  "binary_sha256": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+  "llama_cpp_revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+  "actual_context_tokens": 131072,
+  "native_parameters": {
+    "profile": "gemma4_e4b_visiononly",
+    "alias": "ops-gemma4_e4b",
+    "listen_host": "0.0.0.0",
+    "port": 9030,
+    "context_tokens": 131072,
+    "allow_native_extension": false,
+    "kv": "q4_0",
+    "kv_k": null,
+    "kv_v": null,
+    "batch": 256,
+    "ubatch": 16,
+    "gpu_layers": 99,
+    "kv_offload": "gpu",
+    "threads": 4,
+    "mmproj_offload": "gpu",
+    "mmap": "off",
+    "lazy_mode": "on",
+    "direct_io": "on",
+    "model_cache_advice": "on",
+    "log_verbosity": 4,
+    "reasoning": "on",
+    "reasoning_budget": null,
+    "rope_scaling": null,
+    "rope_scale": null,
+    "rope_freq_scale": null,
+    "yarn_orig_ctx": null,
+    "flash_attn": "on",
+    "cuda_graphs": "off",
+    "warmup": "on",
+    "image_max_tokens": null,
+    "startup_timeout": 300,
+    "min_available_mib": 384,
+    "max_swap_growth_mib": 128
+  },
+  "loading_seconds": 5.588993689976633,
+  "conditions": [
+    {
+      "condition": "A",
+      "diagnostic_only": true,
+      "resource_admission": false,
+      "production_evidence": false,
+      "platform_writes": 0,
+      "image": {
+        "parent_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+        "derived_sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+        "bytes": 117040,
+        "width": 1056,
+        "height": 576,
+        "cid": "43120657507",
+        "actual_time": 176.0,
+        "frame_id": "43120657507:storyboard:21:71bc59780da756ea"
+      },
+      "original_request_sha256": "1dd64039778e523ae9be9fc3e5056c607d2205c9016769513972c88b49e149ea",
+      "actual_request_sha256": "99e501f156cdfd2cd304cf7e5bb551d4da62bc4f81301de6e000133c101f72f5",
+      "original_request_8192_sha256": "58ce84b60cb555e9f615493414ec1bc731547de85ebf19e5206e374ad2fac42c",
+      "request_parameters": {
+        "model": "ops-gemma4_e4b",
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.08,
+        "seed": 42,
+        "repeat_last_n": 4096
+      },
+      "message_order": [
+        [
+          "image_url",
+          "text"
+        ]
+      ],
+      "owner_experiment_id": "cb0dfb807592453cb81c5cd09d749c74",
+      "helper_sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+      "timings": [
+        {
+          "original_sha256": "99e501f156cdfd2cd304cf7e5bb551d4da62bc4f81301de6e000133c101f72f5",
+          "wire_sha256": "bc27f8fc199e6eb11da698eae0718d9942ee4415bd622af0db6426a88ff2788e",
+          "context": {},
+          "max_tokens": 8192,
+          "content_ttft_ms": 60906.74610604765,
+          "complete_ms": 95554.05210203025,
+          "reasoning_characters_not_retained": 3502,
+          "content_kind": "natural_text",
+          "delivery_changes": {
+            "stream": {
+              "from": false,
+              "to": true
+            },
+            "stream_options": {
+              "from": null,
+              "to": {
+                "include_usage": true
+              }
+            }
+          },
+          "response_format_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "http_status": 200,
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1238,
+            "prompt_tokens": 350,
+            "total_tokens": 1588,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          }
+        }
+      ],
+      "status": "completed",
+      "memory_before": {
+        "samples": 333,
+        "peak_server_tree_rss_bytes": 5823205376,
+        "peak_system_used_bytes": 7002550272,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 987430912,
+        "latest": {
+          "timestamp": "2026-11-01T15:35:30.892384+00:00",
+          "monotonic_seconds": 282223.62686508,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 6907219968,
+          "system_available_bytes": 1082761216,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 747896832,
+          "swap_in_bytes": 600346624,
+          "swap_out_bytes": 3607420928,
+          "server_tree_rss_bytes": 5823188992,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "visible_content": "这是一张移动端聊天界面的截图（通常是微信或类似应用）。整个画面是一个数字化的对话记录，而非物理环境的场景。\n\n### **🖼️ 所见内容描述**\n\n#### **一、 人物角色 (Characters)**\n1. **聊天参与者：** 聊天界面中包含至少两位用户（发件人与接收方），虽然名字不全，但他们通过文本气泡进行互动。\n2. **图内角色：** 在聊天末尾，有一个动态贴纸/表情包。图中描绘了两个风格化的女性或情侣形象，一个身穿深色衣物，另一个较为明亮，两人在接吻或亲密相拥的姿态，周围点缀着红色心形装饰。\n\n#### **二、 物品及元素 (Objects & Elements)**\n1. **手机界面/App接口：** 这是主要的背景，即聊天软件的界面，包含头像占位符、文字输入框、信息流等标准UI设计。\n2. **文本信息：** 包含大量中文汉字和排版好的对话内容。\n3. **功能按钮：** 界面中有绿色高亮的按钮（如“发送”）。\n4. **表情/动图 (Stickers)：** 作为一种非文字表达方式，使用了带有浪漫主题的动画贴纸。\n5. **图片附件：** 对话底部可见一些小幅预览图（指原本分享到对话中的静态图像或缩略图）。\n\n#### **三、 动作 (Actions)**\n1. **信息传递：** 用户通过文字、贴纸和图片进行的交流行为（发消息、回复、阅读）。\n2. **情感表达：** 通过使用浪漫的主题贴纸，传达出积极或亲昵的情绪状态。\n\n---\n\n### **📝 内容总结 (Summary)**\n\n**该画面展示了一个发生在移动设备上的实时数字化聊天会话。其内容主要涉及两个或多个用户的日常社交互动。通过文字交流和丰富的表情/贴纸的使用，我们可以推断这段对话具有休闲性或私密的倾向。整体风格围绕即时通讯展开，没有任何具体的现实环境背景。**",
+      "native_slot_sampling_observed": {
+        ".0.params.temperature": 1.0,
+        ".0.params.top_k": 64,
+        ".0.params.top_p": 0.949999988079071,
+        ".0.params.repeat_last_n": 4096,
+        ".0.params.repeat_penalty": 1.0800000429153442,
+        ".0.params.n_predict": 8192
+      },
+      "elapsed_ms": 95559.54579898389,
+      "http_status": 200,
+      "embedded_thought_not_retained": false,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 1238,
+        "prompt_tokens": 350,
+        "total_tokens": 1588,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "reasoning": {
+        "characters": 3502,
+        "sha256": "b54ae146556cfd7f6297d20cb2a0d1f89707147d4d3ce892a343dc85d504d4d5",
+        "window_characters": 64,
+        "stride_characters": 32,
+        "windows_seen": 108,
+        "distinct_hashes_tracked": 108,
+        "untracked_windows": 0,
+        "repeated_windows": 0,
+        "maximum_identical_window_count": 1,
+        "adjacent_identical_windows": 0,
+        "text_retained": false
+      },
+      "memory_after": {
+        "samples": 428,
+        "peak_server_tree_rss_bytes": 5864120320,
+        "peak_system_used_bytes": 7046868992,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 943112192,
+        "latest": {
+          "timestamp": "2026-11-01T15:37:06.892417+00:00",
+          "monotonic_seconds": 282319.626898766,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 6986342400,
+          "system_available_bytes": 1003638784,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 743702528,
+          "swap_in_bytes": 605310976,
+          "swap_out_bytes": 3608420352,
+          "server_tree_rss_bytes": 5864120320,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "source_file": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-A.json",
+      "id": "A",
+      "question": "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
+      "visible_content_sha256_utf8": "dc345ed83a9b34ac5c4fe0f258b946d5799c51fb85a0bcb4672ccbc829aa53fd",
+      "review_status": "specific_observations_below; no aggregate model pass/fail"
+    },
+    {
+      "condition": "confirm",
+      "diagnostic_only": true,
+      "resource_admission": false,
+      "production_evidence": false,
+      "platform_writes": 0,
+      "image": {
+        "bvid": "BV1XMxj6wEcD",
+        "frame_id": "43120657507:storyboard:7:8ad5b968d02f900b",
+        "cid": "43120657507",
+        "actual_time": 58.0,
+        "parent_path": "/workspace/tuber/runtime/tmp/operations-corpus-20261101/BV1XMxj6wEcD/0.jpg",
+        "derived_path": "/workspace/tuber/runtime/tmp/operations-compare-20261101-gemma4-e4b-u16-384/derived-frames/BV1XMxj6wEcD-0.png",
+        "profile": "gemma4_image_280",
+        "parent_sha256": "8ad5b968d02f900b62cae16c889b317d6b6035e800aa5c312245a1984788c525",
+        "derived_sha256": "1e01bc19dd1cb81355524e099207de25f2a230ed44e1af2e1256ff2450d1940d",
+        "parent_mime_type": "image/jpeg",
+        "derived_mime_type": "image/png",
+        "parent_size": {
+          "width": 480,
+          "height": 270
+        },
+        "derived_size": {
+          "width": 1056,
+          "height": 576
+        },
+        "parameters": {
+          "operation": "official_spatial_resize_and_rgb",
+          "resize_performed": true,
+          "rgb_conversion_performed": false,
+          "max_soft_tokens": 280,
+          "patch_size": 16,
+          "pooling_kernel_size": 3,
+          "expected_visual_tokens_from_grid": 264,
+          "interpolation": "Pillow.Resampling.BICUBIC",
+          "pillow_version": "13.0.0",
+          "output_encoding": "lossless_png",
+          "runtime_pixel_normalization": true,
+          "crop": null
+        },
+        "official_sources": [
+          "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+          "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+          "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+        ],
+        "actual_bytes": 100127
+      },
+      "original_request_sha256": "1dd64039778e523ae9be9fc3e5056c607d2205c9016769513972c88b49e149ea",
+      "actual_request_sha256": "b02156b071f981cf68ce7b49d92da7fa6da0d702d11897545f8f3b47872a41d7",
+      "original_request_8192_sha256": "58ce84b60cb555e9f615493414ec1bc731547de85ebf19e5206e374ad2fac42c",
+      "request_parameters": {
+        "model": "ops-gemma4_e4b",
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.08,
+        "seed": 42,
+        "repeat_last_n": 4096
+      },
+      "message_order": [
+        [
+          "image_url",
+          "text"
+        ]
+      ],
+      "owner_experiment_id": "cb0dfb807592453cb81c5cd09d749c74",
+      "helper_sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+      "timings": [
+        {
+          "original_sha256": "b02156b071f981cf68ce7b49d92da7fa6da0d702d11897545f8f3b47872a41d7",
+          "wire_sha256": "bf319fff6184c27e1d1d4d05f907b7ac2a61a41357d9021601fcbb6ed7734c52",
+          "context": {},
+          "max_tokens": 8192,
+          "content_ttft_ms": 55882.85347598139,
+          "complete_ms": 94764.75361699704,
+          "reasoning_characters_not_retained": 2981,
+          "content_kind": "natural_text",
+          "delivery_changes": {
+            "stream": {
+              "from": false,
+              "to": true
+            },
+            "stream_options": {
+              "from": null,
+              "to": {
+                "include_usage": true
+              }
+            }
+          },
+          "response_format_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "http_status": 200,
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1229,
+            "prompt_tokens": 349,
+            "total_tokens": 1578,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          }
+        }
+      ],
+      "status": "completed",
+      "memory_before": {
+        "samples": 472,
+        "peak_server_tree_rss_bytes": 5864120320,
+        "peak_system_used_bytes": 7046868992,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 943112192,
+        "latest": {
+          "timestamp": "2026-11-01T15:37:51.377708+00:00",
+          "monotonic_seconds": 282364.112186815,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 6970245120,
+          "system_available_bytes": 1019736064,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 743440384,
+          "swap_in_bytes": 605548544,
+          "swap_out_bytes": 3608420352,
+          "server_tree_rss_bytes": 5864116224,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "visible_content": "这是一张**智能手机应用程序界面**的截图，展示了某一类社交、聊天或购物平台上的内容。由于图片是一个数字界面而非物理场景，我们主要从其“虚拟物体”和“抽象动作”（即功能）来描述。\n\n---\n\n### 🔎 所见分析 (Description Analysis)\n\n#### 👨‍👩‍👧 人物 (Characters/Actors)\n在图像中没有实体的真人形象，但代表“人物”的是：\n1. **匿名或化名用户：** 在信息流中穿插着多位发送信息的账号（例如，左侧方通常代表发言者）。\n2. **系统角色：** 应用本身提供的各种提示、按钮和操作引导文字。\n\n#### 📦 物品 (Objects)\n1. **移动应用界面 (App UI)：** 主题是简洁白色的卡片式设计，包裹着所有信息。\n2. **信息块/气泡：** 每个对话行被封装在一个带头像或名字的文本块内，是核心的内容承载单位。\n3. **导航栏/标题栏：** 顶部带有标题（如“大豆”）以及功能按钮（如蓝色“点击/订购”的按钮）。\n4. **数据：** 文字、图标、时间戳等构成信息流的各组成部分。\n\n#### 🏃 动作与行为 (Actions and Behaviors)\n1. **浏览/观看 (Viewing)：** 这是当前屏幕最直接的操作，用户正在查看这些历史消息或互动记录。\n2. **交流/沟通 (Communication)：** 应用的核心功能在于传递信息，通过文字进行观点分享、提问或确认订单状态。\n3. **操作/交互 (Interaction)：** 信息块中的一些按钮（如青色或蓝色的行动召唤按钮）暗示了“购买”、“下一步”或“确认”等可被用户触发的功能性动作。\n\n---\n\n### 📝 总结 (Conclusion/Summary)\n\n**概括你的具体内容是：**\n\n此画面展示了一个移动应用内的对话或动态列表页面。这个页面具有典型的移动社交或社区特征，它结构清晰地列出了多条由不同用户发出的文本信息。这些信息可能是关于某个主题的讨论（如图中可见讨论食品或计划的内容）、用户的状态更新，或者是某种商品的订单/进度反馈。整个界面以卡片流的形式组织数据，旨在提供直观的用户互动和查看服务。",
+      "native_slot_sampling_observed": {
+        ".0.params.temperature": 1.0,
+        ".0.params.top_k": 64,
+        ".0.params.top_p": 0.949999988079071,
+        ".0.params.repeat_last_n": 4096,
+        ".0.params.repeat_penalty": 1.0800000429153442,
+        ".0.params.n_predict": 8192
+      },
+      "elapsed_ms": 94769.69731401186,
+      "http_status": 200,
+      "embedded_thought_not_retained": false,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 1229,
+        "prompt_tokens": 349,
+        "total_tokens": 1578,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "reasoning": {
+        "characters": 2981,
+        "sha256": "e36aaa7b0c0db7c37fada3a72b2d3f390fdfaad00a9e1cdb11a7ebfb733443ff",
+        "window_characters": 64,
+        "stride_characters": 32,
+        "windows_seen": 92,
+        "distinct_hashes_tracked": 92,
+        "untracked_windows": 0,
+        "repeated_windows": 0,
+        "maximum_identical_window_count": 1,
+        "adjacent_identical_windows": 0,
+        "text_retained": false
+      },
+      "memory_after": {
+        "samples": 566,
+        "peak_server_tree_rss_bytes": 5888708608,
+        "peak_system_used_bytes": 7116177408,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 873803776,
+        "latest": {
+          "timestamp": "2026-11-01T15:39:26.361004+00:00",
+          "monotonic_seconds": 282459.095483378,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 7075495936,
+          "system_available_bytes": 914485248,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 757596160,
+          "swap_in_bytes": 605696000,
+          "swap_out_bytes": 3622408192,
+          "server_tree_rss_bytes": 5888704512,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "source_file": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-A-confirm58.json",
+      "id": "A_confirm_58s",
+      "question": "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
+      "visible_content_sha256_utf8": "8ffa9241e5ee7849e2de4ff8d85a06d932e92c3e30191fab046d9ca8bb2e9a24",
+      "review_status": "specific_observations_below; no aggregate model pass/fail"
+    },
+    {
+      "condition": "B",
+      "diagnostic_only": true,
+      "resource_admission": false,
+      "production_evidence": false,
+      "platform_writes": 0,
+      "image": {
+        "parent_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+        "derived_sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+        "bytes": 117040,
+        "width": 1056,
+        "height": 576,
+        "cid": "43120657507",
+        "actual_time": 176.0,
+        "frame_id": "43120657507:storyboard:21:71bc59780da756ea"
+      },
+      "original_request_sha256": "1dd64039778e523ae9be9fc3e5056c607d2205c9016769513972c88b49e149ea",
+      "actual_request_sha256": "c0e30f18eb5ccbc8364d348c8304d3a8a76ecbd7c41a3de1d0d7cb41ccb17071",
+      "original_request_8192_sha256": "58ce84b60cb555e9f615493414ec1bc731547de85ebf19e5206e374ad2fac42c",
+      "request_parameters": {
+        "model": "ops-gemma4_e4b",
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 40,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+        "seed": 42,
+        "reasoning_budget_tokens": 2048
+      },
+      "message_order": [
+        [
+          "text",
+          "image_url"
+        ]
+      ],
+      "owner_experiment_id": "cb0dfb807592453cb81c5cd09d749c74",
+      "helper_sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+      "timings": [
+        {
+          "original_sha256": "c0e30f18eb5ccbc8364d348c8304d3a8a76ecbd7c41a3de1d0d7cb41ccb17071",
+          "wire_sha256": "43e888c0aa47d0dd99915879ddf12832f9a7b7a48689bd8ef99087fe340bf435",
+          "context": {},
+          "max_tokens": 8192,
+          "content_ttft_ms": 54954.05452302657,
+          "complete_ms": 82032.84904401517,
+          "reasoning_characters_not_retained": 3053,
+          "content_kind": "natural_text",
+          "delivery_changes": {
+            "stream": {
+              "from": false,
+              "to": true
+            },
+            "stream_options": {
+              "from": null,
+              "to": {
+                "include_usage": true
+              }
+            }
+          },
+          "response_format_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "http_status": 200,
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1140,
+            "prompt_tokens": 350,
+            "total_tokens": 1490,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          }
+        }
+      ],
+      "status": "completed",
+      "memory_before": {
+        "samples": 606,
+        "peak_server_tree_rss_bytes": 5888708608,
+        "peak_system_used_bytes": 7116177408,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 873803776,
+        "latest": {
+          "timestamp": "2026-11-01T15:40:06.756458+00:00",
+          "monotonic_seconds": 282499.490944085,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 7068336128,
+          "system_available_bytes": 921645056,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 757596160,
+          "swap_in_bytes": 605741056,
+          "swap_out_bytes": 3622408192,
+          "server_tree_rss_bytes": 5888704512,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "visible_content": "这是一个移动设备屏幕的截图，显示的是一个聊天或社交媒体应用程序的界面。\n\n**所见描述：**\n\n**人物 (People):**\n画面中没有真实的人物，但内容涉及的“人物”是聊天中使用的**表情包或贴图**。这些贴图通常是卡通形象或风格化的角色，用于表达情绪或回应对话。\n\n**物品 (Objects):**\n1. **移动设备界面：** 整个画面是一个手机屏幕的截图，显示了应用程序的UI（用户界面）。\n2. **聊天气泡/消息：** 屏幕上排列着多条文本消息，这些消息构成了对话的主体。\n3. **贴图/表情包：** 画面中嵌入了至少两组明显的贴图。一组是单体或小群体的卡通形象，另一组是带有爱心装饰的两人形象（可能代表情侣或亲密关系）。\n4. **文本内容：** 消息内容以提问的形式出现，例如“你觉得...”。\n\n**动作 (Actions):**\n1. **信息展示：** 屏幕正在展示一段已发生的或正在进行的数字交流记录。\n2. **互动/沟通：** 聊天界面本身代表了用户之间的信息传递和互动行为。\n\n**内容概括：**\n\n这张画面捕捉的是一个**移动聊天应用中的对话片段**。内容并非严肃的叙事，而是一系列**基于提问和表情包的轻松互动**。聊天记录中包含文字提问（如“你觉得...”），并穿插了具有情感色彩的卡通贴图（如爱心贴图），表明这是一个非正式、休闲的社交交流场景。\n\n**总结：** 这是一个典型的移动端聊天界面截图，展示了用户通过文字和表情包进行的日常数字沟通。",
+      "native_slot_sampling_observed": {
+        ".0.params.temperature": 0.20000000298023224,
+        ".0.params.top_k": 40,
+        ".0.params.top_p": 0.949999988079071,
+        ".0.params.repeat_last_n": 64,
+        ".0.params.repeat_penalty": 1.0,
+        ".0.params.n_predict": 8192
+      },
+      "elapsed_ms": 82038.36027701618,
+      "http_status": 200,
+      "embedded_thought_not_retained": false,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 1140,
+        "prompt_tokens": 350,
+        "total_tokens": 1490,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "reasoning": {
+        "characters": 3053,
+        "sha256": "05deac94bfd77e117a20dc79293c22a39418a41bc9874ad26cb7f332a252115e",
+        "window_characters": 64,
+        "stride_characters": 32,
+        "windows_seen": 94,
+        "distinct_hashes_tracked": 94,
+        "untracked_windows": 0,
+        "repeated_windows": 0,
+        "maximum_identical_window_count": 1,
+        "adjacent_identical_windows": 0,
+        "text_retained": false
+      },
+      "memory_after": {
+        "samples": 687,
+        "peak_server_tree_rss_bytes": 5901438976,
+        "peak_system_used_bytes": 7120818176,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 869163008,
+        "latest": {
+          "timestamp": "2026-11-01T15:41:28.599968+00:00",
+          "monotonic_seconds": 282581.334447465,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 7095558144,
+          "system_available_bytes": 894423040,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 757596160,
+          "swap_in_bytes": 605794304,
+          "swap_out_bytes": 3622408192,
+          "server_tree_rss_bytes": 5901426688,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "source_file": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-B.json",
+      "id": "B",
+      "question": "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
+      "visible_content_sha256_utf8": "ec4450d441b59cb814bbe4b34abad8827288411ed878c79593a0c9b4b6c3035c",
+      "review_status": "specific_observations_below; no aggregate model pass/fail"
+    },
+    {
+      "condition": "C",
+      "diagnostic_only": true,
+      "resource_admission": false,
+      "production_evidence": false,
+      "platform_writes": 0,
+      "image": {
+        "parent_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+        "derived_sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+        "bytes": 117040,
+        "width": 1056,
+        "height": 576,
+        "cid": "43120657507",
+        "actual_time": 176.0,
+        "frame_id": "43120657507:storyboard:21:71bc59780da756ea",
+        "crop_box": [
+          176,
+          0,
+          304,
+          270
+        ],
+        "crop_sha256": "e35b1b20eb85c2f06e19b9a6b46dba6ce38fa114f5ecd4bc93b3490f8c16ddef",
+        "crop_pixels_exact": true,
+        "cropped_size": [
+          128,
+          270
+        ],
+        "derived": {
+          "profile": "gemma4_image_280",
+          "parent_sha256": "e35b1b20eb85c2f06e19b9a6b46dba6ce38fa114f5ecd4bc93b3490f8c16ddef",
+          "derived_sha256": "b19309be7188fd65bd32f774ce2cf0d7c8bbf92f98cd407a48690f34c0b1cdce",
+          "parent_mime_type": "image/png",
+          "derived_mime_type": "image/png",
+          "parent_size": {
+            "width": 128,
+            "height": 270
+          },
+          "derived_size": {
+            "width": 528,
+            "height": 1152
+          },
+          "parameters": {
+            "operation": "official_spatial_resize_and_rgb",
+            "resize_performed": true,
+            "rgb_conversion_performed": false,
+            "max_soft_tokens": 280,
+            "patch_size": 16,
+            "pooling_kernel_size": 3,
+            "expected_visual_tokens_from_grid": 264,
+            "interpolation": "Pillow.Resampling.BICUBIC",
+            "pillow_version": "13.0.0",
+            "output_encoding": "lossless_png",
+            "runtime_pixel_normalization": true,
+            "crop": null
+          },
+          "official_sources": [
+            "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+            "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+            "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+          ]
+        },
+        "actual_input_sha256": "b19309be7188fd65bd32f774ce2cf0d7c8bbf92f98cd407a48690f34c0b1cdce",
+        "actual_input_bytes": 260943
+      },
+      "original_request_sha256": "1dd64039778e523ae9be9fc3e5056c607d2205c9016769513972c88b49e149ea",
+      "actual_request_sha256": "b84d03d95dc10ea0097477f24f3cd6dfb932bc57bfabe7e89f7cab0931383584",
+      "original_request_8192_sha256": "58ce84b60cb555e9f615493414ec1bc731547de85ebf19e5206e374ad2fac42c",
+      "request_parameters": {
+        "model": "ops-gemma4_e4b",
+        "max_tokens": 8192,
+        "stream": false,
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.08,
+        "seed": 42,
+        "repeat_last_n": 4096
+      },
+      "message_order": [
+        [
+          "image_url",
+          "text"
+        ]
+      ],
+      "owner_experiment_id": "cb0dfb807592453cb81c5cd09d749c74",
+      "helper_sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+      "timings": [
+        {
+          "original_sha256": "b84d03d95dc10ea0097477f24f3cd6dfb932bc57bfabe7e89f7cab0931383584",
+          "wire_sha256": "a969e66d14a968e9a763c996f7d5cdf55f7433402e31059f8333f4b77df971d0",
+          "context": {},
+          "max_tokens": 8192,
+          "content_ttft_ms": 58676.620265992824,
+          "complete_ms": 106495.33076304942,
+          "reasoning_characters_not_retained": 3567,
+          "content_kind": "natural_text",
+          "delivery_changes": {
+            "stream": {
+              "from": false,
+              "to": true
+            },
+            "stream_options": {
+              "from": null,
+              "to": {
+                "include_usage": true
+              }
+            }
+          },
+          "response_format_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "http_status": 200,
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1387,
+            "prompt_tokens": 350,
+            "total_tokens": 1737,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          }
+        }
+      ],
+      "status": "completed",
+      "memory_before": {
+        "samples": 722,
+        "peak_server_tree_rss_bytes": 5901438976,
+        "peak_system_used_bytes": 7120818176,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 869163008,
+        "latest": {
+          "timestamp": "2026-11-01T15:42:03.933191+00:00",
+          "monotonic_seconds": 282616.667676104,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 7097937920,
+          "system_available_bytes": 892043264,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 757334016,
+          "swap_in_bytes": 605851648,
+          "swap_out_bytes": 3622408192,
+          "server_tree_rss_bytes": 5901422592,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "visible_content": "基于您提供的截图分析，这是一份关于该屏幕内容的详细描述与总结。请注意，由于图片包含了大量的中文文本和插画素材，以下描述将侧重于视觉元素（人物、物体）以及其表现出的状态或动作。\n\n---\n\n### **1. 人物与角色描绘**\n\n**主要单人形象（中间大型插图）：**\n*   **外貌特征：** 这是一位年轻的男性动漫风格角色。他拥有浅蓝色或接近白色的发色，眼睛大且富有神采，表情偏向柔和、惊讶或略带迷茫。\n*   **穿着/动作：** 服饰细节难以完全辨认，但整体看起来较为随性。他的姿态是面对前方（或稍向上望），处于一种停顿或观察的状态。这个角色是该帖子中最突出的视觉焦点。\n\n**群体形象（下方小图标/插图）：**\n*   **外貌特征：** 这一组图中包含数个角色。他们形态各异，部分角色的发色较深，衣着款式也更加多样化，暗示着不同的性格或阵营。\n*   **姿态/互动：** 多个角色聚集在一起，共同朝前走或站立。他们的排列紧凑，给人一种集体感和团结感，暗示这是一个团队或团体在行动。\n\n### **2. 物品与环境描写**\n\n*   **背景环境：** 背景多为白色或淡灰色调，属于典型的数字社交媒体界面（Mobile UI）。没有描绘具体的真实外部环境，所有物体都以二维插画形式出现。\n*   **文字信息：** 整个界面充斥着大量带有注释性质的文字（如评论、标题和说明），这些文字提供了叙事上下文，指示这些插画的内容是为了配合某个故事、设定或话题而发布的。\n\n### **3. 核心行为与叙事概要**\n\n*   **动作：** 在插画层面，可见“凝视”（角色注视前方）和“集群移动”（群像向前推进）两个主要的动作倾向。\n*   **情绪/氛围：** 大体营造出一种叙事、讨论或反思的氛围，类似于二次元圈内的剧情解说或概念分享。\n*   **对话/观点：** 图片中的黑色正文内容涉及对现状的描述、未来的预测以及对角色个人选择的讨论（如提到的“以后……”、“可以”、“开始”等词汇），表明这些图片是作为表达某种情感或观点的载体被使用的。\n\n### **总结（Synthesis）**\n\n该屏幕展示了一个在线社交媒体的截屏，通过插入两幅对比鲜明的动漫插画——一幅聚焦于一个面部特写和思考的孤独个体（蓝发角色），另一幅展现了多位角色并肩作战的合影（群像）。整张画面结合文字，呈现了一种围绕特定虚构角色进行的叙事性讨论或宣传内容。",
+      "native_slot_sampling_observed": {
+        ".0.params.temperature": 1.0,
+        ".0.params.top_k": 64,
+        ".0.params.top_p": 0.949999988079071,
+        ".0.params.repeat_last_n": 4096,
+        ".0.params.repeat_penalty": 1.0800000429153442,
+        ".0.params.n_predict": 8192
+      },
+      "elapsed_ms": 106504.12564398721,
+      "http_status": 200,
+      "embedded_thought_not_retained": false,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 1387,
+        "prompt_tokens": 350,
+        "total_tokens": 1737,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "reasoning": {
+        "characters": 3567,
+        "sha256": "ab438389b1f98de87b22317397cc0306d8a54b92be93d425b2afa02068edb037",
+        "window_characters": 64,
+        "stride_characters": 32,
+        "windows_seen": 110,
+        "distinct_hashes_tracked": 110,
+        "untracked_windows": 0,
+        "repeated_windows": 0,
+        "maximum_identical_window_count": 1,
+        "adjacent_identical_windows": 0,
+        "text_retained": false
+      },
+      "memory_after": {
+        "samples": 828,
+        "peak_server_tree_rss_bytes": 5915017216,
+        "peak_system_used_bytes": 7120818176,
+        "peak_swap_used_bytes": 758382592,
+        "minimum_system_available_bytes": 869163008,
+        "latest": {
+          "timestamp": "2026-11-01T15:43:51.083162+00:00",
+          "monotonic_seconds": 282723.817642163,
+          "system_total_bytes": 7989981184,
+          "system_used_bytes": 7041064960,
+          "system_available_bytes": 948916224,
+          "swap_total_bytes": 12584906752,
+          "swap_used_bytes": 757334016,
+          "swap_in_bytes": 605925376,
+          "swap_out_bytes": 3622449152,
+          "server_tree_rss_bytes": 5915013120,
+          "process_count": 1
+        },
+        "peak_swap_growth_bytes": 79429632
+      },
+      "source_file": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-C.json",
+      "id": "C",
+      "question": "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
+      "visible_content_sha256_utf8": "eba63b77040f8f477645d179cc28a7429ac526d804ae90fc7a1a4c0c28fff2eb",
+      "review_status": "specific_observations_below; no aggregate model pass/fail"
+    }
+  ],
+  "maximum_frame_resource_observation": {
+    "condition": "resource",
+    "diagnostic_only": true,
+    "resource_admission": false,
+    "production_evidence": false,
+    "platform_writes": 0,
+    "image": {
+      "bvid": "BV1UWxp6LEL1",
+      "frame_id": "43227810760:storyboard:26:b2c7f87301048d70",
+      "cid": "43227810760",
+      "actual_time": 135.0,
+      "parent_path": "/workspace/tuber/runtime/tmp/operations-corpus-20261101/BV1UWxp6LEL1/1.jpg",
+      "derived_path": "/workspace/tuber/runtime/tmp/operations-compare-20261101-gemma4-e4b-u16-384/derived-frames/BV1UWxp6LEL1-1.png",
+      "profile": "gemma4_image_280",
+      "parent_sha256": "b2c7f87301048d70bed5e41f949c04140d8b2abcd90f2a6ed2527f99888430e4",
+      "derived_sha256": "5f923b022fc860404e7e25e552147c0bdfa28133fbaff8846ae00927405fbfbc",
+      "parent_mime_type": "image/jpeg",
+      "derived_mime_type": "image/png",
+      "parent_size": {
+        "width": 480,
+        "height": 270
+      },
+      "derived_size": {
+        "width": 1056,
+        "height": 576
+      },
+      "parameters": {
+        "operation": "official_spatial_resize_and_rgb",
+        "resize_performed": true,
+        "rgb_conversion_performed": false,
+        "max_soft_tokens": 280,
+        "patch_size": 16,
+        "pooling_kernel_size": 3,
+        "expected_visual_tokens_from_grid": 264,
+        "interpolation": "Pillow.Resampling.BICUBIC",
+        "pillow_version": "13.0.0",
+        "output_encoding": "lossless_png",
+        "runtime_pixel_normalization": true,
+        "crop": null
+      },
+      "official_sources": [
+        "https://huggingface.co/google/gemma-4-E2B-it/blob/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json",
+        "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
+        "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
+      ],
+      "actual_bytes": 553472
+    },
+    "original_request_sha256": "1dd64039778e523ae9be9fc3e5056c607d2205c9016769513972c88b49e149ea",
+    "actual_request_sha256": "66ba06cb309d21fd4e9cd05519eff20430f3b5bffb0fa587f802205efef6eba0",
+    "original_request_8192_sha256": "58ce84b60cb555e9f615493414ec1bc731547de85ebf19e5206e374ad2fac42c",
+    "request_parameters": {
+      "model": "ops-gemma4_e4b",
+      "max_tokens": 8192,
+      "stream": false,
+      "chat_template_kwargs": {
+        "enable_thinking": true
+      },
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 64,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.08,
+      "seed": 42,
+      "repeat_last_n": 4096
+    },
+    "message_order": [
+      [
+        "image_url",
+        "text"
+      ]
+    ],
+    "owner_experiment_id": "cb0dfb807592453cb81c5cd09d749c74",
+    "helper_sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+    "timings": [
+      {
+        "original_sha256": "66ba06cb309d21fd4e9cd05519eff20430f3b5bffb0fa587f802205efef6eba0",
+        "wire_sha256": "bac71be1d1050b0119e2076992ad3271fa9832af88244ab4006f2c9b27477f54",
+        "context": {},
+        "max_tokens": 8192,
+        "content_ttft_ms": 45669.674485048745,
+        "complete_ms": 79241.95351504022,
+        "reasoning_characters_not_retained": 2611,
+        "content_kind": "natural_text",
+        "delivery_changes": {
+          "stream": {
+            "from": false,
+            "to": true
+          },
+          "stream_options": {
+            "from": null,
+            "to": {
+              "include_usage": true
+            }
+          }
+        },
+        "response_format_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "http_status": 200,
+        "finish_reason": "stop",
+        "usage": {
+          "completion_tokens": 1020,
+          "prompt_tokens": 350,
+          "total_tokens": 1370,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      }
+    ],
+    "status": "completed",
+    "memory_before": {
+      "samples": 226,
+      "peak_server_tree_rss_bytes": 5618720768,
+      "peak_system_used_bytes": 6811934720,
+      "peak_swap_used_bytes": 679215104,
+      "minimum_system_available_bytes": 1178046464,
+      "latest": {
+        "timestamp": "2026-11-01T15:33:42.731243+00:00",
+        "monotonic_seconds": 282115.465724241,
+        "system_total_bytes": 7989981184,
+        "system_used_bytes": 6798405632,
+        "system_available_bytes": 1191575552,
+        "swap_total_bytes": 12584906752,
+        "swap_used_bytes": 679215104,
+        "swap_in_bytes": 589205504,
+        "swap_out_bytes": 3527008256,
+        "server_tree_rss_bytes": 5612101632,
+        "process_count": 1
+      },
+      "peak_swap_growth_bytes": 262144
+    },
+    "visible_content": "Based on the image provided, here is a detailed description of the characters, objects, and setting:\n\n### **1. Character Description**\n\n*   **Figure:** There is one central figure, an anthropomorphic anime character (or digital painting of a young woman).\n*   **Appearance:** She has long, vibrant **blue hair**. She is wearing a distinctive white headpiece/bonnet adorned with delicate lace or ruffles. Her clothing appears to be a formal white dress with dark accenents around the sleeves and bodice.\n*   **Pose:** The character is seated directly on the floor/rug, facing the viewer with a gentle, somewhat serene expression.\n\n### **2. Object & Environmental Description**\n\n*   **Interior/Setting:** The scene takes place indoors, resembling a cozy living space or a home office/study.\n*   **Flooring:** The floor consists of light-colored wooden planks. A rectangular textured rug is placed under the character.\n*   **Furniture (Desk Area):** Behind the character is a contemporary wooden desk setup. This includes various technological items (implied computer screen, peripheral parts) and storage drawers made of warm-toned wood.\n*   **Background Furniture:** To the far left, another piece of furniture (likely a dining table or chairs) is partially visible, suggesting an open, spacious room.\n*   **Color Palette:** The overall color scheme is dominated by warm earth tones from the wood combined with the cool blues and bright whites of the character, creating a sharp contrast.\n\n### **3. Summary of Action and Scene**\n\nThe image presents a stylized character—a young woman dressed in intricate white garments and a blue ensemble—seated peacefully within a modern, well-lit domestic workspace. While there are no active movements shown (the character is static), the composition suggests she is simply present or waiting in her personal study, juxtaposing her classical, elaborate costume against the backdrop of modern technology and architecture.\n\n***\n\n**In short:** It is a high-quality piece of digital art featuring a classically dressed, blue-haired anime girl sitting calmly amidst a contemporary, warm-toned wooden study or office.",
+    "native_slot_sampling_observed": {
+      ".0.params.temperature": 1.0,
+      ".0.params.top_k": 64,
+      ".0.params.top_p": 0.949999988079071,
+      ".0.params.repeat_last_n": 4096,
+      ".0.params.repeat_penalty": 1.0800000429153442,
+      ".0.params.n_predict": 8192
+    },
+    "elapsed_ms": 79259.02217900148,
+    "http_status": 200,
+    "embedded_thought_not_retained": false,
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 1020,
+      "prompt_tokens": 350,
+      "total_tokens": 1370,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "reasoning": {
+      "characters": 2611,
+      "sha256": "bd0d599dc1f48288b5041bc51192905dbeb73c064cbe6898e669725db6fcb0da",
+      "window_characters": 64,
+      "stride_characters": 32,
+      "windows_seen": 80,
+      "distinct_hashes_tracked": 80,
+      "untracked_windows": 0,
+      "repeated_windows": 0,
+      "maximum_identical_window_count": 1,
+      "adjacent_identical_windows": 0,
+      "text_retained": false
+    },
+    "memory_after": {
+      "samples": 305,
+      "peak_server_tree_rss_bytes": 5823205376,
+      "peak_system_used_bytes": 7002550272,
+      "peak_swap_used_bytes": 758382592,
+      "minimum_system_available_bytes": 987430912,
+      "latest": {
+        "timestamp": "2026-11-01T15:35:02.569144+00:00",
+        "monotonic_seconds": 282195.303624605,
+        "system_total_bytes": 7989981184,
+        "system_used_bytes": 6964912128,
+        "system_available_bytes": 1025069056,
+        "swap_total_bytes": 12584906752,
+        "swap_used_bytes": 749207552,
+        "swap_in_bytes": 599089152,
+        "swap_out_bytes": 3607420928,
+        "server_tree_rss_bytes": 5823188992,
+        "process_count": 1
+      },
+      "peak_swap_growth_bytes": 79429632
+    }
+  },
+  "resource_measurement_scope": "One actual largest frozen 280-profile PNG at full context; additional A/B/C diagnostic requests. Not a new max3 public probe.",
+  "capacity_reference": {
+    "path": "/workspace/tuber/runtime/tmp/operations-compare-20261101-gemma4-e4b-u16-384/resource-proof.json",
+    "scope": "Previous main-model full-context capacity remains source evidence; new vision-only projector/GPU measurements are separately reported, not falsely substituted into the old proof.",
+    "new_context_stress_run": false,
+    "same_main_model": true,
+    "projector_and_offload_changed": true
+  },
+  "whole_run_memory": {
+    "samples": 845,
+    "peak_server_tree_rss_bytes": 5916311552,
+    "peak_system_used_bytes": 7120818176,
+    "peak_swap_used_bytes": 758382592,
+    "minimum_system_available_bytes": 869163008,
+    "latest": {
+      "timestamp": "2026-11-01T15:44:07.985177+00:00",
+      "monotonic_seconds": 282740.719664132,
+      "system_total_bytes": 7989981184,
+      "system_used_bytes": 2108219392,
+      "system_available_bytes": 5881761792,
+      "swap_total_bytes": 12584906752,
+      "swap_used_bytes": 757334016,
+      "swap_in_bytes": 605941760,
+      "swap_out_bytes": 3622453248,
+      "server_tree_rss_bytes": 0,
+      "process_count": 0
+    },
+    "peak_swap_growth_bytes": 79429632,
+    "kernel_reaped_children_peak_rss_bytes": 5916348416
+  },
+  "loader_observations": {
+    "source": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/gemma4-e4b-visiononly-gpu-20261101/server.log",
+    "lines": [
+      "0.00.123.976 I clip_model_loader: has vision encoder",
+      "0.02.048.345 I load_tensors:        CUDA0 model buffer size =  2851.06 MiB",
+      "0.02.048.351 I load_tensors:    CUDA_Host model buffer size =   680.00 MiB",
+      "0.02.048.354 I load_tensors:   CPU_Mapped model buffer size =  1512.00 MiB",
+      "0.04.307.173 I llama_context:  CUDA_Host  output buffer size =     1.00 MiB",
+      "0.04.438.466 I llama_kv_cache:      CUDA0 KV buffer size =   576.00 MiB",
+      "0.04.441.059 I init_rotation:      CUDA0 rotation buffer size =     4.06 MiB",
+      "0.04.447.394 I llama_kv_cache:      CUDA0 KV buffer size =     8.44 MiB",
+      "0.04.450.192 I init_rotation:      CUDA0 rotation buffer size =     5.31 MiB",
+      "0.04.623.377 I sched_reserve:      CUDA0 compute buffer size =   518.37 MiB",
+      "0.04.623.395 I sched_reserve:  CUDA_Host compute buffer size =     5.31 MiB",
+      "0.04.851.751 I clip_model_loader: has vision encoder",
+      "0.04.862.212 I clip_ctx: CLIP using CUDA0 backend",
+      "0.04.862.737 I load_hparams: n_embd:             768",
+      "0.05.255.554 I reserve_compute_meta:      CUDA0 compute buffer size =   101.27 MiB",
+      "0.05.255.566 I reserve_compute_meta:        CPU compute buffer size =     6.77 MiB",
+      "3.47.297.311 I slot encode_mtmd_: id  0 | task 1 | encoding mtmd batch from idx = 12, n_chunks = 1",
+      "3.48.065.636 I decoding image batch 1/2, n_tokens_batch = 256",
+      "3.49.125.299 I image decoded (batch 1/2) in 1059 ms",
+      "3.49.125.313 I decoding image batch 2/2, n_tokens_batch = 8",
+      "3.49.217.326 I image decoded (batch 2/2) in 92 ms",
+      "5.06.351.157 I slot print_timing: id  0 | task 1 | prompt eval time =    2435.52 ms /   350 tokens (    6.96 ms per token,   143.71 tokens per second)",
+      "5.06.351.170 I slot print_timing: id  0 | task 1 |        eval time =   76715.33 ms /  1020 tokens (   75.28 ms per token,    13.28 tokens per second)",
+      "5.06.351.173 I slot print_timing: id  0 | task 1 |       total time =   79150.85 ms /  1370 tokens",
+      "5.35.474.208 I slot encode_mtmd_: id  0 | task 1024 | encoding mtmd batch from idx = 12, n_chunks = 1",
+      "5.36.011.092 I decoding image batch 1/2, n_tokens_batch = 256",
+      "5.37.060.565 I image decoded (batch 1/2) in 1050 ms",
+      "5.37.060.583 I decoding image batch 2/2, n_tokens_batch = 8",
+      "5.37.131.535 I image decoded (batch 2/2) in 70 ms",
+      "7.10.929.413 I slot print_timing: id  0 | task 1024 | prompt eval time =    2129.31 ms /   350 tokens (    6.08 ms per token,   164.37 tokens per second)",
+      "7.10.929.425 I slot print_timing: id  0 | task 1024 |        eval time =   93391.16 ms /  1238 tokens (   75.50 ms per token,    13.25 tokens per second)",
+      "7.10.929.427 I slot print_timing: id  0 | task 1024 |       total time =   95520.47 ms /  1588 tokens",
+      "7.55.719.634 I slot encode_mtmd_: id  0 | task 2265 | encoding mtmd batch from idx = 12, n_chunks = 1",
+      "7.56.256.017 I decoding image batch 1/2, n_tokens_batch = 256",
+      "7.57.281.239 I image decoded (batch 1/2) in 1025 ms",
+      "7.57.281.255 I decoding image batch 2/2, n_tokens_batch = 8",
+      "7.57.351.511 I image decoded (batch 2/2) in 70 ms",
+      "9.30.375.328 I slot print_timing: id  0 | task 2265 | prompt eval time =    2120.14 ms /   349 tokens (    6.07 ms per token,   164.61 tokens per second)",
+      "9.30.375.346 I slot print_timing: id  0 | task 2265 |        eval time =   92611.39 ms /  1229 tokens (   75.42 ms per token,    13.26 tokens per second)",
+      "9.30.375.349 I slot print_timing: id  0 | task 2265 |       total time =   94731.53 ms /  1578 tokens",
+      "10.11.203.236 I slot encode_mtmd_: id  0 | task 3497 | encoding mtmd batch from idx = 80, n_chunks = 1",
+      "10.11.718.087 I decoding image batch 1/2, n_tokens_batch = 256",
+      "10.12.729.648 I image decoded (batch 1/2) in 1012 ms",
+      "10.12.729.661 I decoding image batch 2/2, n_tokens_batch = 8",
+      "10.12.799.396 I image decoded (batch 2/2) in 69 ms",
+      "11.32.853.439 I slot print_timing: id  0 | task 3497 | prompt eval time =    2102.69 ms /   350 tokens (    6.01 ms per token,   166.45 tokens per second)",
+      "11.32.853.454 I slot print_timing: id  0 | task 3497 |        eval time =   79901.60 ms /  1140 tokens (   70.15 ms per token,    14.26 tokens per second)",
+      "11.32.853.457 I slot print_timing: id  0 | task 3497 |       total time =   82004.30 ms /  1490 tokens",
+      "12.08.560.265 I slot encode_mtmd_: id  0 | task 4640 | encoding mtmd batch from idx = 12, n_chunks = 1",
+      "12.09.098.531 I decoding image batch 1/2, n_tokens_batch = 256",
+      "12.10.119.927 I image decoded (batch 1/2) in 1021 ms",
+      "12.10.119.943 I decoding image batch 2/2, n_tokens_batch = 8",
+      "12.10.191.374 I image decoded (batch 2/2) in 71 ms",
+      "13.54.938.124 I slot print_timing: id  0 | task 4640 | prompt eval time =    2110.03 ms /   350 tokens (    6.03 ms per token,   165.87 tokens per second)",
+      "13.54.938.138 I slot print_timing: id  0 | task 4640 |        eval time =  104341.55 ms /  1387 tokens (   75.28 ms per token,    13.28 tokens per second)",
+      "13.54.938.140 I slot print_timing: id  0 | task 4640 |       total time =  106451.58 ms /  1737 tokens"
+    ],
+    "has_audio_encoder_log": false,
+    "nan_or_nonfinite_warning_lines": []
+  },
+  "cleanup": {
+    "termination_reason": "operator_stop",
+    "server_returncode": 1,
+    "exit_code": 0,
+    "details": {
+      "signalled_pids": [
+        32271
+      ],
+      "force_killed_pids": [],
+      "remaining_pids": []
+    }
+  },
+  "interpretation": {
+    "A_176s": "聊天界面主类恢复并交付正文；贴纸人物姿态等具体细节尚不足以称整帧正确。",
+    "A_confirm_58s": "能识别头像、气泡与消息，但泛化为购物/订购按钮/订单，未形成稳定事实改善。",
+    "B_176s": "聊天、文本气泡和表情类别与画面有对应；具体OCR“你觉得…”未核。completion=1140，小于2048思考cap；不能声称cap修复。",
+    "C_176s": "精确保留全部非黑像素后，仍描述成社媒故事、蓝发男性与并肩作战群像，具体理解未解决。",
+    "delivery": "All four diagnostic responses and the maximum-frame sample stopped normally. No repeated reasoning windows were detected by the recorded 64-character/32-stride hash method; this is not a claim about reasoning correctness.",
+    "causality": "CPU-to-GPU vision and audio-off changed together. A additionally changes sampling, repetition window/penalty, image order and output budget versus the old failing baseline. C changes input crop/resize. These observations do not isolate a single cause.",
+    "resource": "This run stayed above its 384MiB guard with swap growth below128MiB. The whole-run peak/minimum is not an isolated per-condition measurement or a matched memory-saving estimate.",
+    "overall": "单帧空答/重复问题在本次组合下未复现；视觉细节仍错，不能称稳定事实改善或全模型已通过。"
+  },
+  "source_files": [
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/metrics-final.json",
+      "sha256": "fc234f9fc1a9f7fc5a990d0e635aa54141dd82c03f2d2cd04b9a85d519f5b250",
+      "bytes": 37804
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/projector-derivation.json",
+      "sha256": "e3590130b2510d2c254922ad9e3424192325b851a84e601ff8ace839361c6bbd",
+      "bytes": 1462
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/resource-real.json",
+      "sha256": "6cf38b75977cf4ddabdbe28250667f5299d38d26f60b25f0a2ce2e8b2faab065",
+      "bytes": 10938
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/resource-measurement.json",
+      "sha256": "eb86d1df3c16dd781c0a0972b9ff6de5d2b6d59fb82d7d69e7ba94b4f9bf6427",
+      "bytes": 4184
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/loader-and-timings.json",
+      "sha256": "97cd81ebd148eee0c07e252fc7ca5a3913b33e392e7832ffc57d308ac3b08a1c",
+      "bytes": 5426
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-u16-384/final-report.json",
+      "sha256": "ce7d2d0bb26bf1fb08b6da5bc52112b2ce551d2b48fbbc05b7056d0192ff4d39",
+      "bytes": 196786
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/operations-corpus-20261101/index.json",
+      "sha256": "d2a85ca804f8467d21f9148ed5949be9961b5340af108ab09a30f6a1ba758df6",
+      "bytes": 311436
+    },
+    {
+      "source": "tmp/operations-browse-20261101/visiononly-diagnostic.py",
+      "sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+      "bytes": 11252
+    },
+    {
+      "source": "tmp/operations-browse-20261101/caption-budget-diagnostic.py",
+      "sha256": "8180fd04bda7c869892ba3f004c33530751d3d5ead883ff64f09d6c59c9a9ebf",
+      "bytes": 13238
+    },
+    {
+      "source": "tmp/operations-browse-20261101/projector-modalities.py",
+      "sha256": "11700b828f4b9147a58721dfb5fdfb58aec0d9654c6bf589cfe6d1465d91073d",
+      "bytes": 4846
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-A.json",
+      "sha256": "259fe392707beff198916d4615a1c42912a4f1d62a95d897e2cdbbf4ed4f3bb5",
+      "bytes": 9347
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-A-confirm58.json",
+      "sha256": "8a0146461ddaee2a8cc9006019bff0493cafb3812a732e94fb165a3753f67a0f",
+      "bytes": 11011
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-B.json",
+      "sha256": "71715357a93e17c4375e113ae8ee0008e6574ed1c93e1e00145287650c4971ce",
+      "bytes": 9066
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-C.json",
+      "sha256": "85d41b2fe1e944efd1b7fd68ee4662f27f85d80f496aca8d5ab3e792cd3b8bd7",
+      "bytes": 11879
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-C.crop.png",
+      "sha256": "e35b1b20eb85c2f06e19b9a6b46dba6ce38fa114f5ecd4bc93b3490f8c16ddef",
+      "bytes": 33928
+    },
+    {
+      "source": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-C.input.png",
+      "sha256": "b19309be7188fd65bd32f774ce2cf0d7c8bbf92f98cd407a48690f34c0b1cdce",
+      "bytes": 260943
+    }
+  ],
+  "helper_lifecycle": {
+    "projector_modalities": "Kept as a one-off tmp helper; no default dependency, tool framework, registry source, model source, image or engine was changed.",
+    "actual_projector_helper_sha256": "11700b828f4b9147a58721dfb5fdfb58aec0d9654c6bf589cfe6d1465d91073d",
+    "actual_diagnostic_helper_sha256": "3c5687a4f9b452899252fe5c07be67afef2eea92a87dc68f4ab1ad7489f17187",
+    "promoted_tool": false
+  },
+  "verification": {
+    "all_source_file_hashes_verified": true,
+    "visible_answers_preserved_exactly": true,
+    "derived_png_hashes_verified_without_embedding_png": true,
+    "no_reasoning_text_retained": true,
+    "no_commands_environment_headers_credentials_or_image_payloads_embedded": true
+  }
+}

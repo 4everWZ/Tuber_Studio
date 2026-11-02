@@ -8,10 +8,13 @@ from collections import OrderedDict
 from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
+from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, models_health, response_json
+from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
 from .providers import (
     DemoProvider,
     LlamaCppProvider,
+    generate_operation_reply,
     json_schema_text,
     parse_json_object,
     public_error,
@@ -30,13 +33,19 @@ def create_llm(settings):
 
 
 class APIProvider:
+    generation_metered = True
     capacity_verified = False
     capacity_source = "operator_declared"
     token_accounting = "api_usage_probe"
     is_sleeping = None
 
-    def __init__(self, config, api_key=None):
+    def __init__(self, config, api_key=None, *, adapter="openai_compatible"):
+        if adapter not in {"openai_compatible", "llama_cpp"}:
+            raise ValueError("未知API协议适配器")
+        self.adapter = adapter
         self.config = config
+        if adapter == "llama_cpp":
+            LlamaCppSampling.model_validate(llama_cpp_sampling(config))
         self.client = api_client(config, api_key)
         self.last_tokens = self.server_tokens = None
         self.profile_error = None
@@ -62,19 +71,40 @@ class APIProvider:
             self.profile_error = public_error(error)
             raise
 
-    async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False):
+    async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None):
         payload = {
             "model": self.config["model"],
             "messages": single_system_messages(messages),
             "max_tokens": budget,
             "stream": False,
         }
+        thinking = self.config.get("enable_thinking")
+        if self.adapter == "llama_cpp" and thinking is not None:
+            if type(thinking) is not bool:
+                raise ValueError("llama.cpp思考设置须为布尔值或None")
+            payload["chat_template_kwargs"] = {"enable_thinking": thinking}
         if not probe:
             payload["temperature"] = self.config.get(
                 "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7
             )
+        if self.adapter == "llama_cpp":
+            sampling = llama_cpp_sampling(self.config, summary=summary)
+            if probe:
+                sampling.pop("temperature", None)
+            payload.update(sampling)
+            if payload.get("temperature") is None:
+                payload.pop("temperature", None)
         if structured:
             payload["response_format"] = {"type": "json_object"}
+            if self.adapter == "llama_cpp" and schema is not None:
+                payload["response_format"]["schema"] = schema
+        reservation = (
+            reserve_generation(
+                self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
+            )
+            if probe
+            else None
+        )
         data = await response_json(
             self.client,
             "POST",
@@ -88,20 +118,31 @@ class APIProvider:
         if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise ValueError("API未返回唯一完整回答")
         choice = choices[0]
+        if not probe:
+            self.last_finish_reason = choice.get("finish_reason")
+            self.last_usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+            observed_message = choice.get("message")
+            received = observed_message.get("content") if isinstance(observed_message, dict) else None
+            self.last_content_characters = len(received) if isinstance(received, str) else None
+            self.last_content = received if isinstance(received, str) else None
         if choice.get("finish_reason") not in ({"stop", "length"} if probe else {"stop"}):
             if summary:
                 raise IncompleteCompaction("API摘要未完整结束；原上下文保留")
-            raise ValueError("API回复未完整结束；未提交草稿")
+            raise ValueError(f"API回复未完整结束（finish_reason={choice.get('finish_reason')}）；未提交草稿")
         message = choice.get("message", {})
         if not isinstance(message, dict) or message.get("tool_calls") or message.get("function_call"):
             raise ValueError("API返回了不允许的工具调用")
         usage = data.get("usage", {})
+        if not probe:
+            self.last_usage = usage if isinstance(usage, dict) else {}
         count = usage.get("prompt_tokens") if isinstance(usage, dict) else None
         if type(count) is not int or count <= 0:
             raise ValueError("API未提供有效prompt_tokens；不能可靠管理上下文")
         self.last_tokens = count
         if not probe and not isinstance(message.get("content"), str):
             raise ValueError("API未返回文本内容")
+        if probe:
+            settle_generation(reservation, usage)
         return message.get("content"), count
 
     async def count_tokens(self, messages):
@@ -131,9 +172,13 @@ class APIProvider:
         count = await self.count_tokens(messages)
         if count + budget > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("API压缩输入超窗")
+        reservation = reserve_generation(
+            self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
+        )
         content, _ = await self._complete(messages, budget=budget, summary=True)
         if not content.strip():
             raise IncompleteCompaction("API摘要为空；原上下文保留")
+        settle_generation(reservation, self.last_usage)
         return content
 
     async def generate(self, messages, character, event_id, source_text=None):
@@ -141,10 +186,42 @@ class APIProvider:
         count = await self.count_tokens(messages)
         if count + budget > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("输入超出API窗口预算；禁止静默丢弃历史")
+        reservation = reserve_generation(
+            self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
+        )
         content, _ = await self._complete(messages, budget=budget, structured=True)
-        return validate_reply(content, character, event_id, source_text)
+        reply = validate_reply(content, character, event_id, source_text)
+        settle_generation(reservation, self.last_usage)
+        return reply
 
-    async def generate_json(self, messages, schema, *, max_tokens):
+    async def generate_text(self, messages, *, max_tokens):
+        """Generate visible natural text with the same real API usage budget."""
+        self.last_content = None
+        self.last_finish_reason = None
+        self.last_usage = {}
+        self.last_content_characters = None
+        if type(max_tokens) is not int or max_tokens < 1:
+            raise ValueError("文本输出预算须为正整数")
+        count = await self.count_tokens(messages)
+        if count + max_tokens > self.config["context_tokens"] * 95 // 100:
+            raise ContextWindowExceeded("文本输入超出API窗口预算；禁止静默丢弃数据")
+        reservation = reserve_generation(
+            self.config["context_tokens"] * 95 // 100 - max_tokens,
+            max_tokens,
+            conservative_input=True,
+        )
+        content, actual = await self._complete(messages, budget=max_tokens)
+        if actual + max_tokens > self.config["context_tokens"] * 95 // 100:
+            raise ContextWindowExceeded("API文本实际计量超窗；未采用结果")
+        settle_generation(reservation, self.last_usage)
+        if not content.strip():
+            raise ValueError("API未返回可见文本")
+        return content
+
+    async def generate_operation(self, messages, character, event_id, source_text=None):
+        return await generate_operation_reply(self, messages, event_id)
+
+    def prepare_json_messages(self, messages, schema, *, max_tokens):
         schema_text = json_schema_text(schema, max_tokens)
         # JSON-object mode is widely supported; do not assume a compatible API
         # implements json_schema. Domain/source validation stays with the caller.
@@ -157,13 +234,26 @@ class APIProvider:
                 ),
             },
         ]
+        return single_system_messages(messages)
+
+    async def generate_json(self, messages, schema, *, max_tokens):
+        self.last_content = None
+        self.last_finish_reason = None
+        self.last_usage = {}
+        self.last_content_characters = None
+        messages = self.prepare_json_messages(messages, schema, max_tokens=max_tokens)
         count = await self.count_tokens(messages)
         if count + max_tokens > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("结构化输入超出API窗口预算；禁止静默丢弃数据")
-        content, actual = await self._complete(messages, budget=max_tokens, structured=True)
+        reservation = reserve_generation(
+            self.config["context_tokens"] * 95 // 100 - max_tokens, max_tokens, conservative_input=True
+        )
+        content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema)
         if actual + max_tokens > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("API结构化实际计量超窗；未采用结果")
-        return parse_json_object(content)
+        value = parse_json_object(content)
+        settle_generation(reservation, self.last_usage)
+        return value
 
 
 class VisionProvider(Protocol):

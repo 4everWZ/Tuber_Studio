@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .operation_text import validate_operation_text
+
 Emotion = Literal["idle", "cheerful", "angry", "shy", "confused", "excited"]
 Animation = Literal["idle", "talk", "talk_happy", "angry", "shy", "confused", "gift"]
 
@@ -50,9 +52,22 @@ class Reply(BaseModel):
     @field_validator("spoken_text")
     @classmethod
     def plain_speech(cls, value):
-        if re.search(r"[\x00-\x1f\x7f]", value):
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", value):
             raise ValueError("台词含控制字符")
-        return value.strip()
+        text = value.strip()
+        if not text:
+            raise ValueError("台词为空")
+        return text
+
+
+class OperationReply(Reply):
+    spoken_text: str = Field(min_length=1)
+
+    @field_validator("spoken_text")
+    @classmethod
+    def plain_speech(cls, value):
+        # Override live speech normalization; operations keep the original prose.
+        return validate_operation_text(value)
 
 
 class Character(BaseModel):

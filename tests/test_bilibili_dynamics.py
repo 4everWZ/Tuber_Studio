@@ -116,7 +116,7 @@ async def test_network_loss_after_write_is_uncertain(platform):
     assert "private-session" not in str(caught.value) and len(requests) == 1
 
 
-@pytest.mark.parametrize("text", ["", "x" * 501, "bad\x00text", None])
+@pytest.mark.parametrize("text", ["", "鲸" * 87382, "bad\x00text", None])
 async def test_invalid_body_never_network(platform, text):
     adapter, requests, _ = platform
     with pytest.raises(ValueError):

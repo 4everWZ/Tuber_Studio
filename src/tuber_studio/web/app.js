@@ -6,20 +6,32 @@ const model = {
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, draftDirty: false, draftId: null, policy: null,
+  commentPolicyDirty: false,
   importPreviewSignature: null, categorySaving: new Set(),
   modeSwitch: null, modeResult: null,
   threadContextPending: null,
   retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
   providersDirty: false, providersSaving: false,
   dynamicPolicy: null, dynamicPolicyDirty: false, dynamicSaving: false, dynamicEvaluating: false,
-  dynamicPosts: [], dynamicDecisions: [], dynamicMemories: [], dynamicPostId: null, dynamicPostDirty: false,
+  dynamicPosts: [], dynamicDecisions: [], dynamicMemories: [], dynamicPostId: null, dynamicPostDirty: false, dynamicDecisionId: null,
   dynamicPostPending: false, dynamicMemorySaving: new Set(),
   dynamicListsLoaded: false,
   dynamicMemorySummary: null,
+  dynamicMemeCache: new Map(), dynamicMemePending: new Set(), dynamicMemeContext: null, dynamicMemePreviewKey: null,
 };
+const commentContinuation = new OperationContinuationView($("comment-continuation"), api, notice, refreshComments);
+const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
+const dynamicDecisionContinuation = new OperationContinuationView($("dynamic-decision-continuation"), api, notice, refreshDynamics);
 const cachePanel = new CachePanel($("cache-panel"), api, notice);
 setInterval(() => { if (model.authenticated) cachePanel.refresh(); }, 5000);
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
+const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
+const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => { model.dynamicMemeCache.clear(); messagesPanel.memeCache.clear(); });
+const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), settings: $("account-settings"), api, notify: notice, onSessionRevoked: showLogin, onChange: () => {
+  if (!model.authenticated) return;
+  Promise.allSettled([loadPolicy(), ...(model.page === "messages" ? [messagesPanel.refresh()] : [])]).then(results => results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); }));
+}});
+const dynamicMemePicker = new MemePicker(api, (id, asset) => selectDynamicMeme(id, asset, model.dynamicMemeContext), {title: "选择动态配图", description: "只显示此动态所属角色已启用且可用的图片。最多附加1张，保留原正文；修改配图后需要重新审核。"});
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
   connecting: "连接中", error: "错误", queued: "排队中", generating: "生成台词", synthesizing: "合成语音",
@@ -31,6 +43,7 @@ const names = {
   suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
   gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示", llama_cpp: "llama.cpp",
   invalidated: "已失效", post: "生成动态", wait: "等待", role_story: "虚构角色故事",
+  checkpoint:"进度已保存", needs_material:"等待补充材料", deciding:"Agent 处理中", awaiting_review:"待审核", needs_reconciliation:"发送结果待核对", waiting:"等待下一步", abandoned:"已暂缓",
 };
 function label(value) { return names[value] || value || "—"; }
 function display(value) { return value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); }
@@ -101,6 +114,9 @@ async function busy(button, action) {
 }
 function showLogin() {
   model.authenticated = false; $("workspace").hidden = true; $("login").hidden = false;
+  accountPanel.deactivate();
+  messagesPanel.closeImagePicker();
+  dynamicMemePicker.close(true); model.dynamicMemeContext = null;
   clearProviderSecrets();
   model.socket?.close(); model.socket = null;
 }
@@ -108,7 +124,7 @@ async function enterWorkspace() {
   const status = await api("/api/status");
   model.authenticated = true; $("login").hidden = true; $("workspace").hidden = false;
   renderStatus(status); connectAdmin();
-  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy()]);
+  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate()]);
   results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); });
   await changePage();
 }
@@ -172,6 +188,7 @@ function renderLiveFeatures() {
 }
 function renderStatus(status) {
   if (!status) return; model.status = status;
+  if (status.comment_policy) renderCommentPolicy(status.comment_policy);
   setBadge($("live-state"), status.state);
   if (status.muted) $("live-state").textContent += " · 静音";
   const character = status.character;
@@ -352,6 +369,7 @@ function renderJobs(tbody, jobs, withId = false) {
 }
 async function loadCharacters() {
   model.characters = list(await api("/api/characters")); renderCharacterList();
+  memeGallery.setCharacters(model.characters, model.status?.character?.id);
   if (!model.characterId && model.characters.length) await selectCharacter(model.status?.character?.id || model.characters[0].id);
 }
 function renderCharacterList() {
@@ -442,10 +460,12 @@ function providerFormFromSettings(settings) {
   const fields = {
     "llm-kind": llm.kind || "llama_cpp", "llm-base-url": llm.base_url || "", "llm-model": llm.model || "",
     "llm-context-tokens": llm.context_tokens ?? 131072, "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
+    "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
     "tts-kind": tts.kind || "prerecorded", "tts-base-url": tts.base_url || "", "tts-model": tts.model || "", "tts-voice": tts.voice || "",
     "vision-kind": vision.kind || "disabled", "vision-location": vision.location || "local", "vision-base-url": vision.base_url || "", "vision-model": vision.model || "",
   };
   Object.entries(fields).forEach(([id, value]) => { $(id).value = String(value); });
+  $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
   clearProviderSecrets(); model.providersDirty = false;
 }
 function renderProviderForm() {
@@ -494,7 +514,7 @@ function readProviderPayload() {
   const context = integer("llm-context-tokens", "上下文窗口"), native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
   if (context > native) throw new Error("上下文窗口不能超过模型原生 / 服务声明上限。请按实际服务能力填写。");
   const payload = {
-    llm: {kind: $("llm-kind").value, base_url: $("llm-base-url").value.trim(), model: $("llm-model").value.trim(), context_tokens: context, native_context_tokens: native},
+    llm: {kind: $("llm-kind").value, base_url: $("llm-base-url").value.trim(), model: $("llm-model").value.trim(), context_tokens: context, native_context_tokens: native, operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536)},
     tts: {kind: $("tts-kind").value, base_url: $("tts-base-url").value.trim(), model: $("tts-model").value.trim(), voice: $("tts-voice").value.trim()},
     vision: {kind: $("vision-kind").value, location: $("vision-location").value, base_url: $("vision-base-url").value.trim(), model: $("vision-model").value.trim()},
     credentials: {}, clear_credentials: [],
@@ -681,7 +701,7 @@ function renderComments() {
       const categoryFeedback = node("small", comment.category_source === "operator" ? "人工分类" : "", "cell-sub");
       categoryFeedback.setAttribute("aria-live", "polite"); categoryCell.append(categoryFeedback);
       categorySelect.onchange = () => saveCommentCategory(comment, categorySelect, categoryFeedback);
-      cell(row, comment.draft ? badge(comment.draft.status) : "未生成"); tbody.append(row);
+      cell(row, comment.draft ? badge(comment.draft.status) : comment.continuation ? badge(comment.continuation.state) : "未生成"); tbody.append(row);
     });
   }
   updateCommentSelection(); renderDraft();
@@ -714,18 +734,19 @@ function selectComment(id) {
 }
 function renderAnswerCheck(draft) {
   let check = draft?.answer_check;
-  if (!check) { $("draft-answer-check").textContent = "暂无来源与完整性检查记录。"; return; }
+  if (!check) { $("draft-answer-check").textContent = "暂无记忆核对记录。"; return; }
   if (typeof check === "string") {
     try { check = JSON.parse(check); } catch { $("draft-answer-check").textContent = "检查记录格式异常，无法展示证据。"; return; }
   }
   if (!check || typeof check !== "object" || Array.isArray(check)) { $("draft-answer-check").textContent = "检查记录格式异常，无法展示证据。"; return; }
   const evidence = {};
-  ["sources", "required_slots", "missing", "retried", "warning"].forEach(key => { if (Object.hasOwn(check, key)) evidence[key] = check[key]; });
+  ["sources", "required_slots", "missing", "retried", "warning", "method", "status", "semantic_verdict"].forEach(key => { if (Object.hasOwn(check, key)) evidence[key] = check[key]; });
   $("draft-answer-check").textContent = Object.keys(evidence).length ? JSON.stringify(evidence, null, 2) : "检查记录未提供来源、缺项、重试或提示字段。";
 }
 function renderDraft(force = false) {
   const comment = model.comments.find(item => item.id === model.commentId);
   if (!comment) {
+    commentContinuation.render(null);
     if (model.draftDirty) return;
     renderAnswerCheck(null);
     $("draft-source").textContent = "选择列表中的评论，查看角色草稿及来源。";
@@ -735,10 +756,11 @@ function renderDraft(force = false) {
   const draft = comment.draft;
   renderAnswerCheck(draft);
   $("draft-source").textContent = `${comment.display_name || "匿名观众"}：${comment.content}`;
-  setBadge($("draft-status"), draft?.status || "未生成");
+  setBadge($("draft-status"), draft?.status || comment.continuation?.state || "未生成");
   describe($("draft-meta"), [["来源评论", `${comment.video_id} / ${comment.comment_id}`], ["与当前OC的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : "匿名用户"], ["楼ID", comment.thread_id || comment.comment_id], ["父评论ID", comment.parent_comment_id || "顶层"], ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"], ["模型", draft?.model || "—"], ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])]);
   if (force || !model.draftDirty || model.draftId !== draft?.id) { $("draft-text").value = draft?.text || ""; model.draftId = draft?.id || null; model.draftDirty = false; }
   const locked = draft && ["published", "publishing", "publish_uncertain", "private_handoff"].includes(draft.status);
+  commentContinuation.render(draft?.status === "private_handoff" ? null : draft?.continuation || comment.continuation, {channel: "comments", localId: draft?.id || comment.id, dirty: model.draftDirty, entityStatus: draft?.status});
   $("draft-text").disabled = !draft || locked;
   $("approve-draft").disabled = !draft || locked;
   $("reject-draft").disabled = !draft || locked;
@@ -752,16 +774,26 @@ function renderCommentTasks(tasks) {
   tbody.replaceChildren(); tasks.forEach(task => { const row = node("tr"); cell(row, task.kind || task.type || "生成回复", task.id); cell(row, badge(task.status)); cell(row, task.total != null ? `${task.done || 0} / ${task.total}${task.errors ? ` · ${task.errors} 失败` : ""}` : task.progress ?? task.result ?? task.completed_count ?? "—"); cell(row, task.error || task.reason || "—"); tbody.append(row); });
 }
 async function loadPolicy() {
-  model.policy = await api("/api/comments/policy");
-  const policy = model.policy;
-  $("auto-browse").checked = !!policy.auto_browse; $("auto-reply").checked = !!policy.auto_reply;
-  $("watch-videos").value = (policy.watch_videos || []).join("\n");
-  $("browse-interval").value = policy.browse_interval_seconds || 300;
-  $("replies-hour").value = policy.max_replies_per_hour || 5; $("replies-day").value = policy.max_replies_per_day || 20;
-  $("credential-state").textContent = policy.credentials_configured ? "已配置（不回显）" : "未配置";
+  renderCommentPolicy(await api("/api/comments/policy"));
+}
+function renderCommentPolicy(policy) {
+  model.policy = policy;
+  const base = policy.base || policy;
+  if (!model.commentPolicyDirty) {
+    $("auto-browse").checked = !!base.auto_browse; $("auto-reply").checked = !!base.auto_reply;
+    $("watch-videos").value = (base.watch_videos || []).join("\n");
+    $("browse-interval").value = base.browse_interval_seconds || 300;
+    $("replies-hour").value = base.max_replies_per_hour || 5; $("replies-day").value = base.max_replies_per_day || 20;
+  }
   $("reply-mode").textContent = policy.auto_reply ? "自动回复已开启" : "人工审核";
   $("comment-fetch-mode").textContent = policy.auto_reply ? "公开读取 · 自动回复已开启" : "公开读取 · 人工审核";
-  $("reply-mode").className = `badge ${policy.auto_reply ? "active" : ""}`; renderDraft();
+  $("reply-mode").className = `badge ${policy.auto_reply ? "active" : ""}`;
+  $("comment-policy-overlay").hidden = !policy.automation_override && !policy.emergency;
+  $("comment-policy-overlay-text").textContent = policy.emergency ? "紧急停止已生效，所有自动收发被阻止。这里编辑个人基础设置；解除紧停前不会恢复自动业务。" : "自动化覆盖正在生效。这里编辑个人基础设置，被覆盖项目关闭自动化后生效；立即停止请前往自动化工作区。";
+  $("comment-policy-base-note").textContent = model.commentPolicyDirty ? "有未保存的基础设置。" : policy.automation_override ? "保存个人基础设置；被覆盖项目关闭自动化后生效。" : "默认人工审核。开启基础自动回复后，新草稿按来源和额度校验处理。";
+  $("stop-auto-reply").textContent = policy.emergency ? "紧急停止已生效" : policy.automation_override ? "前往自动化紧急停止" : "停止基础自动回复";
+  $("stop-auto-reply").disabled = !!policy.emergency;
+  renderDraft();
 }
 async function loadPopularVideos() {
   const data = list(await api("/api/comments/videos")); const container = $("popular-videos");
@@ -802,6 +834,7 @@ function dynamicPolicyFromServer(policy) {
   if (!model.dynamicPolicyDirty) {
     $("dynamic-enabled").checked = !!policy.enabled;
     $("dynamic-auto-publish").checked = policy.auto_publish !== false;
+    $("dynamic-use-memes").checked = !!policy.use_memes;
     $("dynamic-evaluate-interval").value = policy.evaluate_interval_seconds ?? 1800;
     $("dynamic-min-post-interval").value = policy.min_post_interval_seconds ?? 21600;
     $("dynamic-max-posts").value = policy.max_posts_per_day ?? 2;
@@ -838,7 +871,7 @@ function renderDynamicPosts() {
       button.onclick = () => {
         if (model.dynamicPostDirty && post.id !== model.dynamicPostId && !confirm("动态有未保存修改。放弃修改并选择另一条？")) return;
         if (post.id !== model.dynamicPostId) model.dynamicPostDirty = false;
-        model.dynamicPostId = post.id; renderDynamicPosts();
+        model.dynamicPostId = post.id; renderDynamicPosts(); refreshDynamicMemeInfo(post);
       };
       cell(row, button); cell(row, badge(post.status)); body.append(row);
     });
@@ -847,27 +880,71 @@ function renderDynamicPosts() {
 }
 function renderDynamicPost() {
   const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
-  const editable = !!post && ["pending_review", "approved"].includes(post.status);
+  const editable = !!post && ["pending_review", "approved", "rejected"].includes(post.status);
+  const imageInfo = post?.meme_id ? model.dynamicMemeCache.get(`${post.character_id}:${post.meme_id}`) : null;
+  const unavailable = !!post?.meme_id && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
   if (post) setBadge($("dynamic-post-status"), post.status);
   else { $("dynamic-post-status").className = "badge"; $("dynamic-post-status").textContent = "选择动态"; }
   $("dynamic-post-text").disabled = !editable || model.dynamicPostPending;
   if (!model.dynamicPostDirty) $("dynamic-post-text").value = post?.content || "";
   $("approve-dynamic").disabled = !editable || model.dynamicPostPending;
   $("reject-dynamic").disabled = !editable || model.dynamicPostPending;
-  $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || !model.dynamicPolicy?.credentials_configured;
+  $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || unavailable || !model.dynamicPolicy?.credentials_configured;
+  $("publish-dynamic").textContent = post?.meme_id ? "发布已审核图文" : "发布已审核动态";
+  $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending;
+  $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || !post?.meme_id;
+  for (const button of $("dynamic-posts").querySelectorAll("button")) button.disabled = model.dynamicPostPending;
+  $("dynamic-meme-preview").hidden = !post?.meme_id;
+  if (post?.meme_id) {
+    $("dynamic-meme-name").textContent = imageInfo?.asset?.title || post.meme_id;
+    $("dynamic-meme-availability").textContent = unavailable ? "当前配图已禁用或缺失，请更换图片或移除配图。" : imageInfo?.error ? "配图状态暂未取得，可到图库核对；发布前会再次检查。" : "配图将在发布前重新检查可用性。";
+    const key = `${post.id}:${post.character_id}:${post.meme_id}`;
+    if (model.dynamicMemePreviewKey !== key) { model.dynamicMemePreviewKey = key; $("dynamic-meme-image").replaceChildren(memePreview({asset_id: post.meme_id, title: imageInfo?.asset?.title || "动态配图"}, post.character_id)); }
+  } else if (model.dynamicMemePreviewKey) { model.dynamicMemePreviewKey = null; $("dynamic-meme-image").replaceChildren(); }
   describe($("dynamic-post-meta"), post ? [["动态ID", post.id], ["角色", `${post.character_id} · v${post.character_version}`], ["模型", post.model], ["决策原因", post.reason || "未报告"], ["发布时间（当地时间）", localDateTime(post.published_at)]] : []);
   appendDynamicSources($("dynamic-post-sources"), post?.sources);
   $("dynamic-post-receipt").textContent = JSON.stringify(publicSettings({receipt: post?.receipt ?? null, error: post?.error ?? null}), null, 2);
-  $("dynamic-post-note").textContent = !post ? "从列表选择动态，查看来源、决策与平台回执。" : model.dynamicPostDirty ? "有未保存修改；审核通过后保存，再发布。" : post.error ? `平台操作未完成：${post.error}` : post.status === "publish_uncertain" ? "发布结果不确定，请核对平台回执；不会自动重发。" : post.status === "published" ? "已发布，平台回执见下方。" : !model.dynamicPolicy?.credentials_configured ? "未配置B站账号；可生成和审核草稿，发布前请到评论设置配置凭证。" : "手动评估生成的草稿始终保留人工审核，后台不会补发。";
+  $("dynamic-post-note").textContent = !post ? "从列表选择动态，查看来源、决策与平台回执。" : model.dynamicPostDirty ? "有未保存修改；审核通过后保存，再发布。" : post.error ? `操作未完成：${post.error}` : post.status === "publish_uncertain" ? "发布结果不确定，请核对平台回执；不会自动重发。" : post.status === "published" ? "已发布，平台回执见下方。" : !model.dynamicPolicy?.credentials_configured ? "未配置B站账号；可生成和审核草稿，发布前请到设置页的B站账号区配置凭证。" : "手动评估生成的草稿始终保留人工审核，后台不会补发。";
   $("dynamic-post-note").classList.toggle("error-text", !!post?.error || post?.status === "publish_uncertain");
+  dynamicContinuation.render(post?.continuation, {channel: "dynamics", localId: post?.id, dirty: model.dynamicPostDirty, entityStatus: post?.status});
+}
+async function refreshDynamicMemeInfo(post) {
+  if (!post?.meme_id) return;
+  const key = `${post.character_id}:${post.meme_id}`, cached = model.dynamicMemeCache.get(key);
+  if (model.dynamicMemePending.has(key) || (cached && Date.now() - cached.at < 30000)) return;
+  model.dynamicMemePending.add(key);
+  try {
+    const value = await api(`/api/memes?character=${encodeURIComponent(post.character_id)}`);
+    model.dynamicMemeCache.set(key, {asset: list(value).find(item => item.asset_id === post.meme_id) || null, at: Date.now()});
+  } catch (error) { model.dynamicMemeCache.set(key, {error: safeMessage(error.message), at: Date.now()}); }
+  finally { model.dynamicMemePending.delete(key); if (model.dynamicPostId === post.id) renderDynamicPost(); }
+}
+async function selectDynamicMeme(meme_id, asset = null, context = null) {
+  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
+  if (!post || model.dynamicPostPending) throw new Error("动态正在处理中或尚未选择，请稍后重试。");
+  if (context && (context.id !== post.id || context.character !== post.character_id || context.version !== post.character_version)) throw new Error("动态或角色已变化，请重新选择配图。");
+  model.dynamicPostPending = true; renderDynamicPost();
+  try {
+    await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/review`, {method: "POST", body: {action: "edit", text: $("dynamic-post-text").value, meme_id}});
+    if (asset) model.dynamicMemeCache.set(`${post.character_id}:${asset.asset_id}`, {asset, at: Date.now()});
+    model.dynamicPostDirty = false; await refreshDynamics(); notice(meme_id ? "已为动态附加1张图片，正文保留；请重新审核。" : "已移除动态配图，正文保留；请重新审核。");
+  } finally { model.dynamicPostPending = false; renderDynamicPost(); }
 }
 function renderDynamicDecisions() {
   const body = $("dynamic-decisions");
+  const selected = model.dynamicDecisions.find(item => item.id === model.dynamicDecisionId);
+  dynamicDecisionContinuation.render(selected?.continuation, {channel:"dynamics", localId:selected?.id, entityStatus:selected?.status});
   if (!model.dynamicDecisions.length) return empty(body, 4, "暂无评估决策。手动评估或开启运营后查看。");
   body.replaceChildren();
   model.dynamicDecisions.forEach(decision => {
     const row = node("tr"); cell(row, localDateTime(decision.created_at), `${decision.character_id} · v${decision.character_version}${decision.manual ? " · 手动" : " · 后台"}`);
-    cell(row, badge(decision.action), label(decision.status)); cell(row, decision.reason || "未报告", decision.error || "");
+    cell(row, badge(decision.action), label(decision.status));
+    const reason = cell(row, decision.reason || "未报告", decision.error || "");
+    if (decision.continuation?.phase === "generation") {
+      const progress = node("button", "查看生成进度", "secondary"); progress.type = "button";
+      progress.onclick = () => {model.dynamicDecisionId = decision.id; renderDynamicDecisions(); dynamicDecisionContinuation.root.scrollIntoView({block:"nearest"});};
+      reason.append(progress);
+    }
     const details = node("details"); details.append(node("summary", `来源 ${list(decision.sources).length} 条`));
     const sources = node("div"); appendDynamicSources(sources, decision.sources); details.append(sources); cell(row, details); body.append(row);
   });
@@ -928,11 +1005,12 @@ async function refreshDynamics() {
     model.dynamicMemorySummary = summary; renderDynamicMemorySummary(summary);
   }
   model.dynamicListsLoaded = true;
+  await refreshDynamicMemeInfo(model.dynamicPosts.find(item => item.id === model.dynamicPostId));
 }
 async function saveDynamicPolicy(stop = false) {
   if (model.dynamicSaving) return;
   const payload = stop ? {enabled: false} : {
-    enabled: $("dynamic-enabled").checked, auto_publish: $("dynamic-auto-publish").checked,
+    enabled: $("dynamic-enabled").checked, auto_publish: $("dynamic-auto-publish").checked, use_memes: $("dynamic-use-memes").checked,
     evaluate_interval_seconds: boundedInteger("dynamic-evaluate-interval", "动态评估间隔", 300, 86400),
     min_post_interval_seconds: boundedInteger("dynamic-min-post-interval", "最短发布间隔", 21600, 604800),
     max_posts_per_day: boundedInteger("dynamic-max-posts", "每日动态数", 1, 2),
@@ -964,12 +1042,12 @@ async function reviewDynamic(action) {
 }
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
-  model.page = ["comments", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
+  model.page = ["comments", "automation", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
   document.querySelectorAll("[data-section]").forEach(section => { section.hidden = section.dataset.section !== model.page; });
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page; link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
-  document.title = `${({comments: "评论工作台", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材", settings: "设置"})[model.page]} · Tuber Studio`;
+  document.title = `${({comments: "评论工作台", automation: "自主浏览与互动", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await refreshComments(); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh()]); }
+  try { if (model.page === "comments") await refreshComments(); else if (model.page === "automation") await automationPanel.refresh(); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened()]); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {
@@ -981,6 +1059,7 @@ async function poll() {
     if (model.page === "comments") await refreshComments();
     if (model.page === "dynamics") await refreshDynamics();
     if (model.page === "messages") await messagesPanel.refresh();
+    if (model.page === "automation") await automationPanel.refresh();
   } catch (error) { $("connection").textContent = "连接失败，等待重试"; if (error.status !== 401) notice(error.message, true); }
   finally { model.polling = false; }
 }
@@ -1194,15 +1273,16 @@ $("publish-draft").onclick = () => busy($("publish-draft"), async () => {
 $("comment-policy-form").onsubmit = event => {
   event.preventDefault(); busy(event.submitter, async () => {
     const payload = {auto_browse: $("auto-browse").checked, auto_reply: $("auto-reply").checked, watch_videos: $("watch-videos").value.split(/[\s,，]+/).filter(Boolean), browse_interval_seconds: Number($("browse-interval").value), max_replies_per_hour: Number($("replies-hour").value), max_replies_per_day: Number($("replies-day").value)};
-    if ($("bili-sessdata").value) payload.sessdata = $("bili-sessdata").value;
-    if ($("bili-csrf").value) payload.csrf = $("bili-csrf").value;
     await api("/api/comments/policy", {method: "PUT", body: payload});
-    $("bili-sessdata").value = ""; $("bili-csrf").value = ""; await loadPolicy(); notice(payload.auto_reply ? "自动回复设置已保存并开启。" : "回复设置已保存；当前为人工审核模式。");
+    model.commentPolicyDirty = false;
+    await loadPolicy(); notice(model.policy.automation_override ? "个人基础设置已保存；被覆盖项目关闭自动化后生效。" : "回复基础设置已保存，请以当前生效状态为准。");
   });
 };
 $("stop-auto-reply").onclick = () => busy($("stop-auto-reply"), async () => {
-  await api("/api/comments/policy", {method: "PUT", body: {auto_reply: false}}); await loadPolicy(); notice("自动回复已停止。已提交给平台的请求以回执为准。");
+  if (model.policy?.automation_override) {location.hash = "automation"; notice("自动化正在覆盖此开关，请在工作区停止本轮、关闭总开关或紧急停止所有自动收发。"); return;}
+  await api("/api/comments/policy", {method: "PUT", body: {auto_reply: false}}); await loadPolicy(); notice("基础自动回复已停止。已提交给平台的请求以回执为准。");
 });
+$("comment-policy-form").addEventListener("input", () => {model.commentPolicyDirty = true; $("comment-policy-base-note").textContent = "有未保存的基础设置；自动化覆盖项目关闭总开关后生效。";});
 $("dynamic-policy-form").addEventListener("input", () => { model.dynamicPolicyDirty = true; renderDynamicPolicy(); });
 $("dynamic-policy-form").addEventListener("change", () => { model.dynamicPolicyDirty = true; renderDynamicPolicy(); });
 $("dynamic-policy-form").onsubmit = event => { event.preventDefault(); busy($("save-dynamic-policy"), () => saveDynamicPolicy()); };
@@ -1226,6 +1306,8 @@ $("evaluate-dynamics").onclick = () => busy($("evaluate-dynamics"), async () => 
   } finally { model.dynamicEvaluating = false; renderDynamicPolicy(); }
 });
 $("dynamic-post-text").oninput = () => { model.dynamicPostDirty = true; renderDynamicPost(); };
+$("dynamic-pick-meme").onclick = () => { const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId); if (!post) return; model.dynamicMemeContext = {id: post.id, character: post.character_id, version: post.character_version}; dynamicMemePicker.open(post.character_id, post.meme_id); };
+$("dynamic-clear-meme").onclick = () => busy($("dynamic-clear-meme"), () => selectDynamicMeme(null));
 $("approve-dynamic").onclick = () => busy($("approve-dynamic"), () => reviewDynamic("approve"));
 $("reject-dynamic").onclick = () => busy($("reject-dynamic"), () => reviewDynamic("reject"));
 $("publish-dynamic").onclick = () => busy($("publish-dynamic"), async () => {
@@ -1312,7 +1394,7 @@ $("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
 });
 $("character-image").onerror = () => { $("character-image").hidden = true; };
 window.addEventListener("hashchange", changePage);
-window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty) { event.preventDefault(); event.returnValue = ""; } });
+window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; } });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 setInterval(poll, 2500);
 enterWorkspace().catch(error => { showLogin(); if (error.status !== 401) $("login-error").textContent = error.message; });

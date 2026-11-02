@@ -1,0 +1,194 @@
+{
+  "bvid": "BV1We4y1k7za",
+  "aid": 558183700,
+  "auth": false,
+  "mode": "independent_roi_input_diagnostic_not_main_evaluation",
+  "parent_manifest": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\storyboard-report.json",
+  "parent_manifest_sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78",
+  "operation": "crop_only_no_resize_enhancement_or_repaint",
+  "pillow_version": "13.0.0",
+  "jpeg_library": "8.0",
+  "selection": "Union of exact nonzero decoded RGB bounding boxes; full height retained",
+  "crop_box_convention": "left/top inclusive, right/bottom exclusive",
+  "common_crop_box": [
+    160,
+    0,
+    320,
+    270
+  ],
+  "original_size": [
+    480,
+    270
+  ],
+  "derived_size": [
+    160,
+    270
+  ],
+  "removed_width": {
+    "left": 160,
+    "right": 160
+  },
+  "kept_pixel_fraction": 0.3333333333333333,
+  "all_removed_columns_are_exact_rgb_zero_in_all_three_frames": true,
+  "frames": [
+    {
+      "id": "837470340:storyboard:2:b33cbf88946f918c:roi:b71f68d61ac79492",
+      "parent_frame_id": "837470340:storyboard:2:b33cbf88946f918c",
+      "bvid": "BV1We4y1k7za",
+      "cid": "837470340",
+      "actual_time": 10.0,
+      "requested_time": 11.25,
+      "kind": "storyboard_roi",
+      "file": "837470340-10-roi.png",
+      "mime_type": "image/png",
+      "bytes": 41153,
+      "width": 160,
+      "height": 270,
+      "image_sha256": "b71f68d61ac794920c9e13c5d94e597ab899ef7ab295b68642ae7bee29e4a4a3",
+      "derived_sha256": "b71f68d61ac794920c9e13c5d94e597ab899ef7ab295b68642ae7bee29e4a4a3",
+      "parent_image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+      "parent_file": "837470340-10.jpg",
+      "parent_bytes": 7104,
+      "original_width": 480,
+      "original_height": 270,
+      "crop_box": [
+        160,
+        0,
+        320,
+        270
+      ],
+      "original_nonblack_bbox": [
+        160,
+        0,
+        320,
+        270
+      ],
+      "removed_left_max_rgb": 0,
+      "removed_right_max_rgb": 0,
+      "decoded_crop_pixel_exact": true,
+      "source": {
+        "operation": "decoded_rgb_crop_only",
+        "parent_kind": "storyboard",
+        "parent_source": {
+          "index_source": "pvdata_u16be_seconds",
+          "tile_index": 2,
+          "sheet_index": 0,
+          "sheet_sha256": "db70fdccb14853e176926d9d118cf8fae0d8fe2268420baf91fea437048900d5"
+        },
+        "parent_image_sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90",
+        "crop_box": [
+          160,
+          0,
+          320,
+          270
+        ]
+      }
+    },
+    {
+      "id": "837470340:storyboard:4:631304db8b63ea77:roi:d8715978feac5161",
+      "parent_frame_id": "837470340:storyboard:4:631304db8b63ea77",
+      "bvid": "BV1We4y1k7za",
+      "cid": "837470340",
+      "actual_time": 20.0,
+      "requested_time": 22.5,
+      "kind": "storyboard_roi",
+      "file": "837470340-20-roi.png",
+      "mime_type": "image/png",
+      "bytes": 51830,
+      "width": 160,
+      "height": 270,
+      "image_sha256": "d8715978feac51614531781f7676d308746fba4d3650f7c8acd27874b8c888f0",
+      "derived_sha256": "d8715978feac51614531781f7676d308746fba4d3650f7c8acd27874b8c888f0",
+      "parent_image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+      "parent_file": "837470340-20.jpg",
+      "parent_bytes": 8793,
+      "original_width": 480,
+      "original_height": 270,
+      "crop_box": [
+        160,
+        0,
+        320,
+        270
+      ],
+      "original_nonblack_bbox": [
+        160,
+        0,
+        320,
+        270
+      ],
+      "removed_left_max_rgb": 0,
+      "removed_right_max_rgb": 0,
+      "decoded_crop_pixel_exact": true,
+      "source": {
+        "operation": "decoded_rgb_crop_only",
+        "parent_kind": "storyboard",
+        "parent_source": {
+          "index_source": "pvdata_u16be_seconds",
+          "tile_index": 4,
+          "sheet_index": 0,
+          "sheet_sha256": "db70fdccb14853e176926d9d118cf8fae0d8fe2268420baf91fea437048900d5"
+        },
+        "parent_image_sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38",
+        "crop_box": [
+          160,
+          0,
+          320,
+          270
+        ]
+      }
+    },
+    {
+      "id": "837470340:storyboard:7:b34f24470efc2922:roi:0a83552673da760f",
+      "parent_frame_id": "837470340:storyboard:7:b34f24470efc2922",
+      "bvid": "BV1We4y1k7za",
+      "cid": "837470340",
+      "actual_time": 35.0,
+      "requested_time": 33.75,
+      "kind": "storyboard_roi",
+      "file": "837470340-35-roi.png",
+      "mime_type": "image/png",
+      "bytes": 43314,
+      "width": 160,
+      "height": 270,
+      "image_sha256": "0a83552673da760f12d9955e23d60fe9ad88f79791d05edf536251052126b764",
+      "derived_sha256": "0a83552673da760f12d9955e23d60fe9ad88f79791d05edf536251052126b764",
+      "parent_image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+      "parent_file": "837470340-35.jpg",
+      "parent_bytes": 7895,
+      "original_width": 480,
+      "original_height": 270,
+      "crop_box": [
+        160,
+        0,
+        320,
+        270
+      ],
+      "original_nonblack_bbox": [
+        160,
+        0,
+        320,
+        270
+      ],
+      "removed_left_max_rgb": 0,
+      "removed_right_max_rgb": 0,
+      "decoded_crop_pixel_exact": true,
+      "source": {
+        "operation": "decoded_rgb_crop_only",
+        "parent_kind": "storyboard",
+        "parent_source": {
+          "index_source": "pvdata_u16be_seconds",
+          "tile_index": 7,
+          "sheet_index": 0,
+          "sheet_sha256": "db70fdccb14853e176926d9d118cf8fae0d8fe2268420baf91fea437048900d5"
+        },
+        "parent_image_sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1",
+        "crop_box": [
+          160,
+          0,
+          320,
+          270
+        ]
+      }
+    }
+  ]
+}

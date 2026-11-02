@@ -1,0 +1,397 @@
+{
+  "timestamp_utc": "2026-10-31T16:49:09.476945+00:00",
+  "scope": "Real preparation/cache/scheduler code on this host; deterministic simulated source and latency, no Bilibili network or GPU generation",
+  "host": {
+    "os": "Linux",
+    "machine": "aarch64",
+    "python": "3.12.3",
+    "cpu_count": 6,
+    "ram_bytes": 7989981184
+  },
+  "implementation_sources_sha256": {
+    "tuber_studio.bilibili_browsing": "bb02c907c23cf4ace45530f650d5ae01c410e52dea0d14160711d14abd3e1752",
+    "tuber_studio.browsing": "e8732442bde6dce1f3e5346356a6f557a957a69bc434d62a468d04b7db9a20d0",
+    "tuber_studio.browsing_evidence": "64495683bfa5d5aee41bb91e2d29fd46328fe4e2b6e9547381b4602f98194161",
+    "tuber_studio.browsing_store": "4a3724342ec2c7e10da7efdb29c0645333d106f0c24bb1d8799c29c04409e5ae",
+    "tuber_studio.media_cache": "bdfa6fcd7949bdf20274bee75a5e7bba458f4582bd1547a21250cdcc9ea0c7e6",
+    "tuber_studio.runtime": "6a69fbdb0ff1de428ac820a8fcf3d8d87a99b28b429685f912d21244c9a058d3"
+  },
+  "fixture": {
+    "videos": [
+      "BV1000000001",
+      "BV1000000002",
+      "BV1000000003",
+      "BV1000000004"
+    ],
+    "subtitle_segments_per_video": 3,
+    "sha256": "737575835eb23216d60d7e2c4958a1efead872592866bc7e91a4eb401cdd524a",
+    "response_delay_seconds": 0.3,
+    "application_request_interval_seconds": 0.25,
+    "adapter_minimum_request_interval_seconds": 0.1,
+    "cold_http_reads_per_video": 6
+  },
+  "measurements": [
+    {
+      "workers": 1,
+      "videos": 4,
+      "wall_seconds": 7.344038317998638,
+      "videos_per_second": 0.5446594675570893,
+      "http_reads": 24,
+      "database_budget": {
+        "reads": 24,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "cache_hits": 0,
+      "singleflight_merges": 0,
+      "queue_wait": {
+        "count": 4,
+        "total_seconds": 11.009063587960554,
+        "mean_seconds": 2.7522658969901386,
+        "max_seconds": 5.507341534976149
+      },
+      "preparation_latency": {
+        "count": 4,
+        "total_seconds": 7.342438596038846,
+        "mean_seconds": 1.8356096490097116,
+        "max_seconds": 1.8379641130159143
+      },
+      "request_gate_wait": {
+        "count": 24,
+        "total_seconds": 0.048570552084129304,
+        "mean_seconds": 0.002023773003505388,
+        "max_seconds": 0.0031007869984023273
+      },
+      "request_min_start_spacing_seconds": 0.3035128759802319,
+      "http_rate_limit_responses": 0,
+      "observed_peak_inflight_http": 1,
+      "rss_baseline_bytes": 55083008,
+      "sampled_peak_rss_bytes": 55410688,
+      "kernel_process_peak_rss_bytes": 55410688,
+      "rss_sample_period_seconds": 0.01,
+      "system_available_before_bytes": 2854662144,
+      "system_available_after_bytes": 2846765056,
+      "source_versions": {
+        "BV1000000001": "c5a71a40d4e32bdf45048bba73e1f3ed8ba608c4ab223b45b3191a78d90ab8cc",
+        "BV1000000002": "2c1664a59f825567e491f2658c03371c36fb1439747d3ad7f7a8c59398b14e79",
+        "BV1000000003": "3b21e13d7f7efe51981470122fb362e51db8d8b0a83bb6df8b27ded974415284",
+        "BV1000000004": "30bee92133084567623153574208a7224aac0f9967a9cbb6a404abab043b624c"
+      },
+      "material_id_count": 4,
+      "cache": {
+        "bytes": 5421,
+        "files": 4,
+        "protected_bytes": 5421,
+        "reclaimable_bytes": 0,
+        "limit_bytes": 536870912,
+        "writing": false
+      },
+      "cache_condition": "cold",
+      "http_methods": [
+        "GET"
+      ]
+    },
+    {
+      "workers": 4,
+      "videos": 4,
+      "wall_seconds": 6.087737118999939,
+      "videos_per_second": 0.6570585953056229,
+      "http_reads": 24,
+      "database_budget": {
+        "reads": 24,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "cache_hits": 0,
+      "singleflight_merges": 0,
+      "queue_wait": {
+        "count": 4,
+        "total_seconds": 2.534600207582116e-05,
+        "mean_seconds": 6.33650051895529e-06,
+        "max_seconds": 1.1360010830685496e-05
+      },
+      "preparation_latency": {
+        "count": 4,
+        "total_seconds": 22.836883923970163,
+        "mean_seconds": 5.709220980992541,
+        "max_seconds": 6.086688705981942
+      },
+      "request_gate_wait": {
+        "count": 24,
+        "total_seconds": 15.52026786011993,
+        "mean_seconds": 0.646677827504997,
+        "max_seconds": 0.7543074970017187
+      },
+      "request_min_start_spacing_seconds": 0.24960820001433603,
+      "http_rate_limit_responses": 0,
+      "observed_peak_inflight_http": 2,
+      "rss_baseline_bytes": 55091200,
+      "sampled_peak_rss_bytes": 55418880,
+      "kernel_process_peak_rss_bytes": 55418880,
+      "rss_sample_period_seconds": 0.01,
+      "system_available_before_bytes": 2854076416,
+      "system_available_after_bytes": 2845409280,
+      "source_versions": {
+        "BV1000000001": "c5a71a40d4e32bdf45048bba73e1f3ed8ba608c4ab223b45b3191a78d90ab8cc",
+        "BV1000000002": "2c1664a59f825567e491f2658c03371c36fb1439747d3ad7f7a8c59398b14e79",
+        "BV1000000003": "3b21e13d7f7efe51981470122fb362e51db8d8b0a83bb6df8b27ded974415284",
+        "BV1000000004": "30bee92133084567623153574208a7224aac0f9967a9cbb6a404abab043b624c"
+      },
+      "material_id_count": 4,
+      "cache": {
+        "bytes": 5421,
+        "files": 4,
+        "protected_bytes": 5421,
+        "reclaimable_bytes": 0,
+        "limit_bytes": 536870912,
+        "writing": false
+      },
+      "cache_condition": "cold",
+      "http_methods": [
+        "GET"
+      ]
+    },
+    {
+      "workers": 1,
+      "videos": 4,
+      "wall_seconds": 0.008595015009632334,
+      "videos_per_second": 465.38604010781205,
+      "http_reads": 0,
+      "database_budget": {
+        "reads": 0,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "cache_hits": 4,
+      "singleflight_merges": 0,
+      "queue_wait": {
+        "count": 4,
+        "total_seconds": 2.723198849707842e-05,
+        "mean_seconds": 6.807997124269605e-06,
+        "max_seconds": 1.2192002031952143e-05
+      },
+      "preparation_latency": {
+        "count": 4,
+        "total_seconds": 0.008079738036030903,
+        "mean_seconds": 0.002019934509007726,
+        "max_seconds": 0.0026892879977822304
+      },
+      "request_gate_wait": {
+        "count": 0,
+        "total_seconds": 0,
+        "mean_seconds": 0,
+        "max_seconds": 0
+      },
+      "request_min_start_spacing_seconds": null,
+      "http_rate_limit_responses": 0,
+      "observed_peak_inflight_http": 0,
+      "rss_baseline_bytes": 55427072,
+      "sampled_peak_rss_bytes": 55427072,
+      "kernel_process_peak_rss_bytes": 55427072,
+      "rss_sample_period_seconds": 0.01,
+      "system_available_before_bytes": 2848645120,
+      "system_available_after_bytes": 2848645120,
+      "source_versions": {
+        "BV1000000001": "c5a71a40d4e32bdf45048bba73e1f3ed8ba608c4ab223b45b3191a78d90ab8cc",
+        "BV1000000002": "2c1664a59f825567e491f2658c03371c36fb1439747d3ad7f7a8c59398b14e79",
+        "BV1000000003": "3b21e13d7f7efe51981470122fb362e51db8d8b0a83bb6df8b27ded974415284",
+        "BV1000000004": "30bee92133084567623153574208a7224aac0f9967a9cbb6a404abab043b624c"
+      },
+      "material_id_count": 4,
+      "cache": {
+        "bytes": 5419,
+        "files": 4,
+        "protected_bytes": 5419,
+        "reclaimable_bytes": 0,
+        "limit_bytes": 536870912,
+        "writing": false
+      },
+      "cache_condition": "hot",
+      "http_methods": [
+        "GET"
+      ]
+    },
+    {
+      "workers": 4,
+      "videos": 4,
+      "wall_seconds": 0.011097130016423762,
+      "videos_per_second": 360.4535581794569,
+      "http_reads": 0,
+      "database_budget": {
+        "reads": 0,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "cache_hits": 4,
+      "singleflight_merges": 0,
+      "queue_wait": {
+        "count": 4,
+        "total_seconds": 3.9776990888640285e-05,
+        "mean_seconds": 9.944247722160071e-06,
+        "max_seconds": 1.3568002032116055e-05
+      },
+      "preparation_latency": {
+        "count": 4,
+        "total_seconds": 0.010498618008568883,
+        "mean_seconds": 0.0026246545021422207,
+        "max_seconds": 0.0030346100102178752
+      },
+      "request_gate_wait": {
+        "count": 0,
+        "total_seconds": 0,
+        "mean_seconds": 0,
+        "max_seconds": 0
+      },
+      "request_min_start_spacing_seconds": null,
+      "http_rate_limit_responses": 0,
+      "observed_peak_inflight_http": 0,
+      "rss_baseline_bytes": 55508992,
+      "sampled_peak_rss_bytes": 55508992,
+      "kernel_process_peak_rss_bytes": 55508992,
+      "rss_sample_period_seconds": 0.01,
+      "system_available_before_bytes": 2846179328,
+      "system_available_after_bytes": 2846179328,
+      "source_versions": {
+        "BV1000000001": "c5a71a40d4e32bdf45048bba73e1f3ed8ba608c4ab223b45b3191a78d90ab8cc",
+        "BV1000000002": "2c1664a59f825567e491f2658c03371c36fb1439747d3ad7f7a8c59398b14e79",
+        "BV1000000003": "3b21e13d7f7efe51981470122fb362e51db8d8b0a83bb6df8b27ded974415284",
+        "BV1000000004": "30bee92133084567623153574208a7224aac0f9967a9cbb6a404abab043b624c"
+      },
+      "material_id_count": 4,
+      "cache": {
+        "bytes": 5421,
+        "files": 4,
+        "protected_bytes": 5421,
+        "reclaimable_bytes": 0,
+        "limit_bytes": 536870912,
+        "writing": false
+      },
+      "cache_condition": "hot",
+      "http_methods": [
+        "GET"
+      ]
+    }
+  ],
+  "comparisons": {
+    "cold": {
+      "workers_1_to_4_speedup": 1.2063658752737136,
+      "same_source_versions": true,
+      "http_read_delta": 0
+    },
+    "hot": {
+      "workers_1_to_4_speedup": 0.7745259357069535,
+      "same_source_versions": true,
+      "http_read_delta": 0
+    }
+  },
+  "controlled_probes": {
+    "singleflight": {
+      "workers": 4,
+      "videos": 4,
+      "wall_seconds": 1.8433894899790175,
+      "videos_per_second": 2.169915810925845,
+      "http_reads": 6,
+      "database_budget": {
+        "reads": 6,
+        "model_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "top_levels": 0
+      },
+      "cache_hits": 0,
+      "singleflight_merges": 6,
+      "queue_wait": {
+        "count": 4,
+        "total_seconds": 2.512102946639061e-05,
+        "mean_seconds": 6.2802573665976524e-06,
+        "max_seconds": 1.1488009477034211e-05
+      },
+      "preparation_latency": {
+        "count": 4,
+        "total_seconds": 7.368438171950402,
+        "mean_seconds": 1.8421095429876004,
+        "max_seconds": 1.8423484049853869
+      },
+      "request_gate_wait": {
+        "count": 6,
+        "total_seconds": 0.013041917001828551,
+        "mean_seconds": 0.002173652833638092,
+        "max_seconds": 0.0031141640210989863
+      },
+      "request_min_start_spacing_seconds": 0.30374875699635595,
+      "http_rate_limit_responses": 0,
+      "observed_peak_inflight_http": 1,
+      "rss_baseline_bytes": 55111680,
+      "sampled_peak_rss_bytes": 55439360,
+      "kernel_process_peak_rss_bytes": 55439360,
+      "rss_sample_period_seconds": 0.01,
+      "system_available_before_bytes": 2823647232,
+      "system_available_after_bytes": 2852302848,
+      "source_versions": {
+        "BV1000000001": "c5a71a40d4e32bdf45048bba73e1f3ed8ba608c4ab223b45b3191a78d90ab8cc"
+      },
+      "material_id_count": 1,
+      "cache": {
+        "bytes": 1356,
+        "files": 1,
+        "protected_bytes": 1356,
+        "reclaimable_bytes": 0,
+        "limit_bytes": 536870912,
+        "writing": false
+      },
+      "http_methods": [
+        "GET"
+      ]
+    },
+    "restriction": {
+      "error_kind": "restricted",
+      "http_reads": 1,
+      "rate_limit_responses": 1,
+      "material_count": 0,
+      "http_methods": [
+        "GET"
+      ]
+    },
+    "cancellation": {
+      "cancel_seconds": 0.0004178989911451936,
+      "children_done": true,
+      "inflight_http": 0,
+      "pending_flights": 0,
+      "waiters": 0,
+      "cancelled_http": 1,
+      "http_reads": 1,
+      "model_calls": 0,
+      "http_methods": [
+        "GET"
+      ]
+    },
+    "live_priority": {
+      "background_generation_blocked_while_live_pending": true,
+      "background_admitted_after_live_queue_cleared": true,
+      "admission_seconds": 0.20068887301022187,
+      "real_gpu_generation_invoked": false,
+      "http_reads": 6,
+      "lock_released": true,
+      "http_methods": [
+        "GET"
+      ]
+    }
+  },
+  "limitations": [
+    "Response latency and API payloads are simulated, not real platform throughput or access verification.",
+    "RSS is this isolated CPU preparation process; kernel peak includes process initialization and hot-cache population.",
+    "Live priority tests the actual offline-generation lock using controlled live queue events, not OBS playback or GPU concurrency.",
+    "One measurement per configuration; very short hot-cache timings are not statistically stable performance claims."
+  ],
+  "model_generations": 0,
+  "platform_writes": 0,
+  "environment_image_changed": false
+}

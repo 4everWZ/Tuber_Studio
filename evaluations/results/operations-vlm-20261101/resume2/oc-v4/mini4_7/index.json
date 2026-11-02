@@ -1,0 +1,693 @@
+{
+  "schema_version": 1,
+  "status": "completed_experiment_checkpoint",
+  "model_profile": "mini4_7",
+  "variant_profiles": [
+    "mini4_7",
+    "mini4_7_4x"
+  ],
+  "protocol": "vlm-operations-v4-oc-paths",
+  "semantic_acceptance": null,
+  "automatic_admission": false,
+  "completed": {
+    "plain_oc_scenes": 4,
+    "plain_oc_turns_per_temperature": 6,
+    "plain_oc_temperatures": [
+      0.2,
+      0.7
+    ],
+    "real_task_core_cases": 7,
+    "separate_safety_diagnostics": 2,
+    "plain_original_frames_per_projector": 3,
+    "separate_4x_roi_frames": 3,
+    "actual_product_provider_linkage": true,
+    "genie_pair_flow": true,
+    "full_input_4x_capacity": true,
+    "original_residency_restored": true
+  },
+  "source_conditions": {
+    "v3_pilot": "Legacy tool/JSON calling path for ordinary OC scenes, retained as a calling-path diagnosis; no final capability exclusion follows its old totals.",
+    "v4_oc": "Natural ordinary conversation, no tools/JSON. Default16x runPID20027; temperature.2 and.7 are independent conditions.",
+    "vision": "New16x run24298 and official4x run24376: same three original frames and natural no-role/no-tool/no-JSON observation question. Both use image_first, thinkingon, temperature.2/4096/seed42.",
+    "roi": "Official4x only, separate crop diagnostic. Original black margins are exactlyRGB0, crop160,0,320,270 retains all nonblack decoded pixels. No repaint/sharpen/extra source frames.",
+    "resources": "131072/q4KV/GPU99/projectorGPU/ubatch64/mmapoff/DIOon/model-cache-adviceon. Each run has its own owner/metrics and cleanup.",
+    "provider": "Public API uses original bytes, text-first existing API path, explicit Mini sampling, thinkingon, per-stage4096 output; parent16-model-call/65536-output budget, no platform adapter. Actual final usage1790 output across12 counted generations including token probes."
+  },
+  "projector_identity": {
+    "variant_of": "mini4_7",
+    "main_model_unchanged": true,
+    "source_revision": "345adbfa02c4a4671e61b7c75502dc9bf24fa93d",
+    "default16x_file": "mmproj-model-f16.gguf",
+    "official4x_file": "mmproj-model-f16-4x.gguf",
+    "official4x_sha256": "1e0ab439877e6896ded59ff24cdd242fdffb236394f6fc4a5b019cbd60bb5f4a",
+    "official4x_size_bytes": 901033888,
+    "actual4x_scale_factor": 2,
+    "default16x_scale_factor": 4,
+    "observed_tensor_type": "BF16/F32; namedF16 is not used to infer full tensor quantization",
+    "default_registry_profile_unchanged": true
+  },
+  "observations": {
+    "oc": "Rice joke has character flavor and repetition; companionship/story continuation are less expansive than the richer candidates. The two-red-circle followup is remembered. Additional drawing ideas are normal improvisation, not automatically counted as forgetting.",
+    "agent_tasks": "Counting and nine-vs-two were understood. Missing-color CC, independent source fetch and agent-directed frame tasks contain mistakes or incomplete tool loops; original answers and actual receipts remain separate from pure perception.",
+    "default16x_plain_vision": "20s separates the operating hand from watching girl,35s describes colored tube display;10s includes red-liquid/experiment content with coarse pigment interpretation and OCR error. Actual3.7/2.9/3.2s.",
+    "official4x_plain_vision": "Main people/containers/layered tube are observed in3.2/3.3/2.7s. Action wording at20s remains coarse; no universal improvement over16x is inferred.",
+    "roi": "10s再滴红色 and35s现在就是有不同的颜色分层 are transcribed correctly in this condition. Other actor/action detail remains coarse; this does not establish general OCR correctness.",
+    "product_final": "The staged real product flow completes resource admission and analysis with original IDs/CID/time/SHA bound by the backend;20s adult-hand/liquid operation and35s layer display are useful observations.10s is still a broad play/pigment interpretation."
+  },
+  "native_image_decode_tokens": {
+    "default16x_plain_frames": {
+      "first_three_original_frames": [
+        67,
+        67,
+        67
+      ],
+      "next_three_roi_frames": null,
+      "source": "Native image decode batch token counts, including model image suffix; not inferred from total prompt usage."
+    },
+    "official4x_full_pipeline": {
+      "first_three_original_frames": [
+        265,
+        265,
+        265
+      ],
+      "next_three_roi_frames": [
+        241,
+        241,
+        241
+      ],
+      "source": "Native image decode batch token counts, including model image suffix; not inferred from total prompt usage."
+    }
+  },
+  "context": {
+    "training_native_tokens": 262144,
+    "served_tokens": 131072,
+    "actual_input_tokens": 119991,
+    "reserved_output_tokens": 8192,
+    "input_plus_reserve": 128183,
+    "capacity_admitted": true,
+    "anchor": "珊瑚-7319",
+    "raw_exact_recall_passed": true,
+    "recall_semantic_verified": true,
+    "elapsed_ms": 168031.00529999938,
+    "filler_version": "Original e472 source snapshot retained. Later neutral-filler/whitespace matcher maintenance does not rewrite or rerun this measurement."
+  },
+  "product_provider_versions": {
+    "v1": {
+      "artifact": "mini4x-provider-real.json",
+      "result": "rejected_schema_contract",
+      "json_syntax_valid": true,
+      "specific": "Missing limitations, list instead of frame_observations mapping, first source ID missing its finalc; not a JSON syntax error or a pure-perception failure."
+    },
+    "v2_9df": {
+      "artifact": "mini4x-provider-v2-real.json",
+      "result": "completed",
+      "limitation": "Temporal inputs were not yet included in model context; original bindings remain recorded."
+    },
+    "v2_700": {
+      "artifact": "mini4x-provider-v2-timed-real.json",
+      "result": "completed",
+      "protocol": "sequential_captions_indexed_assessment_v2",
+      "source_revision": "7001789",
+      "binding_verified": true,
+      "used_original_frames": true,
+      "model_calls": 12,
+      "input_tokens": 4764,
+      "output_tokens": 1790,
+      "round_elapsed_seconds": 39.085049629211426
+    }
+  },
+  "genie": {
+    "configured_voice_id": "yaoyao_sovits_v2",
+    "backend": "genie_onnx_int8",
+    "independent_loopback_port": 9041,
+    "readiness_seconds": 17.655420310009504,
+    "minimum_pair_available_bytes": 2459820032,
+    "peak_swap_growth_bytes": 0,
+    "speech_seconds": 11.98,
+    "synthesis_seconds": 11.022957327018958,
+    "audio_sha256": "7dc8c21578654e64b2d8e804be0b9197d328702063bfe5f39ee89bd6cd945c98",
+    "audio": "genie-coexistence/local-speech.wav",
+    "audio_played": false,
+    "worker_reaped": true,
+    "production_configuration_unchanged": true,
+    "scope": "Short real sequential LLM-to-local-speech flow with both resident; not a GPU-parallel or long-duration endurance measurement."
+  },
+  "resource_runs": {
+    "default16x_mixed_v3_v4": {
+      "pid": 20027,
+      "experiment_id": "f20826149a2d4963a69a84176939dab8",
+      "parameters": {
+        "profile": "mini4_7",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/mini4_7-oc-v3",
+        "alias": "ops-mini4_7",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 64,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "gpu",
+        "mmap": "off",
+        "lazy_mode": null,
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "on",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 512,
+        "max_swap_growth_mib": 128
+      },
+      "state": "stopped",
+      "server_returncode": 1,
+      "actual_context_tokens": 131072,
+      "minimum_available_bytes": 3205324800,
+      "peak_server_tree_rss_bytes": 3440463872,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          20027
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "aggregation": "Whole lifetime. The4x system-memory curve includes the separate Genie pair; model-tree RSS excludes the independently owned Genie worker."
+    },
+    "default16x_plain_frames": {
+      "pid": 24298,
+      "experiment_id": "9592d96193ac484cb9a64cdbc8f0397f",
+      "parameters": {
+        "profile": "mini4_7",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/mini4_7-16x-plain-visual-v4",
+        "alias": "ops-mini4_7",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 64,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "gpu",
+        "mmap": "off",
+        "lazy_mode": null,
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "on",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 512,
+        "max_swap_growth_mib": 128
+      },
+      "state": "stopped",
+      "server_returncode": 1,
+      "actual_context_tokens": 131072,
+      "minimum_available_bytes": 3478822912,
+      "peak_server_tree_rss_bytes": 3274092544,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          24298
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "aggregation": "Whole lifetime. The4x system-memory curve includes the separate Genie pair; model-tree RSS excludes the independently owned Genie worker."
+    },
+    "official4x_full_pipeline": {
+      "pid": 24376,
+      "experiment_id": "4889f45f5bcf45caaa6d63a2985f74d0",
+      "parameters": {
+        "profile": "mini4_7_4x",
+        "registry": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/vlm-operations-with-mini4x.json",
+        "model_root": "/workspace/tuber/runtime/models/operations-vlm",
+        "llama_binary": "/workspace/tuber/runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server",
+        "run_dir": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/resume2/mini4_7-4x-plain-visual-v4",
+        "alias": "ops-mini4_7_4x",
+        "listen_host": "0.0.0.0",
+        "port": 9030,
+        "context_tokens": 131072,
+        "allow_native_extension": false,
+        "kv": "q4_0",
+        "kv_k": null,
+        "kv_v": null,
+        "batch": 256,
+        "ubatch": 64,
+        "gpu_layers": 99,
+        "kv_offload": "gpu",
+        "threads": 4,
+        "mmproj_offload": "gpu",
+        "mmap": "off",
+        "lazy_mode": null,
+        "direct_io": "on",
+        "model_cache_advice": "on",
+        "log_verbosity": 4,
+        "reasoning": "on",
+        "reasoning_budget": null,
+        "rope_scaling": null,
+        "rope_scale": null,
+        "rope_freq_scale": null,
+        "yarn_orig_ctx": null,
+        "flash_attn": "on",
+        "cuda_graphs": "on",
+        "warmup": "on",
+        "image_max_tokens": null,
+        "startup_timeout": 300,
+        "min_available_mib": 512,
+        "max_swap_growth_mib": 128
+      },
+      "state": "stopped",
+      "server_returncode": 1,
+      "actual_context_tokens": 131072,
+      "minimum_available_bytes": 2466222080,
+      "peak_server_tree_rss_bytes": 3249942528,
+      "peak_swap_growth_bytes": 0,
+      "cleanup": {
+        "signalled_pids": [
+          24376
+        ],
+        "force_killed_pids": [],
+        "remaining_pids": []
+      },
+      "aggregation": "Whole lifetime. The4x system-memory curve includes the separate Genie pair; model-tree RSS excludes the independently owned Genie worker."
+    }
+  },
+  "restoration": {
+    "verified": true,
+    "original_model": "MiniCPM5-2B",
+    "pid": 25156,
+    "mode": "text",
+    "selected_provider": "llm2b",
+    "original_genie_running": false,
+    "config_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+    "owned_candidates_remaining_live": false,
+    "independent_genie_port9041_open": false,
+    "proof": "original-restoration/verification.json"
+  },
+  "files": {
+    "genie-coexistence/local-speech.wav": {
+      "bytes": 766764,
+      "sha256": "7dc8c21578654e64b2d8e804be0b9197d328702063bfe5f39ee89bd6cd945c98"
+    },
+    "genie-coexistence/memory.jsonl.gz": {
+      "bytes": 2152,
+      "sha256": "ff7d77a1a0145a3f2326ddb99390ca1cd05b31f3d980d3d5bd563a16ebe6bdfd",
+      "uncompressed_sha256": "5ef80ffd414ea1afe12b2d3cb85b36f23c1e3f0b1bc196863bc71ccccc0b6fb4"
+    },
+    "genie-coexistence/messages.json": {
+      "bytes": 2130,
+      "sha256": "234159a75351b4280a8ff6b06d19301ae3a7252dd78ae76f51e04703580c2836"
+    },
+    "genie-coexistence/result.json": {
+      "bytes": 3805,
+      "sha256": "ccd77ce5a03b5c8517a1290996f9ec570617b720d3cda8255b312b36ce50514d"
+    },
+    "genie-coexistence/worker.log.gz": {
+      "bytes": 776,
+      "sha256": "977f4f5f76d38bd88e23ce664a59ae533c48a0e526a20e2e44d090d73a6008ec",
+      "uncompressed_sha256": "7e4bb168b9eae550e41a7408748920a8d430e91796a52dd41831d9479ceec3e3"
+    },
+    "images/837470340-10.jpg": {
+      "bytes": 7104,
+      "sha256": "b33cbf88946f918cbcd480597d0e3c34d73646984474331dcf1014b6cbd4bc90"
+    },
+    "images/837470340-20.jpg": {
+      "bytes": 8793,
+      "sha256": "631304db8b63ea773f8bd74e8ea33a3b234687edce18870629b4c9eaec045f38"
+    },
+    "images/837470340-35.jpg": {
+      "bytes": 7895,
+      "sha256": "b34f24470efc2922390399bf4530a8ecdb60d0acc5eba3895388cac1275f13c1"
+    },
+    "images/roi/837470340-10-roi.png": {
+      "bytes": 41153,
+      "sha256": "b71f68d61ac794920c9e13c5d94e597ab899ef7ab295b68642ae7bee29e4a4a3"
+    },
+    "images/roi/837470340-20-roi.png": {
+      "bytes": 51830,
+      "sha256": "d8715978feac51614531781f7676d308746fba4d3650f7c8acd27874b8c888f0"
+    },
+    "images/roi/837470340-35-roi.png": {
+      "bytes": 43314,
+      "sha256": "0a83552673da760f12d9955e23d60fe9ad88f79791d05edf536251052126b764"
+    },
+    "images/roi/roi-report.json": {
+      "bytes": 6119,
+      "sha256": "dd8043dff509817834ab9487cddcf8cbb78bf57dc9ff1447d885ceeb1b38fafb"
+    },
+    "images/shapes-original.png": {
+      "bytes": 2796,
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161"
+    },
+    "images/storyboard-report.json": {
+      "bytes": 2383,
+      "sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
+    },
+    "mini4_7-16x-v4-plain-frames.json": {
+      "bytes": 20202,
+      "sha256": "e7aebabeac03d0652ae0d0b35f37f4695783cfeef78f8956b904cffe4e568658"
+    },
+    "mini4_7-4x-v4-capacity.command.json": {
+      "bytes": 1528,
+      "sha256": "01abb58a5b2bb64747f101f9db7c22753e13ff89082613c430b93d269d319574"
+    },
+    "mini4_7-4x-v4-capacity.json": {
+      "bytes": 24716,
+      "sha256": "4dc88c66b2496942f62fed0cfeae3ff62f601d819415c8f6694f392428b4852c"
+    },
+    "mini4_7-4x-v4-plain-frames-roi.json": {
+      "bytes": 20372,
+      "sha256": "193cdab5528b284be7ba9b7e16d58bcd38ef5041d724e1172154ae78aa9fcd68"
+    },
+    "mini4_7-4x-v4-plain-frames.json": {
+      "bytes": 19978,
+      "sha256": "a16c7e3080267591a3cc34c5133c7a6adbacbb2196d330deba6412f01b11d2da"
+    },
+    "mini4_7-v3-oc-pilot.command.json": {
+      "bytes": 1420,
+      "sha256": "4446647c690a9ccbd724a5b8fc19bdf0c1de263b5de0f5e2aad01c197ae9a200"
+    },
+    "mini4_7-v3-oc-pilot.json": {
+      "bytes": 153191,
+      "sha256": "8434fd268e81b287e1ac5f29fc31c306858bf4a435fa371d55411e57ad46c575"
+    },
+    "mini4_7-v4-diagnostics.command.json": {
+      "bytes": 1381,
+      "sha256": "4a0f769c3b51ad0e4455e1233df5c50ad26a9c5a03dac7832350601011414d65"
+    },
+    "mini4_7-v4-diagnostics.json": {
+      "bytes": 48478,
+      "sha256": "cb6abb9b9228ed6dfcdb5694787d147be150a33ed52b00e3ee712ece7334e6f6"
+    },
+    "mini4_7-v4-oc-pilot.command.json": {
+      "bytes": 1420,
+      "sha256": "95652d560d8cfd797237208201d8db76b9e7c6ebe8c7887e3c4a67293c3a7bec"
+    },
+    "mini4_7-v4-oc-pilot.json": {
+      "bytes": 52911,
+      "sha256": "26a3ec3d8d0d4795fe4df7e48314531b7e3296d08e75a4ee55082a94f1f4ea31"
+    },
+    "mini4_7-v4-oc-review.md": {
+      "bytes": 14305,
+      "sha256": "5a62609fceaa68d00b67630581d53a4031aeae30a4d3daf46e89edaf1acdd1b7"
+    },
+    "mini4_7-v4-oc-temperature07.command.json": {
+      "bytes": 1460,
+      "sha256": "c85a623bc7f2ad57d47ad4fcfc3eb97b8ac7ff9ec255c1b7ba68627a704405f0"
+    },
+    "mini4_7-v4-oc-temperature07.json": {
+      "bytes": 52555,
+      "sha256": "5b5cf49b4d8b91f9589daf1047ab8367fbaed1dbde4812ee927491b7631c5e06"
+    },
+    "mini4_7-v4-real-tasks.command.json": {
+      "bytes": 1612,
+      "sha256": "a20d0fb1611cc1169d9861aad1cf7e43b3ac6b154794fdef5e5c8797d9b4fc42"
+    },
+    "mini4_7-v4-real-tasks.json": {
+      "bytes": 230292,
+      "sha256": "b24fc2d7a235f041604b3005b02505b2b30ed6ac95d0a0ad703f5856fee242fc"
+    },
+    "mini4x-artifact-verified.json": {
+      "bytes": 305,
+      "sha256": "1f7c658b5610a027c1321198eb32847069ade18f297adbd51453ab53e7ca1c1e"
+    },
+    "mini4x-cohost-messages.json": {
+      "bytes": 2130,
+      "sha256": "234159a75351b4280a8ff6b06d19301ae3a7252dd78ae76f51e04703580c2836"
+    },
+    "mini4x-provider-plan.json": {
+      "bytes": 9644,
+      "sha256": "9f33683db6dec4c2a565b489caecd262355092c917daecd04802086cd7d3b977"
+    },
+    "mini4x-provider-real.json": {
+      "bytes": 18229,
+      "sha256": "a869b01501f2d803af8da3b63d739d6d33b5f240fe9cf6840e1ed28ec43d7889"
+    },
+    "mini4x-provider-sampling.json": {
+      "bytes": 148,
+      "sha256": "9ff32b983c5aa558129505bd296910e15e66d52e4a894a922d754211d2c562c9"
+    },
+    "mini4x-provider-v2-plan.json": {
+      "bytes": 9738,
+      "sha256": "fb05a92166bb857b1609829d3f3512fdd5ab29d5b1280a69a7172c5fdc22ed19"
+    },
+    "mini4x-provider-v2-real.json": {
+      "bytes": 43460,
+      "sha256": "23429a8a2d6e6f93ad6f3d1681f9be38177c38326c474e060c4857d721fbcef9"
+    },
+    "mini4x-provider-v2-timed-plan.json": {
+      "bytes": 9753,
+      "sha256": "bea5584206b2539b2220e30326f1da4d512c5c22a6e5bf3a51ea76e10f867351"
+    },
+    "mini4x-provider-v2-timed-real.json": {
+      "bytes": 42306,
+      "sha256": "a9b91843ec8ae30c6520447cc2d715ba4d1ddf890d18521dae78d9014aad0cb8"
+    },
+    "mini4x-video-resource-proof-v2-timed.json": {
+      "bytes": 2584,
+      "sha256": "72a395d2e8a69e74601938804366b3e46af857c371c5eddb8741f8dbea371971"
+    },
+    "mini4x-video-resource-proof-v2.json": {
+      "bytes": 2584,
+      "sha256": "5dd73e00a6eb58fefbcf61dda454bca7ca6c276e3677034fc7e318361822a06b"
+    },
+    "mini4x-video-resource-proof.json": {
+      "bytes": 2444,
+      "sha256": "0783f0336128e258252721d336a46da43530f29ab7e90578c8a5fedfc73e5429"
+    },
+    "original-restoration/restored-before-final.json": {
+      "bytes": 2055,
+      "sha256": "4efd767f34f1256b366122f6040be91440125fc821ae1d9cd642854ae18c07a2"
+    },
+    "original-restoration/restored.json": {
+      "bytes": 2056,
+      "sha256": "1c7fb3c4b4d605ff3c63b9f1b24731bb572dc4570f9457420af6538c32fd44b2"
+    },
+    "original-restoration/verification.json": {
+      "bytes": 4557,
+      "sha256": "713799b6a665e0688e5b64806cd9e31aaa27176b0b080d955a56774f98a10873"
+    },
+    "provider-round-ledgers.json": {
+      "bytes": 1448,
+      "sha256": "3f634db29fc2fc628e42c9d6eb3e21fae36443f578e80c28506f176e866a3d8c"
+    },
+    "ready-snapshots/mini4x-ready-proof/metrics.json": {
+      "bytes": 22570,
+      "sha256": "bcbbebd8724e63ca4de536214dee237963ecc0c7715717623c09da1082031118"
+    },
+    "ready-snapshots/mini4x-ready-proof/owner.json": {
+      "bytes": 2726,
+      "sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7"
+    },
+    "ready-snapshots/mini4x-ready-proof-v2-timed/metrics.json": {
+      "bytes": 22572,
+      "sha256": "ecef6a518b15d82a29204b11d0532f906485a41797292f736a94b5197dc4ab3c"
+    },
+    "ready-snapshots/mini4x-ready-proof-v2-timed/owner.json": {
+      "bytes": 2726,
+      "sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7"
+    },
+    "resource-runs/default16x_mixed_v3_v4/memory.jsonl.gz": {
+      "bytes": 60768,
+      "sha256": "01dd3ed0d54018eb97296278293362f699f8585cdedc1abd082f4aaa449a92fd",
+      "uncompressed_sha256": "d5bc3a632afefdf64bb2dab0309f81a568e759a8f3cfebb0419ae57f3051d20a"
+    },
+    "resource-runs/default16x_mixed_v3_v4/metrics.json": {
+      "bytes": 24197,
+      "sha256": "30c6b38e7a7b665e9d3c6ff8628a52c03fe2bd14e6ea557c1ae28e39b6f2779e"
+    },
+    "resource-runs/default16x_mixed_v3_v4/owner.json": {
+      "bytes": 2669,
+      "sha256": "fe63a31f1421089a9da916e921f953493bef24d5766a3bf5a46bac95d1b12b5a"
+    },
+    "resource-runs/default16x_mixed_v3_v4/server.log.gz": {
+      "bytes": 27004,
+      "sha256": "d2ec6a83b224499f4fd07ee1de4cca3178f58dd629576756a30753db381fdb80",
+      "uncompressed_sha256": "92db278c754acd4a58c430343d07e49eb65eaf5dbb07014700c2062658412007"
+    },
+    "resource-runs/default16x_plain_frames/memory.jsonl.gz": {
+      "bytes": 3983,
+      "sha256": "def11228eb813f481776b900bbe2f18a2c38067a0e2dbce9be73de943b251a37",
+      "uncompressed_sha256": "d645b2a5b6f3c538b1b87f27ca2db186da24dd9704b670d6fe3fb55a4a168c09"
+    },
+    "resource-runs/default16x_plain_frames/metrics.json": {
+      "bytes": 24211,
+      "sha256": "c376fae1f2b602f7e97c0851654358ddec5e13e5be39865eb49d4ccace16127d"
+    },
+    "resource-runs/default16x_plain_frames/owner.json": {
+      "bytes": 2704,
+      "sha256": "c10ab8cb6ad473f5c710a4528e4f6df0097a1625bee27091e75761ffe031400b"
+    },
+    "resource-runs/default16x_plain_frames/server.log.gz": {
+      "bytes": 6622,
+      "sha256": "e32afc1ebb5bd3a36855a2231177a938566881b5149c25928eac2f5d1172c9ec",
+      "uncompressed_sha256": "e7c346ec5558371e5b3a07cbbda44610d938b8904f7e65388645b4346685fd01"
+    },
+    "resource-runs/official4x_full_pipeline/memory.jsonl.gz": {
+      "bytes": 57634,
+      "sha256": "42a6f73f1e79f61d3126f94573a01e26f6289bb0fbfbec328504b31bbeee2b67",
+      "uncompressed_sha256": "9bfbca031470932671e3fc9bc2f9a60f7b49576a20b2f0ee8668e9645d93c986"
+    },
+    "resource-runs/official4x_full_pipeline/metrics.json": {
+      "bytes": 24588,
+      "sha256": "bcdc6593dec25eeebd6553d017e74adff48a0f68f865d12ebba4323b40062307"
+    },
+    "resource-runs/official4x_full_pipeline/owner.json": {
+      "bytes": 2726,
+      "sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7"
+    },
+    "resource-runs/official4x_full_pipeline/server.log.gz": {
+      "bytes": 34097,
+      "sha256": "2af5bad0e6b8984a7a1a7e7bf4e5cb6e240db7149180f1968a110e4020e6aa83",
+      "uncompressed_sha256": "633b5d64d287bb0fcee0847d4a340301dfb4e569469c6dcfd482249037d67ad9"
+    },
+    "source-snapshots/current-owned-helpers/final-restore-and-verify.py.gz": {
+      "bytes": 1686,
+      "sha256": "9a3bd508d7f509efde26c4fa2517101d0f23dd15a75c278eb292d6e94cd52c50",
+      "uncompressed_sha256": "b14018d6c3de219dc5cdda07ab40853416988f7ea2a4f4ed76fe011889285a04"
+    },
+    "source-snapshots/current-owned-helpers/genie-cohost.py.gz": {
+      "bytes": 3803,
+      "sha256": "8333546cb17edea1de958a8a0833b283a33f357939849e64762f11e868a6a414",
+      "uncompressed_sha256": "e6859e112053e90b27a8ecf7168cf01d00b5f735b3aa07cedc3110717b7cdca1"
+    },
+    "source-snapshots/current-owned-helpers/plain-frame-probe.py.gz": {
+      "bytes": 1692,
+      "sha256": "6b154678830e99a5ddc5aae1492d0664d4f914a47e2d4b8297d0144130159666",
+      "uncompressed_sha256": "6ab6c72fae96739483a4c6fa991e33277c1c687acd3ae2d780296a06c6263efa"
+    },
+    "source-snapshots/source-provider-v2-7001789/api_providers.py.gz": {
+      "bytes": 3846,
+      "sha256": "25340ede8c02cb05fe9b5a914e846726126afd601119036e538d2285aa0da6e4",
+      "uncompressed_sha256": "a9dcfe32b7c6885815f9c30c46e7f19e5a769499fc4d79a41837fbf15ee9fc1c"
+    },
+    "source-snapshots/source-provider-v2-7001789/llama_sampling.py.gz": {
+      "bytes": 709,
+      "sha256": "2dd5d4161a8e4d18120af167fbbc17d17ff5fa0db37fdab4c7be0758c086548a",
+      "uncompressed_sha256": "c50ca3c71e5580486c86b89550f71574810a4af34cb6824aeffed50b33eaff05"
+    },
+    "source-snapshots/source-provider-v2-7001789/manifest.json": {
+      "bytes": 441,
+      "sha256": "d7ecd60b484a761025d3ee7d47645a91ddd71d2a071a514428e791299318c0ad"
+    },
+    "source-snapshots/source-provider-v2-7001789/provider-wiring.py.gz": {
+      "bytes": 5693,
+      "sha256": "cf7af98426b8f0b3fabc5b39db847dace40cb8e3058ef15e180d9267715c9a79",
+      "uncompressed_sha256": "989cc8459c6970e8ef1b717d6484144538a53407f1e34b5f3e7016918be56308"
+    },
+    "source-snapshots/source-provider-v2-7001789/video_vision.py.gz": {
+      "bytes": 6292,
+      "sha256": "96205358978c6e109d3496ac551d1a8a20a416315e72343d2030e3c6f307e36e",
+      "uncompressed_sha256": "7d9c4af948c09596d145a70604854e106a5e4cfd563d89d3ef5cd468ac5264c7"
+    },
+    "source-snapshots/source-provider-v2-9dfc600/api_providers.py.gz": {
+      "bytes": 3846,
+      "sha256": "25340ede8c02cb05fe9b5a914e846726126afd601119036e538d2285aa0da6e4",
+      "uncompressed_sha256": "a9dcfe32b7c6885815f9c30c46e7f19e5a769499fc4d79a41837fbf15ee9fc1c"
+    },
+    "source-snapshots/source-provider-v2-9dfc600/llama_sampling.py.gz": {
+      "bytes": 709,
+      "sha256": "2dd5d4161a8e4d18120af167fbbc17d17ff5fa0db37fdab4c7be0758c086548a",
+      "uncompressed_sha256": "c50ca3c71e5580486c86b89550f71574810a4af34cb6824aeffed50b33eaff05"
+    },
+    "source-snapshots/source-provider-v2-9dfc600/manifest.json": {
+      "bytes": 441,
+      "sha256": "6ce5b7baf5b6fe271ea537a9aa0f9744ee5a84ee0539cc5aee454b5e77b0b649"
+    },
+    "source-snapshots/source-provider-v2-9dfc600/provider-wiring.py.gz": {
+      "bytes": 5693,
+      "sha256": "cf7af98426b8f0b3fabc5b39db847dace40cb8e3058ef15e180d9267715c9a79",
+      "uncompressed_sha256": "989cc8459c6970e8ef1b717d6484144538a53407f1e34b5f3e7016918be56308"
+    },
+    "source-snapshots/source-provider-v2-9dfc600/video_vision.py.gz": {
+      "bytes": 6206,
+      "sha256": "3463a6d424c9aa80add52ca02617131d969be100450cf911fc3adc6691d7945b",
+      "uncompressed_sha256": "1a34180a4781c58b63c87304e747dd2517b55dbaf4375204c71e9bc3f5c97de8"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/0-vlm_operations.py.gz": {
+      "bytes": 28205,
+      "sha256": "6e3345f284ec1fe3a53dc78f95929cffccbff9155ecfd5f1a4ea5f5252e81a10",
+      "uncompressed_sha256": "e472f511b58b09cb894e24bc2e3a68266cb229e753dc1a361677721bb44cb4cb"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/1-vlm_images.py.gz": {
+      "bytes": 2606,
+      "sha256": "807e6091293f6904ee17e3717b0eba9ebbaf68ff6d5712091b6aeffbb64deed8",
+      "uncompressed_sha256": "100318e6e5f1167b478d401403777fbef11c14f791fe574fa4ac1694d1581e2b"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/2-vlm-operations.json": {
+      "bytes": 8412,
+      "sha256": "20e68f6817bd15de87aba3eab74f08ea92394fa95d234a1cecf121196481a010"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/3-characters.json": {
+      "bytes": 2923,
+      "sha256": "942a2c15e957184d9e138952003e4c299a0292babdc8449e6caa5382d2af6328"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/4-plain-frame-probe.py.gz": {
+      "bytes": 1692,
+      "sha256": "6b154678830e99a5ddc5aae1492d0664d4f914a47e2d4b8297d0144130159666",
+      "uncompressed_sha256": "6ab6c72fae96739483a4c6fa991e33277c1c687acd3ae2d780296a06c6263efa"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/5-genie-cohost.py.gz": {
+      "bytes": 3803,
+      "sha256": "8333546cb17edea1de958a8a0833b283a33f357939849e64762f11e868a6a414",
+      "uncompressed_sha256": "e6859e112053e90b27a8ecf7168cf01d00b5f735b3aa07cedc3110717b7cdca1"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/6-provider-wiring.py.gz": {
+      "bytes": 5622,
+      "sha256": "fa3560ab1a6e4f56271e52a50d49b01d3b4fb23c104df507044ddb4d5bd377a9",
+      "uncompressed_sha256": "abf6c25d3a6de45762beb6ae8cf7ef0e09753154c0e8e83d7827c53d20681f43"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/7-video_vision.py.gz": {
+      "bytes": 5603,
+      "sha256": "4385064701341592ecd668fb0aba079d13f41563f5e455216f81db4f5d2e13f5",
+      "uncompressed_sha256": "f34684c4ce276ce826bef33a4468c8888f209dc0c84a7c79b8c925e86f92b879"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/8-api_providers.py.gz": {
+      "bytes": 3718,
+      "sha256": "240ec5d1f15f587b3ea835ca26834569a13a8ddc234c2fcc20277f67d4aa2253",
+      "uncompressed_sha256": "d6f195f48eaab23f1c30c0e8e64267de6df1f537177aa08e0bb880389d0477d3"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/9-llama_sampling.py.gz": {
+      "bytes": 709,
+      "sha256": "2dd5d4161a8e4d18120af167fbbc17d17ff5fa0db37fdab4c7be0758c086548a",
+      "uncompressed_sha256": "c50ca3c71e5580486c86b89550f71574810a4af34cb6824aeffed50b33eaff05"
+    },
+    "source-snapshots/source-v4-pre-probe-cleanup/manifest.json": {
+      "bytes": 1093,
+      "sha256": "4b5ebc8e5629676449a2d0d1afa074d5972e1d2ba52f1f0439319561ce6fa47e"
+    }
+  }
+}

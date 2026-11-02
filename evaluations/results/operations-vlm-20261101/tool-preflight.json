@@ -1,0 +1,175 @@
+{
+  "created_at": "2026-10-31T17:49:24.242674+00:00",
+  "protocol": "vlm-operations-v1",
+  "declarations": {
+    "model": "tool-preflight-only",
+    "quantization": "not-loaded",
+    "context_tokens": 131072,
+    "thinking": "on",
+    "tools_mode": "native",
+    "max_output_tokens_including_reasoning": 4096,
+    "temperature": 0.2,
+    "seed": 42,
+    "additional_image_sampling_parameters": {}
+  },
+  "execution": {
+    "host": "R9000P-2021H",
+    "model_endpoint": "http://127.0.0.1:1",
+    "network_proxy": "http://127.0.0.1:7897",
+    "search_provider": "bing-rss",
+    "search_endpoint": null,
+    "max_tool_rounds": 6,
+    "max_tool_calls_per_case": 12,
+    "max_model_calls_per_case": 24,
+    "model_timeout_seconds": 300,
+    "case_deadline_seconds": 600,
+    "network_timeout_seconds": 20,
+    "max_document_bytes": 2097152
+  },
+  "materials": {
+    "cases_sha256": "c9bc963548c5ae0e5aef556f41602e331f1b6b8977fc8b2c7c007bb7ce875120",
+    "character_public_sha256": "1fd90223a4f444c75ce4b7c94eb350e8ef9eab2524ff20b930aa7e3cb1806fac",
+    "image": {
+      "path": "tmp\\vlm-tool-preflight-20261101.fixture.png",
+      "sha256": "d2a5129439846b0a317944f89f4e2508a100bd187e69267a8853979174aa3161",
+      "width": 512,
+      "height": 320,
+      "red_circles": 2,
+      "blue_squares": 3
+    }
+  },
+  "cases": [],
+  "context_configuration_verified": false,
+  "context_probe": {
+    "requested": false
+  },
+  "scope": {
+    "production_configuration_modified": false,
+    "platform_write_tools_available": false,
+    "reasoning_text_retained": false,
+    "full_semantic_acceptance_claimed": false
+  },
+  "tool_preflight": {
+    "source": "harness_only_not_model_tool_selection",
+    "model_requests_made": 0,
+    "receipts": [
+      {
+        "ref": "tool:1",
+        "name": "web_search",
+        "arguments": {
+          "query": "W3C PNG specification lossless"
+        },
+        "ok": true,
+        "result": {
+          "provider": "bing-rss",
+          "query": "W3C PNG specification lossless",
+          "results": [
+            {
+              "url": "https://www.w3school.com.cn/",
+              "title": "W3School 在线教程",
+              "snippet": "W3School 提供涵盖所有主流 Web 开发语言的免费在线教程、参考手册和练习题。内容包含 HTML、CSS、JavaScript、Python、SQL、Java 等众多热门技术领域。"
+            },
+            {
+              "url": "https://www.w3.org/",
+              "title": "W3C",
+              "snippet": "The World Wide Web Consortium (W3C) develops standards and guidelines to help everyone build a web based on the principles of accessibility, internationalization, privacy and security."
+            },
+            {
+              "url": "https://www.w3schools.com/",
+              "title": "W3Schools Online Web Tutorials",
+              "snippet": "W3Schools offers free online tutorials and references on web development languages such as HTML, CSS, JavaScript, PHP, SQL, and JQuery."
+            },
+            {
+              "url": "https://www.w3cschool.cn/xuexiw3c/",
+              "title": "W3C 标准教程_w3cschool",
+              "snippet": "Web的价值和成长依赖于其全球性和普适性。 我们需要确保无论用户在适用什么样的计算机、软件、语言、网络环境、传感和交互设备时，都能够获得同样的Web内容和体验。 W3C通过制定各类国际Web标准，确保这一目标得以实现。 这些标准也使Web对所有人更加开放。"
+            },
+            {
+              "url": "https://www.runoob.com/w3c/w3c-tutorial.html",
+              "title": "W3C 教程 | 菜鸟教程",
+              "snippet": "W3C 教程 W3C 让每个人都能在互联网上分享资源。 W3C（英语：World Wide Web Consortium，万维网联盟），又称 W3C 理事会，是万维网的主要国际标准组织。 开始学习 W3C ! W3C 教程列表 W3C 简介 本节内容：W3C 是什么组织，它如何运作，网络是如何被标准化的。"
+            }
+          ],
+          "request_url": "https://cn.bing.com/search?q=W3C+PNG+specification+lossless&format=rss&count=5",
+          "response_sha256": "c9ee8528bbe33a61862108473d96b97eb98109e2c265d4b4360c2c8f6abcba25"
+        },
+        "elapsed_ms": 635.7924999902025
+      },
+      {
+        "ref": "tool:2",
+        "name": "web_fetch",
+        "arguments": {
+          "url": "https://www.w3.org/TR/png-3/"
+        },
+        "ok": true,
+        "result": {
+          "url": "https://www.w3.org/TR/png-3/",
+          "redirects": [],
+          "content_type": "text/html",
+          "bytes": 656574,
+          "sha256": "a3ac82bb9eb8664b93961a2a9ff6def3d70e3a9f63d92721143c1f391d04edec",
+          "elapsed_ms": 1622.3015000578016,
+          "title": "Portable Network Graphics (PNG) Specification (Third Edition)",
+          "text": "Portable Network Graphics (PNG) Specification (Third Edition)\nPortable Network Graphics (PNG) Specification (Third Edition)\nW3C Recommendation\n24 June 2025\nMore details about this document\nThis version:\nhttps://www.w3.org/TR/2025/REC-png-3-20250624/\nLatest published version:\nhttps://www.w3.org/TR/png-3/\nLatest editor's draft:\nhttps://w3c.github.io/png/\nHistory:\nhttps://www.w3.org/standards/history/png-3/\nCommit history\nImplementation report:\nhttps://w3c.github.io/png/Implementation_Report_3e/\nEditors:\nChris Blume\n(\nW3C Invited Experts\n)\nPierre-Anthony Lemieux\n(\nMovieLabs\n)\nChris Lilley\n(\nW3C\n)\nChris Needham\nLeonard Rosenthol\n(\nAdobe Inc.\n)\nChris Arley Seeger\n(\nNBCUniversal, LLC a subsidiary of Comcast Corporation\n)\nSimon Thompson\n(\nBritish Broadcasting Corporation\n)\nCosmin Truta\n(\nW3C Invited Experts\n)\nFormer editors:\nThomas Boutell\nAdam M. Costello\nDavid Duce\nTom Lane\nGlenn Randers-Pehrson\nAuthors:\nMark Adler\nThomas Boutell\nChristian Brunschen\nAdam M. Costello\nLee Daniel Crocker\nAndreas Dilger\nOliver Fromme\nJean-loup Gailly\nPhil Harvey\nChris Herborth\nAlex Jakulin\nNeal Kettler\nTom Lane\nAlexander Lehmann\nChris Lilley\n(\nW3C\n)\nDave Martindale\nOwen Mortensen\nStuart Parmenter\nKeith S. Pickens\nRobert P. Poole\nGlenn Randers-Pehrson\nGreg Roelofs\nWillem van Schaik\nGuy Schalnat\nPaul Schmidt\nAndrew Smith\nMichael Stokes\nVladimir Vukicevic\nTim Wegner\nJeremy Wohl\nFeedback:\nGitHub w3c/png\n(\npull requests\n,\nnew issue\n,\nopen issues\n)\npublic-png@w3.org\nwith subject line\n[png-3]\n… message topic …\n(\narchives\n)\nErrata:\nhttps://www.w3.org/2025/06/REC-PNG-20250624-errata\nSee also\ntranslations\n.\nCopyright\n©\n    1996-2025\nWorld Wide Web Consortium\n.\nW3C\n®\nliability\n,\ntrademark\nand\npermissive document license\nrules apply.\nAbstract\nThis document describes PNG (Portable Network Graphics), an extensible file format for the\nlossless\n, portable,\n    well-compressed storage of static and animated raster images. PNG provides a patent-free replacement for GIF and can also\n    replace many common uses of TIFF.\nIndexed-color\n,\ngreyscale\n, and\ntruecolor\nimages are supported, plus an optional alpha\n    channel. Sample depths range from 1 to 16 bits.\nPNG is designed to work well in online viewing applications, such as the World Wide Web, so it is fully streamable with a\n    progressive display option. PNG is robust, providing both full file integrity checking and simple detection of common\n    transmission errors. Also, PNG can store color space data for improved color matching on heterogeneous platforms.\nThis specification defines two Internet Media Types, image/png and image/apng.\nStatus of This Document\nThis section describes the status of this\n      document at the time of its publication. A list of current\nW3C\npublications and the latest revision of this technical report can be found\n      in the\nW3C\nstandards and drafts index\nat\n      https://www.w3.org/TR/.\nThis specification is intended to become an International Standard, but is not yet one. It is inappropriate to refer to this\n    specification as an International Standard.\nThis document was published by the\nPortable Network Graphics (PNG) Working Group\nas a Recommendation using the\nRecommendation track\n.\nA W3C Recommendation is a specification that, after extensive consensus-building, is endorsed by\nW3C\nand its Members, and has commitments from Working Group members to\nroyalty-free licensing\nfor implementations.\nW3C recommends the wide deployment of this specification as a standard for the Web.\nThis document was produced by a group\n        operating under the\nW3C\nPatent\n          Policy\n.\nW3C\nmaintains a\npublic list of any patent disclosures\nmade in connection with the deliverables of\n          the group; that page also includes\n          instructions for disclosing a patent. An individual who has actual\n          knowledge of a patent which the individual believes contains\nEssential Claim(s)\nmust disclose the information in accordance with\nsection 6 of the\nW3C\nPatent Policy\n.\nThis document is governed by the\n03 November 2023\nW3C\nProcess Document\n.\nTable of Contents\nAbstract\nStatus of This Document\n1.\nIntroduction\n2.\nScope\n3.\nTerms, definitions, and abbreviated terms\n4.\nConcepts\n4.1\nStatic and Animated images\n4.2\nImages\n4.3\nColor spaces\n4.4\nReference image to PNG image transformation\nIntroduction\n4.4.1\nAlpha separation\n4.4.2\nIndexing\n4.4.3\nRGB merging\n4.4.4\nAlpha compaction\n4.4.5\nSample depth scaling\n4.5\nPNG image\n4.6\nEncoding the PNG image\nIntroduction\n4.6.1\nPass extraction\n4.6.2\nScanline serialization\n4.6.3\nFiltering\n4.6.4\nCompression\n4.6.5\nChunking\n4.7\nAdditional information\n4.8\nPNG datastream\n4.8.1\nChunks\n4.8.2\nChunk types\n4.9\nAPNG\n: frame-based animation\nIntroduction\n4.9.1\nStructure\n4.9.2\nSequence numbers\n4.9.3\nOutput buffer\n4.9.4\nCanvas\n4.10\nError handling\n4.11\nExtensions\n5.\nDatastream structure\n5.1\nPNG datastream\n5.2\nPNG signature\n5.3\nChunk layout\n5.4\nChunk naming conventions\n5.5\nCRC\nalgorithm\n5.6\nChunk ordering\n5.7\nDefining chunks\n5.7.1\nGeneral\n5.7.2\nDefining public chunks\n5.7.3\nDefining private chunks\n5.8\nPrivate field values\n6.\nReference image to PNG image transformation\n6.1\nColor types and values\n6.2\nAlpha representation\n7.\nEncoding the PNG image as a PNG datastream\n7.1\nIntegers and byte order\n7.2\nScanlines\n7.3\nFiltering\n8.\nInterlacing and pass extraction\nIntroduction\n8.1\nInterlace methods\n9.\nFiltering\n9.1\nFilter methods and filter types\n9.2\nFilter types for filter method 0\n9.3\nFilter type 3: Average\n9.4\nFilter type 4: Paeth\n10.\nCompression\n10.1\nCompression method 0\n10.2\nCompression of the sequence of filtered scanlines\n10.3\nOther uses of compression\n11.\nChunk specifications\n11.1\nGeneral\n11.2\nCritical chunks\nIntroduction\n11.2.1\nIHDR\nImage header\n11.2.2\nPLTE\nPalette\n11.2.3\nIDAT\nImage data\n11.2.4\nIEND\nImage trailer\n11.3\nAncillary chunks\nIntroduction\n11.3.1\nTransparency information\n11.3.1.1\ntRNS\nTransparency\n11.3.2\nColor space information\n11.3.2.1\ncHRM\nPrimary chromaticities and white point\n11.3.2.2\ngAMA\nImage gamma\n11.3.2.3\niCCP\nEmbedded ICC profile\n11.3.2.4\nsBIT\nSignificant bits\n11.3.2.5\nsRGB\nStandard RGB color space\n11.3.2.6\ncICP\nCoding-independent code points for video signal type identification\n11.3.2.7\nmDCV\nMastering Display Color Volume\n11.3.2.8\ncLLI\nContent Light Level Information\n11.3.3\nTextual information\nIntroduction\n11.3.3.1\nKeywords and text strings\n11.3.3.2\ntEXt\nTextual data\n11.3.3.3\nzTXt\nCompressed textual data\n11.3.3.4\niTXt\nInternational textual data\n11.3.4\nMiscellaneous information\n11.3.4.1\nbKGD\nBackground color\n11.3.4.2\nhIST\nImage histogram\n11.3.4.3\npHYs\nPhysical pixel dimensions\n11.3.4.4\nsPLT\nSuggested palette\n11.3.4.5\neXIf\nExchangeable Image File (Exif) Profile\n11.3.4.5.1\neXIf\nGeneral Recommendations\n11.3.4.5.2\neXIf\nRecommendations for Decoders\n11.3.4.5.3\neXIf\nRecommendations for Encoders\n11.3.5\nTime stamp information\n11.3.5.1\ntIME\nImage last-modification time\n11.3.6\nAnimation information\n11.3.6.1\nacTL\nAnimation Control Chunk\n11.3.6.2\nfcTL\nFrame Control Chunk\n11.3.6.3\nfdAT\nFrame Data Chunk\n12.\nPNG Encoders\nIntroduction\n12.1\nEncoder gamma handling\n12.2\nEncoder color handling\n12.3\nAlpha channel creation\n12.4\nSample depth scaling\n12.5\nSuggested palettes\n12.6\nInterlacing\n12.7\nFilter selection\n12.8\nCompression\n12.9\nText chunk processing\n12.10\nChunking\n12.10.1\nUse of private chunks\n12.10.2\nUse of non-reserved field values\n12.10.3\nAncillary chunks\n13.\nPNG decoders and viewers\nIntroduction\n13.1\nError handling\n13.2\nError checking\n13.3\nSecurity considerations\n13.4\nPrivacy considerations\n13.5\nChunking\n13.6\nPixel dimensions\n13.7\nText chunk processing\n13.8\nDecompression\n13.9\nFiltering\n13.10\nInterlacing and progressive display\n13.11\nTruecolor image handling\n13.12\nSample depth rescaling\n13.13\nDecoder gamma handling\n13.14\nDecoder color handling\n13.15\nBackground color\n13.16\nAlpha channel processing\n13.17\nHistogram and suggested palette usage\n14.\nEditors\n14.1\nAdditional chunk types\n14.2\nBehavior of PNG editors\n14.3\nOrdering of chunks\n14.3.1\nOrdering of critical chunks\n14.3.2\nOrdering of ancillary chunks\n15.\nConformance\n15.1\nConformance\n15.2\nIntroduction\n15.2.1\nObjectives\n15.2.2\nScope\n15.3\nConformance conditions\n15.3.1\nConformance of PNG datastreams\n15.3.2\nConformance of PNG encoders\n15.3.3\nConformance of PNG decoders\n15.3.4\nConformance of PNG editors\nA.\nInternet Media Types\nA.1\nimage/png\nA.2\nimage/apng\nB.\nGuidelines for private chunk types\nC.\nGamma and chromaticity\nD.\nSample\nCRC\nimplementation\nE.\nOnline resources\nIntroduction\nE.1\nICC profile specifications\nE.2\nPNG web site\nE.3\nSample implementation and test images\nF.\nChanges\nF.1\nChanges since the\nProposed Recommendation  of 15 May 2025\nF.2\nChanges since the\nCandidate Recommendation Snapshot of 13 March 2025\nF.3\nChanges since the\nCandidate Recommendation Draft of 21 January 2025 (Third Edition)\nF.4\nChanges since the\nCandidate Recommendation Draft of 18 July 2024 (Third Edition)\nF.5\nChanges since the\nCandidate Recommendation Snapshot of 21 September 2023 (Third Edition)\nF.6\nChanges since the\nWorking Draft of 20 July 2023 (Third Edition)\nF.7\nChanges since the\nFirst Public Working Draft of 25 October 2022 (Third Edition)\nF.8\nChanges since the\nW3C\nRecommendation of 10 November 2003\n(PNG Second Edition)\nF.9\nChanges between First and Second Editions\nG.\nReferences\nG.1\nNormative references\nG.2\nInformative references\n1.\nIntroduction\nThe design goals for this specification were:\nPortability: encoding, decoding, and transmission should be software and hardware platform independent.\nCompleteness: it should be possible to represent\ntruecolor\n,\nindexed-color\n, and\ngreyscale\nimages, in each case with\n    the option of transparency, color space information, and ancillary information such as textual comments.\nSerial encode and decode: it should be possible for datastreams to be generated serially and read serially, allowing the\n    datastream format to be used for on-the-fly generation and display of images across a serial communication channel.\nProgressive presentation: it should be possible to transmit datastreams so that an approximation of the whole image can be\n    presented initially, and progressively enhanced as the datastream is received.\nRobustness to transmission errors: it should be possible to detect datastream transmission errors reliably.\nLosslessness: filtering and compression should preserve all information.\nPerformance: any filtering, compression, and progressive image presentation should be aimed at efficient decoding and\n    presentation. Fast encoding is a less important goal than fast decoding. Decoding speed may be achieved at the expense of\n    encoding speed.\nCompression: images should be compressed effectively, consistent with the other design goals.\nSimplicity: developers should be able to implement the standard easily.\nInterchangeability: any standard-conforming PNG decoder shall be capable of reading all conforming PNG datastreams.\nFlexibility: future extensions and private additions should be allowed for without compromising the interchangeability of\n    standard PNG datastreams.\nFreedom from legal restrictions: no algorithms should be used that are not freely available.\n2.\nScope\nThis specification specifies a datastream and an associated file format, Portable Network Graphics (PNG, pronounced \"ping\"),\n    for a\nlossless\n, portable, compressed individual computer graphics image or frame-based animation, transmitted across the\n    Internet.\n3.\nTerms, definitions, and abbreviated terms\nFor the purposes of this specification the following definitions apply.\nbyte\noctet\n8-bit binary integer in the range [0, 255] where the most significant bit is bit 7 and the least significant\n      bit is bit 0.\nbyte order\nordering of\nbytes\nfor multi-byte data values.\nchromaticity\npair of\nx\nand\ny\nvalues in the\nxyY\nspace specified at [\nCOLORIMETRY\n].\nNote\nChromaticity is a measure of the quality of a color regardless of its luminance.\ncomposite (verb)\nform an image by merging a foreground image and a background image, using transparency information to determine\n      where and to what extent the background should be visible.\nNote\nThe foreground image is said to be\ncomposited\nagainst the background.\ndatastream\nsequence of\nbytes\n.\ndeflate\nmember of the\nLZ77\nfamily of compression methods.\nSOURCE: [\nRFC1951\n]\nframe\nFor static PNG, the\nstatic image\nis considered to be the first (and only) frame.\n        For animated PNG, each image that forms part\n        of the\nframe-based animation\nsequence\n        is a frame.\n        Thus, for animated PNG, when the static image is not the first frame,\n        the static image is not considered to be a frame.\nframe buffer\nthe final digital storage area for the image shown by most types of computer display.\nNote\nSoftware causes an image to appear on screen by loading the image into the\nframe buffer\n.\nfully transparent black\npixel where the red, green, blue and alpha components are all equal to zero.\ngamma value\nvalue of the exponent of a\ngamma\ntransfer function\n.\ngamma\npower-law\ntransfer function\n.\nhigh dynamic range (\nHDR\n)\nan image format capable of storing images with a relatively high dynamic range similar to or in excess of the human visual system's instantaneous dynamic range (~12-14\nstops\n). PNG allows the use of two\nHDR\nformats,\nHLG\nand\nPQ\n[\nITU-R-BT.2100\n].\nhybrid log-gamma (\nHLG\n)\ntransfer function\ndefined in [\nITU-R-BT.2100\n] Table 5. (A relative scene-referred system.)\nfull-range image\nimage where reference black and white correspond, respectively, to sample values\n0\nand\n2\nbit depth\n-\n      1\n.\nimage data\n1-dimensional array of\nscanlines\nwithin an image.\ninterlaced PNG image\nsequence of\nreduced images\ngenerated from the\nPNG image\nby\npass extraction\n.\nlossless\nmethod of data compression that permits reconstruction of the original data exactly, bit-for-bit.\nluminance\nan objective measurement of the visible light intensity, taking into account the sensitivity of the human eye to different wavelengths.\nNote\nLuminance and\nchromaticity\ntogether fully define a measured color.  For a formal definition, see [\nCOLORIMETRY\n].\nLZ77\ndata compression algorithm described in [\nZiv-Lempel\n].\nnarrow-range image\nImage where reference black and white do not correspond, respectively, to sample values\n0\nand\n2\nbit depth\n- 1\n.\nnetwork byte order\nbyte order\nin which the most significant byte comes first, then the less significant bytes in descending order of\n        significance (\nMSB\nLSB\nfor two-byte integers,\nMSB\nB2 B1\nLSB\nfor four-byte integers).\nperceptual quantizer (\nPQ\n)\ntransfer function\ndefined in [\nITU-R-BT.2100\n] Table 4. (An absolute display-referred system.)\nNote\nOnly RGB may be used in PNG, ICtCp is NOT supported.\nPNG decoder\nprocess or device that reconstructs the\nreference image\nfrom a\nPNG datastream\nand generates a\n        corresponding\ndelivered image\n.\nPNG editor\nprocess or device that creates a modification of an existing\nPNG datastream\n, preserving unmodified ancillary\n        information wherever possible, and obeying the\nchunk\nordering rules, even for unknown chunk types.\nPNG encoder\nprocess or device which constructs a\nreference image\nfrom a\nsource image\n, and generates a\nPNG\n        datastream\nrepresenting the reference image.\nPNG file\nPNG datastream\nstored as a file.\nPNG four-byte unsigned integer\na four-byte unsigned integer limited to the range 0 to 2\n31\n-1.\nNote\nThe restriction is imposed in order to accommodate languages that have difficulty with unsigned four-byte\n        values.\nPNG two-byte unsigned integer\na two-byte unsigned integer in network byte order.\nsample\nintersection of a\nchannel\nand a\npixel\nin an image.\nsample depth\nnumber of bits used to represent a\nsample\nvalue.\nscanline\nrow of\npixels\nwithin an image or\ninterlaced PNG image\n.\nstandard dynamic range (\nSDR\n)\nan image format capable of storing images with a relatively low dynamic range of 5-8\nstops\n. Examples include [\nSRGB\n], [\nDisplay-P3\n], [\nITU-R-BT.709\n].\nNote\nStandard dynamic range is independent of the primaries and hence, gamut. Wide color gamut\nSDR\nformats are supported by PNG.\nstop\na change in scene light luminance of a factor of 2.\ntransfer function\nfunction relating image luminance with image samples.\nwhite point\nchromaticity\nof a computer display's nominal white value.\nzlib\ndeflate\n-style compression method.\nSOURCE: [\nrfc1950\n]\nNote\nAlso refers to the name of a library containing a sample implementation of this method.\nCyclic Redundancy Code\nCRC\ntype of check value designed to detect most transmission errors.\nNote\nA decoder calculates the\nCRC\nfor the received data and checks by comparing it to the\nCRC\ncalculated by\n        the encoder and appended to the data. A mismatch indicates that the data or the\nCRC\nwere corrupted in transit.\nCathode Ray Tube\nCRT\nvacuum tube containing one or more electron guns, which emit electron beams that are manipulated to display images on a\n      phosphorescent screen.\nElectro-Optical Transfer Function\nEOTF\nThe\ntransfer function\nbetween the electrical or digital domain and light energy. It defines the amount of light emitted by a display for a given input signal.\nLeast Significant Byte\nLSB\nLeast significant byte of a multi-\nbyte\nvalue.\nMost Significant Byte\nMSB\nMost significant byte of a multi-\nbyte\nvalue.\nOpto-Electrical Transfer Function\nOETF\nThe\ntransfer function\nbetween light energy and the electrical or digital domain. It defines the amount of light in a scene required to produce a given output signal.\n4.\nConcepts\n4.1\nStatic and Animated images\nAll PNG images contain a single\nstatic image\n.\nSome PNG images — called\nAnimated PNG\n(\nAPNG\n) — also\n      contain a frame-based animation sequence, the\nanimated image\n. The first frame of this may be — but need not be —\n      the\nstatic image\n. Non-animation-capable displays (such as printers) will display the\nstatic image\nrather than\n      the animation sequence.\nThe\nstatic image\n, and each individual frame of an\nanimated image\n, corresponds to a\nreference image\nand is stored as a\nPNG image\n.\n4.2\nImages\nThis specification specifies the PNG datastream, and places some requirements o",
+          "truncated": true
+        },
+        "elapsed_ms": 1738.712599966675
+      },
+      {
+        "ref": "tool:3",
+        "name": "bilibili_read",
+        "arguments": {
+          "bvid": "BV1We4y1k7za"
+        },
+        "ok": true,
+        "result": {
+          "url": "https://www.bilibili.com/video/BV1We4y1k7za",
+          "metadata": {
+            "bvid": "BV1We4y1k7za",
+            "aid": 558183700,
+            "title": "在家就能做的科学小实验：色彩分层。原理：加盐导致密度不同；红黄蓝色素混色",
+            "description": "-",
+            "tags": [
+              "我的开学VLOG",
+              "UP！新学期",
+              "科普",
+              "实验",
+              "科学",
+              "色彩",
+              "儿童科学实验",
+              "幼儿园科学实验",
+              "科学实验",
+              "科学小实验",
+              "必剪创作"
+            ],
+            "tags_missing": false,
+            "owner_uid": "4241505",
+            "owner": "乐乐妈妈与乐乐",
+            "duration": 45.0,
+            "parts": [
+              {
+                "cid": "837470340",
+                "page": 1,
+                "title": "在家就能做的科学小实验：色彩分层。原理：加盐导致密度不同；红黄蓝色素混色",
+                "duration": 45.0
+              }
+            ],
+            "published_at": 1663725600,
+            "category_id": 254,
+            "fetched_at": 1793468966.8426824,
+            "description_complete": true
+          },
+          "subtitles": [],
+          "subtitle_errors": [
+            {
+              "cid": "837470340",
+              "error": "no_subtitles"
+            }
+          ],
+          "coverage": "at_most_two_parts"
+        },
+        "elapsed_ms": 561.7405000375584
+      }
+    ]
+  }
+}

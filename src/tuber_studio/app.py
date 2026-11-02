@@ -13,33 +13,60 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .auth_sessions import (
+    COOKIE_MAX_AGE,
+    COOKIE_NAME,
+    AuthSessions,
+    EnvironmentManagedToken,
+    InvalidAdminCredential,
+)
+from .bilibili_account import BilibiliAccount
+from .browsing import BrowsingService
+from .browsing_api import register_browsing_api
 from .comments import Comments
 from .config import Settings
 from .direct_messages import DirectMessages
 from .dynamics import Dynamics
 from .live_api import register_live_api
 from .live_media import MAX_UPLOAD
+from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
+from .meme_api import register_meme_api
+from .memes import MemeCatalog
 from .message_api import register_message_api
 from .models import Character, Event
+from .operation_recovery_api import register_operation_recovery_api
 from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
 from .runtime import Runtime
 from .store import Store
 
 
-def create_app(settings=None, adapter=None, *, singing_provider=None, message_adapter=None):
+def create_app(
+    settings=None,
+    adapter=None,
+    *,
+    singing_provider=None,
+    message_adapter=None,
+    video_evidence_factory=None,
+):
     settings = settings or Settings()
+    AuthSessions.prepare_runtime(settings)
     seeds = json.loads((settings.root / "config/characters.json").read_text(encoding="utf-8"))
     store = Store(settings.runtime / "studio.sqlite3", seeds)
+    sessions = AuthSessions(settings, store)
     runtime = Runtime(settings, store, singing_provider=singing_provider)
     comments = Comments(settings, store, runtime, adapter)
-    dynamics = Dynamics(settings, store, runtime, comments)
-    messages = DirectMessages(settings, store, runtime, comments, message_adapter)
+    account = BilibiliAccount(comments)
+    memes = MemeCatalog(settings, store)
+    dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
+    messages = DirectMessages(settings, store, runtime, comments, message_adapter, memes=memes)
     comments.direct_messages = messages
-    sessions = {}
+    visual = video_evidence_factory(runtime) if video_evidence_factory is not None else None
+    browsing = BrowsingService(settings, store, runtime, comments, messages, dynamics, visual=visual)
+    runtime.browsing = browsing
     login_attempts = {}
 
     @asynccontextmanager
@@ -49,34 +76,54 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
             await comments.open()
             await dynamics.open()
             await messages.open()
+            await browsing.open()
             yield
         finally:
             try:
-                await messages.close()
+                await browsing.close()
             finally:
                 try:
-                    await dynamics.close()
+                    await messages.close()
                 finally:
                     try:
-                        await comments.close()
+                        await dynamics.close()
                     finally:
                         try:
-                            await runtime.close()
+                            await comments.close()
                         finally:
-                            store.close()
+                            try:
+                                await runtime.close()
+                            finally:
+                                store.close()
 
     app = FastAPI(title="Tuber Studio", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.runtime, app.state.comments, app.state.store = runtime, comments, store
     app.state.dynamics = dynamics
     app.state.messages = messages
-
-    def valid_session(cookie):
-        return bool(cookie and sessions.get(cookie, 0) > time.time())
+    app.state.browsing = browsing
+    app.state.bilibili_account = account
+    app.state.memes = memes
+    app.state.auth_sessions = sessions
 
     def admin_ok(connection):
         bearer = connection.headers.get("authorization", "")
-        return valid_session(connection.cookies.get("tuber_admin")) or (
-            bearer.startswith("Bearer ") and secrets.compare_digest(bearer[7:], settings.admin_token)
+        return sessions.valid(connection.cookies.get(COOKIE_NAME)) or (
+            bearer.startswith("Bearer ") and sessions.authenticate(bearer[7:])
+        )
+
+    def admin_cookie(response, request, session):
+        response.set_cookie(
+            COOKIE_NAME,
+            session,
+            httponly=True,
+            samesite="strict",
+            max_age=COOKIE_MAX_AGE,
+            secure=request.url.scheme == "https",
+        )
+
+    def clear_admin_cookie(response, request):
+        response.delete_cookie(
+            COOKIE_NAME, httponly=True, samesite="strict", secure=request.url.scheme == "https"
         )
 
     def overlay_ok(connection):
@@ -99,13 +146,23 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
             if not same_origin(request):
                 return JSONResponse({"detail": "跨站写入被拒绝"}, status_code=403)
             uploading = request.url.path == "/api/live/uploads" and request.method == "POST"
-            if int(request.headers.get("content-length", "0")) > (MAX_UPLOAD if uploading else 2_100_000):
+            meme_upload = request.url.path == "/api/memes" and request.method == "POST"
+            limit = MAX_UPLOAD if uploading else MAX_MEME_REQUEST if meme_upload else 2_100_000
+            if int(request.headers.get("content-length", "0")) > limit:
                 return JSONResponse({"detail": "请求过大"}, status_code=413)
             if not uploading:
                 body = await request.body()
-                if len(body) > 2_100_000:
+                if len(body) > limit:
                     return JSONResponse({"detail": "请求过大"}, status_code=413)
         response = await call_next(request)
+        cookie = request.cookies.get(COOKIE_NAME)
+        if (
+            cookie
+            and response.status_code < 400
+            and request.url.path not in {"/api/auth", "/api/logout", "/api/auth/reset-token"}
+            and sessions.needs_cookie_refresh(cookie)
+        ):
+            admin_cookie(response, request, cookie)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "no-cache"
@@ -120,6 +177,14 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
     register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok)
     register_message_api(app, messages, require_admin)
+    register_meme_api(app, memes, runtime, require_admin)
+    register_browsing_api(app, browsing, require_admin)
+    register_operation_recovery_api(
+        app,
+        runtime,
+        {"comments": comments, "messages": messages, "dynamics": dynamics, "browsing": browsing},
+        require_admin,
+    )
 
     @app.get("/")
     async def index():
@@ -136,31 +201,37 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
         if len(attempts) >= 10:
             raise HTTPException(429, "登录尝试过多，请稍后再试")
         token = data.get("token", "")
-        if not isinstance(token, str) or not secrets.compare_digest(token, settings.admin_token):
+        try:
+            session = sessions.issue(token, request.cookies.get(COOKIE_NAME))
+        except InvalidAdminCredential:
             login_attempts[ip] = attempts + [time.time()]
             raise HTTPException(401, "管理令牌无效")
         login_attempts.pop(ip, None)
-        session = secrets.token_urlsafe(32)
-        sessions.update({k: v for k, v in list(sessions.items()) if v > time.time()})
-        if len(sessions) >= 32:
-            sessions.pop(next(iter(sessions)))
-        sessions[session] = time.time() + 12 * 3600
         response = JSONResponse({"authenticated": True})
-        response.set_cookie(
-            "tuber_admin",
-            session,
-            httponly=True,
-            samesite="strict",
-            max_age=43200,
-            secure=request.url.scheme == "https",
-        )
+        admin_cookie(response, request, session)
         return response
 
     @app.post("/api/logout", dependencies=[Depends(require_admin)])
     async def logout(request: Request):
-        sessions.pop(request.cookies.get("tuber_admin"), None)
+        sessions.revoke(request.cookies.get(COOKIE_NAME))
         response = JSONResponse({"authenticated": False})
-        response.delete_cookie("tuber_admin")
+        clear_admin_cookie(response, request)
+        return response
+
+    @app.post("/api/auth/reset-token", dependencies=[Depends(require_admin)])
+    async def reset_admin_token(request: Request):
+        authorization = request.headers.get("authorization", "")
+        try:
+            token = sessions.reset_token(
+                cookie=request.cookies.get(COOKIE_NAME),
+                bearer=authorization[7:] if authorization.startswith("Bearer ") else None,
+            )
+        except InvalidAdminCredential as error:
+            raise HTTPException(401, str(error)) from None
+        except EnvironmentManagedToken as error:
+            raise HTTPException(409, str(error)) from None
+        response = JSONResponse({"token": token, "authenticated": False})
+        clear_admin_cookie(response, request)
         return response
 
     @app.post("/api/overlay/auth")
@@ -190,6 +261,26 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
     @app.get("/api/status", dependencies=[Depends(require_admin)])
     async def status():
         return runtime.status() | {"comment_policy": comments.policy(), "dynamic_policy": dynamics.policy()}
+
+    @app.get("/api/account/bilibili", dependencies=[Depends(require_admin)])
+    async def account_status():
+        return account.status()
+
+    @app.put("/api/account/bilibili", dependencies=[Depends(require_admin)])
+    async def account_settings(data: dict = Body(...)):
+        return await account.configure(data)
+
+    @app.post("/api/account/bilibili/refresh", dependencies=[Depends(require_admin)])
+    async def account_refresh():
+        return await account.refresh()
+
+    @app.get("/api/account/bilibili/avatar", dependencies=[Depends(require_admin)])
+    async def account_avatar():
+        try:
+            image, mime = await account.avatar_image()
+        except (ValueError, httpx.HTTPError):
+            raise HTTPException(404, "账号头像暂时不可用") from None
+        return Response(image, media_type=mime)
 
     @app.post("/api/inference/mode", dependencies=[Depends(require_admin)])
     async def work_mode(mode: Literal["text", "live"] = Body(embed=True)):
@@ -467,9 +558,10 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
 
     @app.post("/api/dynamics/posts/{post_id}/review", dependencies=[Depends(require_admin)])
     async def review_dynamic(post_id: int, data: dict = Body(...)):
-        if set(data) - {"action", "text"}:
+        if set(data) - {"action", "text", "meme_id"}:
             raise ValueError("未知动态审核字段")
-        return dynamics.review(post_id, data.get("action"), data.get("text"))
+        options = {"meme_id": data["meme_id"]} if "meme_id" in data else {}
+        return dynamics.review(post_id, data.get("action"), data.get("text"), **options)
 
     @app.post("/api/dynamics/posts/{post_id}/publish", dependencies=[Depends(require_admin)])
     async def publish_dynamic(post_id: int):
@@ -536,6 +628,7 @@ def create_app(settings=None, adapter=None, *, singing_provider=None, message_ad
             while admin_ok(websocket):
                 await websocket.send_json({"type": "status", "data": runtime.status()})
                 await asyncio.sleep(1)
+            await websocket.close(code=1008)
         except (WebSocketDisconnect, RuntimeError):
             pass
 

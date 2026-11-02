@@ -1,0 +1,83 @@
+{
+  "time": 1793500425.86836,
+  "broker": {
+    "state": "active",
+    "active_provider": "llm2b",
+    "error": null,
+    "mode": "text",
+    "selected_provider": "llm2b",
+    "requested_context_tokens": 131072,
+    "kv_cache_type": "q4_0",
+    "cuda_managed_memory": false,
+    "busy": false,
+    "providers": {
+      "llm2b": {
+        "running": true,
+        "is_sleeping": false,
+        "loaded_this_boot": true,
+        "native_context_tokens": 131072,
+        "context_tokens": 131072,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0"
+      },
+      "llm1b": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 131072,
+        "context_tokens": null,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "llm1bq8": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 131072,
+        "context_tokens": null,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "llmqwen35": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 262144,
+        "context_tokens": null,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "tts": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": null,
+        "context_tokens": null,
+        "cache_type_k": null,
+        "cache_type_v": null
+      }
+    }
+  },
+  "ram": {
+    "total": 7989981184,
+    "available": 3140161536,
+    "percent": 60.7,
+    "used": 4849819648,
+    "free": 2843561984,
+    "active": 352165888,
+    "inactive": 950779904,
+    "buffers": 55132160,
+    "cached": 580132864,
+    "shared": 112656384,
+    "slab": 169897984
+  },
+  "swap": {
+    "total": 12584906752,
+    "used": 476577792,
+    "free": 12108328960,
+    "percent": 3.8,
+    "sin": 496578560,
+    "sout": 2898554880
+  },
+  "config_unchanged": true
+}

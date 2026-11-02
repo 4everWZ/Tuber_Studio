@@ -10,9 +10,16 @@ import time
 
 import httpx
 
-from .bilibili import BilibiliAdapter, PublishUncertain, _data, _positive_id
+from .bilibili import _ERRORS, BilibiliAdapter, PublishUncertain, _positive_id
+from .bilibili_images import upload_image
+from .operation_text import validate_operation_text
+from .publication_errors import platform_rejection
 
 ORIGIN = "https://api.vc.bilibili.com"
+
+
+class MessagePreparationCancelled(asyncio.CancelledError):
+    """No final message submission occurred; the reviewed draft can be retained."""
 
 
 class BilibiliMessagesAdapter(BilibiliAdapter):
@@ -49,16 +56,35 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
             raise ValueError("平台私信消息记录无效")
         return rows[:30]
 
+    async def reconcile_publication(self, target, *, author_uid, text, started_at, receipt=None):
+        from .publication_reconciliation import reconcile_message
+
+        return await reconcile_message(
+            self._get, target, author_uid=author_uid, text=text, started_at=started_at, receipt=receipt
+        )
+
     async def send(self, uid, text, *, authorized=None):
+        text = validate_operation_text(text, label="私信内容")
+        return await self._send(uid, {"content": text}, authorized=authorized)
+
+    async def send_image(self, uid, image, *, authorized=None, prepare_authorized=None):
+        return await self._send(
+            uid, image, image_message=True, authorized=authorized, prepare_authorized=prepare_authorized
+        )
+
+    async def _send(self, uid, content, *, image_message=False, authorized=None, prepare_authorized=None):
         if not self._sessdata or not self._csrf:
             raise ValueError("发送私信需要 SESSDATA 和 bili_jct")
         receiver = _positive_id(uid)
-        if not isinstance(text, str) or not 1 <= len(text.strip()) <= 1000:
-            raise ValueError("私信内容须为1到1000字")
-        sender = await self.self_uid()
-        if receiver == sender:
-            raise ValueError("不能向当前账号自己发送自动私信")
-        params = await self.wbi_params({"w_sender_uid": sender, "w_receiver_id": receiver})
+        try:
+            sender = await self.self_uid()
+            if receiver == sender:
+                raise ValueError("不能向当前账号自己发送自动私信")
+            if image_message:
+                content = await upload_image(self, content, authorized=prepare_authorized)
+            params = await self.wbi_params({"w_sender_uid": sender, "w_receiver_id": receiver})
+        except asyncio.CancelledError:
+            raise MessagePreparationCancelled from None
         if authorized is not None and not authorized():
             raise ValueError("私信发送授权已停止，保留草稿")
         try:
@@ -69,9 +95,9 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
                     "msg[sender_uid]": sender,
                     "msg[receiver_id]": receiver,
                     "msg[receiver_type]": 1,
-                    "msg[msg_type]": 1,
+                    "msg[msg_type]": 2 if image_message else 1,
                     "msg[msg_status]": 0,
-                    "msg[content]": json.dumps({"content": text}, ensure_ascii=False),
+                    "msg[content]": json.dumps(content, ensure_ascii=False),
                     "msg[dev_id]": "A6716E9A-7CE3-47AF-994B-F0B34178D28D",
                     "msg[new_face_version]": 0,
                     "msg[timestamp]": int(time.time()),
@@ -91,7 +117,7 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
         if not isinstance(payload, dict) or type(payload.get("code")) is not int:
             raise PublishUncertain("私信响应没有有效回执，禁止自动重发")
         if payload["code"] != 0:
-            _data(payload)
+            raise platform_rejection(payload, fallback=_ERRORS.get(payload["code"], "平台明确拒绝了本次私信"))
         try:
             key = _positive_id(payload["data"]["msg_key"])
         except (KeyError, TypeError, ValueError):

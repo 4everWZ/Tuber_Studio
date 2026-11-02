@@ -1,0 +1,86 @@
+{
+  "timestamp": 1793475645.4353695,
+  "action": "idle",
+  "broker": {
+    "state": "cold",
+    "active_provider": null,
+    "error": null,
+    "mode": "text",
+    "selected_provider": "llm2b",
+    "requested_context_tokens": 131072,
+    "kv_cache_type": "q4_0",
+    "cuda_managed_memory": false,
+    "busy": false,
+    "providers": {
+      "llm2b": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": true,
+        "native_context_tokens": 131072,
+        "context_tokens": 131072,
+        "cache_type_k": "q4_0",
+        "cache_type_v": "q4_0"
+      },
+      "llm1b": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 131072,
+        "context_tokens": null,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "llm1bq8": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 131072,
+        "context_tokens": null,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "llmqwen35": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": 262144,
+        "context_tokens": null,
+        "cache_type_k": "q8_0",
+        "cache_type_v": "q8_0"
+      },
+      "tts": {
+        "running": false,
+        "is_sleeping": true,
+        "loaded_this_boot": false,
+        "native_context_tokens": null,
+        "context_tokens": null,
+        "cache_type_k": null,
+        "cache_type_v": null
+      }
+    }
+  },
+  "config_unchanged": true,
+  "config_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "ram": {
+    "total": 7989981184,
+    "available": 5678100480,
+    "percent": 28.9,
+    "used": 2311880704,
+    "free": 5220827136,
+    "active": 432590848,
+    "inactive": 682020864,
+    "buffers": 23060480,
+    "cached": 756174848,
+    "shared": 77774848,
+    "slab": 213073920
+  },
+  "swap": {
+    "total": 12584906752,
+    "used": 524025856,
+    "free": 12060880896,
+    "percent": 4.2,
+    "sin": 476291072,
+    "sout": 2873786368
+  },
+  "processes": []
+}

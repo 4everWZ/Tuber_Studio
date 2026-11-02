@@ -1,0 +1,212 @@
+{
+  "captured_at": "2026-11-01T21:34:40.484793+00:00",
+  "status": "restoration_verified_then_network_unstable",
+  "latest_verified_candidate": {
+    "pid": 40854,
+    "run_dir": "/workspace/tuber/runtime/experiments/game-livestream-stage-20261102/e4b-A-q8-gpuproj-mtp1-draftu1-cachehint",
+    "event": "ready",
+    "actual_context_tokens": 131072,
+    "loading_seconds": 7.059907310991548,
+    "model_generation_calls_after_ready": 0,
+    "current_process_status": "confirmed_stopped_remaining_empty",
+    "precise_ready_utc": null
+  },
+  "network": {
+    "tailscale_peer_online": false,
+    "peer_last_seen": "2026-11-01T21:30:00.1Z",
+    "peer_last_handshake": "2026-11-02T05:29:41.1016858+08:00",
+    "lan_arp": "Unreachable",
+    "lan_ping": "timeout",
+    "lan_ssh_tcp": "timeout",
+    "tailscale_ssh_tcp": "timeout",
+    "cause": "unknown",
+    "bounded_reconnect_file": "bounded-reconnect.json",
+    "reconnect_observations": "bounded-reconnect.json: both TCP paths opened at +40s; recovery succeeded; a later LAN SSH TCP attempt timed out"
+  },
+  "production": {
+    "last_verified_config_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+    "config_verified_at": "2026-11-01T20:26:21.724914+00:00",
+    "last_verified_image_id": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
+    "image_verification_time": "During pre-unload preflight; precise UTC was not persisted",
+    "original_mini5_last_known": "Restored MiniCPM5-2B active/text, health200, then a later network attempt timed out",
+    "genie_last_known": "running=false standby verified after restore",
+    "last_known_broker_after_idle": {
+      "mode": "text",
+      "state": "cold",
+      "selected_provider": "llm2b",
+      "active_provider": null,
+      "busy": false,
+      "providers": {
+        "llm2b": {
+          "running": false
+        },
+        "llm1b": {
+          "running": false
+        },
+        "llm1bq8": {
+          "running": false
+        },
+        "llmqwen35": {
+          "running": false
+        },
+        "tts": {
+          "running": false
+        }
+      }
+    },
+    "restoration_confirmed": true,
+    "current_config_or_image_reverified_after_disconnect": true,
+    "last_known_broker_after_restoration": {
+      "mode": "text",
+      "state": "active",
+      "selected_provider": "llm2b",
+      "active_provider": "llm2b",
+      "requested_context_tokens": 131072,
+      "kv_cache_type": "q4_0",
+      "busy": false
+    }
+  },
+  "owned_telemetry": {
+    "started": false,
+    "reason": "SSH TCP connection timed out before remote command execution",
+    "runtime_temperature_clock_load_power_samples": null,
+    "prior_known_power_mode": "MAXN_SUPER mode2; not changed"
+  },
+  "confirmed_completed": [
+    "E2B dual-Q8, audio-off, MTP-u64 and MTP-u1 fixed JSON response n3 each",
+    "E2B original native caption under those four conditions",
+    "E2B full280/image-first partial text-layout observation; crop .2 length/empty; crop T1 normal completion under u1",
+    "E4B exact prior A request reconstructed by SHA; Q8 GPU no-MTP caption and fixed response complete",
+    "Both Q4-v2 conversions verified: 113 visual linear tensors; 1298 other tensors including all 752 audio tensors byte-identical"
+  ],
+  "not_completed": [
+    "Fresh E4B Q8 GPU MTP-u1 cachehint run: ready only, no generation",
+    "E4B actual MTP draft acceptance/quality/speed",
+    "Q4-v2 model loading/backend/quality/performance for either family",
+    "Authorized final E2B F16-KV pilot"
+  ],
+  "failure_categories": {
+    "E2B_crop_u64_T02": "finish length,8192 completion,empty visible text; private reasoning only total hash/count; repetition unknown",
+    "E4B_Q8_GPU_MTP_initial": "Loader cudaMalloc217.47MiB/NvMap error12; remaining[]",
+    "E4B_Q8_CPU_MTP_initial": "common_init CUDA VMM allocation startup failure; remaining[]",
+    "E4B_Q8_CPU_MTP_cachehint": "Ready then 384MiB guard during caption, minimum available368930816B; remaining[]; no completed visible answer"
+  },
+  "invalid_v1": {
+    "never_loaded": true,
+    "both_large_gguf_files_removed_after_exact_path_and_sha_check": true,
+    "manifests_and_type_plans_preserved": true,
+    "remote_cleanup_record": "/workspace/tuber/runtime/tmp/game-livestream-stage-20261102/invalid-v1-cleanup.json",
+    "cleanup_record_copied_locally": false
+  },
+  "local_evidence": [
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\original-q8-finalmetrics.json",
+      "sha256": "94c5946bcf882a087bef5692da73c0083a04d324518da36bb9ab33361317babc",
+      "bytes": 35909
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-finalmetrics.json",
+      "sha256": "0d18b10dbbdea935c604ac9ba96c8aa8245f4bbaa820bb42f9f17c702ae92a1b",
+      "bytes": 37528
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-finalmetrics.json",
+      "sha256": "cfb74a1b40ac1179ea1f4d50a197cd4ebb79d12b8b55a82952c576d612d53ada",
+      "bytes": 39906
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-draftu1-finalmetrics.json",
+      "sha256": "d4eec0e6caf9b354792691df6e4a9da1d1efc91a8420d80b2059daf13ede1a1f",
+      "bytes": 39970
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-finalmetrics.json",
+      "sha256": "4f1dfe56aeb6c8f9da1b0ea92895ea88da67480de8a40b1aa2a34948f3085a25",
+      "bytes": 36998
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-mtp1-draftu1-startup-failure.json",
+      "sha256": "c7977ac6ef022a7557d9e74ded6200449545d72d78d35cd1edcd928c9a5d0751",
+      "bytes": 16861
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-cpuproj-mtp1-draftu1-startup-failure.json",
+      "sha256": "55b9744a796d3a58b5f8738c2a30ddb2df4bdc092844aeef330cc867d6e9f544",
+      "bytes": 15751
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-cpuproj-mtp1-draftu1-cachehint-finalmetrics.json",
+      "sha256": "067c8a15cfb5a3838130d16dd530305c6c9c007d58b247f1d44c523903967876",
+      "bytes": 39123
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e2b-projector-Q4-v2-manifest.json",
+      "sha256": "c0604e29f8910d01cd02aeb73711809693fff349dba6f0bc6064b399af1f9ab4",
+      "bytes": 361036
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-projector-Q4-v2-manifest.json",
+      "sha256": "48a02da4836770e2ac9a358119a325d246bfb481510f2aa469760479aa46679e",
+      "bytes": 361046
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\q4-v1-invalidation.json",
+      "sha256": "f43b24419d9e0f70a149d2b4abc02845c8b86eb4ed80af09222944dac8d32b67",
+      "bytes": 673
+    },
+    {
+      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\quantizer-build.json",
+      "sha256": "337de19247c8df26df054fbfcaef992361ead2316b49715e86131c7e97963239",
+      "bytes": 580
+    }
+  ],
+  "remote_only_unretrieved": [
+    "Latest fresh GPU cachehint owner.json/metrics.json/server log",
+    "CPU cachehint raw caption checkpoint (driver could not complete final /props; metrics independently identifies resource guard)",
+    "invalid-v1-cleanup.json",
+    "post-quant-v2-projector-cache-advice.json",
+    "remaining native per-image interval extracts"
+  ],
+  "recovery": {
+    "priority": "Read actual owned PID/nonce/create_time and RAM; controlled stop current candidate; run captured restore.py; verify Mini5/text healthy, Genie off, config and actual Docker image unchanged before any new generation",
+    "supervisor": "/workspace/tuber/runtime/tmp/game-livestream-stage-20261102/vlm_experiment-u1.py",
+    "restore_script": "/workspace/tuber/runtime/experiments/operations-vlm-20261101/restore.py",
+    "automatic_future_model_requests": false
+  },
+  "scope": {
+    "platform_writes": 0,
+    "production_config_writes": 0,
+    "container_image_changes": 0,
+    "server_binary_sha256_unchanged": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e"
+  },
+  "recovery_evidence": {
+    "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\recovery-after-network.json",
+    "sha256": "5148b419b6c63837255f6b42a2909980153fcb62927843fa7782a5cab432f46f",
+    "verification_interval_start_utc": "2026-11-01T21:35:27.408926+00:00",
+    "candidate_cleanup": {
+      "signalled_pids": [
+        40854
+      ],
+      "force_killed_pids": [],
+      "remaining_pids": []
+    },
+    "original_health": {
+      "http_status": 200,
+      "status": "ok"
+    },
+    "broker": {
+      "mode": "text",
+      "state": "active",
+      "selected_provider": "llm2b",
+      "active_provider": "llm2b",
+      "requested_context_tokens": 131072,
+      "kv_cache_type": "q4_0",
+      "busy": false
+    },
+    "genie_running": false,
+    "available_ram": 3150970880,
+    "config_after": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+    "actual_docker_image_verified_after_restore": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
+    "subsequent_network": "A later SSH TCP attempt timed out before telemetry execution"
+  }
+}

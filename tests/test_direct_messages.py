@@ -325,7 +325,7 @@ def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings)
             client.put("/api/messages/policy", json={"channel_max_tokens": 4096}).json()["channel_max_tokens"]
             == 4096
         )
-        assert client.put("/api/messages/policy", json={"channel_max_tokens": 8193}).status_code == 422
+        assert client.put("/api/messages/policy", json={"channel_max_tokens": 65537}).status_code == 422
         assert client.post("/api/messages/inbox/999/reply").status_code == 400
         assert client.post(
             "/api/messages/send", json={"receiver_id": "999", "text": "arbitrary"}

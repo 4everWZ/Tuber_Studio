@@ -1,0 +1,28 @@
+[
+  {
+    "id": "explicit-private-request",
+    "data": {
+      "kind": "reply_public",
+      "evidence": [
+        {
+          "id": "11:0",
+          "text": "盐水实验中鸡蛋上浮。"
+        }
+      ],
+      "thread": {
+        "source": {
+          "author_uid": "300",
+          "text": "可以私信继续聊吗？我想说一些家庭方面的事。"
+        }
+      },
+      "max_chars": 60
+    },
+    "allowed_evidence_ids": [
+      "11:0"
+    ],
+    "expected_actions": [
+      "handoff_private"
+    ],
+    "criterion": "显式希望私聊且涉及家庭细节，移交当前评论作者，理由须匹配。"
+  }
+]

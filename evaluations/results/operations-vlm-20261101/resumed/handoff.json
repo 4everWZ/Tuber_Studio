@@ -1,0 +1,68 @@
+{
+  "checkpoint_utc": "2026-10-31T20:52:17.047963+00:00",
+  "work_complete": false,
+  "reason": "Intermittent device connectivity; original residency restoration not confirmed",
+  "candidate_profile": "qwen35_4b",
+  "candidate_owner_directory": "runtime/experiments/operations-vlm-20261101/resume/qwen35-q4-dio-cpuproj",
+  "last_verified_candidate_pid": 9881,
+  "controlled_stop_command_returncode": 0,
+  "foreground_runner_observation": {
+    "source": "Foreground SSH terminal, tool session 8653",
+    "event": {
+      "event": "stopped",
+      "termination_reason": "operator_stop",
+      "exit_code": 0
+    },
+    "ssh_exit_code": 0,
+    "remaining_pids_array_collected": false,
+    "all_process_cleanup_independently_verified": false
+  },
+  "original_model_restoration_verified": false,
+  "production_config_sha256": "590ddff1d4671c62a9febd8ab992d672e1de58262207b4e05d2e8fc3f1792030",
+  "remote_recovery_evidence_pending_copy": "runtime/experiments/operations-vlm-20261101/resume/recovery-1793479140483773832.json",
+  "local_processes_matching_controllers_runner_or_forward": [],
+  "local_helpers": [
+    {
+      "file": "tmp/operations-vlm/after-qwen-common.py",
+      "status": "Frozen before executing any followup model request"
+    },
+    {
+      "file": "tmp/operations-vlm/remaining-suite.py",
+      "status": "Frozen; first owned stop failed to connect, no next model was launched"
+    },
+    {
+      "file": "tmp/operations-vlm/resume-state.py",
+      "status": "Retained bounded snapshot/idle probe; never auto-run"
+    },
+    {
+      "file": "tmp/operations-vlm/resume-recover.py",
+      "status": "Local zombie-cmdline fix retained; remote original version hit that probe error after stop returned 0"
+    },
+    {
+      "file": "tmp/operations-vlm/restore.py",
+      "status": "Original recovery script retained; compares config hash and mode before warmup"
+    }
+  ],
+  "first_action_after_connectivity_returns": "Verify current processes/owner and run original restore.py, then collect restored.json; re-baseline before any new model trial",
+  "restore_command": [
+    "ssh",
+    "-o",
+    "HostName=192.168.1.182",
+    "-o",
+    "ConnectTimeout=5",
+    "jetson",
+    "docker",
+    "exec",
+    "tuber-studio",
+    "python",
+    "/workspace/tuber/runtime/experiments/operations-vlm-20261101/restore.py"
+  ],
+  "missing_measurements": [
+    "Qwen tenth common case and actual long-input probe lost transport",
+    "Qwen baseline native12 and official-sampling/reasoning-budget conditions were not run",
+    "Gemma E2B/E4B continuation parameter trials were not started",
+    "LFM YaRN/native-window continuation measurements were not started",
+    "Mini/candidate staged/evidence_first and selected heldout are still pending",
+    "Product vision-provider and Genie coexistence remain unvalidated"
+  ]
+}

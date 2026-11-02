@@ -15,6 +15,7 @@ from .compaction import (
     wire_messages,
 )
 from .memory import GroundedMemory, extract_facts
+from .operation_text import reply_output_budget
 from .providers import build_messages, public_error
 from .store import Store
 
@@ -170,7 +171,7 @@ class ContextManager:
             source_complete=True,
             created_at=time.time(),
         )
-        suffix = [scaffold[4]]
+        suffix = scaffold[4:]
         return prefix, initial_context, pending, suffix
 
     @staticmethod
@@ -193,7 +194,9 @@ class ContextManager:
             }
         ]
 
-    async def prepare(self, scope, character, event, relationship=None, mode="live", *, evidence=None):
+    async def prepare(
+        self, scope, character, event, relationship=None, mode="live", *, evidence=None, output_tokens=None
+    ):
         row = self.window(scope, character)
         prefix, initial, pending, suffix = self.parts(
             character, event or {"text": "", "event_id": "context:rebuild"}, relationship or {}, mode
@@ -225,16 +228,17 @@ class ContextManager:
             # upstream overflow-recovery loop, rather than truncating here.
             overflow, count = True, 0
         config = self.settings.data["llm"]
-        total = count + config.get("max_tokens", 160)
+        output = reply_output_budget(config, mode) if output_tokens is None else output_tokens
+        total = count + output
         if overflow or needs_compaction(total, config, row["carried_prefix_tokens"]):
             if not history:
                 raise ContextWindowExceeded("核心设定或当前输入已超窗，没有可压缩历史；请调整输入")
-            await self._compact(row, prefix, initial, pending, suffix)
+            await self._compact(row, prefix, initial, pending, suffix, output_tokens=output)
             row = self.window(scope, character)
             history = json.loads(row["history"])
             messages = self.render(prefix, initial, history, pending, suffix)
             count = await self.provider.count_tokens(messages)
-        if count + config.get("max_tokens", 160) > limits(config)[1]:
+        if count + output > limits(config)[1]:
             raise ContextWindowExceeded("压缩后仍超出有效窗口；保留原始记录，不截断核心或当前输入")
         self.store.execute(
             "UPDATE context_windows SET input_tokens=?,updated_at=? WHERE key=?",
@@ -242,7 +246,7 @@ class ContextManager:
         )
         return messages
 
-    async def _compact(self, row, prefix, initial, pending=None, suffix=None):
+    async def _compact(self, row, prefix, initial, pending=None, suffix=None, *, output_tokens=None):
         passes = 0
         budgets = []
         try:
@@ -268,7 +272,10 @@ class ContextManager:
                 )
                 if count * 100 < config["context_tokens"] * SECOND_PASS_OCCUPANCY_PERCENT:
                     break
-            if count + config.get("max_tokens", 160) > limits(config)[1]:
+            if (
+                count + (config.get("max_tokens", 160) if output_tokens is None else output_tokens)
+                > limits(config)[1]
+            ):
                 raise ContextWindowExceeded("压缩结果仍超窗，未替换原历史")
             warning = (
                 "两轮压缩后占用仍达到40%，原始记录保留；请检查角色设定和保留内容。"
@@ -311,7 +318,13 @@ class ContextManager:
         if not json.loads(row["history"]):
             raise ValueError("当前范围没有可压缩历史；先完成互动或生成评论草稿")
         prefix, initial, _, suffix = self.parts(character, {"text": "", "event_id": "compact"}, {}, mode)
-        await self._compact(row, prefix, initial, suffix=suffix)
+        await self._compact(
+            row,
+            prefix,
+            initial,
+            suffix=suffix,
+            output_tokens=reply_output_budget(self.settings.data["llm"], mode),
+        )
         return self.status()
 
     def record(self, scope, character, event, reply_text, mode="live", *, memory_kind=None):

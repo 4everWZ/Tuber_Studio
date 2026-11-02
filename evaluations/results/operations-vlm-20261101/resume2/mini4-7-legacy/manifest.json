@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "candidate": "mini4_7",
+  "status": "legacy_diagnostic_only_positive_oc_profile_pending",
+  "artifacts": [
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/mini4_7-staged-native.json",
+      "bytes": 78573,
+      "sha256": "193eced7ca3ac57d96f0af4a706cdcd07e17224dd13ffe8120577618f6be1c9a",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/mini4_7-evidence-first-native.json",
+      "bytes": 124235,
+      "sha256": "ec3a9fb8b778ca3fff4a3659ae7bd5f617acec13090e143a86a01541ddff120a",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/mini4_7-core-rules-pilot-native.json",
+      "bytes": 22339,
+      "sha256": "1a3f80e99d7f6f9c47ffd7482977a8f6f9e301da27dfdeb5b69df9d0e50aa49f",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/mini-core-rules-pilot-cases.json",
+      "bytes": 2001,
+      "sha256": "282468f7b4db2f0c3deab1e8e43bb9ba5fc88b279d60257ff5d28d08db518422",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/mini4_7-locked-selection.json",
+      "bytes": 916,
+      "sha256": "8b675a9fc7b9957366d152e0e31aabb5a99008798bfe816ac388b4a07a78c9ac",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/mini4_7-staged-heldout-native.json",
+      "bytes": 58688,
+      "sha256": "45859182d20c07a8e7066e59bdcdbf2a4de1e775b23fa74c08bd8888d00e0429",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/metrics.json",
+      "bytes": 24171,
+      "sha256": "3b6d6da6fd9aaf819f6293eb8b3bb01135fd6937f29f259f700b43fcd6f150c0",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/owner.json",
+      "bytes": 2667,
+      "sha256": "987a1b729d4fb2f1b9d86dc3646067ced964ecb4029c2f88640406e072df3a80",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/server.log.gz",
+      "bytes": 26554,
+      "sha256": "dd0c90616aa605f31b0d1a40d529f47776b67e6331cf82a40240c83603da5fa5",
+      "source_sha256": "fdbe7009cce204e284bf9db24c72bb4bdccccb12a6da9695026aadad28798ab3"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/memory.jsonl.gz",
+      "bytes": 18959,
+      "sha256": "9c2900342d24d431e97e971053dec49a35519993df1278a63ff8cdf840244bc8",
+      "source_sha256": "a581c124243c908a0e72a974934956810c17c41bc4f5ae906e4ade8a61b3275d"
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/browsing-semantics.json",
+      "bytes": 4969,
+      "sha256": "e299a71dc0fad1962fe30726ffdfbad80884ddc40d43b2d1f3721d93de85a504",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/operations-heldout.json",
+      "bytes": 7393,
+      "sha256": "192a37d3e78ad0c740c240f7f378a2481beee568803746061ed28e8a5670d19b",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/character-public.json",
+      "bytes": 1538,
+      "sha256": "87b0f1105c3e70ed665f3725e48141e62ef800b1bff1c991660db6a3afb42cda",
+      "source_sha256": null
+    },
+    {
+      "path": "evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/review.json",
+      "bytes": 1807,
+      "sha256": "19a1d2f724d69dabb468f5f2bed7b4b8f79914ab7010d967b0590ec57b69f1ff",
+      "source_sha256": null
+    }
+  ]
+}

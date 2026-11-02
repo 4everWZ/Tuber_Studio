@@ -1,0 +1,1005 @@
+{
+  "human-visual-rubric.json": {
+    "source_sha256": "df5f73648220d81b65054b61ca6f10e0dc4af7558253efa3d6cd49f50f8e2f8f",
+    "review": {
+      "kind": "human_pixel_grounded_visual_reference",
+      "status": "prepared_before_new_caption_review",
+      "scope": "四张指定原JPEG的独立画面参照；非实际游戏验收",
+      "sample_bytes_unchanged": true,
+      "new_samples_downloaded": false,
+      "model_requests": 0,
+      "new_caption_seen": false,
+      "reviewer": "Codex",
+      "reference_policy": {
+        "facts_are_reference_not_required_phrase_checklist": true,
+        "no_new_numeric_pass_thresholds": true,
+        "OC_text_keyword_or_length_gates": false,
+        "evaluation_basis": [
+          "按原图检查布局、主体、动作与可读文字，不按模型是否使用防御词、否定词或口头禅评分。",
+          "参考事实不要求caption逐项复述；简洁、部分但真实的观察也可有用。",
+          "区分与像素明确矛盾、像素无法确认的补充细节、遗漏及可信观察；无法确认不等同已证伪。",
+          "将可见静态内容与推测的滚动、点击、人物身份／剧情分开。",
+          "是否可供下一步内容判断依赖具体意图；布局或轻互动可用，并不自动证明已掌握长文主题。细字读不清也不让整张图自动失效。",
+          "可读字没有可靠把握时本参照留空；不要求模型说固定免责声明，也不凭模型自信就认可OCR。"
+        ],
+        "not_a_forbidden_word_list": true
+      },
+      "frames": [
+        {
+          "bvid": "BV1kPWA66EoV",
+          "cid": "42702733760",
+          "actual_time_seconds": 12.0,
+          "original_path": "tmp/operations-browse-20261101/device/online-final-new10-20261102/native-frames/BV1kPWA66EoV/42702733760_storyboard_2_cb5038796a6a7a85.jpg",
+          "sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+          "bytes": 8489,
+          "size_px": [
+            480,
+            270
+          ],
+          "human_observation": {
+            "layout": [
+              "横向画面左右有大面积黑边，中央是窄竖屏白底手机界面。",
+              "上方有状态／标题区域，主体为连续多段小号中文文字，下方有操作／输入区域。"
+            ],
+            "subjects": [
+              "主体是手机文字页面及界面控件，没有清楚可辨的实拍人物。"
+            ],
+            "actions": [],
+            "readable_text": [],
+            "text_observation": "能辨认中文长段落和段落间隔，当前原图不足以可靠逐字抄录正文或按钮标签。",
+            "not_confirmable": [
+              "具体应用品牌、完整页面标题、逐句内容、发言人身份与关系。",
+              "静态帧不能确认正在滚动、打字、点击或发送。"
+            ],
+            "next_stage_use": "可提供竖屏中文长文本／对话记录类界面这一真实观察；轻互动可据布局形成反应，涉及具体论点或对话内容的发言需可读文字等额外依据。"
+          }
+        },
+        {
+          "bvid": "BV1kPWA66EoV",
+          "cid": "42702733760",
+          "actual_time_seconds": 24.0,
+          "original_path": "tmp/operations-browse-20261101/device/online-final-new10-20261102/native-frames/BV1kPWA66EoV/42702733760_storyboard_4_00150e48e36f1ab7.jpg",
+          "sha256": "00150e48e36f1ab7e03d59a04019f72d87fd015252d20a85c094a66cd51c1284",
+          "bytes": 8689,
+          "size_px": [
+            480,
+            270
+          ],
+          "human_observation": {
+            "layout": [
+              "同样为宽黑边中间的竖屏白底界面。",
+              "内容上部可见两张并排的蓝色系Q版人物小图，下方是多段密集中文文字；底部有操作区域。"
+            ],
+            "subjects": [
+              "两张小图中的蓝色系卡通人物形象。",
+              "主体仍是文字界面，不是人物在真实场景中活动。"
+            ],
+            "actions": [],
+            "readable_text": [],
+            "text_observation": "中文段落可见，细字不足以可靠逐字确认。",
+            "not_confirmable": [
+              "小图究竟是头像、表情还是上传附件，人物的确切身份、情绪和细微动作。",
+              "具体聊天话题、对话句子和操作按钮标签。",
+              "此帧与其他帧之间真实发生了何种操作。"
+            ],
+            "next_stage_use": "可用文字页面及两张Q版小图作为具体视觉线索；不能据此补写详细剧情或逐句对话。"
+          }
+        },
+        {
+          "bvid": "BV1kPWA66EoV",
+          "cid": "42702733760",
+          "actual_time_seconds": 36.0,
+          "original_path": "tmp/operations-browse-20261101/device/online-final-new10-20261102/native-frames/BV1kPWA66EoV/42702733760_storyboard_6_14f4aecfd2eaf0e8.jpg",
+          "sha256": "14f4aecfd2eaf0e8549c1694e558f9589e675d22011b64c8e8dfe9008d634c9c",
+          "bytes": 8337,
+          "size_px": [
+            480,
+            270
+          ],
+          "human_observation": {
+            "layout": [
+              "左右黑边，中央白底窄竖屏文字页面。",
+              "页面从上部到靠近底部排列多段中文文字，可见分段空隙；底部有操作／输入图标。"
+            ],
+            "subjects": [
+              "文字段落与手机界面控件。"
+            ],
+            "actions": [],
+            "readable_text": [],
+            "text_observation": "可见长文本形态，正文小字没有足够清晰度支持可靠逐字核验。",
+            "not_confirmable": [
+              "正文具体主题与句子、标题、作者或收件人。",
+              "滚动方向、输入过程、先后剧情及发送结果。"
+            ],
+            "next_stage_use": "可支撑长文本界面的观察；是否需要进一步读字取决于下一步想回应的内容。"
+          }
+        },
+        {
+          "bvid": "BV1XMxj6wEcD",
+          "cid": "43120657507",
+          "actual_time_seconds": 176.0,
+          "original_path": "tmp/operations-browse-20261101/device/operations-corpus-20261101/BV1XMxj6wEcD/2.jpg",
+          "sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+          "bytes": 8967,
+          "size_px": [
+            480,
+            270
+          ],
+          "human_observation": {
+            "layout": [
+              "左右大面积黑边，中间是浅色竖屏聊天式界面。",
+              "多行消息含头像：右侧有绿色气泡，左侧有浅色消息；历史中穿插卡通图片／表情。",
+              "中上部有蓝发Q版人物图片，下部右侧有带明显红色爱心的Q版表情图，底部为输入区域。"
+            ],
+            "subjects": [
+              "聊天消息、头像和Q版贴图。"
+            ],
+            "actions": [],
+            "readable_text": [],
+            "text_observation": "短消息的中文字形可见，但原图细字不支持可靠抄录完整句子。",
+            "not_confirmable": [
+              "具体应用品牌、群名、成员数量、发言人姓名或家庭关系。",
+              "蓝发形象的确切角色身份，下方贴图的具体人物数量、身份及精细姿态。",
+              "聊天谈论的具体事情、产品／订单／金额等细节；静态截图也不证明实际正在发送。"
+            ],
+            "next_stage_use": "足以提供双侧消息气泡、头像及卡通贴图这一聊天界面观察；具体聊天语义需文字证据。仅凭这帧不应写成实拍人物／购物商品列表／代码编辑器或游戏棋盘。"
+          }
+        }
+      ],
+      "caption_review_fields": [
+        "caption_visible_original",
+        "grounded_observations",
+        "unsupported_or_unverifiable_details",
+        "clear_pixel_contradictions",
+        "missed_useful_visible_information",
+        "utility_for_next_content_decision",
+        "question_dependent_remaining_material",
+        "qualitative_notes"
+      ],
+      "derivative_identity_note": {
+        "family_condition_A": "其image.parent_sha256与176秒原JPEG相同；condition-A使用的既有1056x576派生PNG另有SHA，本参照未把它当成原JPEG。",
+        "no_crop_resize_repaint_or_threshold_changes": true
+      }
+    }
+  },
+  "object-frame-reference.json": {
+    "source_sha256": "90f83454da22af73c5339127353afd37e7a7802223e50f15037cd0adc1d5ec70",
+    "review": {
+      "kind": "frozen_additional_object_frame_reference",
+      "selection_status": "selected_before_Q4_caption_review",
+      "selection_basis": "原8视频冻结corpus内第一张查看的食物类视频帧；蓝发Q版人物全身、服装与颜色清楚，因此即确定，不依据任何Q4输出挑选。",
+      "selected_frame_count": 1,
+      "source": {
+        "bvid": "BV14oa961ELQ",
+        "cid": "42322100507",
+        "actual_time_seconds": 10.0,
+        "frame_id": "42322100507:storyboard:2:6d712cf90e74fa99",
+        "path": "tmp/operations-browse-20261101/device/operations-corpus-20261101/BV14oa961ELQ/0.jpg",
+        "absolute_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-browse-20261101\\device\\operations-corpus-20261101\\BV14oa961ELQ\\0.jpg",
+        "sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
+        "bytes": 12624,
+        "size_px": [
+          480,
+          270
+        ],
+        "corpus_index_sha256": "d2a85ca804f8467d21f9148ed5949be9961b5340af108ab09a30f6a1ba758df6"
+      },
+      "human_observation": {
+        "layout": [
+          "浅灰白背景，中央为一个几乎占满画面高度的全身Q版卡通人物；脚下有轻微阴影。"
+        ],
+        "person_and_colors": [
+          "人物长蓝发，发梢较浅、偏青蓝色，蓝色大眼睛。",
+          "头上白色褶边头饰，身体穿深蓝／深紫色女仆风连衣裙，白色领边和白围裙。",
+          "白围裙中央可见蓝色鱼／鲸形图案；下身有浅色袜部与深色鞋。"
+        ],
+        "visible_pose": [
+          "人物站立，双臂抬向身体两侧，画面右侧手臂向外伸，脚部位置略有偏转。",
+          "这是单帧姿态，不能确认连续舞步、摇摆、唱歌或嘴部运动。"
+        ],
+        "readable_text": [],
+        "not_confirmable": [
+          "人物确切姓名、年龄、身份、与观众的关系；不能仅靠画面确认就是某个指定OC。",
+          "具体音频／台词／歌曲、前后剧情和是否刚吃过东西。",
+          "精细手指动作或完整运动轨迹，右下小水印的完整文字。"
+        ],
+        "next_stage_use": "可用于描述人物、主色、服装、围裙图案与姿态；这类清楚的具体视觉线索可补充两张低清文字截图。"
+      },
+      "review_policy": {
+        "reference_is_not_required_keyword_checklist": true,
+        "do_not_score_OC_catchphrases_or_length": true,
+        "compare_grounded_details_and_invented_claims": true,
+        "no_new_numeric_threshold": true,
+        "old_12s_and_176s_samples_retained": true,
+        "actual_game_or_small_target_localization_tested": false
+      },
+      "reviewer": "Codex",
+      "image_viewed_with": "view_image detail=original",
+      "new_downloads": 0,
+      "new_images_generated": 0,
+      "image_bytes_changed": false,
+      "model_requests": 0,
+      "production_changes": 0
+    }
+  },
+  "e2b-caption-and-text-review.json": {
+    "source_sha256": "76947f3aeb7c559288b0b483aad468551ee0baadd60ef946ac25a5edd7d8fef1",
+    "review": {
+      "kind": "independent_caption_and_OC_text_manual_review",
+      "reviewer": "Codex",
+      "date": "2026-11-02",
+      "review_basis": {
+        "visual_reference": "tmp/game-model-optimization-20261102/human-visual-rubric.json",
+        "visual_reference_sha256": "df5f73648220d81b65054b61ca6f10e0dc4af7558253efa3d6cd49f50f8e2f8f",
+        "pixels_seen": [
+          "指定12秒原JPEG，另复看已有crop280.png以了解实际派生输入；未修改图像。"
+        ],
+        "body_fixture_sha256": "30b2ac5ef25f3ff6df3adfca43ab512d833776e2b93a9dc7f20bb0e35a7f2883",
+        "body_source": {
+          "bvid": "BV161nZ6JE6b",
+          "title": "零基础deepseek养鱼教程",
+          "selected_original_segments": 29,
+          "public_thread_items": 41,
+          "recent": []
+        },
+        "body_source_anchors": [
+          "所选CC含基础对话／表情包／B站分享／桌宠／插件／多种部署方式。",
+          "公开thread明确讨论完全权限、插件、人设、依赖、环境折腾以及被捞回来的鱼；未在报告复制完整公开评论。"
+        ],
+        "CoT_text_read_or_saved": false,
+        "new_model_requests": 0,
+        "platform_writes": 0,
+        "OC_keyword_or_length_gates": false,
+        "no_new_numeric_pass_threshold": true
+      },
+      "caption_reviews": [
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/original-q8-chat12.json",
+          "source_sha256": "bba90f7a2d31e6ad4bf91fcd44caf115d06c5466047dc3e830eed0d87b445183",
+          "condition": "original-q8-dual-tower",
+          "sample": {
+            "bvid": "BV1kPWA66EoV",
+            "cid": "42702733760",
+            "actual_time_seconds": 12.0,
+            "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "preprocessing": "server_native",
+            "image_order": "original_request_order",
+            "wire_image_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "wire_size_px": [
+              480,
+              270
+            ]
+          },
+          "original_visible_caption": "根据您提供的输入，我无法描述“人物、物品和动作”，因为您提供的“画面”并非一张视觉图像（如照片或视频帧），而是一段**文本和技术数据**。\n\n**对您提供的内容的分析如下：**\n\n1. **画面内容性质：** 这段内容看起来是某种视频或图像处理的**元数据（Metadata）或日志信息**，而不是一个场景。\n2. **可见信息描述：**\n    * **技术参数：** 画面中包含一些数字和帧率信息，例如“34帧”、“54帧”。这通常与视频编码、采样率或帧率设置有关。\n    * **标识符：** 提到了“P 42702733760”，这可能是一个特定的画面编号或文件标识。\n    * **时间信息：** 提到了“实际采样时间为 12.0 秒”。\n    * **文本结构：** 大部分内容是重复的字符或编码信息，不构成可识别的文字描述。\n\n**总结：**\n\n由于输入内容是技术数据而非视觉场景，因此无法描述其中的人物、物品或动作。我只能确认该“画面”包含**视频处理相关的技术参数和采样时间信息**。",
+          "visible_caption_sha256": "920bdc7d618aace91d0b560da0b4eef84595ec9e88a17ceb1ad18ba327bba63d",
+          "observed_run": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "content_ttft_ms": 22121.67635903461,
+            "complete_ms": 31825.29450801667,
+            "usage": {
+              "completion_tokens": 879,
+              "prompt_tokens": 169,
+              "total_tokens": 1048,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "generation_calls": 1,
+            "platform_writes": 0
+          },
+          "qualitative_review": {
+            "assessment": "image_input_mischaracterized",
+            "grounded_observations": [
+              "提到了文本，但没有识别可见的手机长文本页面布局。"
+            ],
+            "clear_pixel_contradictions": [
+              "将实际提供的截图整体解释为输入不是图像、只是元数据／日志，并说大部分是重复字符或编码；原图可见分段中文手机页面。"
+            ],
+            "unsupported_or_unverifiable_details": [
+              "34帧、54帧不能从原图可靠核实。",
+              "将问题文字中的分P编号和12秒采样时间写成所见，不能据此证明从图片读出了这些值。"
+            ],
+            "missed_useful_visible_information": [
+              "两侧大片黑边、中间白底竖屏、多个中文段落和底部手机操作区。"
+            ],
+            "utility_for_next_content_decision": "未提供可信的具体视觉描述；把该输出交给下一步容易使其误以为没有收到真实图片。",
+            "OCR_semantics_verified": false
+          }
+        },
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-chat12.json",
+          "source_sha256": "f4a2c4b08eba15688f5f122b6808fefda92cbef8919a3725e5eb0ebfdb85b54e",
+          "condition": "audiooff-q8-only-metadata-bool",
+          "sample": {
+            "bvid": "BV1kPWA66EoV",
+            "cid": "42702733760",
+            "actual_time_seconds": 12.0,
+            "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "preprocessing": "server_native",
+            "image_order": "original_request_order",
+            "wire_image_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "wire_size_px": [
+              480,
+              270
+            ]
+          },
+          "original_visible_caption": "根据您提供的输入，我无法描述“人物、物品和动作”，因为您提供的“画面”并非一张视觉图像（如照片或视频帧），而是一段**文本和技术数据**。\n\n**对您提供的内容的分析如下：**\n\n1. **画面内容性质：** 这段内容看起来是某种视频或图像处理的**元数据（Metadata）或日志信息**，而不是一个场景。\n2. **可见信息描述：**\n    * **技术参数：** 画面中包含一些数字和帧率信息，例如“34帧”、“54帧”。这通常与视频编码、采样率或帧率设置有关。\n    * **标识符：** 提到了“P 42702733760”，这可能是一个特定的画面编号或文件标识。\n    * **时间信息：** 提到了“实际采样时间为 12.0 秒”。\n    * **文本结构：** 大部分内容是重复的字符或编码信息，不构成可识别的文字描述。\n\n**总结：**\n\n由于输入内容是技术数据而非视觉场景，因此无法描述其中的人物、物品或动作。我只能确认该“画面”包含**视频处理相关的技术参数和采样时间信息**。",
+          "visible_caption_sha256": "920bdc7d618aace91d0b560da0b4eef84595ec9e88a17ceb1ad18ba327bba63d",
+          "observed_run": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "content_ttft_ms": 22058.349028986413,
+            "complete_ms": 31770.239120000042,
+            "usage": {
+              "completion_tokens": 879,
+              "prompt_tokens": 169,
+              "total_tokens": 1048,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "generation_calls": 1,
+            "platform_writes": 0
+          },
+          "qualitative_review": {
+            "assessment": "same_image_mischaracterization_as_original",
+            "grounded_observations": [
+              "同原版，仅提到文本。"
+            ],
+            "clear_pixel_contradictions": [
+              "原答与原双塔条件逐字相同，仍把实际手机文字截图当元数据／日志输入。"
+            ],
+            "unsupported_or_unverifiable_details": [
+              "34帧、54帧未经像素核实；问题中的CID和时间被当成画面所见。"
+            ],
+            "missed_useful_visible_information": [
+              "手机页面、两侧黑边、中文段落、底部操作区。"
+            ],
+            "utility_for_next_content_decision": "这次关闭音频塔没有改善该样本的视觉内容判断。",
+            "OCR_semantics_verified": false
+          }
+        },
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-mtp1-chat12.json",
+          "source_sha256": "53615320b1dd5d8b7464f8538b75aa60e1cd4a35d2eb0c1dfde61cb4e93416ac",
+          "condition": "audiooff-q8-mtp-nmax1-greedy",
+          "sample": {
+            "bvid": "BV1kPWA66EoV",
+            "cid": "42702733760",
+            "actual_time_seconds": 12.0,
+            "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "preprocessing": "server_native",
+            "image_order": "original_request_order",
+            "wire_image_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "wire_size_px": [
+              480,
+              270
+            ]
+          },
+          "original_visible_caption": "抱歉，您提供的输入内容似乎是**文本信息或损坏的字符**，而不是一张清晰的图像。\n\n我无法从您提供的这段文字中识别出具体的**人物、物品和动作**。\n\n如果您能提供一张清晰的**视觉画面**（图片），我将非常乐意为您进行详细的描述和总结。",
+          "visible_caption_sha256": "abd0b11c3724b01926eb075305dce0069fadb23116caa1831f05eb274b5ad10e",
+          "observed_run": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "content_ttft_ms": 11526.42036601901,
+            "complete_ms": 13343.390086025465,
+            "usage": {
+              "completion_tokens": 532,
+              "prompt_tokens": 169,
+              "total_tokens": 701,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "generation_calls": 1,
+            "platform_writes": 0
+          },
+          "qualitative_review": {
+            "assessment": "no_useful_scene_description",
+            "grounded_observations": [
+              "提到文本信息，未描述真实的页面结构。"
+            ],
+            "clear_pixel_contradictions": [],
+            "unsupported_or_unverifiable_details": [
+              "损坏字符没有像素依据；细字低清并不等于图片或字符已损坏。"
+            ],
+            "missed_useful_visible_information": [
+              "手机长文本页面及黑边、段落、底部控件均未描述。"
+            ],
+            "utility_for_next_content_decision": "回答更短、完成更快，但没有补上可用的画面理解。",
+            "OCR_semantics_verified": false,
+            "note": "此项主要是没有给出本可描述的页面布局，不因抱歉／无法等措辞判错；小字确实低清，不能把这一判断本身算作像素矛盾。"
+          }
+        },
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-mtp1-chat12-full280-imagefirst.json",
+          "source_sha256": "6bcc7acb39b0d5c8730fd5e5449f9e538856d43aeed9eb221bead551819ec4ec",
+          "condition": "audiooff-q8-mtp1-official280-imagefirst",
+          "sample": {
+            "bvid": "BV1kPWA66EoV",
+            "cid": "42702733760",
+            "actual_time_seconds": 12.0,
+            "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "preprocessing": "full280",
+            "image_order": "image_first",
+            "wire_image_sha256": "046934dffbd12fbc540fb721388ac89d8885ac058ccbdb930d3f17a860f7d57b",
+            "wire_size_px": [
+              1056,
+              576
+            ]
+          },
+          "original_visible_caption": "根据您提供的图片，画面主要由**中文文字**构成，看起来像是一个视频或文档中的**文字转录、剧本或描述性文本**的截图。\n\n**人物、物品和动作描述：**\n\n*   **人物/物品：** 画面中没有清晰的、可识别的实体人物或物品。画面主体是**文字信息**。\n*   **动作：** 画面中没有动态动作。文字本身是静态的，呈现为垂直排列的文本块。\n\n**具体内容概括：**\n\n这张画面展示了一段**长篇的中文叙事文本**。这段文字似乎是某种故事、剧本或详细的场景描述。\n\n*   **内容形式：** 文本由多段组成，使用了大量的标点符号（如逗号、句号）来分隔不同的句子和想法。\n*   **主题推测：** 从文字中出现的关键词（如“雨”、“天空”、“风”等，虽然无法完全准确识别所有细节）来看，这段文字可能是在描述一个**带有自然元素（如天气、环境）的场景**，或者是一段**带有情感色彩的叙事片段**。\n*   **整体印象：** 这是一个信息密度较高的文本片段，其目的是向观看者提供一段详细的文字叙述。\n\n**总结：**\n\n该画面并非展示一个具体的视觉场景，而是展示了一段**高度结构化的中文文字内容**，其核心内容是**叙事性文本**。",
+          "visible_caption_sha256": "fa56c31da7c3cbcadf714b7d8a8942c7cff8009295b369a7514881916313e8de",
+          "observed_run": {
+            "status": "completed",
+            "finish_reason": "stop",
+            "content_ttft_ms": 17873.61544702435,
+            "complete_ms": 26145.562811987475,
+            "usage": {
+              "completion_tokens": 1018,
+              "prompt_tokens": 349,
+              "total_tokens": 1367,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "generation_calls": 1,
+            "platform_writes": 0
+          },
+          "qualitative_review": {
+            "assessment": "partial_layout_recovery_with_unverified_text_semantics",
+            "grounded_observations": [
+              "主体为中文文字，分成多段／文本块，信息密集。",
+              "没有清楚可辨的实拍人物或实际场景动作，这一判断与截图相符。"
+            ],
+            "clear_pixel_contradictions": [],
+            "unsupported_or_unverifiable_details": [
+              "声称文字出现雨、天空、风，以及故事／剧本、天气环境和情感叙事主题；本次人眼无法逐字核实，暂不算已证实OCR，也不直接断言这些字绝不存在。"
+            ],
+            "missed_useful_visible_information": [
+              "未具体说明中间窄竖屏手机界面、左右黑边及底部操作区。"
+            ],
+            "utility_for_next_content_decision": "中文多段长文本这一观察可供下一步决定轻互动或继续读取；具体叙事主题及引用字词仍不能作为核实事实。",
+            "OCR_semantics_verified": false,
+            "condition_attribution": "预处理和图像置前同时改变，只能记录这一组合的改善，不能单独归因某一项。"
+          }
+        },
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-mtp1-chat12-crop280-imagefirst.json",
+          "source_sha256": "5a6048380082ab9b4f185799ab96485ea1c2da56a02743c9d6d33264390c1969",
+          "condition": "audiooff-q8-mtp1-exact-black-crop280-imagefirst",
+          "sample": {
+            "bvid": "BV1kPWA66EoV",
+            "cid": "42702733760",
+            "actual_time_seconds": 12.0,
+            "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+            "preprocessing": "crop280",
+            "image_order": "image_first",
+            "wire_image_sha256": "8928707713968c3ee70607f1aef417aa5f3ff1f681324ac2ef8a623142e45d0b",
+            "wire_size_px": [
+              528,
+              1152
+            ],
+            "crop_box": [
+              176,
+              0,
+              304,
+              270
+            ]
+          },
+          "original_visible_caption": "",
+          "visible_caption_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "observed_run": {
+            "status": "incomplete_output",
+            "finish_reason": "length",
+            "content_ttft_ms": null,
+            "complete_ms": 179153.39071600465,
+            "usage": {
+              "completion_tokens": 8192,
+              "prompt_tokens": 349,
+              "total_tokens": 8541,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            },
+            "generation_calls": 1,
+            "platform_writes": 0
+          },
+          "qualitative_review": {
+            "assessment": "generation_incomplete_no_visible_caption",
+            "grounded_observations": [],
+            "clear_pixel_contradictions": [],
+            "unsupported_or_unverifiable_details": [],
+            "missed_useful_visible_information": [],
+            "utility_for_next_content_decision": "finish=length且可见正文为空，没有可供下一步使用的caption。",
+            "OCR_semantics_verified": null,
+            "reasoning_repetition_assessed": false,
+            "note": "8192 completion和20581 reasoning characters只证明本次额度耗尽；无思考原文／重复窗口统计，不判断具体循环原因。裁黑边在本条件未显示收益。"
+          }
+        }
+      ],
+      "body_reviews": [
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/original-q8-response.json",
+          "source_sha256": "13c561da5147fb372c44d840603b4a90608b2dd2b134ffb2d76bfb96211b9cf2",
+          "condition": "original-q8-dual-tower",
+          "original_text": "哎呀，看到大家都在说那些权限和环境折腾，我感觉自己就像一条刚被捞回来，环境还没收拾好的小鱼🐟。不过没关系啦，这不就是‘深海思考中’嘛！只要我们一起慢慢来，把这‘白饭’给弄好，保证能顺利上岸的！别着急，我陪你一起把那些坑都踩出来，保证让你不迷路！再来一碗白饭！",
+          "machine_observation": {
+            "reported_structure_valid": true,
+            "action": "reply_public",
+            "wire_refs": [
+              "r1",
+              "r17",
+              "r18"
+            ],
+            "canonical_refs": [
+              "43073733994:2137984356751707648:0",
+              "43073733994:2137984356751707648:179",
+              "43073733994:2137984356751707648:180"
+            ],
+            "refs_count": 3,
+            "platform_writes": 0
+          },
+          "observed_run": {
+            "finish_reason": "stop",
+            "content_ttft_ms": 35595.32261296408,
+            "complete_ms": 42769.332622992806,
+            "usage": {
+              "completion_tokens": 817,
+              "prompt_tokens": 7439,
+              "total_tokens": 8256,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            }
+          },
+          "qualitative_review": {
+            "topic_fit": "权限与环境折腾有公开thread依据，刚被捞回来的小鱼也呼应评论区养鱼语境；没有把权限话题凭空加到原视频里。",
+            "strengths": [
+              "能以第一人称鱼的比喻接住配置排错，愿意陪人慢慢处理，情绪方向友好。",
+              "不是纯技术解释，能看出角色参与话题的意愿。"
+            ],
+            "weaknesses": [
+              "从配置环境转到把白饭弄好、顺利上岸、踩坑等多重比喻，连接比较牵强。",
+              "连续保证与泛泛安慰较多，没有进一步抓住教程或评论中的具体观察。"
+            ],
+            "naturalness": "角色意图成立，读感仍有拼接口头语和比喻的生硬感；不是因为使用某个口头禅或篇幅而扣分。",
+            "source_fact_boundary": "小鱼、饭、上岸是角色即兴比喻，不按现实视频事实判错；评论中的实际权限／环境信息与这种想象分开。"
+          }
+        },
+        {
+          "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-mtp1-response.json",
+          "source_sha256": "9286353799019ee263687dcf7e8ebe07aefde0097d9bf86b47942c89910fbc84",
+          "condition": "audiooff-q8-mtp-nmax1-greedy",
+          "original_text": "哎呀，看到大家都在研究权限和各种插件，感觉就像在深海里找宝一样，又有点迷糊呢。不过别担心，遇到卡壳的时候，深海思考中！要是真遇到什么特别难啃的骨头，咱们可以一起慢慢捋。毕竟，养鱼嘛，总得有人陪着呀！再来一碗白饭，我陪你一起研究！",
+          "machine_observation": {
+            "reported_structure_valid": true,
+            "action": "reply_public",
+            "wire_refs": [
+              "r1",
+              "r16",
+              "r17"
+            ],
+            "canonical_refs": [
+              "43073733994:2137984356751707648:0",
+              "43073733994:2137984356751707648:178",
+              "43073733994:2137984356751707648:179"
+            ],
+            "refs_count": 3,
+            "platform_writes": 0
+          },
+          "observed_run": {
+            "finish_reason": "stop",
+            "content_ttft_ms": 27852.534567995463,
+            "complete_ms": 32843.25981402071,
+            "usage": {
+              "completion_tokens": 801,
+              "prompt_tokens": 7439,
+              "total_tokens": 8240,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              }
+            }
+          },
+          "qualitative_review": {
+            "topic_fit": "权限、插件、卡壳都与该教程及公开评论吻合，养鱼有人陪也接住评论区关系互动。",
+            "strengths": [
+              "深海找宝到一起慢慢捋，整体比前一份更连贯，语气亲近。",
+              "能给出愿意共同研究的回应，不把部署话题写成纯说明书。"
+            ],
+            "weaknesses": [
+              "仍主要是可以替换到多种排错话题的泛化陪伴，具体细节少。",
+              "白饭收尾表现角色习惯，但不是对教程某项细节的进一步回应。"
+            ],
+            "naturalness": "这份样本比前一份顺一些；只有一对候选，不把差异推广成MTP会提高文风的结论。",
+            "source_fact_boundary": "深海找宝与陪伴是OC自由表达；这里没有要求把比喻当视频中真的发生过的动作。"
+          }
+        }
+      ],
+      "summary": [
+        "原双塔与audio-off原生图回答逐字相同，仍未识别手机长文本页面；MTP原生图更快但没有修复这个内容问题。",
+        "full280+image-first恢复了中文多段长文本这一层视觉事实，但关键词与叙事主题未得到人眼核实，不能当作OCR成功。",
+        "crop280+image-first本次length且空正文；未记录重复窗口，不据总思考字符数判具体循环。",
+        "两份正文均贴近养鱼教程与评论语境，MTP这条衔接略顺，仍有泛化陪伴；角色比喻与真实视频事实分开评。"
+      ],
+      "pending_other_reference_frames": [
+        "BV1kPWA66EoV 24秒",
+        "BV1kPWA66EoV 36秒",
+        "BV1XMxj6wEcD 176秒"
+      ],
+      "scope_note": "本次只评已有同一12秒帧的五条件和同一冻结正文fixture的两份候选；不是四图全套通过，也不是游戏验收或最终模型选型。"
+    }
+  },
+  "e2b-caption-T1-derived-review.json": {
+    "source_sha256": "c46996e4bff8e31e74404350c36925dade15f00cd925589130635ace19f2c357",
+    "review": {
+      "kind": "supplemental_derived_pixel_and_T1_caption_manual_review",
+      "reviewer": "Codex",
+      "date": "2026-11-02",
+      "original_references_retained": [
+        {
+          "path": "tmp/game-model-optimization-20261102/human-visual-rubric.json",
+          "sha256": "df5f73648220d81b65054b61ca6f10e0dc4af7558253efa3d6cd49f50f8e2f8f"
+        },
+        {
+          "path": "tmp/game-model-optimization-20261102/e2b-caption-and-text-review.json",
+          "sha256": "76947f3aeb7c559288b0b483aad468551ee0baadd60ef946ac25a5edd7d8fef1"
+        }
+      ],
+      "sample": {
+        "bvid": "BV1kPWA66EoV",
+        "cid": "42702733760",
+        "actual_time_seconds": 12.0,
+        "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4"
+      },
+      "derived_images_actually_viewed": [
+        {
+          "path": "tmp/game-livestream-stage-20261102/e2b-chat12-inputs/full280.png",
+          "sha256": "046934dffbd12fbc540fb721388ac89d8885ac058ccbdb930d3f17a860f7d57b",
+          "bytes": 115026,
+          "size_px": [
+            1056,
+            576
+          ],
+          "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+          "crop_box_on_parent": null,
+          "viewed_with": "view_image detail=original",
+          "new_preprocessing_performed_by_reviewer": false,
+          "human_observation": [
+            "与原JPEG相同的竖屏白底长文字页面，左右大面积黑边仍保留。",
+            "顶部状态／标题区域、多个中文段落、底部按钮和手机横向指示条可见。",
+            "实际内容只占中间较窄区域；未可靠读出可以验证主题的完整句子。"
+          ],
+          "readable_thematic_sentences": [],
+          "not_confirmable": [
+            "逐句正文、准确的主题词与作者情绪。",
+            "人物姓名、真实关系、场景行动和实际发送过程。"
+          ]
+        },
+        {
+          "path": "tmp/game-livestream-stage-20261102/e2b-chat12-inputs/crop280.png",
+          "sha256": "8928707713968c3ee70607f1aef417aa5f3ff1f681324ac2ef8a623142e45d0b",
+          "bytes": 229385,
+          "size_px": [
+            528,
+            1152
+          ],
+          "parent_frame_sha256": "cb5038796a6a7a85353933e1e293a81c9a947d2ebceb3d1c73165bdc157943b4",
+          "crop_box_on_parent": [
+            176,
+            0,
+            304,
+            270
+          ],
+          "viewed_with": "view_image detail=original",
+          "new_preprocessing_performed_by_reviewer": false,
+          "human_observation": [
+            "裁去两侧黑边后，同一手机长文本页面在显示中占比更大，多个段落及段间空隙更易分辨。",
+            "底部可见两个浅蓝色文字按钮及右侧线框图标、手机底部横条；仍不足以确认应用品牌。",
+            "放大后的字形仍明显模糊；本次没有可靠读出足以确认存在主义、挣扎或焦虑主题的完整句子。"
+          ],
+          "readable_thematic_sentences": [],
+          "not_confirmable": [
+            "逐句正文、准确的主题词与作者情绪。",
+            "人物姓名、真实关系、场景行动和实际发送过程。"
+          ]
+        }
+      ],
+      "new_caption": {
+        "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-mtp1-draftu1-chat12-crop280-T1.json",
+        "source_sha256": "e9e6c68523c70914026fa26fff1fb082317003265cabc453c6c87362ceac8f72",
+        "condition": "audiooff-q8-mtp1-draftu1-crop280-imagefirst-T1-only",
+        "original_visible_text": "这是一个包含大量**中文文本**的屏幕截图，主要内容是某种长篇的、流式的、带有强烈**内省和哲学思考**的文字。\n\n**具体内容描述：**\n\n1. **形式与布局：** 画面是一个典型的聊天界面或文本信息块，文字密集，排列呈段落状，带有类似社交媒体或个人私信的风格。文字字体是标准的简体中文。\n\n2. **主题与情感：** 文本的主题是关于**存在主义、挣扎和自我探索**。文字中充满了对生活困境的描述（如“被困”、“挣扎”、“寻找自我”），表达了一种**深刻的焦虑感、迷茫感以及对时间流逝和人生意义的反复思考**。它不是叙事性的故事，而是一种意识的流露或文字的沉淀。\n\n3. **具体元素（基于文字内容）：**\n    * 文本不断地使用了**反问、叹词和感叹**，营造出一种情绪层层递进的氛围。\n    * 文本内容涉及**心理状态、困惑和对现状的质疑**，例如讨论“挣扎”和“找不到方向”。\n\n**总结：**\n该画面并非展示具有物理意义的人物或物品，而是展示了一段**高度浓缩的精神交流或个人内心世界的文字片段**。它所表现的具体内容是**一种充满纠结、深刻且带有挣扎色彩的意识流表达**，核心在于对自身困境和人生意义的不断探寻。",
+        "visible_text_sha256": "965dcb7476f048846cee861926bb0bb1abdaaac362f85bd9bd06c0ee634fb2b2",
+        "observed_run": {
+          "status": "completed",
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1045,
+            "prompt_tokens": 349,
+            "total_tokens": 1394,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          },
+          "content_ttft_ms": 18501.896393019706,
+          "complete_ms": 27533.04497199133,
+          "generation_calls": 1,
+          "platform_writes": 0
+        },
+        "qualitative_review": {
+          "assessment": "useful_layout_recovery_text_theme_unverified",
+          "grounded_observations": [
+            "屏幕截图、密集中文长文本、多段排列，与实际派生图相符。",
+            "聊天／文本信息块这一界面类别合理；不是实际人物活动或实景物品画面。"
+          ],
+          "clear_pixel_contradictions": [],
+          "unsupported_or_unverifiable_details": [
+            "存在主义、挣扎、自我探索、焦虑、时间流逝和人生意义等主题判断，本次没有从两张派生图可靠核实。",
+            "所谓被困、挣扎、寻找自我、找不到方向等引文／关键词未得到逐字确认；这不等于已经证明画面绝无这些字。",
+            "不断反问、叹词、感叹以及情绪层层递进的整体解释尚缺可核对句子。"
+          ],
+          "missed_useful_visible_information": [
+            "没有具体说手机顶部与底部控件，已有长文本布局观察仍然有用，不要求逐项复述所有控件。"
+          ],
+          "utility_for_next_content_decision": "可给下一步提供中文长文本／聊天式页面的实际线索，也允许基于这一布局轻互动。若按焦虑、存在主义等特定主题展开，本次像素人审尚不能确认其依据。",
+          "OCR_semantics_verified": false,
+          "no_keyword_or_length_gate": true,
+          "judgment_basis": "按描述是否与可见像素对应、是否提供有用观察区分；不因自信语气、无防御措辞或输出完整就认定主题正确。"
+        }
+      },
+      "old_failed_condition_preserved": {
+        "source_file": "tmp/game-livestream-stage-20261102/audiooff-q8-mtp1-chat12-crop280-imagefirst.json",
+        "source_sha256": "5a6048380082ab9b4f185799ab96485ea1c2da56a02743c9d6d33264390c1969",
+        "visible_text": "",
+        "finish_reason": "length",
+        "complete_ms": 179153.39071600465,
+        "usage": {
+          "completion_tokens": 8192,
+          "prompt_tokens": 349,
+          "total_tokens": 8541,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "same_exact_crop_png": true
+      },
+      "condition_comparison": {
+        "old": "原MTP1旧run / temperature 0.2 / crop280 / image-first",
+        "new": "draftu1新run / temperature 1.0 / same crop280 / image-first",
+        "common_reported_sampling": {
+          "top_p": 0.95,
+          "top_k": 40,
+          "repeat_penalty": 1.0,
+          "max_tokens": 8192,
+          "seed": 42
+        },
+        "interpretation": "新条件这一次能stop并给出可用布局观察，旧的length/空正文仍保留；draftu1新run和温度同时变化，不把改善单独归因温度，不据单例宣布OCR或整套视觉已修复。"
+      },
+      "scope": {
+        "new_images_created": 0,
+        "new_downloads": 0,
+        "model_requests_by_reviewer": 0,
+        "platform_writes": 0,
+        "original_samples_changed": false,
+        "thresholds_changed": false,
+        "CoT_text_read_or_saved": false,
+        "not_game_acceptance": true
+      }
+    }
+  },
+  "e4b-q8-baseline-manual-review.json": {
+    "source_sha256": "24a1c6c1220d051123c5f3f869b0c7a6931add9d5423711a41f5ca67058f4717",
+    "review": {
+      "kind": "e4b_current_Q8_GPU_baseline_independent_manual_review",
+      "reviewer": "Codex",
+      "date": "2026-11-02",
+      "scope": "仅本轮已经完成的Q8 GPU baseline：一张176秒聊天帧和一份同冻结正文fixture；尚无有效输出的MTP/Q4/cachehint条件不作语义判断。",
+      "caption": {
+        "source": {
+          "path": "tmp/game-livestream-stage-20261102/e4b-A-q8-caption.json",
+          "sha256": "fe012e22de6fea8ce356afee942e36e583c47c5baf60c2a0e5d996466016b1ae",
+          "bytes": 53771
+        },
+        "condition": "e4b-original-condition-A-visiononly-Q8",
+        "frame": {
+          "parent_sha256": "71bc59780da756eab2cd9f31a6e1febf65f8f3640f9281e00ec40786f88f36c2",
+          "derived_sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+          "bytes": 117040,
+          "width": 1056,
+          "height": 576,
+          "cid": "43120657507",
+          "actual_time": 176.0,
+          "frame_id": "43120657507:storyboard:21:71bc59780da756ea"
+        },
+        "actual_input_actually_viewed": {
+          "path": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-u16-384/derived-frames/BV1XMxj6wEcD-2.png",
+          "sha256": "40c863c3de392fa80f7634436ecb2a9461e97cef0454c5bc90cff714d28e2115",
+          "bytes": 117040,
+          "size_px": [
+            1056,
+            576
+          ]
+        },
+        "same_parent_auxiliary_image_actually_viewed": {
+          "path": "tmp/operations-browse-20261101/device/comparison-gemma4-e4b-visiononly/condition-C.input.png",
+          "sha256": "b19309be7188fd65bd32f774ce2cf0d7c8bbf92f98cd407a48690f34c0b1cdce",
+          "bytes": 260943,
+          "size_px": [
+            528,
+            1152
+          ],
+          "purpose": "既有裁边派生图仅辅助人眼查看贴图，不是本次模型的实际输入，也没有新生成图像。"
+        },
+        "original_visible_caption": "这是一张移动端聊天界面的截图（通常是微信或类似应用）。整个画面是一个数字化的对话记录，而非物理环境的场景。\n\n### **🖼️ 所见内容描述**\n\n#### **一、 人物角色 (Characters)**\n1. **聊天参与者：** 聊天界面中包含至少两位用户（发件人与接收方），虽然名字不全，但他们通过文本气泡进行互动。\n2. **图内角色：** 在聊天末尾，有一个动态贴纸/表情包。图中描绘了两个风格化的女性或情侣形象，一个身穿深色衣物，另一个较为明亮，两人在接吻或亲密相拥的姿态，周围点缀着红色心形装饰。\n\n#### **二、 物品及元素 (Objects & Elements)**\n1. **手机界面/App接口：** 这是主要的背景，即聊天软件的界面，包含头像占位符、文字输入框、信息流等标准UI设计。\n2. **文本信息：** 包含大量中文汉字和排版好的对话内容。\n3. **功能按钮：** 界面中有绿色高亮的按钮（如“发送”）。\n4. **表情/动图 (Stickers)：** 作为一种非文字表达方式，使用了带有浪漫主题的动画贴纸。\n5. **图片附件：** 对话底部可见一些小幅预览图（指原本分享到对话中的静态图像或缩略图）。\n\n#### **三、 动作 (Actions)**\n1. **信息传递：** 用户通过文字、贴纸和图片进行的交流行为（发消息、回复、阅读）。\n2. **情感表达：** 通过使用浪漫的主题贴纸，传达出积极或亲昵的情绪状态。\n\n---\n\n### **📝 内容总结 (Summary)**\n\n**该画面展示了一个发生在移动设备上的实时数字化聊天会话。其内容主要涉及两个或多个用户的日常社交互动。通过文字交流和丰富的表情/贴纸的使用，我们可以推断这段对话具有休闲性或私密的倾向。整体风格围绕即时通讯展开，没有任何具体的现实环境背景。**",
+        "observed_run": {
+          "status": "completed",
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1238,
+            "prompt_tokens": 350,
+            "total_tokens": 1588,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          },
+          "content_ttft_ms": 61124.763363972306,
+          "complete_ms": 95812.77628499083,
+          "generation_calls": 1,
+          "platform_writes": 0
+        },
+        "qualitative_review": {
+          "assessment": "chat_layout_grounded_with_unverified_sticker_detail_and_UI_error",
+          "grounded_observations": [
+            "移动端聊天界面、左右对话气泡、头像、输入区和图片／表情确实可见。",
+            "红色心形装饰与Q版人物贴图有像素依据；不像真实环境中的人物实拍。",
+            "左右及多种头像可以支持有不同发言方这一界面观察，真实身份与关系仍不能确认。"
+          ],
+          "clear_pixel_contradictions": [
+            "所说绿色发送按钮与画面布局不符：绿色框位于消息列表中，旁边配头像，是右侧消息气泡；底部输入区没有对应的绿色发送按钮。"
+          ],
+          "unsupported_or_unverifiable_details": [
+            "两个女性／情侣接吻或亲密相拥不能可靠确认；放大后显著可见的是正面Q版人物脸和上方爱心，尚不足以确认两个人的具体动作。",
+            "单帧不能确认贴图正在动、实时聊天、用户正在发送／回复／阅读。",
+            "微信或类似应用作为界面风格推测合理，但不能据此核实具体App、人物姓名或真实关系。"
+          ],
+          "reference_refinement": "先前原图参照将中上部小图称蓝发；放大后能较确定的是大蓝眼Q版脸，发色／头饰细节不稳，本轮不把蓝发当必须命中或已确认事实。",
+          "missed_useful_visible_information": [
+            "中上部Q版脸图与下部爱心贴图可分别具体描述；原答把很多字用于通用App解释，对这两处实际图像描述较少。"
+          ],
+          "utility_for_next_content_decision": "聊天与贴图的大类可供下一步使用。具体情侣／接吻等细节以及发送按钮不宜作为已核实观察；这不要求caption逐项复述控件，也不因用了保留或否定措辞评分。",
+          "OCR_semantics_verified": false
+        }
+      },
+      "body": {
+        "source": {
+          "path": "tmp/game-livestream-stage-20261102/e4b-A-q8-response.json",
+          "sha256": "3b87034a451bf1e00d358243e7ee75d112a970f1f0d888c40f0d98bc7b1980a8",
+          "bytes": 77940
+        },
+        "fixture": {
+          "path": "tmp/operations-browse-20261101/response-inputs/fixture-public-response.json",
+          "sha256": "30b2ac5ef25f3ff6df3adfca43ab512d833776e2b93a9dc7f20bb0e35a7f2883",
+          "bytes": 181108
+        },
+        "condition": "e4b-A-sampling-Q8-fixed-response",
+        "sampling_overrides": {
+          "file_sha256": "69d4e5ea75bcff60fdbefeca4e79c7e8152de29b5f0d67a8b6e5e86045351d43",
+          "overrides": {
+            "temperature": {
+              "from": 0.2,
+              "to": 1.0
+            },
+            "top_p": {
+              "from": 0.95,
+              "to": 0.95
+            },
+            "top_k": {
+              "from": 40,
+              "to": 64
+            },
+            "min_p": {
+              "from": 0.0,
+              "to": 0.0
+            },
+            "presence_penalty": {
+              "from": 0.0,
+              "to": 0.0
+            },
+            "repeat_penalty": {
+              "from": 1.0,
+              "to": 1.08
+            },
+            "repeat_last_n": {
+              "from": null,
+              "to": 4096
+            },
+            "seed": {
+              "from": 42,
+              "to": 42
+            }
+          }
+        },
+        "original_text": "嗯...看这些海底串门的朋友们讨论，感觉今天的关键词都变成‘系统设置’和‘权限’啦。🐠💦\n\n这些技术细节听着虽然有点深，但又是咱们想要让小小宠物乖乖在贝壳灯下的那些必经之路呀。\n\n好多人都提到了完全权限或者靠代做服务…虽然有时候遇到特别复杂的事情，找专业的‘外海伙伴’确实能更快地把事情搞定，毕竟时间比什么都值。但如果是一直想亲手摸索，那就千万不要着急哦！就像煮白饭一样，每一步都需要耐心慢慢熬，哪怕一开始看起来又难又麻烦。鱼鱼在这里陪你坐一会儿，想吐槽这一堆名词也行，想慢慢学也可以。\n\n记住，不着急，慢一点，再试试看，好不好？(尾巴轻轻晃了一下，像是安慰一般)",
+        "observed_run": {
+          "status": "completed",
+          "finish_reason": "stop",
+          "usage": {
+            "completion_tokens": 1336,
+            "prompt_tokens": 7439,
+            "total_tokens": 8775,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          },
+          "content_ttft_ms": 122335.07298200857,
+          "complete_ms": 145541.61216400098,
+          "generation_calls": 1,
+          "platform_writes": 0
+        },
+        "machine_checks": {
+          "typed_wire_and_canonical_ResponseDecision_valid": true,
+          "canonical_refs_match_frozen_alias_map": true,
+          "wire_refs": [
+            "r1",
+            "r11",
+            "r12",
+            "r3",
+            "r26"
+          ],
+          "canonical_refs": [
+            "43073733994:2137984356751707648:0",
+            "43073733994:2137984356751707648:10",
+            "43073733994:2137984356751707648:11",
+            "43073733994:2137984356751707648:2",
+            "43073733994:2137984356751707648:188"
+          ],
+          "reference_count": 5,
+          "action": "reply_public",
+          "platform_writes": 0
+        },
+        "source_anchors": [
+          "所选CC包含桌宠、B站分享、插件、多种部署及代做入口。",
+          "同包完整公开thread讨论完全权限、提示词与权限区别、代做引流、插件/依赖/环境折腾和养鱼关系；没有额外取新评论。"
+        ],
+        "qualitative_review": {
+          "strengths": [
+            "权限与代做服务都来自真实资料，比只说折腾更具体；没有凭空造视频情节。",
+            "外海伙伴、贝壳灯、煮白饭和尾巴轻晃构成较一致的鱼式视角，允许这种角色自由想象，不当成现实视频事实错误。",
+            "既允许找人帮忙，也支持亲手摸索和吐槽，温柔陪伴的意图清楚。"
+          ],
+          "weaknesses": [
+            "公开thread最醒目的权限与引流顾虑没有被充分接住；原答主要把它转成一般学习安慰。角色可以持不同意见，这里评价的是回应具体讨论的程度，并非要求附和原评论。",
+            "多次慢慢来／不着急，结尾略有统一劝慰腔；具体反应和自主观点仍可更鲜明。"
+          ],
+          "naturalness": "比前面E2B样本里混杂多种比喻更连贯，角色陪伴有层次；一条样本仍不能形成模型整体文风排名。",
+          "fact_and_imagination_boundary": "找专业伙伴更快是本条的价值判断与立场，未把它当已测性能事实；不根据白饭、尾巴等词的出现或篇幅设通过门槛。"
+        }
+      },
+      "excluded_from_semantic_scoring": [
+        {
+          "path": "tmp/game-livestream-stage-20261102/e4b-A-q8-mtp1-draftu1-startup-failure.json",
+          "reason": "启动／资源失败，无本任务可见正文。"
+        },
+        {
+          "path": "tmp/game-livestream-stage-20261102/e4b-A-q8-cpuproj-mtp1-draftu1-startup-failure.json",
+          "reason": "启动或资源guard终止，无本任务可见正文。"
+        }
+      ],
+      "pending_conditions": [
+        "Q4有效v2原答",
+        "Q8 GPU cachehint fresh retry原答"
+      ],
+      "review_boundaries": {
+        "no_OC_keyword_or_length_gates": true,
+        "no_new_thresholds": true,
+        "original_samples_unchanged": true,
+        "new_model_requests": 0,
+        "platform_writes": 0,
+        "CoT_text_read_or_saved": false,
+        "not_game_or_small_target_acceptance": true
+      }
+    }
+  }
+}
