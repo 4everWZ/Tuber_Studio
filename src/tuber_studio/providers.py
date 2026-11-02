@@ -103,7 +103,7 @@ class LlamaCppProvider:
         self.uses_broker = bool(inference_token)
         self.client = httpx.AsyncClient(
             base_url=config["base_url"].rstrip("/"),
-            timeout=httpx.Timeout(config.get("timeout_seconds", 40), connect=5),
+            timeout=httpx.Timeout(config.get("timeout_seconds", 90), connect=10),
             trust_env=False,
             headers={"X-Tuber-Inference-Key": inference_token} if inference_token else None,
         )
@@ -700,7 +700,7 @@ def public_error(error):
     if isinstance(error, httpx.HTTPStatusError):
         return f"上游HTTP {error.response.status_code}；请检查服务、权限或平台限制"
     if isinstance(error, httpx.TimeoutException):
-        return "上游服务超时"
+        return "上游服务超时（网络连接或服务响应过慢，可重试）"
     if isinstance(error, httpx.RequestError):
         return "无法连接上游服务"
     if isinstance(error, (ValueError, KeyError)):

@@ -149,7 +149,7 @@ class BilibiliAdapter:
             base_url="https://api.bilibili.com",
             headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
             cookies=cookies,
-            timeout=httpx.Timeout(20, connect=10),
+            timeout=httpx.Timeout(45, connect=10),
             follow_redirects=False,
         )
 
@@ -180,20 +180,26 @@ class BilibiliAdapter:
         }
 
     async def _get_payload(self, path: str, params: dict):
-        try:
-            response = await self.client.get(path, params=params)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as error:
-            raise ValueError(
-                f"B 站读取失败（HTTP {error.response.status_code}），请检查权限或风控状态"
-            ) from None
-        except httpx.RequestError:
-            raise ValueError("B 站读取连接失败或超时，请稍后重试") from None
-        except json.JSONDecodeError:
-            raise ValueError("B 站返回了非 JSON 响应，请检查平台访问状态") from None
-        except (TypeError, KeyError):
-            raise ValueError("B 站返回了无效数据") from None
+        for attempt in range(2):
+            try:
+                response = await self.client.get(path, params=params)
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as error:
+                raise ValueError(
+                    f"B 站读取失败（HTTP {error.response.status_code}），请检查权限或风控状态"
+                ) from None
+            except (httpx.TimeoutException, httpx.ConnectError) as error:
+                if attempt == 0:
+                    await asyncio.sleep(0.8)
+                    continue
+                raise ValueError("B 站读取连接失败或超时，请稍后重试") from None
+            except httpx.RequestError:
+                raise ValueError("B 站读取连接失败或超时，请稍后重试") from None
+            except json.JSONDecodeError:
+                raise ValueError("B 站返回了非 JSON 响应，请检查平台访问状态") from None
+            except (TypeError, KeyError):
+                raise ValueError("B 站返回了无效数据") from None
 
     async def _get(self, path: str, params: dict) -> dict:
         return _data(await self._get_payload(path, params))
