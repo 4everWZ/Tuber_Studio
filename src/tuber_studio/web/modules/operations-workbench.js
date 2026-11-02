@@ -806,7 +806,10 @@
           if (this.notify) this.notify("台词内容不能为空", true);
           return;
         }
+        const originalText = approveBtn.textContent;
         approveBtn.disabled = true;
+        approveBtn.textContent = "审核中…";
+        approveBtn.classList.add("is-busy");
         try {
           await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
             method: "POST",
@@ -818,17 +821,34 @@
           intent.status = "approved";
           this.renderedIntentText = newText;
           this.renderedIntentStatus = "approved";
-          if (this.notify) this.notify("✓ 草稿已通过审核！可以点击立即发布。");
+
+          if (this.intentFilter === "pending_review") {
+            const nextPending = this.intents.find(i => i.status === "pending_review" && i.id !== intent.id);
+            if (nextPending) {
+              this.selectedIntentId = nextPending.id;
+              if (this.notify) this.notify("✓ 草稿已审核通过，已切换至下一条。");
+            } else {
+              this.selectedIntentId = null;
+              if (this.notify) this.notify("🎉 待审核草稿全部处理完毕！");
+            }
+          } else {
+            if (this.notify) this.notify("✓ 草稿已通过审核！可以点击立即发布。");
+          }
           await this.refresh();
         } catch (e) {
           approveBtn.disabled = false;
+          approveBtn.textContent = originalText;
+          approveBtn.classList.remove("is-busy");
           if (this.notify) this.notify(e.message, true);
         }
       };
 
       const publishAction = async () => {
         const newText = editor ? editor.value.trim() : intent.text;
+        const originalText = publishBtn.textContent;
         publishBtn.disabled = true;
+        publishBtn.textContent = "发布中…";
+        publishBtn.classList.add("is-busy");
         try {
           if (newText && newText !== intent.text) {
             await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
@@ -846,13 +866,18 @@
           await this.refresh();
         } catch (e) {
           publishBtn.disabled = false;
+          publishBtn.textContent = originalText;
+          publishBtn.classList.remove("is-busy");
           if (this.notify) this.notify(e.message, true);
         }
       };
 
       const rejectAction = async () => {
         if (!confirm("确认放弃并拒绝此条草稿吗？")) return;
+        const originalText = rejectBtn.textContent;
         rejectBtn.disabled = true;
+        rejectBtn.textContent = "处理中…";
+        rejectBtn.classList.add("is-busy");
         try {
           await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
             method: "POST",
@@ -861,10 +886,24 @@
           this.draftDirty = false;
           this.unsavedDrafts.delete(intent.id);
           intent.status = "rejected";
-          if (this.notify) this.notify("已放弃该草稿。");
+
+          if (this.intentFilter === "pending_review") {
+            const nextPending = this.intents.find(i => i.status === "pending_review" && i.id !== intent.id);
+            if (nextPending) {
+              this.selectedIntentId = nextPending.id;
+              if (this.notify) this.notify("已放弃该草稿，已切换至下一条。");
+            } else {
+              this.selectedIntentId = null;
+              if (this.notify) this.notify("🎉 待审核草稿全部处理完毕！");
+            }
+          } else {
+            if (this.notify) this.notify("已放弃该草稿。");
+          }
           await this.refresh();
         } catch (e) {
           rejectBtn.disabled = false;
+          rejectBtn.textContent = originalText;
+          rejectBtn.classList.remove("is-busy");
           if (this.notify) this.notify(e.message, true);
         }
       };

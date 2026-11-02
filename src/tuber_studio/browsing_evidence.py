@@ -55,7 +55,7 @@ class BrowsingEvidence:
         return json.loads(raw)
 
     @staticmethod
-    def source_version(material):
+    def legacy_source_version(material):
         metadata = material["metadata"]
         stable = {
             k: metadata.get(k)
@@ -72,6 +72,46 @@ class BrowsingEvidence:
                 "category_id",
             )
         }
+        stable["parts_evidence"] = [
+            {
+                k: part.get(k)
+                for k in (
+                    "cid",
+                    "track_id",
+                    "language",
+                    "is_ai",
+                    "segments",
+                    "coverage",
+                    "visual",
+                    "visual_provider",
+                    "frame_evidence",
+                    "limitations",
+                )
+            }
+            for part in material["parts"]
+        ]
+        return hashlib.sha256(json.dumps(stable, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    @staticmethod
+    def source_version(material):
+        metadata = material["metadata"]
+        raw_tags = metadata.get("tags")
+        sorted_tags = sorted([t for t in raw_tags if isinstance(t, str)]) if isinstance(raw_tags, list) else raw_tags
+        stable = {
+            k: metadata.get(k)
+            for k in (
+                "bvid",
+                "aid",
+                "title",
+                "description",
+                "owner_uid",
+                "parts",
+                "duration",
+                "published_at",
+                "category_id",
+            )
+        }
+        stable["tags"] = sorted_tags
         stable["parts_evidence"] = [
             {
                 k: part.get(k)
@@ -253,7 +293,31 @@ class BrowsingEvidence:
                 raise EvidenceUnavailable(
                     missing[0]["reason"] if missing else "no_subtitles", "无可用CC字幕，未执行视频发言"
                 )
-            visual_parts, visual_frames = await self._visual_parts(metadata, task, deadline)
+            timestamps = None
+            if parts:
+                all_segs = [
+                    s for p in parts for s in p.get("segments", [])
+                    if isinstance(s, dict) and "start" in s and "end" in s
+                ]
+                if all_segs:
+                    if len(all_segs) <= 3:
+                        timestamps = [(s["start"] + s["end"]) / 2 for s in all_segs]
+                    else:
+                        indices = [
+                            max(0, int(len(all_segs) * 0.15)),
+                            int(len(all_segs) * 0.50),
+                            min(len(all_segs) - 1, int(len(all_segs) * 0.85)),
+                        ]
+                        seen_idx = set()
+                        timestamps = []
+                        for idx in indices:
+                            if idx not in seen_idx:
+                                seen_idx.add(idx)
+                                s = all_segs[idx]
+                                timestamps.append((s["start"] + s["end"]) / 2)
+            visual_parts, visual_frames = await self._visual_parts(
+                metadata, task, deadline, timestamps=timestamps
+            )
             parts.extend(visual_parts)
         material = {
             "metadata": metadata,
@@ -314,7 +378,7 @@ class BrowsingEvidence:
     def _valid_time(value):
         return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
-    async def _visual_parts(self, metadata, task, deadline):
+    async def _visual_parts(self, metadata, task, deadline, *, timestamps=None):
         capabilities = dict(self.visual.capabilities())
         if not (
             capabilities.get("available")
@@ -340,9 +404,18 @@ class BrowsingEvidence:
         deadline = min(deadline if deadline is not None else now + timeout, now + timeout)
         try:
             async with asyncio.timeout(max(0, deadline - time.time())):
-                frames = await self.reader(
-                    self.adapter.video_frames, metadata, min(3, capabilities["max_frames"])
-                )
+                import inspect
+                sig = inspect.signature(self.adapter.video_frames)
+                call_args = [metadata, min(3, capabilities["max_frames"])]
+                call_kwargs = {"timestamps": timestamps} if "timestamps" in sig.parameters and timestamps else {}
+                if call_kwargs:
+                    frames = await self.reader(
+                        lambda *a: self.adapter.video_frames(*a, **call_kwargs), *call_args
+                    )
+                else:
+                    frames = await self.reader(
+                        self.adapter.video_frames, *call_args
+                    )
                 if (
                     not isinstance(frames, list)
                     or not frames

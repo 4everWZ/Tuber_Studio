@@ -220,6 +220,136 @@ function renderStatus(status) {
   renderContext(status.context);
   renderInference(status.inference); renderVoicePreview();
   if (model.dynamicPolicy) renderDynamicPolicy();
+  renderJetsonOverview();
+}
+
+let lastJetsonFetchTime = 0;
+let cachedJetsonNodeData = null;
+
+async function fetchJetsonMetrics(force = false) {
+  const now = Date.now();
+  if (!force && cachedJetsonNodeData && (now - lastJetsonFetchTime < 10000)) {
+    return cachedJetsonNodeData;
+  }
+  try {
+    cachedJetsonNodeData = await api("/api/inference/node");
+    lastJetsonFetchTime = now;
+  } catch (e) {
+    console.warn("Failed to fetch inference node metrics:", e);
+  }
+  return cachedJetsonNodeData;
+}
+
+async function renderJetsonOverview() {
+  const card = $("jetson-monitor-card");
+  if (!card) return;
+  const node = await fetchJetsonMetrics();
+  if (!node) {
+    const healthBadge = $("jetson-health-badge");
+    if (healthBadge) {
+      healthBadge.textContent = "离线 / 未连接";
+      healthBadge.className = "badge bad";
+    }
+    return;
+  }
+
+  const caps = node.capabilities || {};
+  const res = caps.resource || {};
+  const endpointEl = $("jetson-node-endpoint");
+  if (endpointEl) endpointEl.textContent = node.base_url || "未配置节点地址";
+
+  const modeBadge = $("jetson-mode-badge");
+  if (modeBadge) modeBadge.textContent = node.mode === "live" ? "直播模式" : "文本/运营模式";
+
+  const healthBadge = $("jetson-health-badge");
+  if (healthBadge) {
+    if (node.error) {
+      healthBadge.textContent = "异常";
+      healthBadge.className = "badge bad";
+    } else if (node.paired) {
+      healthBadge.textContent = "🟢 运行正常";
+      healthBadge.className = "badge good";
+    } else {
+      healthBadge.textContent = "未配对";
+      healthBadge.className = "badge";
+    }
+  }
+
+  const toGB = b => (b ? (b / (1024 * 1024 * 1024)).toFixed(2) : "0");
+  const toMB = b => (b ? (b / (1024 * 1024)).toFixed(1) : "0");
+  const totalGB = toGB(res.total_bytes);
+  const availGB = toGB(res.available_bytes);
+  const rssGB = toGB(res.process_tree_rss_bytes);
+  const swapMB = toMB(res.swap_used_bytes);
+
+  const ramText = $("jetson-ram-text");
+  if (ramText) ramText.textContent = `${availGB} GB 可用 / ${totalGB} GB 总计`;
+
+  const ramBar = $("jetson-ram-bar");
+  if (ramBar && res.total_bytes) {
+    const usedBytes = res.total_bytes - (res.available_bytes || 0);
+    const pct = Math.min(100, Math.max(0, (usedBytes / res.total_bytes) * 100));
+    ramBar.style.width = `${pct.toFixed(1)}%`;
+    ramBar.className = `jetson-progress-fill ${pct > 85 ? "high" : pct > 65 ? "medium" : "normal"}`;
+  }
+
+  const rssText = $("jetson-rss-text");
+  if (rssText) rssText.textContent = `${rssGB} GB`;
+  const availText = $("jetson-available-text");
+  if (availText) availText.textContent = `${availGB} GB`;
+  const swapText = $("jetson-swap-text");
+  if (swapText) swapText.textContent = `${swapMB} MB`;
+
+  const activeProfile = caps.profiles?.[caps.selected_provider] || caps.profiles?.llmgemma4e2b || {};
+  const modelName = $("jetson-model-name");
+  if (modelName) modelName.textContent = activeProfile.alias || caps.model || node.model || "—";
+
+  const modelQuant = $("jetson-model-quant");
+  if (modelQuant) {
+    const qModel = activeProfile.quantization || "Q4_0";
+    const qProj = activeProfile.projector_quantization ? ` / ${activeProfile.projector_quantization} Proj` : "";
+    modelQuant.textContent = `${qModel}${qProj}`;
+  }
+
+  const contextText = $("jetson-context-text");
+  if (contextText) {
+    const ctx = activeProfile.context_tokens || caps.requested_context_tokens || 131072;
+    contextText.textContent = `${(ctx / 1024).toFixed(0)}K (${ctx.toLocaleString()} Tokens)`;
+  }
+
+  const visionStatus = $("jetson-vision-status");
+  if (visionStatus) {
+    visionStatus.textContent = activeProfile.supports_vision ? "支持 / 已就绪" : "纯文本";
+  }
+
+  const storageList = caps.storage || [];
+  let totalStorageBytes = 0;
+  let modelsBytes = 0;
+  let ttsBytes = 0;
+  let engineBytes = 0;
+
+  for (const s of storageList) {
+    const bytes = s.used_bytes || 0;
+    totalStorageBytes += bytes;
+    if (s.kind === "models") modelsBytes = bytes;
+    else if (s.kind === "tts") ttsBytes = bytes;
+    else if (s.kind === "engines") engineBytes = bytes;
+  }
+
+  const storeTotal = $("jetson-storage-total");
+  if (storeTotal) storeTotal.textContent = `${toGB(totalStorageBytes)} GB`;
+  const storeModels = $("jetson-store-models");
+  if (storeModels) storeModels.textContent = `${toGB(modelsBytes)} GB`;
+  const storeTts = $("jetson-store-tts");
+  if (storeTts) storeTts.textContent = `${toGB(ttsBytes)} GB`;
+  const storeEngines = $("jetson-store-engines");
+  if (storeEngines) storeEngines.textContent = `${toMB(engineBytes)} MB`;
+
+  const lastCheck = $("jetson-last-check");
+  if (lastCheck && caps.checked_at) {
+    const d = new Date(caps.checked_at * 1000);
+    lastCheck.textContent = `最近同步: ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+  }
 }
 function resourceMode(inference) {
   if (inference?.mode === "exclusive") return "text";

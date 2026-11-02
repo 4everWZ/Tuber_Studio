@@ -85,12 +85,12 @@ class BrowsingAdapter(BilibiliAdapter):
         self._read_gate = asyncio.Lock()
         self._frame_sampler = None
 
-    async def video_frames(self, metadata, count=3, *, cid=None):
+    async def video_frames(self, metadata, count=3, *, cid=None, timestamps=None):
         from .bilibili_frames import FrameSampler
 
         if self._frame_sampler is None:
             self._frame_sampler = FrameSampler(self)
-        return await self._frame_sampler.frames(metadata, count, cid=cid)
+        return await self._frame_sampler.frames(metadata, count, cid=cid, timestamps=timestamps)
 
     async def close(self):
         if self._frame_sampler is not None:

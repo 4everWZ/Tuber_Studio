@@ -309,7 +309,7 @@ class FrameSampler:
             if response is not None:
                 await response.aclose()
 
-    async def frames(self, metadata, count=3, *, cid=None):
+    async def frames(self, metadata, count=3, *, cid=None, timestamps=None):
         _integer(count, maximum=6)
         if not self.decoder.available:
             raise PlatformReadError("frames_unavailable", "未安装ffmpeg／ffprobe")
@@ -361,7 +361,11 @@ class FrameSampler:
             raise PlatformReadError("no_frames", "当前分P没有可核验的故事板拼图")
         width = _integer(data.get("img_x_size"), maximum=2048)
         height = _integer(data.get("img_y_size"), maximum=2048)
-        targets = [duration * (i + 1) / (count + 1) for i in range(count)]
+        if timestamps:
+            valid_targets = [float(t) for t in timestamps[:count] if 0 <= float(t) <= duration]
+            targets = valid_targets if valid_targets else [duration * (i + 1) / (count + 1) for i in range(count)]
+        else:
+            targets = [duration * (i + 1) / (count + 1) for i in range(count)]
         selected, used = [], set()
         for target in targets:
             actual, ordinal = min(entries, key=lambda item: (abs(item[0] - target), item[1]))

@@ -913,7 +913,8 @@ class BrowsingService:
         ):
             raise ValueError("视频证据为空")
         for key, version in zip(evidence["material_keys"], evidence["source_versions"], strict=True):
-            if self.evidence.load(key)["source_version"] != version:
+            mat = self.evidence.load(key)
+            if mat["source_version"] != version and self.evidence.legacy_source_version(mat) != version:
                 raise ValueError("视频来源版本已失效")
 
     async def validate_private_source(self, draft):
@@ -965,8 +966,41 @@ class BrowsingService:
             source = self.store.one("SELECT bvid FROM browsing_materials WHERE id=?", (key,))
             if not source:
                 raise ValueError("原始来源标识已移除，不能恢复旧证据")
-            identity, material = await self._prepare_evidence(source["bvid"], self.effective(), force=True)
-            if material["source_version"] != version:
+            bvid = source["bvid"]
+            cached = None
+            try:
+                cached = self.evidence.load(key)
+            except Exception:
+                pass
+
+            if cached is not None:
+                cached_version = cached.get("source_version")
+                if cached_version != version and self.evidence.legacy_source_version(cached) != version:
+                    raise ValueError("视频来源材料已变化，不能使用旧候选")
+                # Verify that the remote video has not had its core metadata materially altered
+                try:
+                    fresh_meta = await self.adapter.video_metadata(bvid)
+                except Exception:
+                    fresh_meta = None
+                if fresh_meta:
+                    old_meta = cached.get("metadata", {})
+                    if (
+                        fresh_meta.get("title") != old_meta.get("title")
+                        or fresh_meta.get("description") != old_meta.get("description")
+                        or str(fresh_meta.get("aid")) != str(old_meta.get("aid"))
+                        or fresh_meta.get("duration") != old_meta.get("duration")
+                    ):
+                        raise ValueError("视频来源材料已变化，不能使用旧候选")
+                result.append(key)
+                continue
+
+            identity, material = await self._prepare_evidence(bvid, self.effective(), force=True)
+            current_version = material["source_version"]
+            legacy_version = self.evidence.legacy_source_version(material)
+            if (
+                current_version != version
+                and legacy_version != version
+            ):
                 raise ValueError("视频来源材料已变化，不能使用旧候选")
             result.append(identity)
         return result

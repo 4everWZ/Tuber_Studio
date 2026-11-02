@@ -886,3 +886,165 @@
   border-bottom: 1px solid #f1f5f9;
   padding: 10px 0;
 }
+
+/* Jetson Monitor Card & Busy State */
+button.is-busy {
+  opacity: 0.75;
+  cursor: wait !important;
+  pointer-events: none;
+  filter: brightness(0.95);
+}
+
+.jetson-monitor-card {
+  margin: 16px 0;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.jetson-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.jetson-logo-icon {
+  font-size: 1.25rem;
+  background: #fef3c7;
+  color: #d97706;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.code-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.jetson-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jetson-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 16px;
+}
+
+.jetson-metric-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jetson-metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.jetson-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.jetson-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.jetson-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.jetson-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.jetson-progress-fill.normal {
+  background: #10b981;
+}
+
+.jetson-progress-fill.medium {
+  background: #f59e0b;
+}
+
+.jetson-progress-fill.high {
+  background: #ef4444;
+}
+
+.jetson-metric-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.jetson-metric-footer strong {
+  color: #0f172a;
+}
+
+.jetson-badge-mini {
+  background: #e0e7ff;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.jetson-model-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 2px 0;
+}
+
+.jetson-storage-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jetson-storage-chip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #475569;
+}
+
+.jetson-storage-chip b {
+  color: #0f172a;
+  margin-left: 2px;
+}
