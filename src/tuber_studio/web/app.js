@@ -31,7 +31,7 @@ const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => { model.dynamicMemeCache.clear(); messagesPanel.memeCache.clear(); });
 const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), settings: $("account-settings"), api, notify: notice, onSessionRevoked: showLogin, onChange: () => {
   if (!model.authenticated) return;
-  Promise.allSettled([loadPolicy(), ...(model.page === "messages" ? [messagesPanel.refresh()] : [])]).then(results => results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); }));
+  Promise.allSettled([loadPolicy(), updatePermissionCapsule(), ...(model.page === "messages" ? [messagesPanel.refresh()] : [])]).then(results => results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); }));
 }});
 const dynamicMemePicker = new MemePicker(api, (id, asset) => selectDynamicMeme(id, asset, model.dynamicMemeContext), {title: "选择动态配图", description: "只显示此动态所属角色已启用且可用的图片。最多附加1张，保留原正文；修改配图后需要重新审核。"});
 const names = {
@@ -126,7 +126,7 @@ async function enterWorkspace() {
   const status = await api("/api/status");
   model.authenticated = true; $("login").hidden = true; $("workspace").hidden = false;
   renderStatus(status); connectAdmin();
-  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate()]);
+  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule()]);
   results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); });
   await changePage();
 }
@@ -1049,12 +1049,13 @@ async function reviewDynamic(action) {
 }
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
-  model.page = ["comments", "automation", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(requested) ? requested : "comments";
+  const mapped = requested === "automation" ? "comments" : requested;
+  model.page = ["comments", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(mapped) ? mapped : "comments";
   document.querySelectorAll("[data-section]").forEach(section => { section.hidden = section.dataset.section !== model.page; });
-  document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page; link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
-  document.title = `${({comments: "评论工作台", automation: "自主浏览与互动", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
+  document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page || (link.dataset.page === "comments" && mapped === "comments"); link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
+  document.title = `${({comments: "社区运营工作台", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await refreshComments(); else if (model.page === "automation") await automationPanel.refresh(); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh()]); }
+  try { if (model.page === "comments") await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await refreshLive(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh(), updatePermissionCapsule()]); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {
@@ -1063,10 +1064,10 @@ async function poll() {
   try {
     renderStatus(await api("/api/status"));
     if (["overview", "live"].includes(model.page)) await refreshLive();
-    if (model.page === "comments") await refreshComments();
+    if (model.page === "comments") { await refreshComments(); await automationPanel.refresh(); }
     if (model.page === "dynamics") await refreshDynamics();
     if (model.page === "messages") await messagesPanel.refresh();
-    if (model.page === "automation") await automationPanel.refresh();
+    await updatePermissionCapsule();
   } catch (error) { $("connection").textContent = "连接失败，等待重试"; if (error.status !== 401) notice(error.message, true); }
   finally { model.polling = false; }
 }
@@ -1400,6 +1401,286 @@ $("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
   if (model.page === "comments") await refreshComments();
 });
 $("character-image").onerror = () => { $("character-image").hidden = true; };
+
+// Centralized Permission Capsule & Matrix Control
+let currentAutomationStatus = null;
+
+async function updatePermissionCapsule() {
+  if (!model.authenticated) return;
+  try {
+    const status = await api("/api/automation");
+    currentAutomationStatus = status;
+    const account = accountPanel.value;
+    const hasSessdata = !!account?.configured?.sessdata;
+    const hasCsrf = !!account?.configured?.csrf;
+    const settings = status.settings || {};
+    const control = status.policy || {};
+
+    // 1. Determine Tier
+    let tier = "draft";
+    let icon = "📝";
+    let text = "权限：草稿生成·人工审核后发布";
+
+    if (!hasSessdata || !hasCsrf || account?.state !== "logged_in") {
+      tier = "readonly";
+      icon = "🛡️";
+      text = "权限：只读监控（无发布权）";
+    } else if (
+      control.enabled &&
+      (settings.top_level_auto_publish || settings.reply_auto_publish || settings.handoff_auto_send)
+    ) {
+      tier = "autopublish";
+      icon = "⚡";
+      const maxDaily = settings.max_per_day || 20;
+      text = `权限：模型全自动发布（每日上限 ${maxDaily} 条）`;
+    } else if (
+      !settings.top_level_enabled &&
+      !settings.reply_enabled &&
+      !settings.mentions_enabled
+    ) {
+      tier = "readonly";
+      icon = "🛡️";
+      text = "权限：只读监控（行为已禁止）";
+    } else {
+      tier = "draft";
+      icon = "📝";
+      text = "权限：草稿生成·人工审核后发布";
+    }
+
+    // Update topbar capsule
+    const capsule = $("permission-capsule");
+    if (capsule) {
+      capsule.dataset.tier = tier;
+      const textEl = $("capsule-text");
+      const iconEl = $("capsule-icon");
+      if (textEl) textEl.textContent = text;
+      if (iconEl) iconEl.textContent = icon;
+    }
+
+    // Update operations workbench capsule
+    const opCapsule = $("op-permission-capsule-btn");
+    if (opCapsule) {
+      opCapsule.dataset.tier = tier;
+      opCapsule.innerHTML = `<span>${icon} ${text}</span>`;
+    }
+
+    // Update settings matrix header badge
+    const matrixBadge = $("matrix-capsule-badge");
+    if (matrixBadge) {
+      matrixBadge.textContent = ({
+        readonly: "只读监控态",
+        draft: "草稿审核态（人机协同）",
+        autopublish: "完全自治态",
+      })[tier];
+      matrixBadge.className = `badge ${tier === "autopublish" ? "active" : tier === "draft" ? "good" : ""}`;
+    }
+
+    // Update Matrix Credentials state
+    const sessdataEl = $("matrix-sessdata-status");
+    if (sessdataEl) {
+      sessdataEl.textContent = hasSessdata ? (account?.state === "logged_in" ? `已登录 (UID ${account?.profile?.uid || "—"})` : "已配置 · 待验证") : "未配置";
+      sessdataEl.className = `status-tag ${hasSessdata && account?.state === "logged_in" ? "ok" : "warn"}`;
+    }
+    const csrfEl = $("matrix-csrf-status");
+    if (csrfEl) {
+      csrfEl.textContent = hasCsrf ? "已就绪（具备写入授权）" : "未配置（写入被禁用）";
+      csrfEl.className = `status-tag ${hasCsrf ? "ok" : "warn"}`;
+    }
+
+    // Render Matrix & Quick Bar
+    renderPermissionMatrix(status);
+    renderOperationsQuickBar(status);
+  } catch (e) {
+    // Ignore transient poll errors
+  }
+}
+
+function jumpToPermissionMatrix() {
+  location.hash = "settings";
+  setTimeout(() => {
+    const el = $("operations-permission-matrix");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("highlight-pulse");
+      setTimeout(() => el.classList.remove("highlight-pulse"), 2000);
+    }
+  }, 150);
+}
+
+function renderPermissionMatrix(status) {
+  const settings = status.settings || {};
+  // 1. Top level
+  const topLevelVal = !settings.top_level_enabled ? "0" : settings.top_level_auto_publish ? "2" : "1";
+  const topRadio = document.querySelector(`input[name="matrix_top_level"][value="${topLevelVal}"]`);
+  if (topRadio && document.activeElement?.name !== "matrix_top_level") topRadio.checked = true;
+
+  // 2. Reply
+  const replyVal = !settings.reply_enabled ? "0" : settings.reply_auto_publish ? "2" : "1";
+  const replyRadio = document.querySelector(`input[name="matrix_reply"][value="${replyVal}"]`);
+  if (replyRadio && document.activeElement?.name !== "matrix_reply") replyRadio.checked = true;
+
+  // 3. DM
+  const dmVal = !settings.comment_handoff_enabled ? "0" : settings.handoff_auto_send ? "2" : "1";
+  const dmRadio = document.querySelector(`input[name="matrix_dm"][value="${dmVal}"]`);
+  if (dmRadio && document.activeElement?.name !== "matrix_dm") dmRadio.checked = true;
+
+  // 4. Circuit Breakers
+  if ($("matrix-max-replies-video") && document.activeElement !== $("matrix-max-replies-video")) {
+    $("matrix-max-replies-video").value = settings.max_replies_per_video ?? 2;
+  }
+  if ($("matrix-max-per-round") && document.activeElement !== $("matrix-max-per-round")) {
+    $("matrix-max-per-round").value = settings.max_per_hour ?? 5;
+  }
+  if ($("matrix-max-per-day") && document.activeElement !== $("matrix-max-per-day")) {
+    $("matrix-max-per-day").value = settings.max_per_day ?? 20;
+  }
+  if ($("matrix-auto-downgrade") && document.activeElement !== $("matrix-auto-downgrade")) {
+    $("matrix-auto-downgrade").checked = settings.auto_downgrade_on_error !== false;
+  }
+}
+
+async function savePermissionMatrix() {
+  const topVal = document.querySelector('input[name="matrix_top_level"]:checked')?.value || "1";
+  const replyVal = document.querySelector('input[name="matrix_reply"]:checked')?.value || "1";
+  const dmVal = document.querySelector('input[name="matrix_dm"]:checked')?.value || "1";
+
+  const topLevelEnabled = topVal !== "0";
+  const topLevelAuto = topVal === "2";
+
+  const replyEnabled = replyVal !== "0";
+  const replyAuto = replyVal === "2";
+
+  const dmHandoff = dmVal !== "0";
+  const dmAuto = dmVal === "2";
+
+  const maxRepliesVideo = parseInt($("matrix-max-replies-video")?.value || "2", 10);
+  const maxPerRound = parseInt($("matrix-max-per-round")?.value || "5", 10);
+  const maxPerDay = parseInt($("matrix-max-per-day")?.value || "20", 10);
+  const autoDowngrade = !!$("matrix-auto-downgrade")?.checked;
+
+  const current = currentAutomationStatus?.settings || {};
+  const payload = {
+    ...current,
+    top_level_enabled: topLevelEnabled,
+    top_level_auto_publish: topLevelAuto,
+    reply_enabled: replyEnabled,
+    reply_auto_publish: replyAuto,
+    max_replies_per_video: Math.max(0, Math.min(20, maxRepliesVideo)),
+    max_per_hour: Math.max(1, Math.min(30, maxPerRound)),
+    max_per_day: Math.max(1, Math.min(200, maxPerDay)),
+    auto_downgrade_on_error: autoDowngrade,
+    comment_handoff_enabled: dmHandoff,
+  };
+
+  const fb = $("matrix-save-feedback");
+  if (fb) fb.textContent = "正在保存权限矩阵…";
+
+  try {
+    await api("/api/automation/settings", { method: "PUT", body: payload });
+    if (fb) fb.textContent = "✓ 权限矩阵已保存并即时生效";
+    notice("权限矩阵已保存并即时生效。");
+    await updatePermissionCapsule();
+  } catch (err) {
+    if (fb) fb.textContent = `保存失败：${err.message}`;
+    notice(err.message, true);
+  }
+}
+
+function renderOperationsQuickBar(status) {
+  const settings = status.settings || {};
+  if ($("op-keywords") && document.activeElement !== $("op-keywords")) {
+    $("op-keywords").value = (settings.keywords || []).join(", ");
+  }
+  if ($("op-source") && document.activeElement !== $("op-source")) {
+    const src = (settings.sources && settings.sources[0]) || "recommend";
+    $("op-source").value = src;
+  }
+  if ($("op-max-replies") && document.activeElement !== $("op-max-replies")) {
+    $("op-max-replies").value = settings.max_replies_per_video ?? 2;
+  }
+  const toggleBtn = $("op-toggle-auto");
+  if (toggleBtn) {
+    const isRunning = status.state === "running";
+    toggleBtn.textContent = isRunning ? "停止自主运营" : "开启自主运营";
+    toggleBtn.className = isRunning ? "danger" : "primary";
+  }
+}
+
+async function saveOperationsQuickConfig() {
+  const rawKw = $("op-keywords")?.value || "";
+  const keywords = rawKw
+    .split(/[,，\n]/)
+    .map(k => k.trim())
+    .filter(k => k.length > 0)
+    .slice(0, 20);
+  const source = $("op-source")?.value || "recommend";
+  const maxReplies = parseInt($("op-max-replies")?.value || "2", 10);
+
+  const current = currentAutomationStatus?.settings || {};
+  const payload = {
+    ...current,
+    keywords,
+    sources: [source],
+    max_replies_per_video: Math.max(0, Math.min(20, maxReplies)),
+  };
+
+  try {
+    await api("/api/automation/settings", { method: "PUT", body: payload });
+    notice("运营关键词与来源设置已保存。");
+    await updatePermissionCapsule();
+  } catch (err) {
+    notice(err.message, true);
+  }
+}
+
+if ($("permission-capsule")) $("permission-capsule").onclick = jumpToPermissionMatrix;
+if ($("op-permission-capsule-btn")) $("op-permission-capsule-btn").onclick = jumpToPermissionMatrix;
+if ($("matrix-save")) $("matrix-save").onclick = savePermissionMatrix;
+if ($("op-save-quick-config")) $("op-save-quick-config").onclick = saveOperationsQuickConfig;
+if ($("op-preview-round")) {
+  $("op-preview-round").onclick = async () => {
+    try {
+      await api("/api/automation/round", { method: "POST", body: { preview: true } });
+      notice("单轮运营预览已排队启动，候选将存为待审核草稿。");
+      await automationPanel.refresh();
+      await updatePermissionCapsule();
+    } catch (e) {
+      notice(e.message, true);
+    }
+  };
+}
+if ($("op-toggle-auto")) {
+  $("op-toggle-auto").onclick = async () => {
+    try {
+      const isRunning = currentAutomationStatus?.state === "running";
+      await api("/api/automation/enable", { method: "POST", body: { enabled: !isRunning } });
+      notice(!isRunning ? "自主运营已开启。" : "自主运营已停止。");
+      await automationPanel.refresh();
+      await updatePermissionCapsule();
+    } catch (e) {
+      notice(e.message, true);
+    }
+  };
+}
+if ($("op-stop-round")) {
+  $("op-stop-round").onclick = async () => {
+    try {
+      await api("/api/automation/stop", { method: "POST", body: { emergency: false } });
+      notice("已停止当前运营轮次。");
+      await automationPanel.refresh();
+      await updatePermissionCapsule();
+    } catch (e) {
+      notice(e.message, true);
+    }
+  };
+}
+if ($("refresh-operations")) {
+  $("refresh-operations").onclick = async () => {
+    await Promise.allSettled([automationPanel.refresh(), updatePermissionCapsule()]);
+    notice("社区运营数据已刷新。");
+  };
+}
+
 window.addEventListener("hashchange", changePage);
 window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; } });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });

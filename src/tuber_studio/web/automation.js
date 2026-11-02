@@ -126,6 +126,7 @@ class AutomationPanel {
         this.dirty = false;
         this.$("[data-settings-state]").textContent = "基础设置已保存。";
         await this.refresh();
+        if (typeof updatePermissionCapsule === "function") await updatePermissionCapsule();
       });
     };
     for (const button of root.querySelectorAll("[data-tab]")) {
@@ -196,6 +197,7 @@ class AutomationPanel {
       if (this.pending.has("emergency") || this.value?.policy?.emergency) {
         this.confirming = false;
         await this.refresh();
+        if (typeof updatePermissionCapsule === "function") await updatePermissionCapsule();
         this.feedback("紧急停止仍生效；预检不会开启自动化。");
         return;
       }

@@ -18,8 +18,7 @@
     <aside class="sidebar">
       <a class="brand" href="#comments"><span class="brand-mark">TS</span><span>Tuber Studio<small>本地角色运行时</small></span></a>
       <nav aria-label="功能区">
-        <a href="#comments" data-page="comments"><span aria-hidden="true">▤</span>评论工作台</a>
-        <a href="#automation" data-page="automation"><span aria-hidden="true">⌁</span>自主浏览与互动</a>
+        <a href="#comments" data-page="comments"><span aria-hidden="true">📺</span>社区运营</a>
         <a href="#messages" data-page="messages"><span aria-hidden="true">✉</span>私信工作台</a>
         <a href="#dynamics" data-page="dynamics"><span aria-hidden="true">✎</span>动态运营</a>
         <a href="#overview" data-page="overview"><span aria-hidden="true">◫</span>总览</a>
@@ -34,13 +33,22 @@
     </aside>
     <div class="main-shell">
       <header class="topbar account-topbar">
-        <div class="status-line"><span id="live-state" class="badge">读取状态</span><span id="global-character">—</span><span id="overlay-state" class="muted">播放器未连接</span><span id="context-state" class="muted">上下文能力待验证</span><span id="inference-state" class="muted" aria-live="polite" hidden></span></div>
+        <div class="status-line">
+          <span id="live-state" class="badge">就绪</span>
+          <span id="global-character" class="badge active">—</span>
+          <span id="inference-state" class="muted" aria-live="polite"></span>
+          <button type="button" id="permission-capsule" class="permission-capsule" data-tier="draft" title="点击跳转至设置配置权限矩阵">
+            <span id="capsule-icon">📝</span> <span id="capsule-text">权限：草稿生成·人工审核后发布</span>
+          </button>
+        </div>
         <span id="connection" class="muted">连接中</span>
         <div id="global-bilibili-account" class="global-bilibili-account"></div>
-        <div class="mode-workspace">
+        <div class="mode-workspace" style="display:none;">
           <fieldset class="resource-modes" aria-describedby="resource-mode-help"><legend>资源工作模式</legend><div class="mode-buttons"><button type="button" data-inference-mode="text" aria-pressed="false" disabled>文本模式</button><button type="button" data-inference-mode="live" aria-pressed="false" disabled>直播（后续）</button></div></fieldset>
-          <p id="resource-mode-help" class="hint">首版以评论与文本为主；直播和本地动态语音后续开放。默认 MiniCPM 模型只处理文本。</p>
-          <span id="resource-mode-feedback" class="hint" role="status">等待资源模式状态。</span>
+          <p id="resource-mode-help" class="hint"></p>
+          <span id="resource-mode-feedback" class="hint" role="status"></span>
+          <span id="overlay-state"></span>
+          <span id="context-state"></span>
         </div>
       </header>
       <div id="notice" class="notice" role="status" hidden></div>
@@ -49,15 +57,68 @@
       <div id="context-warning" class="notice warning" role="status" hidden></div>
       <div id="inference-error" class="notice error" role="alert" hidden></div>
       <main class="content">
-        <section data-section="automation" hidden><div id="automation-panel"></div></section>
+        <section data-section="automation" hidden></section>
         <section data-section="comments" hidden>
-          <div class="page-heading"><div><p class="eyebrow">先阅读，再决定如何回应</p><h1>评论工作台</h1></div><button id="refresh-videos">逛逛热门视频</button></div>
-          <article class="panel"><div class="panel-heading"><h2>读取视频评论</h2><span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span></div><form id="fetch-comments-form" class="fetch-row"><label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label><label>最多页数<select id="comment-pages"><option value="1">1 页</option><option value="2">2 页</option><option value="3">3 页</option><option value="5">5 页</option></select></label><button class="primary" type="submit">读取评论</button></form><p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p><div id="popular-videos" class="video-list" hidden></div><details class="subsection"><summary>导入已有 JSON / CSV 评论</summary><form id="import-comments-form"><label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label><label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="6" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"这期会有续集吗？"}]' required></textarea></label><p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。内容保留在输入框，导入失败后可以修正重试。</p><details><summary>高级字段映射（标准字段可留空）</summary><label>字段映射 JSON<textarea id="import-mapping" class="code-editor compact-editor" rows="3" placeholder='{"comment_id":"id","platform_user_id":"uid","display_name":"name","content":"message"}' spellcheck="false"></textarea></label><p class="hint">按「目标字段: 来源字段」填写。目标支持 comment_id、platform_user_id、display_name、content、like_count、created_at、thread_id、parent_comment_id；未填写的字段使用同名来源。楼ID缺省取评论ID，父评论ID可空。</p></details><div class="actions import-actions"><button id="preview-import" type="button">预览导入</button><button id="submit-import" class="primary" type="submit" disabled>导入评论</button><span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span></div><div id="import-preview" class="table-scroll import-preview" hidden><table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table></div></form></details></article>
-          <article class="panel"><div class="panel-heading"><h2>浏览与回复设置</h2><span id="reply-mode" class="badge">人工审核</span></div><p id="comment-policy-overlay" class="feature-note" hidden><span id="comment-policy-overlay-text"></span> <a href="#automation">自主浏览与互动 →</a></p><form id="comment-policy-form"><div class="policy-checks"><label><input id="auto-browse" type="checkbox">自动浏览关注视频</label><label><input id="auto-reply" type="checkbox">自动发布角色回复</label><button id="stop-auto-reply" type="button" class="danger">停止自动回复</button></div><details class="policy-details"><summary>关注视频与频率</summary><div class="form-grid"><label>关注视频（每行一个 BV 号）<textarea id="watch-videos" rows="3" placeholder="BV…"></textarea></label><div class="form-grid"><label>浏览间隔（秒）<input id="browse-interval" type="number" min="60" value="300"></label><label>每小时最多回复<input id="replies-hour" type="number" min="1" value="5"></label><label>每天最多回复<input id="replies-day" type="number" min="1" value="20"></label></div></div><p class="hint">B站账号与凭证统一在 <a href="#settings">设置 → B站账号</a> 中管理。</p></details><div class="actions policy-actions"><button type="submit">保存回复设置</button><span id="comment-policy-base-note" class="hint">默认人工审核。编辑个人基础设置；自动化覆盖期间的实际状态在工作区显示。</span></div></form></article>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">视频浏览 · 角色主评 · 评论互动 · 审核发布</p>
+              <h1>社区运营工作台</h1>
+            </div>
+            <div class="actions">
+              <button id="op-preview-round" type="button">单轮运营预览</button>
+              <button id="op-toggle-auto" type="button" class="primary">开启自主运营</button>
+              <button id="op-stop-round" type="button" class="danger">停止本轮</button>
+              <button id="refresh-operations" type="button">刷新</button>
+              <button id="refresh-videos" type="button" hidden></button>
+            </div>
+          </div>
 
-          <div class="comment-toolbar"><label>视频筛选<input id="filter-video" placeholder="全部视频"></label><label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label><label>类别<select id="filter-category"><option value="">全部类别</option><option value="question">问题</option><option value="suggestion">建议 / 反馈</option><option value="interaction">适合互动</option><option value="spam">垃圾</option><option value="general">一般评论</option></select></label><label>草稿状态<select id="filter-status"><option value="">全部状态</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label><button id="filter-comments">筛选</button><button id="analyze-comments">归类评论</button><button id="generate-drafts" class="primary">为选中评论生成草稿</button><button id="compact-comments">压缩当前楼上下文</button><button id="rebuild-comments" aria-describedby="thread-rebuild-state">重建上下文</button></div><p id="comment-context-state" class="hint">上下文能力待验证。</p><p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。</p><p id="thread-rebuild-state" class="hint" role="status">仅从本地现存评论原文重建当前楼，不重新抓取外网；已有非空上下文不会覆盖，原文不存在时无法重建。</p>
-          <div class="comment-layout"><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel"><div class="panel-heading"><h2>回复草稿</h2><span id="draft-status" class="badge">选择评论</span></div><p id="draft-source" class="quoted-text">选择列表中的评论，查看角色草稿及来源。</p><dl id="draft-meta" class="description-list"></dl><label>编辑回复<textarea id="draft-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-draft" class="primary" disabled>审核通过</button><button id="reject-draft" disabled>拒绝</button><button id="copy-draft" disabled>复制回复</button><button id="publish-draft" disabled>发布已审核回复</button></div><a id="open-private-draft" href="#messages" hidden>查看私信工作台 →</a><p id="draft-note" class="hint">默认人工审核。平台凭证未配置时可复制回复。</p><section id="comment-continuation" hidden></section><details class="subsection"><summary>来源与完整性检查</summary><pre id="draft-answer-check" class="code-small">暂无检查证据。</pre></details></article></div>
-          <article class="panel"><div class="panel-heading"><h2>评论任务</h2><span class="hint">生成任务在后台执行，错误可见</span></div><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></div></article>
+          <!-- Operations Quick Control & Keyword Bar -->
+          <div class="operations-control-bar">
+            <div class="keyword-input-row">
+              <label style="margin:0;font-size:12px;white-space:nowrap;">🔍 搜索关键词：</label>
+              <input id="op-keywords" placeholder="输入搜索关键词（多个用逗号隔开，如：AI, 大肥鱼, VTuber）" style="margin:0;">
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="margin:0;font-size:12px;white-space:nowrap;">发现来源：</label>
+              <select id="op-source" style="width:130px;margin:0;">
+                <option value="recommend">首页推荐</option>
+                <option value="search">关键词搜索</option>
+                <option value="popular">热门榜单</option>
+                <option value="specified">指定视频</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="margin:0;font-size:12px;white-space:nowrap;">单视频回复上限：</label>
+              <input id="op-max-replies" type="number" min="0" max="20" value="2" style="width:65px;margin:0;" title="0代表不回帖；达到上限或无有价值评论自动跳过，不一条道走到黑">
+            </div>
+            <button id="op-save-quick-config" type="button" class="quiet" style="border:1px solid #ccd6e2;">保存设置</button>
+            <button type="button" id="op-permission-capsule-btn" class="permission-capsule" data-tier="draft" title="点击跳转至系统设置调整权限与放行级别">
+              <span>📝 权限：草稿审核态</span>
+            </button>
+          </div>
+
+          <div id="automation-panel"></div>
+
+          <details class="panel" style="margin-top: 24px;">
+            <summary style="font-weight:600;font-size:13px;color:var(--ink);">高级工具：手动录入指定视频 / CSV 评论导入 / 历史列表</summary>
+            <div style="padding-top:16px;">
+              <article class="panel">
+                <div class="panel-heading"><h2>读取视频评论</h2><span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span></div>
+                <form id="fetch-comments-form" class="fetch-row"><label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label><label>最多页数<select id="comment-pages"><option value="1">1 页</option><option value="2">2 页</option><option value="3">3 页</option><option value="5">5 页</option></select></label><button class="primary" type="submit">读取评论</button></form>
+                <p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p>
+                <div id="popular-videos" class="video-list" hidden></div>
+                <details class="subsection"><summary>导入已有 JSON / CSV 评论</summary>
+                  <form id="import-comments-form"><label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label><label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="6" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"这期会有续集吗？"}]' required></textarea></label><p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。内容保留在输入框，导入失败后可以修正重试。</p><details><summary>高级字段映射（标准字段可留空）</summary><label>字段映射 JSON<textarea id="import-mapping" class="code-editor compact-editor" rows="3" placeholder='{"comment_id":"id","platform_user_id":"uid","display_name":"name","content":"message"}' spellcheck="false"></textarea></label><p class="hint">按「目标字段: 来源字段」填写。目标支持 comment_id、platform_user_id、display_name、content、like_count、created_at、thread_id、parent_comment_id；未填写的字段使用同名来源。楼ID缺省取评论ID，父评论ID可空。</p></details><div class="actions import-actions"><button id="preview-import" type="button">预览导入</button><button id="submit-import" class="primary" type="submit" disabled>导入评论</button><span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span></div><div id="import-preview" class="table-scroll import-preview" hidden><table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table></div></form>
+                </details>
+              </article>
+              <article class="panel" style="display:none;"><form id="comment-policy-form"><input id="auto-browse" type="checkbox"><input id="auto-reply" type="checkbox"><button id="stop-auto-reply" type="button"></button><textarea id="watch-videos"></textarea><input id="browse-interval" type="number"><input id="replies-hour" type="number"><input id="replies-day" type="number"><span id="reply-mode"></span><span id="comment-policy-overlay"></span><span id="comment-policy-overlay-text"></span><span id="comment-policy-base-note"></span></form></article>
+              <div class="comment-toolbar"><label>视频筛选<input id="filter-video" placeholder="全部视频"></label><label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label><label>类别<select id="filter-category"><option value="">全部类别</option><option value="question">问题</option><option value="suggestion">建议 / 反馈</option><option value="interaction">适合互动</option><option value="spam">垃圾</option><option value="general">一般评论</option></select></label><label>草稿状态<select id="filter-status"><option value="">全部状态</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label><button id="filter-comments">筛选</button><button id="analyze-comments">归类评论</button><button id="generate-drafts" class="primary">为选中评论生成草稿</button><button id="compact-comments">压缩当前楼上下文</button><button id="rebuild-comments" aria-describedby="thread-rebuild-state">重建上下文</button></div><p id="comment-context-state" class="hint">上下文能力待验证。</p><p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。</p><p id="thread-rebuild-state" class="hint" role="status">仅从本地现存评论原文重建当前楼，不重新抓取外网；已有非空上下文不会覆盖，原文不存在时无法重建。</p>
+              <div class="comment-layout"><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel"><div class="panel-heading"><h2>回复草稿</h2><span id="draft-status" class="badge">选择评论</span></div><p id="draft-source" class="quoted-text">选择列表中的评论，查看角色草稿及来源。</p><dl id="draft-meta" class="description-list"></dl><label>编辑回复<textarea id="draft-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-draft" class="primary" disabled>审核通过</button><button id="reject-draft" disabled>拒绝</button><button id="copy-draft" disabled>复制回复</button><button id="publish-draft" disabled>发布已审核回复</button></div><a id="open-private-draft" href="#messages" hidden>查看私信工作台 →</a><p id="draft-note" class="hint">默认人工审核。平台凭证未配置时可复制回复。</p><section id="comment-continuation" hidden></section><details class="subsection"><summary>来源与完整性检查</summary><pre id="draft-answer-check" class="code-small">暂无检查证据。</pre></details></article></div>
+              <article class="panel"><div class="panel-heading"><h2>评论任务</h2><span class="hint">生成任务在后台执行，错误可见</span></div><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></div></article>
+            </div>
+          </details>
+        </section>
         </section>
         <section data-section="messages" hidden><div id="messages-panel"></div></section>
         <section data-section="dynamics" hidden>
@@ -102,7 +163,91 @@
         <section data-section="assets" hidden><div class="page-heading"><div><p class="eyebrow">角色表情与预录素材</p><h1>素材与表情包</h1></div></div><div id="meme-gallery"></div><h2>角色与预录素材</h2><div id="asset-grid" class="asset-grid"></div></section>
         <section data-section="settings" hidden>
           <div class="page-heading"><div><p class="eyebrow">账号、模型、API 与数据留存</p><h1>设置</h1></div></div>
-          <div id="account-settings"></div><article class="panel"><div class="panel-heading"><h2>表情包</h2><a href="#assets">管理表情包图库 →</a></div><p class="hint">按角色管理可用于私信与图文动态的图片、来源和许可；分别沿用对应工作台的审核与额度。</p></article>
+          <div id="account-settings"></div>
+          <article class="panel" id="operations-permission-matrix">
+            <div class="panel-heading">
+              <h2>运营权限与自动化控制</h2>
+              <span id="matrix-capsule-badge" class="badge">草稿审核态</span>
+            </div>
+            <p class="hint">集中管理社区运营、私信与动态的行为授权、放行级别与安全熔断阈值。修改后即时联动各工作台。</p>
+            
+            <fieldset class="matrix-group">
+              <legend>一、平台凭证与写入权</legend>
+              <div class="matrix-credentials-status">
+                <div class="matrix-status-item">
+                  <span>B站登录凭证 (SESSDATA)：</span>
+                  <strong id="matrix-sessdata-status" class="status-tag">待读取</strong>
+                </div>
+                <div class="matrix-status-item">
+                  <span>CSRF 写入权 (bili_jct)：</span>
+                  <strong id="matrix-csrf-status" class="status-tag">待读取</strong>
+                </div>
+                <div class="matrix-actions">
+                  <a href="#account-settings" class="button quiet">配置或刷新账号凭证 ↑</a>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="matrix-group">
+              <legend>二、动作放行级别</legend>
+              <div class="matrix-action-grid">
+                <div class="matrix-action-card">
+                  <h3>视频看完自发主评</h3>
+                  <p class="hint">视频理解完成后，以角色第一人称发布置顶主评</p>
+                  <div class="matrix-radio-group">
+                    <label><input type="radio" name="matrix_top_level" value="0"> 禁止</label>
+                    <label><input type="radio" name="matrix_top_level" value="1" checked> 存为草稿 (需审核)</label>
+                    <label><input type="radio" name="matrix_top_level" value="2"> 自动发布</label>
+                  </div>
+                </div>
+                <div class="matrix-action-card">
+                  <h3>评论区跟帖回复</h3>
+                  <p class="hint">进入评论区筛选有价值评论，自主决定是否跟帖</p>
+                  <div class="matrix-radio-group">
+                    <label><input type="radio" name="matrix_reply" value="0"> 禁止</label>
+                    <label><input type="radio" name="matrix_reply" value="1" checked> 存为草稿 (需审核)</label>
+                    <label><input type="radio" name="matrix_reply" value="2"> 自动发布</label>
+                  </div>
+                </div>
+                <div class="matrix-action-card">
+                  <h3>私信沟通与移交</h3>
+                  <p class="hint">观众主动私信或评论区深聊转私信</p>
+                  <div class="matrix-radio-group">
+                    <label><input type="radio" name="matrix_dm" value="0"> 禁止</label>
+                    <label><input type="radio" name="matrix_dm" value="1" checked> 存为草稿 (需审核)</label>
+                    <label><input type="radio" name="matrix_dm" value="2"> 自动发布</label>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="matrix-group">
+              <legend>三、安全熔断与频率阈值</legend>
+              <div class="form-grid">
+                <label>单视频最大回复数上限
+                  <input id="matrix-max-replies-video" type="number" min="0" max="20" value="2">
+                  <small class="hint">0 为不回帖；达到上限或无有价值评论自动跳过，不一条道走到黑</small>
+                </label>
+                <label>单轮互动总量上限
+                  <input id="matrix-max-per-round" type="number" min="1" max="50" value="5">
+                  <small class="hint">单轮内主评与回帖总额度上限</small>
+                </label>
+                <label>全天互动总量上限
+                  <input id="matrix-max-per-day" type="number" min="1" max="200" value="20">
+                  <small class="hint">24小时内所有自动发布总上限</small>
+                </label>
+                <label class="check-field" style="margin-top: 1.5rem;">
+                  <input id="matrix-auto-downgrade" type="checkbox" checked>
+                  遇到连续平台报错自动降级为“仅草稿”
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="actions">
+              <button id="matrix-save" type="button" class="primary">保存权限矩阵配置</button>
+              <span id="matrix-save-feedback" class="hint" role="status"></span>
+            </div>
+          </article><article class="panel"><div class="panel-heading"><h2>表情包</h2><a href="#assets">管理表情包图库 →</a></div><p class="hint">按角色管理可用于私信与图文动态的图片、来源和许可；分别沿用对应工作台的审核与额度。</p></article>
           <article class="panel" id="providers-panel"><div class="panel-heading"><h2>模型与 API</h2><span id="providers-dirty" class="hint">正在读取已保存配置…</span></div>
             <form id="providers-form"><fieldset id="provider-fields" class="provider-fields" disabled>
               <fieldset class="provider-group"><legend>文本模型与上下文</legend>
