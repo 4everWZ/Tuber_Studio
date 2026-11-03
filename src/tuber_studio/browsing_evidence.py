@@ -96,7 +96,9 @@ class BrowsingEvidence:
     def source_version(material):
         metadata = material["metadata"]
         raw_tags = metadata.get("tags")
-        sorted_tags = sorted([t for t in raw_tags if isinstance(t, str)]) if isinstance(raw_tags, list) else raw_tags
+        sorted_tags = (
+            sorted([t for t in raw_tags if isinstance(t, str)]) if isinstance(raw_tags, list) else raw_tags
+        )
         stable = {
             k: metadata.get(k)
             for k in (
@@ -296,7 +298,9 @@ class BrowsingEvidence:
             timestamps = None
             if parts:
                 all_segs = [
-                    s for p in parts for s in p.get("segments", [])
+                    s
+                    for p in parts
+                    for s in p.get("segments", [])
                     if isinstance(s, dict) and "start" in s and "end" in s
                 ]
                 if all_segs:
@@ -405,17 +409,18 @@ class BrowsingEvidence:
         try:
             async with asyncio.timeout(max(0, deadline - time.time())):
                 import inspect
+
                 sig = inspect.signature(self.adapter.video_frames)
                 call_args = [metadata, min(3, capabilities["max_frames"])]
-                call_kwargs = {"timestamps": timestamps} if "timestamps" in sig.parameters and timestamps else {}
+                call_kwargs = (
+                    {"timestamps": timestamps} if "timestamps" in sig.parameters and timestamps else {}
+                )
                 if call_kwargs:
                     frames = await self.reader(
                         lambda *a: self.adapter.video_frames(*a, **call_kwargs), *call_args
                     )
                 else:
-                    frames = await self.reader(
-                        self.adapter.video_frames, *call_args
-                    )
+                    frames = await self.reader(self.adapter.video_frames, *call_args)
                 if (
                     not isinstance(frames, list)
                     or not frames

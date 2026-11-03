@@ -105,12 +105,14 @@ def deduplicate_subtitles(raw_segments: list[dict]) -> list[dict]:
         text = clean_stutter(text)
         if not text:
             continue
-        cleaned.append({
-            **seg,
-            "text": text,
-            "start": float(seg["start"]),
-            "end": float(seg["end"]),
-        })
+        cleaned.append(
+            {
+                **seg,
+                "text": text,
+                "start": float(seg["start"]),
+                "end": float(seg["end"]),
+            }
+        )
 
     if not cleaned:
         return []

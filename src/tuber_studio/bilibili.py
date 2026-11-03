@@ -189,7 +189,7 @@ class BilibiliAdapter:
                 raise ValueError(
                     f"B 站读取失败（HTTP {error.response.status_code}），请检查权限或风控状态"
                 ) from None
-            except (httpx.TimeoutException, httpx.ConnectError) as error:
+            except (httpx.TimeoutException, httpx.ConnectError):
                 if attempt == 0:
                     await asyncio.sleep(0.8)
                     continue
@@ -441,11 +441,15 @@ class BilibiliAdapter:
         info = await self._video(video_id)
         if not folder_id:
             nav_payload = await self._get_payload("/x/web-interface/nav", {})
-            nav_data = _data(nav_payload) if isinstance(nav_payload, dict) and nav_payload.get("code") == 0 else {}
+            nav_data = (
+                _data(nav_payload) if isinstance(nav_payload, dict) and nav_payload.get("code") == 0 else {}
+            )
             mid = nav_data.get("mid")
             if not mid:
                 raise ValueError("获取账号信息失败，无法查询默认收藏夹")
-            folders_data = _data(await self._get_payload("/x/v3/fav/folder/created/list-all", {"up_mid": mid}))
+            folders_data = _data(
+                await self._get_payload("/x/v3/fav/folder/created/list-all", {"up_mid": mid})
+            )
             folders = folders_data.get("list") if isinstance(folders_data, dict) else []
             if not folders:
                 raise ValueError("未找到可用收藏夹")

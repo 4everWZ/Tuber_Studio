@@ -1,12 +1,9 @@
 """Tests for thread context, depth=1 anti-nesting and agent lifecycle."""
 
-import asyncio
-import contextvars
-import json
 import pytest
 
-from tuber_studio.browsing import BrowsingService, agent_depth
-from tuber_studio.browsing_models import BrowsingPolicy, RESPONSE_INSTRUCTION
+from tuber_studio.browsing import agent_depth
+from tuber_studio.browsing_models import RESPONSE_INSTRUCTION
 
 
 @pytest.mark.asyncio
@@ -72,7 +69,7 @@ def test_thread_context_assembly_and_timeline():
         rid = str(it.get("thread_id") or it["comment_id"])
         threads_by_root.setdefault(rid, []).append(it)
 
-    target_item = raw_items[2] # 观众B
+    target_item = raw_items[2]  # 观众B
     cid = target_item["comment_id"]
     rid = target_item["thread_id"]
     pid = target_item["parent_comment_id"]
@@ -128,9 +125,7 @@ def test_thread_context_assembly_and_timeline():
 def test_daily_reply_limit_refreshes_after_midnight():
     """Verify replies created today count against quota, while yesterday's do not."""
     import datetime
-    import time
 
-    now = time.time()
     today_midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
     # Yesterday's reply (e.g. 2 hours before midnight)
@@ -206,6 +201,7 @@ def test_permission_matrix_payload_and_frequency_alignment():
 def test_passive_reply_accounted_in_daily_meltdown():
     """Both proactive and passive replies (@ mentions) count towards the daily write limit."""
     import time
+
     now = time.time()
     # Mocking write attempts table rows within last 24h
     attempts = [
@@ -219,4 +215,3 @@ def test_passive_reply_accounted_in_daily_meltdown():
     # Exceeding max_per_day triggers safety meltdown
     is_meltdown = count_last_24h >= max_per_day
     assert is_meltdown is True
-

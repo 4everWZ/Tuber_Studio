@@ -869,9 +869,7 @@ class InferenceBroker:
             else:
                 self.state = "active" if residents else "cold"
                 self.error = (
-                    None
-                    if isinstance(failure, asyncio.CancelledError)
-                    else "Resource transition failed"
+                    None if isinstance(failure, asyncio.CancelledError) else "Resource transition failed"
                 )
             raise
 
