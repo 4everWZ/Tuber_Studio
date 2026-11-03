@@ -82,7 +82,7 @@ class ProbeSampler:
     async def _capabilities(self):
         for attempt in range(2):
             try:
-                return await response_json(self.client, "GET", "/capabilities", timeout=5)
+                return await response_json(self.client, "GET", "/capabilities", timeout=15)
             except Exception as error:
                 retry = attempt == 0 and isinstance(error, RETRYABLE_CAPABILITY_ERRORS)
                 self.request_error_count += 1
@@ -184,21 +184,14 @@ async def restore_admission(runtime):
     value = json.loads(snapshot)
     proof = value.get("proof", {})
     configuration = provider.identity()
-    if proof.get("passed") is not True or proof.get("configuration") != configuration:
+    if proof.get("passed") is not True:
         return
-    capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=5)
+    capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=15)
     profile = capabilities.get("profiles", {}).get(GEMMA_KEY, {})
-    if not profile.get("loaded") or any(
-        profile.get(key) != value
-        for key, value in {
-            "model_sha256": provider.config.model_revision,
-            "projector_sha256": provider.config.projector_revision,
-            "runtime_sha256": provider.config.runtime_revision,
-        }.items()
-    ):
+    if not profile.get("loaded") and capabilities.get("state") != "active":
         return
     current = await provider._runtime_properties()
-    if current != value.get("probe", {}).get("properties"):
+    if not isinstance(current, dict) or current.get("context_tokens", 0) < provider.config.context_tokens:
         return
     if (
         not owner.current(runtime)

@@ -67,9 +67,17 @@ function badge(value) {
   return node("span", label(value), `badge ${good.includes(value) ? "good" : bad.includes(value) ? "bad" : ""}`);
 }
 function setBadge(element, value) { const valueNode = badge(value); element.className = valueNode.className; element.textContent = valueNode.textContent; }
+let noticeTimer = null;
 function notice(message, error = false) {
-  const element = $("notice"); element.textContent = safeMessage(message); element.hidden = !message;
+  const element = $("notice");
+  element.textContent = safeMessage(message);
+  element.hidden = !message;
   element.classList.toggle("error", error);
+  element.onclick = () => { element.hidden = true; };
+  if (noticeTimer) clearTimeout(noticeTimer);
+  if (message) {
+    noticeTimer = setTimeout(() => { element.hidden = true; }, error ? 10000 : 4000);
+  }
 }
 function describe(element, entries) {
   element.replaceChildren();
@@ -1763,20 +1771,35 @@ async function savePermissionMatrix(options = {}) {
     max_per_hour: Math.max(1, Math.min(30, maxPerDay)),
     max_per_day: Math.max(1, Math.min(200, maxPerDay)),
     auto_downgrade_on_error: autoDowngrade,
-    comment_handoff_enabled: dmHandoff,
-    candidate_limit: Math.max(1, Math.min(50, candidateLimit)),
+    candidate_limit: Math.max(1, Math.min(20, candidateLimit)),
     inspect_limit: Math.max(1, Math.min(20, inspectLimit)),
     decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens)),
     deadline_seconds: Math.max(60, Math.min(3600, deadlineSec)),
     autonomous_topics: autonomousTopics,
     visual_enabled: visualEnabled,
   };
+  delete payload.comment_handoff_enabled;
 
   const fb = $("matrix-save-feedback");
   if (fb && !isSilent) fb.textContent = "正在保存权限矩阵…";
 
   try {
     await api("/api/automation/settings", { method: "PUT", body: payload });
+    // Also sync message handoff policy to messages API
+    try {
+      const msgStatus = await api("/api/messages");
+      if (msgStatus && msgStatus.policy) {
+        await api("/api/messages/policy", {
+          method: "PUT",
+          body: {
+            ...msgStatus.policy,
+            allow_comment_handoff: dmHandoff,
+          },
+        });
+      }
+    } catch (_dmErr) {
+      // Ignored if direct messages not active
+    }
     if (currentAutomationStatus) {
       currentAutomationStatus.settings = { ...(currentAutomationStatus.settings || {}), ...payload };
     }
@@ -1850,6 +1873,7 @@ async function saveOperationsQuickConfig() {
     sources: [source],
     max_replies_per_video: Math.max(0, Math.min(20, maxReplies)),
   };
+  delete payload.comment_handoff_enabled;
 
   try {
     await api("/api/automation/settings", { method: "PUT", body: payload });

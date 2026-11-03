@@ -137,6 +137,7 @@ class Runtime:
                 if observed.get("provider_alignment_error"):
                     await self.refresh_inference()
             await self.llm.health()
+            self.error = None
         except Exception as error:
             self.error = public_error(error)
         if getattr(self, "browsing", None):
@@ -233,7 +234,9 @@ class Runtime:
         if owner.client is None:
             raise ValueError("当前运行方式未启用设备资源模式")
         try:
-            response = await owner.client.get("/health", timeout=httpx.Timeout(2, connect=1))
+            is_remote = self.settings.data.get("inference_broker", {}).get("deployment") == "remote"
+            health_timeout = httpx.Timeout(10, connect=5) if is_remote else httpx.Timeout(4, connect=2)
+            response = await owner.client.get("/health", timeout=health_timeout)
             response.raise_for_status()
             observed = response.json()
         except Exception:
@@ -255,12 +258,19 @@ class Runtime:
 
     async def _observe_inference(self):
         iteration = 0
+        consecutive_failures = 0
         while True:
             owner = ObservationOwner.capture(self)
             try:
                 await self.refresh_inference()
+                consecutive_failures = 0
+                if self.error and ("超时" in self.error or "连接" in self.error):
+                    self.error = None
             except Exception as error:
-                if owner.current(self):
+                consecutive_failures += 1
+                if owner.current(self) and (
+                    consecutive_failures >= 3 or self.inference_status.get("state") == "error"
+                ):
                     self.inference_status = self.inference_status | {
                         "state": "error",
                         "active": None,

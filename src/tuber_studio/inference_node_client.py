@@ -21,7 +21,7 @@ async def refresh_capabilities(runtime):
     if not owner.client:
         raise ValueError("尚未配置推理节点")
     try:
-        value = await response_json(owner.client, "GET", "/capabilities", timeout=5)
+        value = await response_json(owner.client, "GET", "/capabilities", timeout=15)
         if value.get("protocol") != "tuber-inference-node" or value.get("protocol_version") != 1:
             raise ValueError("推理节点协议不兼容")
     except Exception:

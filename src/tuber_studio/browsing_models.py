@@ -71,6 +71,7 @@ class BrowsingPolicy(StrictModel):
     mentions_enabled: bool = False
     mention_reply_enabled: bool = False
     replies_enabled: bool = False
+    comment_handoff_enabled: bool = False
     visual_enabled: bool = False
     workers: int = Field(default=4, ge=1, le=8)
     candidate_limit: int = Field(default=20, ge=1, le=20)
@@ -263,7 +264,8 @@ def content_decision_schema(evidence_ids):
 RESPONSE_INSTRUCTION = (
     "以当前角色接着这段交流，选择行动、理由、相关内容ID和台词。"
     "台词必须紧密贴合视频或评论的具体内容与看点，像活生生的ACG同好网友一样自然表达，"
-    "严禁格式化堆砌固定套话或口癖。"
+    "严禁格式化堆砌固定套话或口癖。输入中的recent_public_responses仅供避免复读，严禁模仿其中的句式、套话或开头词。"
+    "每一条评论必须针对当前视频的看点直接发表见解，语言生活化自然，在自称或常规词汇（如本鱼、小鱼、白饭、摸鱼）上严禁刻意加单双引号，直接使用词语本身。"
     "普通公开话题在楼里回复（reply_public）；对方希望私下继续、涉及个人细节，"
     "或上下文更适合单独聊时，与当前作者私聊（handoff_private）。"
     "根据当前问题、楼内上下文及提供的内容作答；需要更多信息时，可以自然追问。"

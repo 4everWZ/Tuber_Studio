@@ -69,6 +69,12 @@ class OperationsControl:
             store.db.execute(
                 "UPDATE operation_write_retries SET status='uncertain',error='发送中重启，等待核对状态' WHERE status='sending'"
             )
+            # Cold start: Force autonomous operations into standby (enabled=False).
+            # Requires explicit manual activation by the user clicking "开启自主运营" in UI.
+            policy = store.get("operations_policy", {})
+            if policy.get("enabled"):
+                policy["enabled"] = False
+                store.set("operations_policy", policy)
 
     def policy(self):
         value = OperationsPolicy.model_validate(self.store.get("operations_policy", {})).model_dump()

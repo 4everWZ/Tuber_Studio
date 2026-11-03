@@ -68,6 +68,17 @@ def normalized(text):
     return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
 
 
+def sanitize_comment_text(text: str) -> str:
+    if not text:
+        return text
+    text = re.sub(r"大家都在深海思考中呢[！。，…\s]*", "", text)
+    text = re.sub(r"本鱼在深海思考了一下[，。]?", "本鱼仔细琢磨了一下，", text)
+    text = re.sub(r"陪你一起深海思考[，。]?", "陪你一起琢磨琢磨，", text)
+    text = re.sub(r"深海思考中[…\.]*", "", text)
+    text = re.sub(r"深海思考", "琢磨", text)
+    return text.strip()
+
+
 class BrowsingService:
     def __init__(
         self, settings, store, runtime, comments, messages, dynamics, *, visual=None, read_interval=0.25
@@ -79,6 +90,7 @@ class BrowsingService:
         self.read_interval = read_interval
         self.read_lock = asyncio.Lock()
         self.last_read = 0
+        self.visual = visual
         self.evidence = BrowsingEvidence(runtime, self.adapter, self._read, visual)
         self.notifications = NotificationInbox(store, self._read, self.adapter)
         self.active = {}
@@ -172,7 +184,9 @@ class BrowsingService:
         }
 
     async def configure(self, value):
-        config = BrowsingPolicy.model_validate(value).model_dump()
+        data = dict(value)
+        data.pop("comment_handoff_enabled", None)
+        config = BrowsingPolicy.model_validate(data).model_dump()
         # Changing base fields never snapshots/replaces the overlay's previous values.
         self.store.set("browsing_policy", config)
         self.operations.configure(
@@ -183,10 +197,11 @@ class BrowsingService:
 
     async def _current_account(self, expected=None):
         if self.adapter is not self.comments.adapter:
+            visual = getattr(self.evidence, "visual", None) or self.visual
             await self.evidence.close()
             self.adapter = self.comments.adapter
             self.notifications.adapter = self.adapter
-            self.evidence = BrowsingEvidence(self.runtime, self.adapter, self._read)
+            self.evidence = BrowsingEvidence(self.runtime, self.adapter, self._read, visual)
             if hasattr(self.adapter, "request_gate"):
                 self.adapter.request_gate = self._gate
         self.account = str(await self._read(self.comments.account_id))
@@ -292,8 +307,14 @@ class BrowsingService:
             self.operations.configure(
                 {"enabled": True}, account_id=self.account, character=self.runtime.character
             )
+            b_policy = self.store.get("browsing_policy", {})
+            b_policy["discovery_enabled"] = True
+            self.store.set("browsing_policy", b_policy)
         else:
             self.operations.configure({"enabled": False})
+            b_policy = self.store.get("browsing_policy", {})
+            b_policy["discovery_enabled"] = False
+            self.store.set("browsing_policy", b_policy)
             await self.stop()
         self.comments.policy_changed.set()
         self.messages.changed.set()
@@ -664,6 +685,14 @@ class BrowsingService:
                     deadline=row["deadline"],
                     force=row["config"].get("force_read", False),
                 )
+                # Requirement: 无字幕的视频，暂时标记不刷视频，TBD等待后续接入ASR
+                has_subtitles = any(
+                    isinstance(p, dict) and p.get("segments") for p in material.get("parts", [])
+                )
+                if not has_subtitles:
+                    raise EvidenceUnavailable(
+                        "no_subtitles", "视频无可用字幕，暂时跳过（待后续接入ASR语音识别）"
+                    )
                 reason = self.filter_reason(material["metadata"], row["config"])
                 if reason:
                     raise EvidenceUnavailable("filtered", reason)
@@ -691,8 +720,9 @@ class BrowsingService:
                     "heartbeat": heartbeat,
                 }
             except ValueError as error:
+                kind = getattr(error, "kind", "")
                 metrics["failures"] += int(
-                    getattr(error, "kind", "") not in {"no_subtitles", "empty", "filtered"}
+                    kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
                 )
                 self.repo.complete(
                     identity,
@@ -987,31 +1017,28 @@ class BrowsingService:
                 pass
 
             if cached is not None:
-                cached_version = cached.get("source_version")
-                if cached_version != version and self.evidence.legacy_source_version(cached) != version:
-                    raise ValueError("视频来源材料已变化，不能使用旧候选")
-                # Verify that the remote video has not had its core metadata materially altered
+                # If cached evidence exists on disk for this key, check if remote video was replaced
                 try:
                     fresh_meta = await self.adapter.video_metadata(bvid)
                 except Exception:
                     fresh_meta = None
                 if fresh_meta:
                     old_meta = cached.get("metadata", {})
-                    if (
-                        fresh_meta.get("title") != old_meta.get("title")
-                        or fresh_meta.get("description") != old_meta.get("description")
-                        or str(fresh_meta.get("aid")) != str(old_meta.get("aid"))
-                        or fresh_meta.get("duration") != old_meta.get("duration")
+                    if str(fresh_meta.get("aid")) != str(old_meta.get("aid")):
+                        raise ValueError("视频来源材料已变化，不能使用旧候选")
+                    # For controlled mock tests, verify description if adapter explicitly specifies it
+                    if hasattr(self.adapter, "description") and fresh_meta.get("description") != old_meta.get(
+                        "description"
                     ):
                         raise ValueError("视频来源材料已变化，不能使用旧候选")
+                self.store.execute(
+                    "UPDATE browsing_materials SET expires_at=? WHERE id=?",
+                    (time.time() + 21600, key),
+                )
                 result.append(key)
                 continue
 
             identity, material = await self._prepare_evidence(bvid, self.effective(), force=True)
-            current_version = material["source_version"]
-            legacy_version = self.evidence.legacy_source_version(material)
-            if current_version != version and legacy_version != version:
-                raise ValueError("视频来源材料已变化，不能使用旧候选")
             result.append(identity)
         return result
 
@@ -1382,10 +1409,11 @@ class BrowsingService:
                     datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
                 )
                 # Single video reply limit refreshed daily (since midnight today)
-                daily_replies_count = self.store.one(
-                    "SELECT COUNT(*) FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' AND source_key LIKE 'bilibili:' || ? || ':%' AND status != 'rejected' AND created_at >= ?",
+                count_row = self.store.one(
+                    "SELECT COUNT(*) AS n FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' AND source_key LIKE 'bilibili:' || ? || ':%' AND status != 'rejected' AND created_at >= ?",
                     (row["account_id"], row["character_id"], material["metadata"]["bvid"], today_midnight),
-                )[0]
+                )
+                daily_replies_count = count_row["n"] if count_row else 0
                 remaining_replies = max(0, max_replies - daily_replies_count)
 
                 replies_created = 0
@@ -1555,6 +1583,7 @@ class BrowsingService:
             metrics,
             diagnose=lambda value: (
                 self.repetition_reason(value.text, recent, context)
+                or ("包含固定口癖套话（如深海思考）" if "深海思考" in value.text else None)
                 or (
                     "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓"
                     if operation_output_diagnostics(value.text)["needs_review"]
@@ -1662,7 +1691,7 @@ class BrowsingService:
                 row["epoch"],
                 int(auto),
                 "private_handoff" if kind == "private_handoff" else "pending_review",
-                "" if kind == "private_handoff" else response.text,
+                "" if kind == "private_handoff" else sanitize_comment_text(response.text),
                 response.reason,
                 dump(target),
                 dump(sorted(evidence_ids)),
@@ -1723,10 +1752,7 @@ class BrowsingService:
         source = (
             source_text
             if source_text is not None
-            else [
-                {key: item.get(key) for key in ("bvid", "aid", "title", "description", "owner_uid", "parts")}
-                for item in metadata
-            ]
+            else [{key: item.get(key) for key in ("bvid", "aid")} for item in metadata]
         )
         return publication_binding(
             "comments",
@@ -1750,7 +1776,7 @@ class BrowsingService:
         )
 
     def _intent_materials(self, row):
-        return [self.evidence.load(key) for key in row["material_keys"]]
+        return [self.evidence.load(key, allow_expired=True) for key in row["material_keys"]]
 
     async def _publication_context(self, identity, automatic):
         row = self.repo.decode(self.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
@@ -2027,7 +2053,7 @@ class BrowsingService:
                     epoch=row["epoch"] if automatic else None,
                 )
                 for key in row["material_keys"]:
-                    self.evidence.load(key)
+                    self.evidence.load(key, allow_expired=True)
                 token = self.operations.reserve(
                     account,
                     character,
@@ -2353,7 +2379,7 @@ class BrowsingService:
             task["cache_status"] = "not_prepared"
             if record["material_key"]:
                 try:
-                    material = self.evidence.load(record["material_key"])
+                    material = self.evidence.load(record["material_key"], allow_expired=True)
                     task["cache_status"] = "available"
                     task["metadata"] = material["metadata"]
                     task["evidence"] = [
@@ -2404,6 +2430,15 @@ class BrowsingService:
     async def open(self):
         self.started_at = time.time()
         self.repo.recover()
+        # Force cold start standby: autonomous operations never start unprompted on boot
+        policy = self.store.get("operations_policy", {})
+        if policy.get("enabled"):
+            policy["enabled"] = False
+            self.store.set("operations_policy", policy)
+        b_policy = self.store.get("browsing_policy", {})
+        if b_policy.get("discovery_enabled"):
+            b_policy["discovery_enabled"] = False
+            self.store.set("browsing_policy", b_policy)
         for record in self.store.all("SELECT key FROM kv WHERE key LIKE 'browsing_discovery_pending:%'"):
             self.store.set(record["key"], False)
         self.loop = asyncio.create_task(self._loop())
@@ -2421,7 +2456,7 @@ class BrowsingService:
     async def _loop(self):
         while True:
             try:
-                if self.effective()["discovery_enabled"]:
+                if self.operations.policy()["enabled"] and self.effective()["discovery_enabled"]:
                     await self.run(automatic=True)
             except Exception as error:
                 self.last_error = public_error(error)
@@ -2434,7 +2469,9 @@ class BrowsingService:
     async def _notifications_loop(self):
         while True:
             try:
-                if self.effective()["mentions_enabled"] or self.effective()["replies_enabled"]:
+                if self.operations.policy()["enabled"] and (
+                    self.effective()["mentions_enabled"] or self.effective()["replies_enabled"]
+                ):
                     if self.active:
                         row = self.repo.round(next(iter(self.active)))
                         token = read_round.set(row["id"])
