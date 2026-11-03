@@ -79,6 +79,7 @@ class BrowsingService:
         self.read_interval = read_interval
         self.read_lock = asyncio.Lock()
         self.last_read = 0
+        self.visual = visual
         self.evidence = BrowsingEvidence(runtime, self.adapter, self._read, visual)
         self.notifications = NotificationInbox(store, self._read, self.adapter)
         self.active = {}
@@ -185,10 +186,11 @@ class BrowsingService:
 
     async def _current_account(self, expected=None):
         if self.adapter is not self.comments.adapter:
+            visual = getattr(self.evidence, "visual", None) or self.visual
             await self.evidence.close()
             self.adapter = self.comments.adapter
             self.notifications.adapter = self.adapter
-            self.evidence = BrowsingEvidence(self.runtime, self.adapter, self._read)
+            self.evidence = BrowsingEvidence(self.runtime, self.adapter, self._read, visual)
             if hasattr(self.adapter, "request_gate"):
                 self.adapter.request_gate = self._gate
         self.account = str(await self._read(self.comments.account_id))
@@ -294,8 +296,14 @@ class BrowsingService:
             self.operations.configure(
                 {"enabled": True}, account_id=self.account, character=self.runtime.character
             )
+            b_policy = self.store.get("browsing_policy", {})
+            b_policy["discovery_enabled"] = True
+            self.store.set("browsing_policy", b_policy)
         else:
             self.operations.configure({"enabled": False})
+            b_policy = self.store.get("browsing_policy", {})
+            b_policy["discovery_enabled"] = False
+            self.store.set("browsing_policy", b_policy)
             await self.stop()
         self.comments.policy_changed.set()
         self.messages.changed.set()
@@ -1012,6 +1020,10 @@ class BrowsingService:
                         "description"
                     ):
                         raise ValueError("视频来源材料已变化，不能使用旧候选")
+                self.store.execute(
+                    "UPDATE browsing_materials SET expires_at=? WHERE id=?",
+                    (time.time() + 21600, key),
+                )
                 result.append(key)
                 continue
 
@@ -1752,7 +1764,7 @@ class BrowsingService:
         )
 
     def _intent_materials(self, row):
-        return [self.evidence.load(key) for key in row["material_keys"]]
+        return [self.evidence.load(key, allow_expired=True) for key in row["material_keys"]]
 
     async def _publication_context(self, identity, automatic):
         row = self.repo.decode(self.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
@@ -2029,7 +2041,7 @@ class BrowsingService:
                     epoch=row["epoch"] if automatic else None,
                 )
                 for key in row["material_keys"]:
-                    self.evidence.load(key)
+                    self.evidence.load(key, allow_expired=True)
                 token = self.operations.reserve(
                     account,
                     character,
@@ -2355,7 +2367,7 @@ class BrowsingService:
             task["cache_status"] = "not_prepared"
             if record["material_key"]:
                 try:
-                    material = self.evidence.load(record["material_key"])
+                    material = self.evidence.load(record["material_key"], allow_expired=True)
                     task["cache_status"] = "available"
                     task["metadata"] = material["metadata"]
                     task["evidence"] = [
@@ -2411,6 +2423,10 @@ class BrowsingService:
         if policy.get("enabled"):
             policy["enabled"] = False
             self.store.set("operations_policy", policy)
+        b_policy = self.store.get("browsing_policy", {})
+        if b_policy.get("discovery_enabled"):
+            b_policy["discovery_enabled"] = False
+            self.store.set("browsing_policy", b_policy)
         for record in self.store.all("SELECT key FROM kv WHERE key LIKE 'browsing_discovery_pending:%'"):
             self.store.set(record["key"], False)
         self.loop = asyncio.create_task(self._loop())
@@ -2428,7 +2444,7 @@ class BrowsingService:
     async def _loop(self):
         while True:
             try:
-                if self.effective()["discovery_enabled"]:
+                if self.operations.policy()["enabled"] and self.effective()["discovery_enabled"]:
                     await self.run(automatic=True)
             except Exception as error:
                 self.last_error = public_error(error)
@@ -2441,7 +2457,9 @@ class BrowsingService:
     async def _notifications_loop(self):
         while True:
             try:
-                if self.effective()["mentions_enabled"] or self.effective()["replies_enabled"]:
+                if self.operations.policy()["enabled"] and (
+                    self.effective()["mentions_enabled"] or self.effective()["replies_enabled"]
+                ):
                     if self.active:
                         row = self.repo.round(next(iter(self.active)))
                         token = read_round.set(row["id"])

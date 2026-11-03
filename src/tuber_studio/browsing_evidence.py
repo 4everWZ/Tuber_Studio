@@ -37,11 +37,11 @@ class BrowsingEvidence:
             raise ValueError("浏览缓存目录不能使用链接")
         self.directory.mkdir(exist_ok=True)
 
-    def load(self, identity):
+    def load(self, identity, *, allow_expired=False):
         if not isinstance(identity, str) or not re.fullmatch(r"[a-f0-9]{64}", identity):
             raise EvidenceUnavailable("invalid", "浏览材料标识无效")
         row = self.store.one("SELECT * FROM browsing_materials WHERE id=?", (identity,))
-        if not row or row["expires_at"] < time.time():
+        if not row or (not allow_expired and row["expires_at"] < time.time()):
             raise EvidenceUnavailable("expired", "原始材料已失效，需重新读取")
         path = self.directory / (identity + ".json")
         if linked(self.directory) or linked(path) or not path.is_file():
@@ -291,7 +291,7 @@ class BrowsingEvidence:
                 missing.append({"cid": part["cid"], "reason": kind})
         visual_frames = []
         if not parts or require_visual:
-            if not config["visual_enabled"]:
+            if not parts and not config["visual_enabled"]:
                 raise EvidenceUnavailable(
                     missing[0]["reason"] if missing else "no_subtitles",
                     "视频无可用字幕，暂时跳过（待后续接入ASR语音识别）",
@@ -320,10 +320,14 @@ class BrowsingEvidence:
                                 seen_idx.add(idx)
                                 s = all_segs[idx]
                                 timestamps.append((s["start"] + s["end"]) / 2)
-            visual_parts, visual_frames = await self._visual_parts(
-                metadata, task, deadline, timestamps=timestamps
-            )
-            parts.extend(visual_parts)
+            try:
+                visual_parts, visual_frames = await self._visual_parts(
+                    metadata, task, deadline, timestamps=timestamps
+                )
+                parts.extend(visual_parts)
+            except Exception:
+                if require_visual or not parts:
+                    raise
         material = {
             "metadata": metadata,
             "parts": parts,
@@ -339,8 +343,33 @@ class BrowsingEvidence:
     async def _with_visual(self, material, *, task, deadline, expires_at):
         # Only raw CC is shared across provider identities. New observations
         # belong to the current provider and preserve the original CC tracks.
+        timestamps = None
+        all_segs = [
+            s
+            for p in material.get("parts", [])
+            for s in p.get("segments", [])
+            if isinstance(s, dict) and "start" in s and "end" in s
+        ]
+        if all_segs:
+            if len(all_segs) <= 3:
+                timestamps = [(s["start"] + s["end"]) / 2 for s in all_segs]
+            else:
+                indices = [
+                    max(0, int(len(all_segs) * 0.15)),
+                    int(len(all_segs) * 0.50),
+                    min(len(all_segs) - 1, int(len(all_segs) * 0.85)),
+                ]
+                seen_idx = set()
+                timestamps = []
+                for idx in indices:
+                    if idx not in seen_idx:
+                        seen_idx.add(idx)
+                        s = all_segs[idx]
+                        timestamps.append((s["start"] + s["end"]) / 2)
         material = self._cc_only(material)
-        parts, frames = await self._visual_parts(material["metadata"], task, deadline)
+        parts, frames = await self._visual_parts(
+            material["metadata"], task, deadline, timestamps=timestamps
+        )
         material["parts"].extend(parts)
         material["visual_frames"] = frames
         material["coverage"] = "sampled_visual"

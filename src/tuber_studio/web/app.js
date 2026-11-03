@@ -67,9 +67,17 @@ function badge(value) {
   return node("span", label(value), `badge ${good.includes(value) ? "good" : bad.includes(value) ? "bad" : ""}`);
 }
 function setBadge(element, value) { const valueNode = badge(value); element.className = valueNode.className; element.textContent = valueNode.textContent; }
+let noticeTimer = null;
 function notice(message, error = false) {
-  const element = $("notice"); element.textContent = safeMessage(message); element.hidden = !message;
+  const element = $("notice");
+  element.textContent = safeMessage(message);
+  element.hidden = !message;
   element.classList.toggle("error", error);
+  element.onclick = () => { element.hidden = true; };
+  if (noticeTimer) clearTimeout(noticeTimer);
+  if (message) {
+    noticeTimer = setTimeout(() => { element.hidden = true; }, error ? 10000 : 4000);
+  }
 }
 function describe(element, entries) {
   element.replaceChildren();

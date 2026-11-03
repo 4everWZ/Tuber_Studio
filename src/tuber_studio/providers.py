@@ -145,7 +145,8 @@ class LlamaCppProvider:
         await self.client.aclose()
 
     async def health(self):
-        response = await self.client.get("/health", timeout=5)
+        timeout = httpx.Timeout(15, connect=5) if self.uses_broker else 5
+        response = await self.client.get("/health", timeout=timeout)
         response.raise_for_status()
         await self.ensure_capacity()
         return {"available": True, "detail": response.json(), "server_context_tokens": self.server_tokens}
@@ -158,11 +159,12 @@ class LlamaCppProvider:
                 raise ValueError("上下文至少4096 tokens")
             if window > native:
                 raise ValueError("配置超出该模型原生上下文；请先验证并配置支持更长窗口的模型")
-            response = await self.client.get("/props", timeout=5)
+            timeout = httpx.Timeout(20, connect=5) if self.uses_broker else 5
+            response = await self.client.get("/props", timeout=timeout)
             if response.status_code == 503 and self.uses_broker:
                 warmup = await self.client.post("/warmup", json={}, timeout=httpx.Timeout(120, connect=5))
                 warmup.raise_for_status()
-                response = await self.client.get("/props", timeout=5)
+                response = await self.client.get("/props", timeout=timeout)
             response.raise_for_status()
             properties = response.json()
             self.is_sleeping = properties.get("is_sleeping", False)

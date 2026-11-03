@@ -71,6 +71,7 @@ class BrowsingPolicy(StrictModel):
     mentions_enabled: bool = False
     mention_reply_enabled: bool = False
     replies_enabled: bool = False
+    comment_handoff_enabled: bool = False
     visual_enabled: bool = False
     workers: int = Field(default=4, ge=1, le=8)
     candidate_limit: int = Field(default=20, ge=1, le=20)

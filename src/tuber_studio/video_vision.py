@@ -145,7 +145,7 @@ class ApiVideoEvidenceProvider:
             self.api.client,
             "GET",
             str(self.api.client.base_url.copy_with(path=self.config.properties_path)),
-            timeout=min(5, self.config.timeout_seconds),
+            timeout=min(20, self.config.timeout_seconds),
         )
         # The configured llama.cpp endpoint must prove its actual window and
         # loaded vision projector; /models or a model name alone is insufficient.
