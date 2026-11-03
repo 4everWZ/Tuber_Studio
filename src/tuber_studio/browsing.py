@@ -1583,11 +1583,7 @@ class BrowsingService:
             metrics,
             diagnose=lambda value: (
                 self.repetition_reason(value.text, recent, context)
-                or (
-                    "包含固定口癖套话（如深海思考）"
-                    if "深海思考" in value.text
-                    else None
-                )
+                or ("包含固定口癖套话（如深海思考）" if "深海思考" in value.text else None)
                 or (
                     "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓"
                     if operation_output_diagnostics(value.text)["needs_review"]

@@ -367,9 +367,7 @@ class BrowsingEvidence:
                         s = all_segs[idx]
                         timestamps.append((s["start"] + s["end"]) / 2)
         material = self._cc_only(material)
-        parts, frames = await self._visual_parts(
-            material["metadata"], task, deadline, timestamps=timestamps
-        )
+        parts, frames = await self._visual_parts(material["metadata"], task, deadline, timestamps=timestamps)
         material["parts"].extend(parts)
         material["visual_frames"] = frames
         material["coverage"] = "sampled_visual"
