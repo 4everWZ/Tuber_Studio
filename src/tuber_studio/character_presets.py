@@ -14,11 +14,12 @@ _LEGACY = {
         "9b49a0c31bbd5a9ae82acf08a09e63cefb0aae7107b83f4f0a38cbd2f1d122be",
         "c502c1ff0d81547625a819dd59aec9f2073a3610a51c86a4b75ddebd070df598",
         "e9725899336b63ddea4eb1a4998a65cb6c0ddada9326b21dd62f6421ace2f4e1",
+        "fcee2e6ac6f43e51e044561b1e6033261f8a299555640bcf54dc86f85f711fb6",
     },
     "whale_calm": {"494f4d61137e6354758c0acdb358471f4c5bada61263093a2deef94366c314d7"},
 }
 _REPLACEMENTS = {
-    "whale": "fcee2e6ac6f43e51e044561b1e6033261f8a299555640bcf54dc86f85f711fb6",
+    "whale": "58f2eb2af9b7fb8ade8abd9449bd8c691c17fd4d495ca1d5f9b0aca8cc9ceee2",
     "whale_calm": "a59012ed87a55ee2a8bb0284dc66b0d5de29b298b0fcbcfc40e7d58991ed96d3",
 }
 _CONTENT_FIELDS = ("core", "style", "rules", "lore", "sources", "license_status")

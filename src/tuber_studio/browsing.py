@@ -68,6 +68,17 @@ def normalized(text):
     return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
 
 
+def sanitize_comment_text(text: str) -> str:
+    if not text:
+        return text
+    text = re.sub(r"大家都在深海思考中呢[！。，…\s]*", "", text)
+    text = re.sub(r"本鱼在深海思考了一下[，。]?", "本鱼仔细琢磨了一下，", text)
+    text = re.sub(r"陪你一起深海思考[，。]?", "陪你一起琢磨琢磨，", text)
+    text = re.sub(r"深海思考中[…\.]*", "", text)
+    text = re.sub(r"深海思考", "琢磨", text)
+    return text.strip()
+
+
 class BrowsingService:
     def __init__(
         self, settings, store, runtime, comments, messages, dynamics, *, visual=None, read_interval=0.25
@@ -1573,6 +1584,11 @@ class BrowsingService:
             diagnose=lambda value: (
                 self.repetition_reason(value.text, recent, context)
                 or (
+                    "包含固定口癖套话（如深海思考）"
+                    if "深海思考" in value.text
+                    else None
+                )
+                or (
                     "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓"
                     if operation_output_diagnostics(value.text)["needs_review"]
                     else None
@@ -1679,7 +1695,7 @@ class BrowsingService:
                 row["epoch"],
                 int(auto),
                 "private_handoff" if kind == "private_handoff" else "pending_review",
-                "" if kind == "private_handoff" else response.text,
+                "" if kind == "private_handoff" else sanitize_comment_text(response.text),
                 response.reason,
                 dump(target),
                 dump(sorted(evidence_ids)),
