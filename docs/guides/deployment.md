@@ -15,6 +15,19 @@ B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留�
 
 离线诊断可用llm.kind=demo、tts.kind=prerecorded并选预录音色；界面必须标明固定台词／预录，不能冒称真实推理、动态配音或128K能力。
 
+## 提交前检查
+
+在准备提交的开发工作树中，用锁定的开发环境运行与 CI 相同的代码检查入口：
+
+    uv sync --locked --group dev --python 3.12
+    uv run --locked python tools/ci/check_style.py
+
+该命令只检查，不改文件；每次都会分别报告 lint 和 format 的结果，任一失败就返回非零退出码。仅看到 `ruff check` 成功不代表格式检查通过。格式问题可运行 `uv run --locked ruff format src tests tools` 修复，检查差异后重新运行上述入口；修改之后再提交，不要把修改前的检查结果当作当前提交已通过。
+
+代码检查不替代功能测试。运行受改动影响的 pytest 测试，并以对应 PR 提交的 Linux CPU CI 结果确认完整套件与打包结果。若本地因 NumPy、ONNX 或 PyYAML 等可选依赖缺失而跳过测试，应如实报告；不要因此修改 Jetson 的生产依赖。
+
+这些代码检查不需要模型、GPU、Docker 或设备连接，可在 Windows／Linux 开发环境运行。分支／PR CI 默认不执行 ARM64 环境镜像阶段；该阶段由主分支、发布标签或手动运行触发。CPU CI 成功不代表 Jetson 实机推理或 ARM64 镜像构建已经验证。
+
 ## 电脑业务主机与独立推理节点
 
 推荐由电脑运行B/S后端、Agent、联网与B站工具、在线点歌Node、业务缓存和OBS，Jetson只运行受认证的推理节点。业务数据库、角色／关系、平台凭据和登录会话保存在电脑，模型、声音模型及推理缓存保留在Jetson。数据归属与恢复约束见[跨主机规范](../specs/distributed-runtime.md)。

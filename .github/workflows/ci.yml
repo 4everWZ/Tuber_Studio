@@ -55,9 +55,7 @@ jobs:
       - name: Locked project environment
         run: uv sync --locked --group dev
       - name: Lint and format
-        run: |
-          uv run --locked ruff check src tests tools
-          uv run --locked ruff format --check src tests tools
+        run: uv run --locked python tools/ci/check_style.py
       - name: Image decoder for catalog contracts
         run: |
           sudo apt-get update
