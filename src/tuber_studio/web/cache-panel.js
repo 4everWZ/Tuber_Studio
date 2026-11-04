@@ -2,7 +2,7 @@
 class CachePanel {
   constructor(root, api, notify) {
     this.root=root; this.api=api; this.notify=notify; this.value=null; this.busy=false;
-    root.innerHTML='<div class="panel-heading"><h2>媒体缓存</h2><button type="button" data-refresh>刷新容量</button></div><p class="hint">音乐最高15 GiB，合计导入歌曲、在线音频与演唱缓存。浏览材料使用独立缓存池，不占音乐额度，也不重复计入临时产物。曲库、当前／待播、进行中的浏览任务与待审核证据受保护。模型、音色包、账号、审计、关系和私信原文不在此清理。</p><form><div class="cache-groups"></div><button type="submit">保存缓存上限</button><p data-state role="status"></p></form>';
+    root.innerHTML='<div class="panel-heading"><h2>媒体缓存</h2><button type="button" data-refresh>刷新容量</button></div><p class="hint">点歌音乐（最高15 GiB）与生成的语音音频均有独立缓存上限与自动 LRU 淘汰机制，可以在此统一查看与清理。曲库、当前／待播、进行中的浏览任务与待审核证据受保护。模型、音色包、账号、审计、关系和私信原文不在此清理。</p><form><div class="cache-groups"></div><button type="submit">保存缓存上限</button><p data-state role="status"></p></form>';
     this.groups=root.querySelector('.cache-groups');
     for (const [key,label,max] of [['music','音乐',15360],['speech','语音',15360],['temporary','临时产物',4096],['browsing','浏览材料',4096]]) {
       const group=document.createElement('div'); group.className='cache-group'; group.dataset.category=key;
