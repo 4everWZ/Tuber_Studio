@@ -658,7 +658,10 @@
                           <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">🔄 获取远端模型</button>
                         </div>
                       </label>
-                      <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="margin-top:6px;">
+                      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+                        <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="flex:1;">
+                        <span id="model-multimodal-badge" class="badge good" title="模型多模态能力指示">👁️ 支持多模态视觉</span>
+                      </div>
                     </div>
                   </div>
 
@@ -707,25 +710,6 @@
                   <p id="tts-settings-help" class="hint">配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。</p>
                   <p id="tts-local-engine" class="hint" role="status">本地引擎：正在读取已保存配置。</p>
                 </fieldset>
-
-                <details class="provider-group">
-                  <summary>多模态接口（高级，默认关闭）</summary>
-                  <p class="hint">MiniCPM5-2B 为纯文本模型；如使用 Gemma 4 E2B 或 MiniCPM-V 可开启图片理解端点。</p>
-                  <div class="form-grid">
-                    <label>多模态接口<select id="vision-kind"><option value="disabled">关闭</option><option value="openai_compatible">OpenAI 兼容 API</option></select></label>
-                    <label>服务位置<select id="vision-location"><option value="local">本地端点</option><option value="remote">外部 API</option></select></label>
-                  </div>
-                  <div id="vision-api-fields">
-                    <label>多模态 Base URL<input id="vision-base-url" type="url" placeholder="独立的多模态兼容端点" autocomplete="off"></label>
-                    <label>模型 ID<input id="vision-model" placeholder="实际支持多模态的模型 ID" autocomplete="off"></label>
-                  </div>
-                  <div class="provider-credential">
-                    <label>API Key（可选）<input id="vision-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
-                    <span id="vision-key-state" class="hint">密钥状态待读取</span>
-                    <label class="check-field"><input id="vision-clear-key" type="checkbox">清除已保存密钥</label>
-                  </div>
-                  <p id="vision-settings-state" class="hint" role="status">多模态接口未启用。</p>
-                </details>
               </fieldset>
 
               <div class="actions">

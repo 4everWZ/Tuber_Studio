@@ -15,6 +15,8 @@ def test_get_local_models_endpoint(settings):
         assert "base" in data
         assert any("MiniCPM-V-4.7-1B" in m["name"] for m in data["fine_tuned"])
         assert any("MiniCPM5-2B" in m["name"] for m in data["base"])
+        assert any(m["multimodal"] is True for m in data["fine_tuned"])
+        assert any(m["id"] == "MiniCPM5-2B" and m["multimodal"] is False for m in data["base"])
 
 
 def test_get_remote_models_endpoint_error_handling(settings):

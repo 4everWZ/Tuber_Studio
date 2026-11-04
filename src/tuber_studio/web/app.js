@@ -787,22 +787,58 @@ function publicSettings(value, key = "") {
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
   return value;
 }
+function isModelMultimodal(modelName) {
+  if (!modelName || typeof modelName !== "string") return false;
+  const name = modelName.toLowerCase();
+  return (
+    name.includes("minicpm-v") ||
+    name.includes("-v-") ||
+    name.includes("-v4") ||
+    name.includes("vl") ||
+    name.includes("vision") ||
+    name.includes("4o") ||
+    name.includes("gemini") ||
+    name.includes("claude") ||
+    name.includes("omni") ||
+    name.includes("pixtral") ||
+    name.includes("qvq") ||
+    name.includes("gemma4")
+  );
+}
+
+function updateModelMultimodalBadge() {
+  const badge = $("model-multimodal-badge");
+  if (!badge) return;
+  const modelId = ($("llm-model")?.value || "").trim();
+  const multimodal = isModelMultimodal(modelId);
+  if (multimodal) {
+    badge.className = "badge good";
+    badge.textContent = "👁️ 支持多模态视觉";
+    badge.title = "该模型具备视觉/图片多模态分析能力";
+  } else {
+    badge.className = "badge muted";
+    badge.textContent = "📝 纯文本模型";
+    badge.title = "该模型仅处理纯文本";
+  }
+}
+
 function clearProviderSecrets() {
-  ["llm", "tts", "vision"].forEach(kind => {
-    $(`${kind}-key`).value = ""; $(`${kind}-clear-key`).checked = false;
+  ["llm", "tts"].forEach(kind => {
+    const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
+    if (el) el.value = "";
+    if (clear) clear.checked = false;
   });
 }
 function providerFormFromSettings(settings) {
-  const llm = settings.llm || {}, tts = settings.tts || {}, vision = settings.vision || {};
+  const llm = settings.llm || {}, tts = settings.tts || {};
   const fields = {
     "llm-kind": llm.kind || "llama_cpp", "llm-base-url": llm.base_url || "", "llm-model": llm.model || "",
     "llm-context-tokens": llm.context_tokens ?? 131072, "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
     "tts-kind": tts.kind || "prerecorded", "tts-base-url": tts.base_url || "", "tts-model": tts.model || "", "tts-voice": tts.voice || "",
-    "vision-kind": vision.kind || "disabled", "vision-location": vision.location || "local", "vision-base-url": vision.base_url || "", "vision-model": vision.model || "",
   };
-  Object.entries(fields).forEach(([id, value]) => { $(id).value = String(value); });
-  $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
+  Object.entries(fields).forEach(([id, value]) => { const el = $(id); if (el) el.value = String(value); });
+  if ($("llm-live-output-budget")) $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
   clearProviderSecrets(); model.providersDirty = false;
   syncModelSelectWithInput();
   const isLocal = (llm.kind || "llama_cpp") === "llama_cpp" && (!llm.base_url || llm.base_url.includes("127.0.0.1") || llm.base_url.includes("localhost"));
@@ -811,6 +847,7 @@ function providerFormFromSettings(settings) {
     btnLocal.classList.toggle("active", isLocal);
     btnRemote.classList.toggle("active", !isLocal);
   }
+  updateModelMultimodalBadge();
 }
 function renderProviderForm() {
   if ($("provider-fields")) $("provider-fields").disabled = !!model.providersSaving;
@@ -836,14 +873,11 @@ function renderProviderForm() {
     if (el) { el.required = ttsApi; el.disabled = !ttsApi || !!model.providersSaving; }
   });
   if ($("tts-key")) $("tts-key").disabled = !ttsApi || !!model.providersSaving;
-  const visionApi = $("vision-kind").value === "openai_compatible";
-  $("vision-api-fields").hidden = !visionApi; $("vision-location").disabled = !visionApi;
-  ["vision-base-url", "vision-model"].forEach(id => { $(id).required = visionApi; $(id).disabled = !visionApi; });
-  $("vision-key").disabled = !visionApi;
-  $("vision-settings-state").textContent = visionApi ? "已选择独立多模态接入；保存后仅应用接口配置，不会开启看图工作流。当前文本端点不代表具备视觉能力。" : "多模态接口关闭，不会向视觉服务发送请求。";
-  ["llm", "tts", "vision"].forEach(kind => {
-    $(`${kind}-key-state`).textContent = model.settings?.provider_credentials?.[kind] ? "已有保存密钥（不回显）" : "未保存密钥";
+  ["llm", "tts"].forEach(kind => {
+    const el = $(`${kind}-key-state`);
+    if (el) el.textContent = model.settings?.provider_credentials?.[kind] ? "已有保存密钥（不回显）" : "未保存密钥";
   });
+  updateModelMultimodalBadge();
   renderLiveFeatures();
 }
 function applySettings(settings, fillForm = false) {
@@ -883,7 +917,8 @@ async function loadLocalModelsDropdown() {
     if (ftGroup && Array.isArray(data.fine_tuned) && data.fine_tuned.length) {
       ftGroup.replaceChildren();
       data.fine_tuned.forEach(m => {
-        const opt = node("option", m.name);
+        const tag = m.multimodal ? " [👁️ 多模态]" : " [📝 纯文本]";
+        const opt = node("option", `${m.name}${tag}`);
         opt.value = m.id;
         ftGroup.append(opt);
       });
@@ -891,12 +926,14 @@ async function loadLocalModelsDropdown() {
     if (baseGroup && Array.isArray(data.base) && data.base.length) {
       baseGroup.replaceChildren();
       data.base.forEach(m => {
-        const opt = node("option", m.name);
+        const tag = m.multimodal ? " [👁️ 多模态]" : " [📝 纯文本]";
+        const opt = node("option", `${m.name}${tag}`);
         opt.value = m.id;
         baseGroup.append(opt);
       });
     }
     syncModelSelectWithInput();
+    updateModelMultimodalBadge();
   } catch (err) {
     console.warn("Failed to load local models dropdown:", err);
   }
@@ -1070,9 +1107,11 @@ function initInferenceProvidersUI() {
         model.providersDirty = true;
         renderProviderForm();
       }
+      updateModelMultimodalBadge();
     });
     input.addEventListener("input", () => {
       syncModelSelectWithInput();
+      updateModelMultimodalBadge();
     });
   }
 
@@ -1099,7 +1138,8 @@ function initInferenceProvidersUI() {
           remoteGroup.replaceChildren();
           remoteGroup.label = `🌐 远端服务模型 (${models.length})`;
           models.forEach(m => {
-            const opt = node("option", m);
+            const tag = isModelMultimodal(m) ? " [👁️ 多模态]" : " [📝 纯文本]";
+            const opt = node("option", `${m}${tag}`);
             opt.value = m;
             remoteGroup.append(opt);
           });
@@ -1199,17 +1239,38 @@ function readProviderPayload() {
   };
   const context = integer("llm-context-tokens", "上下文窗口"), native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
   if (context > native) throw new Error("上下文窗口不能超过模型原生 / 服务声明上限。请按实际服务能力填写。");
+  const modelId = $("llm-model").value.trim();
+  const isMultimodal = isModelMultimodal(modelId);
+  const isLlmApi = $("llm-kind").value === "openai_compatible";
   const payload = {
-    llm: {kind: $("llm-kind").value, base_url: $("llm-base-url").value.trim(), model: $("llm-model").value.trim(), context_tokens: context, native_context_tokens: native, operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536)},
-    tts: {kind: $("tts-kind").value, base_url: $("tts-base-url").value.trim(), model: $("tts-model").value.trim(), voice: $("tts-voice").value.trim()},
-    vision: {kind: $("vision-kind").value, location: $("vision-location").value, base_url: $("vision-base-url").value.trim(), model: $("vision-model").value.trim()},
+    llm: {
+      kind: $("llm-kind").value,
+      base_url: $("llm-base-url").value.trim(),
+      model: modelId,
+      context_tokens: context,
+      native_context_tokens: native,
+      operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536),
+    },
+    tts: {
+      kind: $("tts-kind").value,
+      base_url: $("tts-base-url").value.trim(),
+      model: $("tts-model").value.trim(),
+      voice: $("tts-voice").value.trim(),
+    },
+    vision: {
+      kind: isMultimodal && isLlmApi ? "openai_compatible" : "disabled",
+      location: "local",
+      base_url: isMultimodal && isLlmApi ? $("llm-base-url").value.trim() : "",
+      model: isMultimodal && isLlmApi ? modelId : "",
+    },
     credentials: {}, clear_credentials: [],
   };
-  ["llm", "tts", "vision"].forEach(kind => {
-    const key = $(`${kind}-key`), clear = $(`${kind}-clear-key`).checked;
-    if (!key.disabled && key.value && clear) throw new Error(`${kind.toUpperCase()} 请分别选择输入新密钥或清除已有密钥，不能同时操作。`);
+  ["llm", "tts"].forEach(kind => {
+    const key = $(`${kind}-key`), clearEl = $(`${kind}-clear-key`);
+    const clear = clearEl ? clearEl.checked : false;
+    if (key && !key.disabled && key.value && clear) throw new Error(`${kind.toUpperCase()} 请分别选择输入新密钥或清除已有密钥，不能同时操作。`);
     if (clear) payload.clear_credentials.push(kind);
-    else if (!key.disabled && key.value) payload.credentials[kind] = key.value;
+    else if (key && !key.disabled && key.value) payload.credentials[kind] = key.value;
   });
   return payload;
 }
