@@ -136,7 +136,7 @@ async function enterWorkspace() {
   const status = await api("/api/status");
   model.authenticated = true; $("login").hidden = true; $("workspace").hidden = false;
   renderStatus(status); connectAdmin();
-  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule(), interactiveGamesUI.init(), loadLocalModelsDropdown()]);
+  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule(), interactiveGamesUI.init(), loadLocalModelsDropdown(), checkDafeiyuModelStatus()]);
   results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); });
   await changePage();
 }
@@ -887,44 +887,118 @@ async function loadLocalModelsDropdown() {
   }
 }
 
+let dafeiyuModelTimer = null;
+
+async function checkDafeiyuModelStatus() {
+  try {
+    const status = await api("/api/models/dafeiyu/status");
+    renderDafeiyuModelCard(status);
+    if (status.download_status === "downloading") {
+      if (!dafeiyuModelTimer) {
+        dafeiyuModelTimer = setInterval(checkDafeiyuModelStatus, 1500);
+      }
+    } else {
+      if (dafeiyuModelTimer) {
+        clearInterval(dafeiyuModelTimer);
+        dafeiyuModelTimer = null;
+      }
+      if (status.installed) {
+        loadLocalModelsDropdown();
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to check Dafeiyu model status:", err);
+  }
+}
+
+function renderDafeiyuModelCard(status) {
+  const badge = $("dafeiyu-model-badge");
+  const installedView = $("dafeiyu-model-installed-view");
+  const missingView = $("dafeiyu-model-missing-view");
+  const btnDownload = $("btn-download-dafeiyu-model");
+  const btnCancel = $("btn-cancel-dafeiyu-download");
+  const progressBox = $("dafeiyu-progress-container");
+  const progressFill = $("dafeiyu-progress-fill");
+  const progressText = $("dafeiyu-progress-text");
+  const speedText = $("dafeiyu-speed-text");
+
+  if (!badge) return;
+
+  if (status.installed) {
+    badge.className = "badge good";
+    badge.textContent = "已安装并就绪";
+    if (installedView) installedView.hidden = false;
+    if (missingView) missingView.hidden = true;
+    if ($("dafeiyu-model-path")) $("dafeiyu-model-path").textContent = status.file_path || status.filename;
+    if ($("dafeiyu-model-size")) $("dafeiyu-model-size").textContent = `${(status.file_size / (1024 * 1024)).toFixed(1)} MB`;
+  } else if (status.download_status === "downloading") {
+    badge.className = "badge warning";
+    badge.textContent = "正在下载中…";
+    if (installedView) installedView.hidden = true;
+    if (missingView) missingView.hidden = false;
+    if (progressBox) progressBox.style.display = "block";
+    if (btnDownload) btnDownload.disabled = true;
+    if (btnCancel) btnCancel.style.display = "inline-block";
+    if (progressFill) progressFill.style.width = `${status.download_percent}%`;
+    if (progressText) {
+      const mbDone = (status.downloaded_bytes / (1024 * 1024)).toFixed(1);
+      const mbTotal = (status.expected_size / (1024 * 1024)).toFixed(1);
+      progressText.textContent = `${status.download_percent}% (${mbDone} / ${mbTotal} MB)`;
+    }
+    if (speedText) speedText.textContent = `${status.speed_mb_s} MB/s`;
+  } else {
+    badge.className = "badge";
+    badge.textContent = status.download_status === "failed" ? "下载失败" : "未下载";
+    if (installedView) installedView.hidden = true;
+    if (missingView) missingView.hidden = false;
+    if (progressBox) progressBox.style.display = "none";
+    if (btnDownload) btnDownload.disabled = false;
+    if (btnCancel) btnCancel.style.display = "none";
+    if (status.error && $("dafeiyu-missing-hint")) {
+      $("dafeiyu-missing-hint").textContent = `下载提示: ${status.error}。可重新点击尝试。`;
+    }
+  }
+}
+
 function initInferenceProvidersUI() {
   document.querySelectorAll(".preset-chip").forEach(chip => {
     chip.addEventListener("click", () => {
       const preset = chip.dataset.preset;
-      if (preset === "local-broker") {
+      if (preset === "jetson" || preset === "local-broker") {
         $("llm-kind").value = "llama_cpp";
-        $("llm-base-url").value = "http://127.0.0.1:9012/v1";
+        $("llm-base-url").value = "http://127.0.0.1:9012/llm/2b";
         $("llm-model").value = "MiniCPM-V-4.7-1B";
-        $("tts-kind").value = "openai_compatible";
-        $("tts-base-url").value = "http://127.0.0.1:9012/v1";
-        $("tts-model").value = "gpt_sovits";
-        $("tts-voice").value = "whale_sweet";
-      } else if (preset === "local-3090") {
+        $("tts-kind").value = "gpt_sovits";
+      } else if (preset === "workstation") {
         $("llm-kind").value = "openai_compatible";
-        $("llm-base-url").value = "http://192.168.1.100:8000/v1";
-        $("llm-model").value = "minicpm_v_dafeiyu";
-        $("tts-kind").value = "openai_compatible";
-        $("tts-base-url").value = "http://192.168.1.100:9880";
-        $("tts-model").value = "gpt_sovits";
-        $("tts-voice").value = "whale_sweet";
-      } else if (preset === "local-ollama") {
-        $("llm-kind").value = "openai_compatible";
-        $("llm-base-url").value = "http://127.0.0.1:11434/v1";
-        $("llm-model").value = "minicpm-v";
-      } else if (preset === "remote-deepseek") {
-        $("llm-kind").value = "openai_compatible";
-        $("llm-base-url").value = "https://api.deepseek.com/v1";
-        $("llm-model").value = "deepseek-chat";
-      } else if (preset === "remote-silicon") {
-        $("llm-kind").value = "openai_compatible";
-        $("llm-base-url").value = "https://api.siliconflow.cn/v1";
-        $("llm-model").value = "Qwen/Qwen2.5-7B-Instruct";
+        $("llm-base-url").value = "http://127.0.0.1:9010/v1";
+        $("llm-model").value = "MiniCPM-V-4.7-1B";
       }
       syncModelSelectWithInput();
       model.providersDirty = true;
       renderProviderForm();
-      notice("已载入预设配置，可点击「一键测通所有端点」测试连通性，或直接点击保存。");
+      notice("已载入本地服务预设，可点击「一键测通所有端点」测试连通性。");
     });
+  });
+
+  $("btn-download-dafeiyu-model")?.addEventListener("click", async () => {
+    try {
+      notice("已启动大肥鱼微调模型下载任务（从 Hugging Face 镜像加速拉取）…");
+      await api("/api/models/dafeiyu/download", {method: "POST"});
+      checkDafeiyuModelStatus();
+    } catch (e) {
+      notice(`启动下载失败: ${safeMessage(e.message)}`, true);
+    }
+  });
+
+  $("btn-cancel-dafeiyu-download")?.addEventListener("click", async () => {
+    try {
+      await api("/api/models/dafeiyu/cancel", {method: "POST"});
+      notice("已发送取消下载请求。");
+      checkDafeiyuModelStatus();
+    } catch (e) {
+      notice(`取消失败: ${safeMessage(e.message)}`, true);
+    }
   });
 
   const select = $("llm-model-select");
@@ -1602,7 +1676,7 @@ async function changePage() {
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page || (link.dataset.page === "comments" && mapped === "comments"); link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
   document.title = `${({comments: "社区运营工作台", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]); else if (model.page === "voices") await updateVoiceCacheUI(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh(), updatePermissionCapsule(), interactiveGamesUI.refresh()]); }
+  try { if (model.page === "comments") await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]); else if (model.page === "voices") await updateVoiceCacheUI(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh(), updatePermissionCapsule(), interactiveGamesUI.refresh(), checkDafeiyuModelStatus()]); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {

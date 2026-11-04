@@ -14,7 +14,7 @@ def test_get_local_models_endpoint(settings):
         assert "fine_tuned" in data
         assert "base" in data
         assert any("MiniCPM-V-4.7-1B" in m["name"] for m in data["fine_tuned"])
-        assert any("Qwen" in m["name"] for m in data["base"])
+        assert any("MiniCPM5-2B" in m["name"] for m in data["base"])
 
 
 def test_get_remote_models_endpoint_error_handling(settings):
@@ -83,3 +83,58 @@ def test_ping_endpoints_success_and_tolerant_failure(settings, monkeypatch):
         # TTS failed gracefully without 500 error
         assert data["tts"]["ok"] is False
         assert "连接被拒绝" in data["tts"]["detail"]
+
+
+def test_dafeiyu_model_hub_status_and_download(settings, monkeypatch):
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        headers = {"Authorization": "Bearer " + settings.admin_token}
+        res = client.get("/api/models/dafeiyu/status", headers=headers)
+        assert res.status_code == 200
+        status = res.json()
+        assert status["model_name"] == "MiniCPM-V-4.7-1B (大肥鱼专属微调)"
+        assert status["filename"] == "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+        assert status["repo_id"] == "4everImmortality/dafeiyu-minicpmv"
+        assert "installed" in status
+
+        # Trigger cancel
+        cancel_res = client.post("/api/models/dafeiyu/cancel", headers=headers)
+        assert cancel_res.status_code == 200
+        assert cancel_res.json()["status"] == "cancelled"
+
+
+def test_model_hub_module_logic(tmp_path):
+    from tuber_studio import model_hub
+
+    # 1. Non-existent file
+    assert not model_hub.is_model_installed(tmp_path)
+    status = model_hub.get_model_status(tmp_path)
+    assert status["installed"] is False
+    assert status["file_size"] == 0
+
+    # 2. Corrupt / small file (<600MB)
+    fake_model = tmp_path / model_hub.DEFAULT_MODEL_FILENAME
+    fake_model.write_bytes(b"too small")
+    assert not model_hub.is_model_installed(tmp_path)
+
+    # 3. Simulate installed model (>= 600MB via mock stat)
+    import os
+    import unittest.mock as mock
+    fake_stat = os.stat_result((0o100644, 0, 0, 0, 0, 0, 672003776, 0, 0, 0))
+    with mock.patch("pathlib.Path.stat", return_value=fake_stat):
+        assert model_hub.is_model_installed(tmp_path)
+        status = model_hub.get_model_status(tmp_path)
+        assert status["installed"] is True
+
+    # 4. ensure_model_on_first_run returns True if already installed
+    with mock.patch.object(model_hub, "is_model_installed", return_value=True):
+        assert model_hub.ensure_model_on_first_run(tmp_path) is True
+
+    # 5. ensure_model_on_first_run starts download if missing
+    with mock.patch.object(model_hub, "is_model_installed", return_value=False), \
+         mock.patch.object(model_hub, "start_model_download") as mock_dl:
+        assert model_hub.ensure_model_on_first_run(tmp_path) is False
+        mock_dl.assert_called_once_with(tmp_path, force=False)
+
+

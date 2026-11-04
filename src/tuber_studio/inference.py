@@ -147,6 +147,10 @@ class ProcessRunner:
         if key == GEMMA_KEY and self.node_settings:
             value = self.node_settings.get("gemma_model", "runtime/models/" + RESOURCES[key].model)
             return project_asset(self.root, value)
+        if key == "llm1b":
+            dafeiyu = (self.root / "runtime/models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").resolve()
+            if dafeiyu.is_file():
+                return dafeiyu
         return (self.root / "runtime/models" / RESOURCES[key].model).resolve()
 
     def gemma_assets(self):
@@ -735,6 +739,10 @@ class InferenceBroker:
     def model_path(self, key):
         if hasattr(self.runner, "model_path"):
             return self.runner.model_path(key)
+        if key == "llm1b":
+            dafeiyu = (self.root / "runtime/models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").resolve()
+            if dafeiyu.is_file():
+                return dafeiyu
         return (self.root / "runtime/models" / RESOURCES[key].model).resolve()
 
     async def initialize(self):

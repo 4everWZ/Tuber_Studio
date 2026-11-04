@@ -2,6 +2,16 @@
   "format": 1,
   "files": [
     {
+      "path": "models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
+      "bytes": 672003776,
+      "sha256": "44f464ecf2b745baec09a5bb7750099ef1a121557ff0df99f821cc267a5c43e5",
+      "mode": 292,
+      "urls": [
+        "https://hf-mirror.com/4everImmortality/dafeiyu-minicpmv/resolve/main/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
+        "https://huggingface.co/4everImmortality/dafeiyu-minicpmv/resolve/main/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+      ]
+    },
+    {
       "path": "models/MiniCPM5-2B-Q4_K_M.gguf",
       "bytes": 1561318368,
       "sha256": "ec2d5801640099e97d8d7e8003ad4d81f336e757811f03a26173dddf386602fd",

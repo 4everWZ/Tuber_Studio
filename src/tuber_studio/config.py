@@ -19,6 +19,8 @@ class Settings:
         self.runtime.mkdir(parents=True, exist_ok=True)
         self.audio = self.runtime / "audio"
         self.audio.mkdir(exist_ok=True)
+        self.models = self.runtime / "models"
+        self.models.mkdir(exist_ok=True)
         path = Path(os.getenv("TUBER_CONFIG", str(self.runtime / "studio.json")))
         example = self.root / "config/studio.example.json"
         self.data = json.loads((path if path.exists() else example).read_text(encoding="utf-8"))

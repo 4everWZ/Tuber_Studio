@@ -159,7 +159,9 @@ def proposal(settings, body):
             "minicpm_v_dafeiyu",
             "gemma_e2b_dafeiyu",
             "MiniCPM-V-4.7-1B",
-            "Qwen/Qwen2.5-7B-Instruct",
+            "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
+            "MiniCPM5-2B",
+            "MiniCPM5-1B",
         }:
             raise ValueError("此设置不切换本地默认节点模型；请保持已安装的默认模型，或选择自定义本地/外部端点")
     profiles = data.get("work_mode_profiles")

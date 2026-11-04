@@ -4,6 +4,7 @@ import asyncio
 import base64
 import binascii
 import json
+import os
 import secrets
 import time
 import weakref
@@ -17,6 +18,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, WebSo
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from . import model_hub
 from .auth_sessions import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -92,6 +94,8 @@ def create_app(
             await dynamics.open()
             await messages.open()
             await browsing.open()
+            if "PYTEST_CURRENT_TEST" not in os.environ and os.getenv("TUBER_DISABLE_AUTO_DOWNLOAD") != "1":
+                model_hub.ensure_model_on_first_run(settings.models)
             yield
         finally:
             try:
@@ -483,44 +487,51 @@ def create_app(
     @app.get("/api/providers/local-models", dependencies=[Depends(require_admin)])
     async def local_models():
         """Categorized list of fine-tuned persona models and base generic models."""
+        hub_status = model_hub.get_model_status(settings.models)
+        installed = hub_status["installed"]
         return {
             "fine_tuned": [
                 {
-                    "id": "minicpm_v_dafeiyu",
-                    "name": "MiniCPM-V-4.7-1B (大肥鱼专属 DoRA/DARE-TIES 融合版)",
-                    "recommended_for": "whale",
-                    "tag": "推荐·极简提示词",
-                    "description": "已内化热白饭、海底小屋与大肥鱼傲娇人设，首字延迟 <1s",
-                },
-                {
-                    "id": "gemma_e2b_dafeiyu",
-                    "name": "Gemma 4 E2B (大肥鱼对照微调版)",
-                    "recommended_for": "whale",
-                    "tag": "实验对照",
-                    "description": "实验性微调对照多模态版本",
+                    "id": "MiniCPM-V-4.7-1B",
+                    "name": "MiniCPM-V-4.7-1B (大肥鱼专属微调)" + (" [本地已就绪]" if installed else " [未下载·支持自动拉取]"),
+                    "repo": model_hub.DEFAULT_REPO_ID,
+                    "filename": model_hub.DEFAULT_MODEL_FILENAME,
+                    "installed": installed,
+                    "tag": "大肥鱼微调" if installed else "HF自动下载",
+                    "description": "基于 MiniCPM-V-4.7-1B 微调融合，已内化大肥鱼人设与白饭口癖",
                 },
             ],
             "base": [
                 {
+                    "id": "MiniCPM5-2B",
+                    "name": "MiniCPM5-2B (本地默认)",
+                    "tag": "本地默认基座",
+                    "description": "本地默认通用文本小模型",
+                },
+                {
                     "id": "MiniCPM-V-4.7-1B",
                     "name": "MiniCPM-V-4.7-1B (原始基线)",
                     "tag": "通用基座",
-                    "description": "未微调的原版开源模型，需完整提示词驱动",
-                },
-                {
-                    "id": "Qwen/Qwen2.5-7B-Instruct",
-                    "name": "Qwen2.5-7B-Instruct",
-                    "tag": "通用基座",
-                    "description": "通义千问通用对话模型",
-                },
-                {
-                    "id": "MiniCPM5-2B",
-                    "name": "MiniCPM5-2B (本地默认)",
-                    "tag": "通用基座",
-                    "description": "本地默认通用文本小模型",
+                    "description": "未微调的原版多模态开源模型，需完整提示词驱动",
                 },
             ],
         }
+
+    @app.get("/api/models/dafeiyu/status", dependencies=[Depends(require_admin)])
+    async def get_dafeiyu_model_status():
+        """Get real-time installation and download progress of the Da Feiyu model."""
+        return model_hub.get_model_status(settings.models)
+
+    @app.post("/api/models/dafeiyu/download", dependencies=[Depends(require_admin)])
+    async def trigger_dafeiyu_model_download():
+        """Trigger background download of the Da Feiyu model from Hugging Face / mirror."""
+        return model_hub.start_model_download(settings.models, force=False)
+
+    @app.post("/api/models/dafeiyu/cancel", dependencies=[Depends(require_admin)])
+    async def cancel_dafeiyu_model_download():
+        """Cancel an ongoing download task."""
+        model_hub.cancel_model_download()
+        return {"status": "cancelled"}
 
     @app.get("/api/providers/models", dependencies=[Depends(require_admin)])
     async def fetch_remote_models(base_url: str = Query(...), api_key: str | None = Query(None)):
