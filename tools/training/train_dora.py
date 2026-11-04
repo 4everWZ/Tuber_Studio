@@ -107,9 +107,8 @@ def setup_dora_config(args):
         logger.error("peft is required. Please install it on the workstation: pip install peft trl transformers")
         sys.exit(1)
 
-    # For Gemma 4, linear layers are inside Gemma4ClippableLinear.linear
     if "gemma" in args.model_name_or_path.lower():
-        target_modules = ["linear"]
+        target_modules = r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)"
     else:
         target_modules = DEFAULT_TARGET_MODULES
 
