@@ -160,23 +160,111 @@ def main():
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH, help="Path to eval cases json")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_REPORT, help="Output markdown report path")
     parser.add_argument("--model-label", type=str, default="MiniCPM-V-4.7-1B", help="Model name label")
+    parser.add_argument("--base-model", type=str, default=None, help="Base model HF repo or local directory")
+    parser.add_argument("--merged-model", type=str, default=None, help="Merged model directory")
     parser.add_argument("--mock", action="store_true", help="Generate mock evaluation to verify pipeline")
     args = parser.parse_args()
 
     cases = load_test_cases(args.cases)
     logger.info("Loaded %d test cases for 4-group comparison.", len(cases))
 
-    # Synthetic mock generation if running offline/dry-run
     evaluated_cases = []
     for c in cases:
-        case_result = {
+        evaluated_cases.append({
             "id": c["id"],
             "title": c.get("title", c["id"]),
             "prompt": c["prompt"],
+            "expected_traits": c.get("expected_traits", []),
+            "disallowed_patterns": c.get("disallowed_patterns", c.get("disallowed", [])),
             "groups": {},
-        }
+        })
 
-        # Mock replies per scenario category
+    if not args.mock and args.base_model and args.merged_model:
+        import torch
+        from transformers import AutoTokenizer, AutoModelForImageTextToText, AutoModelForCausalLM
+
+        def load_model_and_tokenizer(model_path: str):
+            logger.info("Loading model from %s...", model_path)
+            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            try:
+                model = AutoModelForImageTextToText.from_pretrained(
+                    model_path,
+                    dtype=torch.bfloat16,
+                    trust_remote_code=True,
+                    device_map="auto",
+                )
+            except Exception as e:
+                logger.info("AutoModelForImageTextToText failed (%s), falling back to AutoModelForCausalLM...", e)
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    dtype=torch.bfloat16,
+                    trust_remote_code=True,
+                    device_map="auto",
+                )
+            model.eval()
+            return model, tokenizer
+
+        def generate_response(model, tokenizer, messages: list[dict[str, str]]) -> str:
+            prompt_str = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = tokenizer(prompt_str, return_tensors="pt").to(model.device)
+            with torch.no_grad():
+                output_ids = model.generate(
+                    **inputs,
+                    max_new_tokens=128,
+                    temperature=0.7,
+                    top_p=0.8,
+                    do_sample=True,
+                    eos_token_id=tokenizer.eos_token_id,
+                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                )
+            gen_ids = output_ids[0][inputs["input_ids"].shape[1]:]
+            return tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+
+        # Step 1: Base Model (Groups A and B)
+        logger.info("--- Evaluating Group A & B with Base Model (%s) ---", args.base_model)
+        base_model, base_tok = load_model_and_tokenizer(args.base_model)
+        for ec in evaluated_cases:
+            # Group A
+            msgs_a = build_group_messages("A", ec["prompt"])
+            reply_a = generate_response(base_model, base_tok, msgs_a)
+            eval_a = evaluate_response_quality(reply_a, ec["expected_traits"], ec["disallowed_patterns"])
+            ec["groups"]["A"] = {"reply": reply_a, "eval": eval_a}
+
+            # Group B
+            msgs_b = build_group_messages("B", ec["prompt"])
+            reply_b = generate_response(base_model, base_tok, msgs_b)
+            eval_b = evaluate_response_quality(reply_b, ec["expected_traits"], ec["disallowed_patterns"])
+            ec["groups"]["B"] = {"reply": reply_b, "eval": eval_b}
+
+        del base_model
+        del base_tok
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # Step 2: Merged Model (Groups C and D)
+        logger.info("--- Evaluating Group C & D with Merged Model (%s) ---", args.merged_model)
+        merged_model, merged_tok = load_model_and_tokenizer(args.merged_model)
+        for ec in evaluated_cases:
+            # Group C
+            msgs_c = build_group_messages("C", ec["prompt"])
+            reply_c = generate_response(merged_model, merged_tok, msgs_c)
+            eval_c = evaluate_response_quality(reply_c, ec["expected_traits"], ec["disallowed_patterns"])
+            ec["groups"]["C"] = {"reply": reply_c, "eval": eval_c}
+
+            # Group D
+            msgs_d = build_group_messages("D", ec["prompt"])
+            reply_d = generate_response(merged_model, merged_tok, msgs_d)
+            eval_d = evaluate_response_quality(reply_d, ec["expected_traits"], ec["disallowed_patterns"])
+            ec["groups"]["D"] = {"reply": reply_d, "eval": eval_d}
+
+        del merged_model
+        del merged_tok
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    else:
+        # Synthetic mock generation if running offline/dry-run
         mock_replies_by_id = {
             "case_1_food_chit_chat": {
                 "A": "作为一个虚拟主播大肥鱼，今天我打算吃白饭。白饭是我的主要特征之一。",
@@ -204,15 +292,15 @@ def main():
             },
         }
 
-        for grp in ["A", "B", "C", "D"]:
-            category_replies = mock_replies_by_id.get(c["id"], {})
-            reply = category_replies.get(grp, f"【组 {grp}】回复示例")
-            eval_res = evaluate_response_quality(reply, c.get("expected_traits", []), c.get("disallowed_patterns", c.get("disallowed", [])))
-            case_result["groups"][grp] = {
-                "reply": reply,
-                "eval": eval_res,
-            }
-        evaluated_cases.append(case_result)
+        for ec in evaluated_cases:
+            for grp in ["A", "B", "C", "D"]:
+                category_replies = mock_replies_by_id.get(ec["id"], {})
+                reply = category_replies.get(grp, f"【组 {grp}】回复示例")
+                eval_res = evaluate_response_quality(reply, ec["expected_traits"], ec["disallowed_patterns"])
+                ec["groups"][grp] = {
+                    "reply": reply,
+                    "eval": eval_res,
+                }
 
     report_content = generate_markdown_report(evaluated_cases, args.model_label)
     args.output.parent.mkdir(parents=True, exist_ok=True)

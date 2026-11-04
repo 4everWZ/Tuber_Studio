@@ -16,7 +16,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Target projection layers for standard LLaMA/Qwen/Gemma backbones
+# Target projection layers for standard attention and MLP backbones
 DEFAULT_TARGET_MODULES = [
     "q_proj",
     "k_proj",
@@ -29,6 +29,8 @@ DEFAULT_TARGET_MODULES = [
 
 # Modules to explicitly freeze (Vision Encoders & Projectors)
 FREEZE_PATTERNS = [
+    "vision_tower",
+    "merger",
     "vision_model",
     "vpm",
     "resampler",
@@ -105,16 +107,22 @@ def setup_dora_config(args):
         logger.error("peft is required. Please install it on the workstation: pip install peft trl transformers")
         sys.exit(1)
 
+    # For Gemma 4, linear layers are inside Gemma4ClippableLinear.linear
+    if "gemma" in args.model_name_or_path.lower():
+        target_modules = ["linear"]
+    else:
+        target_modules = DEFAULT_TARGET_MODULES
+
     peft_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
-        target_modules=DEFAULT_TARGET_MODULES,
+        target_modules=target_modules,
         lora_dropout=args.lora_dropout,
         bias="none",
         task_type=TaskType.CAUSAL_LM,
         use_dora=args.use_dora,
     )
-    logger.info("DoRA configuration created: rank=%d, alpha=%d, use_dora=%s", args.r, args.lora_alpha, args.use_dora)
+    logger.info("DoRA configuration created: rank=%d, alpha=%d, use_dora=%s, targets=%s", args.r, args.lora_alpha, args.use_dora, target_modules)
     return peft_config
 
 
@@ -154,18 +162,67 @@ def main():
     torch_dtype = torch.bfloat16 if args.bf16 and torch.cuda.is_bf16_supported() else torch.float16
     logger.info("Loading base model %s with dtype=%s...", args.model_name_or_path, torch_dtype)
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name_or_path,
-        torch_dtype=torch_dtype,
-        trust_remote_code=True,
-        device_map="auto" if not os.environ.get("WORLD_SIZE") else None,
-    )
+    try:
+        from transformers import AutoModelForImageTextToText
+        model = AutoModelForImageTextToText.from_pretrained(
+            args.model_name_or_path,
+            dtype=torch_dtype,
+            trust_remote_code=True,
+            device_map="auto" if not os.environ.get("WORLD_SIZE") else None,
+        )
+    except Exception as e:
+        logger.info("AutoModelForImageTextToText failed (%s), falling back to AutoModelForCausalLM...", e)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name_or_path,
+            dtype=torch_dtype,
+            trust_remote_code=True,
+            device_map="auto" if not os.environ.get("WORLD_SIZE") else None,
+        )
 
     # Freeze vision and apply DoRA
     freeze_vision_modules(model)
     peft_config = setup_dora_config(args)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
+
+    # Load datasets
+    train_file = args.data_dir / "sft_train.json"
+    val_file = args.data_dir / "sft_val.json"
+    if not train_file.exists():
+        logger.error("Dataset not found at %s. Please run prepare_persona_dataset.py first.", train_file)
+        sys.exit(1)
+
+    import json
+
+    from datasets import Dataset
+
+    with open(train_file, encoding="utf-8") as f:
+        raw_train = json.load(f)
+    with open(val_file, encoding="utf-8") as f:
+        raw_val = json.load(f)
+
+    def format_samples(batch):
+        texts = []
+        for msgs in batch["messages"]:
+            formatted = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
+            texts.append(formatted)
+        return {"text": texts}
+
+    train_ds = Dataset.from_list(raw_train)
+    val_ds = Dataset.from_list(raw_val)
+    train_ds = train_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
+    val_ds = val_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
+
+    def tokenize_function(examples):
+        tokenized = tokenizer(examples["text"], truncation=True, max_length=args.max_seq_length)
+        tokenized["labels"] = [ids.copy() for ids in tokenized["input_ids"]]
+        return tokenized
+
+    tokenized_train = train_ds.map(tokenize_function, batched=True, remove_columns=["text"])
+    tokenized_val = val_ds.map(tokenize_function, batched=True, remove_columns=["text"])
+
+    from transformers import DataCollatorForSeq2Seq, Trainer
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, pad_to_multiple_of=8, return_tensors="pt")
 
     # Training arguments
     training_args = TrainingArguments(
@@ -177,13 +234,43 @@ def main():
         bf16=args.bf16,
         logging_steps=10,
         save_strategy="epoch",
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_total_limit=2,
         seed=args.seed,
         report_to="none",
     )
 
-    logger.info("Workstation training configuration finalized (output_dir=%s). Ready to launch training loop.", training_args.output_dir)
+    logger.info("Workstation training configuration finalized (output_dir=%s). Launching Trainer...", training_args.output_dir)
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_val,
+        data_collator=data_collator,
+    )
+
+    train_result = trainer.train()
+    logger.info("Training complete! Train loss: %.4f", train_result.training_loss)
+
+    logger.info("Saving DoRA adapter weights to %s...", args.output_dir)
+    model.save_pretrained(args.output_dir)
+    tokenizer.save_pretrained(args.output_dir)
+
+    # Save metrics
+    metrics = {
+        "train_loss": train_result.training_loss,
+        "train_runtime_seconds": train_result.metrics.get("train_runtime", 0),
+        "train_samples_per_second": train_result.metrics.get("train_samples_per_second", 0),
+        "epochs": args.epochs,
+        "model": args.model_name_or_path,
+        "dora_rank": args.r,
+        "dora_alpha": args.lora_alpha,
+    }
+    with open(args.output_dir / "training_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    logger.info("DoRA training pipeline finished successfully!")
 
 
 if __name__ == "__main__":

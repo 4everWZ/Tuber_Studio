@@ -112,12 +112,22 @@ def main():
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Loading base model...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        args.base_model,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-        device_map="cpu",
-    )
+    try:
+        from transformers import AutoModelForImageTextToText
+        base_model = AutoModelForImageTextToText.from_pretrained(
+            args.base_model,
+            dtype=torch.bfloat16,
+            trust_remote_code=True,
+            device_map="cpu",
+        )
+    except Exception as e:
+        logger.info("AutoModelForImageTextToText failed (%s), falling back to AutoModelForCausalLM...", e)
+        base_model = AutoModelForCausalLM.from_pretrained(
+            args.base_model,
+            dtype=torch.bfloat16,
+            trust_remote_code=True,
+            device_map="cpu",
+        )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
 
     if args.merge_method == "linear":
