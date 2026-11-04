@@ -136,7 +136,7 @@ async function enterWorkspace() {
   const status = await api("/api/status");
   model.authenticated = true; $("login").hidden = true; $("workspace").hidden = false;
   renderStatus(status); connectAdmin();
-  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule(), interactiveGamesUI.init()]);
+  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule(), interactiveGamesUI.init(), loadLocalModelsDropdown()]);
   results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); });
   await changePage();
 }
@@ -231,6 +231,55 @@ function renderStatus(status) {
   renderInference(status.inference); renderVoicePreview();
   if (model.dynamicPolicy) renderDynamicPolicy();
   renderJetsonOverview();
+  renderServiceStatusCapsule(status);
+}
+
+function renderServiceStatusCapsule(status) {
+  const capsule = $("service-status-capsule");
+  if (!capsule) return;
+  const providers = status?.providers || {};
+  const llmDot = $("capsule-llm-dot");
+  const llmLabel = $("capsule-llm-label");
+  const ttsDot = $("capsule-tts-dot");
+  const ttsLabel = $("capsule-tts-label");
+  const charLabel = $("capsule-char-label");
+
+  if (llmDot && llmLabel) {
+    const llmDesc = providers.llm;
+    if (status?.error && String(status.error).includes("LLM")) {
+      llmDot.className = "status-dot red";
+      llmLabel.textContent = "LLM: 连接异常";
+    } else if (llmDesc) {
+      llmDot.className = "status-dot green";
+      llmLabel.textContent = `LLM: ${llmDesc}`;
+    } else {
+      llmDot.className = "status-dot amber";
+      llmLabel.textContent = "LLM: 未配置";
+    }
+  }
+
+  if (ttsDot && ttsLabel) {
+    const ttsDesc = providers.tts;
+    if (status?.error && String(status.error).includes("TTS")) {
+      ttsDot.className = "status-dot red";
+      ttsLabel.textContent = "TTS: 异常";
+    } else if (ttsDesc && ttsDesc !== "prerecorded") {
+      ttsDot.className = "status-dot green";
+      ttsLabel.textContent = `TTS: ${ttsDesc}`;
+    } else if (ttsDesc === "prerecorded") {
+      ttsDot.className = "status-dot amber";
+      ttsLabel.textContent = "TTS: 预录音频";
+    } else {
+      ttsDot.className = "status-dot amber";
+      ttsLabel.textContent = "TTS: 未启动";
+    }
+  }
+
+  if (charLabel) {
+    const character = status?.character;
+    const name = character?.name || character?.id || "大肥鱼";
+    charLabel.textContent = `角色: ${name}`;
+  }
 }
 
 let lastJetsonFetchTime = 0;
@@ -524,6 +573,9 @@ function renderCharacterList() {
   if (!model.characters.length) { container.append(node("p", "暂无角色配置。", "muted")); return; }
   model.characters.forEach(character => {
     const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
+    const isFineTuned = (character.persona_type || "fine_tuned") === "fine_tuned";
+    const typeBadge = node("span", isFineTuned ? "★ 微调人设" : "⚙ 基座OC", `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`);
+    button.append(typeBadge);
     button.append(node("small", `${character.id} · v${character.version ?? character.active_version ?? "—"}${character.id === model.status?.character?.id ? " · 当前角色" : ""}`));
     button.addEventListener("click", () => busy(button, async () => {
       if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换所选角色？")) return;
@@ -549,8 +601,144 @@ function setCharacterEditor(character) {
   $("character-editor").value = JSON.stringify(character, null, 2);
   ["character-editor", "save-character", "reset-character", "activate-character"].forEach(id => { $(id).disabled = false; });
   $("editor-title").textContent = `${character.name || character.id} · v${character.version}`;
-  $("character-preview").textContent = JSON.stringify({core: character.core, style: character.style, rules: character.rules, lore: character.lore}, null, 2);
+  $("character-preview").textContent = JSON.stringify({persona_type: character.persona_type, core: character.core, style: character.style, rules: character.rules, lore: character.lore}, null, 2);
   $("character-dirty").textContent = "";
+  syncCharacterJsonToVisual(character);
+}
+
+function updateOCTypeBadge(personaType) {
+  const badge = $("oc-type-badge");
+  const promptBox = $("oc-compact-prompt-box");
+  const isFineTuned = personaType === "fine_tuned";
+  if (badge) {
+    badge.textContent = isFineTuned ? "★ 特化微调固有角色 (超轻极速注入)" : "⚙ 经典通用基座 Prompt OC (全量规格注入)";
+    badge.className = `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`;
+  }
+  if (promptBox) {
+    promptBox.style.display = isFineTuned ? "block" : "none";
+  }
+}
+
+function syncCharacterJsonToVisual(character) {
+  if (!character) return;
+  const personaType = character.persona_type || "fine_tuned";
+  if ($("oc-persona-type")) $("oc-persona-type").value = personaType;
+  if ($("oc-fine-tuned-model")) $("oc-fine-tuned-model").value = character.fine_tuned_model || "";
+  if ($("oc-compact-prompt")) $("oc-compact-prompt").value = character.compact_system_prompt || "";
+  if ($("oc-identity")) $("oc-identity").value = character.core?.identity || "";
+  if ($("oc-background")) $("oc-background").value = character.core?.background || "";
+  if ($("oc-traits")) {
+    const traits = character.core?.traits;
+    $("oc-traits").value = Array.isArray(traits) ? traits.join("、") : (traits || "");
+  }
+  if ($("oc-min-chars")) $("oc-min-chars").value = character.style?.min_chars ?? 15;
+  if ($("oc-max-chars")) $("oc-max-chars").value = character.style?.max_chars ?? 60;
+  if ($("oc-catchphrases")) {
+    const cp = character.style?.catchphrases;
+    $("oc-catchphrases").value = Array.isArray(cp) ? cp.join("\n") : (cp || "");
+  }
+  if ($("oc-instructions")) {
+    const inst = character.style?.instructions;
+    $("oc-instructions").value = Array.isArray(inst) ? inst.join("\n") : (inst || "");
+  }
+  if ($("oc-voice-profile")) $("oc-voice-profile").value = character.voice_profile_id || "";
+  if ($("oc-avatar-manifest")) $("oc-avatar-manifest").value = character.avatar_manifest || "";
+
+  updateOCTypeBadge(personaType);
+}
+
+function syncVisualToCharacterJson() {
+  let charObj;
+  try {
+    charObj = JSON.parse($("character-editor").value);
+  } catch {
+    charObj = model.character ? {...model.character} : {};
+  }
+  const personaType = $("oc-persona-type")?.value || "fine_tuned";
+  charObj.persona_type = personaType;
+  if ($("oc-fine-tuned-model")?.value.trim()) {
+    charObj.fine_tuned_model = $("oc-fine-tuned-model").value.trim();
+  } else {
+    delete charObj.fine_tuned_model;
+  }
+  if ($("oc-compact-prompt")?.value.trim()) {
+    charObj.compact_system_prompt = $("oc-compact-prompt").value.trim();
+  } else {
+    delete charObj.compact_system_prompt;
+  }
+
+  charObj.core = charObj.core || {};
+  if ($("oc-identity")) charObj.core.identity = $("oc-identity").value.trim();
+  if ($("oc-background")) charObj.core.background = $("oc-background").value.trim();
+  if ($("oc-traits")) {
+    charObj.core.traits = $("oc-traits").value.split(/[、,，\n]+/).map(s => s.trim()).filter(Boolean);
+  }
+
+  charObj.style = charObj.style || {};
+  if ($("oc-min-chars")) charObj.style.min_chars = Number($("oc-min-chars").value) || 15;
+  if ($("oc-max-chars")) charObj.style.max_chars = Number($("oc-max-chars").value) || 60;
+  if ($("oc-catchphrases")) {
+    charObj.style.catchphrases = $("oc-catchphrases").value.split("\n").map(s => s.trim()).filter(Boolean);
+  }
+  if ($("oc-instructions")) {
+    charObj.style.instructions = $("oc-instructions").value.split("\n").map(s => s.trim()).filter(Boolean);
+  }
+
+  if ($("oc-voice-profile")?.value.trim()) {
+    charObj.voice_profile_id = $("oc-voice-profile").value.trim();
+  } else {
+    delete charObj.voice_profile_id;
+  }
+  if ($("oc-avatar-manifest")?.value.trim()) {
+    charObj.avatar_manifest = $("oc-avatar-manifest").value.trim();
+  } else {
+    delete charObj.avatar_manifest;
+  }
+
+  $("character-editor").value = JSON.stringify(charObj, null, 2);
+  $("character-preview").textContent = JSON.stringify({persona_type: charObj.persona_type, core: charObj.core, style: charObj.style, rules: charObj.rules, lore: charObj.lore}, null, 2);
+  updateOCTypeBadge(personaType);
+  model.characterDirty = true;
+  $("character-dirty").textContent = "有未保存修改";
+}
+
+function initOCStudioUI() {
+  document.querySelectorAll(".oc-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.tab;
+      document.querySelectorAll(".oc-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".oc-tab-content").forEach(content => {
+        content.classList.toggle("active", content.id === targetId);
+      });
+    });
+  });
+
+  const visualIds = [
+    "oc-persona-type", "oc-fine-tuned-model", "oc-compact-prompt",
+    "oc-identity", "oc-background", "oc-traits",
+    "oc-min-chars", "oc-max-chars", "oc-catchphrases", "oc-instructions",
+    "oc-voice-profile", "oc-avatar-manifest"
+  ];
+  visualIds.forEach(id => {
+    const el = $(id);
+    if (el) {
+      el.addEventListener("input", syncVisualToCharacterJson);
+      el.addEventListener("change", syncVisualToCharacterJson);
+    }
+  });
+
+  $("character-editor")?.addEventListener("input", () => {
+    model.characterDirty = true;
+    $("character-dirty").textContent = "有未保存修改";
+    try {
+      const parsed = JSON.parse($("character-editor").value);
+      if (parsed && typeof parsed === "object") {
+        syncCharacterJsonToVisual(parsed);
+      }
+    } catch {
+      // mid-typing invalid json
+    }
+  });
 }
 async function loadAssets() {
   model.assets = list(await api("/api/assets")); const grid = $("asset-grid"); grid.replaceChildren();
@@ -615,6 +803,7 @@ function providerFormFromSettings(settings) {
   Object.entries(fields).forEach(([id, value]) => { $(id).value = String(value); });
   $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
   clearProviderSecrets(); model.providersDirty = false;
+  syncModelSelectWithInput();
 }
 function renderProviderForm() {
   $("provider-fields").disabled = !model.settings || model.providersSaving;
@@ -651,6 +840,223 @@ function applySettings(settings, fillForm = false) {
   let url = model.settings.overlay_url || "/overlay";
   try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
   $("overlay-url").value = url; $("open-overlay").href = url;
+}
+
+function syncModelSelectWithInput() {
+  const select = $("llm-model-select");
+  const input = $("llm-model");
+  if (!select || !input) return;
+  const val = input.value.trim();
+  let found = false;
+  for (const opt of select.options) {
+    if (opt.value === val) {
+      select.value = val;
+      found = true;
+      break;
+    }
+  }
+  if (!found && val) {
+    select.value = "__custom__";
+  }
+}
+
+async function loadLocalModelsDropdown() {
+  try {
+    const data = await api("/api/providers/local-models");
+    const ftGroup = $("fine-tuned-models-group");
+    const baseGroup = $("base-models-group");
+    if (ftGroup && Array.isArray(data.fine_tuned) && data.fine_tuned.length) {
+      ftGroup.replaceChildren();
+      data.fine_tuned.forEach(m => {
+        const opt = node("option", m.name);
+        opt.value = m.id;
+        ftGroup.append(opt);
+      });
+    }
+    if (baseGroup && Array.isArray(data.base) && data.base.length) {
+      baseGroup.replaceChildren();
+      data.base.forEach(m => {
+        const opt = node("option", m.name);
+        opt.value = m.id;
+        baseGroup.append(opt);
+      });
+    }
+    syncModelSelectWithInput();
+  } catch (err) {
+    console.warn("Failed to load local models dropdown:", err);
+  }
+}
+
+function initInferenceProvidersUI() {
+  document.querySelectorAll(".preset-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const preset = chip.dataset.preset;
+      if (preset === "local-broker") {
+        $("llm-kind").value = "llama_cpp";
+        $("llm-base-url").value = "http://127.0.0.1:9012/v1";
+        $("llm-model").value = "MiniCPM-V-4.7-1B";
+        $("tts-kind").value = "openai_compatible";
+        $("tts-base-url").value = "http://127.0.0.1:9012/v1";
+        $("tts-model").value = "gpt_sovits";
+        $("tts-voice").value = "whale_sweet";
+      } else if (preset === "local-3090") {
+        $("llm-kind").value = "openai_compatible";
+        $("llm-base-url").value = "http://192.168.1.100:8000/v1";
+        $("llm-model").value = "minicpm_v_dafeiyu";
+        $("tts-kind").value = "openai_compatible";
+        $("tts-base-url").value = "http://192.168.1.100:9880";
+        $("tts-model").value = "gpt_sovits";
+        $("tts-voice").value = "whale_sweet";
+      } else if (preset === "local-ollama") {
+        $("llm-kind").value = "openai_compatible";
+        $("llm-base-url").value = "http://127.0.0.1:11434/v1";
+        $("llm-model").value = "minicpm-v";
+      } else if (preset === "remote-deepseek") {
+        $("llm-kind").value = "openai_compatible";
+        $("llm-base-url").value = "https://api.deepseek.com/v1";
+        $("llm-model").value = "deepseek-chat";
+      } else if (preset === "remote-silicon") {
+        $("llm-kind").value = "openai_compatible";
+        $("llm-base-url").value = "https://api.siliconflow.cn/v1";
+        $("llm-model").value = "Qwen/Qwen2.5-7B-Instruct";
+      }
+      syncModelSelectWithInput();
+      model.providersDirty = true;
+      renderProviderForm();
+      notice("已载入预设配置，可点击「一键测通所有端点」测试连通性，或直接点击保存。");
+    });
+  });
+
+  const select = $("llm-model-select");
+  const input = $("llm-model");
+  if (select && input) {
+    select.addEventListener("change", () => {
+      if (select.value === "__custom__") {
+        input.focus();
+      } else if (select.value) {
+        input.value = select.value;
+        model.providersDirty = true;
+        renderProviderForm();
+      }
+    });
+    input.addEventListener("input", () => {
+      syncModelSelectWithInput();
+    });
+  }
+
+  $("btn-fetch-models")?.addEventListener("click", async () => {
+    const btn = $("btn-fetch-models");
+    const baseUrl = $("llm-base-url").value.trim();
+    const apiKey = $("llm-key").value.trim();
+    if (!baseUrl) {
+      notice("请先填写推理服务 Base URL 再拉取模型列表。", true);
+      return;
+    }
+    const remoteGroup = $("remote-models-group");
+    await busy(btn, async () => {
+      try {
+        let path = `/api/providers/models?base_url=${encodeURIComponent(baseUrl)}`;
+        if (apiKey) path += `&api_key=${encodeURIComponent(apiKey)}`;
+        const res = await api(path);
+        const models = res.models || [];
+        if (!models.length) {
+          notice("未在远端服务检测到可用模型列表。", true);
+          return;
+        }
+        if (remoteGroup) {
+          remoteGroup.replaceChildren();
+          remoteGroup.label = `🌐 远端服务模型 (${models.length})`;
+          models.forEach(m => {
+            const opt = node("option", m);
+            opt.value = m;
+            remoteGroup.append(opt);
+          });
+          remoteGroup.hidden = false;
+        }
+        notice(`成功拉取 ${models.length} 个远端模型！可在下拉列表中直接选择。`);
+      } catch (err) {
+        notice(`拉取远端模型失败：${safeMessage(err.message)}`, true);
+      }
+    });
+  });
+
+  $("btn-ping-providers")?.addEventListener("click", async () => {
+    const btn = $("btn-ping-providers");
+    const llmUrl = $("llm-base-url").value.trim();
+    const llmKey = $("llm-key").value.trim();
+    const ttsUrl = $("tts-base-url").value.trim();
+    const ttsKey = $("tts-key").value.trim();
+
+    const llmBadge = $("ping-llm-badge");
+    const llmDetail = $("ping-llm-detail");
+    const ttsBadge = $("ping-tts-badge");
+    const ttsDetail = $("ping-tts-detail");
+
+    if (llmBadge) { llmBadge.className = "badge"; llmBadge.textContent = "测速中…"; }
+    if (ttsBadge) { ttsBadge.className = "badge"; ttsBadge.textContent = "测速中…"; }
+
+    await busy(btn, async () => {
+      try {
+        const res = await api("/api/providers/ping", {
+          method: "POST",
+          body: {
+            llm_url: llmUrl || undefined,
+            llm_key: llmKey || undefined,
+            tts_url: ttsUrl || undefined,
+            tts_key: ttsKey || undefined,
+          }
+        });
+
+        if (res.llm) {
+          if (res.llm.ok) {
+            llmBadge.className = "badge good";
+            llmBadge.textContent = `${res.llm.latency_ms} ms (正常)`;
+            llmDetail.textContent = `${res.llm.url} · 连接成功 (HTTP ${res.llm.status_code})`;
+            const dot = $("capsule-llm-dot");
+            const lbl = $("capsule-llm-label");
+            if (dot) dot.className = "status-dot green";
+            if (lbl) lbl.textContent = `LLM: 正常 (${res.llm.latency_ms}ms)`;
+          } else {
+            llmBadge.className = "badge bad";
+            llmBadge.textContent = "连接失败";
+            llmDetail.textContent = `${res.llm.url || "未配置"} · ${res.llm.detail || "不可达"}`;
+            const dot = $("capsule-llm-dot");
+            const lbl = $("capsule-llm-label");
+            if (dot) dot.className = "status-dot red";
+            if (lbl) lbl.textContent = "LLM: 不可达";
+          }
+        }
+
+        if (res.tts) {
+          if (res.tts.ok) {
+            ttsBadge.className = "badge good";
+            ttsBadge.textContent = `${res.tts.latency_ms} ms (正常)`;
+            ttsDetail.textContent = `${res.tts.url} · 连接成功 (HTTP ${res.tts.status_code})`;
+            const dot = $("capsule-tts-dot");
+            const lbl = $("capsule-tts-label");
+            if (dot) dot.className = "status-dot green";
+            if (lbl) lbl.textContent = `TTS: 正常 (${res.tts.latency_ms}ms)`;
+          } else {
+            ttsBadge.className = "badge bad";
+            ttsBadge.textContent = "连接失败";
+            ttsDetail.textContent = `${res.tts.url || "未配置"} · ${res.tts.detail || "不可达"}`;
+            const dot = $("capsule-tts-dot");
+            const lbl = $("capsule-tts-label");
+            if (dot) dot.className = "status-dot amber";
+            if (lbl) lbl.textContent = "TTS: 未联通";
+          }
+        }
+
+        notice("端点测通诊断完成！详细延迟已展示在下方卡片。");
+      } catch (err) {
+        notice(`端点诊断执行失败：${safeMessage(err.message)}`, true);
+      }
+    });
+  });
+
+  $("service-status-capsule")?.addEventListener("click", () => {
+    location.hash = "#settings";
+  });
 }
 async function loadSettings() { applySettings(await api("/api/settings")); }
 function readProviderPayload() {
@@ -1982,4 +2388,6 @@ window.addEventListener("hashchange", changePage);
 window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; } });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 setInterval(poll, 2500);
+initOCStudioUI();
+initInferenceProvidersUI();
 enterWorkspace().catch(error => { showLogin(); if (error.status !== 401) $("login-error").textContent = error.message; });

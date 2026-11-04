@@ -480,6 +480,167 @@ def create_app(
         llm, tts, vision = await asyncio.gather(one(runtime.llm), one(runtime.voices), one(runtime.vision))
         return {"llm": llm, "tts": tts, "vision": vision}
 
+    @app.get("/api/providers/local-models", dependencies=[Depends(require_admin)])
+    async def local_models():
+        """Categorized list of fine-tuned persona models and base generic models."""
+        return {
+            "fine_tuned": [
+                {
+                    "id": "minicpm_v_dafeiyu",
+                    "name": "MiniCPM-V-4.7-1B (大肥鱼专属 DoRA/DARE-TIES 融合版)",
+                    "recommended_for": "whale",
+                    "tag": "推荐·极简提示词",
+                    "description": "已内化热白饭、海底小屋与大肥鱼傲娇人设，首字延迟 <1s",
+                },
+                {
+                    "id": "gemma_e2b_dafeiyu",
+                    "name": "Gemma 4 E2B (大肥鱼对照微调版)",
+                    "recommended_for": "whale",
+                    "tag": "实验对照",
+                    "description": "实验性微调对照多模态版本",
+                },
+            ],
+            "base": [
+                {
+                    "id": "MiniCPM-V-4.7-1B",
+                    "name": "MiniCPM-V-4.7-1B (原始基线)",
+                    "tag": "通用基座",
+                    "description": "未微调的原版开源模型，需完整提示词驱动",
+                },
+                {
+                    "id": "Qwen/Qwen2.5-7B-Instruct",
+                    "name": "Qwen2.5-7B-Instruct",
+                    "tag": "通用基座",
+                    "description": "通义千问通用对话模型",
+                },
+                {
+                    "id": "MiniCPM5-2B",
+                    "name": "MiniCPM5-2B (本地默认)",
+                    "tag": "通用基座",
+                    "description": "本地默认通用文本小模型",
+                },
+            ],
+        }
+
+    @app.get("/api/providers/models", dependencies=[Depends(require_admin)])
+    async def fetch_remote_models(base_url: str = Query(...), api_key: str | None = Query(None)):
+        """Fetch remote model list from user-specified OpenAI-compatible or Ollama endpoint."""
+        url = base_url.strip().rstrip("/")
+        if not url or not url.startswith(("http://", "https://")):
+            raise HTTPException(400, "Base URL 必须是以 http:// 或 https:// 开头的合法地址")
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        candidate_paths = (
+            ["/models", "/v1/models"] if url.endswith("/v1") else ["/v1/models", "/models", "/api/tags"]
+        )
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), trust_env=False) as client:
+            last_err = "无法连接至目标服务"
+            for path in candidate_paths:
+                target_url = (
+                    url + path
+                    if not url.endswith("/v1") or not path.startswith("/v1")
+                    else url + path[3:]
+                )
+                try:
+                    res = await client.get(target_url, headers=headers)
+                    if res.status_code == 200:
+                        data = res.json()
+                        models = []
+                        if isinstance(data.get("data"), list):
+                            models = [
+                                m.get("id")
+                                for m in data["data"]
+                                if isinstance(m, dict) and "id" in m
+                            ]
+                        elif isinstance(data.get("models"), list):
+                            models = [
+                                m.get("name") or m.get("model")
+                                for m in data["models"]
+                                if isinstance(m, dict)
+                            ]
+                        elif isinstance(data, list):
+                            models = [
+                                m.get("id") or m.get("name") for m in data if isinstance(m, dict)
+                            ]
+
+                        if models:
+                            return {
+                                "models": sorted(set(filter(None, models))),
+                                "endpoint": target_url,
+                            }
+                except (httpx.ConnectError, httpx.ConnectTimeout):
+                    last_err = f"无法连接目标地址（连接被拒绝或超时，请确认服务已启动：{url}）"
+                except Exception as e:
+                    last_err = f"请求失败: {e}"
+
+            return {"models": [], "error": last_err}
+
+    @app.post("/api/providers/ping", dependencies=[Depends(require_admin)])
+    async def ping_endpoints(payload: dict = Body(...)):
+        """Measure HTTP round-trip latency and connectivity for candidate endpoints."""
+        llm_url = (payload.get("llm_base_url") or payload.get("llm_url") or "").strip().rstrip("/")
+        tts_url = (payload.get("tts_base_url") or payload.get("tts_url") or "").strip().rstrip("/")
+        api_key = payload.get("llm_key")
+
+        result = {
+            "llm": {"ok": False, "url": llm_url, "latency_ms": None, "detail": "未配置", "status_code": None},
+            "tts": {"ok": False, "url": tts_url, "latency_ms": None, "detail": "未配置", "status_code": None},
+        }
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0), trust_env=False) as client:
+            if llm_url:
+                t0 = time.perf_counter()
+                try:
+                    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+                    test_url = llm_url if llm_url.endswith("/v1") else (llm_url + "/v1/models")
+                    res = await client.get(test_url, headers=headers)
+                    elapsed = round((time.perf_counter() - t0) * 1000)
+                    is_ok = res.status_code in (200, 401)
+                    result["llm"] = {
+                        "ok": is_ok,
+                        "url": llm_url,
+                        "status_code": res.status_code,
+                        "latency_ms": elapsed,
+                        "detail": (
+                            f"HTTP {res.status_code} ({elapsed}ms)"
+                            if res.status_code == 200
+                            else (
+                                "需要提供正确的 API Key"
+                                if res.status_code == 401
+                                else f"HTTP {res.status_code}"
+                            )
+                        ),
+                    }
+                except httpx.ConnectError:
+                    result["llm"] = {"ok": False, "url": llm_url, "latency_ms": None, "detail": "连接被拒绝 (服务未启动或端口不通)", "status_code": None}
+                except httpx.TimeoutException:
+                    result["llm"] = {"ok": False, "url": llm_url, "latency_ms": None, "detail": "连接超时 (网络不通或地址有误)", "status_code": None}
+                except Exception as e:
+                    result["llm"] = {"ok": False, "url": llm_url, "latency_ms": None, "detail": f"测试失败: {e}", "status_code": None}
+
+            if tts_url:
+                t0 = time.perf_counter()
+                try:
+                    res = await client.get(tts_url)
+                    elapsed = round((time.perf_counter() - t0) * 1000)
+                    result["tts"] = {
+                        "ok": res.status_code in (200, 404),
+                        "url": tts_url,
+                        "status_code": res.status_code,
+                        "latency_ms": elapsed,
+                        "detail": f"就绪 ({elapsed}ms)",
+                    }
+                except httpx.ConnectError:
+                    result["tts"] = {"ok": False, "url": tts_url, "latency_ms": None, "detail": "连接被拒绝 (服务未启动或端口不通)", "status_code": None}
+                except Exception as e:
+                    result["tts"] = {"ok": False, "url": tts_url, "latency_ms": None, "detail": f"测试失败: {e}", "status_code": None}
+
+        return result
+
     @app.get("/api/context/status", dependencies=[Depends(require_admin)])
     async def context_status(video_id: str | None = None, thread_id: str | None = None):
         if video_id is not None or thread_id is not None:

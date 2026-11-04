@@ -1178,3 +1178,161 @@ button.is-busy {
   padding-top: 6px;
   border-top: 1px dashed #f1f5f9;
 }
+
+/* Grouped Navigation & Service Status Capsule */
+.nav-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8c9ba5;
+  padding: 12px 14px 4px;
+}
+.nav-external {
+  color: #2b6cb0 !important;
+}
+
+.service-status-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.service-status-capsule:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.status-divider {
+  color: #cbd5e1;
+  user-select: none;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.green { background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
+.status-dot.amber { background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+.status-dot.red { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+
+/* Preset Chips & Diagnostics */
+.preset-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+}
+.preset-chip {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-chip:hover {
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+.ping-test-box {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: #fdfdfd;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.ping-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.ping-card {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+.ping-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ping-title { font-weight: 600; font-size: 12px; }
+.ping-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+}
+.ping-badge.ok { background: #dcfce7; color: #15803d; }
+.ping-badge.fail { background: #fee2e2; color: #b91c1c; }
+.ping-detail { margin: 4px 0 0; font-size: 11px; }
+
+/* OC Studio & Badges */
+.oc-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.oc-badge.fine-tuned {
+  background: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+.oc-badge.prompt-oc {
+  background: #ccfbf1;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+.oc-tab-nav {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #e2e8f0;
+  margin: 14px 0;
+}
+.oc-tab-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+.oc-tab-btn.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+.oc-tab-content { display: none; }
+.oc-tab-content.active { display: block; }

@@ -34,9 +34,16 @@ def single_system_messages(messages):
 def build_messages(character, event, relationship, mode="live"):
     if mode != "live":
         character = operation_character(character)
-    fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
+
+    is_fine_tuned = character.get("persona_type") == "fine_tuned" and character.get("compact_system_prompt")
+    if is_fine_tuned:
+        system_content = character["compact_system_prompt"].strip()
+    else:
+        fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
+        system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
+
     messages = [
-        {"role": "system", "content": SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)},
+        {"role": "system", "content": system_content},
         {"role": "system", "content": f"当前交流场景：{mode}"},
     ]
     lore = [
@@ -51,35 +58,44 @@ def build_messages(character, event, relationship, mode="live"):
     messages.append({"role": "user", "content": "当前观众消息：" + json.dumps(event, ensure_ascii=False)})
     if mode == "comment_channel_decision":
         return messages
-    examples = [
-        {
-            "观众": item["viewer"],
-            "回答": {
-                "spoken_text": item["reply"],
-                "emotion": "cheerful",
-                "animation_id": "talk_happy",
-                "reply_to": [],
-            },
-        }
-        for item in character["core"].get("examples", [])[:3]
-        if isinstance(item, dict) and "viewer" in item and "reply" in item
-    ]
-    messages.append(
-        {
-            "role": "system",
-            "content": (
-                "回应当前观众，spoken_text填写你的角色台词。"
-                + (
-                    f"用{character['style'].get('min_chars', 1)}到{character['style'].get('max_chars', 60)}字回答。"
-                    if mode == "live"
-                    else "按当前交流自然决定篇幅。"
-                )
-                + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
-                "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
-                "角色互动示例：" + json.dumps(examples, ensure_ascii=False)
-            ),
-        }
-    )
+
+    if is_fine_tuned:
+        suffix_content = (
+            "回应当前观众，spoken_text填写你的角色台词。"
+            + (
+                f"用{character['style'].get('min_chars', 1)}到{character['style'].get('max_chars', 60)}字回答。"
+                if mode == "live"
+                else "按当前交流自然决定篇幅。"
+            )
+            + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
+            "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
+        )
+    else:
+        examples = [
+            {
+                "观众": item["viewer"],
+                "回答": {
+                    "spoken_text": item["reply"],
+                    "emotion": "cheerful",
+                    "animation_id": "talk_happy",
+                    "reply_to": [],
+                },
+            }
+            for item in character["core"].get("examples", [])[:3]
+            if isinstance(item, dict) and "viewer" in item and "reply" in item
+        ]
+        suffix_content = (
+            "回应当前观众，spoken_text填写你的角色台词。"
+            + (
+                f"用{character['style'].get('min_chars', 1)}到{character['style'].get('max_chars', 60)}字回答。"
+                if mode == "live"
+                else "按当前交流自然决定篇幅。"
+            )
+            + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
+            "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
+            "角色互动示例：" + json.dumps(examples, ensure_ascii=False)
+        )
+    messages.append({"role": "system", "content": suffix_content})
     return messages
 
 

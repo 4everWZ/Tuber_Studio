@@ -18,27 +18,49 @@
     <aside class="sidebar">
       <a class="brand" href="#comments"><span class="brand-mark">TS</span><span>Tuber Studio<small>本地角色运行时</small></span></a>
       <nav aria-label="功能区">
+        <div class="nav-group-title">运营中心</div>
         <a href="#comments" data-page="comments"><span aria-hidden="true">📺</span>社区运营</a>
         <a href="#messages" data-page="messages"><span aria-hidden="true">✉</span>私信工作台</a>
         <a href="#dynamics" data-page="dynamics"><span aria-hidden="true">✎</span>动态运营</a>
-        <a href="#overview" data-page="overview"><span aria-hidden="true">◫</span>总览</a>
-        <a href="/live"><span aria-hidden="true">♫</span><span>直播工作台 ↗</span></a>
-        <a href="#live" data-page="live"><span aria-hidden="true">◉</span><span id="live-nav-label">直播（后续）</span></a>
-        <a href="#characters" data-page="characters"><span aria-hidden="true">♧</span>角色</a>
-        <a href="#voices" data-page="voices"><span aria-hidden="true">♫</span>语音</a>
+
+        <div class="nav-group-title">直播互动</div>
+        <a href="#live" data-page="live"><span aria-hidden="true">🎮</span>直播与小游戏</a>
+        <a href="/live" target="_blank" class="nav-external"><span aria-hidden="true">🎙</span>独立直播推流 ↗</a>
+
+        <div class="nav-group-title">人设与资产</div>
+        <a href="#characters" data-page="characters"><span aria-hidden="true">♧</span>角色与 OC 管理</a>
+        <a href="#voices" data-page="voices"><span aria-hidden="true">♫</span>语音音色</a>
         <a href="#assets" data-page="assets"><span aria-hidden="true">▧</span>素材与表情包</a>
-        <a href="#settings" data-page="settings"><span aria-hidden="true">⚙</span>设置</a>
+
+        <div class="nav-group-title">系统与总览</div>
+        <a href="#overview" data-page="overview"><span aria-hidden="true">◫</span>系统总览</a>
+        <a href="#settings" data-page="settings"><span aria-hidden="true">⚙</span>推理服务与设置</a>
       </nav>
       <div class="sidebar-bottom"><span class="badge">本地角色原型</span><p>虚构 AI 同人角色<br>非 DeepSeek 官方账号</p><button id="logout" class="quiet">退出登录</button></div>
     </aside>
     <div class="main-shell">
       <header class="topbar account-topbar">
+        <div class="service-status-capsule" id="service-status-capsule" title="点击跳转至推理设置进行快速诊断与配置">
+          <span class="status-indicator">
+            <span class="status-dot green" id="capsule-llm-dot"></span>
+            <span id="capsule-llm-label">LLM: 连接中</span>
+          </span>
+          <span class="status-divider">|</span>
+          <span class="status-indicator">
+            <span class="status-dot green" id="capsule-tts-dot"></span>
+            <span id="capsule-tts-label">TTS: 待检测</span>
+          </span>
+          <span class="status-divider">|</span>
+          <span class="status-indicator">
+            <span id="capsule-char-label">角色: 大肥鱼</span>
+          </span>
+        </div>
         <div class="status-line">
           <span id="live-state" class="badge">就绪</span>
-          <span id="global-character" class="badge active">—</span>
+          <span id="global-character" class="badge active" hidden>—</span>
           <span id="inference-state" class="muted" aria-live="polite"></span>
           <button type="button" id="permission-capsule" class="permission-capsule" data-tier="draft" title="点击跳转至设置配置权限矩阵">
-            <span id="capsule-icon">📝</span> <span id="capsule-text">权限：草稿生成·人工审核后发布</span>
+            <span id="capsule-icon">📝</span> <span id="capsule-text">权限：草稿审核态</span>
           </button>
         </div>
         <span id="connection" class="muted">连接中</span>
@@ -264,8 +286,133 @@
           <article class="panel"><div class="panel-heading"><h2>收到的事件</h2><span class="hint">重复、过期与过滤原因保留在记录中</span></div><div class="table-scroll"><table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table></div></article>
         </section>
         <section data-section="characters" hidden>
-          <div class="page-heading"><div><p class="eyebrow">人格与版本</p><h1>角色</h1></div></div>
-          <div class="character-layout"><article class="panel"><h2>角色列表</h2><div id="character-list" class="object-list"></div><form id="clone-form" class="subsection"><h3>复制当前所选角色</h3><label>新角色 ID<input id="clone-id" pattern="[a-z0-9_\-]+" maxlength="50" placeholder="whale_alt" required></label><label>新角色名称<input id="clone-name" placeholder="新角色名称" required></label><button type="submit">复制角色</button></form></article><article class="panel"><div class="panel-heading"><h2 id="editor-title">选择角色</h2><button id="activate-character" class="primary" disabled>激活所选版本</button></div><div class="form-grid"><label>配置版本<select id="character-version" disabled></select></label><div class="hint align-bottom">切换角色或回滚时取消旧角色未播报任务。</div></div><form id="character-form"><label>角色配置 JSON<textarea id="character-editor" class="code-editor" rows="22" spellcheck="false" disabled aria-describedby="character-help"></textarea></label><p id="character-help" class="hint">核心人格、说话风格、规则与动态 Lore 分开维护。长度偏好只用于直播台词；评论、私信和动态按内容自由表达。保存创建新版本；旧版本不会被覆盖。</p><div class="actions"><button id="save-character" class="primary" disabled>保存为新版本</button><button id="reset-character" type="button" disabled>放弃未保存修改</button><span id="character-dirty" class="hint"></span></div></form><details class="subsection"><summary>预览人格结构</summary><pre id="character-preview" class="code-small"></pre></details></article></div>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">角色形态分层 · 特化微调模型固有角色 · 通用提示词 OC 编排</p>
+              <h1>角色与 OC 工作台</h1>
+            </div>
+          </div>
+          <div class="character-layout">
+            <article class="panel">
+              <div class="panel-heading">
+                <h2>角色列表 (OCs)</h2>
+              </div>
+              <div id="character-list" class="object-list"></div>
+              <form id="clone-form" class="subsection" style="margin-top:16px;">
+                <h3>新建 / 克隆 OC</h3>
+                <label>新 OC 标识 (ID)<input id="clone-id" pattern="[a-z0-9_\-]+" maxlength="50" placeholder="my_oc" required></label>
+                <label>角色名称<input id="clone-name" placeholder="新角色名称" required></label>
+                <button type="submit">创建新 OC</button>
+              </form>
+            </article>
+            <article class="panel">
+              <div class="panel-heading">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <h2 id="editor-title" style="margin:0;">选择角色</h2>
+                  <span id="oc-type-badge" class="oc-badge fine-tuned">★ 特化微调固有角色</span>
+                </div>
+                <button id="activate-character" class="primary" disabled>激活此角色版本</button>
+              </div>
+
+              <div class="form-grid" style="margin-bottom:12px;">
+                <label>配置版本
+                  <select id="character-version" disabled></select>
+                </label>
+                <div class="hint align-bottom">切换角色或回滚版本时自动平滑重置会话任务。</div>
+              </div>
+
+              <!-- OC Tabs Navigation -->
+              <div class="oc-tab-nav">
+                <button type="button" class="oc-tab-btn active" data-tab="tab-oc-model">模型与提示词模式</button>
+                <button type="button" class="oc-tab-btn" data-tab="tab-oc-persona">核心人设与性格</button>
+                <button type="button" class="oc-tab-btn" data-tab="tab-oc-style">说话风格与示范</button>
+                <button type="button" class="oc-tab-btn" data-tab="tab-oc-assets">音色与形象</button>
+                <button type="button" class="oc-tab-btn" data-tab="tab-oc-json">高级 JSON 源码</button>
+              </div>
+
+              <!-- Tab 1: Model & Prompt Mode -->
+              <div class="oc-tab-content active" id="tab-oc-model">
+                <div class="form-grid">
+                  <label>角色形态架构
+                    <select id="oc-persona-type">
+                      <option value="fine_tuned">★ 特化微调固有角色 (模型内化人设 · 推荐极简提示词)</option>
+                      <option value="prompt_oc">⚙ 通用提示词 OC (运行于通用基座模型 · 全量提示词工程)</option>
+                    </select>
+                  </label>
+                  <label>绑定的特化权重说明
+                    <input id="oc-fine-tuned-model" placeholder="例如：MiniCPM-V-4.7-1B (大肥鱼专属微调)">
+                  </label>
+                </div>
+                <div id="oc-compact-prompt-box" style="margin-top:12px;">
+                  <label>极简身份锚定提示词 (Compact System Prompt - 特化微调专享)
+                    <textarea id="oc-compact-prompt" class="code-editor" rows="3" placeholder="例如：你叫大肥鱼，是一只机灵傲娇、偏爱热白饭与海底小屋的深海鲸鱼娘主播。请用鲜活自然的第一人称短句与直播间观众互动。"></textarea>
+                  </label>
+                  <p class="hint">针对微调专属模型，模型权重已内化性格与世界观。仅需 1~2 行简明锚定即可涌现生动人设，彻底剥除 800+ tokens 冗余规则与死板 Few-shot，极致降低 Jetson 首字延迟。</p>
+                </div>
+              </div>
+
+              <!-- Tab 2: Persona & Lore -->
+              <div class="oc-tab-content" id="tab-oc-persona">
+                <label>核心身份与世界观 (Identity)
+                  <textarea id="oc-identity" class="code-editor" rows="4"></textarea>
+                </label>
+                <label style="margin-top:10px;">背景设定 (Background)
+                  <textarea id="oc-background" class="code-editor" rows="3"></textarea>
+                </label>
+                <label style="margin-top:10px;">性格特质 (Traits，每行一条)
+                  <textarea id="oc-traits" class="code-editor" rows="5"></textarea>
+                </label>
+              </div>
+
+              <!-- Tab 3: Style & Examples -->
+              <div class="oc-tab-content" id="tab-oc-style">
+                <div class="form-grid">
+                  <label>单句台词最短字数 (min_chars)
+                    <input id="oc-min-chars" type="number" min="1" max="120" value="1">
+                  </label>
+                  <label>单句台词最长字数 (max_chars)
+                    <input id="oc-max-chars" type="number" min="1" max="120" value="60">
+                  </label>
+                </div>
+                <label style="margin-top:10px;">口头禅 (Catchphrases，逗号分隔)
+                  <input id="oc-catchphrases" placeholder="什么嘛, 再来一碗白饭, 本鱼, 鱼鱼">
+                </label>
+                <label style="margin-top:10px;">表达规范与指导语 (Instructions)
+                  <textarea id="oc-instructions" class="code-editor" rows="4"></textarea>
+                </label>
+                <p class="hint">通用提示词 OC 在通用大模型上扮演角色时需依赖完整示范；特化微调模型下系统将自动瘦身以加速推理。</p>
+              </div>
+
+              <!-- Tab 4: Assets & Voice -->
+              <div class="oc-tab-content" id="tab-oc-assets">
+                <div class="form-grid">
+                  <label>绑定默认音色 (Voice Profile)
+                    <input id="oc-voice-profile" placeholder="whale_sovits_v2">
+                  </label>
+                  <label>形象模型描述文件 (Avatar Manifest)
+                    <input id="oc-avatar-manifest" value="assets/whale/manifest.json">
+                  </label>
+                </div>
+              </div>
+
+              <!-- Tab 5: Raw JSON -->
+              <div class="oc-tab-content" id="tab-oc-json">
+                <form id="character-form">
+                  <label>角色配置完整 JSON
+                    <textarea id="character-editor" class="code-editor" rows="18" spellcheck="false" disabled aria-describedby="character-help"></textarea>
+                  </label>
+                  <p id="character-help" class="hint">可直接编辑底层 JSON 源码。保存创建新版本；旧版本不会被覆盖。</p>
+                </form>
+              </div>
+
+              <div class="actions" style="margin-top:14px;">
+                <button id="save-character" class="primary" disabled>保存角色为新版本</button>
+                <button id="reset-character" type="button" disabled>放弃未保存修改</button>
+                <span id="character-dirty" class="hint"></span>
+              </div>
+              <details class="subsection" style="margin-top:10px;"><summary>预览完整人格结构</summary><pre id="character-preview" class="code-small"></pre></details>
+            </article>
+          </div>
         </section>
         <section data-section="voices" hidden>
           <div class="page-heading"><div><p class="eyebrow">声音 Provider 与试听</p><h1>语音</h1></div><a href="#settings" class="button">配置语音 API</a></div><article class="panel"><div class="panel-heading"><h2>音色资产</h2><span class="hint">来源及许可依据配置显示</span></div><div class="table-scroll"><table><thead><tr><th>音色</th><th>Provider / 权重版本</th><th>参考素材</th><th>许可状态</th></tr></thead><tbody id="voices"></tbody></table></div></article><article class="panel narrow"><h2>短句试听</h2><form id="preview-form"><label>音色<select id="preview-voice" required></select></label><label>试听文字<textarea id="preview-text" rows="3" maxlength="120" required>你好呀，我是大肥鱼。今天也想和你说说话。</textarea></label><div class="actions"><button id="preview-submit" type="submit" class="primary">生成试听</button><span id="preview-state" class="hint" role="status"></span></div><audio id="preview-audio" controls preload="none" hidden></audio></form><p id="voice-preview-help" class="hint">预录和已配置的外部语音 API 可试听；本地 GPT-SoVITS 后续开放。试听不会启动直播，也不会替换角色音色。</p></article>
@@ -410,26 +557,156 @@
               <span id="matrix-save-feedback" class="hint" role="status"></span>
             </div>
           </article><article class="panel"><div class="panel-heading"><h2>表情包</h2><a href="#assets">管理表情包图库 →</a></div><p class="hint">按角色管理可用于私信与图文动态的图片、来源和许可；分别沿用对应工作台的审核与额度。</p></article>
-          <article class="panel" id="providers-panel"><div class="panel-heading"><h2>模型与 API</h2><span id="providers-dirty" class="hint">正在读取已保存配置…</span></div>
-            <form id="providers-form"><fieldset id="provider-fields" class="provider-fields" disabled>
-              <fieldset class="provider-group"><legend>文本模型与上下文</legend>
-                <div class="form-grid"><label>模型来源<select id="llm-kind"><option value="llama_cpp">本地 llama.cpp</option><option value="openai_compatible">外部 OpenAI 兼容 API</option><option value="demo">演示（无真实推理）</option></select></label><label>模型 ID<input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off"></label></div>
-                <label>服务 Base URL<input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm/2b" autocomplete="off" aria-describedby="llm-endpoint-help"></label><p id="llm-endpoint-help" class="hint">本地服务保留当前 broker 路径；外部 OpenAI 兼容 API 的 Base URL 通常以 /v1 结尾。</p>
-                <div class="form-grid"><label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required></label><label id="llm-native-label">模型原生 / 服务声明上限（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label></div>
-                <label>运营输出额度（tokens，含思考）<input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help"></label><p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考与正文；实际可用额度受上下文剩余空间约束。单份正文的本地资源上限为256 KiB（UTF-8）。<span id="llm-live-output-budget"></span></p>
-                <p id="llm-capacity-help" class="hint">默认 131072（128K）。当前 MiniCPM5-2B 原生上限为 131072；增大窗口须有服务真实支持，不能通过 RoPE 参数伪扩展。声明值与服务实际校验分别显示。</p>
-                <div class="provider-credential"><label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label><span id="llm-key-state" class="hint">密钥状态待读取</span><label class="check-field"><input id="llm-clear-key" type="checkbox">清除已保存密钥</label></div>
-                <p id="llm-probe-help" class="hint" hidden>生成、摘要或重建进行准确 token 计数时，兼容 API 可能额外发送一次 1-token 用量探针并计费；相同输入会缓存计数。连接检查只读取健康状态或模型列表。</p>
+          <article class="panel" id="providers-panel">
+            <div class="panel-heading">
+              <h2>模型与推理服务 (Inference & APIs)</h2>
+              <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
+            </div>
+
+            <!-- Preset chips for fast filling -->
+            <div class="preset-chips-row">
+              <span class="hint" style="margin:0;font-weight:600;">常用服务预设：</span>
+              <button type="button" class="preset-chip" data-preset="workstation">工作站 9010 (MiniCPM-V微调)</button>
+              <button type="button" class="preset-chip" data-preset="ollama">本地 Ollama (11434)</button>
+              <button type="button" class="preset-chip" data-preset="vllm">本地 vLLM (8000)</button>
+              <button type="button" class="preset-chip" data-preset="llama_cpp">本地 llama.cpp (8080)</button>
+              <button type="button" class="preset-chip" data-preset="jetson">Jetson Orin (9012)</button>
+              <button type="button" class="preset-chip" data-preset="siliconflow">云端 SiliconFlow</button>
+            </div>
+
+            <!-- Ping Test Box -->
+            <div class="ping-test-box">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-weight:600;font-size:13px;">⚡ 上游端点连通性实测与延迟：</span>
+                <button type="button" id="btn-ping-providers" class="button">一键测通所有端点</button>
+              </div>
+              <div id="ping-results-grid" class="ping-results-grid">
+                <div class="ping-card" id="ping-card-llm">
+                  <div class="ping-card-header">
+                    <span class="ping-title">LLM 文本推理</span>
+                    <span class="ping-badge" id="ping-llm-badge">待检测</span>
+                  </div>
+                  <p class="hint ping-detail" id="ping-llm-detail">点击上方按钮测试连通性</p>
+                </div>
+                <div class="ping-card" id="ping-card-tts">
+                  <div class="ping-card-header">
+                    <span class="ping-title">TTS 语音合成</span>
+                    <span class="ping-badge" id="ping-tts-badge">待检测</span>
+                  </div>
+                  <p class="hint ping-detail" id="ping-tts-detail">点击上方按钮测试连通性</p>
+                </div>
+              </div>
+            </div>
+
+            <form id="providers-form">
+              <fieldset id="provider-fields" class="provider-fields" disabled>
+                <fieldset class="provider-group">
+                  <legend>文本模型与推理地址</legend>
+                  <div class="form-grid">
+                    <label>模型来源
+                      <select id="llm-kind">
+                        <option value="openai_compatible">外部 / 自定义 OpenAI 兼容端点 (推荐)</option>
+                        <option value="llama_cpp">本地 llama.cpp / Jetson 原生</option>
+                        <option value="demo">离线演示模式 (无真实推理)</option>
+                      </select>
+                    </label>
+                    <div>
+                      <label>模型 ID
+                        <div style="display:flex;gap:6px;margin-top:4px;">
+                          <select id="llm-model-select" style="flex:1;">
+                            <optgroup label="★ 特化微调人设模型 (Fine-Tuned Persona)" id="fine-tuned-models-group">
+                              <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
+                              <option value="minicpm_v_dafeiyu">minicpm_v_dafeiyu (4-bit AWQ)</option>
+                              <option value="gemma_e2b_dafeiyu">Gemma 4 E2B (大肥鱼对照微调版)</option>
+                            </optgroup>
+                            <optgroup label="⚙ 原始通用基座模型 (Base Models)" id="base-models-group">
+                              <option value="MiniCPM-V-4.7-1B">MiniCPM-V-4.7-1B (原始基线)</option>
+                              <option value="Qwen/Qwen2.5-7B-Instruct">Qwen2.5-7B-Instruct</option>
+                              <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
+                            </optgroup>
+                            <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
+                            <option value="__custom__">自定义输入模型 ID…</option>
+                          </select>
+                          <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">🔄 获取远端模型</button>
+                        </div>
+                      </label>
+                      <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="margin-top:6px;">
+                    </div>
+                  </div>
+
+                  <label style="margin-top:10px;">服务 Base URL
+                    <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm/2b 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
+                  </label>
+                  <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；外部 API 的 Base URL 通常以 /v1 结尾。</p>
+
+                  <div class="form-grid">
+                    <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required></label>
+                    <label id="llm-native-label">模型原生 / 服务声明上限（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
+                  </div>
+                  <label>运营输出额度（tokens，含思考）<input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help"></label>
+                  <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考与正文；实际可用额度受上下文剩余空间约束。<span id="llm-live-output-budget"></span></p>
+
+                  <div class="provider-credential">
+                    <label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
+                    <span id="llm-key-state" class="hint">密钥状态待读取</span>
+                    <label class="check-field"><input id="llm-clear-key" type="checkbox">清除已保存密钥</label>
+                  </div>
+                  <p id="llm-probe-help" class="hint" hidden>生成、摘要或重建进行准确 token 计数时，兼容 API 可能额外发送一次 1-token 用量探针并计费；相同输入会缓存计数。</p>
+                </fieldset>
+
+                <fieldset class="provider-group">
+                  <legend>语音来源与外部 API</legend>
+                  <label>语音来源
+                    <select id="tts-kind">
+                      <option value="prerecorded">预录音频</option>
+                      <option value="openai_compatible">外部 OpenAI 兼容语音 API</option>
+                      <option value="gpt_sovits">本地 GPT-SoVITS / Genie ONNX</option>
+                    </select>
+                  </label>
+                  <div id="tts-api-fields">
+                    <label>语音 API Base URL<input id="tts-base-url" type="url" placeholder="服务提供的 Base URL（通常包含 /v1）" autocomplete="off"></label>
+                    <div class="form-grid">
+                      <label>模型 ID<input id="tts-model" placeholder="填写语音服务的实际模型 ID" autocomplete="off"></label>
+                      <label>Voice ID<input id="tts-voice" placeholder="填写服务支持的 Voice ID" autocomplete="off"></label>
+                    </div>
+                  </div>
+                  <div class="provider-credential">
+                    <label>API Key（可选）<input id="tts-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
+                    <span id="tts-key-state" class="hint">密钥状态待读取</span>
+                    <label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存密钥</label>
+                  </div>
+                  <p id="tts-settings-help" class="hint">配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。</p>
+                  <p id="tts-local-engine" class="hint" role="status">本地引擎：正在读取已保存配置。</p>
+                </fieldset>
+
+                <details class="provider-group">
+                  <summary>多模态接口（高级，默认关闭）</summary>
+                  <p class="hint">MiniCPM5-2B 为纯文本模型；如使用 Gemma 4 E2B 或 MiniCPM-V 可开启图片理解端点。</p>
+                  <div class="form-grid">
+                    <label>多模态接口<select id="vision-kind"><option value="disabled">关闭</option><option value="openai_compatible">OpenAI 兼容 API</option></select></label>
+                    <label>服务位置<select id="vision-location"><option value="local">本地端点</option><option value="remote">外部 API</option></select></label>
+                  </div>
+                  <div id="vision-api-fields">
+                    <label>多模态 Base URL<input id="vision-base-url" type="url" placeholder="独立的多模态兼容端点" autocomplete="off"></label>
+                    <label>模型 ID<input id="vision-model" placeholder="实际支持多模态的模型 ID" autocomplete="off"></label>
+                  </div>
+                  <div class="provider-credential">
+                    <label>API Key（可选）<input id="vision-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
+                    <span id="vision-key-state" class="hint">密钥状态待读取</span>
+                    <label class="check-field"><input id="vision-clear-key" type="checkbox">清除已保存密钥</label>
+                  </div>
+                  <p id="vision-settings-state" class="hint" role="status">多模态接口未启用。</p>
+                </details>
               </fieldset>
-              <fieldset class="provider-group"><legend>语音来源与外部 API</legend>
-                <label>语音来源<select id="tts-kind"><option value="prerecorded">预录音频</option><option value="openai_compatible">外部 OpenAI 兼容语音 API</option><option value="gpt_sovits">本地 GPT-SoVITS（后续）</option></select></label>
-                <div id="tts-api-fields"><label>语音 API Base URL<input id="tts-base-url" type="url" placeholder="服务提供的 Base URL（通常包含 /v1）" autocomplete="off"></label><div class="form-grid"><label>模型 ID<input id="tts-model" placeholder="填写语音服务的实际模型 ID" autocomplete="off"></label><label>Voice ID<input id="tts-voice" placeholder="填写服务支持的 Voice ID" autocomplete="off"></label></div></div>
-                <div class="provider-credential"><label>API Key（可选）<input id="tts-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label><span id="tts-key-state" class="hint">密钥状态待读取</span><label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存密钥</label></div>
-                <p id="tts-settings-help" class="hint">配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。</p>
-                <p id="tts-local-engine" class="hint" role="status">本地引擎：正在读取已保存配置。</p>
-              </fieldset>
-              <details class="provider-group"><summary>多模态接口（高级，默认关闭）</summary><p class="hint">当前 MiniCPM5-2B 为文本模型，不支持看图。此处仅保存独立兼容端点的接入配置；本版不提供图片上传或看图工作流，也不下载视觉模型。</p><div class="form-grid"><label>多模态接口<select id="vision-kind"><option value="disabled">关闭</option><option value="openai_compatible">OpenAI 兼容 API</option></select></label><label>服务位置<select id="vision-location"><option value="local">本地端点</option><option value="remote">外部 API</option></select></label></div><div id="vision-api-fields"><label>多模态 Base URL<input id="vision-base-url" type="url" placeholder="独立的多模态兼容端点" autocomplete="off"></label><label>模型 ID<input id="vision-model" placeholder="实际支持多模态的模型 ID" autocomplete="off"></label></div><div class="provider-credential"><label>API Key（可选）<input id="vision-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label><span id="vision-key-state" class="hint">密钥状态待读取</span><label class="check-field"><input id="vision-clear-key" type="checkbox">清除已保存密钥</label></div><p id="vision-settings-state" class="hint" role="status">多模态接口未启用。</p></details>
-            </fieldset><div class="actions"><button id="save-providers" class="primary" type="submit" disabled>保存并应用</button><button id="reset-providers" type="button" disabled>恢复已保存配置</button><button id="check-providers-settings" type="button">检查当前连接</button></div><p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p><pre id="providers-check-result" class="code-small" hidden></pre></form>
+
+              <div class="actions">
+                <button id="save-providers" class="primary" type="submit" disabled>保存并应用</button>
+                <button id="reset-providers" type="button" disabled>恢复已保存配置</button>
+                <button id="check-providers-settings" type="button">检查已保存配置连接</button>
+              </div>
+              <p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p>
+              <pre id="providers-check-result" class="code-small" hidden></pre>
+            </form>
           </article>
           <article class="panel"><div class="panel-heading"><h2>上下文能力与压缩</h2><span id="context-verified" class="badge">待验证</span></div><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用；配置目标不代表服务已支持。</p><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
           <article class="panel" id="retention-panel"><div class="panel-heading"><h2>对话数据留存</h2><span class="hint">按服务已保存策略自动执行</span></div>

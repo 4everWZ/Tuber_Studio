@@ -83,6 +83,9 @@ class Character(BaseModel):
     avatar_manifest: str = "assets/whale/manifest.json"
     sources: list[str] = Field(default_factory=list)
     license_status: str = "unknown"
+    persona_type: str = Field(default="prompt_oc")
+    fine_tuned_model: str | None = None
+    compact_system_prompt: str | None = None
 
     @field_validator("style")
     @classmethod

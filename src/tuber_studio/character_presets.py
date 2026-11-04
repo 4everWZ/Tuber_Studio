@@ -31,7 +31,10 @@ def _fingerprint(config):
     except (ValueError, TypeError):
         # Unknown fields and malformed historical/custom configs are left alone.
         return None
-    data.pop("version")
+    data.pop("version", None)
+    data.pop("persona_type", None)
+    data.pop("fine_tuned_model", None)
+    data.pop("compact_system_prompt", None)
     canonical = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
