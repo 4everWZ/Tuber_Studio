@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 import psutil
 
+from .agent_tools import build_default_tool_registry
 from .api_providers import VisionService, create_llm
 from .browsing_store import BrowsingRepository
 from .context import ContextManager
@@ -24,7 +25,7 @@ from .interactive_rules import InteractiveRulesService
 from .live_media import LiveMedia
 from .media_cache import MediaCache
 from .memory import missing_slots
-from .models import Event, OperationReply, Reply
+from .models import OperationReply, Reply
 from .online_songs import OnlineSongs
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, reply_generation_binding
@@ -57,6 +58,11 @@ class Runtime:
         self.interactive_rules = InteractiveRulesService(store)
         self.draw_and_guess = DrawAndGuessService(daily_memory=self.daily_memory)
         self.game_livestream = GameLivestreamService(interactive_rules=self.interactive_rules)
+        self.tool_registry = build_default_tool_registry(
+            daily_memory=self.daily_memory,
+            game_livestream=self.game_livestream,
+            draw_and_guess=self.draw_and_guess,
+        )
         self.context = ContextManager(
             settings,
             store,
@@ -64,6 +70,7 @@ class Runtime:
             daily_memory=self.daily_memory,
             game_livestream=self.game_livestream,
             draw_and_guess=self.draw_and_guess,
+            tool_registry=self.tool_registry,
         )
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None

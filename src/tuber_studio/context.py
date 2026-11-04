@@ -5,6 +5,7 @@ import re
 import time
 from pathlib import Path
 
+from .agent_tools import build_default_tool_registry
 from .compaction import (
     SUMMARIZATION_PROMPT,
     ContextWindowExceeded,
@@ -59,12 +60,26 @@ class BudgetedSummary:
 
 
 class ContextManager:
-    def __init__(self, settings, store, provider, daily_memory=None, game_livestream=None, draw_and_guess=None):
+    def __init__(
+        self,
+        settings,
+        store,
+        provider,
+        daily_memory=None,
+        game_livestream=None,
+        draw_and_guess=None,
+        tool_registry=None,
+    ):
         self.settings, self.store, self.provider = settings, store, provider
         self.memory = GroundedMemory(store)
         self.daily_memory = daily_memory
         self.game_livestream = game_livestream
         self.draw_and_guess = draw_and_guess
+        self.tool_registry = tool_registry or build_default_tool_registry(
+            daily_memory=daily_memory,
+            game_livestream=game_livestream,
+            draw_and_guess=draw_and_guess,
+        )
         self.last_key = None
         store.execute("""CREATE TABLE IF NOT EXISTS context_windows(
             key TEXT PRIMARY KEY,mode TEXT,character_id TEXT,character_version INTEGER,
@@ -108,6 +123,7 @@ class ContextManager:
             daily_memory=self.daily_memory,
             game_livestream=self.game_livestream,
             draw_and_guess=self.draw_and_guess,
+            tool_registry=self.tool_registry,
         )
         try:
             row = candidate.window(scope, character)
@@ -227,43 +243,11 @@ class ContextManager:
                     + json.dumps(evidence, ensure_ascii=False),
                 }
             )
-        if self.daily_memory and mode in ("live", "comment_draft"):
-            anecdotes = self.daily_memory.get_active_anecdotes(
-                character["id"],
-                character["version"],
-                query_text=event.get("text", "") if event else "",
-                limit=2,
-                max_tokens=150,
+        if self.tool_registry:
+            augmentations = self.tool_registry.collect_context_augmentations(
+                character, event, mode
             )
-            if anecdotes:
-                initial.append(
-                    {
-                        "role": "user",
-                        "kind": "context",
-                        "content": "近期生活与社群新鲜事（闲聊或被问及时自然随口提及，不要死板背诵）："
-                        + json.dumps(anecdotes, ensure_ascii=False),
-                    }
-                )
-        if self.game_livestream and mode == "live" and self.game_livestream.is_active():
-            game_prompt = self.game_livestream.get_context_prompt()
-            if game_prompt:
-                initial.append(
-                    {
-                        "role": "user",
-                        "kind": "context",
-                        "content": game_prompt,
-                    }
-                )
-        if self.draw_and_guess and mode == "live" and self.draw_and_guess.is_active():
-            dg_word = self.draw_and_guess.current_word
-            if dg_word:
-                initial.append(
-                    {
-                        "role": "user",
-                        "kind": "context",
-                        "content": f"[当前直播间正在进行【你画我猜】小游戏，你正在画《{dg_word['word']}》（分类: {dg_word['category']}）。观众在弹幕竞猜，请以俏皮画手口吻互动，但绝不要提前直接说出答案！]",
-                    }
-                )
+            initial.extend(augmentations)
         history = json.loads(row["history"])
         messages = self.render(prefix, initial, history, pending, suffix)
         overflow = False

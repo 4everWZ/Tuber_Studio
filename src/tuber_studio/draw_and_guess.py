@@ -4,8 +4,6 @@ import re
 import time
 import unicodedata
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field
-
 
 WORD_BANK = [
     {
@@ -213,7 +211,7 @@ class DrawAndGuessService:
 
         if self.daily_memory and hasattr(self.daily_memory, "record_highlight"):
             try:
-                from datetime import datetime, UTC
+                from datetime import UTC, datetime
                 today_str = datetime.now(UTC).strftime("%Y-%m-%d")
                 self.daily_memory.record_highlight(
                     character_id=character_id,
@@ -227,7 +225,7 @@ class DrawAndGuessService:
                     source_user=display_name,
                     tags=["你画我猜", "互动", word],
                 )
-            except Exception as e:
+            except Exception:
                 import traceback
                 traceback.print_exc()
 

@@ -1,11 +1,12 @@
 import datetime
 import json
+
 import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.daily_memory import DailyMemoryService, desensitize_user
 from tuber_studio.context import ContextManager
+from tuber_studio.daily_memory import DailyMemoryService, desensitize_user
 
 
 class DummyProvider:
@@ -213,7 +214,7 @@ def test_daily_memory_api_endpoints(settings):
         assert "extracted" in ext_res.json()
 
         # 4. Insert manually via store to test PUT and DELETE
-        store = app.state.runtime.store
+        _store = app.state.runtime.store
         service = app.state.runtime.daily_memory
         today = datetime.date.today().isoformat()
         item_id = service.record_highlight(

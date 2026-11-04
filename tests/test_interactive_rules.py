@@ -1,9 +1,7 @@
 import pytest
+
 from tuber_studio.interactive_rules import (
     InteractiveRulesService,
-    InteractiveRules,
-    SongRequestRule,
-    DrawAndGuessRule,
     default_rules,
 )
 from tuber_studio.models import Event

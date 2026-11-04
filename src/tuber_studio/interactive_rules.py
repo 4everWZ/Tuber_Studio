@@ -1,7 +1,8 @@
 """Interactive and gift trigger rules for song requests, mini-games, and game livestreaming."""
 
 import re
-from typing import Any, Literal
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .models import Event

@@ -1,9 +1,8 @@
-import pytest
 
 from tuber_studio.game_livestream import (
-    StardewValleyAdapter,
-    PvZAdapter,
     GameLivestreamService,
+    PvZAdapter,
+    StardewValleyAdapter,
 )
 
 

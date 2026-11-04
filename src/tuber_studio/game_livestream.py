@@ -4,7 +4,8 @@ import asyncio
 import logging
 import random
 import time
-from typing import Any, Literal
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
