@@ -67,7 +67,7 @@ LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
 def resource_cache_type(key: str, configured: str) -> str | None:
     if not RESOURCES[key].model:
         return None
-    return configured if key in {"llm2b", GEMMA_KEY} else "q8_0"
+    return configured if key in {"llm1b", "llm2b", GEMMA_KEY} else "q8_0"
 
 
 def native_context(path: Path, *, expected_architecture: str | None = None) -> int:
@@ -261,7 +261,7 @@ class ProcessRunner:
                 "--cache-type-v",
                 cache,
                 "--reasoning",
-                "auto",
+                (self.node_settings or {}).get("reasoning", "auto"),
                 "--temp",
                 "1.0" if key in {"llm2b", "llmqwen35"} else "0.7",
                 "--top-p",
@@ -277,6 +277,8 @@ class ProcessRunner:
                 "--no-mmap",
                 "--direct-io",
             ]
+            if (self.node_settings or {}).get("speculative_ngram", False):
+                command.extend(["--spec-type", "ngram-mod"])
             if key == "llmqwen35":
                 command.extend(
                     [
