@@ -29,6 +29,7 @@ setInterval(() => { if (model.authenticated) inferenceNodePanel.refresh(); }, 10
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
+const interactiveGamesUI = new InteractiveGamesUI({ notify: notice });
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => { model.dynamicMemeCache.clear(); messagesPanel.memeCache.clear(); });
 const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), settings: $("account-settings"), api, notify: notice, onSessionRevoked: showLogin, onChange: () => {
   if (!model.authenticated) return;
@@ -135,7 +136,7 @@ async function enterWorkspace() {
   const status = await api("/api/status");
   model.authenticated = true; $("login").hidden = true; $("workspace").hidden = false;
   renderStatus(status); connectAdmin();
-  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule()]);
+  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule(), interactiveGamesUI.init()]);
   results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); });
   await changePage();
 }
@@ -1195,7 +1196,7 @@ async function changePage() {
   document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page || (link.dataset.page === "comments" && mapped === "comments"); link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
   document.title = `${({comments: "社区运营工作台", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh()]); else if (model.page === "voices") await updateVoiceCacheUI(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh(), updatePermissionCapsule()]); }
+  try { if (model.page === "comments") await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]); else if (model.page === "voices") await updateVoiceCacheUI(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh(), updatePermissionCapsule(), interactiveGamesUI.refresh()]); }
   catch (error) { notice(error.message, true); }
 }
 async function poll() {

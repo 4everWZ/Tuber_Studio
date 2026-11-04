@@ -242,7 +242,15 @@ class OnlineSongs:
             )
             if pending:
                 return self.confirm(pending["token"], int(number[1]), event=event)
-        if not command:
+        query = command.group(1) if command else None
+        if hasattr(self.runtime, "interactive_rules") and self.runtime.interactive_rules:
+            is_req, custom_query, rej = self.runtime.interactive_rules.match_song_request(event)
+            if is_req:
+                if rej:
+                    raise ValueError(rej)
+                query = custom_query
+
+        if not query:
             return None
         self.require_enabled()
         key = tuple(owner) if event.platform_user_id else (event.platform, event.room_id, "anonymous")
@@ -257,7 +265,7 @@ class OnlineSongs:
             while len(self.search_times) > 2000:
                 self.search_times.pop(next(iter(self.search_times)))
         session = self.runtime.session_id
-        songs = await self.search(command[1])
+        songs = await self.search(query)
         if session != self.runtime.session_id or self.runtime.state == "stopped":
             raise ValueError("搜索期间直播会话已改变，请重新点歌")
         if time.time() - event.timestamp.timestamp() > self.runtime.settings.data["event_ttl_seconds"]:

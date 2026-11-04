@@ -16,12 +16,15 @@ from .api_providers import VisionService, create_llm
 from .browsing_store import BrowsingRepository
 from .context import ContextManager
 from .daily_memory import DailyMemoryService
+from .draw_and_guess import DrawAndGuessService
+from .game_livestream import GameLivestreamService
 from .generation_meter import budgeted_call
 from .inference_node_client import refresh_capabilities
+from .interactive_rules import InteractiveRulesService
 from .live_media import LiveMedia
 from .media_cache import MediaCache
 from .memory import missing_slots
-from .models import OperationReply
+from .models import Event, OperationReply, Reply
 from .online_songs import OnlineSongs
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, reply_generation_binding
@@ -51,7 +54,17 @@ class Runtime:
             settings.data.get("vision", {"kind": "disabled"}), settings.endpoint_key("vision")
         )
         self.daily_memory = DailyMemoryService(store)
-        self.context = ContextManager(settings, store, self.llm, daily_memory=self.daily_memory)
+        self.interactive_rules = InteractiveRulesService(store)
+        self.draw_and_guess = DrawAndGuessService(daily_memory=self.daily_memory)
+        self.game_livestream = GameLivestreamService(interactive_rules=self.interactive_rules)
+        self.context = ContextManager(
+            settings,
+            store,
+            self.llm,
+            daily_memory=self.daily_memory,
+            game_livestream=self.game_livestream,
+            draw_and_guess=self.draw_and_guess,
+        )
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None
         self.retention_error = None
@@ -620,6 +633,53 @@ class Runtime:
         if self.state != "stopped" and -30 <= age <= self.settings.data["event_ttl_seconds"]:
             try:
                 if event.type == "chat":
+                    # 1. Check if Draw & Guess is active and user guessed correctly
+                    if hasattr(self, "draw_and_guess") and self.draw_and_guess.is_active():
+                        matched_win = self.draw_and_guess.check_guess(
+                            user_id=event.platform_user_id,
+                            display_name=event.display_name,
+                            text=event.text,
+                            character_id=self.character["id"] if self.character else "whale",
+                            character_version=self.character["version"] if self.character else 1,
+                        )
+                        if matched_win:
+                            event = event.model_copy(
+                                update={
+                                    "text": matched_win["spoken_text"],
+                                    "metadata": {**event.metadata, "draw_guess_won": matched_win},
+                                }
+                            )
+
+                    # 2. Check if chat command requests to start Draw & Guess
+                    if not event.metadata.get("draw_guess_won") and hasattr(self, "interactive_rules"):
+                        should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
+                        if should_start:
+                            start_info = self.draw_and_guess.start_round(trigger_user=event.display_name)
+                            event = event.model_copy(
+                                update={
+                                    "text": start_info["spoken_text"],
+                                    "metadata": {**event.metadata, "draw_guess_start": start_info},
+                                }
+                            )
+
+                    # 3. Check if chat command requests switching game
+                    if (
+                        not (event.metadata.get("draw_guess_won") or event.metadata.get("draw_guess_start"))
+                        and hasattr(self, "interactive_rules")
+                        and hasattr(self, "game_livestream")
+                    ):
+                        target_gid, gname = self.interactive_rules.match_game_switch(event)
+                        if target_gid and target_gid != self.game_livestream.active_game_id:
+                            sw_info = self.game_livestream.switch_game(
+                                target_gid, reason=f"{event.display_name} 弹幕点播"
+                            )
+                            event = event.model_copy(
+                                update={
+                                    "text": sw_info["spoken_text"],
+                                    "metadata": {**event.metadata, "game_switch": sw_info},
+                                }
+                            )
+
                     interpreted = await self.online_songs.interpret(event)
                     if interpreted and isinstance(interpreted, tuple):
                         _, online_snapshot = interpreted
@@ -634,6 +694,59 @@ class Runtime:
                         event = event.model_copy(
                             update={"type": "song", "text": online_snapshot["song"]["title"], "metadata": {}}
                         )
+                elif event.type == "gift":
+                    # Check gift triggers
+                    if hasattr(self, "interactive_rules"):
+                        # 1. Game switch via gift (if targeted game switch requested)
+                        target_gid, gname = (
+                            self.interactive_rules.match_game_switch(event)
+                            if hasattr(self, "game_livestream")
+                            else (None, None)
+                        )
+                        if target_gid and target_gid != self.game_livestream.active_game_id:
+                            sw_info = self.game_livestream.switch_game(
+                                target_gid, reason=f"{event.display_name} 送礼点播"
+                            )
+                            event = event.model_copy(
+                                update={
+                                    "text": sw_info["spoken_text"],
+                                    "metadata": {**event.metadata, "game_switch": sw_info},
+                                }
+                            )
+                        else:
+                            # 2. In-game bounty action via gift
+                            action, label = (
+                                self.interactive_rules.match_game_action(
+                                    event, self.game_livestream.active_game_id
+                                )
+                                if hasattr(self, "game_livestream")
+                                else (None, None)
+                            )
+                            if action and label:
+                                gname, _, _ = self.interactive_rules.extract_gift_info(event)
+                                act_info = self.game_livestream.handle_gift_action(
+                                    action, label, event.display_name, gname
+                                )
+                                event = event.model_copy(
+                                    update={
+                                        "text": act_info["spoken_text"],
+                                        "metadata": {**event.metadata, "game_action": act_info},
+                                    }
+                                )
+                            else:
+                                # 3. Draw & Guess via gift
+                                should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
+                                if should_start:
+                                    gname, _, _ = self.interactive_rules.extract_gift_info(event)
+                                    start_info = self.draw_and_guess.start_round(
+                                        trigger_user=event.display_name, gift_name=gname
+                                    )
+                                    event = event.model_copy(
+                                        update={
+                                            "text": start_info["spoken_text"],
+                                            "metadata": {**event.metadata, "draw_guess_start": start_info},
+                                        }
+                                    )
                 elif event.type == "song" and "online_id" in event.metadata:
                     online_snapshot = await self.online_songs.selection(event.metadata["online_id"], event)
             except ValueError as error:
@@ -778,14 +891,52 @@ class Runtime:
                     emotion, animation = "cheerful", "gift"
                 else:
                     self.store.update_job(job_id, status="generating")
-                    started = time.perf_counter()
-                    reply, answer_check = await self.generate_reply(
-                        "live:" + self.session_id,
-                        character,
-                        event,
-                        self.store.relationship(character["id"], row["user_id"]),
-                    )
-                    self.timings["llm_ms"] = round((time.perf_counter() - started) * 1000)
+                    meta = event.get("metadata") or {}
+                    if meta.get("draw_guess_won"):
+                        reply = Reply(
+                            spoken_text=meta["draw_guess_won"]["spoken_text"],
+                            emotion="cheerful",
+                            animation_id="talk_happy",
+                            reply_to=[event["event_id"]],
+                        )
+                        answer_check = None
+                        self.timings["llm_ms"] = 0
+                    elif meta.get("draw_guess_start"):
+                        reply = Reply(
+                            spoken_text=meta["draw_guess_start"]["spoken_text"],
+                            emotion="cheerful",
+                            animation_id="talk_happy",
+                            reply_to=[event["event_id"]],
+                        )
+                        answer_check = None
+                        self.timings["llm_ms"] = 0
+                    elif meta.get("game_switch"):
+                        reply = Reply(
+                            spoken_text=meta["game_switch"]["spoken_text"],
+                            emotion="cheerful",
+                            animation_id="talk",
+                            reply_to=[event["event_id"]],
+                        )
+                        answer_check = None
+                        self.timings["llm_ms"] = 0
+                    elif meta.get("game_action"):
+                        reply = Reply(
+                            spoken_text=meta["game_action"]["spoken_text"],
+                            emotion="excited",
+                            animation_id="talk_happy",
+                            reply_to=[event["event_id"]],
+                        )
+                        answer_check = None
+                        self.timings["llm_ms"] = 0
+                    else:
+                        started = time.perf_counter()
+                        reply, answer_check = await self.generate_reply(
+                            "live:" + self.session_id,
+                            character,
+                            event,
+                            self.store.relationship(character["id"], row["user_id"]),
+                        )
+                        self.timings["llm_ms"] = round((time.perf_counter() - started) * 1000)
                     self.store.update_job(
                         job_id,
                         status="synthesizing",

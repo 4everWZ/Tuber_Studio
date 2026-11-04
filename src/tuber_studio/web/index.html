@@ -226,6 +226,40 @@
           <div class="page-heading"><div><p class="eyebrow">Mock 连接器</p><h1>直播控制</h1></div><div class="actions"><button data-action="start" class="primary">启动</button><button data-action="pause">暂停</button><button data-action="resume">恢复</button><button data-action="stop" class="danger">停止直播</button></div></div>
           <div class="actions control-strip"><button data-action="mute" class="danger">紧急静音</button><button data-action="unmute">解除静音</button><button data-action="skip">跳过当前任务</button><button data-action="clear">清空待播队列</button><span class="hint">暂停保留队列；停止会取消当前及待播任务。</span></div>
           <div class="live-grid"><article class="panel"><div class="panel-heading"><h2>离线事件调试台</h2><span class="badge">不连接真实平台</span></div><form id="event-form"><div class="form-grid"><label>事件类型<select id="event-type"><option value="chat">弹幕</option><option value="gift">礼物</option><option value="sfx">预录音效</option><option value="song">点歌</option><option value="disconnect">模拟断线</option></select></label><label>观众 ID<input id="event-user" value="debug-001" maxlength="100"></label><label>显示昵称<input id="event-name" value="调试观众" maxlength="100"></label><label>事件 ID<input id="event-id" placeholder="留空自动生成；重复 ID 用于去重测试" maxlength="180"></label></div><label>弹幕 / 事件内容<textarea id="event-text" rows="3" maxlength="1000" placeholder="例如：大肥鱼，今天在忙什么？" required></textarea></label><label id="sfx-label" hidden>预录素材 ID<input id="event-asset" placeholder="从素材页复制音频素材 ID"></label><div class="actions"><button type="submit" class="primary">注入事件</button><button type="button" id="fill-greeting">填入问候</button><span id="event-result" class="hint" role="status"></span></div></form></article><article class="panel"><div class="panel-heading"><h2>当前任务</h2><span id="live-current-status" class="badge">空闲</span></div><p id="live-current-text" class="speech-text">等待事件。</p><dl id="live-current-detail" class="description-list"></dl></article></div>
+          <div class="live-grid" style="margin-top: 16px;">
+            <article class="panel" id="live-game-panel">
+              <div class="panel-heading">
+                <h2>🎮 游戏直播联动 (SRS v0.1)</h2>
+                <span id="live-game-name" class="badge">星露谷物语</span>
+              </div>
+              <p id="live-game-summary" class="speech-text" style="font-size: 14px;">正在加载游戏状态...</p>
+              <p id="live-game-activity" class="hint"></p>
+              <div class="actions" style="margin-top: 10px;">
+                <button type="button" class="button primary small" data-game-switch="stardew_valley">切到《星露谷》</button>
+                <button type="button" class="button primary small" data-game-switch="pvz">切到《植物大战僵尸》</button>
+              </div>
+              <div class="subsection" style="margin-top: 12px;">
+                <h3>快捷游戏动作注入</h3>
+                <div id="live-game-actions" class="actions"></div>
+              </div>
+            </article>
+
+            <article class="panel" id="live-draw-guess-panel">
+              <div class="panel-heading">
+                <h2>🎨 你画我猜互动</h2>
+                <span id="dg-live-status" class="badge">空闲中</span>
+              </div>
+              <p id="dg-live-word" class="speech-text" style="font-size: 14px;">等待送礼触发或手动开启</p>
+              <div class="actions" style="margin-top: 10px;">
+                <button type="button" id="dg-start-btn" class="button primary small">开启一轮</button>
+                <button type="button" id="dg-stop-btn" class="button danger small" disabled>提前结束</button>
+                <a href="/overlay/draw-guess" target="_blank" class="button quiet small">打开 OBS 透明画板 ↗</a>
+              </div>
+              <p class="hint" style="margin-top: 10px;">
+                送出指定礼物（如画笔/小心心）或弹幕抢答即可自动参与；观众猜对后大肥鱼会自动祝贺并沉淀至每日趣事记忆。
+              </p>
+            </article>
+          </div>
           <article class="panel"><div class="panel-heading"><h2>回复队列与记录</h2><button id="refresh-live">刷新</button></div><div class="table-scroll"><table><thead><tr><th>任务 / 时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="live-jobs"></tbody></table></div></article>
           <article class="panel"><div class="panel-heading"><h2>收到的事件</h2><span class="hint">重复、过期与过滤原因保留在记录中</span></div><div class="table-scroll"><table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table></div></article>
         </section>
@@ -407,6 +441,60 @@
           </article>
           <section class="panel" id="inference-node-panel"></section>
           <section class="panel" id="cache-panel"></section>
+          <article class="panel" id="interactive-rules-card">
+            <div class="panel-heading">
+              <h2>🎁 互动玩法与礼物门槛配置</h2>
+              <span class="hint">自定义点歌、你画我猜与游戏直播的触发规则</span>
+            </div>
+            <form id="interactive-rules-form">
+              <fieldset class="matrix-group">
+                <legend>一、点歌门槛规则</legend>
+                <div class="form-grid">
+                  <label>点歌触发方式
+                    <select id="rule-song-mode">
+                      <option value="free">免费（弹幕输入“点歌 歌名”即可）</option>
+                      <option value="gift_only">仅送礼（必须送出指定礼物/达标电池）</option>
+                    </select>
+                  </label>
+                  <label>最低礼物价值（电池）
+                    <input id="rule-song-coin" type="number" min="0" max="10000" value="0">
+                  </label>
+                  <label>指定礼物名称（逗号分隔，留空则不限礼物类型）
+                    <input id="rule-song-gifts" type="text" placeholder="例如：小心心, 辣条">
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="matrix-group" style="margin-top: 14px;">
+                <legend>二、“你画我猜”互动规则</legend>
+                <div class="form-grid">
+                  <label class="check-field" style="grid-column: 1 / -1;">
+                    <input id="rule-dg-enabled" type="checkbox" checked> 启用直播间“你画我猜”小游戏
+                  </label>
+                  <label>启动触发方式
+                    <select id="rule-dg-mode">
+                      <option value="gift_only">仅送礼触发</option>
+                      <option value="danmaku_or_gift">弹幕指令（#你画我猜）或送礼</option>
+                      <option value="host_only">仅主播/后台手动启动</option>
+                    </select>
+                  </label>
+                  <label>启动最低礼物电池
+                    <input id="rule-dg-coin" type="number" min="0" max="10000" value="10">
+                  </label>
+                  <label>指定触发礼物名称
+                    <input id="rule-dg-gifts" type="text" value="画笔, 小心心, 辣条">
+                  </label>
+                  <label>每轮竞猜时长（秒）
+                    <input id="rule-dg-duration" type="number" min="15" max="300" value="60">
+                  </label>
+                </div>
+              </fieldset>
+
+              <div class="actions" style="margin-top: 14px;">
+                <button type="submit" class="button primary">保存互动与礼物规则</button>
+              </div>
+            </form>
+          </article>
           <details class="panel"><summary id="overlay-heading">OBS 播放器配置（直播后续）</summary><p id="overlay-help" class="muted">直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
           <details class="panel"><summary>当前已保存配置（脱敏，只读）</summary><p class="hint">API Key 不会回显；上方表单的未保存修改不会出现在此处。</p><pre id="settings-json" class="code-small"></pre></details>
         </section>
@@ -425,6 +513,7 @@
   <script src="/static/automation.js" defer></script>
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
+  <script src="/static/interactive-games.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

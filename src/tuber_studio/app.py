@@ -213,6 +213,10 @@ def create_app(
     async def overlay():
         return FileResponse(web / "overlay.html")
 
+    @app.get("/overlay/draw-guess")
+    async def draw_guess_overlay():
+        return FileResponse(web / "draw-guess-overlay.html")
+
     @app.post("/api/auth")
     async def login(request: Request, data: dict = Body(...)):
         ip = request.client.host if request.client else "local"
@@ -710,6 +714,64 @@ def create_app(
     @app.post("/api/comments/drafts/{draft_id}/publish", dependencies=[Depends(require_admin)])
     async def publish(draft_id: int):
         return await comments.publish(draft_id)
+
+    @app.get("/api/interactive-rules", dependencies=[Depends(require_admin)])
+    async def get_interactive_rules():
+        return runtime.interactive_rules.get_rules().model_dump()
+
+    @app.put("/api/interactive-rules", dependencies=[Depends(require_admin)])
+    async def put_interactive_rules(data: dict = Body(...)):
+        return runtime.interactive_rules.save_rules(data)
+
+    @app.get("/api/games/status", dependencies=[Depends(require_admin)])
+    async def get_games_status():
+        adapter = runtime.game_livestream.get_active_adapter()
+        return {
+            "active_game_id": runtime.game_livestream.active_game_id,
+            "is_active": runtime.game_livestream.is_active(),
+            "active_status": adapter.get_status(),
+            "available_games": [
+                {"id": k, "display_name": a.display_name}
+                for k, a in runtime.game_livestream.adapters.items()
+            ],
+        }
+
+    @app.post("/api/games/switch", dependencies=[Depends(require_admin)])
+    async def switch_game(data: dict = Body(...)):
+        target = data.get("game_id")
+        if not target:
+            raise ValueError("缺少 game_id")
+        return runtime.game_livestream.switch_game(target, reason="主播后台手动切换")
+
+    @app.post("/api/games/action", dependencies=[Depends(require_admin)])
+    async def execute_game_action(data: dict = Body(...)):
+        action = data.get("action")
+        if not action:
+            raise ValueError("缺少 action")
+        adapter = runtime.game_livestream.get_active_adapter()
+        return adapter.execute_action(action, data.get("params"))
+
+    @app.post("/api/games/step", dependencies=[Depends(require_admin)])
+    async def step_game():
+        return runtime.game_livestream.step_game()
+
+    @app.get("/api/draw-and-guess/status", dependencies=[Depends(require_admin)])
+    async def get_draw_and_guess_status():
+        return runtime.draw_and_guess.get_overlay_state()
+
+    @app.post("/api/draw-and-guess/start", dependencies=[Depends(require_admin)])
+    async def start_draw_and_guess(data: dict = Body(...)):
+        user = data.get("trigger_user", "主播")
+        duration = int(data.get("duration_sec", 60))
+        return runtime.draw_and_guess.start_round(trigger_user=user, duration_sec=duration)
+
+    @app.post("/api/draw-and-guess/stop", dependencies=[Depends(require_admin)])
+    async def stop_draw_and_guess():
+        return runtime.draw_and_guess.stop_round()
+
+    @app.get("/api/draw-and-guess/overlay")
+    async def draw_and_guess_overlay_data():
+        return runtime.draw_and_guess.get_overlay_state()
 
     @app.websocket("/ws/admin")
     async def admin_ws(websocket: WebSocket):
