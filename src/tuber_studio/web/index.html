@@ -24,7 +24,7 @@
         <a href="#dynamics" data-page="dynamics"><span aria-hidden="true">✎</span>动态运营</a>
 
         <div class="nav-group-title">直播互动</div>
-        <a href="#live" data-page="live"><span aria-hidden="true">🎮</span>直播与小游戏</a>
+        <a href="#live" data-page="live"><span aria-hidden="true">🎮</span><span id="live-nav-label">直播与小游戏</span></a>
         <a href="/live" target="_blank" class="nav-external"><span aria-hidden="true">🎙</span>独立直播推流 ↗</a>
 
         <div class="nav-group-title">人设与资产</div>
@@ -599,11 +599,10 @@
               </div>
             </div>
 
-            <!-- Preset chips for fast filling -->
-            <div class="preset-chips-row">
-              <span class="hint" style="margin:0;font-weight:600;">本地服务预设：</span>
-              <button type="button" class="preset-chip" data-preset="jetson">Jetson 本地 Broker (9012)</button>
-              <button type="button" class="preset-chip" data-preset="workstation">微调服务端口 (9010)</button>
+            <!-- Deployment Mode Switcher: Local vs Remote -->
+            <div class="deploy-mode-switcher" id="deploy-mode-switcher">
+              <button type="button" class="deploy-mode-btn active" id="btn-mode-local" data-mode="local">🏠 本地部署 (Local)</button>
+              <button type="button" class="deploy-mode-btn" id="btn-mode-remote" data-mode="remote">🌐 远程 / 云端 (Remote / API)</button>
             </div>
 
             <!-- Ping Test Box -->
@@ -631,14 +630,14 @@
             </div>
 
             <form id="providers-form">
-              <fieldset id="provider-fields" class="provider-fields" disabled>
+              <fieldset id="provider-fields" class="provider-fields">
                 <fieldset class="provider-group">
                   <legend>文本模型与推理地址</legend>
                   <div class="form-grid">
-                    <label>模型来源
+                    <label>推理引擎协议
                       <select id="llm-kind">
-                        <option value="openai_compatible">自定义 OpenAI 兼容端点 (本地 / 云端)</option>
-                        <option value="llama_cpp">本地 llama.cpp / Jetson 原生</option>
+                        <option value="llama_cpp">本地 llama.cpp 推理</option>
+                        <option value="openai_compatible">远程 / 自定义 OpenAI 兼容端点</option>
                         <option value="demo">离线演示模式 (无真实推理)</option>
                       </select>
                     </label>
@@ -669,9 +668,10 @@
                   <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；外部 API 的 Base URL 通常以 /v1 结尾。</p>
 
                   <div class="form-grid">
-                    <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required></label>
+                    <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required aria-describedby="llm-capacity-help"></label>
                     <label id="llm-native-label">模型原生 / 服务声明上限（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
                   </div>
+                  <p id="llm-capacity-help" class="hint"></p>
                   <label>运营输出额度（tokens，含思考）<input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help"></label>
                   <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考与正文；实际可用额度受上下文剩余空间约束。<span id="llm-live-output-budget"></span></p>
 
@@ -729,8 +729,8 @@
               </fieldset>
 
               <div class="actions">
-                <button id="save-providers" class="primary" type="submit" disabled>保存并应用</button>
-                <button id="reset-providers" type="button" disabled>恢复已保存配置</button>
+                <button id="save-providers" class="primary" type="submit">保存并应用</button>
+                <button id="reset-providers" type="button">恢复已保存配置</button>
                 <button id="check-providers-settings" type="button">检查已保存配置连接</button>
               </div>
               <p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p>

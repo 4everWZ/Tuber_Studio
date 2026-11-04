@@ -1230,33 +1230,38 @@ button.is-busy {
 .status-dot.amber { background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
 .status-dot.red { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
 
-/* Preset Chips & Diagnostics */
-.preset-chips-row {
+/* Deployment Mode Switcher (Local vs Remote) */
+.deploy-mode-switcher {
+  display: inline-flex;
+  gap: 6px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 8px;
+  margin: 10px 0 16px;
+  border: 1px solid #e2e8f0;
+}
+.deploy-mode-btn {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: 10px 0 14px;
-  padding: 8px 12px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: #64748b;
   border-radius: 6px;
-}
-.preset-chip {
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background: #fff;
-  color: #1e293b;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
-.preset-chip:hover {
-  border-color: #3b82f6;
-  color: #1d4ed8;
-  background: #eff6ff;
+.deploy-mode-btn:hover {
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.6);
+}
+.deploy-mode-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .ping-test-box {
   margin: 14px 0;

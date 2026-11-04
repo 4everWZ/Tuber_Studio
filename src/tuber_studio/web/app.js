@@ -187,12 +187,13 @@ function localEngineLabel() {
 }
 function renderLiveFeatures() {
   const enabled = liveEnabled();
-  $("live-nav-label").textContent = enabled ? "Mock 直播" : "直播（后续）";
-  document.querySelector('[data-inference-mode="live"]').textContent = enabled ? "直播模式" : "直播（后续）";
-  $("live-feature-notice").textContent = enabled ? `本地 Mock 直播已开放：启动会加载直播资源；仅处理手动注入事件，不连接 B站或抖音。停止直播后，切回${resourceModeName("text")}模式才会卸载 TTS。` : "直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。";
-  $("live-feature-notice").hidden = false;
-  $("overlay-heading").textContent = enabled ? "OBS / Mock 播放器配置" : "OBS 播放器配置（直播后续）";
-  $("overlay-help").textContent = enabled ? "手动打开播放器后，在 Mock 直播中注入事件即可播报。仅一个 overlay 页面获得播放权，第二个页面进入待机；不会连接真实直播平台。" : "直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。";
+  if ($("live-nav-label")) $("live-nav-label").textContent = enabled ? "Mock 直播" : "直播（后续）";
+  const liveInferenceModeBtn = document.querySelector('[data-inference-mode="live"]');
+  if (liveInferenceModeBtn) liveInferenceModeBtn.textContent = enabled ? "直播模式" : "直播（后续）";
+  if ($("live-feature-notice")) $("live-feature-notice").textContent = enabled ? `本地 Mock 直播已开放：启动会加载直播资源；仅处理手动注入事件，不连接 B站或抖音。停止直播后，切回${resourceModeName("text")}模式才会卸载 TTS。` : "直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。";
+  if ($("live-feature-notice")) $("live-feature-notice").hidden = false;
+  if ($("overlay-heading")) $("overlay-heading").textContent = enabled ? "OBS / Mock 播放器配置" : "OBS 播放器配置（直播后续）";
+  if ($("overlay-help")) $("overlay-help").textContent = enabled ? "手动打开播放器后，在 Mock 直播中注入事件即可播报。仅一个 overlay 页面获得播放权，第二个页面进入待机；不会连接真实直播平台。" : "直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。";
   const localOption = $("tts-kind").querySelector('option[value="gpt_sovits"]');
   localOption.textContent = enabled ? "本地 GPT-SoVITS 音色" : "本地 GPT-SoVITS（后续）";
   $("tts-local-engine").textContent = model.settings ? `已保存本地引擎：${localEngineLabel()} · 音色：${localVoiceId() || "未配置"}。${model.settings.tts?.kind !== "gpt_sovits" ? "当前语音来源未使用此引擎。" : !enabled ? "本地动态语音尚未启用。" : model.settings.tts?.local_backend !== "genie_onnx_int8" ? "此后端未准入本地试听。" : "需手动进入直播模式；引擎与音色由服务配置，只读展示。"}` : "本地引擎：正在读取已保存配置。";
@@ -804,23 +805,37 @@ function providerFormFromSettings(settings) {
   $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
   clearProviderSecrets(); model.providersDirty = false;
   syncModelSelectWithInput();
+  const isLocal = (llm.kind || "llama_cpp") === "llama_cpp" && (!llm.base_url || llm.base_url.includes("127.0.0.1") || llm.base_url.includes("localhost"));
+  const btnLocal = $("btn-mode-local"), btnRemote = $("btn-mode-remote");
+  if (btnLocal && btnRemote) {
+    btnLocal.classList.toggle("active", isLocal);
+    btnRemote.classList.toggle("active", !isLocal);
+  }
 }
 function renderProviderForm() {
-  $("provider-fields").disabled = !model.settings || model.providersSaving;
-  $("save-providers").disabled = !model.settings || model.providersSaving;
-  $("save-providers").setAttribute("aria-busy", String(model.providersSaving));
-  $("reset-providers").disabled = !model.settings || model.providersSaving || !model.providersDirty;
-  $("check-providers-settings").disabled = model.providersSaving;
-  $("providers-dirty").textContent = model.providersSaving ? "正在保存并应用…" : model.providersDirty ? "有未保存修改" : model.settings ? "已保存配置" : "正在读取已保存配置…";
+  if ($("provider-fields")) $("provider-fields").disabled = !!model.providersSaving;
+  if ($("save-providers")) {
+    $("save-providers").disabled = !!model.providersSaving;
+    $("save-providers").setAttribute("aria-busy", String(!!model.providersSaving));
+  }
+  if ($("reset-providers")) $("reset-providers").disabled = !!model.providersSaving || !model.providersDirty;
+  if ($("check-providers-settings")) $("check-providers-settings").disabled = !!model.providersSaving;
+  if ($("providers-dirty")) $("providers-dirty").textContent = model.providersSaving ? "正在保存并应用…" : model.providersDirty ? "有未保存修改" : model.settings ? "已保存配置" : "正在读取已保存配置…";
   const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
-  ["llm-base-url", "llm-model", "llm-key"].forEach(id => { $(id).disabled = demo; });
+  ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
+    const el = $(id);
+    if (el) el.disabled = demo || !!model.providersSaving;
+  });
   $("llm-base-url").required = !demo; $("llm-model").required = !demo;
   $("llm-probe-help").hidden = !external;
-  $("llm-capacity-help").textContent = external ? "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" : "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
+  if ($("llm-capacity-help")) $("llm-capacity-help").textContent = external ? "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" : "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
   const ttsApi = $("tts-kind").value === "openai_compatible";
   $("tts-api-fields").hidden = !ttsApi;
-  ["tts-base-url", "tts-model", "tts-voice"].forEach(id => { $(id).required = ttsApi; $(id).disabled = !ttsApi; });
-  $("tts-key").disabled = !ttsApi;
+  ["tts-base-url", "tts-model", "tts-voice"].forEach(id => {
+    const el = $(id);
+    if (el) { el.required = ttsApi; el.disabled = !ttsApi || !!model.providersSaving; }
+  });
+  if ($("tts-key")) $("tts-key").disabled = !ttsApi || !!model.providersSaving;
   const visionApi = $("vision-kind").value === "openai_compatible";
   $("vision-api-fields").hidden = !visionApi; $("vision-location").disabled = !visionApi;
   ["vision-base-url", "vision-model"].forEach(id => { $(id).required = visionApi; $(id).disabled = !visionApi; });
@@ -924,7 +939,10 @@ function renderDafeiyuModelCard(status) {
 
   if (!badge) return;
 
-  if (status.is_full_local === false) {
+  const currentKind = $("llm-kind") ? $("llm-kind").value : "llama_cpp";
+  const isLocalInUI = currentKind === "llama_cpp";
+
+  if (!isLocalInUI || status.is_full_local === false) {
     badge.className = "badge muted";
     badge.textContent = "Docker / 远端部署";
     if (installedView) installedView.hidden = true;
@@ -933,7 +951,7 @@ function renderDafeiyuModelCard(status) {
     if (btnDownload) btnDownload.style.display = "none";
     if (btnCancel) btnCancel.style.display = "none";
     if ($("dafeiyu-missing-hint")) {
-      $("dafeiyu-missing-hint").textContent = "当前为远程 Docker 容器、端侧推理节点或云端 API。模型权重在 Docker 容器/端侧节点拉取（通过 Dockerfile / downloads.json），本地 Web 端无需也不执行下载。";
+      $("dafeiyu-missing-hint").textContent = "当前为远程 Docker 容器、端侧推理节点或云端 API。模型权重在 Docker 容器/端侧节点拉取，本地 Web 端无需也不执行下载。";
     }
     return;
   }
@@ -977,24 +995,48 @@ function renderDafeiyuModelCard(status) {
 }
 
 function initInferenceProvidersUI() {
-  document.querySelectorAll(".preset-chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      const preset = chip.dataset.preset;
-      if (preset === "jetson" || preset === "local-broker") {
-        $("llm-kind").value = "llama_cpp";
+  const btnModeLocal = $("btn-mode-local");
+  const btnModeRemote = $("btn-mode-remote");
+
+  function setDeployMode(mode) {
+    const isLocal = mode === "local";
+    btnModeLocal?.classList.toggle("active", isLocal);
+    btnModeRemote?.classList.toggle("active", !isLocal);
+    if (isLocal) {
+      $("llm-kind").value = "llama_cpp";
+      if (!$("llm-base-url").value || $("llm-base-url").value.startsWith("https://") || $("llm-base-url").value.includes("openai")) {
         $("llm-base-url").value = "http://127.0.0.1:9012/llm/2b";
-        $("llm-model").value = "MiniCPM-V-4.7-1B";
-        $("tts-kind").value = "gpt_sovits";
-      } else if (preset === "workstation") {
-        $("llm-kind").value = "openai_compatible";
-        $("llm-base-url").value = "http://127.0.0.1:9010/v1";
+      }
+      if (!$("llm-model").value || $("llm-model").value === "__custom__") {
         $("llm-model").value = "MiniCPM-V-4.7-1B";
       }
-      syncModelSelectWithInput();
-      model.providersDirty = true;
-      renderProviderForm();
-      notice("已载入本地服务预设，可点击「一键测通所有端点」测试连通性。");
-    });
+      $("tts-kind").value = "gpt_sovits";
+      $("tts-base-url").value = "http://127.0.0.1:9012/tts";
+      notice("已切换为【本地部署】模式。");
+    } else {
+      $("llm-kind").value = "openai_compatible";
+      if ($("llm-base-url").value === "http://127.0.0.1:9012/llm/2b") {
+        $("llm-base-url").value = "";
+      }
+      $("tts-kind").value = "openai_compatible";
+      notice("已切换为【远程 / 云端】模式，可自定义填写 Base URL 与 API Key。");
+    }
+    syncModelSelectWithInput();
+    model.providersDirty = true;
+    renderProviderForm();
+    checkDafeiyuModelStatus();
+  }
+
+  btnModeLocal?.addEventListener("click", () => setDeployMode("local"));
+  btnModeRemote?.addEventListener("click", () => setDeployMode("remote"));
+
+  $("llm-kind")?.addEventListener("change", () => {
+    const isLocal = $("llm-kind").value === "llama_cpp";
+    btnModeLocal?.classList.toggle("active", isLocal);
+    btnModeRemote?.classList.toggle("active", !isLocal);
+    model.providersDirty = true;
+    renderProviderForm();
+    checkDafeiyuModelStatus();
   });
 
   $("btn-download-dafeiyu-model")?.addEventListener("click", async () => {
