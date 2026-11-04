@@ -204,6 +204,20 @@
               </div>
             </div>
           </article>
+          <article class="panel daily-memory-card" id="daily-memory-card">
+            <div class="panel-heading">
+              <div>
+                <h2>跨渠道每日记忆与社群趣事</h2>
+                <span class="hint">打通直播高光与评论热梗，为直播闲聊、视频回帖与动态提供鲜活谈资</span>
+              </div>
+              <div class="actions">
+                <button type="button" id="extract-daily-memory" class="primary">✨ 提炼今日趣事</button>
+                <button type="button" id="refresh-daily-memory">刷新</button>
+              </div>
+            </div>
+            <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
+            <div id="daily-memory-list" class="daily-memory-list"></div>
+          </article>
           <div class="overview-grid"><article class="panel"><div class="panel-heading"><h2>当前播报</h2><span id="current-status" class="badge">空闲</span></div><div class="current-character"><img id="character-image" alt="当前角色" hidden><div><h3 id="current-character-name">尚未选择角色</h3><p id="current-text" class="speech-text">启动直播并注入一条弹幕，查看处理及播报状态。</p><p id="current-detail" class="hint"></p></div></div><div class="actions"><button data-action="pause">暂停后续任务</button><button data-action="skip">跳过当前</button><button data-action="mute" class="danger">紧急静音</button></div><div class="subsection"><h3>最近实际播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article><article class="panel"><div class="panel-heading"><h2>运行连接</h2><button id="check-providers">检查连接</button></div><dl id="provider-summary" class="description-list"></dl><p class="hint">音频由独立 overlay 播放。只有播放器确认开始并结束，任务才计为已播报。</p><a href="#settings" class="inline-link">查看 OBS 播放器配置 →</a><pre id="provider-check" class="code-small" hidden></pre></article></div>
           <article class="panel"><div class="panel-heading"><h2>最近任务</h2><a href="#live" class="inline-link">查看事件与队列</a></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="overview-jobs"></tbody></table></div></article>
         </section>
@@ -410,6 +424,7 @@
   <script src="/static/messages.js" defer></script>
   <script src="/static/automation.js" defer></script>
   <script src="/static/account.js" defer></script>
+  <script src="/static/daily-memory.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

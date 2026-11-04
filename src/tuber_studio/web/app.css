@@ -1048,3 +1048,133 @@ button.is-busy {
   color: #0f172a;
   margin-left: 2px;
 }
+
+/* Daily Memory & Anecdotes Card */
+.daily-memory-card {
+  margin-bottom: 20px;
+}
+
+.daily-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.daily-memory-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.daily-memory-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.daily-memory-item.active {
+  border-left: 4px solid #10b981;
+}
+
+.daily-memory-item.pending_review {
+  border-left: 4px solid #f59e0b;
+}
+
+.daily-memory-item.archived {
+  border-left: 4px solid #94a3b8;
+  opacity: 0.75;
+}
+
+.daily-memory-item .item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.daily-memory-item .category-chip {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.daily-memory-item .item-headline {
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.daily-memory-item .item-date {
+  color: #64748b;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.status-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.status-badge.success {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.status-badge.warning {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.status-badge.muted {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.daily-memory-item .item-anecdote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.daily-memory-item .quote-icon {
+  color: #3b82f6;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.daily-memory-item .anecdote-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.daily-memory-item .item-quote {
+  margin-top: 4px;
+  padding-left: 26px;
+}
+
+.daily-memory-item .item-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #f1f5f9;
+}

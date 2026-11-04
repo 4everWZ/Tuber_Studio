@@ -620,6 +620,46 @@ def create_app(
     async def publish_dynamic(post_id: int):
         return await dynamics.publish(post_id)
 
+    @app.get("/api/daily-memory", dependencies=[Depends(require_admin)])
+    async def get_daily_memory(
+        date: str | None = None,
+        status: str | None = None,
+        limit: int = Query(50, ge=1, le=100),
+    ):
+        char = runtime.character
+        highlights = runtime.daily_memory.list_highlights(
+            char["id"], char["version"], date_str=date, status=status, limit=limit
+        )
+        active = runtime.daily_memory.get_active_anecdotes(
+            char["id"], char["version"], limit=3, max_tokens=200
+        )
+        return {"highlights": highlights, "active_anecdotes": active}
+
+    @app.post("/api/daily-memory/extract", dependencies=[Depends(require_admin)])
+    async def extract_daily_memory(data: dict = Body(default={})):
+        import datetime
+        date_str = data.get("date") or datetime.date.today().isoformat()
+        auto_approve = bool(data.get("auto_approve", False))
+        async with runtime.generation_lock:
+            extracted = await runtime.daily_memory.distill(
+                runtime.character, date_str, runtime.llm, auto_approve=auto_approve
+            )
+        return {"extracted": extracted, "total": len(extracted), "date": date_str}
+
+    @app.put("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
+    async def update_daily_memory(item_id: int, data: dict = Body(...)):
+        updated = runtime.daily_memory.update_highlight(item_id, data)
+        if not updated:
+            raise HTTPException(404, "未找到该记忆条目")
+        return updated
+
+    @app.delete("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
+    async def delete_daily_memory(item_id: int):
+        success = runtime.daily_memory.delete_highlight(item_id)
+        if not success:
+            raise HTTPException(404, "未找到该记忆条目")
+        return {"ok": True, "id": item_id}
+
     @app.post("/api/comments/import", dependencies=[Depends(require_admin)])
     async def import_comments(data: dict = Body(...)):
         return comments.import_items(

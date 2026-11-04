@@ -15,6 +15,7 @@ import psutil
 from .api_providers import VisionService, create_llm
 from .browsing_store import BrowsingRepository
 from .context import ContextManager
+from .daily_memory import DailyMemoryService
 from .generation_meter import budgeted_call
 from .inference_node_client import refresh_capabilities
 from .live_media import LiveMedia
@@ -49,7 +50,8 @@ class Runtime:
         self.vision = VisionService(
             settings.data.get("vision", {"kind": "disabled"}), settings.endpoint_key("vision")
         )
-        self.context = ContextManager(settings, store, self.llm)
+        self.daily_memory = DailyMemoryService(store)
+        self.context = ContextManager(settings, store, self.llm, daily_memory=self.daily_memory)
         self.retention = RetentionManager(settings, store)
         self.retention_worker = None
         self.retention_error = None

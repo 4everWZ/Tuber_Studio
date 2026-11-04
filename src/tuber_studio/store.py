@@ -58,6 +58,13 @@ class Store:
                 errors INTEGER DEFAULT 0,error TEXT,character_id TEXT,created_at REAL,updated_at REAL);
             CREATE TABLE IF NOT EXISTS publish_attempts(
                 id INTEGER PRIMARY KEY,draft_id INTEGER,started_at REAL,status TEXT,receipt TEXT,error TEXT);
+            CREATE TABLE IF NOT EXISTS daily_highlights(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,character_id TEXT NOT NULL,character_version INTEGER NOT NULL,
+                highlight_date TEXT NOT NULL,category TEXT NOT NULL,headline TEXT NOT NULL,
+                source_ref TEXT,source_user TEXT,quote TEXT NOT NULL,anecdote TEXT NOT NULL,
+                tags TEXT NOT NULL,status TEXT DEFAULT 'active',created_at REAL NOT NULL,updated_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS daily_highlights_lookup
+                ON daily_highlights(character_id,character_version,highlight_date,status);
         """)
         columns = {row[1] for row in self.db.execute("PRAGMA table_info(comments)")}
         if "category_source" not in columns:

@@ -59,9 +59,10 @@ class BudgetedSummary:
 
 
 class ContextManager:
-    def __init__(self, settings, store, provider):
+    def __init__(self, settings, store, provider, daily_memory=None):
         self.settings, self.store, self.provider = settings, store, provider
         self.memory = GroundedMemory(store)
+        self.daily_memory = daily_memory
         self.last_key = None
         store.execute("""CREATE TABLE IF NOT EXISTS context_windows(
             key TEXT PRIMARY KEY,mode TEXT,character_id TEXT,character_version INTEGER,
@@ -98,7 +99,9 @@ class ContextManager:
 
     def source_candidate(self, scope, character, events):
         """Stage original viewer data separately from persistent conversation state."""
-        candidate = ContextManager(self.settings, Store(":memory:", [character]), self.provider)
+        candidate = ContextManager(
+            self.settings, Store(":memory:", [character]), self.provider, daily_memory=self.daily_memory
+        )
         try:
             row = candidate.window(scope, character)
             history = []
@@ -217,6 +220,23 @@ class ContextManager:
                     + json.dumps(evidence, ensure_ascii=False),
                 }
             )
+        if self.daily_memory and mode in ("live", "comment_draft"):
+            anecdotes = self.daily_memory.get_active_anecdotes(
+                character["id"],
+                character["version"],
+                query_text=event.get("text", "") if event else "",
+                limit=2,
+                max_tokens=150,
+            )
+            if anecdotes:
+                initial.append(
+                    {
+                        "role": "user",
+                        "kind": "context",
+                        "content": "近期生活与社群新鲜事（闲聊或被问及时自然随口提及，不要死板背诵）："
+                        + json.dumps(anecdotes, ensure_ascii=False),
+                    }
+                )
         history = json.loads(row["history"])
         messages = self.render(prefix, initial, history, pending, suffix)
         overflow = False
