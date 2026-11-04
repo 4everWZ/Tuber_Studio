@@ -376,9 +376,7 @@ async def test_inflight_restore_cannot_apply_after_a_complete_mode_roundtrip(vis
 
 
 @pytest.mark.parametrize("field", ["model_sha256", "projector_sha256", "runtime_sha256"])
-async def test_restore_rejects_changed_runtime_bytes_even_when_alias_and_properties_match(
-    visual_runtime, field
-):
+async def test_restore_accepts_changed_reported_digest_when_alias_and_properties_match(visual_runtime, field):
     runtime, _, state = visual_runtime
     await video_vision_service.probe_visual(runtime)
     state["identifier_overrides"] = {field: "f" * 64}
@@ -386,7 +384,43 @@ async def test_restore_rejects_changed_runtime_bytes_even_when_alias_and_propert
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
     runtime.browsing.evidence.visual = fresh
+    request_count = len(state["requests"])
     await video_vision_service.restore_admission(runtime)
+    # Restore checks actual capabilities; reported byte digests are no longer a gate.
+    assert fresh.capabilities()["admitted"] and fresh._probe is not None
+    assert all(request.method == "GET" for request in state["requests"][request_count:])
+
+
+@pytest.mark.parametrize("failure", ["unloaded", "context", "vision", "alias"])
+async def test_restore_still_requires_a_loaded_capable_visual_model(visual_runtime, failure):
+    runtime, _, state = visual_runtime
+    await video_vision_service.probe_visual(runtime)
+    original = state["http_handler"]
+    if failure == "unloaded":
+        state["identifier_overrides"] = {"loaded": False}
+
+    async def incompatible_properties(request):
+        if request.url.path.endswith("/props"):
+            return httpx.Response(
+                200,
+                json={
+                    "model_alias": "Wrong-Model" if failure == "alias" else "Gemma4-E2B",
+                    "default_generation_settings": {"n_ctx": 4096 if failure == "context" else 131072},
+                    "modalities": {"vision": failure != "vision"},
+                },
+            )
+        return await original(request)
+
+    state["http_handler"] = incompatible_properties
+    fresh = ApiVideoEvidenceProvider(
+        runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
+    )
+    runtime.browsing.evidence.visual = fresh
+    if failure == "unloaded":
+        await video_vision_service.restore_admission(runtime)
+    else:
+        with pytest.raises(ValueError):
+            await video_vision_service.restore_admission(runtime)
     assert not fresh.capabilities()["admitted"] and fresh._probe is None
 
 
