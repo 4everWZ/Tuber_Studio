@@ -4,7 +4,6 @@ import asyncio
 import base64
 import binascii
 import json
-import os
 import secrets
 import time
 import weakref
@@ -94,8 +93,6 @@ def create_app(
             await dynamics.open()
             await messages.open()
             await browsing.open()
-            if "PYTEST_CURRENT_TEST" not in os.environ and os.getenv("TUBER_DISABLE_AUTO_DOWNLOAD") != "1":
-                model_hub.ensure_model_on_first_run(settings.models)
             yield
         finally:
             try:
@@ -445,7 +442,15 @@ def create_app(
     @app.put("/api/settings/providers", dependencies=[Depends(require_admin)])
     async def provider_settings(data: dict = Body(...)):
         try:
-            return await apply_settings(runtime, data)
+            result = await apply_settings(runtime, data)
+            auto_download_triggered = False
+            if model_hub.is_full_local_deployment(settings):
+                selected_model = settings.data.get("llm", {}).get("model", "")
+                if model_hub.is_dafeiyu_model(selected_model) and not model_hub.is_model_installed(settings.models):
+                    model_hub.start_model_download(settings.models)
+                    auto_download_triggered = True
+            result["auto_download_triggered"] = auto_download_triggered
+            return result
         except ProviderConfigurationError as error:
             raise HTTPException(409, str(error)) from None
         except RuntimeError as error:
@@ -520,7 +525,9 @@ def create_app(
     @app.get("/api/models/dafeiyu/status", dependencies=[Depends(require_admin)])
     async def get_dafeiyu_model_status():
         """Get real-time installation and download progress of the Da Feiyu model."""
-        return model_hub.get_model_status(settings.models)
+        status = model_hub.get_model_status(settings.models)
+        status["is_full_local"] = model_hub.is_full_local_deployment(settings)
+        return status
 
     @app.post("/api/models/dafeiyu/download", dependencies=[Depends(require_admin)])
     async def trigger_dafeiyu_model_download():

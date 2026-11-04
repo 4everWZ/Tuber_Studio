@@ -578,10 +578,10 @@
               <div class="model-card-body">
                 <div id="dafeiyu-model-installed-view" hidden>
                   <p class="hint" style="color:var(--text-success, #2e7d32);margin:4px 0;">✔ 本地模型已就绪：<code id="dafeiyu-model-path">runtime/models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf</code> (<span id="dafeiyu-model-size">—</span>)</p>
-                  <small class="muted">首次克隆自动下载完成。可在下方模型下拉列表直接选用，并配合极简锚点 Prompt 运行。</small>
+                  <small class="muted">权重文件校验通过。可在下方模型下拉列表直接选用，并配合极简锚点 Prompt 运行。</small>
                 </div>
                 <div id="dafeiyu-model-missing-view">
-                  <p class="hint" id="dafeiyu-missing-hint" style="margin:4px 0;">首次部署未检测到本地权重。系统启动时将自动从 Hugging Face 镜像高速拉取，也可点击下方按钮立即下载。</p>
+                  <p class="hint" id="dafeiyu-missing-hint" style="margin:4px 0;">全套本地部署检测：未在本地目录检测到微调权重。在下方选择模型并保存配置确认后，系统将自动拉取；也可点击下方按钮立即下载。</p>
                   <div id="dafeiyu-progress-container" style="display:none;margin:8px 0;">
                     <div style="background:var(--border, #e0e0e0);border-radius:4px;height:12px;overflow:hidden;position:relative;">
                       <div id="dafeiyu-progress-fill" style="background:#1976d2;width:0%;height:100%;transition:width 0.3s;"></div>

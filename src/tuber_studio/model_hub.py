@@ -40,6 +40,62 @@ def _default_models_dir() -> Path:
     return models_dir
 
 
+def is_full_local_deployment(settings_or_data) -> bool:
+    """Determine if the deployment is full local on the current host.
+
+    Returns False if deployment is remote (e.g. Jetson Orin Nano, remote Docker container),
+    or using cloud API (openai_compatible). Returns True only when inference runs
+    locally on this machine (llama_cpp with loopback address).
+    """
+    if hasattr(settings_or_data, "data"):
+        data = settings_or_data.data
+    elif isinstance(settings_or_data, dict):
+        data = settings_or_data
+    else:
+        return False
+
+    broker = data.get("inference_broker", {})
+    llm = data.get("llm", {})
+
+    # 1. If inference_broker explicitly declared remote deployment (e.g. Jetson docker node)
+    if broker.get("deployment") == "remote":
+        return False
+
+    # 2. If LLM engine is not llama_cpp (e.g. cloud API openai_compatible, demo)
+    if llm.get("kind") != "llama_cpp":
+        return False
+
+    # 3. Check endpoint host address
+    base_url = (llm.get("base_url") or broker.get("base_url") or "").strip()
+    if base_url:
+        from urllib.parse import urlsplit
+
+        try:
+            parsed = urlsplit(base_url)
+            host = (parsed.hostname or "").lower()
+            # If pointing to an external machine/IP (e.g. 100.95.31.18 or custom server), it's not local
+            if host and host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+                return False
+        except Exception:
+            return False
+
+    return True
+
+
+def is_dafeiyu_model(model_name: str | None) -> bool:
+    """Check if the given model name refers to the fine-tuned Dafeiyu model."""
+    if not model_name or not isinstance(model_name, str):
+        return False
+    name = model_name.strip()
+    return name in {
+        DEFAULT_MODEL_NAME,
+        DEFAULT_MODEL_FILENAME,
+        "MiniCPM-V-4.7-1B",
+        "minicpm_v_dafeiyu",
+        "MiniCPM-V-4.7-1B (大肥鱼专属微调)",
+    }
+
+
 def is_model_installed(models_dir: Path | None = None) -> bool:
     """Check if the default fine-tuned model exists and has a valid file size."""
     target_dir = models_dir or _default_models_dir()

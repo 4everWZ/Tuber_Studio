@@ -924,9 +924,23 @@ function renderDafeiyuModelCard(status) {
 
   if (!badge) return;
 
+  if (status.is_full_local === false) {
+    badge.className = "badge muted";
+    badge.textContent = "Docker / 远端部署";
+    if (installedView) installedView.hidden = true;
+    if (missingView) missingView.hidden = false;
+    if (progressBox) progressBox.style.display = "none";
+    if (btnDownload) btnDownload.style.display = "none";
+    if (btnCancel) btnCancel.style.display = "none";
+    if ($("dafeiyu-missing-hint")) {
+      $("dafeiyu-missing-hint").textContent = "当前为远程 Docker 容器、端侧推理节点或云端 API。模型权重在 Docker 容器/端侧节点拉取（通过 Dockerfile / downloads.json），本地 Web 端无需也不执行下载。";
+    }
+    return;
+  }
+
   if (status.installed) {
     badge.className = "badge good";
-    badge.textContent = "已安装并就绪";
+    badge.textContent = "本地已就绪";
     if (installedView) installedView.hidden = false;
     if (missingView) missingView.hidden = true;
     if ($("dafeiyu-model-path")) $("dafeiyu-model-path").textContent = status.file_path || status.filename;
@@ -937,7 +951,7 @@ function renderDafeiyuModelCard(status) {
     if (installedView) installedView.hidden = true;
     if (missingView) missingView.hidden = false;
     if (progressBox) progressBox.style.display = "block";
-    if (btnDownload) btnDownload.disabled = true;
+    if (btnDownload) { btnDownload.style.display = "inline-block"; btnDownload.disabled = true; }
     if (btnCancel) btnCancel.style.display = "inline-block";
     if (progressFill) progressFill.style.width = `${status.download_percent}%`;
     if (progressText) {
@@ -948,14 +962,16 @@ function renderDafeiyuModelCard(status) {
     if (speedText) speedText.textContent = `${status.speed_mb_s} MB/s`;
   } else {
     badge.className = "badge";
-    badge.textContent = status.download_status === "failed" ? "下载失败" : "未下载";
+    badge.textContent = status.download_status === "failed" ? "下载失败" : "本地未下载";
     if (installedView) installedView.hidden = true;
     if (missingView) missingView.hidden = false;
     if (progressBox) progressBox.style.display = "none";
-    if (btnDownload) btnDownload.disabled = false;
+    if (btnDownload) { btnDownload.style.display = "inline-block"; btnDownload.disabled = false; }
     if (btnCancel) btnCancel.style.display = "none";
-    if (status.error && $("dafeiyu-missing-hint")) {
-      $("dafeiyu-missing-hint").textContent = `下载提示: ${status.error}。可重新点击尝试。`;
+    if ($("dafeiyu-missing-hint")) {
+      $("dafeiyu-missing-hint").textContent = status.error
+        ? `下载提示: ${status.error}。可重新点击尝试。`
+        : "全套本地部署模式：未在本地目录检测到微调权重。在下方选择模型并保存配置确认后，系统将自动拉取；也可点击下方按钮立即下载。";
     }
   }
 }
@@ -1737,7 +1753,11 @@ $("providers-form").onsubmit = async event => {
     $("providers-save-state").classList.remove("error-text"); $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
     const result = await api("/api/settings/providers", {method: "PUT", body: payload});
     applySettings(result, true);
-    const message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
+    let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
+    if (result.auto_download_triggered) {
+      message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
+      checkDafeiyuModelStatus();
+    }
     $("providers-save-state").textContent = message; notice(message);
     const checks = await Promise.allSettled([api("/api/status"), loadVoices()]);
     if (checks[0].status === "fulfilled") renderStatus(checks[0].value);
