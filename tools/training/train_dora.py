@@ -76,7 +76,8 @@ def parse_args():
     parser.add_argument("--gradient_accumulation_steps", type=int, default=4, help="Gradient accumulation steps")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Peak learning rate")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
-    parser.add_argument("--max_seq_length", type=int, default=2048, help="Maximum sequence length")
+    parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
+    parser.add_argument("--gradient_checkpointing", action="store_true", default=True, help="Enable gradient checkpointing to reduce VRAM")
     parser.add_argument("--bf16", action="store_true", default=True, help="Use BF16 mixed precision (Ampere native)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     return parser.parse_args()
@@ -231,6 +232,8 @@ def main():
         learning_rate=args.learning_rate,
         num_train_epochs=args.epochs,
         bf16=args.bf16,
+        gradient_checkpointing=args.gradient_checkpointing,
+        gradient_checkpointing_kwargs={"use_reentrant": False} if args.gradient_checkpointing else None,
         logging_steps=10,
         save_strategy="epoch",
         eval_strategy="epoch",
