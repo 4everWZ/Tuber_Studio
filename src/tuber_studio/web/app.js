@@ -9,6 +9,7 @@ import {
   loadLocalModelsDropdown as loadLocalModels,
   checkDafeiyuModelStatus as checkDafeiyuStatus,
   syncModelSelectWithInput,
+  updateMultimodalBadge,
 } from "./modules/providers.js";
 import {
   initOperationsModule,
@@ -191,6 +192,7 @@ function renderControls() {
   $("event-form").querySelectorAll("input, select, textarea, button").forEach(input => { if (input.getAttribute("aria-busy") !== "true") input.disabled = !liveEnabled() || resourcesTransitioning(); });
   if ($("compact-live").getAttribute("aria-busy") !== "true") $("compact-live").disabled = !liveEnabled();
   renderLiveFeatures();
+  updateMultimodalBadge();
 }
 function liveEnabled() { return model.settings?.features?.live_enabled === true; }
 function resourcesTransitioning() {
@@ -851,6 +853,7 @@ function renderProviderForm() {
   if ($("llm-capacity-help")) $("llm-capacity-help").textContent = external ? "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" : "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
   renderTTSFields(model);
   renderLiveFeatures();
+  updateMultimodalBadge();
 }
 function applySettings(settings, fillForm = false) {
   model.settings = {...model.settings, ...settings}; settings = model.settings;

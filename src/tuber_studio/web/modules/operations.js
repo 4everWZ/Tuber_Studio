@@ -301,19 +301,19 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
   applyPermissionTierUI(calculatePermissionTier(optimisticSettings, account, hasCsrf));
 
   const current = currentAutomationStatus?.settings || {};
-  const candidateLimit = $("exp-candidate-limit") ? parseInt($("exp-candidate-limit").value || "20", 10) : current.candidate_limit;
-  const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : current.inspect_limit;
-  const decisionTokens = $("exp-decision-max-tokens") ? parseInt($("exp-decision-max-tokens").value || "8192", 10) : current.decision_max_tokens;
-  const deadlineSec = $("exp-deadline-seconds") ? parseInt($("exp-deadline-seconds").value || "1800", 10) : current.deadline_seconds;
-  const autonomousTopics = $("exp-autonomous-topics") ? Boolean($("exp-autonomous-topics").checked) : current.autonomous_topics;
-  const visualEnabled = $("exp-visual-enabled") ? Boolean($("exp-visual-enabled").checked) : current.visual_enabled;
+  const candidateLimit = $("exp-candidate-limit") ? parseInt($("exp-candidate-limit").value || "20", 10) : (current.candidate_limit || 20);
+  const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : (current.inspect_limit || 4);
+  const decisionTokens = $("exp-decision-max-tokens") ? parseInt($("exp-decision-max-tokens").value || "8192", 10) : (current.decision_max_tokens || 8192);
+  const deadlineSec = $("exp-deadline-seconds") ? parseInt($("exp-deadline-seconds").value || "1800", 10) : (current.deadline_seconds || 1800);
+  const autonomousTopics = $("exp-autonomous-topics") ? Boolean($("exp-autonomous-topics").checked) : Boolean(current.autonomous_topics);
+  const visualEnabled = $("exp-visual-enabled") ? Boolean($("exp-visual-enabled").checked) : Boolean(current.visual_enabled ?? true);
 
   const allowedBrowsingKeys = new Set([
     "sources", "keywords", "watch_videos", "autonomous_topics", "discovery_enabled",
     "top_level_enabled", "top_level_auto_publish", "reply_enabled", "reply_auto_publish",
     "video_like_enabled", "video_like_auto_publish", "video_fav_enabled", "video_fav_auto_publish",
     "max_replies_per_video", "auto_downgrade_on_error", "mentions_enabled", "mention_reply_enabled",
-    "replies_enabled", "comment_handoff_enabled", "visual_enabled", "workers", "candidate_limit",
+    "replies_enabled", "visual_enabled", "workers", "candidate_limit",
     "inspect_limit", "max_search_terms", "max_pages", "max_reads", "max_model_calls",
     "max_input_tokens", "max_output_tokens", "decision_max_tokens", "deadline_seconds",
     "interval_seconds", "notification_interval_seconds", "read_retries", "max_takeovers",
@@ -326,10 +326,10 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
   const merged = {
     ...current,
     ...optimisticSettings,
-    candidate_limit: Math.max(1, Math.min(20, candidateLimit)),
-    inspect_limit: Math.max(1, Math.min(20, inspectLimit)),
-    decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens)),
-    deadline_seconds: Math.max(60, Math.min(3600, deadlineSec)),
+    candidate_limit: Math.max(1, Math.min(20, candidateLimit || 20)),
+    inspect_limit: Math.max(1, Math.min(20, inspectLimit || 4)),
+    decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens || 8192)),
+    deadline_seconds: Math.max(60, Math.min(3600, deadlineSec || 1800)),
     autonomous_topics: autonomousTopics,
     visual_enabled: visualEnabled,
   };
@@ -340,6 +340,8 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
       payload[k] = v;
     }
   }
+  delete payload.comment_handoff_enabled;
+  delete payload.handoff_auto_send;
 
   const fb = $("matrix-save-feedback");
   if (fb && !isSilent) fb.textContent = "正在保存权限矩阵…";

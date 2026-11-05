@@ -7,6 +7,48 @@ import { $, node, safeMessage, notice, busy, tokenCount, formatBytes } from "./c
 
 let dafeiyuModelTimer = null;
 
+export function updateMultimodalBadge() {
+  const input = $("llm-model");
+  const badge = $("model-multimodal-badge");
+  const pingVisionBadge = $("ping-vision-badge");
+  const pingVisionDetail = $("ping-vision-detail");
+  if (!badge) return;
+
+  const modelName = (input ? input.value : "").trim().toLowerCase();
+  const isMultimodal = Boolean(
+    modelName.includes("minicpm-v") ||
+    modelName.includes("-v-") ||
+    modelName.includes("vision") ||
+    modelName.includes("vl") ||
+    modelName.includes("4o") ||
+    modelName.includes("gemini")
+  );
+
+  if (isMultimodal) {
+    badge.className = "badge good";
+    badge.textContent = "👁️ 支持多模态视觉";
+    badge.title = "已检测到视觉能力：系统将支持视频抽帧与视觉关键帧分析";
+    if (pingVisionBadge) {
+      pingVisionBadge.className = "ping-badge ok";
+      pingVisionBadge.textContent = "多模态就绪";
+    }
+    if (pingVisionDetail) {
+      pingVisionDetail.textContent = "原生支持视觉抽帧分析；视频关键帧送入模型综合决策。";
+    }
+  } else {
+    badge.className = "badge muted";
+    badge.textContent = "📝 纯文本模式 (自动回退)";
+    badge.title = "纯文本模型：无需多模态，系统自动平滑回退至字幕与文本决策模式";
+    if (pingVisionBadge) {
+      pingVisionBadge.className = "ping-badge muted";
+      pingVisionBadge.textContent = "纯文本回退";
+    }
+    if (pingVisionDetail) {
+      pingVisionDetail.textContent = "平滑回退模式：自动使用字幕与文本决策，不影响日常运营。";
+    }
+  }
+}
+
 export function syncModelSelectWithInput() {
   const select = $("llm-model-select");
   const input = $("llm-model");
@@ -23,6 +65,7 @@ export function syncModelSelectWithInput() {
   if (!found && val) {
     select.value = "__custom__";
   }
+  updateMultimodalBadge();
 }
 
 export async function loadLocalModelsDropdown(api) {
@@ -544,7 +587,8 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
           }
         }
 
-        notice("端点测通诊断完成！详细延迟已展示在下方卡片。");
+        updateMultimodalBadge();
+        notice("端点测通诊断完成！详细延迟与多模态状态已展示在下方卡片。");
       } catch (err) {
         notice(`端点诊断执行失败：${safeMessage(err.message)}`, true);
       }
@@ -553,4 +597,5 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
 
   loadLocalModelsDropdown(api);
   checkDafeiyuModelStatus(api);
+  updateMultimodalBadge();
 }

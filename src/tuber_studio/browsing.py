@@ -186,6 +186,7 @@ class BrowsingService:
     async def configure(self, value):
         data = dict(value)
         data.pop("comment_handoff_enabled", None)
+        data.pop("handoff_auto_send", None)
         current = self.policy()
         merged = current | data
         config = BrowsingPolicy.model_validate(merged).model_dump()
