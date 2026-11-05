@@ -1,6 +1,6 @@
 # 游戏直播契约草案
 
-状态：后续阶段草案。输入为 [游戏直播SRS](../../tmp/Tuber_Studio_Game_Livestream_SRS_v0.1.md)的实际v0.2；本文维护游戏能力的拟议合同，不替代当前产品、部署或模型配置，也不表示已经实现或验收。
+本文是直播阶段之后的实机接入草案，输入为本地 `tmp/Tuber_Studio_Game_Livestream_SRS_v0.1.md`（内容实际为 v0.2）。星露谷与植物大战僵尸的模拟现状、需求映射及实机验收进度见[游戏实施计划](../plans/game-livestream.md)。
 
 ## 范围与复用边界
 

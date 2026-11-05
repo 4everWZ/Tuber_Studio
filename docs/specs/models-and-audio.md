@@ -53,11 +53,17 @@ MiniCPM5-2B 是文本模型。视觉 endpoint 默认 disabled；本地地址不�
 
 LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json，使用 0600 私有权限；管理接口只返回是否已配置，不回显密钥，不把凭证放入模型上下文、公开配置或日志。修改 endpoint 时须重新填写或明确清除对应 key，避免旧凭证发送到新服务；公网 endpoint 使用 HTTPS，禁止跟随重定向泄露凭证。内部 broker token 只用于受控本地 broker，不发送给外部 API。设置修改须经过认证，并在停止直播、无生成作业且自动浏览／回复关闭时原子应用；失败恢复原配置／客户端／本地资源，恢复未确认须可见报错，历史会话保留并按新 Provider 重新计数。
 
+### Jetson 推理接口
+
+默认连接经过配对的本地 Jetson 推理服务。业务端的 broker LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，统一路由按请求模型或当前 Profile 调度文本模式，直播模式保持已选资源。可在该前缀下查询 `health`、`props` 和模型列表，兼容调用使用 `/llm/v1/chat/completions`。旧 `/llm/{模型}/…` 分路继续兼容固定模型调用。外部兼容 API 使用服务方给定的前缀及独立凭证。节点可达、模型已加载、图像可处理和实际资源准入分别核对。
+
+状态探测遵守同一凭证绑定。临时输入的凭证不进入 URL 或日志，保存的凭证仅用于其绑定端点，内部 broker token 仅用于已配对节点的受控路径。检查临时地址使用明确提供给该地址的凭证，或执行无凭证探测。
+
 ## Profile 选择与准入
 
-运营选用 **Gemma 4 E2B**：QAT来源Q4_0主权重、Q8_0视觉投影器、实际131072上下文、q4_0 K/V、思考开启，正常运营输出额度8192且不加独立思考上限。文本采用已测temperature=0.2、top_p=0.95、top_k=40、min_p=0、repeat_penalty=1；额度可按现有设置调整。运营独占推理资源，不要求与TTS共驻；直播继续使用已准入的MiniCPM5＋Genie。文件身份由[候选清单](../../evaluations/candidates/vlm-operations.json)维护，选型理由及边界见[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)。
+默认运营路线是 Jetson 上的自有微调模型，按[内建 OC 方式](runtime-and-characters.md#角色生成方式)组装角色输入。实际权重、投影器、窗口、KV、采样和能力须按该模型在目标设备上核验，沿用同一运营、来源与资源验收要求。通用本地模型／VLM 和兼容 API 由操作者显式选择。运营不要求 TTS 共驻；直播继续以已准入的 MiniCPM5＋Genie 为基线。
 
-独立推理节点已注册固定Gemma Profile，提供原生文本桥、兼容视觉接口和Genie语音接口。电脑在设置中配对节点后，将运营和直播保存为两套Provider配置；实际切换成功、别名与131072窗口核对后才同时替换客户端，失败恢复原模式。普通全本地安装预设继续使用MiniCPM5，已有安装不因配对模板变化被改写。实验仍先释放既有推理资源，逐个运行；原生窗口、实际运行窗口、显式扩窗、真实长输入接收与召回分别记录。
+既有双机部署使用的通用模型 Profile 为 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出），其参数、文件身份、实测结果和未通过项由[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)及[双机实测](../../evaluations/results/distributed-operations-20261102.md)维护。该 Profile 属于通用模型路线。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。新节点优先使用已安装的大肥鱼微调模型，业务端根据节点实际配置配对，保留已有显式安装配置。微调 Profile 的视觉取材须独立配置与准入，目标设备验收见[当前计划](../plans/current.md#推理配置与凭证边界)。实验先释放既有推理资源，分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。
 
 源码模板和当前固定broker默认采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式缩小或放大配置窗口，最小 4096，实际不得超过所选本地模型的真实 native；MiniCPM5-2B的 native 为 131072，不能靠填写更大的声明突破它。本地从真实 GGUF／运行时核对 native 和实际 n_ctx，API 则区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切 Provider 或窗口后重新计数；较小窗口不冒称已接收 128K。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成 1B。
 
@@ -129,7 +135,7 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 ## 单容器封装与推理边界
 
-目标为从适合 Jetson 的原始 CUDA／PyTorch 镜像派生一个 tuber-studio 镜像／容器，只保留运行所需组件，统一 Python／CUDA 环境，共享项目 runtime 挂载。容器内分离业务后端、受限 broker 和按需 llama／TTS 子进程；不默认部署 host Docker controller／独立 host venv，也不挂载 Docker.sock。
+可选全本地部署使用一个从 Jetson CUDA／PyTorch 环境派生的 tuber-studio 容器，业务后端、受限 broker 和按需 llama／TTS 子进程共享运行环境及项目 runtime 挂载。全本地方式沿用容器内运行环境，无需另设宿主 Docker controller 或 Python venv。默认双机部署的职责和数据归属见[跨主机规范](distributed-runtime.md)。两种模式都不挂载 Docker.sock。
 
 程序交付面向Jetson ARM64／L4T R36.4。Docker镜像只提供CUDA／原生Torch、llama-server、锁定Python依赖及固定Genie转换／图骨架依赖；应用源码、WebUI、角色素材、初始化清单和预设由独立程序包或宿主源码目录只读挂载，数据仍独立持久化。日常代码更新不重建环境镜像，不在启动时安装依赖。
 

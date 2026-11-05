@@ -30,7 +30,7 @@ B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留�
 
 ## 电脑业务主机与独立推理节点
 
-推荐由电脑运行B/S后端、Agent、联网与B站工具、在线点歌Node、业务缓存和OBS，Jetson只运行受认证的推理节点。业务数据库、角色／关系、平台凭据和登录会话保存在电脑，模型、声音模型及推理缓存保留在Jetson。数据归属与恢复约束见[跨主机规范](../specs/distributed-runtime.md)。
+默认部署由电脑运行工作台、平台工具、点歌和 OBS，局域网内 Jetson 提供受认证的推理。业务数据、平台凭据和登录会话保存在电脑，模型、音色模型及推理缓存留在 Jetson。数据归属与恢复见[跨主机规范](../specs/distributed-runtime.md)。
 
 电脑使用项目Python环境，Gemma官方图像预处理另装业务端依赖；它不改变Jetson环境镜像：
 
@@ -60,9 +60,9 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
     python tools/jetson/inference-node.py --root /workspace/tuber --host 0.0.0.0 --port 9012
 
-节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。固定Gemma引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及Q8 vision-only投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体实装与恢复记录见[当前计划](../plans/game-livestream.md)。
+节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。固定Gemma引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及Q8 vision-only投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体安装与恢复证据见[双机实测](../../evaluations/results/distributed-operations-20261102.md)。
 
-运营模式加载Gemma，直播模式先加载Genie再加载MiniCPM5。电脑切换Provider前验证实际别名与窗口；直播期间运营模型任务等待回到运营模式。视频视觉先在设置中做真实资源验证，再按同一模型／投影器／引擎和图像配置恢复准入；该验证使用已有素材测传输和资源，实际视频理解质量仍看原视频任务。释放推理缓存会卸载模型及KV，不清除电脑上的关系、记忆或历史。
+首次装配时，模型目录已有大肥鱼微调 GGUF 就优先将它用于运营，现有节点继续使用 `operations_model` 的设置。配对采用节点实际模型及窗口。微调配置先提供文本，视觉能力须另行接入和验证。直播模式先加载 Genie 再加载 MiniCPM5。电脑切换 Provider 前核对实际别名与窗口；直播期间运营模型任务等待回到运营模式。视频视觉先在设置中做资源验证，再按同一模型／投影器／引擎和图像配置恢复准入。视频理解质量以原视频任务核对。释放推理缓存会卸载模型及 KV，电脑业务数据独立保存。
 
 OBS使用电脑后端生成的播放器链接，音频直接从电脑媒体目录读取，不经Jetson转发。电脑后端关闭后节点不继续浏览、执行Agent或发送平台消息。代码更新先停对应服务、换程序版本，再用原数据目录和环境启动；回退先核对切换后的新增数据，再变更权威标记，不能直接启动旧副本覆盖进度。
 
@@ -74,7 +74,7 @@ Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Py
 
 | 容器内组件 | 端口 | 职责 |
 | --- | --- | --- |
-| 后台 | 9020 | 管理API、WebUI、OBS、业务调度，仅发布宿主回环 |
+| 后台 | 9020 | 管理API、WebUI、OBS、业务调度 |
 | 受限broker | 9012 | 固定推理入口、进程管理与资源锁 |
 | MiniCPM5-2B | 9013 | 原生131072窗口、q4_0 KV，实际容量核查 |
 | Genie／GPT-SoVITS | 9011 | 绑定权重与参考的语音合成 |
@@ -87,7 +87,7 @@ Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Py
 从[成功的GitHub Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载jetson-program-<完整commit>产物，内含program.tar.gz、run-ready.sh和program-evidence.json。在新版本专用目录解压，随后由具有Docker权限的普通数据所有者运行：
 
     tar -xzf program.tar.gz
-    bash run-ready.sh --data /path/to/tuber-data
+    bash run-ready.sh --data /path/to/tuber-data --host 127.0.0.1
 
 启动器会找到同级program目录；也可以直接运行program/tools/jetson/run-ready.sh或显式传--source PROGRAM_DIR。程序包包含environment-image.txt，指定与该版本依赖匹配的ghcr.io/4everwz/tuber_studio:env-<环境指纹前24位>。不要求宿主Python、uv或运行时pip安装。
 
@@ -101,17 +101,17 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 程序更新优先解压到新的版本目录，复用原数据目录：
 
-    bash NEW_VERSION/run-ready.sh --source NEW_VERSION/program --data /path/to/tuber-data --replace
+    bash NEW_VERSION/run-ready.sh --source NEW_VERSION/program --data /path/to/tuber-data --host 127.0.0.1 --replace
 
 只要依赖未变，新版本引用同一个环境镜像，不需要重建或拉取环境。旧版本目录和一个已验证环境保留用于回退；回退时指定原程序目录和匹配镜像，数据目录保持不变。程序／环境回退不会回滚数据库，不推断任意版本之间的数据兼容。
 
 开发者可以在宿主源码目录运行：
 
-    bash tools/jetson/run-studio.sh
+    bash tools/jetson/run-studio.sh --host 127.0.0.1
 
 该入口复用同一个启动器，将本项目runtime作为数据目录；优先使用本地构建的tuber-studio:environment-r36.4，不存在时采用发布环境，支持--image及--replace等参数。更改同一目录的源码前先停止本项目容器，避免运行中读到混合版本；git更新后重新执行启动器并传--replace。仅重启既有版本可docker stop／docker start，不拉取镜像。
 
-启动器支持--source、--image、--data、--name、--port及--replace。默认容器名tuber-studio、回环9020；替换同名容器必须明确--replace且绑定同一数据目录。只挂载程序所需src、tools、config、assets、third_party、components及项目依赖声明，不暴露宿主.git或.env。程序挂载只读，runtime可写；正式推理资产子目录只读。drop ALL capabilities、no-new-privileges、临时目录限额及独立bridge继续生效。
+启动器默认容器名为 `tuber-studio`。管理端口 9020 和受认证的 broker 端口 9012 默认绑定宿主回环。需要远程访问管理时使用下文 SSH 转发。可通过 `--port`／`--broker-port` 设置宿主端口。替换同名容器须传 `--replace` 并使用同一数据目录。程序与正式推理资产只读挂载，runtime 可写。容器继续使用独立 bridge、drop ALL capabilities、no-new-privileges 和有界临时目录。
 
 需要在线点歌时，首次增加`--environment online`；启动器使用程序包中的online-environment-image.txt，拉起包含Node及锁定npm依赖的环境扩展镜像。环境选择保存在数据目录environment-profile，后续仅更新程序时继续沿用online，不能退回未安装组件的基础环境。`--environment base`可明确切回基础环境。两种环境都只在本地缺失时拉取；新程序的环境指纹变化时才选择对应新镜像。普通安装仍默认base，工作台的在线点歌开关仍独立默认关闭。
 
@@ -141,7 +141,7 @@ CI镜像构建需要可读的基础CUDA／llama包及GHCR发布权限；使用�
 开发备用构建：
 
     bash tools/jetson/build-ready-image.sh
-    bash tools/jetson/run-ready.sh --image tuber-studio:environment-r36.4 --data ./tuber-data
+    bash tools/jetson/run-ready.sh --image tuber-studio:environment-r36.4 --data ./tuber-data --host 127.0.0.1
 
 build-image.sh是同一环境构建的兼容入口；Dockerfile保留program-base／ready目标名称，但二者都不包含应用源码。构建上下文不读取runtime，不要求模型或生产凭证。普通更新不在设备重新构建；需要离线搬运时可对环境镜像使用docker save／load，同时携带对应程序包，模型资源仍须已经准备或能够下载。
 
@@ -175,11 +175,13 @@ build-image.sh是同一环境构建的兼容入口；Dockerfile保留program-bas
 
 设置页可保存对话留存天数（默认30天）或选择不自动清理，策略保存在SQLite；旧event_retention_days不再控制会话清理。手动清理先预览，再勾选确认；可指定UTC截至日期，按该日结束的排他时间边界提交。原始评论数据集／草稿／发布回执独立保留，清理不是全库删除。楼上下文失效后，下次生成会按本地原文重建，也可点“重建上下文”；已有非空窗口不覆盖。无原文时重新读取或导入，不从已清理摘要／旧草稿复活故事。Demo显示未真实prefill。
 
-设备容器使用独立bridge网络，只有宿主127.0.0.1:9020映射后台；容器内后台监听0.0.0.0:9020，broker／LLM／TTS仍只监听容器回环，不发布到宿主。非root、只读根目录、drop ALL capabilities、no-new-privileges及默认seccomp由固定启动工具设置；runtime持久写入，权重／参考素材／词典只读覆盖，临时目录限额。不提供任意宿主挂载或命令执行接口，不能通过模型台词执行系统指令。没有Landlock／AppArmor或每子进程独立文件沙箱的保证，边界详见[权限规范](../specs/tuber-studio.md#系统与权限边界)。
+全本地容器按上述命令将后台和受认证 broker 映射到宿主回环，原生 LLM／TTS 端口留在容器内。进程权限、容器挂载与隔离边界见[权限规范](../specs/tuber-studio.md#系统与权限边界)。
 
 ## Provider与上下文设置
 
 设置页分别选择本地llama、兼容LLM API、预录／保留的GPT-SoVITS／兼容语音API。API Base URL包含服务自己的版本前缀，例如https://服务域名/v1；公网用HTTPS，本地端点可用HTTP。LLM兼容Chat Completions、max_tokens、JSON对象输出及usage.prompt_tokens；语音兼容audio/speech并返回WAV。模型ID与voice ID由服务提供，不把任意API都当同一模型。
+
+Jetson 节点先配对，LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，模型名以实际节点报告为准。「检查连接」读取已配对节点状态，「高级诊断与维护」显示设备内存及缓存信息。自定义服务的模型列表和地址检查使用表单地址及对应凭证，本机模型下载卡只报告本机状态。接口及旧分路见[推理接口规范](../specs/models-and-audio.md#jetson-推理接口)。
 
 Key只写入runtime/provider-credentials.json（设备0600），设置响应／配置JSON不返回其值。空输入保留已有Key，单独勾选清除才删除；更换API地址时必须重新填写或清除对应Key，避免把旧凭证发到新服务。内部broker token不发给外部服务。语音API使用独立external_api音色；已有角色不会自动换声线，需显式选择对应音色。接口测试替身通过不代表真实账号、声音许可或服务商质量已验证。
 
@@ -209,7 +211,7 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 与正式预热／线程协议一致的PCM数值对照使用tools/evaluate_tts_parity.py --voice whale_sovits_v2 --output runtime/evaluations/tts-parity-<新目录>。外层维护监督器先受控卸载Mini并在finally恢复；工具自身只检查业务停止、自动关闭、GPUworker均已退出，不控制broker或改原缓存。原版／精简版各用新进程与单个工作线程执行生产预热、三句各两遍，记录完整参数、源文件／权重身份和整机守护。同序六组配对、自身重复及可选--legacy-dir旧WAV分别报告；旧协议hash不作为本轮质量门槛，形状／文件不完整不得判一致，数值一致不代表任意文本确定性或人工音质已通过。
 
-正式链路的持续运行入口为tools/evaluate_live.py --output /workspace/tuber/runtime/tmp/live-evaluation，默认两小时且至少100次语音请求：先无额外节拍地完成100次，之后每轮完成后间隔60秒，每第五轮用真实角色／MiniCPM结构回复作为合成文字；其余轮次使用evaluations/speech-cases.json。需先在工作台切到直播资源模式，保持业务停止及自动策略关闭。工具不改模式、不写业务数据库、不发布、不伪造播放回执；记录非静音WAV、无效LLM回复、同进程连续性与整机守护，单纯保活不计作完成合成。当前瑶瑶声线已完成三组相对原版试听、浏览器Mock播放ACK与恰好100句共驻；该工具独立验证持续推理，不替代真实平台、混合事件调度或OBS验收。持续运行的完成状态由[当前计划](../plans/p0-runtime.md)及[准入证据](../../evaluations/results/genie-live-optimization-20261029.json)维护。
+正式链路的持续运行入口为tools/evaluate_live.py --output /workspace/tuber/runtime/tmp/live-evaluation，默认两小时且至少100次语音请求：先无额外节拍地完成100次，之后每轮完成后间隔60秒，每第五轮用真实角色／MiniCPM结构回复作为合成文字；其余轮次使用evaluations/speech-cases.json。需先在工作台切到直播资源模式，保持业务停止及自动策略关闭。工具不改模式、不写业务数据库、不发布、不伪造播放回执；记录非静音WAV、无效LLM回复、同进程连续性与整机守护，单纯保活不计作完成合成。瑶瑶声线的已验范围及持续运行、平台与OBS验收见[当前计划](../plans/current.md#直播点歌与部署验收)。
 
 轻量／量化对照由tools/evaluate_tts_candidates.py执行，inspect只读包元数据／源码，不导入Torch或初始化CUDA。候选离线包放runtime/evaluations/tts-candidates，用tools/jetson/tts/install-candidates.py --bundle <该目录>安装到它自己的venv；只安装已校验的本地wheel，复用原生Torch／Audio／Vision／TorchAO／Transformers，不升级正式环境。缺少依赖或离线资产时明确失败，不在计时过程中下载。
 
