@@ -113,21 +113,21 @@ def test_is_full_local_deployment_detection():
     # 1. Full local deployment (llama_cpp on 127.0.0.1)
     local_cfg = {
         "inference_broker": {"deployment": "local", "base_url": "http://127.0.0.1:9012"},
-        "llm": {"kind": "llama_cpp", "base_url": "http://127.0.0.1:9012/llm/2b"},
+        "llm": {"kind": "llama_cpp", "base_url": "http://127.0.0.1:9012/llm"},
     }
     assert is_full_local_deployment(local_cfg) is True
 
     # 2. Remote Docker / Jetson node
     remote_cfg = {
         "inference_broker": {"deployment": "remote", "base_url": "http://100.95.31.18:9012"},
-        "llm": {"kind": "llama_cpp", "base_url": "http://100.95.31.18:9012/llm/2b"},
+        "llm": {"kind": "llama_cpp", "base_url": "http://100.95.31.18:9012/llm"},
     }
     assert is_full_local_deployment(remote_cfg) is False
 
     # 3. External IP even without explicit deployment="remote"
     external_ip_cfg = {
         "inference_broker": {"base_url": "http://192.168.1.100:9012"},
-        "llm": {"kind": "llama_cpp", "base_url": "http://192.168.1.100:9012/llm/2b"},
+        "llm": {"kind": "llama_cpp", "base_url": "http://192.168.1.100:9012/llm"},
     }
     assert is_full_local_deployment(external_ip_cfg) is False
 

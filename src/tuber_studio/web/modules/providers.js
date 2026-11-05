@@ -405,7 +405,7 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
       notice("已切换为【本地部署】模式（默认直通本机 Broker: 9012）。");
     } else {
       $("llm-kind").value = "openai_compatible";
-      if (!$("llm-base-url").value || $("llm-base-url").value === "http://127.0.0.1:9012/llm" || $("llm-base-url").value === "http://127.0.0.1:9012/llm/2b") {
+      if (!$("llm-base-url").value || $("llm-base-url").value === "http://127.0.0.1:9012/llm") {
         $("llm-base-url").value = "http://100.95.31.18:9012/llm";
       }
       if (!$("tts-base-url").value || $("tts-base-url").value === "http://127.0.0.1:9012/tts") {

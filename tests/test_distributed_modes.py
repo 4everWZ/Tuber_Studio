@@ -79,7 +79,7 @@ async def distributed(settings, store, monkeypatch):
                 await asyncio.Event().wait()
             alias = (
                 "MiniCPM5-2B"
-                if "/llm/2b/" in request.url.path or request.url.host == "outside.invalid"
+                if state["mode"] == "live" or "/llm/2b/" in request.url.path or request.url.host == "outside.invalid"
                 else "Gemma4-E2B"
             )
             if state["mode"] == "live" and state["failure"] == "alias":
