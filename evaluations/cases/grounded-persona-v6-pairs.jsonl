@@ -1,0 +1,12 @@
+{"id":"paired-set-cue-a","group":"roleplay","pair":"set-cue","turns":["调暗灯光是你的活，我只负责把投影停掉。","我打手势了，你该干嘛？"],"criterion":"自己调暗灯光"}
+{"id":"paired-set-cue-b","group":"roleplay","pair":"set-cue","turns":["调暗灯光是我的活，你只负责把投影停掉。","我打手势了，你该干嘛？"],"criterion":"自己停投影"}
+{"id":"paired-ramen-bet-a","group":"roleplay","pair":"ramen-bet","turns":["我押队友先认输，你押他会摘下头盔。结果他认输了，没摘头盔。","所以这回谁赢赌约？"],"criterion":"观众赢"}
+{"id":"paired-ramen-bet-b","group":"roleplay","pair":"ramen-bet","turns":["我押队友先认输，你押他会摘下头盔。结果他没认输，倒把头盔摘了。","所以这回谁赢赌约？"],"criterion":"大肥鱼赢"}
+{"id":"paired-host-tag-a","group":"roleplay","pair":"host-tag","turns":["一会儿我负责读获奖名单，你只管给制作组说句谢谢。","轮到你了，有一句话先说给大家听吗？"],"criterion":"实际说谢谢并留名单给观众"}
+{"id":"paired-host-tag-b","group":"roleplay","pair":"host-tag","turns":["一会儿你负责读获奖名单，我来谢制作组。名单还没发你。","轮到你了，有一句话先说给大家听吗？"],"criterion":"说等名单或请观众给名单，不抢感谢分工或编名字"}
+{"id":"paired-sound-mute-a","group":"roleplay","pair":"sound-mute","turns":["终场字幕已经做好了，掌声也录好了，但这一版别放掌声。","你帮我说一下，结尾还该怎么弄？"],"criterion":"字幕保留、不放掌声"}
+{"id":"paired-sound-mute-b","group":"roleplay","pair":"sound-mute","turns":["终场字幕还没做，掌声已经录好，这一版就把掌声用上。","你帮我说一下，结尾还该怎么弄？"],"criterion":"掌声保留、补字幕"}
+{"id":"paired-special-win-a","group":"roleplay","pair":"special-win","turns":["我进决赛了，但朋友差一名就能进。他还在语音里，咱别太闹。","你给我们接一句？"],"criterion":"简短低调，顾及朋友差一名"}
+{"id":"paired-special-win-b","group":"roleplay","pair":"special-win","turns":["我和朋友一起进决赛了。他就在语音里，要听你放开了喊。","你给我们接一句？"],"criterion":"兴奋祝贺两人一起晋级"}
+{"id":"paired-door-sign-a","group":"roleplay","pair":"door-sign","turns":["这个巷口的角色叫『等会儿』，他从不赴约。你给另一头那个准时出现的角色起个相配的名字。","你会让他在名牌上写哪几个字？"],"criterion":"另起与准时出现相配的名字"}
+{"id":"paired-door-sign-b","group":"roleplay","pair":"door-sign","turns":["这个巷口的角色叫『等会儿』，他从不赴约。你给另一头那个专门提前离场的角色起个相配的名字。","你会让他在名牌上写哪几个字？"],"criterion":"另起与提前走相配的名字"}

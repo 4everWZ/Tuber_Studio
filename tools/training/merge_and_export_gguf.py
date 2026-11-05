@@ -1,8 +1,6 @@
-"""DARE-TIES Weight Merging and GGUF Export Tool for Tuber Studio.
+"""Merge the legacy DoRA adapter into its original Hugging Face checkpoint.
 
-Merges trained DoRA/LoRA persona adapter weights back into the base model (MiniCPM-V-4.7-1B or Gemma 4 E2B)
-using DARE (Drop And REscale) + TIES (Trimming, Elect Sign & Merge) to eliminate catastrophic forgetting,
-preventing degradation of JSON schema, tool calling, and vision understanding.
+For new vision runs use export_grounded_sft.py to produce a paired GGUF.
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Merge DoRA persona adapter using DARE-TIES and prepare GGUF.")
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base_model",
         type=str,
@@ -37,66 +35,18 @@ def parse_args():
     )
     parser.add_argument(
         "--merge_method",
-        type=str,
-        choices=["dare_ties", "linear"],
-        default="dare_ties",
-        help="Model merging method: dare_ties (recommended) or linear",
-    )
-    parser.add_argument(
-        "--drop_rate",
-        type=float,
-        default=0.8,
-        help="DARE drop rate (fraction of small delta weights to drop)",
-    )
-    parser.add_argument(
-        "--density",
-        type=float,
-        default=0.2,
-        help="TIES density threshold (fraction of top parameters to retain)",
-    )
-    parser.add_argument(
-        "--weight",
-        type=float,
-        default=1.0,
-        help="Scaling weight for the persona task vector",
+        choices=["linear"],
+        default="linear",
+        help="The legacy exporter performs a standard PEFT merge",
     )
     return parser.parse_args()
 
 
-def dare_ties_merge(
-    base_tensor,
-    delta_tensor,
-    drop_rate: float = 0.8,
-    density: float = 0.2,
-    weight: float = 1.0,
-):
-    """Applies DARE (Drop And REscale) followed by TIES sign alignment."""
-    import torch
-
-    if delta_tensor.abs().max() == 0:
-        return base_tensor
-
-    # 1. DARE: Random drop and rescale
-    mask = torch.rand_like(delta_tensor.float()) > drop_rate
-    rescaled_delta = delta_tensor * mask.to(delta_tensor.dtype) / (1.0 - drop_rate)
-
-    # 2. TIES Trimming: keep top `density` fraction of absolute magnitudes
-    k = max(1, int(rescaled_delta.numel() * density))
-    flat_delta = rescaled_delta.flatten()
-    threshold = flat_delta.abs().kthvalue(flat_delta.numel() - k + 1).values
-    trimmed_delta = rescaled_delta * (rescaled_delta.abs() >= threshold).to(rescaled_delta.dtype)
-
-    # 3. Apply task vector to base
-    merged_tensor = base_tensor + weight * trimmed_delta
-    return merged_tensor
-
-
 def main():
     args = parse_args()
-    logger.info("Starting DARE-TIES model merge...")
+    logger.info("Starting standard PEFT model merge...")
     logger.info("Base Model: %s", args.base_model)
     logger.info("Adapter Path: %s", args.adapter_path)
-    logger.info("Merge Method: %s (Drop rate: %.2f, Density: %.2f, Weight: %.2f)", args.merge_method, args.drop_rate, args.density, args.weight)
 
     try:
         import torch
@@ -130,15 +80,8 @@ def main():
         )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
 
-    if args.merge_method == "linear":
-        logger.info("Performing standard linear PEFT merge_and_unload...")
-        model = PeftModel.from_pretrained(base_model, str(args.adapter_path))
-        merged_model = model.merge_and_unload()
-    else:
-        logger.info("Performing custom DARE-TIES task vector fusion...")
-        peft_model = PeftModel.from_pretrained(base_model, str(args.adapter_path))
-        # Iterate over modules and apply DARE-TIES on active lora delta weights
-        merged_model = peft_model.merge_and_unload()
+    model = PeftModel.from_pretrained(base_model, str(args.adapter_path))
+    merged_model = model.merge_and_unload()
 
     logger.info("Saving merged weights to %s...", args.output_dir)
     merged_model.save_pretrained(args.output_dir, max_shard_size="4GB")

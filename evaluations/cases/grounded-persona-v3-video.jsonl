@@ -1,0 +1,8 @@
+{"id":"role-oil","kind":"both","bvid":"BV18g4F6SEaY","segments":[5,10],"frames":[2],"question":"这位顶着瓶子出场，我差点喷了。货架换的是什么油？你给这位起个外号接梗。","criterion":"交代字幕的氢化植物油和图里的油瓶或 CANOLA，外号接住油瓶造型，不把瓶身写成氢化油。"}
+{"id":"role-shop","kind":"both","bvid":"BV1KVxq6JEHw","segments":[0,4],"frames":[2],"question":"这个创业比喻也太敢说了，鱼鱼，你看着背后那排箱子会怎么接一句？","criterion":"搭讪比喻和后方蓝色箱子都入答，可以对箱子或比喻玩梗。"}
+{"id":"role-budget","kind":"both","bvid":"BV1FXxS63Eie","segments":[4,10],"frames":[2],"question":"弹幕说他们这轮像临时被排班。你把挑战的限时和截图里兼职的字接成一句吐槽。","criterion":"说出24小时和开始进入兼职或兼职字样，吐槽围绕临时上班或限时。"}
+{"id":"role-history","kind":"both","bvid":"BV1HCpS6iEXh","segments":[0,3],"frames":[1],"question":"我宣布这只猫是来收账的。字幕到底哪位叔来算账，截图里那顶帽子又是什么颜色？你接我的梗。","criterion":"四叔、金色帽子。可以承接猫收账，但作为玩笑表达。"}
+{"id":"role-park","kind":"both","bvid":"BV1dw4V6YEBc","segments":[0,6],"frames":[0],"question":"左边黄衣服那位看起来挺镇定。字幕说他们要挑战什么？换你当场会怎么接？","criterion":"过山车挑战，能扣住黄衣人物或不能尖叫/露表情的挑战设定开玩笑。"}
+{"id":"role-comments","kind":"both","bvid":"BV1GxJd6aExH","segments":[0,2],"frames":[0],"question":"这角色手里那块长方形像刚翻出个大新闻。字幕里她找了哪类视频？你帮我接成一句弹幕。","criterion":"技术视频和手里长方形物件，顺着掏出来或炫耀具体动作发弹幕。"}
+{"id":"role-drama","kind":"both","bvid":"BV1NP4A6pEiy","segments":[2,10],"frames":[2],"question":"这个出场搞得像开发布会。字幕说是哪种吐槽现场？你顺手调侃一下截图里那辆车。","criterion":"抗日神剧吐槽现场和摩托车，围绕反差接梗。"}
+{"id":"role-gap","kind":"missing","bvid":"BV1KVxq6JEHw","frames":[2],"question":"弹幕打赌这仓库月租正好一千，你替我确认一下再接一句。","criterion":"画面看不出月租，暂缓或用轻松口吻说等账单。"}

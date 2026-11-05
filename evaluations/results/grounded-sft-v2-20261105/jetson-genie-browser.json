@@ -1,0 +1,154 @@
+{
+  "device": "Jetson",
+  "voice": "whale_sovits_v2",
+  "backend": "genie_onnx_int8",
+  "browser": "Chrome via Playwright, production overlay script with trusted HTMLAudioElement events",
+  "conditions": "One warm run per mode in order, same fixed reply and real TTS. The mock reply excludes LLM latency.",
+  "observer": "A navigation retry left duplicate observer callbacks. Raw callbacks with the same type within 5 ms were deduplicated; accepted server ACKs were already unique.",
+  "cases": {
+    "buffered": {
+      "status": "completed",
+      "error": null,
+      "text": "鱼鱼刚看完这一段，下一轮先换个简单的打法，等大家都熟了再去试困难模式。",
+      "tts_ms": 6051,
+      "ack": [
+        {
+          "type": "started",
+          "elapsed_ms": 6558,
+          "first_audio_ms": 6560
+        },
+        {
+          "type": "ended",
+          "elapsed_ms": 13715,
+          "first_audio_ms": 6560
+        }
+      ],
+      "browser_audio": [
+        {
+          "type": "playing",
+          "trusted": true,
+          "paused": false,
+          "muted": false,
+          "volume": 1,
+          "duration": 6.74,
+          "at_ms": 6657.5,
+          "time": 0
+        },
+        {
+          "type": "ended",
+          "trusted": true,
+          "paused": true,
+          "muted": false,
+          "volume": 1,
+          "duration": 6.74,
+          "at_ms": 13807,
+          "time": 6.74
+        }
+      ],
+      "first_audio_ms": 6560,
+      "playback_complete_ms": 13715
+    },
+    "split": {
+      "status": "completed",
+      "error": null,
+      "text": "鱼鱼刚看完这一段，下一轮先换个简单的打法，等大家都熟了再去试困难模式。",
+      "tts_ms": 6151,
+      "ack": [
+        {
+          "type": "started",
+          "elapsed_ms": 1642,
+          "first_audio_ms": 1643
+        },
+        {
+          "type": "ended",
+          "elapsed_ms": 3473,
+          "first_audio_ms": 1643
+        },
+        {
+          "type": "started",
+          "elapsed_ms": 3948,
+          "first_audio_ms": 1643
+        },
+        {
+          "type": "ended",
+          "elapsed_ms": 6333,
+          "first_audio_ms": 1643
+        },
+        {
+          "type": "started",
+          "elapsed_ms": 6419,
+          "first_audio_ms": 1643
+        },
+        {
+          "type": "ended",
+          "elapsed_ms": 9058,
+          "first_audio_ms": 1643
+        }
+      ],
+      "browser_audio": [
+        {
+          "type": "playing",
+          "trusted": true,
+          "paused": false,
+          "muted": false,
+          "volume": 1,
+          "duration": 1.78,
+          "at_ms": 15774.599999999627,
+          "time": 0
+        },
+        {
+          "type": "ended",
+          "trusted": true,
+          "paused": true,
+          "muted": false,
+          "volume": 1,
+          "duration": 1.78,
+          "at_ms": 17605.199999999255,
+          "time": 1.78
+        },
+        {
+          "type": "playing",
+          "trusted": true,
+          "paused": false,
+          "muted": false,
+          "volume": 1,
+          "duration": 2.34,
+          "at_ms": 18081.199999999255,
+          "time": 0
+        },
+        {
+          "type": "ended",
+          "trusted": true,
+          "paused": true,
+          "muted": false,
+          "volume": 1,
+          "duration": 2.34,
+          "at_ms": 20466.199999999255,
+          "time": 2.34
+        },
+        {
+          "type": "playing",
+          "trusted": true,
+          "paused": false,
+          "muted": false,
+          "volume": 1,
+          "duration": 2.58,
+          "at_ms": 20553.199999999255,
+          "time": 0
+        },
+        {
+          "type": "ended",
+          "trusted": true,
+          "paused": true,
+          "muted": false,
+          "volume": 1,
+          "duration": 2.58,
+          "at_ms": 23186.5,
+          "time": 2.58
+        }
+      ],
+      "first_audio_ms": 1643,
+      "playback_complete_ms": 9058
+    }
+  }
+}

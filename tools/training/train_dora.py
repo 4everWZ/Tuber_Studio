@@ -1,4 +1,4 @@
-"""DoRA (Weight-Decomposed Low-Rank Adaptation) & SimPO training script.
+"""Legacy text-only DoRA SFT used in the original persona experiment.
 
 Optimized for Workstation with 2x RTX 3090 (48GB VRAM total).
 Supports both MiniCPM-V-4.7-1B and Gemma 4 E2B.
@@ -64,9 +64,9 @@ def parse_args():
     parser.add_argument(
         "--stage",
         type=str,
-        choices=["sft", "simpo"],
+        choices=["sft"],
         default="sft",
-        help="Training stage: sft (supervised fine-tuning) or simpo (preference alignment)",
+        help="This legacy trainer implements the SFT stage",
     )
     parser.add_argument("--use_dora", action="store_true", default=True, help="Enable Weight-Decomposed LoRA (DoRA)")
     parser.add_argument("--r", type=int, default=16, help="LoRA rank")
