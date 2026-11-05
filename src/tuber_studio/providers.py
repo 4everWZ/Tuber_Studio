@@ -103,9 +103,10 @@ class LLMProvider(Protocol):
 class LlamaCppProvider:
     generation_metered = True
 
-    def __init__(self, config, inference_token=None):
+    def __init__(self, config, inference_token=None, *, broker_model_routing=False):
         self.config = config
         self.uses_broker = bool(inference_token)
+        self.broker_model_routing = broker_model_routing
         self.client = httpx.AsyncClient(
             base_url=config["base_url"].rstrip("/"),
             timeout=httpx.Timeout(config.get("timeout_seconds", 90), connect=10),
@@ -167,7 +168,8 @@ class LlamaCppProvider:
             timeout = httpx.Timeout(20, connect=5) if self.uses_broker else 5
             response = await self.client.get("/props", timeout=timeout)
             if response.status_code == 503 and self.uses_broker:
-                warmup = await self.client.post("/warmup", json={}, timeout=httpx.Timeout(120, connect=5))
+                model = {"model": self.config["model"]} if self.broker_model_routing else {}
+                warmup = await self.client.post("/warmup", json=model, timeout=httpx.Timeout(120, connect=5))
                 warmup.raise_for_status()
                 response = await self.client.get("/props", timeout=timeout)
             response.raise_for_status()
@@ -187,9 +189,11 @@ class LlamaCppProvider:
 
     async def _token_count(self, messages):
         # Count the actual chat template, including role delimiters, rather than estimating Chinese characters.
+        model = {"model": self.config["model"]} if self.broker_model_routing else {}
         response = await self.client.post(
             "/apply-template",
             json={
+                **model,
                 "messages": single_system_messages(messages),
                 "add_generation_prompt": True,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
@@ -197,7 +201,7 @@ class LlamaCppProvider:
         )
         response.raise_for_status()
         prompt = response.json()["prompt"]
-        response = await self.client.post("/tokenize", json={"content": prompt, "add_special": True})
+        response = await self.client.post("/tokenize", json={**model, "content": prompt, "add_special": True})
         response.raise_for_status()
         return len(response.json()["tokens"])
 

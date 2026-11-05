@@ -65,11 +65,13 @@ def profile(root, without_llm=False):
         or health["providers"]["tts"]["running"]
     ):
         raise RuntimeError("Requires idle MiniCPM5-2B/131072 text mode, production TTS stopped")
-    response = httpx.get("http://127.0.0.1:9012/llm/2b/props", headers=headers, trust_env=False, timeout=5)
+    response = httpx.get("http://127.0.0.1:9012/llm/props", headers=headers, trust_env=False, timeout=5)
     response.raise_for_status()
     props = response.json()
-    if props["default_generation_settings"]["n_ctx"] != 131072:
-        raise RuntimeError("Actual LLM context differs from 131072")
+    aliases = props.get("model_alias")
+    aliases = [aliases] if isinstance(aliases, str) else aliases
+    if "MiniCPM5-2B" not in (aliases or []) or props["default_generation_settings"]["n_ctx"] != 131072:
+        raise RuntimeError("Actual LLM profile is not MiniCPM5-2B with a 131072 context")
     return {
         "model": config["llm"]["model"],
         "resident_llm": not without_llm,
@@ -122,9 +124,9 @@ def child(args):
         started = time.monotonic()
         headers = {"X-Tuber-Inference-Key": (args.root / "runtime/inference-token").read_text().strip()}
         response = httpx.post(
-            "http://127.0.0.1:9012/llm/2b/warmup",
+            "http://127.0.0.1:9012/llm/warmup",
             headers=headers,
-            json={},
+            json={"model": "MiniCPM5-2B"},
             trust_env=False,
             timeout=180,
         )
@@ -182,7 +184,7 @@ def child(args):
             started = time.monotonic()
             headers = {"X-Tuber-Inference-Key": (args.root / "runtime/inference-token").read_text().strip()}
             response = httpx.post(
-                "http://127.0.0.1:9012/llm/2b/completion",
+                "http://127.0.0.1:9012/llm/completion",
                 headers=headers,
                 trust_env=False,
                 json={

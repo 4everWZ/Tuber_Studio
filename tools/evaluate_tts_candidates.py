@@ -736,7 +736,11 @@ def child(args):
         emit("start_llm_load")
         headers = {"X-Tuber-Inference-Key": (args.root / "runtime/inference-token").read_text().strip()}
         response = httpx.post(
-            "http://127.0.0.1:9012/llm/2b/warmup", headers=headers, json={}, trust_env=False, timeout=180
+            "http://127.0.0.1:9012/llm/warmup",
+            headers=headers,
+            json={"model": "MiniCPM5-2B"},
+            trust_env=False,
+            timeout=180,
         )
         response.raise_for_status()
         emit("llm_loaded", profile=profile(args.root))

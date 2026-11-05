@@ -55,7 +55,9 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 ### Jetson 推理接口
 
-默认连接经过配对的本地 Jetson 推理服务。业务端的 broker LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，统一路由按请求模型或当前 Profile 调度文本模式，直播模式保持已选资源。可在该前缀下查询 `health`、`props` 和模型列表，兼容调用使用 `/llm/v1/chat/completions`。旧 `/llm/{模型}/…` 分路继续兼容固定模型调用。外部兼容 API 使用服务方给定的前缀及独立凭证。节点可达、模型已加载、图像可处理和实际资源准入分别核对。
+默认连接经过配对的本地 Jetson 推理服务。LLM 的 Base URL 使用 `http://<Jetson地址>:9012/llm`。生成和预热可在请求体指定模型，省略时使用当前模型。文本模式可调度指定模型，直播模式固定已选资源。未知模型返回 `422`，直播中请求其他模型返回 `409`。用 `GET /llm/props` 查询实际模型和窗口，用节点的 `GET /health` 查看各资源的驻留状态。兼容生成路径为 `/llm/v1/chat/completions`。外部兼容模型 API 使用服务方给定的前缀及独立凭证。
+
+语音合成使用独立的 `/tts`，业务端通过 `/api/tts/preview` 提供试听，外部兼容语音服务使用 `audio/speech`。单独保存语音设置时保留 LLM 配置及当前资源模式。工作模式协调 Jetson 上的资源驻留，直播时按现有顺序加载本地语音和直播模型。
 
 状态探测遵守同一凭证绑定。临时输入的凭证不进入 URL 或日志，保存的凭证仅用于其绑定端点，内部 broker token 仅用于已配对节点的受控路径。检查临时地址使用明确提供给该地址的凭证，或执行无凭证探测。
 

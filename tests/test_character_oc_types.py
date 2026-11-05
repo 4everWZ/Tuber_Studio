@@ -1,5 +1,8 @@
+import json
+
 import pytest
 
+from tuber_studio.config import Settings
 from tuber_studio.inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
 from tuber_studio.models import Character
 from tuber_studio.persona import uses_built_in_persona
@@ -147,16 +150,37 @@ def test_build_messages_fine_tuned_vs_prompt_oc(mode):
 
 
 @pytest.mark.parametrize(
-    ("route", "model", "expected"),
-    [("dafeiyu", DAFEIYU_MODEL, True), ("2b", DAFEIYU_KEY, False)],
+    ("route", "old_model", "model", "expected"),
+    [("dafeiyu", "MiniCPM5-2B", DAFEIYU_MODEL, True), ("2b", DAFEIYU_KEY, "MiniCPM5-2B", False)],
 )
-def test_typed_node_route_owns_prompt_source(route, model, expected):
+def test_legacy_node_configuration_migrates_its_model_and_prompt_source(
+    settings, route, old_model, model, expected
+):
     base_url = "http://jetson.local:9012"
-    settings = {
-        "inference_broker": {"enabled": True, "base_url": base_url},
-        "llm": {"base_url": f"{base_url}/llm/{route}", "model": model},
+    data = settings.data
+    data["inference_broker"].update(enabled=True, base_url=base_url)
+    data["llm"].update(kind="llama_cpp", base_url=f"{base_url}/llm/{route}/", model=old_model)
+    data["work_mode_profiles"] = {
+        "text": {"llm": {**data["llm"], "kind": "openai_compatible"}},
+        "live": {
+            "llm": {**data["llm"], "kind": "openai_compatible", "base_url": "https://api.example/llm/2b"}
+        },
     }
-    assert uses_built_in_persona(settings) is expected
+    settings.path.write_text(json.dumps(data), encoding="utf-8")
+
+    restored = Settings(runtime=settings.runtime)
+    llm = restored.data["llm"]
+    profiles = restored.data["work_mode_profiles"]
+    assert llm["base_url"] == base_url + "/llm" and llm["model"] == model
+    assert profiles["text"]["llm"] == llm
+    assert profiles["live"]["llm"] == data["work_mode_profiles"]["live"]["llm"]
+    assert uses_built_in_persona(restored.data) is expected
+    assert restored.endpoint_key("llm") == restored.inference_token
+    assert restored.broker_key_for(f"{base_url}/llm/{route}") is None
+    assert json.loads(settings.path.read_text())["llm"]["model"] == old_model
+
+    restored.save_public(restored.data)
+    assert json.loads(settings.path.read_text())["llm"]["base_url"] == base_url + "/llm"
 
 
 def test_compatible_api_uses_card_even_with_a_matching_model_name():

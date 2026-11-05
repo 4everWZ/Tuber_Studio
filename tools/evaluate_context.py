@@ -17,6 +17,9 @@ from pathlib import Path
 
 import httpx
 
+from tuber_studio.config import normalize_broker_llm, uses_broker_llm
+from tuber_studio.inference_profiles import llm_resource_key
+
 ROOT = Path(os.getenv("TUBER_ROOT", str(Path(__file__).resolve().parents[1]))).resolve()
 
 
@@ -152,6 +155,7 @@ async def response_json(response, operation):
 
 async def execute(client, config, requested, watch, metadata):
     llm, broker = config["llm"], config.get("inference_broker", {})
+    managed = uses_broker_llm(config)
     window, native = llm["context_tokens"], llm["native_context_tokens"]
     if type(window) is not int or type(native) is not int or window < 131072 or native < window:
         raise ValueError("Configuration must declare context>=131072 and native context>=configured context")
@@ -160,9 +164,9 @@ async def execute(client, config, requested, watch, metadata):
     response = await client.get("/props", timeout=15)
     properties = response.json() if response.status_code == 200 else {}
     metadata["warmed_up"] = False
-    if broker.get("enabled") and (response.status_code == 503 or properties.get("is_sleeping")):
-        watch.stage = "typed_warmup"
-        await response_json(await client.post("/warmup", json={}, timeout=180), "Typed warmup")
+    if managed and (response.status_code == 503 or properties.get("is_sleeping")):
+        watch.stage = "warmup"
+        await response_json(await client.post("/warmup", json={"model": llm["model"]}, timeout=180), "Warmup")
         metadata["warmed_up"] = True
         response = await client.get("/props", timeout=15)
     properties = await response_json(response, "Read-only props")
@@ -176,12 +180,14 @@ async def execute(client, config, requested, watch, metadata):
     metadata.update(
         model=llm["model"], configured_context=window, configured_native_context=native, actual_context=actual
     )
-    if broker.get("enabled"):
+    if managed:
         health = await response_json(
             await client.get(broker["base_url"].rstrip("/") + "/health", timeout=10), "Broker health"
         )
-        size = httpx.URL(llm["base_url"]).path.rstrip("/").rsplit("/llm/", 1)[-1]
-        provider = health.get("providers", {}).get("llm" + size, {})
+        selected = health.get("selected_provider")
+        if selected != llm_resource_key(llm["model"]):
+            raise ValueError("Broker selection does not match the configured model")
+        provider = health.get("providers", {}).get(selected, {})
         observed_native = provider.get("native_context_tokens")
         if type(observed_native) is not int or observed_native < window:
             raise ValueError("Broker GGUF native context does not cover the configured window")
@@ -198,8 +204,11 @@ async def execute(client, config, requested, watch, metadata):
     markers = {name: name + "_" + nonce for name in ("HEAD", "MIDDLE", "TAIL")}
 
     async def tokenize(text, special=False):
+        payload = {"content": text, "add_special": special}
+        if managed:
+            payload["model"] = llm["model"]
         body = await response_json(
-            await client.post("/tokenize", json={"content": text, "add_special": special}, timeout=30),
+            await client.post("/tokenize", json=payload, timeout=30),
             "Tokenize",
         )
         tokens = body.get("tokens")
@@ -270,8 +279,10 @@ async def confirm_cleanup(client, broker):
 
 async def evaluate(config_path, requested, deadline):
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    normalize_broker_llm(config)
     broker = config.get("inference_broker", {})
-    token = (ROOT / "runtime/inference-token").read_text().strip() if broker.get("enabled") else None
+    managed = uses_broker_llm(config)
+    token = (ROOT / "runtime/inference-token").read_text().strip() if managed else None
     watch = MemoryWatch(deadline)
     metadata, evidence, reason, cleanup = {}, None, None, None
     probe_elapsed = None
@@ -295,7 +306,7 @@ async def evaluate(config_path, requested, deadline):
             monitor.cancel()
             await asyncio.gather(work, monitor, return_exceptions=True)
             probe_elapsed = round(time.monotonic() - watch.started, 3)
-            if reason:
+            if reason and managed:
                 cleanup = await confirm_cleanup(client, broker)
             # Cleanup has its own bound. Do not mislabel a final snapshot after
             # a sampling gap as another rolling 25-second measurement.

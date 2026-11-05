@@ -241,6 +241,8 @@ async def managed_settings(runtime, monkeypatch):
                 await state["restore_release"].wait()
         elif request.url.path == "/idle":
             state["resident"] = False
+        elif request.url.path == "/model":
+            state["selected"], state["resident"] = payload["key"], True
         return httpx.Response(200, json={})
 
     runtime.inference_client = httpx.AsyncClient(
@@ -250,6 +252,8 @@ async def managed_settings(runtime, monkeypatch):
 
     class StagedClient:
         closed = 0
+        server_tokens = None
+        profile_error = None
 
         async def ensure_capacity(self):
             if state["capacity_error"]:
@@ -290,6 +294,35 @@ def assert_rollback(runtime, previous, created):
     assert runtime.settings.provider_keys == previous[7]
     assert len(created) == 3 and all(client.closed == 1 for client in created)
     assert not runtime.mode_lock.locked() and not runtime.generation_lock.locked()
+
+
+@pytest.mark.parametrize("fail_capacity", [False, True])
+async def test_paired_legacy_model_proposal_uses_unified_address_and_transactional_switch(
+    managed_settings, fail_capacity
+):
+    runtime, state, created = managed_settings
+    previous = originals(runtime)
+    base = runtime.settings.data["inference_broker"]["base_url"]
+    state["capacity_error"] = fail_capacity
+    patch = {"llm": {"base_url": base + "/llm/dafeiyu", "model": "MiniCPM5-2B", "context_tokens": 8192}}
+    expected = [
+        ("/context", {"context_tokens": 8192}),
+        ("/model", {"key": "llmdafeiyu"}),
+    ]
+
+    if fail_capacity:
+        with pytest.raises(ValueError, match="simulated new provider failure"):
+            await apply_settings(runtime, patch)
+        expected += [("/model", {"key": "llm2b"}), ("/context", {"context_tokens": 65536})]
+        assert state["selected"] == "llm2b" and state["window"] == 65536 and state["resident"]
+        assert_rollback(runtime, previous, created)
+    else:
+        await apply_settings(runtime, patch)
+        assert state["selected"] == "llmdafeiyu" and state["window"] == 8192 and state["resident"]
+        persisted = json.loads(runtime.settings.path.read_text())["llm"]
+        assert persisted["base_url"] == base + "/llm" and persisted["model"] == "MiniCPM-V-4.7-1B"
+
+    assert [(path, payload) for method, path, payload in state["calls"] if method == "POST"] == expected
 
 
 @pytest.mark.asyncio

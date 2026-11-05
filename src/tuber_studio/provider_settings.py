@@ -6,8 +6,9 @@ import copy
 import httpx
 
 from .api_providers import VisionService, create_llm
-from .config import atomic_bytes, validate_api_key
+from .config import atomic_bytes, normalize_broker_llm, uses_broker_llm, validate_api_key
 from .deployment_profiles import select_local_voice
+from .inference_profiles import LLM_MODELS, llm_resource_key
 from .providers import VoiceService, public_error
 
 FIELDS = {
@@ -66,22 +67,41 @@ async def _broker_snapshot(client, fallback_window):
     return {"selected": selected, "window": window, "resident": bool(running)}
 
 
-async def _restore_broker(client, snapshot, *, context_attempted, was_local):
+def _profile_calls(window, current_window, model=None):
+    context = ("/context", {"context_tokens": window})
+    if model is None:
+        return (context,)
+    select = ("/model", {"key": model})
+    if window == current_window:
+        return (select,)
+    return (context, select) if window < current_window else (select, context)
+
+
+async def _restore_broker(client, snapshot, *, attempted_window, model_attempted, was_local):
     resident = was_local and snapshot["resident"]
     expected = {**snapshot, "resident": resident}
+    actual = None
     try:
-        if await _broker_snapshot(client, snapshot["window"]) == expected:
+        actual = await _broker_snapshot(client, snapshot["window"])
+        if actual == expected:
             # A confirmed rejection or the broker's own rollback may already
             # have left the exact original resources. Do not reload them.
             return True
     except BaseException:
         pass
-    if context_attempted or resident:
-        try:
-            response = await client.post("/context", json={"context_tokens": snapshot["window"]})
-            response.raise_for_status()
-        except BaseException:
-            pass
+    model = (
+        snapshot["selected"]
+        if model_attempted and (actual is None or actual["selected"] != snapshot["selected"])
+        else None
+    )
+    if model or attempted_window is not None or resident:
+        current_window = actual["window"] if actual is not None else attempted_window or snapshot["window"]
+        for path, payload in _profile_calls(snapshot["window"], current_window, model):
+            try:
+                response = await client.post(path, json=payload)
+                response.raise_for_status()
+            except BaseException:
+                pass
     # Also execute this after a failed context rollback: an old external/idle
     # profile must not retain a newly loaded local worker.
     if not resident:
@@ -138,6 +158,8 @@ def proposal(settings, body):
         if name == "tts" and patch.get("kind") == "gpt_sovits" and "base_url" not in patch:
             select_local_voice(after, data.get("inference_broker", {}))
         after.update(patch)
+        if name == "llm":
+            normalize_broker_llm(data)
         if (
             (
                 after.get("base_url", "").rstrip("/") != before.get("base_url", "").rstrip("/")
@@ -149,6 +171,11 @@ def proposal(settings, body):
         ):
             raise ValueError("更换API地址时须重新填写或明确清除对应Key，避免旧凭证发送到新服务")
     if not _voice_only(body):
+        if uses_broker_llm(data):
+            target = llm_resource_key(data["llm"].get("model"))
+            if target is None:
+                raise ValueError("未知推理节点模型")
+            data["llm"]["model"] = LLM_MODELS[target]
         _update_model_profiles(data, settings.data["llm"])
     settings._validate(data)
     return data, keys
@@ -206,7 +233,8 @@ async def apply_settings(runtime, body):
         else previous_data.get("inference_broker", {}).get("context_tokens", 131072)
     )
     previous_file = previous_private = snapshot = None
-    broker_attempted = context_attempted = files_attempted = False
+    broker_attempted = model_attempted = files_attempted = False
+    attempted_window = None
     async with runtime.mode_lock, runtime.generation_lock:
         try:
             previous_file = settings.path.read_bytes() if settings.path.exists() else None
@@ -223,11 +251,16 @@ async def apply_settings(runtime, body):
                     # before sending, never infer "not executed" from an exception.
                     broker_attempted = True
                     if data["llm"]["kind"] == "llama_cpp":
-                        context_attempted = True
-                        response = await runtime.inference_client.post(
-                            "/context", json={"context_tokens": data["llm"]["context_tokens"]}
-                        )
-                        response.raise_for_status()
+                        window = data["llm"]["context_tokens"]
+                        target = llm_resource_key(data["llm"]["model"]) if uses_broker_llm(data) else None
+                        model = target if target != snapshot["selected"] else None
+                        for path, payload in _profile_calls(window, snapshot["window"], model):
+                            if path == "/model":
+                                model_attempted = True
+                            else:
+                                attempted_window = window
+                            response = await runtime.inference_client.post(path, json=payload)
+                            response.raise_for_status()
                     else:
                         response = await runtime.inference_client.post("/idle", json={})
                         response.raise_for_status()
@@ -255,7 +288,8 @@ async def apply_settings(runtime, body):
                     confirmed = await _restore_broker(
                         runtime.inference_client,
                         snapshot,
-                        context_attempted=context_attempted,
+                        attempted_window=attempted_window,
+                        model_attempted=model_attempted,
                         was_local=was_local,
                     )
                 if broker_attempted or files_attempted:

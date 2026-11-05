@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from tuber_studio.compaction import SUMMARIZATION_PROMPT, compact_history
+from tuber_studio.config import normalize_broker_llm, uses_broker_llm
 from tuber_studio.context import DOMAIN_GUIDANCE, ContextManager
 from tuber_studio.providers import LlamaCppProvider, public_error
 from tuber_studio.runtime import Runtime
@@ -27,6 +28,7 @@ def missing_groups(text, groups):
 async def evaluate_grounded(config_path, character_id, seed=42):
     """Exercise real compression + source retrieval + one repair in isolated RAM-only state."""
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    normalize_broker_llm(config)
     config["llm"]["seed"] = seed
     characters = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     cases = json.loads((ROOT / "evaluations/semantic-cases.json").read_text(encoding="utf-8"))
@@ -84,16 +86,14 @@ async def evaluate_grounded(config_path, character_id, seed=42):
 
 async def evaluate(config_path, character_id, seed=42):
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    normalize_broker_llm(config)
     config["llm"]["seed"] = seed
     characters = json.loads((ROOT / "config/characters.json").read_text(encoding="utf-8"))
     character = next(c for c in characters if c["id"] == character_id)
     cases = json.loads((ROOT / "evaluations/semantic-cases.json").read_text(encoding="utf-8"))
-    token = (
-        (ROOT / "runtime/inference-token").read_text(encoding="utf-8").strip()
-        if config.get("inference_broker", {}).get("enabled")
-        else None
-    )
-    provider = LlamaCppProvider(config["llm"], token)
+    managed = uses_broker_llm(config)
+    token = (ROOT / "runtime/inference-token").read_text(encoding="utf-8").strip() if managed else None
+    provider = LlamaCppProvider(config["llm"], token, broker_model_routing=managed)
     results = []
     try:
         await provider.health()

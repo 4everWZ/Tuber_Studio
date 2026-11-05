@@ -492,7 +492,10 @@ def prepare_runtime(root=ROOT):
 
 
 def _configuration(root):
+    from .config import normalize_broker_llm
+
     data = _small_json(_checked(root / "runtime/studio.json", root))
+    normalize_broker_llm(data)
     llm, broker = data.get("llm", {}), data.get("inference_broker", {})
     mode = broker.get("mode", "text")
     if mode not in {"text", "live"}:
@@ -551,7 +554,7 @@ async def observe_ready(client, root=ROOT):
     upstream = await _json(client, "GET", RESOURCES[selected].url + "/health", timeout=5)
     if upstream.get("status") != "ok":
         raise ValueError("The actual local model server is not ready")
-    props = await _json(client, "GET", f"/llm/{selected[3:]}/props", timeout=5)
+    props = await _json(client, "GET", "/llm/props", timeout=5)
     aliases = props.get("model_alias")
     aliases = [aliases] if isinstance(aliases, str) else aliases
     window = data["llm"]["context_tokens"]
@@ -638,7 +641,7 @@ async def _startup_once(root, stack_task, client):
             await asyncio.sleep(0.25)
     data, local, mode = _configuration(root)
     if local and data.get("inference_broker", {}).get("enabled"):
-        # Exactly one typed establishment attempt, even if legacy initialization
+        # Exactly one establishment attempt, even if legacy initialization
         # failed. There is no reload loop and no generated business/event input.
         await _json(client, "POST", "/mode", json={"mode": mode}, timeout=None)
     return await observe_ready(client, root)

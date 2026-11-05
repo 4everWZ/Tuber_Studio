@@ -1,5 +1,6 @@
 """Select the prompt source from the model, independently of the active role card."""
 
+from .config import uses_broker_llm
 from .inference_profiles import DAFEIYU_ALIASES, DAFEIYU_MODEL
 
 
@@ -10,18 +11,11 @@ def uses_built_in_persona(settings):
     if llm.get("kind") == "openai_compatible":
         return False
     model = llm.get("model", "").strip().lower()
-    broker = settings.get("inference_broker", {})
-    base = broker.get("base_url", "").rstrip("/")
-    endpoint = llm.get("base_url", "").rstrip("/")
-    if broker.get("enabled") and endpoint.startswith(base + "/llm/"):
-        legacy_model = endpoint.removeprefix(base + "/llm/")
-        if legacy_model in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b", "dafeiyu"}:
-            return legacy_model == "dafeiyu"
     if model not in DAFEIYU_ALIASES:
         return False
     if model in {DAFEIYU_MODEL.lower(), "minicpm-v-4_7-1b"}:
         # The old bare alias is shared with the unmodified VLM. Only the broker owns it here.
-        return bool(broker.get("enabled")) and endpoint in {base, base + "/llm"}
+        return uses_broker_llm(settings)
     return True
 
 

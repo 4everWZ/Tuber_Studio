@@ -21,6 +21,7 @@ import httpx
 import psutil
 from evaluate_context import MemoryWatch
 
+from tuber_studio.config import normalize_broker_llm, uses_broker_llm
 from tuber_studio.context import ContextManager
 from tuber_studio.providers import LlamaCppProvider, public_error, wav_duration
 
@@ -55,11 +56,13 @@ async def check_profile(client, backend, *, expected_identity=None):
         or health["kv_cache_type"] != "q4_0"
     ):
         raise RuntimeError("Requires idle MiniCPM5-2B/q4_0 + the configured local TTS in live mode")
-    response = await client.get("/llm/2b/props", timeout=10)
+    response = await client.get("/llm/props", timeout=10)
     response.raise_for_status()
     props = response.json()
-    if props["default_generation_settings"]["n_ctx"] != 131072:
-        raise RuntimeError("Actual context is not 131072")
+    aliases = props.get("model_alias")
+    aliases = [aliases] if isinstance(aliases, str) else aliases
+    if "MiniCPM5-2B" not in (aliases or []) or props["default_generation_settings"]["n_ctx"] != 131072:
+        raise RuntimeError("Actual LLM profile is not MiniCPM5-2B with a 131072 context")
     processes = process_ids()
     if len(processes["llm"]) != 1 or len(processes["tts"]) != 1:
         raise RuntimeError("Expected one formal TTS and one LLM process")
@@ -90,7 +93,12 @@ async def check_profile(client, backend, *, expected_identity=None):
 
 async def evaluate(args):
     config = json.loads((ROOT / "runtime/studio.json").read_text(encoding="utf-8"))
-    if config["llm"]["model"] != "MiniCPM5-2B" or config["llm"]["context_tokens"] != 131072:
+    normalize_broker_llm(config)
+    if (
+        not uses_broker_llm(config)
+        or config["llm"]["model"] != "MiniCPM5-2B"
+        or config["llm"]["context_tokens"] != 131072
+    ):
         raise ValueError("Keep the authorized MiniCPM5-2B/131072 profile")
     token = (ROOT / "runtime/inference-token").read_text().strip()
     admin = (ROOT / "runtime/admin-token").read_text().strip()
@@ -103,7 +111,7 @@ async def evaluate(args):
         if c["voice_profile"] == voice["id"]
     )
     config["llm"]["seed"] = cases["seed"]
-    provider = LlamaCppProvider(config["llm"], token)
+    provider = LlamaCppProvider(config["llm"], token, broker_model_routing=True)
     records, profile, error = [], None, None
     args.output.mkdir(parents=True, exist_ok=True)
     watch = MemoryWatch(args.seconds + 900)

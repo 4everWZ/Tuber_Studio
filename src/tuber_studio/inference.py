@@ -20,18 +20,19 @@ import psutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
+from .config import normalize_broker_llm
 from .inference_cache import cache_summary, scan_cache
 from .inference_observation import BackgroundObservation
 from .inference_profiles import (
-    DAFEIYU_ALIASES,
     DAFEIYU_KEY,
-    DAFEIYU_MODEL,
     DAFEIYU_WEIGHTS,
     GEMMA_ARTIFACTS,
     GEMMA_ENGINE,
     GEMMA_ENGINE_SHA256,
     GEMMA_KEY,
+    LLM_MODELS,
     artifact_identity,
+    llm_resource_key,
     project_asset,
     verify_artifact,
 )
@@ -58,34 +59,26 @@ class Resource:
 
 
 RESOURCES = {
-    "llm2b": Resource("http://127.0.0.1:9013", "/health", "MiniCPM5-2B", "MiniCPM5-2B-Q4_K_M.gguf"),
-    "llm1b": Resource("http://127.0.0.1:9010", "/health", "MiniCPM5-1B", "MiniCPM5-1B-Q4_K_M.gguf"),
-    DAFEIYU_KEY: Resource("http://127.0.0.1:9016", "/health", DAFEIYU_MODEL, DAFEIYU_WEIGHTS),
-    "llm1bq8": Resource("http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf"),
-    "llmqwen35": Resource("http://127.0.0.1:9015", "/health", "Qwen3.5-2B", "Qwen_Qwen3.5-2B-Q4_K_M.gguf"),
-    GEMMA_KEY: Resource("http://127.0.0.1:9030", "/health", "Gemma4-E2B", "gemma-4-E2B-it-Q4_0.gguf"),
+    "llm2b": Resource("http://127.0.0.1:9013", "/health", LLM_MODELS["llm2b"], "MiniCPM5-2B-Q4_K_M.gguf"),
+    "llm1b": Resource("http://127.0.0.1:9010", "/health", LLM_MODELS["llm1b"], "MiniCPM5-1B-Q4_K_M.gguf"),
+    DAFEIYU_KEY: Resource("http://127.0.0.1:9016", "/health", LLM_MODELS[DAFEIYU_KEY], DAFEIYU_WEIGHTS),
+    "llm1bq8": Resource("http://127.0.0.1:9014", "/health", LLM_MODELS["llm1bq8"], "MiniCPM5-1B-Q8_0.gguf"),
+    "llmqwen35": Resource(
+        "http://127.0.0.1:9015", "/health", LLM_MODELS["llmqwen35"], "Qwen_Qwen3.5-2B-Q4_K_M.gguf"
+    ),
+    GEMMA_KEY: Resource(
+        "http://127.0.0.1:9030", "/health", LLM_MODELS[GEMMA_KEY], "gemma-4-E2B-it-Q4_0.gguf"
+    ),
     "tts": Resource("http://127.0.0.1:9011", "/docs"),
 }
-LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
+LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion", "warmup"}
 
 
-def resolve_llm_resource_key(model_name: str | None, current_selected: str = "llm2b") -> str:
-    if not model_name or not isinstance(model_name, str):
-        return current_selected
-    name = model_name.strip().lower()
-    if name in {"1b", "llm1b", "minicpm5-1b"}:
-        return "llm1b"
-    if name in DAFEIYU_ALIASES:
-        return DAFEIYU_KEY
-    if name in {"2b", "llm2b", "minicpm5-2b", "minicpm5-2b (本地默认)"}:
-        return "llm2b" if "llm2b" in RESOURCES else current_selected
-    if name in {"1bq8", "llm1bq8", "minicpm5-1b-q8_0", "minicpm5-1b-q8"}:
-        return "llm1bq8" if "llm1bq8" in RESOURCES else current_selected
-    if name in {"qwen35", "llmqwen35", "qwen3.5-2b", "qwen_qwen3.5-2b"}:
-        return "llmqwen35" if "llmqwen35" in RESOURCES else current_selected
-    if name in {"gemma4e2b", "gemma4-e2b", "gemma-4-e2b-it", GEMMA_KEY}:
-        return GEMMA_KEY if GEMMA_KEY in RESOURCES else current_selected
-    return current_selected
+def resolve_llm_resource_key(model_name):
+    key = llm_resource_key(model_name)
+    if key is None:
+        raise HTTPException(422, "Unknown inference model")
+    return key
 
 
 def resource_cache_type(key: str, configured: str) -> str | None:
@@ -807,6 +800,7 @@ class InferenceBroker:
             raise RuntimeError("Studio configuration must be a regular runtime file")
         source = path if path.exists() else self.root / "config/studio.example.json"
         data = json.loads(source.read_text(encoding="utf-8")) if source.exists() else {}
+        normalize_broker_llm(data)
         update(data)
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=".studio-mode-", dir=path.parent)
@@ -854,7 +848,8 @@ class InferenceBroker:
         def update(data):
             alias = RESOURCES[key].alias or key
             if self.configuration_path is not None:
-                data["model"] = alias
+                data["operations_model"] = alias
+                data.pop("model", None)
                 return
             profile = data.setdefault("inference_broker", {})
             if not isinstance(profile, dict):
@@ -865,6 +860,9 @@ class InferenceBroker:
                 raise ValueError("Invalid language model configuration")
             if llm.get("kind", "llama_cpp") == "llama_cpp":
                 llm["model"] = alias
+            operations = data.get("work_mode_profiles", {}).get("text", {}).get("llm")
+            if operations is not None and operations.get("kind") == "llama_cpp":
+                operations["model"] = alias
 
         self._persist_configuration(update)
 
@@ -935,23 +933,26 @@ class InferenceBroker:
         return await self.observe()
 
     async def switch_model(self, key):
+        async with self.lock:
+            await self._switch_model(key)
+        return await self.observe()
+
+    async def _switch_model(self, key):
         if key not in RESOURCES or not RESOURCES[key].model:
             raise HTTPException(422, f"Unknown model key {key}")
-        if self.selected == key and self.active == key:
-            return await self.observe()
         if self.mode != "text":
             raise HTTPException(409, "Model switching requires text mode")
-        async with self.lock:
-            try:
-                async with self._residency_change():
-                    await asyncio.to_thread(self._validate_context, key)
-                    self.selected = key
-                    self.operations_selected = key
-                    await self._apply_mode(self.mode)
-                    self._persist_selected(key)
-            except Exception:
-                raise HTTPException(503, self.error or "Model transition failed") from None
-        return await self.observe()
+        if self.selected == key and self.active == key:
+            return
+        try:
+            async with self._residency_change():
+                await asyncio.to_thread(self._validate_context, key)
+                self.selected = key
+                await self._apply_mode(self.mode)
+                self._persist_selected(key)
+                self.operations_selected = key
+        except Exception:
+            raise HTTPException(503, self.error or "Model transition failed") from None
 
     def _require_idle_text(self):
         if self.lock.locked():
@@ -1149,69 +1150,88 @@ class InferenceBroker:
             "active_provider": self.active,
         }
 
+    async def forward_llm(self, key, path, body):
+        async with self.lock:
+            try:
+                validate_llm_request(path, body, context_tokens=self.context_tokens)
+            except ValueError as error:
+                raise HTTPException(422, str(error)) from None
+            if body.get("stream", False) is not False:
+                raise HTTPException(422, "Only buffered inference is supported")
+            key = key or self.selected
+            if key != self.selected:
+                await self._switch_model(key)
+            if path not in {"warmup", "tokenize"}:
+                body["model"] = RESOURCES[key].alias
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            return await self._forward(key, path, data)
+
     async def forward(self, key, path, body):
         async with self.lock:
-            self.check_resources()
-            if key == "tts" and self.mode != "live":
-                raise HTTPException(409, "Switch to live mode before synthesizing speech")
-            if self.mode == "live" and key not in {self.selected, "tts"}:
-                raise HTTPException(409, "Live mode only permits the selected LLM and TTS")
-            if self.mode == "text" and self.operations_selected is not None and key != self.selected:
-                raise HTTPException(409, "Text mode only permits the selected operations model")
-            self._target_touched = False
-            if self.mode == "live":
-                try:
-                    async with self._residency_change():
-                        await self._apply_mode("live")
-                except Exception:
-                    raise HTTPException(503, self.error) from None
-                self.active = key
+            return await self._forward(key, path, body)
+
+    async def _forward(self, key, path, body):
+        self.check_resources()
+        if key == "tts" and self.mode != "live":
+            raise HTTPException(409, "Switch to live mode before synthesizing speech")
+        if self.mode == "live" and key not in {self.selected, "tts"}:
+            raise HTTPException(409, "Live mode only permits the selected LLM and TTS")
+        if self.mode == "text" and self.operations_selected is not None and key != self.selected:
+            raise HTTPException(409, "Text mode only permits the selected operations model")
+        self._target_touched = False
+        if self.mode == "live":
             try:
-                if self.mode != "live":
-                    await self._activate(key)
-                self.check_resources()
-                if path == "warmup":
-                    return JSONResponse(await self.read(key, "props"))
-                response = await self.client.post(
-                    RESOURCES[key].url + "/" + path,
-                    content=body,
-                    headers={"Content-Type": "application/json"},
-                )
-                # httpx post buffers the body before returning. The GPU lease is
-                # held through this point even when the upstream sends chunked WAV.
-                if response.status_code >= 500:
-                    # A failed CUDA worker must not remain advertised as ready.
-                    # A subsequent live request rebuilds TTS first when required.
-                    await self.runner.stop(key)
-                    self.active, self.state = None, "error"
-                    self.error = "Inference worker failed; the next request must reload it"
-                return Response(
-                    response.content,
-                    status_code=response.status_code,
-                    media_type=response.headers.get("content-type", "application/octet-stream"),
-                )
-            except HTTPException:
-                raise
-            except asyncio.CancelledError:
-                self.state, self.error = "stopping", "Inference request was cancelled"
-                cleanup = asyncio.create_task(self.runner.stop(key)) if self._target_touched else None
-                if cleanup is None:
-                    self.active, self.state, self.error = None, "cold", None
-                    raise
-                while not cleanup.done():
-                    try:
-                        await asyncio.shield(cleanup)
-                    except asyncio.CancelledError:
-                        continue
-                cleanup.result()
+                async with self._residency_change():
+                    await self._apply_mode("live")
+            except Exception:
+                raise HTTPException(503, self.error) from None
+            self.active = key
+        try:
+            if self.mode != "live":
+                await self._activate(key)
+            self.check_resources()
+            if path == "warmup":
+                return JSONResponse(await self.read(key, "props"))
+            response = await self.client.post(
+                RESOURCES[key].url + "/" + path,
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+            # httpx post buffers the body before returning. The GPU lease is
+            # held through this point even when the upstream sends chunked WAV.
+            if response.status_code >= 500:
+                # A failed CUDA worker must not remain advertised as ready.
+                # A subsequent live request rebuilds TTS first when required.
+                await self.runner.stop(key)
+                self.active, self.state = None, "error"
+                self.error = "Inference worker failed; the next request must reload it"
+            return Response(
+                response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/octet-stream"),
+            )
+        except HTTPException:
+            raise
+        except asyncio.CancelledError:
+            self.state, self.error = "stopping", "Inference request was cancelled"
+            cleanup = asyncio.create_task(self.runner.stop(key)) if self._target_touched else None
+            if cleanup is None:
                 self.active, self.state, self.error = None, "cold", None
                 raise
-            except Exception:
-                self.state, self.error = "error", "Inference request failed"
-                if self._target_touched:
-                    await self.runner.stop(key)
-                self.active = None
-                raise HTTPException(503, self.error) from None
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+            cleanup.result()
+            self.active, self.state, self.error = None, "cold", None
+            raise
+        except Exception:
+            self.state, self.error = "error", "Inference request failed"
+            if self._target_touched:
+                await self.runner.stop(key)
+            self.active = None
+            raise HTTPException(503, self.error) from None
 
     async def close(self):
         self._observation_stop.set()
@@ -1306,6 +1326,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
     if not configuration.exists():
         configuration = root / "config/studio.example.json"
     data = json.loads(configuration.read_text(encoding="utf-8")) if configuration.exists() else {}
+    normalize_broker_llm(data)
     if node_config is not None:
         node = data
         for field, default in (("min_available_mib", 384), ("max_swap_growth_mib", 128)):
@@ -1479,136 +1500,62 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             raise HTTPException(422, "Cache cleanup accepts only an empty object")
         return await cancellable(request, manager.clear_cache())
 
-    async def dispatch(
-        request: Request,
-        key: str,
-        path: str,
-        *,
-        auto_rewrite_model: bool = False,
-        parsed_body: tuple[dict, bytes] | None = None,
-    ):
-        if request.method == "GET":
-            if (key.startswith("llm") and path in {"health", "props", "models", "v1/models"}) or (
-                key == "tts" and path in {"docs", "health", ""}
-            ):
-                return await manager.read(key, path if path != "" else "docs")
-            raise HTTPException(404)
-        if not (
-            (key.startswith("llm") and path in LLM_POSTS | {"warmup", "chat/completions"})
-            or (key == "tts" and path in {"tts", ""})
-        ):
-            raise HTTPException(404)
-        if parsed_body is not None:
-            body, data = parsed_body
-        else:
-            body, data = await read_body(request)
-        try:
-            if key.startswith("llm"):
-                validate_llm_request(path, body, context_tokens=manager.context_tokens)
-            else:
-                validate_speech_request(body)
-        except ValueError as error:
-            raise HTTPException(422, str(error)) from None
-        if body.get("stream", False) is not False or body.get("streaming_mode", False) is not False:
-            raise HTTPException(422, "Only buffered inference is supported")
-        if key.startswith("llm"):
-            expected_alias = RESOURCES[key].alias
-            if auto_rewrite_model:
-                if body.get("model") != expected_alias:
-                    body["model"] = expected_alias
-                    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-            else:
-                if body.get("model", expected_alias) != expected_alias:
-                    raise HTTPException(422, "Model does not match typed resource")
-        if key == "tts" and (
-            not allowed_tts_reference(root, body.get("ref_audio_path")) or body.get("aux_ref_audio_paths")
-        ):
-            raise HTTPException(422, "TTS reference must be the configured project voice")
-        if key == "tts":
-            body["ref_audio_path"] = str(project_wav(root, body["ref_audio_path"]))
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-            if path == "":
-                path = "tts"
-        return await cancellable(request, manager.forward(key, path, data))
-
     @app.api_route("/tts", methods=["GET", "POST"])
     async def tts_root(request: Request):
-        if request.method == "GET":
-            return await dispatch(request, "tts", "docs")
-        return await dispatch(request, "tts", "tts")
+        return await tts("", request)
 
     @app.api_route("/tts/{path:path}", methods=["GET", "POST"])
     async def tts(path: str, request: Request):
-        if path in {"", "tts"}:
-            if request.method == "GET":
-                return await dispatch(request, "tts", "docs")
-            return await dispatch(request, "tts", "tts")
-        return await dispatch(request, "tts", path)
+        if request.method == "GET":
+            if path in {"", "tts", "docs", "health"}:
+                return await manager.read("tts", "health" if path == "health" else "docs")
+            raise HTTPException(404)
+        if path not in {"", "tts"}:
+            raise HTTPException(404)
+        body, _ = await read_body(request)
+        try:
+            validate_speech_request(body)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        if not allowed_tts_reference(root, body.get("ref_audio_path")):
+            raise HTTPException(422, "TTS reference must be the configured project voice")
+        body["ref_audio_path"] = str(project_wav(root, body["ref_audio_path"]))
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        return await cancellable(request, manager.forward("tts", "tts", data))
+
+    async def llm_post(request, path=None):
+        if path == "chat/completions":
+            path = "v1/chat/completions"
+        if path is not None and path not in LLM_POSTS:
+            raise HTTPException(404)
+        body, _ = await read_body(request)
+        if path is None:
+            path = "v1/chat/completions" if "messages" in body else "completion"
+        target = resolve_llm_resource_key(body["model"]) if "model" in body else None
+        if path in {"warmup", "tokenize"}:
+            body.pop("model", None)
+        return await cancellable(request, manager.forward_llm(target, path, body))
 
     @app.api_route("/llm", methods=["GET", "POST"])
     async def llm_root(request: Request):
         if request.method == "GET":
             return await manager.read(manager.selected, "health")
-        body, data = await read_body(request)
-        target_key = resolve_llm_resource_key(body.get("model"), manager.selected)
-        if manager.mode == "text" and target_key != manager.selected:
-            await manager.switch_model(target_key)
-        elif manager.mode == "live":
-            target_key = manager.selected
-        path = "v1/chat/completions" if "messages" in body else "completion"
-        return await dispatch(request, target_key, path, auto_rewrite_model=True, parsed_body=(body, data))
+        return await llm_post(request)
 
     @app.api_route("/llm/{path:path}", methods=["GET", "POST"])
     async def llm(path: str, request: Request):
-        first_segment = path.split("/")[0]
-        if first_segment in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b", "dafeiyu"}:
-            # Legacy typed route: /llm/{size}/{path:path}
-            subpath = path[len(first_segment) + 1 :] if len(path) > len(first_segment) else ""
-            return await dispatch(request, "llm" + first_segment, subpath, auto_rewrite_model=False)
-        # Unified direct route: /llm/v1/chat/completions, /llm/health, etc.
-        if request.method == "GET":
-            if path in {"health", "props"}:
-                return await manager.read(manager.selected, path)
-            if path in {"models", "v1/models"}:
-                return {
-                    "object": "list",
-                    "data": [
-                        {
-                            "id": RESOURCES[k].alias,
-                            "object": "model",
-                            "owned_by": "tuber-studio",
-                            "active": k == manager.selected,
-                        }
-                        for k in RESOURCES
-                        if RESOURCES[k].model
-                    ],
-                }
-            raise HTTPException(404)
-        body, data = await read_body(request)
-        target_key = resolve_llm_resource_key(body.get("model"), manager.selected)
-        if manager.mode == "text" and target_key != manager.selected:
-            await manager.switch_model(target_key)
-        elif manager.mode == "live":
-            target_key = manager.selected
-        normalized_path = (
-            "v1/chat/completions" if path in {"chat/completions", "v1/chat/completions"} else path
-        )
-        return await dispatch(
-            request, target_key, normalized_path, auto_rewrite_model=True, parsed_body=(body, data)
-        )
+        if request.method == "POST":
+            return await llm_post(request, path)
+        if path in {"health", "props"}:
+            return await manager.read(manager.selected, path)
+        if path in {"models", "v1/models"}:
+            return await list_models()
+        raise HTTPException(404)
 
-    @app.api_route("/v1/chat/completions", methods=["POST"])
-    @app.api_route("/chat/completions", methods=["POST"])
+    @app.post("/v1/chat/completions")
+    @app.post("/chat/completions")
     async def openai_chat_completions(request: Request):
-        body, data = await read_body(request)
-        target_key = resolve_llm_resource_key(body.get("model"), manager.selected)
-        if manager.mode == "text" and target_key != manager.selected:
-            await manager.switch_model(target_key)
-        elif manager.mode == "live":
-            target_key = manager.selected
-        return await dispatch(
-            request, target_key, "v1/chat/completions", auto_rewrite_model=True, parsed_body=(body, data)
-        )
+        return await llm_post(request, "v1/chat/completions")
 
     @app.get("/v1/models")
     @app.get("/models")
@@ -1617,13 +1564,12 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             "object": "list",
             "data": [
                 {
-                    "id": RESOURCES[k].alias,
+                    "id": model,
                     "object": "model",
                     "owned_by": "tuber-studio",
-                    "active": k == manager.selected,
+                    "active": key == manager.selected,
                 }
-                for k in RESOURCES
-                if RESOURCES[k].model
+                for key, model in LLM_MODELS.items()
             ],
         }
 
@@ -1631,15 +1577,8 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
     @app.post("/select")
     async def select_model(request: Request):
         body, _ = await read_body(request)
-        model_name = body.get("model") or body.get("key")
-        if not model_name or not isinstance(model_name, str):
-            raise HTTPException(422, "Model name or key is required")
-        target_key = resolve_llm_resource_key(model_name, manager.selected)
-        if target_key not in RESOURCES or not RESOURCES[target_key].model:
-            raise HTTPException(422, f"Target model '{model_name}' not available")
-        if manager.mode != "text":
-            raise HTTPException(409, "Model switching requires text mode")
-        return await cancellable(request, manager.switch_model(target_key))
+        target = resolve_llm_resource_key(body.get("model", body.get("key")))
+        return await cancellable(request, manager.switch_model(target))
 
     @app.api_route("/vlm/gemma4e2b/{path:path}", methods=["GET", "POST"])
     async def vision(path: str, request: Request):

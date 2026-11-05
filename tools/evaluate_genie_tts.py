@@ -1,7 +1,7 @@
 """Isolated Genie v2 CPU backend with original dynamic Chinese frontend.
 
 No dependency installs or production configuration writes happen here. Only the
-explicit coexistence switch performs a fixed typed broker warmup; the maintenance
+explicit coexistence switch warms up MiniCPM5-2B through the broker; the maintenance
 controller owns the exclusive window and Mini restoration. Genie templates/converters are MIT High_Logic (2025); stock
 weight loading executes the unchanged upstream function from its source AST.
 The existing checked fixed-reference cache replaces only the reference-only
@@ -77,19 +77,19 @@ def evaluation_adapter(name, root):
 
 
 def observe_mini(root, *, load=False, expected=None):
-    """Read-only identity checks after an optional fixed typed broker warmup."""
+    """Check the resident profile after an optional MiniCPM5-2B warmup."""
     import httpx
     import psutil
 
     headers = {"X-Tuber-Inference-Key": (root / "runtime/inference-token").read_text().strip()}
     with httpx.Client(base_url="http://127.0.0.1:9012", headers=headers, trust_env=False) as client:
         if load:
-            response = client.post("/llm/2b/warmup", json={}, timeout=180)
+            response = client.post("/llm/warmup", json={"model": "MiniCPM5-2B"}, timeout=180)
             response.raise_for_status()
         response = client.get("/health", timeout=5)
         response.raise_for_status()
         health = response.json()
-        response = client.get("/llm/2b/props", timeout=5)
+        response = client.get("/llm/props", timeout=5)
         response.raise_for_status()
         props = response.json()
     providers = health.get("providers", {})

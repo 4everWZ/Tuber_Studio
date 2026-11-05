@@ -527,7 +527,7 @@ def ready(tmp_path):
             return httpx.Response(200, json={"status": "ok"})
         if request.url.path == "/health":
             return httpx.Response(200, json=health)
-        if request.url.path.endswith("/props"):
+        if request.url.path == "/llm/props":
             return httpx.Response(200, json=props)
         if request.url.path == "/tts/docs":
             return httpx.Response(200, json=speech)

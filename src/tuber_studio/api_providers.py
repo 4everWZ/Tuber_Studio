@@ -8,6 +8,7 @@ from collections import OrderedDict
 from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
+from .config import uses_broker_llm
 from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, models_health, response_json
 from .image_preprocessing import prepare_image
@@ -30,7 +31,9 @@ def create_llm(settings):
         return DemoProvider()
     if config["kind"] == "openai_compatible":
         return APIProvider(config, settings.provider_key("llm"))
-    return LlamaCppProvider(config, settings.endpoint_key("llm"))
+    return LlamaCppProvider(
+        config, settings.endpoint_key("llm"), broker_model_routing=uses_broker_llm(settings.data)
+    )
 
 
 class APIProvider:

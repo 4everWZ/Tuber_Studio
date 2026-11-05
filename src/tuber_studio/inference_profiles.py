@@ -17,6 +17,28 @@ DAFEIYU_ALIASES = {
     "minicpm-v-4.7-1b (大肥鱼专属微调)",
 }
 GEMMA_KEY = "llmgemma4e2b"
+LLM_MODELS = {
+    "llm2b": "MiniCPM5-2B",
+    "llm1b": "MiniCPM5-1B",
+    DAFEIYU_KEY: DAFEIYU_MODEL,
+    "llm1bq8": "MiniCPM5-1B-Q8_0",
+    "llmqwen35": "Qwen3.5-2B",
+    GEMMA_KEY: "Gemma4-E2B",
+}
+LLM_ALIASES = (
+    {
+        alias: key
+        for key, model in LLM_MODELS.items()
+        for alias in (key, key.removeprefix("llm"), model.lower())
+    }
+    | dict.fromkeys(DAFEIYU_ALIASES, DAFEIYU_KEY)
+    | {
+        "minicpm5-2b (本地默认)": "llm2b",
+        "minicpm5-1b-q8": "llm1bq8",
+        "qwen_qwen3.5-2b": "llmqwen35",
+        "gemma-4-e2b-it": GEMMA_KEY,
+    }
+)
 GEMMA_ENGINE = "runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server"
 GEMMA_ENGINE_SHA256 = "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e"
 GEMMA_ARTIFACTS = {
@@ -33,6 +55,10 @@ GEMMA_ARTIFACTS = {
         "sha256": "6d01fb358e40fe508f5617038c45671d2a5d518af9e3c217620803d84b68a4f2",
     },
 }
+
+
+def llm_resource_key(model_name):
+    return LLM_ALIASES.get(model_name.strip().lower()) if isinstance(model_name, str) else None
 
 
 def project_asset(root: Path, value: str) -> Path:

@@ -11,7 +11,14 @@ from test_inference import setup_broker
 
 from tuber_studio.inference import HEADER, ProcessRunner, create_app
 from tuber_studio.inference_cache import cache_summary, scan_cache
-from tuber_studio.inference_profiles import GEMMA_ENGINE, GEMMA_KEY, project_asset, verify_artifact
+from tuber_studio.inference_profiles import (
+    DAFEIYU_KEY,
+    DAFEIYU_MODEL,
+    GEMMA_ENGINE,
+    GEMMA_KEY,
+    project_asset,
+    verify_artifact,
+)
 from tuber_studio.inference_validation import validate_vision_request
 
 
@@ -69,6 +76,23 @@ async def test_node_mode_switches_gemma_to_minicpm_genie_and_returns_to_gemma(tm
         "keep": "node",
     }
     assert not (tmp_path / "runtime/studio.json").exists()
+    await broker.close()
+
+
+async def test_unified_node_model_switch_commits_the_operations_profile(tmp_path):
+    broker, _, configuration = await mode_broker(tmp_path)
+    application = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=application), base_url="http://node", headers={HEADER: token}
+    ) as client:
+        response = await client.post("/llm/warmup", json={"model": DAFEIYU_MODEL})
+        assert response.status_code == 200 and response.json()["model_alias"] == DAFEIYU_MODEL
+    assert broker.operations_selected == DAFEIYU_KEY
+    assert json.loads(configuration.read_text())["operations_model"] == DAFEIYU_MODEL
+    restored = create_app(tmp_path, node_config=configuration, warm_start=False).state.broker
+    assert restored.selected == restored.operations_selected == DAFEIYU_KEY
+    await restored.close()
     await broker.close()
 
 
@@ -154,7 +178,8 @@ async def test_node_vision_route_is_explicit_and_shares_the_same_mode_lease(tmp_
     ) as client:
         assert (
             await client.post("/llm/gemma4e2b/v1/chat/completions", json=vision_body())
-        ).status_code == 422
+        ).status_code == 404
+        assert (await client.post("/llm/v1/chat/completions", json=vision_body())).status_code == 422
         assert (
             await client.post("/vlm/gemma4e2b/v1/chat/completions", json=vision_body())
         ).status_code == 200

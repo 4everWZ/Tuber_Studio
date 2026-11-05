@@ -7,9 +7,41 @@ import tempfile
 from pathlib import Path
 
 from .http_api import endpoint
+from .inference_profiles import LLM_MODELS
 from .inference_validation import project_wav
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def normalize_broker_llm(data):
+    """Migrate the exact saved node routes that previously chose the model by path."""
+    broker = data.get("inference_broker", {})
+    base = (broker.get("base_url") or "").rstrip("/")
+    if not base:
+        return
+    unified = base + "/llm"
+    legacy = {f"{unified}/{key.removeprefix('llm')}": model for key, model in LLM_MODELS.items()}
+    profiles = [data, *(data.get("work_mode_profiles") or {}).values()]
+    for profile in profiles:
+        llm = profile.get("llm", {})
+        url = llm.get("base_url")
+        model = legacy.get(url.rstrip("/")) if isinstance(url, str) else None
+        if model and (
+            llm.get("kind") == "llama_cpp"
+            or (llm.get("kind") == "openai_compatible" and broker.get("enabled"))
+        ):
+            llm.update(kind="llama_cpp", base_url=unified, model=model)
+
+
+def uses_broker_llm(data):
+    broker, llm = data.get("inference_broker", {}), data["llm"]
+    base = broker.get("base_url", "").rstrip("/")
+    return (
+        bool(base)
+        and broker.get("enabled")
+        and llm.get("kind", "llama_cpp") == "llama_cpp"
+        and llm.get("base_url", "").rstrip("/") in {base, base + "/llm"}
+    )
 
 
 class Settings:
@@ -24,6 +56,7 @@ class Settings:
         path = Path(os.getenv("TUBER_CONFIG", str(self.runtime / "studio.json")))
         example = self.root / "config/studio.example.json"
         self.data = json.loads((path if path.exists() else example).read_text(encoding="utf-8"))
+        normalize_broker_llm(self.data)
         # Conversation retention now has its own persisted policy; the old
         # seven-day event setting must not silently override the requested 30 days.
         self.data.pop("event_retention_days", None)
@@ -117,22 +150,12 @@ class Settings:
     def broker_key_for(self, base_url):
         broker = self.data.get("inference_broker", {})
         base = broker.get("base_url", "").rstrip("/")
-        allowed = {
-            base + path
-            for path in (
-                "",
-                "/tts",
-                "/llm",
-                "/llm/2b",
-                "/llm/1b",
-                "/llm/1bq8",
-                "/llm/qwen35",
-                "/llm/gemma4e2b",
-                "/llm/dafeiyu",
-                "/vlm/gemma4e2b/v1",
-            )
-        }
-        return self.inference_token if broker.get("enabled") and base_url.rstrip("/") in allowed else None
+        allowed = {base, base + "/tts", base + "/llm", base + "/vlm/gemma4e2b/v1"}
+        return (
+            self.inference_token
+            if base and broker.get("enabled") and base_url.rstrip("/") in allowed
+            else None
+        )
 
     def public_data(self):
         return redact_credentials(self.data) | {
@@ -142,6 +165,7 @@ class Settings:
         }
 
     def save_public(self, data):
+        normalize_broker_llm(data)
         self._validate(data)
         atomic_json(self.path, data)
 

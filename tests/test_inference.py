@@ -461,11 +461,13 @@ async def test_mode_endpoint_authentication_validation_and_read_only_observers(t
         response = await client.post("/mode", json={"mode": "live"})
         assert response.status_code == 200 and response.json()["mode"] == "live"
         before = control.events[:]
-        assert (await client.get("/health")).json()["state"] == "active"
+        health = (await client.get("/health")).json()
+        assert health["state"] == "active" and health["providers"]["llm1b"]["running"] is False
         assert (await client.get("/tts/docs")).status_code == 200
-        assert (await client.get("/llm/1b/health")).status_code == 200
+        assert (await client.get("/llm/1b/health")).status_code == 404
         assert control.events == before
-        assert (await client.post("/llm/1b/warmup", json={})).status_code == 409
+        assert (await client.post("/llm/warmup", json={"model": "MiniCPM5-1B"})).status_code == 409
+        assert control.events == before
     await broker.close()
 
 
@@ -492,16 +494,18 @@ async def test_observers_do_not_wake_sleeping_resources_and_warmup_is_explicit(t
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://broker") as client:
         assert (await client.get("/health")).status_code == 401
         client.headers[HEADER] = token
-        for path in ("/health", "/llm/2b/health", "/tts/docs"):
+        for path in ("/health", "/llm/health", "/tts/docs"):
             assert (await client.get(path)).status_code == 200
         assert control.events == []
-        assert (await client.get("/llm/2b/props")).status_code == 503
-        response = await client.post("/llm/2b/warmup", json={})
+        assert (await client.get("/llm/props")).status_code == 503
+        response = await client.post("/llm/warmup", json={"model": "MiniCPM5-2B"})
         assert response.status_code == 200
         assert response.json()["default_generation_settings"]["n_ctx"] == 131072
-        await broker.forward("llm1b", "completion", b"{}")
+        response = await client.post("/llm/warmup", json={"model": "MiniCPM5-1B"})
+        assert response.status_code == 200
         before = control.events[:]
-        assert (await client.get("/llm/2b/props")).json()["is_sleeping"] is True
+        assert (await client.get("/llm/props")).json()["model_alias"] == "MiniCPM5-1B"
+        assert (await client.get("/health")).json()["providers"]["llm2b"]["running"] is False
         assert control.events == before
     await broker.close()
 
@@ -542,25 +546,25 @@ async def test_speech_observer_preserves_actual_backend_identity_without_startin
 
 
 @pytest.mark.parametrize(
-    "path,body",
+    "path,body,status",
     [
-        ("/llm/2b/arbitrary", {}),
-        ("/llm/other/completion", {}),
-        ("/tts/set_gpt_weights", {}),
-        ("/llm/2b/completion", {"model": "another-model"}),
-        ("/llm/2b/completion", {"stream": True}),
-        ("/tts/tts", {"ref_audio_path": "/etc/passwd"}),
+        ("/llm/2b/completion", {"model": "MiniCPM5-2B"}, 404),
+        ("/llm/other/completion", {"model": "MiniCPM5-1B"}, 404),
+        ("/tts/set_gpt_weights", {}, 404),
+        ("/llm/completion", {"model": "another-model"}, 422),
+        ("/llm/completion", {"model": "MiniCPM5-1B", "stream": True}, 422),
+        ("/tts/tts", {"ref_audio_path": "/etc/passwd"}, 422),
     ],
 )
-async def test_paths_models_streams_and_reference_files_are_restricted(tmp_path, path, body):
+async def test_paths_models_streams_and_reference_files_are_restricted(tmp_path, path, body, status):
     broker, control = setup_broker(tmp_path)
     app = create_app(tmp_path, broker=broker, warm_start=False)
     token = (tmp_path / "runtime/inference-token").read_text()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
     ) as client:
-        assert (await client.post(path, json=body)).status_code in {404, 422}
-    assert control.events == []
+        assert (await client.post(path, json=body)).status_code == status
+    assert control.events == [] and broker.selected == "llm2b"
     await broker.close()
 
 
@@ -578,7 +582,7 @@ async def test_body_limit_rejects_before_resource_activation(tmp_path, chunked):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
     ) as client:
-        assert (await client.post("/llm/2b/completion", content=data)).status_code == 413
+        assert (await client.post("/llm/completion", content=data)).status_code == 413
     assert control.events == []
     await broker.close()
 
@@ -611,7 +615,7 @@ async def test_real_asgi_disconnect_cancels_owned_upstream_and_unlocks(tmp_path,
     token = (tmp_path / "runtime/inference-token").read_text()
     incoming, sent = asyncio.Queue(), []
     body = b'{"mode":"live"}' if mode_change else b"{}"
-    path = "/mode" if mode_change else "/llm/2b/completion"
+    path = "/mode" if mode_change else "/llm/completion"
     incoming.put_nowait({"type": "http.request", "body": body, "more_body": False})
 
     async def send(message):
@@ -773,10 +777,10 @@ async def test_tts_uses_operator_reference_whitelist_with_project_bounds(
 @pytest.mark.parametrize(
     "path,body",
     [
-        ("/llm/2b/v1/chat/completions", {"tools": [{"function": {"name": "shell"}}]}),
-        ("/llm/2b/completion", {"prompt": {"path": "/etc/passwd"}}),
-        ("/llm/2b/apply-template", {"messages": [{"role": "tool", "content": "anything"}]}),
-        ("/llm/2b/warmup", {"model_path": "/tmp/foreign.gguf"}),
+        ("/llm/v1/chat/completions", {"tools": [{"function": {"name": "shell"}}]}),
+        ("/llm/completion", {"prompt": {"path": "/etc/passwd"}}),
+        ("/llm/apply-template", {"messages": [{"role": "tool", "content": "anything"}]}),
+        ("/llm/warmup", {"model_path": "/tmp/foreign.gguf"}),
         ("/tts/tts", {"weights_path": "/tmp/foreign.ckpt"}),
         ("/tts/control", {"command": "restart"}),
     ],
@@ -929,7 +933,7 @@ async def test_external_llm_boot_keeps_broker_cold_and_uses_its_own_model_window
                 not item["running"] and item["native_context_tokens"] is None
                 for item in health["providers"].values()
             )
-            assert (await client.get("/llm/1b/props")).status_code == 503
+            assert (await client.get("/llm/props")).status_code == 503
     assert path.read_text() == original
 
 
@@ -1192,9 +1196,9 @@ async def test_broker_rejects_output_budget_above_configured_actual_window_befor
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
     ) as client:
-        rejected = await client.post("/llm/2b/completion", json={"prompt": "hello", "n_predict": 4097})
+        rejected = await client.post("/llm/completion", json={"prompt": "hello", "n_predict": 4097})
         assert rejected.status_code == 422 and not control.events
-        accepted = await client.post("/llm/2b/completion", json={"prompt": "hello", "n_predict": 4096})
+        accepted = await client.post("/llm/completion", json={"prompt": "hello", "n_predict": 4096})
         assert accepted.status_code == 200
     await broker.close()
 
@@ -1227,23 +1231,23 @@ def test_candidate_identity_cannot_use_another_architecture_with_the_same_window
         native_context(path, expected_architecture="qwen35")
 
 
-async def test_fixed_qwen_text_route_is_explicit_and_respects_live_selection(tmp_path):
+async def test_qwen_warmup_selects_text_model_and_respects_live_selection(tmp_path):
     broker, control = setup_broker(tmp_path)
+    broker.live_selected = "llm2b"
     app = create_app(tmp_path, broker=broker, warm_start=False)
     token = (tmp_path / "runtime/inference-token").read_text()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
     ) as client:
-        assert (await client.get("/llm/qwen35/health")).status_code == 200
+        assert (await client.get("/llm/health")).status_code == 200
         assert control.events == []
-        wrong = await client.post("/llm/qwen35/completion", json={"model": "MiniCPM5-2B"})
-        assert wrong.status_code == 422 and control.events == []
-        response = await client.post("/llm/qwen35/warmup", json={})
+        response = await client.post("/llm/warmup", json={"model": "Qwen3.5-2B"})
         assert response.status_code == 200 and response.json()["model_alias"] == "Qwen3.5-2B"
+        assert broker.operations_selected == "llmqwen35"
         assert broker.natives["llmqwen35"] == 262144
         assert not control.alive["tts"] and control.alive["llmqwen35"]
         await broker.switch_mode("live")
-        assert (await client.post("/llm/qwen35/warmup", json={})).status_code == 409
+        assert (await client.post("/llm/warmup", json={"model": "Qwen3.5-2B"})).status_code == 409
         assert not control.alive["llmqwen35"]
     await broker.close()
 
@@ -1403,7 +1407,7 @@ async def test_resource_startup_failure_keeps_authenticated_observer_available(t
         ) as client:
             response = await client.get("/health")
             assert response.status_code == 200 and response.json()["state"] == "error"
-            assert (await client.get("/llm/2b/props")).status_code == 503
+            assert (await client.get("/llm/props")).status_code == 503
             assert manager.properties == {}
 
 
@@ -1520,12 +1524,12 @@ async def test_unified_broker_endpoints(tmp_path):
         data = resp.json()["data"]
         assert any(m["id"] == "MiniCPM5-2B" for m in data)
 
-        # 3. POST /llm/v1/chat/completions auto-routes and rewrites model alias
+        # Live requests cannot select a different model.
         resp = await client.post(
             "/llm/v1/chat/completions",
             json={"model": "MiniCPM-V-4.7-1B", "messages": [{"role": "user", "content": "hello"}]},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 409 and control.events == []
 
         # 4. POST /v1/chat/completions directly at root
         resp = await client.post(
