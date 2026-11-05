@@ -97,6 +97,61 @@ async def test_bad_config_or_changed_endpoint_does_not_leak_or_overwrite_credent
     assert (settings.path.read_bytes(), settings.credentials_path.read_bytes(), runtime.llm) == original
 
 
+async def test_voice_settings_save_without_touching_model_or_node(runtime, monkeypatch):
+    settings = runtime.settings
+    settings.data = business_configuration(settings.data, "http://jetson.local:9012", mode="live")
+    settings.inference_token = "paired-node-test-key"
+
+    def unexpected_rpc(request):
+        pytest.fail(f"Voice settings sent an unexpected node request: {request.method} {request.url.path}")
+
+    runtime.inference_client = httpx.AsyncClient(
+        base_url="http://jetson.local:9012", transport=httpx.MockTransport(unexpected_rpc)
+    )
+    before = runtime.llm, runtime.vision, runtime.inference_client, runtime.context.provider
+    profiles = settings.data["work_mode_profiles"]
+    settings.provider_keys["llm"] = "existing-model-key"
+    runtime.store.set("comment_policy", {"auto_browse": True})
+
+    api_tts = {
+        "kind": "openai_compatible",
+        "base_url": "https://speech.test/v1",
+        "model": "tts",
+        "voice": "a",
+    }
+    result = await apply_settings(runtime, {"tts": api_tts, "credentials": {"tts": "speech-test-key"}})
+    assert not result["context_recount_required"]
+    assert runtime.voices.cache is runtime.cache
+    assert runtime.voices.client.headers["authorization"] == "Bearer speech-test-key"
+    assert "x-tuber-inference-key" not in runtime.voices.client.headers
+    assert settings.data["work_mode_profiles"] == profiles
+    assert (runtime.llm, runtime.vision, runtime.inference_client, runtime.context.provider) == before
+    assert (
+        business_configuration(settings.data, "http://replacement.local:9012")["tts"] == settings.data["tts"]
+    )
+
+    def fail(data):
+        raise OSError("injected write failure")
+
+    api_voices = runtime.voices
+    with monkeypatch.context() as patch:
+        patch.setattr(settings, "save_public", fail)
+        with pytest.raises(OSError):
+            await apply_settings(runtime, {"tts": {"kind": "gpt_sovits"}, "clear_credentials": ["tts"]})
+    assert runtime.voices is api_voices
+    assert Settings(runtime=settings.runtime).provider_key("tts") == "speech-test-key"
+
+    result = await apply_settings(runtime, {"tts": {"kind": "gpt_sovits"}, "clear_credentials": ["tts"]})
+    assert not result["context_recount_required"]
+    assert result["tts"]["base_url"] == "http://jetson.local:9012/tts"
+    assert result["tts"]["local_backend"] == "genie_onnx_int8"
+    assert runtime.voices.client.headers["x-tuber-inference-key"] == "paired-node-test-key"
+    assert "authorization" not in runtime.voices.client.headers
+    assert api_voices.client.is_closed
+    assert settings.provider_keys == {"llm": "existing-model-key"}
+    assert (runtime.llm, runtime.vision, runtime.inference_client, runtime.context.provider) == before
+
+
 @pytest.mark.asyncio
 async def test_failed_public_save_rolls_back_both_files_and_runtime(runtime, monkeypatch):
     settings = runtime.settings

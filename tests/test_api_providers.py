@@ -4,8 +4,10 @@ from io import BytesIO
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from tuber_studio.api_providers import APIProvider, VisionService, create_llm
+from tuber_studio.app import create_app
 from tuber_studio.browsing_models import BrowsingPolicy
 from tuber_studio.compaction import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.generation_meter import GenerationMeter
@@ -24,6 +26,8 @@ def transport(monkeypatch):
             return httpx.Response(200, json={"data": [{"id": "remote-model"}]})
         body = json.loads(request.content)
         if request.url.path.endswith("/audio/speech"):
+            if state.get("speech_error"):
+                return httpx.Response(401, text="upstream echo: private-tts-key")
             stream = BytesIO()
             with wave.open(stream, "wb") as wav:
                 wav.setnchannels(1)
@@ -349,6 +353,27 @@ async def test_api_speech_is_wav_cached_and_scoped_by_actual_api_voice(settings,
             await service.synthesize("不能冒充原角色声线。", settings.voice("whale_sovits_v2"))
     finally:
         await service.close()
+
+
+def test_api_speech_preview_reports_upstream_rejection_without_its_body(settings, transport):
+    settings.data["tts"].update(
+        kind="openai_compatible", base_url="https://api.test/v1", model="remote-model", voice="voice-a"
+    )
+    settings.provider_keys["tts"] = "private-tts-key"
+    captured, state = transport
+    headers = {"Authorization": "Bearer " + settings.admin_token}
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/tts/preview", headers=headers, json={"voice_id": "external_api", "text": "语音 API 试听"}
+        )
+        assert response.status_code == 200 and response.json()["duration"] == 0.1
+        state["speech_error"] = True
+        response = client.post(
+            "/api/tts/preview", headers=headers, json={"voice_id": "external_api", "text": "凭据错误时试听"}
+        )
+    assert response.status_code == 502 and "HTTP 401" in response.json()["detail"]
+    assert "private-tts-key" not in response.text
+    assert captured[-1].url.path == "/v1/audio/speech"
 
 
 @pytest.mark.asyncio

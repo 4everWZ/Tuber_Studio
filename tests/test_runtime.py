@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -6,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from tuber_studio.models import Event, Reply
+from tuber_studio.provider_settings import apply_settings
 from tuber_studio.providers import build_messages
 
 
@@ -32,6 +34,75 @@ async def prepare_play(runtime, store):
     message = next(m for m in overlay.messages if m["type"] == "play")
     ack = {"job_id": message["job_id"], "playback_token": message["playback_token"]}
     return owner, submitted, ack, overlay
+
+
+async def test_saved_speech_api_supplies_preview_and_live_then_restores_local(runtime, store):
+    settings = runtime.settings
+    character = store.save_character(store.character() | {"voice_profile": "whale_sovits_v2"})
+    await runtime.activate(character["id"], character["version"])
+    sample = settings.asset_path(settings.voice("whale_sample_v1")["sample_asset"]).read_bytes()
+    requests = []
+
+    def speech(request):
+        requests.append(request)
+        return httpx.Response(200, content=sample)
+
+    async def replace_transport():
+        client = runtime.voices.client
+        runtime.voices.client = httpx.AsyncClient(
+            base_url=client.base_url, headers=client.headers, transport=httpx.MockTransport(speech)
+        )
+        await client.aclose()
+
+    await apply_settings(
+        runtime,
+        {
+            "tts": {
+                "kind": "openai_compatible",
+                "base_url": "https://speech.test/v1",
+                "model": "tts-model",
+                "voice": "api-voice",
+            },
+            "credentials": {"tts": "speech-test-key"},
+        },
+    )
+    await replace_transport()
+    preview = await runtime.voices.synthesize("语音 API 试听", settings.voice("external_api"))
+    recorded = await runtime.voices.synthesize_live("使用已有预录", "whale_sample_v1")
+    assert preview.path.is_file() and recorded.warning
+    owner, _, _, overlay = await prepare_play(runtime, store)
+    playback = next(message for message in overlay.messages if message["type"] == "play")
+    assert [request.url.path for request in requests] == ["/v1/audio/speech"] * 2
+    assert requests[-1].headers["authorization"] == "Bearer speech-test-key"
+    assert json.loads(requests[-1].content) == {
+        "model": "tts-model",
+        "voice": "api-voice",
+        "input": playback["text"],
+        "response_format": "wav",
+    }
+    await runtime.control("stop")
+    await runtime.detach_overlay(owner)
+
+    await apply_settings(runtime, {"tts": {"kind": "gpt_sovits"}, "clear_credentials": ["tts"]})
+    await replace_transport()
+    await runtime.control("start")
+    overlay = Overlay()
+    await runtime.attach_overlay(overlay)
+    submitted = await runtime.submit(Event(text="欢迎回到本地语音", platform_user_id="user-2"))
+    await until(
+        lambda: (
+            any(message["type"] == "play" for message in overlay.messages)
+            or store.job(submitted["job_id"])["status"] == "failed"
+        )
+    )
+    assert any(message["type"] == "play" for message in overlay.messages), store.job(submitted["job_id"])
+    assert requests[-1].url.path == "/tts/tts"
+    assert "authorization" not in requests[-1].headers
+    assert (
+        json.loads(requests[-1].content)["ref_audio_path"]
+        == settings.voice("whale_sovits_v2")["server_reference_path"]
+    )
+    assert runtime.character["version"] == character["version"]
 
 
 async def test_text_work_mode_cancels_playback_before_releasing_tts(runtime, store):

@@ -6,6 +6,14 @@ from .http_api import endpoint
 from .inference_profiles import DAFEIYU_MODEL, GEMMA_ARTIFACTS, GEMMA_ENGINE_SHA256
 
 
+def select_local_voice(tts, broker):
+    if broker.get("enabled") and broker.get("deployment") == "remote":
+        tts.update(base_url=broker["base_url"].rstrip("/") + "/tts", local_backend="genie_onnx_int8")
+    elif tts["kind"] != "gpt_sovits":
+        tts.update(base_url="http://127.0.0.1:9012/tts", local_backend="compact")
+    tts["kind"] = "gpt_sovits"
+
+
 def business_configuration(
     current,
     node_url,
@@ -110,7 +118,8 @@ def business_configuration(
         context_tokens=context_tokens,
         kv_cache_type="q4_0",
     )
-    data["tts"].update(base_url=base + "/tts", kind="gpt_sovits", local_backend="genie_onnx_int8")
+    if data["tts"]["kind"] != "openai_compatible":
+        select_local_voice(data["tts"], data["inference_broker"])
     data.update(deepcopy(data["work_mode_profiles"][mode]))
     return data
 

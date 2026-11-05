@@ -419,7 +419,10 @@ def create_app(
         if runtime.current_id or runtime.queue:
             raise ValueError("直播生成／播放繁忙，请先暂停并等待当前任务结束")
         async with runtime.generation_lock:
-            artifact = await runtime.voices.synthesize(text, settings.voice(data.get("voice_id")))
+            try:
+                artifact = await runtime.voices.synthesize(text, settings.voice(data.get("voice_id")))
+            except httpx.HTTPError as error:
+                raise HTTPException(502, public_error(error)) from None
         return {
             "audio_ref": artifact.ref,
             "duration": artifact.duration,
@@ -445,7 +448,7 @@ def create_app(
         try:
             result = await apply_settings(runtime, data)
             auto_download_triggered = False
-            if model_hub.is_full_local_deployment(settings):
+            if result["context_recount_required"] and model_hub.is_full_local_deployment(settings):
                 selected_model = settings.data.get("llm", {}).get("model", "")
                 if model_hub.is_dafeiyu_model(selected_model) and not model_hub.is_model_installed(
                     settings.models

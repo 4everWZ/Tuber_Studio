@@ -972,9 +972,7 @@ class Runtime:
                         answer_check=answer_check,
                     )
                     started = time.perf_counter()
-                    audio = await self.voices.synthesize(
-                        reply.spoken_text, self.settings.voice(character["voice_profile"])
-                    )
+                    audio = await self.voices.synthesize_live(reply.spoken_text, character["voice_profile"])
                     self.timings["tts_ms"] = round((time.perf_counter() - started) * 1000)
                     self.store.update_job(job_id, tts_ms=self.timings["tts_ms"], error=audio.warning)
                     emotion, animation = reply.emotion, reply.animation_id

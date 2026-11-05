@@ -7,6 +7,7 @@ import httpx
 
 from .api_providers import VisionService, create_llm
 from .config import atomic_bytes, validate_api_key
+from .deployment_profiles import select_local_voice
 from .providers import VoiceService, public_error
 
 FIELDS = {
@@ -105,6 +106,11 @@ def _restore_file(path, previous, *, private=False):
         atomic_bytes(path, previous, private=private)
 
 
+def _voice_only(body):
+    targets = (body.keys() & FIELDS.keys()) | body.get("credentials", {}).keys()
+    return targets.union(body.get("clear_credentials", [])) == {"tts"}
+
+
 def proposal(settings, body):
     if not isinstance(body, dict) or set(body) - {*FIELDS, "credentials", "clear_credentials"}:
         raise ValueError("未知Provider设置字段")
@@ -128,17 +134,28 @@ def proposal(settings, body):
         patch = body.get(name, {})
         if not isinstance(patch, dict) or set(patch) - fields:
             raise ValueError("未知Provider字段")
-        data.setdefault(name, {}).update(patch)
-        before, after = settings.data.get(name, {}), data[name]
+        before, after = settings.data.get(name, {}), data.setdefault(name, {})
+        if name == "tts" and patch.get("kind") == "gpt_sovits" and "base_url" not in patch:
+            select_local_voice(after, data.get("inference_broker", {}))
+        after.update(patch)
         if (
-            after.get("base_url", "").rstrip("/") != before.get("base_url", "").rstrip("/")
+            (
+                after.get("base_url", "").rstrip("/") != before.get("base_url", "").rstrip("/")
+                or (name == "tts" and after.get("kind") != before.get("kind"))
+            )
             and settings.provider_keys.get(name)
             and not credentials.get(name)
             and name not in clear
         ):
             raise ValueError("更换API地址时须重新填写或明确清除对应Key，避免旧凭证发送到新服务")
+    if not _voice_only(body):
+        _update_model_profiles(data, settings.data["llm"])
+    settings._validate(data)
+    return data, keys
+
+
+def _update_model_profiles(data, previous_llm):
     broker = data.setdefault("inference_broker", {})
-    previous_llm = settings.data["llm"]
     broker.setdefault(
         "model", previous_llm["model"] if previous_llm["kind"] == "llama_cpp" else "MiniCPM5-2B"
     )
@@ -151,30 +168,33 @@ def proposal(settings, body):
     mode = broker.get("mode")
     if profiles and mode in profiles:
         profiles[mode] = {name: copy.deepcopy(data[name]) for name in ("llm", "vision")}
-    settings._validate(data)
-    return data, keys
 
 
 async def apply_settings(runtime, body):
     settings = runtime.settings
     if runtime.state != "stopped" or runtime.generation_lock.locked() or runtime.mode_lock.locked():
         raise ProviderConfigurationError("请先停止直播并等待当前生成完成，再修改Provider")
-    policy = runtime.store.get("comment_policy", {})
-    if policy.get("auto_browse") or policy.get("auto_reply"):
-        raise ProviderConfigurationError("请先关闭自动浏览和自动回复，再修改Provider")
-    if runtime.store.get("dynamic_policy", {}).get("enabled"):
-        raise ProviderConfigurationError("请先停止动态运营，再修改Provider")
     data, keys = proposal(settings, body)
+    model_update = not _voice_only(body)
+    if model_update:
+        policy = runtime.store.get("comment_policy", {})
+        if policy.get("auto_browse") or policy.get("auto_reply"):
+            raise ProviderConfigurationError("请先关闭自动浏览和自动回复，再修改Provider")
+        if runtime.store.get("dynamic_policy", {}).get("enabled"):
+            raise ProviderConfigurationError("请先停止动态运营，再修改Provider")
     staged = copy.copy(settings)
     staged.data, staged.provider_keys = data, keys
     created = []
     try:
-        llm = create_llm(staged)
-        created.append(llm)
+        if model_update:
+            llm = create_llm(staged)
+            created.append(llm)
         voices = VoiceService(staged)
         created.append(voices)
-        vision = VisionService(data["vision"], staged.endpoint_key("vision"))
-        created.append(vision)
+        voices.cache = runtime.cache
+        if model_update:
+            vision = VisionService(data["vision"], staged.endpoint_key("vision"))
+            created.append(vision)
     except BaseException:
         await _settle_cleanup(_close_clients(created))
         raise
@@ -193,7 +213,7 @@ async def apply_settings(runtime, body):
             previous_private = (
                 settings.credentials_path.read_bytes() if settings.credentials_path.exists() else None
             )
-            if runtime.inference_client:
+            if model_update and runtime.inference_client:
                 try:
                     snapshot = await _broker_snapshot(runtime.inference_client, old_window)
                 except (httpx.ConnectError, httpx.ConnectTimeout):
@@ -211,7 +231,7 @@ async def apply_settings(runtime, body):
                     else:
                         response = await runtime.inference_client.post("/idle", json={})
                         response.raise_for_status()
-            if data["llm"]["kind"] == "llama_cpp":
+            if model_update and data["llm"]["kind"] == "llama_cpp":
                 try:
                     await llm.ensure_capacity()
                 except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
@@ -261,26 +281,29 @@ async def apply_settings(runtime, body):
                 raise asyncio.CancelledError from None
             raise
         settings.data, settings.provider_keys = data, keys
-        old_clients = [runtime.llm, runtime.voices, runtime.vision]
-        runtime.llm, runtime.voices, runtime.vision = llm, voices, vision
-        runtime.context.provider = llm
-        runtime.error = None
-        broker_conf = data.get("inference_broker", {})
-        if broker_conf.get("enabled"):
-            old_inference = runtime.inference_client
-            runtime.inference_client = httpx.AsyncClient(
-                base_url=broker_conf.get("base_url", "http://127.0.0.1:9012"),
-                headers={"X-Tuber-Inference-Key": settings.inference_token},
-                timeout=httpx.Timeout(400, connect=5),
-                trust_env=False,
-            )
-            if old_inference is not None:
-                old_clients.append(old_inference)
-        elif runtime.inference_client is not None:
-            old_clients.append(runtime.inference_client)
-            runtime.inference_client = None
+        old_clients = [runtime.voices]
+        runtime.voices = voices
+        if model_update:
+            old_clients.extend((runtime.llm, runtime.vision))
+            runtime.llm, runtime.vision = llm, vision
+            runtime.context.provider = llm
+            runtime.error = None
+            broker_conf = data.get("inference_broker", {})
+            if broker_conf.get("enabled"):
+                old_inference = runtime.inference_client
+                runtime.inference_client = httpx.AsyncClient(
+                    base_url=broker_conf.get("base_url", "http://127.0.0.1:9012"),
+                    headers={"X-Tuber-Inference-Key": settings.inference_token},
+                    timeout=httpx.Timeout(400, connect=5),
+                    trust_env=False,
+                )
+                if old_inference is not None:
+                    old_clients.append(old_inference)
+            elif runtime.inference_client is not None:
+                old_clients.append(runtime.inference_client)
+                runtime.inference_client = None
         await asyncio.gather(
             *(client.close() if hasattr(client, "close") else client.aclose() for client in old_clients),
             return_exceptions=True,
         )
-    return settings.public_data() | {"restart_required": False, "context_recount_required": True}
+    return settings.public_data() | {"restart_required": False, "context_recount_required": model_update}

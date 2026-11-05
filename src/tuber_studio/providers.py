@@ -579,6 +579,12 @@ class VoiceService:
             self.cache.touch(audio.path, seconds=180)
         return audio
 
+    async def synthesize_live(self, text, voice_id):
+        voice = self.settings.voice(voice_id)
+        if voice["provider"] != "prerecorded" and self.settings.data["tts"]["kind"] == "openai_compatible":
+            voice = self.settings.voice("external_api")
+        return await self.synthesize(text, voice)
+
     async def _synthesize(self, text, voice):
         if voice["provider"] == "prerecorded":
             audio = await self.prerecorded(voice["sample_asset"], voice["sample_text"])
