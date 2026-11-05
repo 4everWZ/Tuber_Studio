@@ -1,18 +1,11 @@
 "use strict";
 
-import { $, $$, formatBytes, formatDuration } from "./modules/core.js?v=20261105.26";
-import { api as baseApi } from "./modules/api.js?v=20261105.26";
-import {
-  initInferenceProvidersUI as initProvidersUI,
-  readProviderPayload,
-  loadLocalModelsDropdown,
-  checkDafeiyuModelStatus as checkDafeiyuStatus,
-  renderProviderForm,
-  applySettings,
-  checkProviderConnections,
-  publicSettings,
-} from "./modules/providers.js?v=20261105.27";
-import { initVoiceSettings, renderVoicePreview, syncVoiceSettings, voiceAvailability } from "./modules/voices.js";
+import { $, node, notice, safeMessage } from "./modules/core.js";
+import { api as baseApi } from "./modules/api.js";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js";
+import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
+import { MemeGallery, MemePicker, memePreview } from "./memes.js";
+import { MessagesPanel } from "./messages.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
@@ -42,17 +35,7 @@ import {
 
 const api = (path, options = {}) => baseApi(path, options, showLogin);
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
-const checkDafeiyuModelStatus = () => checkDafeiyuStatus(api);
-const initInferenceProvidersUI = () => initProvidersUI(model, api, notice, busy, safeMessage, () => renderProviderForm(model, renderLiveFeatures));
 const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
-
-window.$ = $;
-window.$$ = $$;
-window.node = node;
-window.api = api;
-window.notice = notice;
-window.busy = busy;
-window.safeMessage = safeMessage;
 
 const model = {
   authenticated: false, status: null, page: "comments", characters: [], versions: [],
@@ -64,8 +47,6 @@ const model = {
   modeSwitch: null, modeResult: null,
   threadContextPending: null,
   retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
-  providersDirty: false, providersSaving: false,
-  voiceSettingsDirty: false, voiceSettingsSaving: false,
   dynamicPolicy: null, dynamicPolicyDirty: false, dynamicSaving: false, dynamicEvaluating: false,
   dynamicPosts: [], dynamicDecisions: [], dynamicMemories: [], dynamicPostId: null, dynamicPostDirty: false, dynamicDecisionId: null,
   dynamicPostPending: false, dynamicMemorySaving: new Set(),
@@ -148,12 +129,6 @@ const names = {
 
 function label(value) { return names[value] || value || "—"; }
 function display(value) { return value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); }
-function node(tag, text, className) {
-  const element = document.createElement(tag);
-  if (text != null) element.textContent = text;
-  if (className) element.className = className;
-  return element;
-}
 function list(data) { return Array.isArray(data) ? data : data?.items || data?.results || []; }
 function time(value) {
   if (!value) return "—";
@@ -169,20 +144,6 @@ function setBadge(element, value) {
   const valueNode = badge(value);
   element.className = valueNode.className;
   element.textContent = valueNode.textContent;
-}
-
-let noticeTimer = null;
-function notice(message, error = false) {
-  const element = $("notice");
-  if (!element) return;
-  element.textContent = safeMessage(message);
-  element.hidden = !message;
-  element.classList.toggle("error", error);
-  element.onclick = () => { element.hidden = true; };
-  if (noticeTimer) clearTimeout(noticeTimer);
-  if (message) {
-    noticeTimer = setTimeout(() => { element.hidden = true; }, error ? 10000 : 4000);
-  }
 }
 
 function describe(element, entries) {
@@ -241,8 +202,17 @@ function showLogin() {
 }
 
 function applyWorkbenchSettings(settings) {
-  applySettings(settings, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
-  syncVoiceSettings(model);
+  model.settings = { ...model.settings, ...settings };
+  inferenceProviders.sync();
+  voiceSettings.sync();
+  renderLiveFeatures(model);
+  if (model.status) renderStatus(model.status);
+  else renderVoicePreview(model);
+  let overlayUrl;
+  try { overlayUrl = new URL(model.settings.overlay_url || "/overlay", location.origin).href; }
+  catch { overlayUrl = `${location.origin}/overlay`; }
+  $("overlay-url").value = overlayUrl;
+  $("open-overlay").href = overlayUrl;
 }
 
 async function refreshSettings() {
@@ -250,7 +220,7 @@ async function refreshSettings() {
 }
 
 async function enterWorkspace() {
-  model.voiceSettingsDirty = false;
+  voiceSettings.reset();
   await refreshSettings();
   await Promise.all([
     loadVoices(),
@@ -414,15 +384,6 @@ async function loadVoices() {
   renderVoicePreview(model, !previous);
 }
 
-function safeMessage(message) {
-  if (!message) return "";
-  return String(message)
-    .replace(/(sessdata=)[^&;\s]+/gi, "$1[已隐藏]")
-    .replace(/(bili_jct=)[^&;\s]+/gi, "$1[已隐藏]")
-    .replace(/(token=)[^&;\s]+/gi, "$1[已隐藏]")
-    .replace(/(api[_-]?key=)[^&;\s]+/gi, "$1[已隐藏]");
-}
-
 function dateTime(value) {
   if (value == null) return "—";
   const date = new Date(typeof value === "number" ? value * 1000 : value);
@@ -495,11 +456,7 @@ async function changePage() {
     } else if (model.page === "accounts") {
       await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule()]);
     } else if (model.page === "settings") {
-      await Promise.all([
-        inferenceNodePanel.refresh(),
-        loadLocalModelsDropdown(api),
-        checkDafeiyuModelStatus()
-      ]);
+      await Promise.all([inferenceNodePanel.refresh(), inferenceProviders.refresh()]);
     }
   } catch (error) {
     notice(error.message, true);
@@ -579,7 +536,7 @@ dynamicsModule = initDynamicsModule(model, {
   tokenCount,
   safeMessage,
   publicSettings,
-  memePreview: typeof memePreview === "function" ? memePreview : window.memePreview,
+  memePreview,
   dynamicContinuation,
   dynamicDecisionContinuation,
   dynamicMemePicker,
@@ -613,7 +570,13 @@ liveModule = initLiveModule(model, {
 });
 
 initOperationsModule(api, accountPanel, automationPanel);
-initInferenceProvidersUI();
+const inferenceProviders = initInferenceProvidersUI(model, {
+  api,
+  busy,
+  apply: applyWorkbenchSettings,
+  refreshStatus: () => Promise.allSettled([api("/api/status").then(renderStatus), loadVoices()]),
+});
+const voiceSettings = initVoiceSettings(model, api, busy, applyWorkbenchSettings);
 
 // Form submits & remaining listeners
 $("login-form")?.addEventListener("submit", event => {
@@ -627,56 +590,6 @@ $("login-form")?.addEventListener("submit", event => {
     await enterWorkspace();
   });
 });
-
-$("providers-form")?.addEventListener("submit", event => {
-  event.preventDefault();
-  busy(event.submitter, async () => {
-    const payload = readProviderPayload(model);
-    model.providersSaving = true;
-    renderProviderForm(model, renderLiveFeatures);
-    try {
-      if ($("providers-save-state")) {
-        $("providers-save-state").classList.remove("error-text");
-        $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
-      }
-      const result = await api("/api/settings/providers", { method: "PUT", body: payload });
-      model.providersDirty = false;
-      applySettings(result, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
-      let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
-      if (result.auto_download_triggered) {
-        message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
-      }
-      checkDafeiyuModelStatus();
-      if ($("providers-save-state")) $("providers-save-state").textContent = message;
-      notice(message);
-      const checks = await Promise.allSettled([api("/api/status"), loadVoices()]);
-      if (checks[0].status === "fulfilled") renderStatus(checks[0].value);
-    } catch (error) {
-      const message = `保存失败：${safeMessage(error.message)}${error.status === 409 ? " 请先暂停或等待正在生成 / 发布的任务结束，再重试。" : ""} 当前输入已保留。`;
-      if ($("providers-save-state")) {
-        $("providers-save-state").textContent = message;
-        $("providers-save-state").classList.add("error-text");
-      }
-      notice(message, true);
-    } finally {
-      model.providersSaving = false;
-      renderProviderForm(model, renderLiveFeatures);
-    }
-  });
-});
-
-$("reset-providers")?.addEventListener("click", () => {
-  if (!model.settings || model.providersSaving) return;
-  model.providersDirty = false;
-  applySettings(model.settings, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
-  checkDafeiyuModelStatus();
-  if ($("providers-save-state")) {
-    $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。";
-    $("providers-save-state").classList.remove("error-text");
-  }
-});
-
-$("check-providers-settings")?.addEventListener("click", () => busy($("check-providers-settings"), () => checkProviderConnections("providers-check-result", api)));
 
 $("clone-form")?.addEventListener("submit", event => {
   event.preventDefault();
@@ -692,7 +605,6 @@ $("clone-form")?.addEventListener("submit", event => {
 });
 
 $("preview-voice")?.addEventListener("change", () => renderVoicePreview(model));
-initVoiceSettings(model, api, busy, applyWorkbenchSettings);
 $("preview-form")?.addEventListener("submit", event => {
   event.preventDefault();
   busy(event.submitter, async () => {
@@ -782,7 +694,7 @@ if ($("refresh-operations")) {
 
 window.addEventListener("hashchange", changePage);
 window.addEventListener("beforeunload", event => {
-  if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.voiceSettingsDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) {
+  if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || inferenceProviders.dirty || voiceSettings.dirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }

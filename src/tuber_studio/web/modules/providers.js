@@ -1,26 +1,14 @@
-import { $, node, safeMessage, notice, busy, tokenCount } from "./core.js";
+import { $, node, safeMessage, notice, tokenCount } from "./core.js";
 
 let dafeiyuModelTimer = null;
 
-export function syncModelSelectWithInput() {
+function syncModelSelectWithInput() {
   const select = $("llm-model-select");
-  const input = $("llm-model");
-  if (!select || !input) return;
-  const val = input.value.trim();
-  let found = false;
-  for (const opt of select.options) {
-    if (opt.value === val) {
-      select.value = val;
-      found = true;
-      break;
-    }
-  }
-  if (!found && val) {
-    select.value = "__custom__";
-  }
+  const value = $("llm-model").value.trim();
+  if (value) select.value = [...select.options].some(option => option.value === value) ? value : "__custom__";
 }
 
-export async function loadLocalModelsDropdown(api) {
+async function loadLocalModelsDropdown(api) {
   try {
     const data = await api("/api/providers/local-models");
     const ftGroup = $("fine-tuned-models-group");
@@ -47,7 +35,7 @@ export async function loadLocalModelsDropdown(api) {
   }
 }
 
-export async function checkDafeiyuModelStatus(api) {
+async function checkDafeiyuModelStatus(api) {
   const card = $("dafeiyu-model-card");
   const badge = $("dafeiyu-model-badge");
   clearTimeout(dafeiyuModelTimer);
@@ -67,7 +55,7 @@ export async function checkDafeiyuModelStatus(api) {
   }
 }
 
-export function readProviderPayload() {
+function readProviderPayload() {
   const integer = (id, title) => {
     const value = Number($(id).value);
     if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < 4096) {
@@ -122,13 +110,64 @@ export function readProviderPayload() {
   return payload;
 }
 
-export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, onSettingsChanged) {
+export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatus }) {
+  let dirty = false;
+  let saving = false;
+  const render = () => renderProviderForm(model.settings, dirty, saving);
+  const sync = () => {
+    if (!dirty) providerFormFromSettings(model.settings, model.status);
+    render();
+  };
+  const saveState = $("providers-save-state");
+  const feedback = (message, error = false) => {
+    saveState.textContent = message;
+    saveState.classList.toggle("error-text", error);
+  };
+
   for (const event of ["input", "change"]) {
     $("providers-form").addEventListener(event, () => {
-      model.providersDirty = true;
-      onSettingsChanged();
+      dirty = true;
+      render();
     });
   }
+
+  $("providers-form").addEventListener("submit", event => {
+    event.preventDefault();
+    busy(event.submitter, async () => {
+      const payload = readProviderPayload();
+      saving = true;
+      render();
+      feedback("正在保存并应用，请等待服务返回…");
+      try {
+        const result = await api("/api/settings/providers", { method: "PUT", body: payload });
+        dirty = false;
+        apply(result);
+        let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
+        if (result.auto_download_triggered) {
+          message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
+        }
+        feedback(message);
+        checkDafeiyuModelStatus(api);
+        await refreshStatus();
+      } catch (error) {
+        const retry = error.status === 409 ? " 请先暂停或等待正在生成 / 发布的任务结束，再重试。" : "";
+        feedback(`保存失败：${safeMessage(error.message)}${retry} 当前输入已保留。`, true);
+      } finally {
+        saving = false;
+        render();
+      }
+    });
+  });
+
+  $("reset-providers").addEventListener("click", () => {
+    dirty = false;
+    sync();
+    checkDafeiyuModelStatus(api);
+    feedback("已恢复当前已保存配置；未提交的密钥输入已清除。");
+  });
+  $("check-providers-settings").addEventListener("click", event => {
+    busy(event.currentTarget, () => checkProviderConnections(api));
+  });
 
   $("btn-download-dafeiyu-model")?.addEventListener("click", async () => {
     try {
@@ -158,15 +197,9 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
         input.focus();
       } else if (select.value) {
         input.value = select.value;
-        model.providersDirty = true;
-        if (typeof onSettingsChanged === "function") onSettingsChanged();
       }
     });
-    input.addEventListener("input", () => {
-      syncModelSelectWithInput();
-      model.providersDirty = true;
-      if (typeof onSettingsChanged === "function") onSettingsChanged();
-    });
+    input.addEventListener("input", syncModelSelectWithInput);
   }
 
   $("btn-fetch-models")?.addEventListener("click", async () => {
@@ -225,6 +258,12 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
       }
     });
   });
+
+  return {
+    get dirty() { return dirty; },
+    sync,
+    refresh: () => Promise.all([loadLocalModelsDropdown(api), checkDafeiyuModelStatus(api)]),
+  };
 }
 
 export function publicSettings(value, key = "") {
@@ -240,22 +279,14 @@ export function publicSettings(value, key = "") {
   return value;
 }
 
-export function clearProviderSecrets() {
-  ["llm"].forEach(kind => {
-    const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
-    if (el) el.value = "";
-    if (clear) clear.checked = false;
-  });
-}
-
-export function providerFormFromSettings(settings, model) {
+function providerFormFromSettings(settings, status) {
   const llm = settings.llm || {};
   const fields = {
     "llm-kind": llm.kind || "llama_cpp",
     "llm-base-url": llm.base_url || "",
     "llm-model": llm.model || "",
     "llm-context-tokens": llm.context_tokens ?? 131072,
-    "llm-native-tokens": llm.native_context_tokens ?? model?.status?.context?.native_tokens ?? 131072,
+    "llm-native-tokens": llm.native_context_tokens ?? status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
   };
   Object.entries(fields).forEach(([id, value]) => {
@@ -265,57 +296,34 @@ export function providerFormFromSettings(settings, model) {
   if ($("llm-live-output-budget")) {
     $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
   }
-  clearProviderSecrets();
-  if (model) model.providersDirty = false;
+  $("llm-key").value = "";
+  $("llm-clear-key").checked = false;
   syncModelSelectWithInput();
-
 }
 
-export function renderProviderForm(model, renderLiveFeatures) {
-  if ($("provider-fields")) $("provider-fields").disabled = !!model?.providersSaving;
-  if ($("save-providers")) {
-    $("save-providers").disabled = !!model?.providersSaving;
-    $("save-providers").setAttribute("aria-busy", String(!!model?.providersSaving));
-  }
-  if ($("reset-providers")) $("reset-providers").disabled = !!model?.providersSaving || !model?.providersDirty;
-  if ($("check-providers-settings")) $("check-providers-settings").disabled = !!model?.providersSaving;
-  if ($("providers-dirty")) {
-    $("providers-dirty").textContent = model?.providersSaving ? "正在保存并应用…" :
-      model?.providersDirty ? "有未保存修改" :
-      model?.settings ? "已保存配置" : "正在读取已保存配置…";
-  }
-  const external = $("llm-kind")?.value === "openai_compatible", demo = $("llm-kind")?.value === "demo";
+function renderProviderForm(settings, dirty, saving) {
+  $("provider-fields").disabled = saving;
+  $("save-providers").disabled = saving;
+  $("save-providers").setAttribute("aria-busy", String(saving));
+  $("reset-providers").disabled = saving || !dirty;
+  $("check-providers-settings").disabled = saving;
+  $("providers-dirty").textContent = saving ? "正在保存并应用…" : dirty ? "有未保存修改" :
+    settings ? "已保存配置" : "正在读取已保存配置…";
+  $("llm-key-state").textContent = settings?.provider_credentials?.llm ? "已保存密钥" : "未保存密钥";
+  const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
   ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
-    const el = $(id);
-    if (el) el.disabled = demo || !!model?.providersSaving;
+    $(id).disabled = demo || saving;
   });
-  if ($("llm-base-url")) $("llm-base-url").required = !demo;
-  if ($("llm-model")) $("llm-model").required = !demo;
-  if ($("llm-probe-help")) $("llm-probe-help").hidden = !external;
-  if ($("llm-capacity-help")) {
-    $("llm-capacity-help").textContent = external ?
-      "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
-      "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
-  }
-  if (typeof renderLiveFeatures === "function") renderLiveFeatures(model);
+  $("llm-base-url").required = !demo;
+  $("llm-model").required = !demo;
+  $("llm-probe-help").hidden = !external;
+  $("llm-capacity-help").textContent = external ?
+    "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
+    "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
 }
 
-export function applySettings(settings, model, { renderLiveFeatures, renderVoicePreviewFn, renderStatusFn } = {}) {
-  model.settings = { ...model.settings, ...settings };
-  settings = model.settings;
-  if (!model.providersDirty) providerFormFromSettings(settings, model);
-  renderProviderForm(model, renderLiveFeatures);
-  if (renderVoicePreviewFn) renderVoicePreviewFn();
-  if (model.status && renderStatusFn) renderStatusFn(model.status);
-  let url = model.settings.overlay_url || "/overlay";
-  try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
-  if ($("overlay-url")) $("overlay-url").value = url;
-  if ($("open-overlay")) $("open-overlay").href = url;
-}
-
-export async function checkProviderConnections(output, api) {
-  const el = $(output);
-  if (!el) return;
+async function checkProviderConnections(api) {
+  const el = $("providers-check-result");
   el.hidden = false;
   el.textContent = "检查已保存配置的连接中…";
   try {
@@ -325,7 +333,6 @@ export async function checkProviderConnections(output, api) {
       .join(" · ");
   } catch (error) {
     el.textContent = safeMessage(error.message);
-    throw error;
   }
 }
 

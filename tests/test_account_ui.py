@@ -1,4 +1,4 @@
-"""Exercise actual shared account rendering through Node's isolated VM."""
+"""Exercise the shared browser account and request clients in Node."""
 
 import shutil
 import subprocess
@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 
 
-def test_shared_account_ui_keeps_last_profile_on_transport_failure():
+@pytest.mark.parametrize("script", ["account_ui.test.cjs", "web_api.test.cjs"])
+def test_shared_web_clients(script):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is not installed")
     result = subprocess.run(
-        [node, "--test", str(Path(__file__).with_name("account_ui.test.cjs"))],
+        [node, "--test", str(Path(__file__).with_name(script))],
         capture_output=True,
         text=True,
         encoding="utf-8",

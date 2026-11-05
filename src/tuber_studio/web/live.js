@@ -1,6 +1,8 @@
 "use strict";
+import { $ } from "./modules/core.js";
+import { api as baseApi } from "./modules/api.js";
+
 (() => {
-  const $ = id => document.getElementById(id);
   const names = {avatar:"角色形象", title:"直播标题", now:"当前歌曲", lyrics:"歌词字幕", queue:"点歌队列", chat:"弹幕互动", gifts:"礼物心意", decoration:"小装饰"};
   const icons = {avatar:"♙",title:"T",now:"♫",lyrics:"≋",queue:"☷",chat:"☏",gifts:"♡",decoration:"✧"};
   let state, music, status, dirty = false, saved, polling = false, authenticated = false;
@@ -8,12 +10,11 @@
   function element(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
   function feedback(text, error = false) { $("feedback").hidden = !text; $("feedback").textContent = text; $("feedback").classList.toggle("error",error); }
   async function api(path, options = {}) {
-    const headers = {...options.headers}; let body = options.body;
-    if (body && !(body instanceof File) && !(body instanceof Blob)) { headers["Content-Type"] = "application/json"; body = JSON.stringify(body); }
-    const response = await fetch(path, {...options, body, headers, credentials:"same-origin"});
-    const data = await response.json();
-    if (!response.ok) { if (response.status === 401) login(); throw new Error(typeof data.detail === "string" ? data.detail : "请检查输入内容"); }
-    return data;
+    try { return await baseApi(path, options, login); }
+    catch (error) {
+      if (error.status && typeof error.body?.detail !== "string") error.message = "请检查输入内容";
+      throw error;
+    }
   }
   const online = new OnlineSongRequests(api, feedback);
   const cachePanel = new CachePanel($("cache-panel"), api, feedback);

@@ -357,8 +357,7 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
     if (fb) {
       fb.textContent = isSilent ? `✓ 设置已自动保存生效 (${timeStr})` : "✓ 权限矩阵已保存并即时生效";
       fb.style.color = "var(--ok, #2e7d32)";
-    }
-    if (!isSilent) {
+    } else if (!isSilent) {
       notice("权限矩阵已保存并即时生效。");
     }
     await updatePermissionCapsule(api, accountPanel);
@@ -366,8 +365,9 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
     if (fb) {
       fb.textContent = `保存失败：${safeMessage(err.message)}`;
       fb.style.color = "var(--danger, #d32f2f)";
+    } else {
+      notice(err.message, true);
     }
-    notice(err.message, true);
   }
 }
 

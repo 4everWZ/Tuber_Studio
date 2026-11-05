@@ -3,8 +3,8 @@
 const memeEmotions = {idle: "平常", cheerful: "开心", angry: "生气", shy: "害羞", confused: "困惑", excited: "兴奋"};
 let memePickerCount = 0;
 function memeElement(tag, text, className) { const item = document.createElement(tag); if (text != null) item.textContent = text; if (className) item.className = className; return item; }
-function memePreviewUrl(asset, character) { return `/api/memes/${encodeURIComponent(asset.asset_id)}/preview?character=${encodeURIComponent(character)}`; }
-function memePreview(asset, character) {
+export function memePreviewUrl(asset, character) { return `/api/memes/${encodeURIComponent(asset.asset_id)}/preview?character=${encodeURIComponent(character)}`; }
+export function memePreview(asset, character) {
   const frame = memeElement("div", null, "meme-preview");
   const fallback = memeElement("span", asset.missing ? "图片文件缺失" : "图片预览不可用", "hint");
   if (asset.missing) { frame.append(fallback); return frame; }
@@ -29,7 +29,7 @@ function memeMetadata(asset) {
   return details;
 }
 
-class MemeGallery {
+export class MemeGallery {
   constructor(root, api, notify, onChange = () => {}) {
     this.root = root; this.api = api; this.notify = notify; this.onChange = onChange; this.character = null; this.items = []; this.pending = false; this.loading = false; this.sequence = 0;
     root.innerHTML = `<article class="panel meme-library"><div class="panel-heading"><h2>表情包图库</h2><button data-meme-refresh type="button">刷新图库</button></div><p class="hint">为当前角色管理私信与动态使用的表情包。已有素材默认禁用，可先预览来源与许可，再按需要启用；不会自动发送。</p><label class="meme-character">所属角色<select data-meme-character><option value="">正在读取角色…</option></select></label><p data-meme-state class="hint" role="status"></p><div data-meme-grid class="meme-grid"></div>
@@ -97,7 +97,7 @@ class MemeGallery {
   }
 }
 
-class MemePicker {
+export class MemePicker {
   constructor(api, onSelect, {title = "选择私信表情包", description = "只显示此草稿所属角色已启用且可用的图片。选图后仍需审核，最终仅发送这一张图片。"} = {}) {
     this.api = api; this.onSelect = onSelect; this.sequence = 0; this.pending = false;
     const headingId = `meme-picker-heading-${++memePickerCount}`;

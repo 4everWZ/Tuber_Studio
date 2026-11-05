@@ -6,8 +6,7 @@ const sourceNames = {
   prerecorded: "预录配置",
 };
 
-export function syncVoiceSettings(model) {
-  if (model.voiceSettingsDirty) return;
+function fillVoiceSettings(model) {
   const tts = model.settings?.tts || {};
   $("tts-kind").value = tts.kind || "gpt_sovits";
   $("tts-base-url").value = tts.kind === "openai_compatible" ? tts.base_url : "";
@@ -15,16 +14,15 @@ export function syncVoiceSettings(model) {
   $("tts-voice").value = tts.voice || "";
   $("tts-key").value = "";
   $("tts-clear-key").checked = false;
-  renderVoiceSettings(model);
 }
 
-function renderVoiceSettings(model) {
+function renderVoiceSettings(model, saving) {
   const selection = $("tts-kind").value;
   const saved = model.settings?.tts?.kind;
   const external = selection === "openai_compatible";
   $("tts-api-fields").hidden = !external;
-  $("tts-api-fields").disabled = !external || model.voiceSettingsSaving;
-  $("tts-kind").disabled = model.voiceSettingsSaving;
+  $("tts-api-fields").disabled = !external || saving;
+  $("tts-kind").disabled = saving;
   $("tts-source-state").textContent = sourceNames[saved] ? "当前 · " + sourceNames[saved] : "待读取";
   $("tts-key-state").textContent = model.settings?.provider_credentials?.tts ?
     "已保存密钥。同一地址留空可保留。" : "服务需要认证时填写。";
@@ -68,9 +66,16 @@ export function renderVoicePreview(model, selectDefault = false) {
 }
 
 export function initVoiceSettings(model, api, busy, apply) {
+  let dirty = false;
+  let saving = false;
+  const render = () => renderVoiceSettings(model, saving);
+  const sync = () => {
+    if (!dirty) fillVoiceSettings(model);
+    render();
+  };
   $("tts-form").addEventListener("input", () => {
-    model.voiceSettingsDirty = true;
-    renderVoiceSettings(model);
+    dirty = true;
+    render();
   });
   $("tts-form").addEventListener("submit", event => {
     event.preventDefault();
@@ -95,15 +100,14 @@ export function initVoiceSettings(model, api, busy, apply) {
       } else if (kind === "gpt_sovits") {
         body.clear_credentials = ["tts"];
       }
-      model.voiceSettingsSaving = true;
-      renderVoiceSettings(model);
+      saving = true;
+      render();
       state.classList.remove("error-text");
       state.textContent = "正在保存…";
       try {
         const result = await api("/api/settings/providers", { method: "PUT", body });
-        model.voiceSettingsDirty = false;
+        dirty = false;
         apply(result);
-        syncVoiceSettings(model);
         $("preview-audio").pause();
         $("preview-audio").removeAttribute("src");
         $("preview-audio").hidden = true;
@@ -114,9 +118,14 @@ export function initVoiceSettings(model, api, busy, apply) {
         state.classList.add("error-text");
         state.textContent = `保存失败：${safeMessage(error.message)}`;
       } finally {
-        model.voiceSettingsSaving = false;
-        renderVoiceSettings(model);
+        saving = false;
+        render();
       }
     });
   });
+  return {
+    get dirty() { return dirty; },
+    reset() { dirty = false; },
+    sync,
+  };
 }

@@ -1,5 +1,7 @@
 "use strict";
-class MessagesPanel {
+import { MemePicker, memePreviewUrl } from "./memes.js";
+
+export class MessagesPanel {
   constructor(root,api,notify) {
     this.root=root;this.api=api;this.notify=notify;this.value=null;this.selected=null;this.user=null;this.dirty=false;this.policyDirty=false;this.busy=false;
     this.unsavedByAccount=new Map();this.refreshRequest=0;this.memeCache=new Map();this.pickerContext=null;

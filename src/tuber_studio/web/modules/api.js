@@ -3,10 +3,11 @@
  */
 
 export async function api(path, options = {}, onUnauthorized = null) {
-  const config = { ...options, headers: { ...options.headers }, credentials: "same-origin" };
-  if (options.body !== undefined && typeof options.body !== "string" && !(options.body instanceof FormData)) {
-    config.headers["Content-Type"] = "application/json";
-    config.body = JSON.stringify(options.body);
+  const { body, headers } = options;
+  const config = { ...options, headers: new Headers(headers), credentials: "same-origin" };
+  if (body !== undefined && typeof body !== "string" && !(body instanceof FormData) && !(body instanceof Blob)) {
+    config.headers.set("Content-Type", "application/json");
+    config.body = JSON.stringify(body);
   }
   const response = await fetch(path, config);
   const text = await response.text();
