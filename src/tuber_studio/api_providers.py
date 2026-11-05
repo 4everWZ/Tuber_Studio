@@ -30,7 +30,7 @@ def create_llm(settings):
         return DemoProvider()
     if config["kind"] == "openai_compatible":
         return APIProvider(config, settings.provider_key("llm"))
-    return LlamaCppProvider(config, settings.broker_key_for(config["base_url"]))
+    return LlamaCppProvider(config, settings.endpoint_key("llm"))
 
 
 class APIProvider:

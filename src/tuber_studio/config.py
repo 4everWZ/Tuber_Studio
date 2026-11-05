@@ -120,7 +120,9 @@ class Settings:
         allowed = {
             base + path
             for path in (
+                "",
                 "/tts",
+                "/llm",
                 "/llm/2b",
                 "/llm/1b",
                 "/llm/1bq8",

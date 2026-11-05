@@ -198,6 +198,8 @@ async def apply_settings(runtime, body):
     data, keys = proposal(settings, body)
     staged = copy.copy(settings)
     staged.data, staged.provider_keys = data, keys
+    if keys.get("llm") or keys.get("tts"):
+        staged.inference_token = keys.get("llm") or keys.get("tts")
     created = []
     try:
         llm = create_llm(staged)
@@ -247,9 +249,9 @@ async def apply_settings(runtime, body):
                     await llm.ensure_capacity()
                 except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                     llm.profile_error = f"服务暂未连接: {public_error(exc)}"
-                except httpx.RequestError as exc:
+                except httpx.HTTPError as exc:
                     llm_url = data.get("llm", {}).get("base_url", "")
-                    if any(c in llm_url for c in ("100.", "192.168.", "10.", "172.")) or not any(
+                    if any(c in llm_url for c in ("100.", "192.168.", "10.", "172.", "192.0.2.")) or not any(
                         h in llm_url for h in ("127.0.0.1", "localhost")
                     ):
                         llm.profile_error = f"远端连接异常: {public_error(exc)}"
@@ -258,6 +260,11 @@ async def apply_settings(runtime, body):
             files_attempted = True
             settings.save_keys(keys)
             settings.save_public(data)
+            if staged.inference_token:
+                settings.inference_token = staged.inference_token
+                (settings.runtime / "inference-token").write_text(
+                    staged.inference_token.strip() + "\n", encoding="utf-8"
+                )
         except BaseException as failure:
 
             async def rollback():

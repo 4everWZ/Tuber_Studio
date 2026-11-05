@@ -525,6 +525,7 @@ class VoiceService:
         self.settings = settings
         self.cache = None
         config = settings.data["tts"]
+        tts_key = settings.endpoint_key("tts")
         self.client = (
             api_client(config, settings.provider_key("tts"))
             if config["kind"] == "openai_compatible"
@@ -532,8 +533,8 @@ class VoiceService:
                 base_url=config["base_url"].rstrip("/") + "/",
                 timeout=config.get("timeout_seconds", 45),
                 trust_env=False,
-                headers={"X-Tuber-Inference-Key": settings.broker_key_for(config["base_url"])}
-                if settings.broker_key_for(config["base_url"])
+                headers={"X-Tuber-Inference-Key": tts_key}
+                if tts_key
                 else None,
             )
         )
