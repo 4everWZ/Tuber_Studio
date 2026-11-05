@@ -529,7 +529,7 @@ class VoiceService:
             api_client(config, settings.provider_key("tts"))
             if config["kind"] == "openai_compatible"
             else httpx.AsyncClient(
-                base_url=config["base_url"].rstrip("/"),
+                base_url=config["base_url"].rstrip("/") + "/",
                 timeout=config.get("timeout_seconds", 45),
                 trust_env=False,
                 headers={"X-Tuber-Inference-Key": settings.broker_key_for(config["base_url"])}
@@ -546,18 +546,18 @@ class VoiceService:
             return {"available": True, "detail": "预录路径；动态 TTS 尚未启用"}
         if self.settings.data["tts"]["kind"] == "openai_compatible":
             return await models_health(self.client, self.settings.data["tts"]["model"])
-        if not self.settings.data.get("features", {}).get("live_enabled", False):
-            return {"available": False, "detail": "本地TTS与直播尚未启用；预录与语音API可独立使用"}
         if self.settings.data["tts"].get("local_backend") == "genie_onnx_int8":
             await self._genie_identity()
             return {"available": True, "detail": "Genie ONNX INT8已就绪；音质与持续运行按独立验收记录"}
-        response = await self.client.get("/docs", timeout=5)
+        target = "docs" if str(self.client.base_url).endswith("/") else "/docs"
+        response = await self.client.get(target, timeout=5)
         response.raise_for_status()
         return {"available": True, "detail": "GPT-SoVITS HTTP 可达；不代表已完成合成"}
 
     async def _genie_identity(self, voice=None):
         """Ask the fixed worker to check its own assets before cached playback."""
-        response = await self.client.get("/docs", timeout=5)
+        target = "docs" if str(self.client.base_url).endswith("/") else "/docs"
+        response = await self.client.get(target, timeout=5)
         response.raise_for_status()
         if len(response.content) > 65_536:
             raise ValueError("本地语音健康响应过大")

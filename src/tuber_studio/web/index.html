@@ -428,6 +428,7 @@
               <span id="matrix-capsule-badge" class="badge">草稿审核态</span>
             </div>
             <p class="hint">集中管理社区运营、私信与动态的行为授权、放行级别与安全熔断阈值。修改后即时联动各工作台。</p>
+            <div id="matrix-visual-status" class="hint" style="margin: 8px 0; padding: 6px 12px; border-radius: 6px; background: var(--bg-hover, #f3f4f6); font-size: 12px;" hidden></div>
             
             <fieldset class="matrix-group">
               <legend>一、平台凭证与写入权</legend>
@@ -494,13 +495,7 @@
                     <label><input type="radio" name="matrix_video_fav" value="2"> 自动收藏</label>
                   </div>
                 </div>
-                <div class="matrix-action-card" style="opacity: 0.75;">
-                  <h3>🪙 视频投币支持 (Coin)</h3>
-                  <p class="hint">消耗硬币支持UP主；目前为 TBD 规划中暂不开放（防硬币过度消耗）</p>
-                  <div class="matrix-radio-group">
-                    <label><input type="radio" name="matrix_video_coin" value="0" checked disabled> TBD 暂未开放</label>
-                  </div>
-                </div>
+
               </div>
             </fieldset>
 
@@ -547,8 +542,9 @@
                 </label>
                 <label class="check-field" style="grid-column: 1 / -1;">
                   <input id="exp-visual-enabled" type="checkbox" checked>
-                  启用实验性视觉多帧分析 (Visual Analysis - 需要 Gemma 4 E2B 等多模态模型)
+                  启用实验性视觉多帧分析 (Visual Analysis)
                 </label>
+                <small class="hint" style="grid-column: 1 / -1; margin-top:-6px;">若当前端点或基座无视觉多模态能力，系统将在后台自动安全回退至字幕与文本决策模式。</small>
               </div>
             </details>
 
@@ -658,15 +654,14 @@
                           <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">🔄 获取远端模型</button>
                         </div>
                       </label>
-                      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
-                        <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="flex:1;">
-                        <span id="model-multimodal-badge" class="badge good" title="模型多模态能力指示">👁️ 支持多模态视觉</span>
+                      <div style="margin-top:6px;">
+                        <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
                       </div>
                     </div>
                   </div>
 
                   <label style="margin-top:10px;">服务 Base URL
-                    <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm/2b 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
+                    <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm 或 http://<ip>:9012/llm 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
                   </label>
                   <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；外部 API 的 Base URL 通常以 /v1 结尾。</p>
 
@@ -687,27 +682,31 @@
                 </fieldset>
 
                 <fieldset class="provider-group">
-                  <legend>语音来源与外部 API</legend>
+                  <legend>语音来源与 TTS 配置</legend>
                   <label>语音来源
                     <select id="tts-kind">
-                      <option value="prerecorded">预录音频</option>
+                      <option value="gpt_sovits">本地 / 远程 GPT-SoVITS / Genie ONNX (推荐)</option>
                       <option value="openai_compatible">外部 OpenAI 兼容语音 API</option>
-                      <option value="gpt_sovits">本地 GPT-SoVITS / Genie ONNX</option>
+                      <option value="prerecorded">预录音频原型</option>
                     </select>
                   </label>
-                  <div id="tts-api-fields">
-                    <label>语音 API Base URL<input id="tts-base-url" type="url" placeholder="服务提供的 Base URL（通常包含 /v1）" autocomplete="off"></label>
+                  <div id="tts-base-url-container">
+                    <label>语音服务 Base URL
+                      <input id="tts-base-url" type="url" placeholder="http://127.0.0.1:9012/tts 或 http://<jetson-ip>:9012/tts" autocomplete="off">
+                    </label>
+                  </div>
+                  <div id="tts-external-api-fields" hidden>
                     <div class="form-grid">
                       <label>模型 ID<input id="tts-model" placeholder="填写语音服务的实际模型 ID" autocomplete="off"></label>
                       <label>Voice ID<input id="tts-voice" placeholder="填写服务支持的 Voice ID" autocomplete="off"></label>
                     </div>
                   </div>
-                  <div class="provider-credential">
-                    <label>API Key（可选）<input id="tts-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
+                  <div class="provider-credential" id="tts-credential-fields">
+                    <label>API Key（外部 API 可选，留空保留已保存密钥）<input id="tts-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
                     <span id="tts-key-state" class="hint">密钥状态待读取</span>
                     <label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存密钥</label>
                   </div>
-                  <p id="tts-settings-help" class="hint">配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。</p>
+                  <p id="tts-settings-help" class="hint">本地/远程 Broker 默认地址通常为 http://127.0.0.1:9012/tts 或 http://&lt;jetson-ip&gt;:9012/tts；配置外部 API 可在语音页试听。</p>
                   <p id="tts-local-engine" class="hint" role="status">本地引擎：正在读取已保存配置。</p>
                 </fieldset>
               </fieldset>
@@ -804,6 +803,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <script type="module" src="/static/app.js?v=20261105.1"></script>
 </body>
 </html>

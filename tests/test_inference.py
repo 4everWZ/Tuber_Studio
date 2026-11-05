@@ -1489,3 +1489,91 @@ def test_cache_advice_ignores_open_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "open", denied)
     assert ProcessRunner(tmp_path)._advise_owned_model_cache() == 0
+
+
+async def test_unified_broker_endpoints(tmp_path):
+    broker, control = setup_broker(tmp_path, mode="live")
+    reference = tmp_path / "assets/voices/default.wav"
+    reference.parent.mkdir(parents=True, exist_ok=True)
+    reference.write_bytes(b"RIFF\x04\x00\x00\x00WAVE")
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config/voices.json").write_text(
+        json.dumps([{"id": "default", "server_reference_path": str(reference)}])
+    )
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
+        # 1. GET /tts and GET /tts/ return docs
+        resp = await client.get("/tts")
+        assert resp.status_code == 200
+        resp = await client.get("/tts/")
+        assert resp.status_code == 200
+
+        # 2. GET /v1/models and GET /models list models
+        resp = await client.get("/v1/models")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert any(m["id"] == "MiniCPM5-2B" for m in data)
+
+        # 3. POST /llm/v1/chat/completions auto-routes and rewrites model alias
+        resp = await client.post(
+            "/llm/v1/chat/completions",
+            json={"model": "MiniCPM-V-4.7-1B", "messages": [{"role": "user", "content": "hello"}]},
+        )
+        assert resp.status_code == 200
+
+        # 4. POST /v1/chat/completions directly at root
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert resp.status_code == 200
+
+        # 5. POST /tts direct endpoint in live mode
+        resp = await client.post(
+            "/tts",
+            json={"text": "hello", "ref_audio_path": "assets/voices/default.wav"},
+        )
+        assert resp.status_code == 200
+
+        # 6. Switch to text mode: TTS must be rejected with 409 (unloaded to save memory)
+        await client.post("/mode", json={"mode": "text"})
+        resp = await client.post(
+            "/tts",
+            json={"text": "hello", "ref_audio_path": "assets/voices/default.wav"},
+        )
+        assert resp.status_code == 409 and "live mode" in resp.json()["detail"]
+
+    await broker.close()
+
+
+async def test_unified_broker_model_switching(tmp_path):
+    broker, control = setup_broker(tmp_path, mode="text", selected="llm2b")
+    app = create_app(tmp_path, broker=broker, warm_start=False)
+    token = (tmp_path / "runtime/inference-token").read_text()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://broker", headers={HEADER: token}
+    ) as client:
+        assert broker.selected == "llm2b"
+
+        # 1. Switch model via /model in text mode
+        resp = await client.post("/model", json={"model": "MiniCPM-V-4.7-1B"})
+        assert resp.status_code == 200
+        assert broker.selected == "llm1b"
+
+        # 2. Calling /llm with different model in text mode auto-switches
+        resp = await client.post(
+            "/llm/v1/chat/completions",
+            json={"model": "MiniCPM5-2B", "messages": [{"role": "user", "content": "test"}]},
+        )
+        assert resp.status_code == 200
+        assert broker.selected == "llm2b"
+
+        # 3. Switching while in live mode is rejected with 409
+        await client.post("/mode", json={"mode": "live"})
+        resp = await client.post("/model", json={"model": "MiniCPM-V-4.7-1B"})
+        assert resp.status_code == 409
+
+    await broker.close()

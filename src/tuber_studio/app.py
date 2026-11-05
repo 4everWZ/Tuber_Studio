@@ -208,7 +208,7 @@ def create_app(
 
     @app.get("/")
     async def index():
-        return FileResponse(web / "index.html")
+        return FileResponse(web / "index.html", headers={"Cache-Control": "no-cache, must-revalidate"})
 
     @app.get("/overlay")
     async def overlay():
@@ -530,8 +530,21 @@ def create_app(
     @app.get("/api/models/dafeiyu/status", dependencies=[Depends(require_admin)])
     async def get_dafeiyu_model_status():
         """Get real-time installation and download progress of the Da Feiyu model."""
-        status = model_hub.get_model_status(settings.models)
-        status["is_full_local"] = model_hub.is_full_local_deployment(settings)
+        status = model_hub.get_model_status(settings.models, settings_or_data=settings)
+        category = status.get("deployment_category", "local_file")
+        if category == "self_hosted" and status.get("endpoint_url"):
+            url = status["endpoint_url"].rstrip("/")
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=1.0), trust_env=False) as client:
+                    test_url = url + "/health" if not url.endswith(("/health", "/docs")) else url
+                    resp = await client.get(test_url)
+                    status["node_online"] = resp.status_code < 400
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        status["node_mode"] = data.get("mode")
+                        status["resident_model"] = data.get("selected_provider") or data.get("model")
+            except Exception:
+                status["node_online"] = False
         return status
 
     @app.post("/api/models/dafeiyu/download", dependencies=[Depends(require_admin)])
@@ -648,14 +661,23 @@ def create_app(
             if tts_url:
                 t0 = time.perf_counter()
                 try:
-                    res = await client.get(tts_url)
+                    check_url = tts_url
+                    if tts_url.rstrip("/").endswith("/tts"):
+                        check_url = tts_url.rstrip("/") + "/docs"
+                    res = await client.get(check_url)
+                    if res.status_code == 404 and check_url != tts_url:
+                        res = await client.get(tts_url)
                     elapsed = round((time.perf_counter() - t0) * 1000)
                     result["tts"] = {
                         "ok": res.status_code in (200, 404),
                         "url": tts_url,
                         "status_code": res.status_code,
                         "latency_ms": elapsed,
-                        "detail": f"就绪 ({elapsed}ms)",
+                        "detail": (
+                            f"就绪 ({elapsed}ms)"
+                            if res.status_code == 200
+                            else f"HTTP {res.status_code} ({elapsed}ms)"
+                        ),
                     }
                 except httpx.ConnectError:
                     result["tts"] = {"ok": False, "url": tts_url, "latency_ms": None, "detail": "连接被拒绝 (服务未启动或端口不通)", "status_code": None}

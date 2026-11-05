@@ -1,6 +1,40 @@
 "use strict";
 
-const $ = id => document.getElementById(id);
+import { $, $$, formatBytes, formatDuration } from "./modules/core.js";
+import { api as baseApi } from "./modules/api.js";
+import {
+  initInferenceProvidersUI as initProvidersUI,
+  renderTTSFields,
+  readProviderPayload,
+  loadLocalModelsDropdown as loadLocalModels,
+  checkDafeiyuModelStatus as checkDafeiyuStatus,
+  syncModelSelectWithInput,
+} from "./modules/providers.js";
+import {
+  initOperationsModule,
+  updatePermissionCapsule as updateCapsuleModule,
+  savePermissionMatrix as saveMatrixModule,
+  renderPermissionMatrix,
+  renderOperationsQuickBar,
+  calculatePermissionTier,
+  applyPermissionTierUI,
+} from "./modules/operations.js";
+
+const api = (path, options = {}) => baseApi(path, options, showLogin);
+const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
+const loadLocalModelsDropdown = () => loadLocalModels(api);
+const checkDafeiyuModelStatus = () => checkDafeiyuStatus(api);
+const initInferenceProvidersUI = () => initProvidersUI(model, api, notice, busy, safeMessage, renderProviderForm);
+const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
+
+window.$ = $;
+window.$$ = $$;
+window.node = node;
+window.api = api;
+window.notice = notice;
+window.busy = busy;
+window.safeMessage = safeMessage;
+
 const model = {
   authenticated: false, status: null, page: "comments", characters: [], versions: [],
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
@@ -94,21 +128,6 @@ function cell(row, value, small) {
   element.append(value instanceof Node ? value : node("span", display(value)));
   if (small) element.append(node("small", small, "cell-sub"));
   row.append(element); return element;
-}
-async function api(path, options = {}) {
-  const config = {...options, headers: {...options.headers}, credentials: "same-origin"};
-  if (options.body !== undefined && typeof options.body !== "string") {
-    config.headers["Content-Type"] = "application/json"; config.body = JSON.stringify(options.body);
-  }
-  const response = await fetch(path, config);
-  const text = await response.text(); let result;
-  try { result = text ? JSON.parse(text) : {}; } catch { result = {detail: text}; }
-  if (!response.ok) {
-    if (response.status === 401 && model.authenticated) showLogin();
-    const error = new Error(display(result.detail || result.error || `${response.status} ${response.statusText}`));
-    error.status = response.status; throw error;
-  }
-  return result;
 }
 async function busy(button, action) {
   const wasDisabled = button.disabled; button.disabled = true; button.setAttribute("aria-busy", "true");
@@ -787,41 +806,6 @@ function publicSettings(value, key = "") {
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
   return value;
 }
-function isModelMultimodal(modelName) {
-  if (!modelName || typeof modelName !== "string") return false;
-  const name = modelName.toLowerCase();
-  return (
-    name.includes("minicpm-v") ||
-    name.includes("-v-") ||
-    name.includes("-v4") ||
-    name.includes("vl") ||
-    name.includes("vision") ||
-    name.includes("4o") ||
-    name.includes("gemini") ||
-    name.includes("claude") ||
-    name.includes("omni") ||
-    name.includes("pixtral") ||
-    name.includes("qvq") ||
-    name.includes("gemma4")
-  );
-}
-
-function updateModelMultimodalBadge() {
-  const badge = $("model-multimodal-badge");
-  if (!badge) return;
-  const modelId = ($("llm-model")?.value || "").trim();
-  const multimodal = isModelMultimodal(modelId);
-  if (multimodal) {
-    badge.className = "badge good";
-    badge.textContent = "👁️ 支持多模态视觉";
-    badge.title = "该模型具备视觉/图片多模态分析能力";
-  } else {
-    badge.className = "badge muted";
-    badge.textContent = "📝 纯文本模型";
-    badge.title = "该模型仅处理纯文本";
-  }
-}
-
 function clearProviderSecrets() {
   ["llm", "tts"].forEach(kind => {
     const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
@@ -835,7 +819,7 @@ function providerFormFromSettings(settings) {
     "llm-kind": llm.kind || "llama_cpp", "llm-base-url": llm.base_url || "", "llm-model": llm.model || "",
     "llm-context-tokens": llm.context_tokens ?? 131072, "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
-    "tts-kind": tts.kind || "prerecorded", "tts-base-url": tts.base_url || "", "tts-model": tts.model || "", "tts-voice": tts.voice || "",
+    "tts-kind": tts.kind || "gpt_sovits", "tts-base-url": tts.base_url || "", "tts-model": tts.model || "", "tts-voice": tts.voice || "",
   };
   Object.entries(fields).forEach(([id, value]) => { const el = $(id); if (el) el.value = String(value); });
   if ($("llm-live-output-budget")) $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
@@ -847,7 +831,6 @@ function providerFormFromSettings(settings) {
     btnLocal.classList.toggle("active", isLocal);
     btnRemote.classList.toggle("active", !isLocal);
   }
-  updateModelMultimodalBadge();
 }
 function renderProviderForm() {
   if ($("provider-fields")) $("provider-fields").disabled = !!model.providersSaving;
@@ -866,18 +849,7 @@ function renderProviderForm() {
   $("llm-base-url").required = !demo; $("llm-model").required = !demo;
   $("llm-probe-help").hidden = !external;
   if ($("llm-capacity-help")) $("llm-capacity-help").textContent = external ? "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" : "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
-  const ttsApi = $("tts-kind").value === "openai_compatible";
-  $("tts-api-fields").hidden = !ttsApi;
-  ["tts-base-url", "tts-model", "tts-voice"].forEach(id => {
-    const el = $(id);
-    if (el) { el.required = ttsApi; el.disabled = !ttsApi || !!model.providersSaving; }
-  });
-  if ($("tts-key")) $("tts-key").disabled = !ttsApi || !!model.providersSaving;
-  ["llm", "tts"].forEach(kind => {
-    const el = $(`${kind}-key-state`);
-    if (el) el.textContent = model.settings?.provider_credentials?.[kind] ? "已有保存密钥（不回显）" : "未保存密钥";
-  });
-  updateModelMultimodalBadge();
+  renderTTSFields(model);
   renderLiveFeatures();
 }
 function applySettings(settings, fillForm = false) {
@@ -891,404 +863,23 @@ function applySettings(settings, fillForm = false) {
   $("overlay-url").value = url; $("open-overlay").href = url;
 }
 
-function syncModelSelectWithInput() {
-  const select = $("llm-model-select");
-  const input = $("llm-model");
-  if (!select || !input) return;
-  const val = input.value.trim();
-  let found = false;
-  for (const opt of select.options) {
-    if (opt.value === val) {
-      select.value = val;
-      found = true;
-      break;
-    }
-  }
-  if (!found && val) {
-    select.value = "__custom__";
-  }
-}
 
-async function loadLocalModelsDropdown() {
-  try {
-    const data = await api("/api/providers/local-models");
-    const ftGroup = $("fine-tuned-models-group");
-    const baseGroup = $("base-models-group");
-    if (ftGroup && Array.isArray(data.fine_tuned) && data.fine_tuned.length) {
-      ftGroup.replaceChildren();
-      data.fine_tuned.forEach(m => {
-        const tag = m.multimodal ? " [👁️ 多模态]" : " [📝 纯文本]";
-        const opt = node("option", `${m.name}${tag}`);
-        opt.value = m.id;
-        ftGroup.append(opt);
-      });
-    }
-    if (baseGroup && Array.isArray(data.base) && data.base.length) {
-      baseGroup.replaceChildren();
-      data.base.forEach(m => {
-        const tag = m.multimodal ? " [👁️ 多模态]" : " [📝 纯文本]";
-        const opt = node("option", `${m.name}${tag}`);
-        opt.value = m.id;
-        baseGroup.append(opt);
-      });
-    }
-    syncModelSelectWithInput();
-    updateModelMultimodalBadge();
-  } catch (err) {
-    console.warn("Failed to load local models dropdown:", err);
-  }
-}
 
-let dafeiyuModelTimer = null;
 
-async function checkDafeiyuModelStatus() {
-  try {
-    const status = await api("/api/models/dafeiyu/status");
-    renderDafeiyuModelCard(status);
-    if (status.download_status === "downloading") {
-      if (!dafeiyuModelTimer) {
-        dafeiyuModelTimer = setInterval(checkDafeiyuModelStatus, 1500);
-      }
-    } else {
-      if (dafeiyuModelTimer) {
-        clearInterval(dafeiyuModelTimer);
-        dafeiyuModelTimer = null;
-      }
-      if (status.installed) {
-        loadLocalModelsDropdown();
-      }
-    }
-  } catch (err) {
-    console.warn("Failed to check Dafeiyu model status:", err);
-  }
-}
 
-function renderDafeiyuModelCard(status) {
-  const badge = $("dafeiyu-model-badge");
-  const installedView = $("dafeiyu-model-installed-view");
-  const missingView = $("dafeiyu-model-missing-view");
-  const btnDownload = $("btn-download-dafeiyu-model");
-  const btnCancel = $("btn-cancel-dafeiyu-download");
-  const progressBox = $("dafeiyu-progress-container");
-  const progressFill = $("dafeiyu-progress-fill");
-  const progressText = $("dafeiyu-progress-text");
-  const speedText = $("dafeiyu-speed-text");
 
-  if (!badge) return;
 
-  const currentKind = $("llm-kind") ? $("llm-kind").value : "llama_cpp";
-  const isLocalInUI = currentKind === "llama_cpp";
 
-  if (!isLocalInUI || status.is_full_local === false) {
-    badge.className = "badge muted";
-    badge.textContent = "Docker / 远端部署";
-    if (installedView) installedView.hidden = true;
-    if (missingView) missingView.hidden = false;
-    if (progressBox) progressBox.style.display = "none";
-    if (btnDownload) btnDownload.style.display = "none";
-    if (btnCancel) btnCancel.style.display = "none";
-    if ($("dafeiyu-missing-hint")) {
-      $("dafeiyu-missing-hint").textContent = "当前为远程 Docker 容器、端侧推理节点或云端 API。模型权重在 Docker 容器/端侧节点拉取，本地 Web 端无需也不执行下载。";
-    }
-    return;
-  }
 
-  if (status.installed) {
-    badge.className = "badge good";
-    badge.textContent = "本地已就绪";
-    if (installedView) installedView.hidden = false;
-    if (missingView) missingView.hidden = true;
-    if ($("dafeiyu-model-path")) $("dafeiyu-model-path").textContent = status.file_path || status.filename;
-    if ($("dafeiyu-model-size")) $("dafeiyu-model-size").textContent = `${(status.file_size / (1024 * 1024)).toFixed(1)} MB`;
-  } else if (status.download_status === "downloading") {
-    badge.className = "badge warning";
-    badge.textContent = "正在下载中…";
-    if (installedView) installedView.hidden = true;
-    if (missingView) missingView.hidden = false;
-    if (progressBox) progressBox.style.display = "block";
-    if (btnDownload) { btnDownload.style.display = "inline-block"; btnDownload.disabled = true; }
-    if (btnCancel) btnCancel.style.display = "inline-block";
-    if (progressFill) progressFill.style.width = `${status.download_percent}%`;
-    if (progressText) {
-      const mbDone = (status.downloaded_bytes / (1024 * 1024)).toFixed(1);
-      const mbTotal = (status.expected_size / (1024 * 1024)).toFixed(1);
-      progressText.textContent = `${status.download_percent}% (${mbDone} / ${mbTotal} MB)`;
-    }
-    if (speedText) speedText.textContent = `${status.speed_mb_s} MB/s`;
-  } else {
-    badge.className = "badge";
-    badge.textContent = status.download_status === "failed" ? "下载失败" : "本地未下载";
-    if (installedView) installedView.hidden = true;
-    if (missingView) missingView.hidden = false;
-    if (progressBox) progressBox.style.display = "none";
-    if (btnDownload) { btnDownload.style.display = "inline-block"; btnDownload.disabled = false; }
-    if (btnCancel) btnCancel.style.display = "none";
-    if ($("dafeiyu-missing-hint")) {
-      $("dafeiyu-missing-hint").textContent = status.error
-        ? `下载提示: ${status.error}。可重新点击尝试。`
-        : "全套本地部署模式：未在本地目录检测到微调权重。在下方选择模型并保存配置确认后，系统将自动拉取；也可点击下方按钮立即下载。";
-    }
-  }
-}
-
-function initInferenceProvidersUI() {
-  const btnModeLocal = $("btn-mode-local");
-  const btnModeRemote = $("btn-mode-remote");
-
-  function setDeployMode(mode) {
-    const isLocal = mode === "local";
-    btnModeLocal?.classList.toggle("active", isLocal);
-    btnModeRemote?.classList.toggle("active", !isLocal);
-    if (isLocal) {
-      $("llm-kind").value = "llama_cpp";
-      if (!$("llm-base-url").value || $("llm-base-url").value.startsWith("https://") || $("llm-base-url").value.includes("openai")) {
-        $("llm-base-url").value = "http://127.0.0.1:9012/llm/2b";
-      }
-      if (!$("llm-model").value || $("llm-model").value === "__custom__") {
-        $("llm-model").value = "MiniCPM-V-4.7-1B";
-      }
-      $("tts-kind").value = "gpt_sovits";
-      $("tts-base-url").value = "http://127.0.0.1:9012/tts";
-      notice("已切换为【本地部署】模式。");
-    } else {
-      $("llm-kind").value = "openai_compatible";
-      if ($("llm-base-url").value === "http://127.0.0.1:9012/llm/2b") {
-        $("llm-base-url").value = "";
-      }
-      $("tts-kind").value = "openai_compatible";
-      notice("已切换为【远程 / 云端】模式，可自定义填写 Base URL 与 API Key。");
-    }
-    syncModelSelectWithInput();
-    model.providersDirty = true;
-    renderProviderForm();
-    checkDafeiyuModelStatus();
-  }
-
-  btnModeLocal?.addEventListener("click", () => setDeployMode("local"));
-  btnModeRemote?.addEventListener("click", () => setDeployMode("remote"));
-
-  $("llm-kind")?.addEventListener("change", () => {
-    const isLocal = $("llm-kind").value === "llama_cpp";
-    btnModeLocal?.classList.toggle("active", isLocal);
-    btnModeRemote?.classList.toggle("active", !isLocal);
-    model.providersDirty = true;
-    renderProviderForm();
-    checkDafeiyuModelStatus();
-  });
-
-  $("btn-download-dafeiyu-model")?.addEventListener("click", async () => {
-    try {
-      notice("已启动大肥鱼微调模型下载任务（从 Hugging Face 镜像加速拉取）…");
-      await api("/api/models/dafeiyu/download", {method: "POST"});
-      checkDafeiyuModelStatus();
-    } catch (e) {
-      notice(`启动下载失败: ${safeMessage(e.message)}`, true);
-    }
-  });
-
-  $("btn-cancel-dafeiyu-download")?.addEventListener("click", async () => {
-    try {
-      await api("/api/models/dafeiyu/cancel", {method: "POST"});
-      notice("已发送取消下载请求。");
-      checkDafeiyuModelStatus();
-    } catch (e) {
-      notice(`取消失败: ${safeMessage(e.message)}`, true);
-    }
-  });
-
-  const select = $("llm-model-select");
-  const input = $("llm-model");
-  if (select && input) {
-    select.addEventListener("change", () => {
-      if (select.value === "__custom__") {
-        input.focus();
-      } else if (select.value) {
-        input.value = select.value;
-        model.providersDirty = true;
-        renderProviderForm();
-      }
-      updateModelMultimodalBadge();
-    });
-    input.addEventListener("input", () => {
-      syncModelSelectWithInput();
-      updateModelMultimodalBadge();
-    });
-  }
-
-  $("btn-fetch-models")?.addEventListener("click", async () => {
-    const btn = $("btn-fetch-models");
-    const baseUrl = $("llm-base-url").value.trim();
-    const apiKey = $("llm-key").value.trim();
-    if (!baseUrl) {
-      notice("请先填写推理服务 Base URL 再拉取模型列表。", true);
-      return;
-    }
-    const remoteGroup = $("remote-models-group");
-    await busy(btn, async () => {
-      try {
-        let path = `/api/providers/models?base_url=${encodeURIComponent(baseUrl)}`;
-        if (apiKey) path += `&api_key=${encodeURIComponent(apiKey)}`;
-        const res = await api(path);
-        const models = res.models || [];
-        if (!models.length) {
-          notice("未在远端服务检测到可用模型列表。", true);
-          return;
-        }
-        if (remoteGroup) {
-          remoteGroup.replaceChildren();
-          remoteGroup.label = `🌐 远端服务模型 (${models.length})`;
-          models.forEach(m => {
-            const tag = isModelMultimodal(m) ? " [👁️ 多模态]" : " [📝 纯文本]";
-            const opt = node("option", `${m}${tag}`);
-            opt.value = m;
-            remoteGroup.append(opt);
-          });
-          remoteGroup.hidden = false;
-        }
-        notice(`成功拉取 ${models.length} 个远端模型！可在下拉列表中直接选择。`);
-      } catch (err) {
-        notice(`拉取远端模型失败：${safeMessage(err.message)}`, true);
-      }
-    });
-  });
-
-  $("btn-ping-providers")?.addEventListener("click", async () => {
-    const btn = $("btn-ping-providers");
-    const llmUrl = $("llm-base-url").value.trim();
-    const llmKey = $("llm-key").value.trim();
-    const ttsUrl = $("tts-base-url").value.trim();
-    const ttsKey = $("tts-key").value.trim();
-
-    const llmBadge = $("ping-llm-badge");
-    const llmDetail = $("ping-llm-detail");
-    const ttsBadge = $("ping-tts-badge");
-    const ttsDetail = $("ping-tts-detail");
-
-    if (llmBadge) { llmBadge.className = "badge"; llmBadge.textContent = "测速中…"; }
-    if (ttsBadge) { ttsBadge.className = "badge"; ttsBadge.textContent = "测速中…"; }
-
-    await busy(btn, async () => {
-      try {
-        const res = await api("/api/providers/ping", {
-          method: "POST",
-          body: {
-            llm_url: llmUrl || undefined,
-            llm_key: llmKey || undefined,
-            tts_url: ttsUrl || undefined,
-            tts_key: ttsKey || undefined,
-          }
-        });
-
-        if (res.llm) {
-          if (res.llm.ok) {
-            llmBadge.className = "badge good";
-            llmBadge.textContent = `${res.llm.latency_ms} ms (正常)`;
-            llmDetail.textContent = `${res.llm.url} · 连接成功 (HTTP ${res.llm.status_code})`;
-            const dot = $("capsule-llm-dot");
-            const lbl = $("capsule-llm-label");
-            if (dot) dot.className = "status-dot green";
-            if (lbl) lbl.textContent = `LLM: 正常 (${res.llm.latency_ms}ms)`;
-          } else {
-            llmBadge.className = "badge bad";
-            llmBadge.textContent = "连接失败";
-            llmDetail.textContent = `${res.llm.url || "未配置"} · ${res.llm.detail || "不可达"}`;
-            const dot = $("capsule-llm-dot");
-            const lbl = $("capsule-llm-label");
-            if (dot) dot.className = "status-dot red";
-            if (lbl) lbl.textContent = "LLM: 不可达";
-          }
-        }
-
-        if (res.tts) {
-          if (res.tts.ok) {
-            ttsBadge.className = "badge good";
-            ttsBadge.textContent = `${res.tts.latency_ms} ms (正常)`;
-            ttsDetail.textContent = `${res.tts.url} · 连接成功 (HTTP ${res.tts.status_code})`;
-            const dot = $("capsule-tts-dot");
-            const lbl = $("capsule-tts-label");
-            if (dot) dot.className = "status-dot green";
-            if (lbl) lbl.textContent = `TTS: 正常 (${res.tts.latency_ms}ms)`;
-          } else {
-            ttsBadge.className = "badge bad";
-            ttsBadge.textContent = "连接失败";
-            ttsDetail.textContent = `${res.tts.url || "未配置"} · ${res.tts.detail || "不可达"}`;
-            const dot = $("capsule-tts-dot");
-            const lbl = $("capsule-tts-label");
-            if (dot) dot.className = "status-dot amber";
-            if (lbl) lbl.textContent = "TTS: 未联通";
-          }
-        }
-
-        notice("端点测通诊断完成！详细延迟已展示在下方卡片。");
-      } catch (err) {
-        notice(`端点诊断执行失败：${safeMessage(err.message)}`, true);
-      }
-    });
-  });
-
-  $("service-status-capsule")?.addEventListener("click", () => {
-    location.hash = "#settings";
-  });
-}
 async function loadSettings() { applySettings(await api("/api/settings")); }
-function readProviderPayload() {
-  const integer = (id, title) => {
-    const value = Number($(id).value);
-    if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < 4096) throw new Error(`${title}须为不小于 4096 的整数 tokens。`);
-    return value;
-  };
-  const context = integer("llm-context-tokens", "上下文窗口"), native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
-  if (context > native) throw new Error("上下文窗口不能超过模型原生 / 服务声明上限。请按实际服务能力填写。");
-  const modelId = $("llm-model").value.trim();
-  const isMultimodal = isModelMultimodal(modelId);
-  const isLlmApi = $("llm-kind").value === "openai_compatible";
-  const payload = {
-    llm: {
-      kind: $("llm-kind").value,
-      base_url: $("llm-base-url").value.trim(),
-      model: modelId,
-      context_tokens: context,
-      native_context_tokens: native,
-      operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536),
-    },
-    tts: {
-      kind: $("tts-kind").value,
-      base_url: $("tts-base-url").value.trim(),
-      model: $("tts-model").value.trim(),
-      voice: $("tts-voice").value.trim(),
-    },
-    vision: {
-      kind: isMultimodal && isLlmApi ? "openai_compatible" : "disabled",
-      location: "local",
-      base_url: isMultimodal && isLlmApi ? $("llm-base-url").value.trim() : "",
-      model: isMultimodal && isLlmApi ? modelId : "",
-    },
-    credentials: {}, clear_credentials: [],
-  };
-  ["llm", "tts"].forEach(kind => {
-    const key = $(`${kind}-key`), clearEl = $(`${kind}-clear-key`);
-    const clear = clearEl ? clearEl.checked : false;
-    if (key && !key.disabled && key.value && clear) throw new Error(`${kind.toUpperCase()} 请分别选择输入新密钥或清除已有密钥，不能同时操作。`);
-    if (clear) payload.clear_credentials.push(kind);
-    else if (key && !key.disabled && key.value) payload.credentials[kind] = key.value;
-  });
-  return payload;
-}
+
 function voiceAvailability(voice) {
   const provider = voice?.provider || voice?.kind;
   if (provider === "gpt_sovits") {
     const tts = model.settings?.tts;
-    if (!liveEnabled()) return "本地动态语音后续开放";
-    if (tts?.kind !== "gpt_sovits") return "当前语音来源未使用本地引擎";
-    if (tts.local_backend !== "genie_onnx_int8") return "当前本地后端未准入，请使用服务配置的 Genie ONNX INT8";
-    if (voice.id !== localVoiceId()) return "此音色未由当前 Genie 服务选用，不能串用";
-    if (resourcesTransitioning()) return "直播资源正在加载，请等待模型就绪";
-    if (model.status?.inference?.error) return `本地语音资源错误：${model.status.inference.error}`;
-    if (resourceMode(model.status?.inference) !== "live") return "本地试听需先手动切换顶部「直播模式」；不会自动切换";
-    const provider = model.status.inference.providers?.tts;
-    if (provider?.error) return `本地语音资源错误：${provider.error}`;
-    if (["loading", "switching", "starting"].includes(provider?.state)) return "本地 TTS 正在加载，请等待模型就绪";
-    if (model.status.inference.providers?.tts?.running !== true) return "本地 TTS 尚未驻留，请检查直播资源状态";
+    if (tts?.kind !== "gpt_sovits") return "当前语音来源未选择 GPT-SoVITS / Genie";
+    if (!tts?.base_url) return "请先配置语音服务 Base URL";
+    return "";
   }
   if (provider === "openai_compatible" && (model.settings?.tts?.kind !== "openai_compatible" || !model.settings?.tts?.model || !model.settings?.tts?.voice)) return "请先配置外部语音 API 的模型和 Voice ID";
   if (!["gpt_sovits", "openai_compatible", "prerecorded"].includes(provider)) return "此语音 Provider 尚未准入";
@@ -2169,411 +1760,9 @@ $("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
 });
 $("character-image").onerror = () => { $("character-image").hidden = true; };
 
-// Centralized Permission Capsule & Matrix Control
-let currentAutomationStatus = null;
+// Operations Module Initialization (Decoupled & Real-Time Sync)
+initOperationsModule(api, accountPanel, automationPanel);
 
-async function updatePermissionCapsule() {
-  if (!model.authenticated) return;
-  try {
-    const status = await api("/api/automation");
-    currentAutomationStatus = status;
-    const account = accountPanel.value;
-    const hasSessdata = !!account?.configured?.sessdata;
-    const hasCsrf = !!account?.configured?.csrf;
-    const settings = status.settings || {};
-    const control = status.policy || {};
-
-    // 1. Determine Tier
-    let tier = "draft";
-    let icon = "📝";
-    let text = "权限：草稿生成·人工审核后发布";
-
-    if (!hasSessdata || !hasCsrf || account?.state !== "logged_in") {
-      tier = "readonly";
-      icon = "🛡️";
-      text = "权限：只读监控（无发布权）";
-    } else if (
-      control.enabled &&
-      (settings.top_level_auto_publish || settings.reply_auto_publish || settings.video_like_auto_publish || settings.video_fav_auto_publish || settings.handoff_auto_send)
-    ) {
-      tier = "autopublish";
-      icon = "⚡";
-      const maxDaily = settings.max_per_day || 20;
-      text = `权限：模型全自动发布（每日上限 ${maxDaily} 条）`;
-    } else if (
-      !settings.top_level_enabled &&
-      !settings.reply_enabled &&
-      !settings.video_like_enabled &&
-      !settings.video_fav_enabled &&
-      !settings.mentions_enabled
-    ) {
-      tier = "readonly";
-      icon = "🛡️";
-      text = "权限：只读监控（行为已禁止）";
-    } else {
-      tier = "draft";
-      icon = "📝";
-      text = "权限：草稿生成·人工审核后发布";
-    }
-
-    // Update topbar capsule
-    const capsule = $("permission-capsule");
-    if (capsule) {
-      capsule.dataset.tier = tier;
-      const textEl = $("capsule-text");
-      const iconEl = $("capsule-icon");
-      if (textEl) textEl.textContent = text;
-      if (iconEl) iconEl.textContent = icon;
-    }
-
-    // Update operations workbench capsule
-    const opCapsule = $("op-permission-capsule-btn");
-    if (opCapsule) {
-      opCapsule.dataset.tier = tier;
-      opCapsule.innerHTML = `<span>${icon} ${text}</span>`;
-    }
-
-    // Update settings matrix header badge
-    const matrixBadge = $("matrix-capsule-badge");
-    if (matrixBadge) {
-      matrixBadge.textContent = ({
-        readonly: "只读监控态",
-        draft: "草稿审核态（人机协同）",
-        autopublish: "完全自治态",
-      })[tier];
-      matrixBadge.className = `badge ${tier === "autopublish" ? "active" : tier === "draft" ? "good" : ""}`;
-    }
-
-    // Update Matrix Credentials state
-    const sessdataEl = $("matrix-sessdata-status");
-    if (sessdataEl) {
-      sessdataEl.textContent = hasSessdata ? (account?.state === "logged_in" ? `已登录 (UID ${account?.profile?.uid || "—"})` : "已配置 · 待验证") : "未配置";
-      sessdataEl.className = `status-tag ${hasSessdata && account?.state === "logged_in" ? "ok" : "warn"}`;
-    }
-    const csrfEl = $("matrix-csrf-status");
-    if (csrfEl) {
-      csrfEl.textContent = hasCsrf ? "已就绪（具备写入授权）" : "未配置（写入被禁用）";
-      csrfEl.className = `status-tag ${hasCsrf ? "ok" : "warn"}`;
-    }
-
-    // Render Matrix & Quick Bar
-    renderPermissionMatrix(status);
-    renderOperationsQuickBar(status);
-  } catch (e) {
-    // Ignore transient poll errors
-  }
-}
-
-function jumpToPermissionMatrix() {
-  location.hash = "settings";
-  setTimeout(() => {
-    const el = $("operations-permission-matrix");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("highlight-pulse");
-      setTimeout(() => el.classList.remove("highlight-pulse"), 2000);
-    }
-  }, 150);
-}
-
-let matrixUserInteractingUntil = 0;
-let matrixSaveTimeout = null;
-
-function triggerMatrixAutoSave() {
-  matrixUserInteractingUntil = Date.now() + 5000;
-  clearTimeout(matrixSaveTimeout);
-  matrixSaveTimeout = setTimeout(() => {
-    savePermissionMatrix({ silent: true }).catch(console.error);
-  }, 100);
-}
-
-function renderPermissionMatrix(status) {
-  if (Date.now() < matrixUserInteractingUntil) return;
-  const matrixEl = $("operations-permission-matrix");
-  if (matrixEl && matrixEl.contains(document.activeElement)) return;
-
-  const settings = status.settings || {};
-  // 1. Top level
-  const topLevelVal = !settings.top_level_enabled ? "0" : settings.top_level_auto_publish ? "2" : "1";
-  const topRadio = document.querySelector(`input[name="matrix_top_level"][value="${topLevelVal}"]`);
-  if (topRadio && document.activeElement?.name !== "matrix_top_level") topRadio.checked = true;
-
-  // 2. Reply
-  const replyVal = !settings.reply_enabled ? "0" : settings.reply_auto_publish ? "2" : "1";
-  const replyRadio = document.querySelector(`input[name="matrix_reply"][value="${replyVal}"]`);
-  if (replyRadio && document.activeElement?.name !== "matrix_reply") replyRadio.checked = true;
-
-  // 3. DM
-  const dmVal = !settings.comment_handoff_enabled ? "0" : settings.handoff_auto_send ? "2" : "1";
-  const dmRadio = document.querySelector(`input[name="matrix_dm"][value="${dmVal}"]`);
-  if (dmRadio && document.activeElement?.name !== "matrix_dm") dmRadio.checked = true;
-
-  // 4. Video Like
-  const likeVal = !settings.video_like_enabled ? "0" : settings.video_like_auto_publish ? "2" : "1";
-  const likeRadio = document.querySelector(`input[name="matrix_video_like"][value="${likeVal}"]`);
-  if (likeRadio && document.activeElement?.name !== "matrix_video_like") likeRadio.checked = true;
-
-  // 5. Video Favorite
-  const favVal = !settings.video_fav_enabled ? "0" : settings.video_fav_auto_publish ? "2" : "1";
-  const favRadio = document.querySelector(`input[name="matrix_video_fav"][value="${favVal}"]`);
-  if (favRadio && document.activeElement?.name !== "matrix_video_fav") favRadio.checked = true;
-
-  // 6. Circuit Breakers
-  if ($("matrix-max-replies-video") && document.activeElement !== $("matrix-max-replies-video")) {
-    $("matrix-max-replies-video").value = settings.max_replies_per_video ?? 2;
-  }
-  if ($("matrix-max-per-day") && document.activeElement !== $("matrix-max-per-day")) {
-    $("matrix-max-per-day").value = settings.max_per_day ?? 20;
-  }
-  if ($("matrix-auto-downgrade") && document.activeElement !== $("matrix-auto-downgrade")) {
-    $("matrix-auto-downgrade").checked = settings.auto_downgrade_on_error !== false;
-  }
-
-  // 7. Experimental settings
-  if ($("exp-candidate-limit") && document.activeElement !== $("exp-candidate-limit")) {
-    $("exp-candidate-limit").value = settings.candidate_limit ?? 20;
-  }
-  if ($("exp-inspect-limit") && document.activeElement !== $("exp-inspect-limit")) {
-    $("exp-inspect-limit").value = settings.inspect_limit ?? 4;
-  }
-  if ($("exp-decision-max-tokens") && document.activeElement !== $("exp-decision-max-tokens")) {
-    $("exp-decision-max-tokens").value = settings.decision_max_tokens ?? 8192;
-  }
-  if ($("exp-deadline-seconds") && document.activeElement !== $("exp-deadline-seconds")) {
-    $("exp-deadline-seconds").value = settings.deadline_seconds ?? 1800;
-  }
-  if ($("exp-autonomous-topics") && document.activeElement !== $("exp-autonomous-topics")) {
-    $("exp-autonomous-topics").checked = !!settings.autonomous_topics;
-  }
-  if ($("exp-visual-enabled") && document.activeElement !== $("exp-visual-enabled")) {
-    $("exp-visual-enabled").checked = settings.visual_enabled !== false;
-  }
-}
-
-async function savePermissionMatrix(options = {}) {
-  const isSilent = options && options.silent === true;
-  const topVal = document.querySelector('input[name="matrix_top_level"]:checked')?.value || "1";
-  const replyVal = document.querySelector('input[name="matrix_reply"]:checked')?.value || "1";
-  const dmVal = document.querySelector('input[name="matrix_dm"]:checked')?.value || "1";
-  const likeVal = document.querySelector('input[name="matrix_video_like"]:checked')?.value || "1";
-  const favVal = document.querySelector('input[name="matrix_video_fav"]:checked')?.value || "1";
-
-  const topLevelEnabled = topVal !== "0";
-  const topLevelAuto = topVal === "2";
-
-  const replyEnabled = replyVal !== "0";
-  const replyAuto = replyVal === "2";
-
-  const dmHandoff = dmVal !== "0";
-  const dmAuto = dmVal === "2";
-
-  const likeEnabled = likeVal !== "0";
-  const likeAuto = likeVal === "2";
-
-  const favEnabled = favVal !== "0";
-  const favAuto = favVal === "2";
-
-  const maxRepliesVideo = parseInt($("matrix-max-replies-video")?.value || "2", 10);
-  const maxPerDay = parseInt($("matrix-max-per-day")?.value || "20", 10);
-  const autoDowngrade = !!$("matrix-auto-downgrade")?.checked;
-
-  const current = currentAutomationStatus?.settings || {};
-
-  const candidateLimit = $("exp-candidate-limit") ? parseInt($("exp-candidate-limit").value || "20", 10) : current.candidate_limit;
-  const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : current.inspect_limit;
-  const decisionTokens = $("exp-decision-max-tokens") ? parseInt($("exp-decision-max-tokens").value || "8192", 10) : current.decision_max_tokens;
-  const deadlineSec = $("exp-deadline-seconds") ? parseInt($("exp-deadline-seconds").value || "1800", 10) : current.deadline_seconds;
-  const autonomousTopics = $("exp-autonomous-topics") ? !!$("exp-autonomous-topics").checked : current.autonomous_topics;
-  const visualEnabled = $("exp-visual-enabled") ? !!$("exp-visual-enabled").checked : current.visual_enabled;
-
-  const payload = {
-    ...current,
-    top_level_enabled: topLevelEnabled,
-    top_level_auto_publish: topLevelAuto,
-    reply_enabled: replyEnabled,
-    reply_auto_publish: replyAuto,
-    video_like_enabled: likeEnabled,
-    video_like_auto_publish: likeAuto,
-    video_fav_enabled: favEnabled,
-    video_fav_auto_publish: favAuto,
-    max_replies_per_video: Math.max(0, Math.min(20, maxRepliesVideo)),
-    max_per_hour: Math.max(1, Math.min(30, maxPerDay)),
-    max_per_day: Math.max(1, Math.min(200, maxPerDay)),
-    auto_downgrade_on_error: autoDowngrade,
-    candidate_limit: Math.max(1, Math.min(20, candidateLimit)),
-    inspect_limit: Math.max(1, Math.min(20, inspectLimit)),
-    decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens)),
-    deadline_seconds: Math.max(60, Math.min(3600, deadlineSec)),
-    autonomous_topics: autonomousTopics,
-    visual_enabled: visualEnabled,
-  };
-  delete payload.comment_handoff_enabled;
-
-  const fb = $("matrix-save-feedback");
-  if (fb && !isSilent) fb.textContent = "正在保存权限矩阵…";
-
-  try {
-    await api("/api/automation/settings", { method: "PUT", body: payload });
-    // Also sync message handoff policy to messages API
-    try {
-      const msgStatus = await api("/api/messages");
-      if (msgStatus && msgStatus.policy) {
-        await api("/api/messages/policy", {
-          method: "PUT",
-          body: {
-            ...msgStatus.policy,
-            allow_comment_handoff: dmHandoff,
-          },
-        });
-      }
-    } catch (_dmErr) {
-      // Ignored if direct messages not active
-    }
-    if (currentAutomationStatus) {
-      currentAutomationStatus.settings = { ...(currentAutomationStatus.settings || {}), ...payload };
-    }
-    const timeStr = new Date().toLocaleTimeString();
-    if (fb) {
-      fb.textContent = isSilent ? `✓ 设置已自动保存生效 (${timeStr})` : "✓ 权限矩阵已保存并即时生效";
-      fb.style.color = "var(--ok)";
-    }
-    if (!isSilent) {
-      notice("权限矩阵已保存并即时生效。");
-    }
-    await updatePermissionCapsule();
-  } catch (err) {
-    if (fb) {
-      fb.textContent = `保存失败：${err.message}`;
-      fb.style.color = "var(--danger)";
-    }
-    notice(err.message, true);
-  }
-}
-
-function renderOperationsQuickBar(status) {
-  const settings = status.settings || {};
-  if ($("op-keywords") && document.activeElement !== $("op-keywords")) {
-    $("op-keywords").value = (settings.keywords || []).join(", ");
-  }
-  if ($("op-source") && document.activeElement !== $("op-source")) {
-    const src = (settings.sources && settings.sources[0]) || "recommend";
-    $("op-source").value = src;
-  }
-  if ($("op-max-replies") && document.activeElement !== $("op-max-replies")) {
-    $("op-max-replies").value = settings.max_replies_per_video ?? 2;
-  }
-  const policyEnabled = status.policy?.enabled === true;
-  const hasActiveRound = Boolean(status.active_round || (status.rounds && status.rounds.length) || (status.state === "running" && !policyEnabled));
-
-  const toggleBtn = $("op-toggle-auto");
-  if (toggleBtn) {
-    toggleBtn.textContent = policyEnabled ? "停止自主运营" : "开启自主运营";
-    toggleBtn.className = policyEnabled ? "danger" : "primary";
-    toggleBtn.title = policyEnabled ? "点击关闭后台周期性自主运营" : "点击开启后台周期性自主运营";
-  }
-
-  const stopRoundBtn = $("op-stop-round");
-  if (stopRoundBtn) {
-    stopRoundBtn.disabled = !hasActiveRound;
-    stopRoundBtn.title = hasActiveRound ? "点击中止当前正在执行的这一轮运营任务" : "当前无正在运行的轮次";
-  }
-
-  const previewBtn = $("op-preview-round");
-  if (previewBtn) {
-    previewBtn.disabled = hasActiveRound;
-    previewBtn.textContent = hasActiveRound ? "轮次执行中…" : "单轮运营预览";
-  }
-}
-
-async function saveOperationsQuickConfig() {
-  const rawKw = $("op-keywords")?.value || "";
-  const keywords = rawKw
-    .split(/[,，\n]/)
-    .map(k => k.trim())
-    .filter(k => k.length > 0)
-    .slice(0, 20);
-  const source = $("op-source")?.value || "recommend";
-  const maxReplies = parseInt($("op-max-replies")?.value || "2", 10);
-
-  const current = currentAutomationStatus?.settings || {};
-  const payload = {
-    ...current,
-    keywords,
-    sources: [source],
-    max_replies_per_video: Math.max(0, Math.min(20, maxReplies)),
-  };
-  delete payload.comment_handoff_enabled;
-
-  try {
-    await api("/api/automation/settings", { method: "PUT", body: payload });
-    notice("运营关键词与来源设置已保存。");
-    await updatePermissionCapsule();
-  } catch (err) {
-    notice(err.message, true);
-  }
-}
-
-if ($("permission-capsule")) $("permission-capsule").onclick = jumpToPermissionMatrix;
-if ($("op-permission-capsule-btn")) $("op-permission-capsule-btn").onclick = jumpToPermissionMatrix;
-if ($("matrix-save")) $("matrix-save").onclick = () => savePermissionMatrix({ silent: false });
-
-const matrixContainer = $("operations-permission-matrix");
-if (matrixContainer) {
-  matrixContainer.addEventListener("change", () => {
-    triggerMatrixAutoSave();
-  });
-  matrixContainer.addEventListener("input", (e) => {
-    matrixUserInteractingUntil = Date.now() + 5000;
-    if (e.target.type === "number") {
-      clearTimeout(matrixSaveTimeout);
-      matrixSaveTimeout = setTimeout(() => {
-        savePermissionMatrix({ silent: true }).catch(console.error);
-      }, 600);
-    }
-  });
-  matrixContainer.addEventListener("focusin", () => {
-    matrixUserInteractingUntil = Date.now() + 5000;
-  });
-}
-if ($("op-save-quick-config")) $("op-save-quick-config").onclick = saveOperationsQuickConfig;
-if ($("op-preview-round")) {
-  $("op-preview-round").onclick = async () => {
-    try {
-      await api("/api/automation/round", { method: "POST", body: { preview: true } });
-      notice("单轮运营预览已排队启动，候选将存为待审核草稿。");
-      await automationPanel.refresh();
-      await updatePermissionCapsule();
-    } catch (e) {
-      notice(e.message, true);
-    }
-  };
-}
-if ($("op-toggle-auto")) {
-  $("op-toggle-auto").onclick = async () => {
-    try {
-      const isEnabled = currentAutomationStatus?.policy?.enabled === true;
-      const target = !isEnabled;
-      await api("/api/automation/enable", { method: "POST", body: { enabled: target } });
-      notice(target ? "自主运营已开启。" : "自主运营已停止。");
-      await automationPanel.refresh();
-      await updatePermissionCapsule();
-    } catch (e) {
-      notice(e.message, true);
-    }
-  };
-}
-if ($("op-stop-round")) {
-  $("op-stop-round").onclick = async () => {
-    try {
-      await api("/api/automation/stop", { method: "POST", body: { emergency: false } });
-      notice("已停止当前运营轮次。");
-      await automationPanel.refresh();
-      await updatePermissionCapsule();
-    } catch (e) {
-      notice(e.message, true);
-    }
-  };
-}
 if ($("refresh-operations")) {
   $("refresh-operations").onclick = async () => {
     await Promise.allSettled([automationPanel.refresh(), updatePermissionCapsule()]);

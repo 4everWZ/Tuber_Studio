@@ -64,6 +64,33 @@ RESOURCES = {
 LLM_POSTS = {"apply-template", "tokenize", "v1/chat/completions", "completion"}
 
 
+def resolve_llm_resource_key(model_name: str | None, current_selected: str = "llm2b") -> str:
+    if not model_name or not isinstance(model_name, str):
+        return current_selected
+    name = model_name.strip().lower()
+    if name in {
+        "1b",
+        "llm1b",
+        "minicpm5-1b",
+        "minicpm-v-4.7-1b",
+        "minicpm-v-4_7-1b",
+        "minicpm-v-4_7-1b-dafeiyu",
+        "minicpm_v_dafeiyu",
+        "minicpm-v-4.7-1b (大肥鱼专属微调)",
+        "minicpm-v-4.7-1b (原始基线)",
+    }:
+        return "llm1b" if "llm1b" in RESOURCES else current_selected
+    if name in {"2b", "llm2b", "minicpm5-2b", "minicpm5-2b (本地默认)"}:
+        return "llm2b" if "llm2b" in RESOURCES else current_selected
+    if name in {"1bq8", "llm1bq8", "minicpm5-1b-q8_0", "minicpm5-1b-q8"}:
+        return "llm1bq8" if "llm1bq8" in RESOURCES else current_selected
+    if name in {"qwen35", "llmqwen35", "qwen3.5-2b", "qwen_qwen3.5-2b"}:
+        return "llmqwen35" if "llmqwen35" in RESOURCES else current_selected
+    if name in {"gemma4e2b", "gemma4-e2b", "gemma-4-e2b-it", GEMMA_KEY}:
+        return GEMMA_KEY if GEMMA_KEY in RESOURCES else current_selected
+    return current_selected
+
+
 def resource_cache_type(key: str, configured: str) -> str | None:
     if not RESOURCES[key].model:
         return None
@@ -834,6 +861,24 @@ class InferenceBroker:
 
         self._persist_configuration(update)
 
+    def _persist_selected(self, key):
+        def update(data):
+            alias = RESOURCES[key].alias or key
+            if self.configuration_path is not None:
+                data["model"] = alias
+                return
+            profile = data.setdefault("inference_broker", {})
+            if not isinstance(profile, dict):
+                raise ValueError("Invalid inference broker configuration")
+            profile["model"] = alias
+            llm = data.setdefault("llm", {})
+            if not isinstance(llm, dict):
+                raise ValueError("Invalid language model configuration")
+            if llm.get("kind", "llama_cpp") == "llama_cpp":
+                llm["model"] = alias
+
+        self._persist_configuration(update)
+
     async def _restore(self, residents, active):
         await self._establish_residents(residents)
         self.active = active if active in residents else None
@@ -898,6 +943,25 @@ class InferenceBroker:
                     self.mode = mode
             except Exception:
                 raise HTTPException(503, self.error) from None
+        return await self.observe()
+
+    async def switch_model(self, key):
+        if key not in RESOURCES or not RESOURCES[key].model:
+            raise HTTPException(422, f"Unknown model key {key}")
+        if self.selected == key and self.active == key:
+            return await self.observe()
+        if self.mode != "text":
+            raise HTTPException(409, "Model switching requires text mode")
+        async with self.lock:
+            try:
+                async with self._residency_change():
+                    await asyncio.to_thread(self._validate_context, key)
+                    self.selected = key
+                    self.operations_selected = key
+                    await self._apply_mode(self.mode)
+                    self._persist_selected(key)
+            except Exception:
+                raise HTTPException(503, self.error or "Model transition failed") from None
         return await self.observe()
 
     def _require_idle_text(self):
@@ -1426,16 +1490,29 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             raise HTTPException(422, "Cache cleanup accepts only an empty object")
         return await cancellable(request, manager.clear_cache())
 
-    async def dispatch(request: Request, key: str, path: str):
+    async def dispatch(
+        request: Request,
+        key: str,
+        path: str,
+        *,
+        auto_rewrite_model: bool = False,
+        parsed_body: tuple[dict, bytes] | None = None,
+    ):
         if request.method == "GET":
-            if (key.startswith("llm") and path in {"health", "props"}) or (key == "tts" and path == "docs"):
-                return await manager.read(key, path)
+            if (key.startswith("llm") and path in {"health", "props", "models", "v1/models"}) or (
+                key == "tts" and path in {"docs", "health", ""}
+            ):
+                return await manager.read(key, path if path != "" else "docs")
             raise HTTPException(404)
         if not (
-            (key.startswith("llm") and path in LLM_POSTS | {"warmup"}) or (key == "tts" and path == "tts")
+            (key.startswith("llm") and path in LLM_POSTS | {"warmup", "chat/completions"})
+            or (key == "tts" and path in {"tts", ""})
         ):
             raise HTTPException(404)
-        body, data = await read_body(request)
+        if parsed_body is not None:
+            body, data = parsed_body
+        else:
+            body, data = await read_body(request)
         try:
             if key.startswith("llm"):
                 validate_llm_request(path, body, context_tokens=manager.context_tokens)
@@ -1445,8 +1522,15 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             raise HTTPException(422, str(error)) from None
         if body.get("stream", False) is not False or body.get("streaming_mode", False) is not False:
             raise HTTPException(422, "Only buffered inference is supported")
-        if key.startswith("llm") and body.get("model", RESOURCES[key].alias) != RESOURCES[key].alias:
-            raise HTTPException(422, "Model does not match typed resource")
+        if key.startswith("llm"):
+            expected_alias = RESOURCES[key].alias
+            if auto_rewrite_model:
+                if body.get("model") != expected_alias:
+                    body["model"] = expected_alias
+                    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            else:
+                if body.get("model", expected_alias) != expected_alias:
+                    raise HTTPException(422, "Model does not match typed resource")
         if key == "tts" and (
             not allowed_tts_reference(root, body.get("ref_audio_path")) or body.get("aux_ref_audio_paths")
         ):
@@ -1454,13 +1538,103 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
         if key == "tts":
             body["ref_audio_path"] = str(project_wav(root, body["ref_audio_path"]))
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            if path == "":
+                path = "tts"
         return await cancellable(request, manager.forward(key, path, data))
 
-    @app.api_route("/llm/{size}/{path:path}", methods=["GET", "POST"])
-    async def llm(size: str, path: str, request: Request):
-        if size not in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b"}:
+    @app.api_route("/tts", methods=["GET", "POST"])
+    async def tts_root(request: Request):
+        if request.method == "GET":
+            return await dispatch(request, "tts", "docs")
+        return await dispatch(request, "tts", "tts")
+
+    @app.api_route("/tts/{path:path}", methods=["GET", "POST"])
+    async def tts(path: str, request: Request):
+        if path in {"", "tts"}:
+            if request.method == "GET":
+                return await dispatch(request, "tts", "docs")
+            return await dispatch(request, "tts", "tts")
+        return await dispatch(request, "tts", path)
+
+    @app.api_route("/llm", methods=["GET", "POST"])
+    async def llm_root(request: Request):
+        if request.method == "GET":
+            return await manager.read(manager.selected, "health")
+        body, data = await read_body(request)
+        target_key = resolve_llm_resource_key(body.get("model"), manager.selected)
+        if manager.mode == "text" and target_key != manager.selected:
+            await manager.switch_model(target_key)
+        elif manager.mode == "live":
+            target_key = manager.selected
+        path = "v1/chat/completions" if "messages" in body else "completion"
+        return await dispatch(request, target_key, path, auto_rewrite_model=True, parsed_body=(body, data))
+
+    @app.api_route("/llm/{path:path}", methods=["GET", "POST"])
+    async def llm(path: str, request: Request):
+        first_segment = path.split("/")[0]
+        if first_segment in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b"}:
+            # Legacy typed route: /llm/{size}/{path:path}
+            subpath = path[len(first_segment) + 1 :] if len(path) > len(first_segment) else ""
+            return await dispatch(request, "llm" + first_segment, subpath, auto_rewrite_model=False)
+        # Unified direct route: /llm/v1/chat/completions, /llm/health, etc.
+        if request.method == "GET":
+            if path in {"health", "props"}:
+                return await manager.read(manager.selected, path)
+            if path in {"models", "v1/models"}:
+                return {
+                    "object": "list",
+                    "data": [
+                        {"id": RESOURCES[k].alias, "object": "model", "owned_by": "tuber-studio", "active": k == manager.selected}
+                        for k in RESOURCES
+                        if RESOURCES[k].model
+                    ],
+                }
             raise HTTPException(404)
-        return await dispatch(request, "llm" + size, path)
+        body, data = await read_body(request)
+        target_key = resolve_llm_resource_key(body.get("model"), manager.selected)
+        if manager.mode == "text" and target_key != manager.selected:
+            await manager.switch_model(target_key)
+        elif manager.mode == "live":
+            target_key = manager.selected
+        normalized_path = "v1/chat/completions" if path in {"chat/completions", "v1/chat/completions"} else path
+        return await dispatch(request, target_key, normalized_path, auto_rewrite_model=True, parsed_body=(body, data))
+
+    @app.api_route("/v1/chat/completions", methods=["POST"])
+    @app.api_route("/chat/completions", methods=["POST"])
+    async def openai_chat_completions(request: Request):
+        body, data = await read_body(request)
+        target_key = resolve_llm_resource_key(body.get("model"), manager.selected)
+        if manager.mode == "text" and target_key != manager.selected:
+            await manager.switch_model(target_key)
+        elif manager.mode == "live":
+            target_key = manager.selected
+        return await dispatch(request, target_key, "v1/chat/completions", auto_rewrite_model=True, parsed_body=(body, data))
+
+    @app.get("/v1/models")
+    @app.get("/models")
+    async def list_models():
+        return {
+            "object": "list",
+            "data": [
+                {"id": RESOURCES[k].alias, "object": "model", "owned_by": "tuber-studio", "active": k == manager.selected}
+                for k in RESOURCES
+                if RESOURCES[k].model
+            ],
+        }
+
+    @app.post("/model")
+    @app.post("/select")
+    async def select_model(request: Request):
+        body, _ = await read_body(request)
+        model_name = body.get("model") or body.get("key")
+        if not model_name or not isinstance(model_name, str):
+            raise HTTPException(422, "Model name or key is required")
+        target_key = resolve_llm_resource_key(model_name, manager.selected)
+        if target_key not in RESOURCES or not RESOURCES[target_key].model:
+            raise HTTPException(422, f"Target model '{model_name}' not available")
+        if manager.mode != "text":
+            raise HTTPException(409, "Model switching requires text mode")
+        return await cancellable(request, manager.switch_model(target_key))
 
     @app.api_route("/vlm/gemma4e2b/{path:path}", methods=["GET", "POST"])
     async def vision(path: str, request: Request):
@@ -1485,10 +1659,6 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
         if body.get("model", RESOURCES[GEMMA_KEY].alias) != RESOURCES[GEMMA_KEY].alias:
             raise HTTPException(422, "Model does not match typed resource")
         return await cancellable(request, manager.forward(GEMMA_KEY, path, data))
-
-    @app.api_route("/tts/{path:path}", methods=["GET", "POST"])
-    async def tts(path: str, request: Request):
-        return await dispatch(request, "tts", path)
 
     return app
 

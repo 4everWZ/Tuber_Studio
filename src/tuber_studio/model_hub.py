@@ -40,46 +40,58 @@ def _default_models_dir() -> Path:
     return models_dir
 
 
-def is_full_local_deployment(settings_or_data) -> bool:
-    """Determine if the deployment is full local on the current host.
-
-    Returns False if deployment is remote (e.g. Jetson Orin Nano, remote Docker container),
-    or using cloud API (openai_compatible). Returns True only when inference runs
-    locally on this machine (llama_cpp with loopback address).
+def get_deployment_category(settings_or_data) -> str:
+    """Categorize the deployment into:
+    - 'local_file': Running local llama.cpp on this host machine using local model weights file
+    - 'self_hosted': Dedicated inference node / Jetson / Docker / external local server (e.g. port 9012 or LAN IP)
+    - 'cloud_api': Cloud / remote commercial API (openai_compatible with external domain)
     """
     if hasattr(settings_or_data, "data"):
         data = settings_or_data.data
     elif isinstance(settings_or_data, dict):
         data = settings_or_data
     else:
-        return False
+        return "local_file"
 
-    broker = data.get("inference_broker", {})
     llm = data.get("llm", {})
-
-    # 1. If inference_broker explicitly declared remote deployment (e.g. Jetson docker node)
-    if broker.get("deployment") == "remote":
-        return False
-
-    # 2. If LLM engine is not llama_cpp (e.g. cloud API openai_compatible, demo)
-    if llm.get("kind") != "llama_cpp":
-        return False
-
-    # 3. Check endpoint host address
+    broker = data.get("inference_broker", {})
     base_url = (llm.get("base_url") or broker.get("base_url") or "").strip()
-    if base_url:
-        from urllib.parse import urlsplit
+    kind = llm.get("kind", "llama_cpp")
 
+    if kind == "openai_compatible":
+        if not base_url:
+            return "cloud_api"
+        from urllib.parse import urlsplit
         try:
             parsed = urlsplit(base_url)
             host = (parsed.hostname or "").lower()
-            # If pointing to an external machine/IP (e.g. 100.95.31.18 or custom server), it's not local
-            if host and host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-                return False
+            port = parsed.port
+            if port in {9012, 8000, 11434, 9013, 9010, 9014, 9015, 9030} or host in {"127.0.0.1", "localhost", "0.0.0.0"} or host.startswith(("192.168.", "10.", "100.")):
+                return "self_hosted"
+            return "cloud_api"
         except Exception:
-            return False
+            return "cloud_api"
 
-    return True
+    if kind == "llama_cpp":
+        if broker.get("deployment") == "remote":
+            return "self_hosted"
+        if base_url:
+            from urllib.parse import urlsplit
+            try:
+                parsed = urlsplit(base_url)
+                host = (parsed.hostname or "").lower()
+                if host and host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+                    return "self_hosted"
+            except Exception:
+                pass
+        return "local_file"
+
+    return "local_file"
+
+
+def is_full_local_deployment(settings_or_data) -> bool:
+    """Determine if the deployment is full local on the current host."""
+    return get_deployment_category(settings_or_data) == "local_file"
 
 
 def is_dafeiyu_model(model_name: str | None) -> bool:
@@ -107,7 +119,7 @@ def is_model_installed(models_dir: Path | None = None) -> bool:
     return size >= 600 * 1024 * 1024
 
 
-def get_model_status(models_dir: Path | None = None) -> dict:
+def get_model_status(models_dir: Path | None = None, settings_or_data=None) -> dict:
     """Return the current installation and download status of the fine-tuned model."""
     target_dir = models_dir or _default_models_dir()
     model_path = target_dir / DEFAULT_MODEL_FILENAME
@@ -118,11 +130,24 @@ def get_model_status(models_dir: Path | None = None) -> dict:
 
     current_size = model_path.stat().st_size if model_path.is_file() else 0
 
+    category = get_deployment_category(settings_or_data) if settings_or_data else "local_file"
+    is_full_local = category == "local_file"
+
+    llm = {}
+    if hasattr(settings_or_data, "data"):
+        llm = settings_or_data.data.get("llm", {})
+    elif isinstance(settings_or_data, dict):
+        llm = settings_or_data.get("llm", {})
+
     return {
         "model_name": DEFAULT_MODEL_NAME,
         "filename": DEFAULT_MODEL_FILENAME,
         "repo_id": DEFAULT_REPO_ID,
         "installed": installed,
+        "is_full_local": is_full_local,
+        "deployment_category": category,
+        "endpoint_url": (llm.get("base_url") or "").strip(),
+        "configured_model": (llm.get("model") or "").strip(),
         "file_path": str(model_path.resolve()) if installed else None,
         "file_size": current_size,
         "expected_size": EXPECTED_MODEL_SIZE,
