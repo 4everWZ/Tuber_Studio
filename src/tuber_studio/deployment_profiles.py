@@ -25,7 +25,7 @@ def business_configuration(current, node_url, *, mode="text"):
     )
     operations = {
         **common,
-        "base_url": base + "/llm/gemma4e2b",
+        "base_url": base + "/llm",
         "model": "Gemma4-E2B",
         "temperature": 0.2,
         "summary_temperature": 0.2,
@@ -36,7 +36,7 @@ def business_configuration(current, node_url, *, mode="text"):
     }
     live = {
         **common,
-        "base_url": base + "/llm/2b",
+        "base_url": base + "/llm",
         "model": "MiniCPM5-2B",
         "temperature": 1.0,
         "summary_temperature": 1.0,

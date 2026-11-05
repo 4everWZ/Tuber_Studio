@@ -634,6 +634,12 @@ def create_app(
         llm_url = (payload.get("llm_base_url") or payload.get("llm_url") or "").strip().rstrip("/")
         tts_url = (payload.get("tts_base_url") or payload.get("tts_url") or "").strip().rstrip("/")
         api_key = payload.get("llm_key")
+        token_path = runtime.settings.runtime / "inference-token"
+        infer_token = (
+            payload.get("inference_token")
+            or getattr(runtime.settings, "inference_token", None)
+            or (token_path.read_text(encoding="utf-8").strip() if token_path.exists() else None)
+        )
 
         result = {
             "llm": {"ok": False, "url": llm_url, "latency_ms": None, "detail": "未配置", "status_code": None},
@@ -645,6 +651,9 @@ def create_app(
                 t0 = time.perf_counter()
                 try:
                     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+                    if not api_key and infer_token:
+                        headers["X-Tuber-Inference-Key"] = infer_token
+                        headers["Authorization"] = f"Bearer {infer_token}"
                     test_url = llm_url if llm_url.endswith("/v1") else (llm_url + "/v1/models")
                     res = await client.get(test_url, headers=headers)
                     elapsed = round((time.perf_counter() - t0) * 1000)
@@ -655,7 +664,7 @@ def create_app(
                         "status_code": res.status_code,
                         "latency_ms": elapsed,
                         "detail": (
-                            f"HTTP {res.status_code} ({elapsed}ms)"
+                            f"就绪 ({elapsed}ms)"
                             if res.status_code == 200
                             else (
                                 "需要提供正确的 API Key"
@@ -674,12 +683,16 @@ def create_app(
             if tts_url:
                 t0 = time.perf_counter()
                 try:
+                    tts_headers = {}
+                    if infer_token:
+                        tts_headers["X-Tuber-Inference-Key"] = infer_token
+                        tts_headers["Authorization"] = f"Bearer {infer_token}"
                     check_url = tts_url
                     if tts_url.rstrip("/").endswith("/tts"):
                         check_url = tts_url.rstrip("/") + "/docs"
-                    res = await client.get(check_url)
+                    res = await client.get(check_url, headers=tts_headers)
                     if res.status_code == 404 and check_url != tts_url:
-                        res = await client.get(tts_url)
+                        res = await client.get(tts_url, headers=tts_headers)
                     elapsed = round((time.perf_counter() - t0) * 1000)
                     result["tts"] = {
                         "ok": res.status_code in (200, 404),
