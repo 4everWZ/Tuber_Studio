@@ -4,12 +4,15 @@ import { $, $$, formatBytes, formatDuration } from "./modules/core.js";
 import { api as baseApi } from "./modules/api.js";
 import {
   initInferenceProvidersUI as initProvidersUI,
-  renderTTSFields,
   readProviderPayload,
   loadLocalModelsDropdown as loadLocalModels,
   checkDafeiyuModelStatus as checkDafeiyuStatus,
-  syncModelSelectWithInput,
-  updateMultimodalBadge,
+  renderProviderForm,
+  applySettings,
+  loadSettings,
+  renderVoicePreview,
+  voiceAvailability,
+  checkProviderConnections,
 } from "./modules/providers.js";
 import {
   initOperationsModule,
@@ -31,12 +34,19 @@ import {
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js";
+import {
+  renderLiveFeatures,
+  renderControls,
+  renderInference,
+  renderServiceStatusCapsule,
+  initLiveModule,
+} from "./modules/live.js";
 
 const api = (path, options = {}) => baseApi(path, options, showLogin);
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
 const loadLocalModelsDropdown = () => loadLocalModels(api);
 const checkDafeiyuModelStatus = () => checkDafeiyuStatus(api);
-const initInferenceProvidersUI = () => initProvidersUI(model, api, notice, busy, safeMessage, renderProviderForm);
+const initInferenceProvidersUI = () => initProvidersUI(model, api, notice, busy, safeMessage, () => renderProviderForm(model, renderLiveFeatures));
 const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
 
 window.$ = $;
@@ -70,10 +80,12 @@ let commentsModule = null;
 let dynamicsModule = null;
 let characterStudio = null;
 let maintenanceModule = null;
+let liveModule = null;
 
 const refreshComments = async () => commentsModule?.refreshComments();
 const refreshDynamics = async () => dynamicsModule?.refreshDynamics();
 const refreshThreadContext = async () => commentsModule?.refreshThreadContext();
+const refreshLive = async () => liveModule?.refreshLive();
 
 const commentContinuation = new OperationContinuationView($("comment-continuation"), api, notice, refreshComments);
 const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
@@ -204,10 +216,10 @@ async function busy(button, action) {
   } finally {
     button.disabled = wasDisabled;
     button.removeAttribute("aria-busy");
-    if (model.status) renderControls();
+    if (model.status) renderControls(model);
     if (model.status?.context) renderContext(model.status.context);
     if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
-    if (button.id === "preview-submit") renderVoicePreview();
+    if (button.id === "preview-submit") renderVoicePreview(model);
     if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) commentsModule?.renderDraft();
     if (["approve-dynamic", "reject-dynamic", "publish-dynamic"].includes(button.id)) dynamicsModule?.renderDynamicPost();
     if (["save-dynamic-policy", "stop-dynamics", "evaluate-dynamics"].includes(button.id)) dynamicsModule?.renderDynamicPolicy();
@@ -223,7 +235,12 @@ function showLogin() {
 }
 
 async function enterWorkspace() {
-  await Promise.all([loadSettings(), loadVoices(), loadAssets(), characterStudio?.loadCharacters()]);
+  await Promise.all([
+    loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus }),
+    loadVoices(),
+    loadAssets(),
+    characterStudio?.loadCharacters()
+  ]);
   model.authenticated = true;
   $("login").hidden = true;
   $("workspace").hidden = false;
@@ -245,108 +262,17 @@ function connectAdmin() {
   };
 }
 
-function renderControls() {
-  const status = model.status || { state: "stopped" };
-  const running = status.state === "live";
-  $("start").disabled = running;
-  $("pause").disabled = !running;
-  $("stop").disabled = status.state === "stopped";
-  renderModeControls(status.inference);
-}
-
-function liveEnabled() { return model.settings?.features?.live_enabled === true; }
-function resourcesTransitioning() {
-  const inference = model.status?.inference;
-  return !!(model.modeSwitch || (inference?.operation?.mode != null && inference.operation.mode !== inference.mode));
-}
-function localVoiceId() {
-  return model.settings?.tts?.voice || model.status?.character?.voice_profile_id || "dafeiyu";
-}
-function localEngineLabel() {
-  return model.settings?.tts?.kind === "gpt_sovits" ? "GPT-SoVITS" : (model.settings?.tts?.kind || "未配置");
-}
-function renderLiveFeatures() {
-  const enabled = liveEnabled();
-  const liveNotice = $("live-feature-notice");
-  if (liveNotice) liveNotice.hidden = enabled;
-  const startBtn = $("start");
-  if (startBtn && !enabled) startBtn.title = "直播特性未启用";
-}
-
 function renderStatus(status) {
   model.status = status;
-  renderServiceStatusCapsule(status);
+  renderServiceStatusCapsule(status, node);
   renderCharacterImage(model);
-  renderControls();
+  renderControls(model);
   if (status.context) renderContext(status.context);
-  if (status.inference) renderInference(status.inference);
-  renderVoicePreview();
+  if (status.inference) renderInference(status.inference, model, describe);
+  renderVoicePreview(model);
   if ($("character-version")) {
     $("character-version").title = `当前运行角色：${status.character?.name || "—"} v${status.character?.version ?? "—"}`;
   }
-}
-
-function renderServiceStatusCapsule(status) {
-  const capsule = $("service-status-capsule");
-  if (!capsule) return;
-  const inference = status.inference || {};
-  const tts = inference.tts || {};
-  const isOnline = inference.remote_reachable !== false;
-  capsule.className = `service-status-capsule ${isOnline ? "online" : "offline"}`;
-  const dot = capsule.querySelector(".status-dot") || node("span", "", "status-dot");
-  const text = capsule.querySelector(".status-text") || node("span", "", "status-text");
-  const hostLabel = inference.host ? ` [${inference.host}]` : "";
-  const ttsState = tts.resident ? "TTS 已就绪" : "TTS 待命卸载 (省显存)";
-  text.textContent = isOnline ?
-    `🚀 节点在线${hostLabel} · 模型: ${inference.active_model || inference.model || "MiniCPM-V-4.7-1B"} · ${ttsState}` :
-    `⚠️ 节点离线${hostLabel} · 请检查 9012 Broker 服务`;
-  if (!capsule.contains(dot)) capsule.prepend(dot);
-  if (!capsule.contains(text)) capsule.append(text);
-}
-
-function resourceMode(inference) {
-  return model.modeSwitch?.mode || inference?.operation?.mode || inference?.mode || "text_only";
-}
-function resourceModeName(mode) {
-  return { live: "直播优先", text_only: "纯文本节约" }[mode] || mode || "未报告";
-}
-function resourceName(key) {
-  return { tts: "TTS 服务", vlm: "视觉多模态", whisper: "语音识别" }[key] || key;
-}
-function inferenceResidents(inference) {
-  const residents = [];
-  if (inference.tts?.resident) residents.push("TTS 语音");
-  if (inference.vlm?.loaded) residents.push("视觉多模态");
-  return residents.length ? residents.join(" · ") : "当前仅驻留文本大模型";
-}
-function inferenceLabel(inference) {
-  if (inference.kind === "llama_cpp") return "本地 llama.cpp / Jetson 原生";
-  if (inference.kind === "openai_compatible") return "远程 OpenAI 兼容 Broker";
-  return inference.kind || "—";
-}
-
-function renderModeControls(inference = {}) {
-  const currentMode = resourceMode(inference);
-  const transitioning = resourcesTransitioning();
-  const btnLive = $("mode-live");
-  const btnText = $("mode-text");
-  if (btnLive && btnText) {
-    btnLive.classList.toggle("selected", currentMode === "live");
-    btnText.classList.toggle("selected", currentMode === "text_only");
-    btnLive.disabled = transitioning || currentMode === "live";
-    btnText.disabled = transitioning || currentMode === "text_only";
-  }
-}
-
-function renderInference(inference) {
-  describe($("inference-details"), [
-    ["运行架构", inferenceLabel(inference)],
-    ["活跃模型", inference.active_model || inference.model || "—"],
-    ["资源模式", resourceModeName(resourceMode(inference))],
-    ["驻留资源", inferenceResidents(inference)],
-    ["端点状态", inference.remote_reachable !== false ? "正常直通" : "不可达 / 离线"],
-  ]);
-  renderModeControls(inference);
 }
 
 function tokenCount(value) {
@@ -383,44 +309,6 @@ function renderContext(context) {
     if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !usable;
     generate.title = usable ? "" : error || "等待实际上下文能力验证";
   }
-}
-
-async function refreshLive() {
-  const results = await Promise.all([api("/api/jobs?limit=50"), api("/api/events?limit=50")]);
-  const jobs = list(results[0]);
-  renderJobs($("overview-jobs"), jobs.slice(0, 8));
-  renderJobs($("live-jobs"), jobs, true);
-  const events = list(results[1]);
-  const tbody = $("events");
-  if (!tbody) return;
-  if (!events.length) return empty(tbody, 5, "暂无事件。在上方调试台注入一条弹幕。");
-  tbody.replaceChildren();
-  events.forEach(event => {
-    const payload = event.payload || event;
-    const row = node("tr");
-    cell(row, time(payload.timestamp || event.created_at), event.event_id || event.platform_event_id || event.id);
-    cell(row, payload.display_name || "匿名观众", `${payload.platform || "—"} · ${payload.platform_user_id || "未知 ID"}`);
-    cell(row, label(payload.type));
-    cell(row, payload.text || "—");
-    const duplicateCount = event.duplicate_count || event.duplicates || 0;
-    cell(row, badge(event.status), event.reason || event.error || (duplicateCount ? `重复 ${duplicateCount} 次` : ""));
-    tbody.append(row);
-  });
-}
-
-function renderJobs(tbody, jobs, withId = false) {
-  if (!tbody) return;
-  if (!jobs.length) return empty(tbody, 5, "暂无任务。注入事件后可查看处理状态。");
-  tbody.replaceChildren();
-  jobs.forEach(job => {
-    const row = node("tr");
-    cell(row, time(job.created_at), withId ? job.id : "");
-    cell(row, `${job.character_id || "—"} · v${job.character_version ?? "—"}`);
-    cell(row, job.text || job.spoken_text || "—");
-    cell(row, badge(job.status));
-    cell(row, job.llm_ms != null || job.tts_ms != null ? `${Math.round(job.llm_ms || 0)} / ${Math.round(job.tts_ms || 0)} ms` : "—", job.error || job.reason || "");
-    tbody.append(row);
-  });
 }
 
 async function loadAssets() {
@@ -486,7 +374,7 @@ async function loadVoices() {
   select.replaceChildren();
   if (!model.voices.length) {
     if (tbody) empty(tbody, 4, "暂无可用音色。配置声音 Provider 后刷新。");
-    renderVoicePreview();
+    renderVoicePreview(model);
     return;
   }
   model.voices.forEach(voice => {
@@ -503,7 +391,7 @@ async function loadVoices() {
     select.append(option);
   });
   if (model.voices.some(voice => voice.id === previous)) select.value = previous;
-  renderVoicePreview();
+  renderVoicePreview(model);
 }
 
 function safeMessage(message) {
@@ -513,156 +401,6 @@ function safeMessage(message) {
     .replace(/(bili_jct=)[^&;\s]+/gi, "$1[已隐藏]")
     .replace(/(token=)[^&;\s]+/gi, "$1[已隐藏]")
     .replace(/(api[_-]?key=)[^&;\s]+/gi, "$1[已隐藏]");
-}
-
-function publicSettings(value, key = "") {
-  if (key === "credentials" && value != null) return "[已隐藏]";
-  if (typeof value === "string") {
-    if (/api[_-]?key|secret|password|authorization|(?:^|_)token$/i.test(key)) return "[已隐藏]";
-    return safeMessage(value).replace(/([#?&](?:token|key)=)[^&#\s]+/gi, "$1[已隐藏]");
-  }
-  if (Array.isArray(value)) return value.map(item => publicSettings(item, key));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
-  }
-  return value;
-}
-
-function clearProviderSecrets() {
-  ["llm", "tts"].forEach(kind => {
-    const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
-    if (el) el.value = "";
-    if (clear) clear.checked = false;
-  });
-}
-
-function providerFormFromSettings(settings) {
-  const llm = settings.llm || {}, tts = settings.tts || {};
-  const fields = {
-    "llm-kind": llm.kind || "llama_cpp",
-    "llm-base-url": llm.base_url || "",
-    "llm-model": llm.model || "",
-    "llm-context-tokens": llm.context_tokens ?? 131072,
-    "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
-    "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
-    "tts-kind": tts.kind || "gpt_sovits",
-    "tts-base-url": tts.base_url || "",
-    "tts-model": tts.model || "",
-    "tts-voice": tts.voice || "",
-  };
-  Object.entries(fields).forEach(([id, value]) => {
-    const el = $(id);
-    if (el) el.value = String(value);
-  });
-  if ($("llm-live-output-budget")) {
-    $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
-  }
-  clearProviderSecrets();
-  model.providersDirty = false;
-  syncModelSelectWithInput();
-  const isLocal = (llm.kind || "llama_cpp") === "llama_cpp" && (!llm.base_url || llm.base_url.includes("127.0.0.1") || llm.base_url.includes("localhost"));
-  const btnLocal = $("btn-mode-local"), btnRemote = $("btn-mode-remote");
-  if (btnLocal && btnRemote) {
-    btnLocal.classList.toggle("active", isLocal);
-    btnRemote.classList.toggle("active", !isLocal);
-  }
-}
-
-function renderProviderForm() {
-  if ($("provider-fields")) $("provider-fields").disabled = !!model.providersSaving;
-  if ($("save-providers")) {
-    $("save-providers").disabled = !!model.providersSaving;
-    $("save-providers").setAttribute("aria-busy", String(!!model.providersSaving));
-  }
-  if ($("reset-providers")) $("reset-providers").disabled = !!model.providersSaving || !model.providersDirty;
-  if ($("check-providers-settings")) $("check-providers-settings").disabled = !!model.providersSaving;
-  if ($("providers-dirty")) {
-    $("providers-dirty").textContent = model.providersSaving ? "正在保存并应用…" :
-      model.providersDirty ? "有未保存修改" :
-      model.settings ? "已保存配置" : "正在读取已保存配置…";
-  }
-  const external = $("llm-kind")?.value === "openai_compatible", demo = $("llm-kind")?.value === "demo";
-  ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
-    const el = $(id);
-    if (el) el.disabled = demo || !!model.providersSaving;
-  });
-  if ($("llm-base-url")) $("llm-base-url").required = !demo;
-  if ($("llm-model")) $("llm-model").required = !demo;
-  if ($("llm-probe-help")) $("llm-probe-help").hidden = !external;
-  if ($("llm-capacity-help")) {
-    $("llm-capacity-help").textContent = external ?
-      "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
-      "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
-  }
-  renderTTSFields(model);
-  renderLiveFeatures();
-  updateMultimodalBadge();
-}
-
-function applySettings(settings, fillForm = false) {
-  model.settings = { ...model.settings, ...settings };
-  settings = model.settings;
-  if ($("settings-json")) $("settings-json").textContent = JSON.stringify(publicSettings(settings), null, 2);
-  if (fillForm || !model.providersDirty) providerFormFromSettings(settings);
-  renderProviderForm();
-  renderVoicePreview();
-  if (model.status) renderStatus(model.status);
-  let url = model.settings.overlay_url || "/overlay";
-  try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
-  if ($("overlay-url")) $("overlay-url").value = url;
-  if ($("open-overlay")) $("open-overlay").href = url;
-}
-
-async function loadSettings() {
-  applySettings(await api("/api/settings"));
-}
-
-function voiceAvailability(voice) {
-  const provider = voice?.provider || voice?.kind;
-  if (provider === "gpt_sovits") {
-    const tts = model.settings?.tts;
-    if (tts?.kind !== "gpt_sovits") return "当前语音来源未选择 GPT-SoVITS / Genie";
-    if (!tts?.base_url) return "请先配置语音服务 Base URL";
-    return "";
-  }
-  if (provider === "openai_compatible" && (model.settings?.tts?.kind !== "openai_compatible" || !model.settings?.tts?.model || !model.settings?.tts?.voice)) {
-    return "请先配置外部语音 API 的模型和 Voice ID";
-  }
-  if (!["gpt_sovits", "openai_compatible", "prerecorded"].includes(provider)) return "此语音 Provider 尚未准入";
-  return "";
-}
-
-function renderVoicePreview() {
-  const select = $("preview-voice");
-  if (!select) return;
-  [...select.options].forEach(option => {
-    const voice = model.voices.find(item => item.id === option.value);
-    const reason = voiceAvailability(voice);
-    option.disabled = !!reason;
-    option.textContent = `${voice?.name || option.value}${reason ? "（暂不可用）" : ""}`;
-  });
-  const selected = model.voices.find(voice => voice.id === select.value);
-  const reason = selected ? voiceAvailability(selected) : "暂无可用音色";
-  const button = $("preview-submit");
-  if (button && button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
-  if ($("voice-preview-help")) {
-    $("voice-preview-help").textContent = reason || ((selected?.provider || selected?.kind) === "gpt_sovits" ?
-      `本地引擎：${localEngineLabel()}，仅使用服务选定音色。点击生成后再播放；不会启动直播或切换资源模式。` :
-      "预录和已配置的外部语音 API 可独立试听；不会启动直播、切换资源模式或替换角色音色。");
-  }
-}
-
-async function checkProviderConnections(output) {
-  const el = $(output);
-  if (!el) return;
-  el.hidden = false;
-  el.textContent = "检查已保存配置的连接中…";
-  try {
-    el.textContent = JSON.stringify(publicSettings(await api("/api/providers/check", { method: "POST" })), null, 2);
-  } catch (error) {
-    el.textContent = safeMessage(error.message);
-    throw error;
-  }
 }
 
 function dateTime(value) {
@@ -816,7 +554,7 @@ dynamicsModule = initDynamicsModule(model, {
   setBadge,
   tokenCount,
   safeMessage,
-  publicSettings,
+  publicSettings: window.publicSettings,
   memePreview: window.memePreview,
   dynamicContinuation,
   dynamicDecisionContinuation,
@@ -833,6 +571,21 @@ maintenanceModule = initMaintenanceModule(model, {
   describe,
   dateTime,
   refreshCommentsFn: refreshComments,
+});
+
+liveModule = initLiveModule(model, {
+  api,
+  busy,
+  notice,
+  node,
+  cell,
+  time,
+  label,
+  badge,
+  empty,
+  renderStatusFn: renderStatus,
+  renderVoicePreviewFn: () => renderVoicePreview(model),
+  loadSettingsFn: () => loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus }),
 });
 
 initOperationsModule(api, accountPanel, automationPanel);
@@ -854,14 +607,14 @@ $("providers-form")?.addEventListener("submit", event => {
   busy(event.submitter, async () => {
     const payload = readProviderPayload(model);
     model.providersSaving = true;
-    renderProviderForm();
+    renderProviderForm(model, renderLiveFeatures);
     try {
       if ($("providers-save-state")) {
         $("providers-save-state").classList.remove("error-text");
         $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
       }
       const result = await api("/api/settings/providers", { method: "PUT", body: payload });
-      applySettings(result, true);
+      applySettings(result, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
       let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
       if (result.auto_download_triggered) {
         message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
@@ -880,22 +633,21 @@ $("providers-form")?.addEventListener("submit", event => {
       notice(message, true);
     } finally {
       model.providersSaving = false;
-      renderProviderForm();
+      renderProviderForm(model, renderLiveFeatures);
     }
   });
 });
 
 $("reset-providers")?.addEventListener("click", () => {
   if (!model.settings || model.providersSaving) return;
-  providerFormFromSettings(model.settings);
-  renderProviderForm();
+  applySettings(model.settings, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
   if ($("providers-save-state")) {
     $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。";
     $("providers-save-state").classList.remove("error-text");
   }
 });
 
-$("check-providers-settings")?.addEventListener("click", () => busy($("check-providers-settings"), () => checkProviderConnections("providers-check-result")));
+$("check-providers-settings")?.addEventListener("click", () => busy($("check-providers-settings"), () => checkProviderConnections("providers-check-result", api)));
 
 $("clone-form")?.addEventListener("submit", event => {
   event.preventDefault();
@@ -910,12 +662,12 @@ $("clone-form")?.addEventListener("submit", event => {
   });
 });
 
-$("preview-voice")?.addEventListener("change", renderVoicePreview);
+$("preview-voice")?.addEventListener("change", () => renderVoicePreview(model));
 $("preview-form")?.addEventListener("submit", event => {
   event.preventDefault();
   busy(event.submitter, async () => {
     const voice = model.voices.find(item => item.id === $("preview-voice")?.value);
-    const unavailable = voiceAvailability(voice);
+    const unavailable = voiceAvailability(voice, model);
     if (unavailable) throw new Error(unavailable);
     if ($("preview-state")) $("preview-state").textContent = "等待合成…";
     $("preview-audio")?.pause();

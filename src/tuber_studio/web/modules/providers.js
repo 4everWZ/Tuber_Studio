@@ -599,3 +599,154 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
   checkDafeiyuModelStatus(api);
   updateMultimodalBadge();
 }
+
+export function publicSettings(value, key = "") {
+  if (key === "credentials" && value != null) return "[已隐藏]";
+  if (typeof value === "string") {
+    if (/api[_-]?key|secret|password|authorization|(?:^|_)token$/i.test(key)) return "[已隐藏]";
+    return safeMessage(value).replace(/([#?&](?:token|key)=)[^&#\s]+/gi, "$1[已隐藏]");
+  }
+  if (Array.isArray(value)) return value.map(item => publicSettings(item, key));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
+  }
+  return value;
+}
+
+export function clearProviderSecrets() {
+  ["llm", "tts"].forEach(kind => {
+    const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
+    if (el) el.value = "";
+    if (clear) clear.checked = false;
+  });
+}
+
+export function providerFormFromSettings(settings, model) {
+  const llm = settings.llm || {}, tts = settings.tts || {};
+  const fields = {
+    "llm-kind": llm.kind || "llama_cpp",
+    "llm-base-url": llm.base_url || "",
+    "llm-model": llm.model || "",
+    "llm-context-tokens": llm.context_tokens ?? 131072,
+    "llm-native-tokens": llm.native_context_tokens ?? model?.status?.context?.native_tokens ?? 131072,
+    "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
+    "tts-kind": tts.kind || "gpt_sovits",
+    "tts-base-url": tts.base_url || "",
+    "tts-model": tts.model || "",
+    "tts-voice": tts.voice || "",
+  };
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = $(id);
+    if (el) el.value = String(value);
+  });
+  if ($("llm-live-output-budget")) {
+    $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
+  }
+  clearProviderSecrets();
+  if (model) model.providersDirty = false;
+  syncModelSelectWithInput();
+  const isLocal = (llm.kind || "llama_cpp") === "llama_cpp" && (!llm.base_url || llm.base_url.includes("127.0.0.1") || llm.base_url.includes("localhost"));
+  const btnLocal = $("btn-mode-local"), btnRemote = $("btn-mode-remote");
+  if (btnLocal && btnRemote) {
+    btnLocal.classList.toggle("active", isLocal);
+    btnRemote.classList.toggle("active", !isLocal);
+  }
+}
+
+export function renderProviderForm(model, renderLiveFeatures) {
+  if ($("provider-fields")) $("provider-fields").disabled = !!model?.providersSaving;
+  if ($("save-providers")) {
+    $("save-providers").disabled = !!model?.providersSaving;
+    $("save-providers").setAttribute("aria-busy", String(!!model?.providersSaving));
+  }
+  if ($("reset-providers")) $("reset-providers").disabled = !!model?.providersSaving || !model?.providersDirty;
+  if ($("check-providers-settings")) $("check-providers-settings").disabled = !!model?.providersSaving;
+  if ($("providers-dirty")) {
+    $("providers-dirty").textContent = model?.providersSaving ? "正在保存并应用…" :
+      model?.providersDirty ? "有未保存修改" :
+      model?.settings ? "已保存配置" : "正在读取已保存配置…";
+  }
+  const external = $("llm-kind")?.value === "openai_compatible", demo = $("llm-kind")?.value === "demo";
+  ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
+    const el = $(id);
+    if (el) el.disabled = demo || !!model?.providersSaving;
+  });
+  if ($("llm-base-url")) $("llm-base-url").required = !demo;
+  if ($("llm-model")) $("llm-model").required = !demo;
+  if ($("llm-probe-help")) $("llm-probe-help").hidden = !external;
+  if ($("llm-capacity-help")) {
+    $("llm-capacity-help").textContent = external ?
+      "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
+      "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
+  }
+  renderTTSFields(model);
+  if (typeof renderLiveFeatures === "function") renderLiveFeatures(model);
+  updateMultimodalBadge();
+}
+
+export function voiceAvailability(voice, model) {
+  const provider = voice?.provider || voice?.kind;
+  if (provider === "gpt_sovits") {
+    const tts = model?.settings?.tts;
+    if (tts?.kind !== "gpt_sovits") return "当前语音来源未选择 GPT-SoVITS / Genie";
+    if (!tts?.base_url) return "请先配置语音服务 Base URL";
+    return "";
+  }
+  if (provider === "openai_compatible" && (model?.settings?.tts?.kind !== "openai_compatible" || !model?.settings?.tts?.model || !model?.settings?.tts?.voice)) {
+    return "请先配置外部语音 API 的模型和 Voice ID";
+  }
+  if (!["gpt_sovits", "openai_compatible", "prerecorded"].includes(provider)) return "此语音 Provider 尚未准入";
+  return "";
+}
+
+export function renderVoicePreview(model, localEngineLabel = "GPT-SoVITS") {
+  const select = $("preview-voice");
+  if (!select) return;
+  [...select.options].forEach(option => {
+    const voice = model?.voices?.find(item => item.id === option.value);
+    const reason = voiceAvailability(voice, model);
+    option.disabled = !!reason;
+    option.textContent = `${voice?.name || option.value}${reason ? "（暂不可用）" : ""}`;
+  });
+  const selected = model?.voices?.find(voice => voice.id === select.value);
+  const reason = selected ? voiceAvailability(selected, model) : "暂无可用音色";
+  const button = $("preview-submit");
+  if (button && button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
+  if ($("voice-preview-help")) {
+    $("voice-preview-help").textContent = reason || ((selected?.provider || selected?.kind) === "gpt_sovits" ?
+      `本地引擎：${localEngineLabel}，仅使用服务选定音色。点击生成后再播放；不会启动直播或切换资源模式。` :
+      "预录和已配置的外部语音 API 可独立试听；不会启动直播、切换资源模式或替换角色音色。");
+  }
+}
+
+export function applySettings(settings, model, { renderLiveFeatures, renderVoicePreviewFn, renderStatusFn } = {}) {
+  model.settings = { ...model.settings, ...settings };
+  settings = model.settings;
+  if ($("settings-json")) $("settings-json").textContent = JSON.stringify(publicSettings(settings), null, 2);
+  if (!model.providersDirty) providerFormFromSettings(settings, model);
+  renderProviderForm(model, renderLiveFeatures);
+  if (renderVoicePreviewFn) renderVoicePreviewFn();
+  if (model.status && renderStatusFn) renderStatusFn(model.status);
+  let url = model.settings.overlay_url || "/overlay";
+  try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
+  if ($("overlay-url")) $("overlay-url").value = url;
+  if ($("open-overlay")) $("open-overlay").href = url;
+}
+
+export async function loadSettings(model, api, deps = {}) {
+  applySettings(await api("/api/settings"), model, deps);
+}
+
+export async function checkProviderConnections(output, api) {
+  const el = $(output);
+  if (!el) return;
+  el.hidden = false;
+  el.textContent = "检查已保存配置的连接中…";
+  try {
+    el.textContent = JSON.stringify(publicSettings(await api("/api/providers/check", { method: "POST" })), null, 2);
+  } catch (error) {
+    el.textContent = safeMessage(error.message);
+    throw error;
+  }
+}
+
