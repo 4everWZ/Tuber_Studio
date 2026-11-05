@@ -3,6 +3,16 @@ import { $ } from "./modules/core.js";
 import { api as baseApi } from "./modules/api.js";
 
 (() => {
+  const focusView = new URLSearchParams(location.search).get("view");
+  if (focusView === "scene" || focusView === "music") document.body.dataset.focusView = focusView;
+  const frame = window.frameElement;
+  const visible = () => !document.hidden && !frame?.closest("[hidden]");
+  if (focusView && frame) {
+    new ResizeObserver(([entry]) => {
+      const height = Math.ceil(entry.target.getBoundingClientRect().height);
+      if (height) frame.style.height = `${height + 24}px`;
+    }).observe($("workspace"));
+  }
   const names = {avatar:"角色形象", title:"直播标题", now:"当前歌曲", lyrics:"歌词字幕", queue:"点歌队列", chat:"弹幕互动", gifts:"礼物心意", decoration:"小装饰"};
   const icons = {avatar:"♙",title:"T",now:"♫",lyrics:"≋",queue:"☷",chat:"☏",gifts:"♡",decoration:"✧"};
   let state, music, status, dirty = false, saved, polling = false, authenticated = false;
@@ -19,7 +29,7 @@ import { api as baseApi } from "./modules/api.js";
   const online = new OnlineSongRequests(api, feedback);
   const cachePanel = new CachePanel($("cache-panel"), api, feedback);
   const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), api, notify: feedback});
-  setInterval(() => { if (authenticated) cachePanel.refresh(); }, 5000);
+  setInterval(() => { if (authenticated && !focusView && visible()) cachePanel.refresh(); }, 5000);
   async function run(button, action) {
     button.disabled = true; button.setAttribute("aria-busy","true");
     try { await action(); } catch (error) { feedback(error.message,true); }
@@ -96,7 +106,7 @@ import { api as baseApi } from "./modules/api.js";
     if (!state.queue.length) $("queue").append(element("li","还没有待播任务，下一首留给你。","empty"));
   }
   async function poll() {
-    if (polling || !authenticated) return; polling = true;
+    if (polling || !authenticated || !visible()) return; polling = true;
     try {
       const values = await Promise.all([api("/api/live/view"),api("/api/status"),api("/api/live/online")]);
       [state,status] = values; online.update(values[2]);
@@ -116,7 +126,7 @@ import { api as baseApi } from "./modules/api.js";
       $("runtime-error").textContent = status.error || "";
     } catch(error) { feedback(error.message,true); } finally { polling = false; }
   }
-  async function boot() { authenticated = true; try { await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
+  async function boot() { authenticated = true; try { await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); if (!focusView) await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
   $("login-form").onsubmit = async event => { event.preventDefault(); try { await api("/api/auth",{method:"POST",body:{token:$("token").value}}); $("token").value = ""; await boot(); } catch(error) { $("login-error").textContent = error.message; } };
   $("save-layout").onclick = event => run(event.currentTarget, async () => { const value = await api("/api/live/scene",{method:"PUT",body:scene.scene}); loadScene(value); feedback("布局已保存，OBS画面将同步更新。"); });
   $("undo-layout").onclick = () => loadScene(saved);

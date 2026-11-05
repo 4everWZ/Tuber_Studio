@@ -11,6 +11,7 @@
 | 外部 LLM／TTS | 已实现配置、独立凭证及回滚。[非直播验收](../../evaluations/results/nonlive-providers-20261029.json)覆盖本地和 HTTP 替身。 | 用操作者的真实服务分别核验 endpoint、model／voice、生成、容量声明、配额和声音使用条款。 |
 | 评论 | 浏览、导入、按楼上下文、审核和提交路径已实现。手工生成停在待审核，自动策略默认关闭。 | 用目标账号确认真实读取、草稿审核和来源绑定。经明确授权的提交保存平台回复 ID 与回执。 |
 | 自主浏览与通知 | [离线功能验收](../../evaluations/results/autonomous-browsing-acceptance-20261101.json)和[浏览器验收](../../evaluations/results/autonomous-browsing-ui-20261101.json)覆盖发现、证据、交互、移交和停止恢复。[双机实测](../../evaluations/results/distributed-operations-20261102.md)已读取有 CC 和无 CC 的真实视频并生成待审候选，发送为零。 | 继续核验目标账号的推荐、CC、@、收到的回复和文字动态读取，覆盖限流与持续运行。获准写入时核对同一来源、账号、角色和平台回执。 |
+| 自动刷视频首页 | 受控平台覆盖自动主评与楼内跟帖、平台拒绝后修订、三次失败跳过和未知回执只读核对。早期只读实测已验证真实账号在浏览器关闭后连续发现视频。 | 由操作者启动目标账号验证真实发布回执。上游超时和长期运行继续按目标部署验收。 |
 | 私信与渠道判断 | [缓存与私信验收](../../evaluations/results/cache-and-private-messages-20261031.json)覆盖来源绑定、私密上下文、关系及发送替身。[渠道判断对照](../../evaluations/results/channel-thinking-budget-20261031.json)中，2048／4096 两组均完整输出，各有 3/5 例同时满足预期渠道和一致性。 | 先验真实来信读取，再验获准的单次发送。保留思考及独立渠道预算，用相同样本和人工判据复测公私信选择、注入跳过和收件人绑定。 |
 | 动态 | 自主决定、公开来源、频率限制和提交已实现，手工评估进入审核。 | 核对真实动态 ID、正文、公开来源和频率。平台拒绝或风控按实际结果记录。 |
 | 运营模型与视觉 | [通用模型选型](../../evaluations/results/operations-vlm-20261102-performance.md)和[双机实测](../../evaluations/results/distributed-operations-20261102.md)覆盖 E2B 装配、视觉准入和直播回切。[同角色卡对照](../../evaluations/results/operations-vlm-20261101-shared-persona.md)及[字幕对照](../../evaluations/results/subtitle-input-e2b-20261102.md)保留原答与实验条件。 | 按自有微调模型的实际权重、视觉、窗口和资源重新验收，以同素材复核事实、窄引用、画面小字／姿态／图案和角色表达。MTP、F16 KV、Q4 视觉留作独立实验条件，按原门槛另验完整 13 题、多轮工具与 120K 实用容量，采用须同时满足质量和资源要求。 |

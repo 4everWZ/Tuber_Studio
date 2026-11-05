@@ -23,6 +23,10 @@ class BrowsingRepository:
                 lease_until REAL DEFAULT 0,attempts INTEGER DEFAULT 0,input_version TEXT,material_key TEXT,
                 payload TEXT,error TEXT,created_at REAL,updated_at REAL);
             CREATE INDEX IF NOT EXISTS browsing_tasks_round ON browsing_tasks(round_id,status);
+            CREATE TABLE IF NOT EXISTS browsing_video_retries(
+                account_id TEXT NOT NULL,character_id TEXT NOT NULL,character_version INTEGER NOT NULL,
+                bvid TEXT NOT NULL,failures INTEGER NOT NULL,task_id TEXT NOT NULL,
+                PRIMARY KEY(account_id,character_id,character_version,bvid));
             CREATE TABLE IF NOT EXISTS browsing_materials(
                 id TEXT PRIMARY KEY,bvid TEXT,path TEXT,bytes INTEGER,expires_at REAL,created_at REAL);
             CREATE TABLE IF NOT EXISTS browsing_intents(
@@ -31,6 +35,7 @@ class BrowsingRepository:
                 status TEXT,text TEXT,reason TEXT,target TEXT,evidence TEXT,material_keys TEXT,
                 input_version TEXT,receipt TEXT,visibility TEXT,error TEXT,created_at REAL,updated_at REAL,
                 UNIQUE(account_id,character_id,source_key));
+            CREATE INDEX IF NOT EXISTS browsing_intents_round ON browsing_intents(round_id,kind);
             CREATE TABLE IF NOT EXISTS browsing_events(
                 id TEXT PRIMARY KEY,account_id TEXT,kind TEXT,source_key TEXT,timestamp REAL,
                 status TEXT,payload TEXT,error TEXT,created_at REAL,
@@ -53,6 +58,9 @@ class BrowsingRepository:
             )
             self.store.db.execute(
                 "UPDATE browsing_intents SET status='publish_uncertain',error='提交中重启，禁止重发' WHERE status='publishing'"
+            )
+            self.store.db.execute(
+                "UPDATE browsing_intents SET status='automatic_skipped',error='运行已结束' WHERE status='automatic_pending'"
             )
             self.store.db.execute(
                 "UPDATE browsing_events SET status='skipped',error='重启不追发积压事件' WHERE status IN ('received','source_verified','context_ready')"
@@ -174,6 +182,48 @@ class BrowsingRepository:
             (identity, round_id, candidate["bvid"], dump(candidate), now, now),
         )
         return identity
+
+    @staticmethod
+    def retry_scope(round_row):
+        return tuple(round_row[key] for key in ("account_id", "character_id", "character_version"))
+
+    def video_retry(self, row, bvid):
+        return self.store.one(
+            "SELECT r.failures,t.error FROM browsing_video_retries r JOIN browsing_tasks t ON t.id=r.task_id "
+            "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.bvid=?",
+            (*self.retry_scope(row), bvid),
+        )
+
+    def retry_candidates(self, row):
+        return [
+            json.loads(task["payload"]) | {"bvid": task["bvid"]}
+            for task in self.store.all(
+                "SELECT t.bvid,t.payload FROM browsing_video_retries r JOIN browsing_tasks t ON t.id=r.task_id "
+                "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.failures<3 "
+                "ORDER BY t.updated_at LIMIT ?",
+                (*self.retry_scope(row), row["config"]["inspect_limit"]),
+            )
+        ]
+
+    def finish_video_attempt(self, row, candidate, task_id, failures):
+        key = (*self.retry_scope(row), candidate["bvid"])
+        with self.store.db:
+            if failures:
+                self.store.db.execute(
+                    "INSERT OR REPLACE INTO browsing_video_retries VALUES(?,?,?,?,?,?)",
+                    (*key, failures, task_id),
+                )
+                task = self.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (task_id,))
+                payload = json.loads(task["payload"]) | {"consecutive_failures": failures}
+                self.store.db.execute(
+                    "UPDATE browsing_tasks SET status=?,payload=? WHERE id=?",
+                    ("skipped" if failures == 3 else "retry_wait", dump(payload), task_id),
+                )
+            else:
+                self.store.db.execute(
+                    "DELETE FROM browsing_video_retries WHERE account_id=? AND character_id=? AND character_version=? AND bvid=?",
+                    key,
+                )
 
     def claim(self, task_id, owner, *, seconds=30):
         now = time.time()

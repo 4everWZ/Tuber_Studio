@@ -1,16 +1,19 @@
 "use strict";
 
-import { $, node, notice, safeMessage } from "./modules/core.js";
+import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
+import { initCommentQueue } from "./modules/comment-queue.js?v=20261105.31";
+import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261105.33";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
 import { MessagesPanel } from "./messages.js?v=20261105.29";
 import {
   initOperationsModule,
+  renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js?v=20261105.29";
+} from "./modules/operations.js?v=20261105.33";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -18,7 +21,7 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261105.29";
+} from "./modules/comments.js?v=20261105.30";
 import {
   localDateTime,
   initDynamicsModule,
@@ -31,17 +34,25 @@ import {
   renderControls,
   renderServiceStatusCapsule,
   initLiveModule,
-} from "./modules/live.js?v=20261105.27";
+} from "./modules/live.js?v=20261105.30";
 
-const api = (path, options = {}) => baseApi(path, options, showLogin);
+const api = async (path, options = {}) => {
+  const source = location.hash || "#automation";
+  try {
+    return await baseApi(path, options, showLogin);
+  } catch (error) {
+    if (model.authenticated && error.status !== 401) issueLog.record(error.message, source);
+    throw error;
+  }
+};
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
 const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
 
 const model = {
-  authenticated: false, status: null, page: "comments", characters: [], versions: [],
+  authenticated: false, status: null, page: "automation", characters: [], versions: [],
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
-  commentId: null, draftDirty: false, draftId: null, policy: null,
+  commentId: null, policy: null,
   commentPolicyDirty: false,
   importPreviewSignature: null, categorySaving: new Set(),
   modeSwitch: null, modeResult: null,
@@ -79,12 +90,25 @@ const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api
     notice(`节点已配对，状态刷新失败：${error.message}`, true);
   }
 });
-setInterval(() => { if (model.authenticated) cachePanel.refresh(); }, 5000);
-setInterval(() => { if (model.authenticated) inferenceNodePanel.refresh(); }, 10000);
+setInterval(() => { if (model.authenticated && !document.hidden && model.page === "overview") cachePanel.refresh(); }, 5000);
+setInterval(() => { if (model.authenticated && !document.hidden && model.page === "settings") inferenceNodePanel.refresh(); }, 10000);
 
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
+automationPanel.onStatus = renderOperationsQuickBar;
+const issueLog = initIssueLog(api, () => model.page);
+document.addEventListener("workspace-issue", event => {
+  event.preventDefault();
+  issueLog.record(event.detail);
+});
+const discoveryPanel = initDiscoveryPanel(api);
+const refreshDiscoveryActivity = initDiscoveryActivity(api);
+const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status);
+const scrollPositions = new Map();
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
+$("daily-memory-card").addEventListener("toggle", event => {
+  if (model.authenticated && event.currentTarget.open) void dailyMemoryUI.refresh();
+});
 const interactiveGamesUI = new InteractiveGamesUI({ notify: notice });
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
   model.dynamicMemeCache.clear();
@@ -187,7 +211,6 @@ async function busy(button, action) {
     if (model.status?.context) renderContext(model.status.context);
     if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
     if (button.id === "preview-submit") renderVoicePreview(model);
-    if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) commentsModule?.renderDraft();
     if (["approve-dynamic", "reject-dynamic", "publish-dynamic"].includes(button.id)) dynamicsModule?.renderDynamicPost();
     if (["save-dynamic-policy", "stop-dynamics", "evaluate-dynamics"].includes(button.id)) dynamicsModule?.renderDynamicPolicy();
   }
@@ -234,6 +257,8 @@ async function enterWorkspace() {
   $("workspace").hidden = false;
   connectAdmin();
   await changePage();
+  if (model.page !== "automation") await discoveryPanel.refresh();
+  void issueLog.refresh();
 }
 
 function connectAdmin() {
@@ -415,48 +440,64 @@ async function compactContext(scope, videoId, threadId) {
 }
 
 async function changePage() {
-  const requested = location.hash.slice(1) || "comments";
-  const target = $(requested);
-  const anchor = target?.hasAttribute("data-workspace-anchor") ? target : null;
-  const page = anchor?.closest("[data-section]")?.dataset.section || requested;
-  const pages = {
-    comments: ["operations", "评论与草稿"], automation: ["operations", "自主运营"],
-    messages: ["operations", "私信"], dynamics: ["operations", "动态"],
-    live: ["live", "直播控制与队列"], "live-interaction": ["live", "互动与游戏"], "live-player": ["live", "OBS 播放器"],
-    characters: ["character", "角色"], voices: ["character", "语音"], assets: ["character", "素材"],
-    settings: ["settings", "Jetson 推理"], providers: ["settings", "模型与 API"],
-    accounts: ["settings", "账号与权限"], overview: ["settings", "概览与维护"],
+  const requested = location.hash.slice(1) || "automation";
+  const [root, routeKind, routeId, taskId] = requested.split("/");
+  const legacyAnchors = {
+    "voice-cache-card": "cache-panel", storage: "cache-panel", providers: "providers-panel",
+    memory: "daily-memory-card",
   };
-  model.page = Object.hasOwn(pages, page) ? page : "comments";
-  const [workspace, title] = pages[model.page];
+  const target = $(Object.hasOwn(legacyAnchors, root) ? legacyAnchors[root] : root);
+  const anchor = target?.hasAttribute("data-workspace-anchor") ? target : null;
+  const page = anchor?.closest("[data-section]")?.dataset.section ||
+    (root === "automation" && routeKind === "round" ? "automation-records" : root);
+  const pages = {
+    comments: "评论与草稿", automation: "自动刷视频", messages: "私信", dynamics: "动态",
+    "automation-records": "运行记录", "automation-settings": "刷视频设置", issues: "告警与错误",
+    live: "直播控制", "live-scene": "场景编排", "live-music": "曲库与点歌",
+    "live-interaction": "互动与游戏",
+    characters: "角色工作室", voices: "语音", assets: "素材与表情包",
+    settings: "推理与模型", accounts: "账号与权限", overview: "存储与维护",
+  };
+  const previous = model.page;
+  scrollPositions.set(previous, window.scrollY);
+  model.page = Object.hasOwn(pages, page) ? page : "automation";
+  if (model.page !== "comments") commentQueue.leave();
   document.querySelectorAll("[data-section]").forEach(section => {
     section.hidden = section.dataset.section !== model.page;
   });
-  document.querySelectorAll("[data-workspace-tabs]").forEach(tabs => {
-    tabs.hidden = tabs.dataset.workspaceTabs !== workspace;
+  let group;
+  document.querySelectorAll(".workspace-subnav").forEach(nav => {
+    nav.hidden = !nav.querySelector(`[data-page="${model.page}"]`);
+    if (!nav.hidden) group = nav.dataset.workspace;
   });
-  document.querySelectorAll("[data-page], [data-workspace]").forEach(link => {
-    const active = link.dataset.page === model.page || link.dataset.workspace === workspace;
+  document.querySelectorAll("[data-page]").forEach(link => {
+    const exact = link.dataset.page === model.page;
+    const active = exact || Boolean(group && link.dataset.workspaceHome === group) ||
+      (model.page === "automation-records" && link.dataset.page === "automation");
     link.classList.toggle("selected", active);
-    if (active) link.setAttribute("aria-current", link.dataset.workspace ? "location" : "page");
+    if (active) link.setAttribute("aria-current", link.dataset.workspaceHome ? "location" : "page");
     else link.removeAttribute("aria-current");
   });
-  document.title = `${title} · Tuber Studio`;
-  if (anchor) {
-    for (let element = anchor; element; element = element.parentElement) {
-      if (element instanceof HTMLDetailsElement) element.open = true;
-    }
-    anchor.scrollIntoView();
-  } else {
-    window.scrollTo(0, 0);
-  }
+  document.title = `${pages[model.page]} · Tuber Studio`;
+  closeWorkspaceMenu();
+  if (!anchor && previous !== model.page) window.scrollTo(0, scrollPositions.get(model.page) || 0);
 
   if (!model.authenticated) return;
   try {
     if (model.page === "comments") {
-      await refreshComments();
+      const validKey = ["comments", "browsing", "jobs"].includes(routeKind) && /^[\w-]+$/.test(routeId || "");
+      await commentQueue.open(anchor ? "sources" : null, validKey ? `${routeKind}/${routeId}` : null);
     } else if (model.page === "automation") {
-      await Promise.allSettled([automationPanel.refresh(), updatePermissionCapsule()]);
+      await discoveryPanel.refresh();
+      if (model.page === "automation") await refreshDiscoveryActivity();
+    } else if (model.page === "automation-records") {
+      const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
+      await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
+    } else if (model.page === "automation-settings") {
+      await Promise.allSettled([updatePermissionCapsule(), automationPanel.loadRecovery()]);
+    } else if (model.page === "issues") {
+      issueLog.render();
+      await issueLog.refresh();
     } else if (model.page === "messages") {
       await messagesPanel.refresh();
     } else if (model.page === "dynamics") {
@@ -465,45 +506,43 @@ async function changePage() {
       await memeGallery.refresh();
     } else if (model.page === "live") {
       await refreshLive();
+    } else if (model.page === "live-scene" || model.page === "live-music") {
+      const frame = document.querySelector(`[data-section="${model.page}"] iframe`);
+      if (!frame.hasAttribute("src")) frame.src = frame.dataset.src;
     } else if (model.page === "live-interaction") {
-      await Promise.allSettled([dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]);
-    } else if (model.page === "voices") {
-      await updateVoiceCacheUI();
+      await interactiveGamesUI.refresh();
     } else if (model.page === "characters") {
       renderPersona(model);
+      if ($("daily-memory-card").open) await dailyMemoryUI.refresh();
     } else if (model.page === "overview") {
-      await Promise.allSettled([maintenanceModule?.loadRetention(), cachePanel.refresh(), updateVoiceCacheUI()]);
+      await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
     } else if (model.page === "accounts") {
-      await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule()]);
+      await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
     } else if (model.page === "settings") {
-      await inferenceNodePanel.refresh();
-    } else if (model.page === "providers") {
-      await inferenceProviders.refresh();
+      await Promise.allSettled([inferenceNodePanel.refresh(), inferenceProviders.refresh()]);
+    }
+    if (anchor && model.page === page) {
+      for (let element = anchor; element; element = element.parentElement) {
+        if (element instanceof HTMLDetailsElement) element.open = true;
+      }
+      anchor.scrollIntoView();
     }
   } catch (error) {
     notice(error.message, true);
   }
 }
 
-async function updateVoiceCacheUI() {
-  const statsEl = $("voice-cache-stats");
-  if (!statsEl) return;
-  try {
-    const data = await api("/api/cache");
-    const speech = data.categories?.speech;
-    if (speech) {
-      statsEl.textContent = `已用 ${cachePanel.bytes(speech.bytes)} / 上限 ${cachePanel.bytes(speech.limit_bytes)} · 可回收 ${cachePanel.bytes(speech.reclaimable_bytes)} · 受保护 ${cachePanel.bytes(speech.protected_bytes)}${speech.writing ? " · 正在写入" : ""}`;
-    }
-  } catch (_) {}
-}
-
 async function poll() {
   if (!model.authenticated || model.polling || document.hidden) return;
   model.polling = true;
   try {
-    renderStatus(await api("/api/status"));
-    if (model.page === "live") await refreshLive();
-    if (model.page === "comments") await refreshComments();
+    const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh()];
+    if (model.page === "automation") updates.push(refreshDiscoveryActivity());
+    if (model.page === "live") updates.push(refreshLive());
+    if (model.page === "comments") updates.push(commentQueue.isSources() ? refreshComments() : commentQueue.refresh());
+    if (model.page === "automation-records") updates.push(automationPanel.refresh({ background: true }));
+    if (model.page === "issues" || model.page === "automation-records") updates.push(issueLog.refresh());
+    await Promise.allSettled(updates);
   } catch (_) {
     // Non-blocking background poll
   } finally {
@@ -649,7 +688,6 @@ $("preview-form")?.addEventListener("submit", event => {
       if ($("preview-state")) {
         $("preview-state").textContent = safeMessage(`${recorded ? "预录已准备" : "合成完成"}${result.duration != null ? ` · ${Number(result.duration).toFixed(2)} 秒` : ""}，点击播放试听。${actualText}${result.warning ? ` ${result.warning}` : ""}`);
       }
-      await updateVoiceCacheUI();
     } catch (error) {
       if ($("preview-state")) $("preview-state").textContent = `合成失败：${safeMessage(error.message)}`;
       throw error;
@@ -657,17 +695,6 @@ $("preview-form")?.addEventListener("submit", event => {
   });
 });
 
-if ($("voice-cache-clear")) {
-  $("voice-cache-clear").onclick = () => busy($("voice-cache-clear"), async () => {
-    const res = await api("/api/cache/speech/clear", { method: "POST" });
-    const stateEl = $("voice-cache-state");
-    if (stateEl) {
-      stateEl.textContent = `已清理 ${res.result?.removed_files || 0} 个音频文件，释放 ${cachePanel.bytes(res.result?.freed_bytes || 0)} 空间。`;
-    }
-    await updateVoiceCacheUI();
-    await cachePanel.refresh();
-  });
-}
 
 $("copy-overlay")?.addEventListener("click", () => busy($("copy-overlay"), async () => {
   await navigator.clipboard.writeText($("overlay-url")?.value || "");
@@ -710,13 +737,36 @@ $("character-image")?.addEventListener("error", () => {
 if ($("refresh-operations")) {
   $("refresh-operations").onclick = async () => {
     await Promise.allSettled([automationPanel.refresh(), updatePermissionCapsule()]);
-    notice("社区运营数据已刷新。");
+    await discoveryPanel.refresh();
+    notice("运营状态已刷新。");
   };
 }
 
+const workspaceMenu = $("workspace-menu");
+const workspaceMain = document.querySelector(".main-shell");
+function closeWorkspaceMenu(restoreFocus = false) {
+  const wasOpen = workspaceMenu.getAttribute("aria-expanded") === "true";
+  $("workspace").classList.remove("nav-open");
+  workspaceMenu.setAttribute("aria-expanded", "false");
+  workspaceMain.inert = false;
+  if (wasOpen && restoreFocus) workspaceMenu.focus();
+}
+workspaceMenu.onclick = () => {
+  const open = $("workspace").classList.toggle("nav-open");
+  workspaceMenu.setAttribute("aria-expanded", String(open));
+  workspaceMain.inert = open;
+  if (open) ($("workspace-sidebar").querySelector("[aria-current]") || $("workspace-sidebar").querySelector("a")).focus();
+};
+$("close-workspace-menu").onclick = () => closeWorkspaceMenu(true);
+$("workspace-backdrop").onclick = () => closeWorkspaceMenu(true);
+matchMedia("(max-width: 760px)").addEventListener("change", () => closeWorkspaceMenu());
+$("workspace-sidebar").onclick = event => {
+  if (event.target.closest("a")) closeWorkspaceMenu(true);
+};
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeWorkspaceMenu(true); });
 window.addEventListener("hashchange", changePage);
 window.addEventListener("beforeunload", event => {
-  if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || inferenceProviders.dirty || voiceSettings.dirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) {
+  if (commentQueue.hasUnsaved() || model.characterDirty || model.commentPolicyDirty || inferenceProviders.dirty || voiceSettings.dirty || model.dynamicPolicyDirty || model.dynamicPostDirty || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -725,6 +775,11 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) poll();
 });
 setInterval(poll, 2500);
+setInterval(() => {
+  if (model.authenticated && !document.hidden && !["issues", "automation-records"].includes(model.page)) {
+    void issueLog.refresh();
+  }
+}, 10000);
 
 // Auto-login or show workspace
 enterWorkspace().catch(error => {

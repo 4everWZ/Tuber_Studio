@@ -114,6 +114,18 @@ export async function refreshLive({ api, list, node, cell, time, label, badge, e
   });
 }
 
+function renderMusicControls(view) {
+  const playing = view.playback, song = playing?.song?.song;
+  const button = $("live-song-toggle");
+  button.dataset.mediaAction = playing?.paused ? "media-resume" : "media-pause";
+  button.disabled = !song || !playing.started;
+  button.textContent = playing?.paused ? "继续歌曲" : "暂停歌曲";
+  $("live-song-state").textContent = song
+    ? `${song.title} · ${playing.paused ? "已暂停" : playing.started ? "播放中" : "准备中"} · ${Math.floor(playing.position || 0)} 秒`
+    : "当前无歌曲播放";
+  $("live-song-queue").textContent = `待播歌曲 ${view.queue?.filter(item => item.type === "song").length ?? 0} 首`;
+}
+
 function renderJobs(tbody, jobs, { node, cell, time, badge, empty }) {
   if (!tbody) return;
   if (!jobs.length) return empty(tbody, 5, "暂无任务。注入事件后可查看处理状态。");
@@ -185,7 +197,14 @@ export function initLiveModule(model, {
   renderVoicePreviewFn,
   loadSettingsFn,
 }) {
-  const doRefreshLive = () => refreshLive({ api, list: arr => Array.isArray(arr) ? arr : arr?.items || [], node, cell, time, label, badge, empty });
+  const doRefreshLive = () => Promise.all([
+    refreshLive({ api, list: arr => Array.isArray(arr) ? arr : arr?.items || [], node, cell, time, label, badge, empty }),
+    api("/api/live/view").then(renderMusicControls),
+  ]);
+  $("live-song-toggle").onclick = event => busy(event.currentTarget, async () => {
+    await api(`/api/live/${$("live-song-toggle").dataset.mediaAction}`, { method: "POST" });
+    await doRefreshLive();
+  });
 
   document.querySelectorAll("[data-inference-mode]").forEach(button => {
     button.addEventListener("click", () => switchResourceMode(button.dataset.inferenceMode, model, {

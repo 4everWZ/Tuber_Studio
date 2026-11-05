@@ -60,107 +60,25 @@ export function updateCommentSelection(model) {
   }
 }
 
-export function renderAnswerCheck(draft) {
-  const answerEl = $("draft-answer-check");
-  if (!answerEl) return;
-  let check = draft?.answer_check;
-  if (!check) {
-    answerEl.textContent = "暂无记忆核对记录。";
-    return;
+function renderCommentSource(model, commentContinuation, setBadge, describe) {
+  const comment = model.comments?.find(item => item.id === model.commentId);
+  const draft = comment?.draft;
+  const source = $("draft-source");
+  const open = $("open-comment-draft");
+  source.textContent = comment ? `${comment.display_name || "匿名观众"}：${comment.content}` : "选择一条评论，查看原文和所在楼。";
+  setBadge($("draft-status"), draft?.status || comment?.continuation?.state || "选择评论");
+  describe($("draft-meta"), comment ? [
+    ["来源评论", `${comment.video_id} / ${comment.comment_id}`],
+    ["与当前 OC 的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : "匿名用户"],
+    ["楼 ID", comment.thread_id || comment.comment_id],
+    ["父评论 ID", comment.parent_comment_id || "顶层"],
+  ] : []);
+  open.hidden = !draft;
+  if (draft) {
+    open.href = draft.status === "private_handoff" ? "#messages" : `#comments/comments/${draft.id}`;
+    open.textContent = draft.status === "private_handoff" ? "到私信工作台处理" : "到待办处理草稿";
   }
-  if (typeof check === "string") {
-    try {
-      check = JSON.parse(check);
-    } catch {
-      answerEl.textContent = "检查记录格式异常，无法展示证据。";
-      return;
-    }
-  }
-  if (!check || typeof check !== "object" || Array.isArray(check)) {
-    answerEl.textContent = "检查记录格式异常，无法展示证据。";
-    return;
-  }
-  const summary = document.createElement("p");
-  const sources = check.sources || [];
-  summary.textContent = [
-    sources.length ? `引用了 ${sources.length} 条相关记录` : "没有引用历史记录",
-    check.retried ? "已补查一次" : "",
-    check.warning,
-  ].filter(Boolean).join(" · ");
-  answerEl.replaceChildren(summary);
-  for (const source of sources) {
-    const quote = document.createElement("blockquote");
-    quote.className = "quoted-text";
-    quote.textContent = source.text;
-    answerEl.append(quote);
-  }
-}
-
-export function renderDraft(model, commentContinuation, setBadge, describe) {
-  const comment = (model.comments || []).find(item => item.id === model.commentId);
-  if (!comment) {
-    if (commentContinuation) commentContinuation.render(null);
-    if (model.draftDirty) return;
-    renderAnswerCheck(null);
-    if ($("draft-source")) $("draft-source").textContent = "选择列表中的评论，查看角色草稿及来源。";
-    if ($("open-private-draft")) $("open-private-draft").hidden = true;
-    if ($("draft-text")) {
-      $("draft-text").value = "";
-      $("draft-text").disabled = true;
-    }
-    if ($("draft-status")) $("draft-status").textContent = "选择评论";
-    if ($("draft-meta")) describe($("draft-meta"), []);
-    ["approve-draft", "reject-draft", "copy-draft", "publish-draft"].forEach(id => {
-      if ($(id)) $(id).disabled = true;
-    });
-    return;
-  }
-
-  const draft = comment.draft;
-  renderAnswerCheck(draft);
-  if ($("draft-source")) $("draft-source").textContent = `${comment.display_name || "匿名观众"}：${comment.content}`;
-  if ($("draft-status")) setBadge($("draft-status"), draft?.status || comment.continuation?.state || "未生成");
-  if ($("draft-meta")) {
-    describe($("draft-meta"), [
-      ["来源评论", `${comment.video_id} / ${comment.comment_id}`],
-      ["与当前OC的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : "匿名用户"],
-      ["楼ID", comment.thread_id || comment.comment_id],
-      ["父评论ID", comment.parent_comment_id || "顶层"],
-      ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"],
-      ["模型", draft?.model || "—"],
-      ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])
-    ]);
-  }
-  if (!model.draftDirty || model.draftId !== draft?.id) {
-    if ($("draft-text")) $("draft-text").value = draft?.text || "";
-    model.draftId = draft?.id || null;
-    model.draftDirty = false;
-  }
-  const locked = draft && ["published", "publishing", "publish_uncertain", "private_handoff"].includes(draft.status);
-  if (commentContinuation) {
-    commentContinuation.render(draft?.status === "private_handoff" ? null : draft?.continuation || comment.continuation, {
-      channel: "comments",
-      localId: draft?.id || comment.id,
-      dirty: model.draftDirty,
-      entityStatus: draft?.status
-    });
-  }
-  if ($("draft-text")) $("draft-text").disabled = !draft || locked;
-  if ($("approve-draft")) $("approve-draft").disabled = !draft || locked;
-  if ($("reject-draft")) $("reject-draft").disabled = !draft || locked;
-  if ($("copy-draft")) $("copy-draft").disabled = !draft || draft.status === "private_handoff";
-  if ($("open-private-draft")) $("open-private-draft").hidden = draft?.status !== "private_handoff";
-  if ($("publish-draft")) {
-    $("publish-draft").disabled = !draft || draft.status !== "approved" || !model.policy?.credentials_configured || model.draftDirty;
-  }
-  if ($("draft-note")) {
-    $("draft-note").textContent = draft?.status === "private_handoff" ?
-      "在私信工作台审核这份回复并查看发送回执。" :
-      draft?.error ? `错误：${draft.error}` :
-      model.draftDirty ? "文字已修改，先审核保存后再发布或复制。" :
-      model.policy?.auto_reply ? "已配置自动回复。手动生成的草稿需要审核，其他草稿以此处状态与平台回执为准。" :
-      "人工审核模式。审核通过后可复制；账号凭证已配置时可发布。";
-  }
+  commentContinuation.render(draft ? null : comment?.continuation, { channel: "comments", localId: comment?.id });
 }
 
 export function renderCommentTasks(tasks, { node, cell, badge, empty }) {
@@ -224,7 +142,7 @@ export function renderComments(model, {
   if ($("comment-count")) $("comment-count").textContent = `(${model.comments?.length || 0})`;
   if (model.categorySaving.size || document.activeElement?.matches("#comments .category-select")) {
     updateCommentSelection(model);
-    renderDraft(model, commentContinuation, setBadge, describe);
+    renderCommentSource(model, commentContinuation, setBadge, describe);
     return;
   }
   if (!model.comments || !model.comments.length) {
@@ -245,10 +163,7 @@ export function renderComments(model, {
 
       const text = node("button", comment.content, "comment-link");
       text.onclick = () => {
-        if (model.draftDirty && !confirm("回复有未保存修改。放弃修改并查看其他评论？")) return;
         model.commentId = comment.id;
-        model.draftDirty = false;
-        model.draftId = null;
         if ($("compact-video-id")) $("compact-video-id").value = comment.video_id;
         if ($("compact-thread-id")) $("compact-thread-id").value = comment.thread_id || comment.comment_id;
         renderComments(model, {
@@ -289,7 +204,7 @@ export function renderComments(model, {
     });
   }
   updateCommentSelection(model);
-  renderDraft(model, commentContinuation, setBadge, describe);
+  renderCommentSource(model, commentContinuation, setBadge, describe);
 }
 
 export function renderCommentPolicy(policy, model, commentContinuation, setBadge, describe) {
@@ -327,7 +242,7 @@ export function renderCommentPolicy(policy, model, commentContinuation, setBadge
     $("stop-auto-reply").textContent = policy.emergency ? "紧急停止已生效" : policy.automation_override ? "前往自动化紧急停止" : "停止基础自动回复";
     $("stop-auto-reply").disabled = !!policy.emergency;
   }
-  renderDraft(model, commentContinuation, setBadge, describe);
+  renderCommentSource(model, commentContinuation, setBadge, describe);
 }
 
 export function initCommentsModule(model, {
@@ -430,45 +345,6 @@ export function initCommentsModule(model, {
     doRenderComments();
   });
 
-  $("draft-text")?.addEventListener("input", () => {
-    model.draftDirty = true;
-    renderDraft(model, commentContinuation, setBadge, describe);
-  });
-
-  async function reviewDraft(action) {
-    const comment = model.comments?.find(item => item.id === model.commentId);
-    if (!comment?.draft) throw new Error("请先选择已有草稿的评论");
-    await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/review`, {
-      method: "POST",
-      body: { action, text: $("draft-text")?.value }
-    });
-    model.draftDirty = false;
-    await doRefreshComments();
-    notice(action === "approve" ? "草稿已审核保存。" : "草稿已拒绝。");
-  }
-
-  $("approve-draft")?.addEventListener("click", () => busy($("approve-draft"), () => reviewDraft("approve")));
-  $("reject-draft")?.addEventListener("click", () => busy($("reject-draft"), () => reviewDraft("reject")));
-
-  $("copy-draft")?.addEventListener("click", () => busy($("copy-draft"), async () => {
-    const comment = model.comments?.find(item => item.id === model.commentId);
-    if (!comment?.draft) return;
-    if (model.draftDirty) throw new Error("请先审核保存修改，再复制已保存的回复");
-    await navigator.clipboard.writeText($("draft-text")?.value || "");
-    await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/copy`, { method: "POST" });
-    notice("回复已复制，未执行平台发布。");
-    await doRefreshComments();
-  }));
-
-  $("publish-draft")?.addEventListener("click", () => busy($("publish-draft"), async () => {
-    const comment = model.comments?.find(item => item.id === model.commentId);
-    if (!comment?.draft) return;
-    if (model.draftDirty) throw new Error("请先审核保存修改");
-    const result = await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/publish`, { method: "POST" });
-    notice(result.status === "published" ? "平台已确认发布。" : "请查看草稿的发布状态。");
-    await doRefreshComments();
-  }));
-
   $("comment-policy-form")?.addEventListener("submit", event => {
     event.preventDefault();
     busy(event.submitter, async () => {
@@ -480,6 +356,8 @@ export function initCommentsModule(model, {
         max_replies_per_hour: Number($("replies-hour")?.value),
         max_replies_per_day: Number($("replies-day")?.value)
       };
+      if (payload.auto_reply && !(model.policy?.base || model.policy)?.auto_reply &&
+          !confirm("开启指定视频的自动回复？新回复将按现有账号与额度规则尝试提交。")) return;
       await api("/api/comments/policy", { method: "PUT", body: payload });
       model.commentPolicyDirty = false;
       await doLoadPolicy();
@@ -544,7 +422,6 @@ export function initCommentsModule(model, {
   return {
     refreshComments: doRefreshComments,
     renderComments: doRenderComments,
-    renderDraft: () => renderDraft(model, commentContinuation, setBadge, describe),
     loadPolicy: doLoadPolicy,
     refreshThreadContext: doRefreshThreadContext,
   };

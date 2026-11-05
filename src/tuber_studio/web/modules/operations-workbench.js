@@ -1,7 +1,6 @@
 /**
  * Operations Workbench Component for Tuber Studio
- * Implements a modern Master-Detail split-view (VSCode / Antigravity style),
- * with Inbox Zero candidate review, humanized reports, and responsive pagination.
+ * Browser tasks, rounds, public notifications, and engagement review.
  */
 
 (function (root, factory) {
@@ -22,36 +21,30 @@
   }
 
   class OperationsWorkbench {
-    constructor(container, api, notify) {
+    constructor(container, api, notify, refresh) {
       this.container = container;
       this.api = api;
       this.notify = notify;
+      this.refresh = refresh;
 
       // State
-      this.activeTab = "intents"; // "intents" | "inbox" | "tasks" | "rounds"
-      this.intentFilter = "pending_review"; // Default to Inbox Zero!
+      this.activeTab = "tasks";
+      this.intentFilter = "pending_review";
       this.taskFilter = "";
+      this.roundFilter = null;
 
       this.intents = [];
       this.tasks = [];
       this.rounds = [];
       this.inbox = [];
-      this.refreshRequest = 0;
 
       this.selectedIntentId = null;
       this.selectedTaskId = null;
-      this.draftDirty = false;
-      this.unsavedDrafts = new Map(); // intentId -> string (draft text being edited)
-
-      // Caches to prevent poll-driven DOM clobbering & focus loss
-      this.renderedIntentId = null;
-      this.renderedIntentStatus = null;
-      this.renderedIntentText = null;
-      this.renderedIntentUpdatedAt = null;
+      this.intentPending = false;
+      this.renderedIntent = "";
       this.renderedTaskId = null;
       this.renderedTaskStatus = null;
       this.renderedTab = null;
-      this.userInteractingUntil = 0;
       this.lastMasterView = "";
 
       // Paginators
@@ -77,23 +70,19 @@
           <!-- Segmented Master Navigation Bar -->
           <div class="op-workbench-nav">
             <div class="op-segmented-control" role="tablist">
-              <button type="button" class="op-nav-btn active" data-tab="intents">
-                <span class="op-nav-icon">📝</span>
-                <span class="op-nav-label">待办审核</span>
-                <span class="op-badge-counter" id="op-counter-intents" hidden>0</span>
+              <button type="button" class="op-nav-btn active" data-tab="tasks">
+                <span class="op-nav-label">浏览任务</span>
+              </button>
+              <button type="button" class="op-nav-btn" data-tab="rounds">
+                <span class="op-nav-label">轮次记录</span>
               </button>
               <button type="button" class="op-nav-btn" data-tab="inbox">
-                <span class="op-nav-icon">📥</span>
                 <span class="op-nav-label">互动收件箱</span>
                 <span class="op-badge-counter" id="op-counter-inbox" hidden>0</span>
               </button>
-              <button type="button" class="op-nav-btn" data-tab="tasks">
-                <span class="op-nav-icon">🧭</span>
-                <span class="op-nav-label">浏览历史</span>
-              </button>
-              <button type="button" class="op-nav-btn" data-tab="rounds">
-                <span class="op-nav-icon">📑</span>
-                <span class="op-nav-label">巡航简报</span>
+              <button type="button" class="op-nav-btn" data-tab="intents">
+                <span class="op-nav-label">点赞与收藏</span>
+                <span class="op-badge-counter" id="op-counter-intents" hidden>0</span>
               </button>
             </div>
             <div class="op-nav-actions">
@@ -153,10 +142,6 @@
 
     switchTab(tab) {
       if (this.activeTab === tab) return;
-      if (this.draftDirty && !confirm("当前草稿有未保存的修改，切换标签将丢失修改。是否继续？")) {
-        return;
-      }
-      this.draftDirty = false;
       this.activeTab = tab;
       this.lastMasterView = "";
 
@@ -167,6 +152,20 @@
       this.renderMasterSubbar();
       this.renderMasterList();
       this.renderDetail();
+    }
+
+    setRoundFilter(roundId) {
+      this.roundFilter = roundId;
+      this.taskFilter = "";
+      this.tasks = [];
+      this.selectedTaskId = null;
+      this.lastMasterView = "";
+      if (this.activeTab === "tasks") {
+        this.taskPaginator.currentPage = 1;
+        this.renderMasterSubbar();
+        this.renderMasterList();
+        this.renderDetail();
+      }
     }
 
     masterView() {
@@ -196,39 +195,6 @@
       return intent.auto_authorized ? "" : "这条草稿生成时未获得自动发布授权，需人工审核。";
     }
 
-    syncIntentDetailNonEditor(intent) {
-      const detailPane = this.container.querySelector("#op-detail-pane");
-      if (!detailPane) return;
-
-      const isPending = intent.status === "pending_review";
-      const isApproved = intent.status === "approved";
-      const isPublished = intent.status === "published";
-      const reviewNote = detailPane.querySelector(".op-review-note");
-      if (reviewNote) {
-        reviewNote.textContent = this.intentReviewNote(intent);
-        reviewNote.hidden = !reviewNote.textContent;
-      }
-
-      const statusInfo = humanizeStatus(intent.status);
-      const statusTag = detailPane.querySelector(".op-inspector-meta .op-tag-status");
-      if (statusTag) {
-        statusTag.className = `op-tag-status ${statusInfo.className}`;
-        statusTag.textContent = statusInfo.label;
-      }
-
-      const approveBtn = detailPane.querySelector("#op-btn-approve");
-      if (approveBtn) approveBtn.disabled = !isPending;
-
-      const publishBtn = detailPane.querySelector("#op-btn-publish");
-      if (publishBtn) publishBtn.disabled = !isApproved;
-
-      const rejectBtn = detailPane.querySelector("#op-btn-reject");
-      if (rejectBtn) rejectBtn.disabled = (intent.status === "rejected" || isPublished);
-
-      this.renderedIntentStatus = intent.status;
-      this.renderedIntentUpdatedAt = intent.updated_at;
-    }
-
     updateData({ intents, tasks, rounds, inbox } = {}) {
       if (intents !== undefined) this.intents = Array.isArray(intents) ? intents : (intents?.items || []);
       if (tasks !== undefined) this.tasks = Array.isArray(tasks) ? tasks : (tasks?.items || []);
@@ -256,7 +222,7 @@
       // Automatically select first pending intent if nothing selected or current item disappeared (and not dirty)
       if (this.activeTab === "intents") {
         const filtered = this.getFilteredIntents();
-        if (!this.selectedIntentId || (!filtered.some(i => i.id === this.selectedIntentId) && !this.draftDirty)) {
+        if (!this.selectedIntentId || !filtered.some(i => i.id === this.selectedIntentId)) {
           this.selectedIntentId = filtered.length > 0 ? filtered[0].id : null;
         }
       }
@@ -271,40 +237,12 @@
         if (listContainer) listContainer.scrollTop = prevScroll;
       }
 
-      // Detail rendering protection:
       if (this.activeTab === "intents") {
-        const currentIntent = this.intents.find(i => i.id === this.selectedIntentId);
-        if (!currentIntent) {
-          if (!this.draftDirty) {
-            this.renderDetail();
-          }
-          return;
-        }
-
-        const editorEl = this.container.querySelector("#op-intent-editor");
-        const isEditorFocused = editorEl && (document.activeElement === editorEl);
-        const isInteracting = this.draftDirty || isEditorFocused || (Date.now() < this.userInteractingUntil);
-
-        // If user is editing/interacting with the editor: DO NOT destroy or rewrite editor DOM!
-        if (isInteracting && this.renderedIntentId === currentIntent.id) {
-          this.syncIntentDetailNonEditor(currentIntent);
-          return;
-        }
-
-        // If not interacting, only render detail if the intent or its state actually changed
-        if (
-          this.renderedIntentId === currentIntent.id &&
-          this.renderedIntentStatus === currentIntent.status &&
-          this.renderedIntentText === currentIntent.text &&
-          this.renderedIntentUpdatedAt === currentIntent.updated_at
-        ) {
-          return; // Identical, avoid all DOM thrashing!
-        }
-
-        this.renderDetail();
+        const intent = this.intents.find(item => item.id === this.selectedIntentId);
+        if (this.renderedTab !== "intents" || this.renderedIntent !== JSON.stringify(intent)) this.renderDetail();
       } else if (this.activeTab === "tasks") {
         const currentTask = this.tasks.find(t => t.id === this.selectedTaskId);
-        if (this.renderedTab !== "tasks" || this.renderedTaskId !== this.selectedTaskId || this.renderedTaskStatus !== currentTask?.status) {
+        if (this.renderedTab !== "tasks" || this.renderedTaskId !== this.selectedTaskId || this.renderedTaskStatus !== JSON.stringify([currentTask?.status, currentTask?.cache_status, currentTask?.updated_at])) {
           this.renderDetail();
         }
       } else {
@@ -337,6 +275,7 @@
         const filterOptions = [
           { key: "pending_review", label: `⏳ 待审核 (${pendingCount})`, active: this.intentFilter === "pending_review" },
           { key: "approved", label: `✓ 已通过 (${approvedCount})`, active: this.intentFilter === "approved" },
+          { key: "publish_uncertain", label: "待核对", active: this.intentFilter === "publish_uncertain" },
           { key: "published", label: `🚀 已发布 (${publishedCount})`, active: this.intentFilter === "published" },
           { key: "rejected", label: `✕ 已放弃`, active: this.intentFilter === "rejected" },
           { key: "all", label: `全部 (${this.intents.length})`, active: this.intentFilter === "all" },
@@ -349,11 +288,6 @@
           pill.textContent = opt.label;
           pill.onclick = () => {
             if (this.intentFilter === opt.key) return;
-            if (this.draftDirty && !confirm("当前草稿有未保存的修改，切换分类将放弃修改。是否继续？")) {
-              return;
-            }
-            this.draftDirty = false;
-            this.unsavedDrafts.delete(this.selectedIntentId);
             this.intentFilter = opt.key;
             this.intentPaginator.currentPage = 1;
             const filtered = this.getFilteredIntents();
@@ -368,6 +302,12 @@
 
         subbar.append(pills);
       } else if (this.activeTab === "tasks") {
+        if (this.roundFilter) {
+          const all = document.createElement("a");
+          all.href = "#automation";
+          all.textContent = "本轮任务 · 查看全部";
+          subbar.append(all);
+        }
         const select = document.createElement("select");
         select.className = "op-task-select";
         select.innerHTML = `
@@ -436,8 +376,8 @@
         if (this.intentFilter === "pending_review") {
           empty.innerHTML = `
             <div class="op-zero-icon">🎉</div>
-            <h4>待审核队列已全部清空！</h4>
-            <p class="hint">大肥鱼正在自主巡航中，一旦发现优质视频并生成草稿，会实时出现在这里。</p>
+            <h4>暂无待审核的点赞或收藏</h4>
+            <p class="hint">公开评论草稿在「评论与草稿」处理。</p>
           `;
         } else {
           empty.innerHTML = `
@@ -486,13 +426,16 @@
         `;
 
         card.dataset.id = intent.id;
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.onkeydown = event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            card.click();
+          }
+        };
         card.onclick = () => {
           if (this.selectedIntentId !== intent.id) {
-            if (this.draftDirty && !confirm("当前草稿有未保存的修改，切换卡片将放弃修改。是否继续切换？")) {
-              return;
-            }
-            this.draftDirty = false;
-            this.unsavedDrafts.delete(this.selectedIntentId);
             this.selectedIntentId = intent.id;
             this.lastMasterView = "";
             const allCards = listContainer.querySelectorAll(".op-candidate-card");
@@ -512,7 +455,7 @@
       const items = this.roundPaginator.getPageItems();
 
       if (items.length === 0) {
-        listContainer.innerHTML = `<p class="hint empty-cell">暂无巡航记录，可以点击上方「单轮运营预览」开启巡航。</p>`;
+        listContainer.innerHTML = `<p class="hint empty-cell">暂无轮次记录。</p>`;
         return;
       }
 
@@ -527,18 +470,19 @@
             <span class="op-tag-status ${report.statusInfo.className}">${report.statusInfo.label}</span>
           </div>
           <p class="op-round-narrative">${escapeHtml(report.narrative)}</p>
+          <a href="#automation/round/${encodeURIComponent(round.id)}">查看本轮视频</a>
           <div class="op-round-metrics-grid">
             <div class="op-metric-chip">
-              <span class="op-metric-k">浏览视频</span>
-              <strong class="op-metric-v">${report.metrics.reads} 篇</strong>
+              <span class="op-metric-k">读取请求</span>
+              <strong class="op-metric-v">${report.metrics.reads} 次</strong>
             </div>
             <div class="op-metric-chip">
               <span class="op-metric-k">模型调用</span>
               <strong class="op-metric-v">${report.metrics.modelCalls} 次</strong>
             </div>
             <div class="op-metric-chip">
-              <span class="op-metric-k">沉淀草稿</span>
-              <strong class="op-metric-v">${report.metrics.topLevels} 条</strong>
+              <span class="op-metric-k">评论草稿</span>
+              <strong class="op-metric-v">${report.metrics.drafts ?? "—"}</strong>
             </div>
             <div class="op-metric-chip">
               <span class="op-metric-k">Token 消耗</span>
@@ -616,7 +560,7 @@
           <div class="op-inbox-zero">
             <div class="op-zero-icon">📭</div>
             <h4>暂无收到互动或 @ 提及</h4>
-            <p class="hint">当观众在评论区回复大肥鱼或艾特大肥鱼时，会在此实时收件。</p>
+            <p class="hint">全渠道运营读取到的公开回复和 @ 提及会出现在这里。</p>
           </div>
         `;
         return;
@@ -625,18 +569,25 @@
       this.inbox.forEach(event => {
         const item = document.createElement("div");
         item.className = "op-inbox-item";
-        const sender = event.sender_name || event.author_name || "B站观众";
-        const timeAgo = formatRelativeTime(event.created_at);
-        const text = event.text || event.content || event.source_text || "（互动消息）";
+        const payload = event.payload || {};
+        const sender = event.sender_name || event.author_name || payload.author_name || "B 站观众";
+        const timeAgo = formatRelativeTime(event.timestamp || event.created_at);
+        const text = event.source_text || payload.source_text || payload.text || "暂无公开原文";
 
         item.innerHTML = `
           <div class="op-card-header">
             <strong>${escapeHtml(sender)}</strong>
-            <span class="op-card-time">${timeAgo}</span>
+            <span class="op-card-time">${escapeHtml(timeAgo)} · ${escapeHtml(humanizeStatus(event.status).label)}</span>
           </div>
           <p class="quoted-text" style="margin: 6px 0;">${escapeHtml(text)}</p>
           <small class="hint">${event.resource_title ? `来源视频：${escapeHtml(event.resource_title)}` : ""}</small>
         `;
+        if (event.continuation) {
+          const continuation = document.createElement("section");
+          item.append(continuation);
+          new OperationContinuationView(continuation, this.api, this.notify, this.refresh)
+            .render(event.continuation, { channel: "browsing", localId: `event:${event.id}`, entityStatus: event.status });
+        }
         listContainer.append(item);
       });
     }
@@ -651,7 +602,6 @@
         this.renderTaskDetail(detailPane);
       } else {
         this.renderedTab = this.activeTab;
-        this.renderedIntentId = null;
         this.renderedTaskId = null;
         detailPane.innerHTML = `
           <div class="op-empty-state">
@@ -664,319 +614,63 @@
     }
 
     renderIntentDetail(detailPane) {
-      const intent = this.intents.find(i => i.id === this.selectedIntentId);
+      const intent = this.intents.find(item => item.id === this.selectedIntentId);
+      this.renderedTab = "intents";
+      this.renderedIntent = JSON.stringify(intent);
       if (!intent) {
-        this.renderedIntentId = null;
-        this.renderedTab = "intents";
-        detailPane.innerHTML = `
-          <div class="op-empty-state">
-            <div class="op-empty-icon">👈</div>
-            <h3>请选择左侧待审核草稿</h3>
-            <p class="hint">点击左侧列表中的草稿卡片，在此处审查大肥鱼的第一人称拟发表发言。</p>
-          </div>
-        `;
+        detailPane.innerHTML = '<div class="op-empty-state"><h3>选择一条点赞或收藏记录</h3></div>';
         return;
       }
-
-      let target = {};
-      if (typeof intent.target === "string") {
-        try { target = JSON.parse(intent.target); } catch (e) {}
-      } else if (typeof intent.target === "object") {
-        target = intent.target || {};
-      }
-
-      const bvid = intent.bvid || target.bvid || intent.source_id || "";
-      const relatedTask = this.tasks.find(t => t.bvid === bvid);
-      const videoTitle = relatedTask?.title || relatedTask?.metadata?.title || target.title || bvid;
-      const bvidUrl = bvid ? `https://www.bilibili.com/video/${encodeURIComponent(bvid)}` : "#";
-
-      const kindInfo = humanizeKind(intent.kind);
-      const statusInfo = humanizeStatus(intent.status);
-      const isPending = intent.status === "pending_review";
-      const isApproved = intent.status === "approved";
-      const isPublished = intent.status === "published";
-
-      const isModified = this.unsavedDrafts.has(intent.id);
-      const currentDraftText = isModified ? this.unsavedDrafts.get(intent.id) : (intent.text || "");
-      const reviewNote = this.intentReviewNote(intent);
-
-      this.renderedIntentId = intent.id;
-      this.renderedIntentStatus = intent.status;
-      this.renderedIntentText = intent.text;
-      this.renderedIntentUpdatedAt = intent.updated_at;
-      this.renderedTab = "intents";
-
+      const target = intent.target || {};
+      const bvid = target.bvid || "";
+      const status = humanizeStatus(intent.status);
+      const editable = ["pending_review", "approved"].includes(intent.status);
       detailPane.innerHTML = `
         <div class="op-inspector-content">
-          <!-- Top Action Bar -->
-          <div class="op-inspector-header">
-            <div class="op-inspector-meta">
-              <span class="op-tag-kind">${kindInfo.label}</span>
-              <span class="op-tag-status ${statusInfo.className}">${statusInfo.label}</span>
-              <span class="op-inspector-time">${formatRelativeTime(intent.created_at)}</span>
-            </div>
-            <div class="op-inspector-actions">
-              <button type="button" class="op-btn-action primary" id="op-btn-approve" ${!isPending ? "disabled" : ""}>
-                ✓ 审核通过
-              </button>
-              <button type="button" class="op-btn-action success" id="op-btn-publish" ${!isApproved ? "disabled" : ""}>
-                🚀 立即发布到B站
-              </button>
-              <button type="button" class="op-btn-action danger" id="op-btn-reject" ${intent.status === "rejected" || isPublished ? "disabled" : ""}>
-                ✕ 放弃草稿
-              </button>
-            </div>
+          <div class="panel-heading"><h3>${escapeHtml(humanizeKind(intent.kind).label)}</h3>
+            <span class="op-tag-status ${status.className}">${escapeHtml(status.label)}</span></div>
+          <p>${escapeHtml(target.title || bvid)}</p>
+          ${bvid ? `<a href="https://www.bilibili.com/video/${encodeURIComponent(bvid)}" target="_blank" rel="noreferrer">在 B 站查看来源</a>` : ""}
+          <blockquote class="quoted-text">${escapeHtml(intent.text)}</blockquote>
+          <p class="hint">${escapeHtml(this.intentReviewNote(intent))}</p>
+          <div class="actions">
+            ${intent.status === "pending_review" ? '<button type="button" data-review="approve" class="primary">审核通过</button>' : ""}
+            ${editable ? '<button type="button" data-review="reject">拒绝</button>' : ""}
+            ${intent.status === "approved" ? '<button type="button" data-publish>提交已审核操作</button>' : ""}
           </div>
-
-          <p class="hint op-review-note"${reviewNote ? "" : " hidden"}>${escapeHtml(reviewNote)}</p>
-
-          <!-- Target Video Context Card -->
-          <div class="op-video-context-card">
-            <div class="op-video-info">
-              <span class="op-context-label">关联视频</span>
-              <h3 class="op-video-title">${escapeHtml(videoTitle)}</h3>
-              <div class="op-video-links">
-                ${bvid ? `<a href="${bvidUrl}" target="_blank" rel="noreferrer" class="op-link-external">🎬 在 B 站打开原视频 (${escapeHtml(bvid)}) ↗</a>` : ""}
-                ${target.parent && target.parent !== "0" ? `<span class="op-badge-thread">💬 楼内回复目标评论 #${escapeHtml(target.parent)}</span>` : ""}
-              </div>
-            </div>
-          </div>
-
-          <!-- AI Motivation & Humanized Evidence -->
-          <div class="op-ai-reason-card">
-            <h4>💡 大肥鱼为什么想发言？</h4>
-            <p class="op-reason-text">${escapeHtml(humanizeReason(intent.reason))}</p>
-          </div>
-
-          <!-- Draft Editor Section -->
-          <div class="op-draft-editor-box">
-            <div class="op-editor-header">
-              <label for="op-intent-editor"><strong>大肥鱼的发言台词（第一人称口吻）</strong></label>
-              <div class="op-editor-header-actions">
-                <span class="hint" id="op-editor-status">${isModified ? '<span class="op-dirty-pill">● 有未保存的台词修改</span>' : '已就绪'}</span>
-                <button type="button" class="op-btn-save-draft" id="op-btn-save-draft" ${!isModified ? "disabled" : ""} title="保存台词修改 (Ctrl+S)">
-                  💾 保存修改
-                </button>
-              </div>
-            </div>
-            <textarea id="op-intent-editor" rows="6" ${isPublished ? "disabled" : ""}></textarea>
-            <div class="op-editor-tip hint">
-              提示：您可以直接在上方修改台词文字，按 Ctrl+S 或点击「保存修改」，确认无误后点击「审核通过」或「立即发布」。
-            </div>
-          </div>
-
-          <details class="op-tech-details">
-            <summary>来源与发布结果</summary>
-            ${target.source_text ? `<p class="quoted-text">${escapeHtml(target.source_text)}</p>` : ""}
-            <p>引用材料 ${intent.evidence?.length ?? 0} 项</p>
-            <p>${escapeHtml(intent.receipt?.rpid ? `平台评论 ID ${intent.receipt.rpid}` : statusInfo.label)}
-            ${{visible: " · 平台可见", not_visible: " · 暂不可见", not_found: " · 未查到", check_failed: " · 核对失败"}[intent.visibility] || ""}</p>
-          </details>
-        </div>
-      `;
-
-      const editor = detailPane.querySelector("#op-intent-editor");
-      editor.value = currentDraftText;
-      const editorStatus = detailPane.querySelector("#op-editor-status");
-      const saveDraftBtn = detailPane.querySelector("#op-btn-save-draft");
-      const approveBtn = detailPane.querySelector("#op-btn-approve");
-      const publishBtn = detailPane.querySelector("#op-btn-publish");
-      const rejectBtn = detailPane.querySelector("#op-btn-reject");
-
-      const saveDraftAction = async () => {
-        const newText = editor ? editor.value.trim() : intent.text;
-        if (!newText) {
-          if (this.notify) this.notify("台词内容不能为空", true);
-          return;
-        }
-        if (saveDraftBtn) {
-          saveDraftBtn.disabled = true;
-          saveDraftBtn.textContent = "保存中…";
-        }
+          <p class="error-text" data-intent-error role="status">${escapeHtml(intent.error || "")}</p>
+          ${intent.receipt ? `<details class="subsection"><summary>平台回执</summary><pre class="operation-revision-text">${escapeHtml(JSON.stringify(intent.receipt, null, 2))}</pre></details>` : ""}
+          ${intent.round_id ? `<a href="#automation/round/${encodeURIComponent(intent.round_id)}">查看来源轮次</a>` : ""}
+          <section data-intent-continuation hidden></section>
+        </div>`;
+      const controls = [...detailPane.querySelectorAll("[data-review], [data-publish]")];
+      for (const button of controls) button.onclick = async () => {
+        if (this.intentPending) return;
+        this.intentPending = true;
+        for (const control of controls) control.disabled = true;
         try {
-          const action = isPending ? "edit" : "approve";
-          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
-            method: "POST",
-            body: { action: action, text: newText },
-          });
-          this.draftDirty = false;
-          this.unsavedDrafts.delete(intent.id);
-          intent.text = newText;
-          this.renderedIntentText = newText;
-          if (editorStatus) {
-            editorStatus.innerHTML = `<span class="op-saved-pill">✓ 已保存修改</span>`;
-          }
-          if (saveDraftBtn) {
-            saveDraftBtn.textContent = "💾 保存修改";
-            saveDraftBtn.disabled = true;
-          }
-          if (this.notify) this.notify("✓ 台词修改已保存！");
-          const cardSnippet = this.container.querySelector(`.op-candidate-card[data-id="${intent.id}"] .op-card-snippet`);
-          if (cardSnippet) cardSnippet.textContent = newText;
-        } catch (err) {
-          if (saveDraftBtn) {
-            saveDraftBtn.disabled = false;
-            saveDraftBtn.textContent = "💾 保存修改";
-          }
-          if (this.notify) this.notify(err.message, true);
-        }
-      };
-
-      const approveAction = async () => {
-        const newText = editor ? editor.value.trim() : intent.text;
-        if (!newText) {
-          if (this.notify) this.notify("台词内容不能为空", true);
-          return;
-        }
-        const originalText = approveBtn.textContent;
-        approveBtn.disabled = true;
-        approveBtn.textContent = "审核中…";
-        approveBtn.classList.add("is-busy");
-        try {
-          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
-            method: "POST",
-            body: { action: "approve", text: newText },
-          });
-          this.draftDirty = false;
-          this.unsavedDrafts.delete(intent.id);
-          intent.text = newText;
-          intent.status = "approved";
-          this.renderedIntentText = newText;
-          this.renderedIntentStatus = "approved";
-
-          if (this.intentFilter === "pending_review") {
-            const nextPending = this.intents.find(i => i.status === "pending_review" && i.id !== intent.id);
-            if (nextPending) {
-              this.selectedIntentId = nextPending.id;
-              if (this.notify) this.notify("✓ 草稿已审核通过，已切换至下一条。");
-            } else {
-              this.selectedIntentId = null;
-              if (this.notify) this.notify("🎉 待审核草稿全部处理完毕！");
-            }
-          } else {
-            if (this.notify) this.notify("✓ 草稿已通过审核！可以点击立即发布。");
-          }
+          const action = button.dataset.review;
+          const path = action ? "review" : "publish";
+          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/${path}`,
+            { method: "POST", body: action ? { action } : undefined });
+        } catch (error) {
+          const feedback = detailPane.querySelector("[data-intent-error]");
+          if (this.selectedIntentId === intent.id && feedback) feedback.textContent = error.message;
+        } finally {
+          this.intentPending = false;
           await this.refresh();
-        } catch (e) {
-          approveBtn.disabled = false;
-          approveBtn.textContent = originalText;
-          approveBtn.classList.remove("is-busy");
-          if (this.notify) this.notify(e.message, true);
+          for (const control of controls) control.disabled = false;
         }
       };
-
-      const publishAction = async () => {
-        const newText = editor ? editor.value.trim() : intent.text;
-        const originalText = publishBtn.textContent;
-        publishBtn.disabled = true;
-        publishBtn.textContent = "发布中…";
-        publishBtn.classList.add("is-busy");
-        try {
-          if (newText && newText !== intent.text) {
-            await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
-              method: "POST",
-              body: { action: "approve", text: newText },
-            });
-            this.draftDirty = false;
-            this.unsavedDrafts.delete(intent.id);
-            intent.text = newText;
-          }
-          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/publish`, {
-            method: "POST",
-          });
-          if (this.notify) this.notify("🚀 已成功提交发布到 B 站！");
-          await this.refresh();
-        } catch (e) {
-          publishBtn.disabled = false;
-          publishBtn.textContent = originalText;
-          publishBtn.classList.remove("is-busy");
-          if (this.notify) this.notify(e.message, true);
-        }
-      };
-
-      const rejectAction = async () => {
-        if (!confirm("确认放弃并拒绝此条草稿吗？")) return;
-        const originalText = rejectBtn.textContent;
-        rejectBtn.disabled = true;
-        rejectBtn.textContent = "处理中…";
-        rejectBtn.classList.add("is-busy");
-        try {
-          await this.api(`/api/automation/intents/${encodeURIComponent(intent.id)}/review`, {
-            method: "POST",
-            body: { action: "reject", text: editor ? editor.value : intent.text },
-          });
-          this.draftDirty = false;
-          this.unsavedDrafts.delete(intent.id);
-          intent.status = "rejected";
-
-          if (this.intentFilter === "pending_review") {
-            const nextPending = this.intents.find(i => i.status === "pending_review" && i.id !== intent.id);
-            if (nextPending) {
-              this.selectedIntentId = nextPending.id;
-              if (this.notify) this.notify("已放弃该草稿，已切换至下一条。");
-            } else {
-              this.selectedIntentId = null;
-              if (this.notify) this.notify("🎉 待审核草稿全部处理完毕！");
-            }
-          } else {
-            if (this.notify) this.notify("已放弃该草稿。");
-          }
-          await this.refresh();
-        } catch (e) {
-          rejectBtn.disabled = false;
-          rejectBtn.textContent = originalText;
-          rejectBtn.classList.remove("is-busy");
-          if (this.notify) this.notify(e.message, true);
-        }
-      };
-
-      if (saveDraftBtn) saveDraftBtn.onclick = saveDraftAction;
-      if (approveBtn) approveBtn.onclick = approveAction;
-      if (publishBtn) publishBtn.onclick = publishAction;
-      if (rejectBtn) rejectBtn.onclick = rejectAction;
-
-      if (editor) {
-        editor.onfocus = () => {
-          this.userInteractingUntil = Date.now() + 10000;
-        };
-        editor.oninput = () => {
-          const hasChanged = editor.value !== (intent.text || "");
-          this.draftDirty = hasChanged;
-          this.userInteractingUntil = Date.now() + 10000;
-          if (hasChanged) {
-            this.unsavedDrafts.set(intent.id, editor.value);
-            if (editorStatus) editorStatus.innerHTML = `<span class="op-dirty-pill">● 有未保存的台词修改</span>`;
-            if (saveDraftBtn) saveDraftBtn.disabled = false;
-          } else {
-            this.unsavedDrafts.delete(intent.id);
-            if (editorStatus) editorStatus.textContent = "已就绪";
-            if (saveDraftBtn) saveDraftBtn.disabled = true;
-          }
-        };
-        editor.onkeydown = (e) => {
-          this.userInteractingUntil = Date.now() + 10000;
-          if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-            e.preventDefault();
-            saveDraftAction();
-          } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-            e.preventDefault();
-            if (isPending) {
-              approveAction();
-            } else if (isApproved) {
-              publishAction();
-            } else {
-              saveDraftAction();
-            }
-          }
-        };
-      }
+      new OperationContinuationView(detailPane.querySelector("[data-intent-continuation]"), this.api, this.notify, this.refresh)
+        .render(intent.continuation, { channel: "browsing", localId: intent.id, entityStatus: intent.status });
     }
 
     renderTaskDetail(detailPane) {
       const task = this.tasks.find(t => t.id === this.selectedTaskId);
       this.renderedTab = "tasks";
       this.renderedTaskId = task?.id || null;
-      this.renderedTaskStatus = task?.status || null;
+      this.renderedTaskStatus = JSON.stringify([task?.status, task?.cache_status, task?.updated_at]);
       if (!task) {
         detailPane.innerHTML = `
           <div class="op-empty-state">
@@ -991,6 +685,15 @@
       const title = task.title || task.metadata?.title || task.bvid || `任务 ${task.id}`;
       const statusInfo = humanizeStatus(task.status);
       const bvidUrl = task.bvid ? `https://www.bilibili.com/video/${encodeURIComponent(task.bvid)}` : "#";
+      const tracks = task.subtitle_tracks || [];
+      const evidence = task.evidence || [];
+      const drafts = [task.intent_id, ...(task.reply_intent_ids || [])].filter(Boolean);
+      const coverageLabels = {
+        all_available_cc: "已读可用字幕",
+        partial: "部分分 P 有材料",
+        sampled_visual: "已读取抽样画面",
+      };
+      const coverage = coverageLabels[task.coverage] || task.coverage;
 
       detailPane.innerHTML = `
         <div class="op-inspector-content">
@@ -1009,16 +712,28 @@
           </div>
           <div class="op-ai-reason-card">
             <h4>💡 视频理解与决策</h4>
-            <p class="op-reason-text">${escapeHtml(humanizeReason(task.reason || task.payload?.reason))}</p>
+            <p class="op-reason-text">${escapeHtml(humanizeReason(task.reason || task.error || task.decisions?.map(value => humanizeReason(value.reason)).join(" · ")))}</p>
           </div>
-          <div class="actions" style="margin-top: 16px;">
+          ${task.consecutive_failures ? `<p class="hint">连续失败 ${escapeHtml(task.consecutive_failures)} 次${task.consecutive_failures === 3 ? " · 已跳过" : ""}</p>` : ""}
+          <details class="subsection"><summary>分 P 覆盖与引用材料</summary>
+            <p class="hint">${task.cache_status === "missing" ? "原材料已失效或清理" : escapeHtml(coverage || "暂无覆盖信息")}</p>
+            ${tracks.map(track => `<p class="hint">CID ${escapeHtml(track.cid)} · ${escapeHtml(track.language || "—")} · ${track.is_ai == null ? "类型未声明" : track.is_ai ? "平台 AI 字幕" : "人工字幕"} · ${escapeHtml(track.track_id || "无字幕轨")}</p>`).join("")}
+            ${task.missing_parts?.length ? `<p class="hint">缺失分 P · ${escapeHtml(JSON.stringify(task.missing_parts))}</p>` : ""}
+            ${evidence.map(segment => `<p class="hint">${segment.id?.startsWith("frame:") ? "画面观察" : "字幕原文"} · CID ${escapeHtml(segment.cid || "—")} · ${escapeHtml(segment.start ?? segment.time ?? segment.timestamp ?? "—")} 秒</p><blockquote class="quoted-text">${escapeHtml(segment.text || segment.observation || "材料正文不可用")}</blockquote>`).join("") || '<p class="hint">暂无可展示的引用片段。</p>'}
+          </details>
+          ${drafts.map((id, index) => `<p><a href="#comments/browsing/${encodeURIComponent(id)}">查看关联回应 ${index + 1}</a></p>`).join("")}
+          <section data-task-continuation hidden></section>
+          ${task.autonomous ? "" : `<div class="actions" style="margin-top: 16px;">
             <button type="button" class="op-btn-action primary" id="op-btn-reread">
               🎬 重新深度分析视频并生成草稿
             </button>
-          </div>
+          </div>`}
         </div>
       `;
 
+      new OperationContinuationView(detailPane.querySelector("[data-task-continuation]"), this.api, this.notify, this.refresh)
+        .render(task.autonomous ? null : task.continuation,
+          { channel: "browsing", localId: task.id, entityStatus: task.status });
       const rereadBtn = detailPane.querySelector("#op-btn-reread");
       if (rereadBtn) {
         rereadBtn.onclick = async () => {
@@ -1035,24 +750,6 @@
       }
     }
 
-    async refresh() {
-      const request = ++this.refreshRequest;
-      const [intentsRes, tasksRes, roundsRes, inboxRes] = await Promise.allSettled([
-        this.api("/api/automation/intents"),
-        this.api("/api/automation/tasks"),
-        this.api("/api/automation/rounds"),
-        this.api("/api/automation/inbox")
-      ]);
-      if (request !== this.refreshRequest) return;
-
-      const intents = intentsRes.status === "fulfilled" ? intentsRes.value : this.intents;
-      const tasks = tasksRes.status === "fulfilled" ? tasksRes.value : this.tasks;
-      const rounds = roundsRes.status === "fulfilled" ? roundsRes.value : this.rounds;
-      const rawInbox = inboxRes.status === "fulfilled" ? inboxRes.value : this.inbox;
-      const inbox = Array.isArray(rawInbox) ? rawInbox : (Array.isArray(rawInbox?.items) ? rawInbox.items : []);
-
-      this.updateData({ intents, tasks, rounds, inbox });
-    }
   }
 
   return OperationsWorkbench;

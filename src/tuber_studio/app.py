@@ -28,6 +28,7 @@ from .auth_sessions import (
 from .bilibili_account import BilibiliAccount
 from .browsing import BrowsingService
 from .browsing_api import register_browsing_api
+from .comment_workbench import list_queue, queue_detail
 from .comments import Comments
 from .config import Settings
 from .direct_messages import DirectMessages
@@ -757,6 +758,21 @@ def create_app(
     @app.post("/api/comments/analyze", dependencies=[Depends(require_admin)])
     async def analyze(data: dict = Body(default={})):
         return comments.analyze(data.get("video_id"))
+
+    @app.get("/api/comments/workbench", dependencies=[Depends(require_admin)])
+    async def comment_queue(
+        view: Literal["review", "verify", "processing", "history"] = "review",
+        limit: int = Query(30, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ):
+        return list_queue(store, view, limit, offset)
+
+    @app.get("/api/comments/workbench/{channel}/{identity}", dependencies=[Depends(require_admin)])
+    async def comment_queue_detail(channel: Literal["comments", "browsing", "jobs"], identity: str):
+        row = queue_detail(store, comments, browsing, channel, identity)
+        if not row:
+            raise HTTPException(404, "记录不存在")
+        return row
 
     @app.post("/api/comments/drafts", dependencies=[Depends(require_admin)])
     async def drafts(data: dict = Body(...)):

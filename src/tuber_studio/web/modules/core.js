@@ -18,6 +18,9 @@ export function safeMessage(message) {
 
 let noticeTimer;
 export function notice(message, error = false) {
+  if (error && !document.dispatchEvent(new CustomEvent("workspace-issue", {
+    detail: safeMessage(message), cancelable: true,
+  }))) return;
   const element = $("notice");
   element.textContent = safeMessage(message);
   element.hidden = !message;

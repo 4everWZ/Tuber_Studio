@@ -239,6 +239,279 @@ async def finished(service, **args):
     return service.repo.round(result["id"])
 
 
+async def test_background_discovery_publishes_top_level_and_thread_replies(browsing, monkeypatch):
+    second_video = "BV1xx411c7mD"
+    policy = browsing.policy
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    monkeypatch.setattr(
+        browsing,
+        "policy",
+        lambda: (
+            policy()
+            | {
+                "interval_seconds": 0.03,
+                "top_level_enabled": False,
+                "top_level_auto_publish": True,
+                "recent_sample_limit": 0,
+            }
+        ),
+    )
+
+    async def fetch(video, max_pages=1):
+        if video != BV:
+            return {"items": []}
+        return {
+            "items": [
+                {
+                    "comment_id": "502",
+                    "thread_id": "501",
+                    "content": "有意思的盐水实验",
+                    "display_name": "测试观众",
+                    "platform_user_id": "300",
+                }
+            ]
+        }
+
+    async def read_reply(target):
+        assert target["root"] == "501" and target["parent"] == "502"
+        return {"author_uid": "300", "text": "有意思的盐水实验"}
+
+    async def discover(source, keyword, page, limit):
+        assert source == "recommend" and not keyword
+        return {
+            "items": [
+                {"bvid": second_video if browsing.intents() else BV, "title": "盐水实验", "duration": 30}
+            ],
+            "has_more": False,
+        }
+
+    async def notifications(*args):
+        raise AssertionError("独立刷视频不读取通知")
+
+    monkeypatch.setattr(browsing.adapter, "discover", discover)
+    monkeypatch.setattr(browsing.adapter, "notifications", notifications)
+    monkeypatch.setattr(browsing.adapter, "fetch", fetch)
+    monkeypatch.setattr(browsing.adapter, "read_video_reply", read_reply, raising=False)
+    await browsing.open()
+    assert browsing.discovery.start()["state"] == "starting"
+    worker = browsing.discovery.worker
+    browsing.discovery.start()
+    assert browsing.discovery.worker is worker
+    async with asyncio.timeout(5):
+        while sum(item["status"] == "published" for item in browsing.intents()) < 3:
+            await asyncio.sleep(0.01)
+    assert browsing.discovery.enabled
+    await browsing.discovery.stop()
+
+    rows = browsing.rounds()
+    assert len(rows) >= 2 and all(row["config"]["discovery_id"] for row in rows)
+    assert {row["bvid"] for row in browsing.tasks() if row["status"] == "selected"} == {BV, second_video}
+    assert all(row["status"] == "published" and row["auto_authorized"] for row in browsing.intents())
+    assert not browsing.operations.policy()["enabled"]
+    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "502", "0"]
+    assert browsing.discovery.status()["state"] == "off"
+    activity = browsing.discovery.records(recent=True)["activity"]
+    assert {item["kind"] for item in activity if item["status"] == "published"} == {
+        "top_level",
+        "reply_public",
+    }
+    assert all(
+        item["title"] == "盐水实验" and item["excerpt"] for item in activity if item["status"] == "published"
+    )
+
+
+async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch):
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    prepare = browsing._prepare_evidence
+    started, resume = asyncio.Event(), asyncio.Event()
+
+    async def prepare_video(*args, **kwargs):
+        started.set()
+        await resume.wait()
+        return await prepare(*args, **kwargs)
+
+    monkeypatch.setattr(browsing, "_prepare_evidence", prepare_video)
+    await browsing.open()
+    browsing.discovery.start()
+    await asyncio.wait_for(started.wait(), 3)
+    before = browsing.discovery.status()
+    assert before["state"] == "reading" and before["current_video"]["title"] == "盐水实验"
+    assert before["summary"] == {"processed": 0, "skipped": 0}
+    edited = await browsing.discovery.configure_source(
+        {"mode": "search", "keywords": [" 盐水 "], "watch_videos": []}
+    )
+    assert edited["source"]["mode"] == "search"
+    assert edited["round_source"] == "recommend"
+    assert edited["active_round"]["id"] == before["active_round"]["id"]
+    policy = browsing.policy
+    monkeypatch.setattr(browsing, "policy", lambda: policy() | {"interval_seconds": 0.03})
+    resume.set()
+    async with asyncio.timeout(5):
+        while ("discover", "search", "盐水", 1) not in browsing.adapter.calls:
+            await asyncio.sleep(0.01)
+    await browsing.discovery.stop()
+    assert {round_["config"]["sources"][0] for round_ in browsing.rounds()} == {"recommend", "search"}
+
+
+@pytest.mark.parametrize("failed_reads", [1, 3])
+async def test_discovery_retries_once_then_continues_other_videos(browsing, monkeypatch, failed_reads):
+    from tuber_studio.bilibili_browsing import PlatformReadError
+
+    first, second = BV, "BV1xx411c7mD"
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    base = browsing.policy
+    monkeypatch.setattr(
+        browsing,
+        "policy",
+        lambda: (
+            base()
+            | {
+                "interval_seconds": 0.03,
+                "recent_sample_limit": 0,
+            }
+        ),
+    )
+    events = []
+    prepare = browsing._prepare_evidence
+
+    async def prepare_video(video, *args, **kwargs):
+        events.append(video)
+        if video == first and events.count(first) <= failed_reads:
+            raise PlatformReadError("network", "读取超时")
+        return await prepare(video, *args, **kwargs)
+
+    async def discover(*args):
+        return {"items": [{"bvid": video} for video in (first, second)], "has_more": False}
+
+    monkeypatch.setattr(browsing.adapter, "discover", discover)
+    monkeypatch.setattr(browsing, "_prepare_evidence", prepare_video)
+    await browsing.open()
+    browsing.discovery.start()
+    async with asyncio.timeout(5):
+        while not any(target["bvid"] == second for target, _ in browsing.adapter.sent) or (
+            failed_reads == 3 and not any(task.get("consecutive_failures") == 3 for task in browsing.tasks())
+        ):
+            await asyncio.sleep(0.01)
+    await browsing.discovery.stop()
+    assert events[:3] == [first, first, second]
+    if failed_reads == 3:
+        assert events[3] == first
+        assert not any(target["bvid"] == first for target, _ in browsing.adapter.sent)
+        assert any(
+            task["status"] == "skipped" and task.get("consecutive_failures") == 3 for task in browsing.tasks()
+        )
+    else:
+        assert any(target["bvid"] == first for target, _ in browsing.adapter.sent)
+    activity = browsing.discovery.records(recent=True)["activity"]
+    assert any(item["status"] == "retry_wait" and item["failures"] == 1 for item in activity)
+    if failed_reads == 3:
+        assert any(item["status"] == "skipped" and item["failures"] == 3 for item in activity)
+
+
+async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishing(browsing, monkeypatch):
+    from tuber_studio.bilibili import PublishUncertain
+
+    first, second = BV, "BV1xx411c7mD"
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    base = browsing.policy
+    monkeypatch.setattr(
+        browsing,
+        "policy",
+        lambda: (
+            base()
+            | {
+                "interval_seconds": 0.03,
+                "recent_sample_limit": 0,
+            }
+        ),
+    )
+    actions = []
+
+    async def discover(*args):
+        return {"items": [{"bvid": video} for video in (first, second)], "has_more": False}
+
+    async def publish(target, text, *, before_send):
+        before_send()
+        actions.append(("write", target["bvid"]))
+        if target["bvid"] == first:
+            raise PublishUncertain("发送响应超时")
+        return {"code": 0, "rpid": "900"}
+
+    async def reconcile(target, **options):
+        actions.append(("lookup", target["oid"]))
+        return {"status": "not_found"}
+
+    monkeypatch.setattr(browsing.adapter, "discover", discover)
+    monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
+    monkeypatch.setattr(browsing.adapter, "reconcile_publication", reconcile, raising=False)
+    await browsing.open()
+    browsing.discovery.start()
+    async with asyncio.timeout(5):
+        while not any(task.get("consecutive_failures") == 3 for task in browsing.tasks()):
+            await asyncio.sleep(0.01)
+    await browsing.discovery.stop()
+    assert actions == [("write", first), ("lookup", "42"), ("write", second), ("lookup", "42")]
+    assert not browsing.operations.status()["channel_blocks"]
+    assert {row["status"] for row in browsing.intents()} == {"publish_uncertain", "published"}
+    activity = browsing.discovery.records(recent=True)["activity"]
+    assert {item["status"] for item in activity} >= {"publish_uncertain", "published"}
+
+
+async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing, monkeypatch):
+    from tuber_studio.operation_feedback import FeedbackModel
+    from tuber_studio.publication_errors import PlatformRejected
+
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    texts = []
+
+    async def publish(target, text, *, before_send):
+        before_send()
+        texts.append(text)
+        if len(texts) == 1:
+            raise PlatformRejected(12051, "请修改正文")
+        return {"code": 0, "rpid": "901"}
+
+    async def decide(self, row):
+        assert row["trigger_feedback"]["code"] == 12051
+        return {"action": "revise", "reason": "按照平台反馈修订"}
+
+    async def revise(self, row, decision):
+        return "原来盐水的密度会影响鸡蛋浮沉，鱼鱼记住啦。"
+
+    monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
+    monkeypatch.setattr(FeedbackModel, "decide", decide)
+    monkeypatch.setattr(FeedbackModel, "revise", revise)
+    await browsing.open()
+    browsing.discovery.start()
+    async with asyncio.timeout(5):
+        while not any(item["status"] == "published" for item in browsing.intents()):
+            await asyncio.sleep(0.01)
+    await browsing.discovery.stop()
+    assert len(texts) == 2 and texts[0] != texts[1]
+    records = browsing.discovery.records()
+    assert records["sent"][0]["receipt_id"] == "901"
+    assert records["issues"][0]["status"] == "retry_wait"
+
+
+async def test_emergency_during_discovery_preflight_cancels_start(browsing, monkeypatch):
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    started = asyncio.Event()
+
+    async def wait_for_model():
+        started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(browsing, "check_browsing_model", wait_for_model)
+    browsing.discovery.start()
+    await asyncio.wait_for(started.wait(), 2)
+    await browsing.stop(emergency=True)
+    assert not browsing.discovery.enabled and not browsing.rounds()
+    with pytest.raises(ValueError, match="紧急停止"):
+        browsing.discovery.start()
+    browsing.operations.configure({"emergency": False})
+    assert browsing.discovery.status()["state"] == "off"
+
+
 async def test_preview_complete_evidence_review_and_one_shot(browsing):
     row = await finished(browsing, preview=True)
     assert row["status"] == "completed", row

@@ -10,8 +10,25 @@ def register_browsing_api(app, browsing, require_admin):
     async def status():
         return browsing.status()
 
+    @app.get("/api/automation/discovery", dependencies=dependencies)
+    async def discovery():
+        await browsing.discovery.restore_history_scope()
+        return browsing.discovery.status()
+
+    @app.get("/api/automation/discovery/records", dependencies=dependencies)
+    async def discovery_records(recent: bool = False):
+        return browsing.discovery.records(recent=recent)
+
+    @app.put("/api/automation/discovery", dependencies=dependencies)
+    async def control_discovery(data: dict = Body(...)):
+        if set(data) != {"enabled"} or type(data["enabled"]) is not bool:
+            raise ValueError("仅接受布尔值 enabled")
+        return browsing.discovery.start() if data["enabled"] else await browsing.discovery.stop()
+
     @app.put("/api/automation/settings", dependencies=dependencies)
     async def configure(data: dict = Body(...)):
+        if set(data) == {"discovery_source"}:
+            return await browsing.discovery.configure_source(data["discovery_source"])
         return await browsing.configure(data)
 
     @app.post("/api/automation/preflight", dependencies=dependencies)
@@ -42,8 +59,10 @@ def register_browsing_api(app, browsing, require_admin):
         return browsing.status()
 
     @app.get("/api/automation/tasks", dependencies=dependencies)
-    async def tasks(status: str | None = Query(None)):
-        return browsing.tasks(status)
+    async def tasks(
+        status: str | None = Query(None), round_id: str | None = None, task_id: str | None = None
+    ):
+        return browsing.tasks(status, round_id=round_id, task_id=task_id)
 
     @app.get("/api/automation/rounds", dependencies=dependencies)
     async def rounds():

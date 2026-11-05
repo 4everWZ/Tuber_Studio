@@ -609,6 +609,22 @@ class BrowsingAdapter(BilibiliAdapter):
             "coverage": {"complete": False, "page": 1, "reason": "bounded_thread_page"},
         }
 
+    async def read_video_reply(self, target):
+        """Read the actual video thread for replies selected during discovery."""
+        root, parent = str(target["root"]), str(target["parent"])
+        data = await self._get(
+            "/x/v2/reply/reply", {"oid": target["oid"], "type": 1, "root": root, "pn": 1, "ps": 20}
+        )
+        rows = ([data["root"]] if data.get("root") else []) + (data.get("replies") or [])
+        try:
+            items = [self._comment(row, thread_id=root) for row in rows]
+        except (TypeError, KeyError, AttributeError, ValueError):
+            raise PlatformReadError("invalid", "原始楼关系无效") from None
+        source = next((row for row in items if row["comment_id"] == parent), None)
+        if source is None:
+            raise PlatformReadError("not_found", "当前楼未找到原评论")
+        return {"author_uid": source["platform_user_id"], "text": source["content"]}
+
     async def _publish_target(self, target, text, before_send):
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要当前账号SESSDATA及CSRF")

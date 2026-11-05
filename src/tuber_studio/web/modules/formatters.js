@@ -74,13 +74,21 @@
       case "approved":
         return { label: "✓ 已审核通过", className: "status-emerald", priority: 2 };
       case "published":
-        return { label: "🚀 已发布到B站", className: "status-blue", priority: 3 };
+        return { label: "平台已受理", className: "status-blue", priority: 3 };
       case "rejected":
         return { label: "✕ 已放弃", className: "status-slate", priority: 4 };
       case "publish_uncertain":
         return { label: "⚠️ 发布核验中", className: "status-amber", priority: 5 };
       case "running":
-        return { label: "⚡ 正在巡航", className: "status-emerald", priority: 0 };
+        return { label: "运行中", className: "status-emerald", priority: 0 };
+      case "queued":
+      case "discovered":
+        return { label: "排队中", className: "status-slate", priority: 0 };
+      case "claimed":
+      case "preparing":
+        return { label: "取材中", className: "status-emerald", priority: 0 };
+      case "evidence_ready":
+        return { label: "材料就绪", className: "status-emerald", priority: 0 };
       case "completed":
         return { label: "🟢 正常完成", className: "status-emerald", priority: 10 };
       case "partial":
@@ -95,20 +103,24 @@
         return { label: "👀 已阅不发", className: "status-slate", priority: 8 };
       case "checkpoint":
         return { label: "💾 进度已保存", className: "status-slate", priority: 9 };
+      case "retry_wait":
+        return { label: "已记录失败", className: "status-amber", priority: 9 };
       case "no_subtitles":
-        return { label: "🔇 暂无字幕 (TBD)", className: "status-slate", priority: 14 };
+        return { label: "无可用字幕", className: "status-slate", priority: 14 };
+      case "skipped":
+        return { label: "已跳过", className: "status-slate", priority: 14 };
       default:
         return { label: status || "未知状态", className: "status-slate", priority: 99 };
     }
   }
 
   function humanizeReason(reason) {
-    if (!reason) return "常规内容运营互动";
+    if (!reason) return "暂无原因记录";
     const map = {
       "light_interaction": "优质讨论引发共鸣，大肥鱼参与活跃氛围",
       "specific_detail": "深入呼应视频中的核心观点与亮点细节",
       "private_details": "涉及更深话题，引导至私信交流",
-      "no_subtitles": "视频暂无可用字幕，已跳过（待后续接入ASR）",
+      "no_subtitles": "视频无可用字幕，已跳过",
       "visual_unavailable": "视频暂无可用字幕且视觉未就绪，已安全跳过（待后续接入ASR）",
       "platform_error": "B站接口网络波动或频控限制",
       "spam": "过滤掉广告营销或低俗刷屏发言",
@@ -143,24 +155,11 @@
     const inputTokens = budget.input_tokens ?? 0;
     const outputTokens = budget.output_tokens ?? 0;
     const totalTokens = inputTokens + outputTokens;
-    const topLevels = budget.top_levels ?? 0;
-
-    let narrative = "";
-    const keywords = (config.keywords && config.keywords.length) ? config.keywords.slice(0, 3).join("、") : "热门关注内容";
-
-    if (round.status === "completed") {
-      narrative = `本轮围绕「${keywords}」自主巡航，共检索浏览了 ${reads} 篇视频，深度调用模型分析 ${modelCalls} 次，成功沉淀了 ${topLevels || (modelCalls > 0 ? "1" : "0")} 条高质量互动草稿。`;
-    } else if (round.status === "partial") {
-      narrative = `本轮检索浏览了 ${reads} 篇视频，部分视频因缺少可用字幕或未触达兴趣点跳过，已完成分析并保留相关进度。`;
-    } else if (round.status === "cancelled") {
-      narrative = `本轮巡航被手动中止，已阅览的 ${reads} 篇视频进度与已生成的草稿已妥善留存。`;
-    } else if (round.status === "failed") {
-      narrative = `本轮巡航遇到异常中断：${round.error || "网络或平台限制"}，系统已自动熔断保护。`;
-    } else if (round.status === "running") {
-      narrative = `当前正在对「${keywords}」进行实时巡航，已阅 ${reads} 篇视频，正在进行深度理解……`;
-    } else {
-      narrative = `本轮巡航共处理 ${reads} 篇视频，消耗 ${totalTokens} Tokens。`;
-    }
+    const kind = config.discovery_id ? "自动刷视频" : round.preview ? "只读预览" : "全渠道运营";
+    const viewed = round.metrics?.viewed;
+    const drafts = round.public_drafts;
+    const narrative = [kind, viewed == null ? "" : `已读并判断 ${viewed} 条`,
+      drafts == null ? "" : `评论草稿 ${drafts} 条`, round.error || ""].filter(Boolean).join(" · ");
 
     const tokenFormatted = totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : `${totalTokens}`;
 
@@ -175,7 +174,7 @@
         reads,
         modelCalls,
         tokens: tokenFormatted,
-        topLevels,
+        drafts,
       },
       raw: round,
     };

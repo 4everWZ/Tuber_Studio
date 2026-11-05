@@ -92,6 +92,7 @@
       prevBtn.onclick = (e) => {
         e.preventDefault();
         this.prev();
+        this.renderControls(container);
       };
 
       const nextBtn = document.createElement("button");
@@ -102,6 +103,7 @@
       nextBtn.onclick = (e) => {
         e.preventDefault();
         this.next();
+        this.renderControls(container);
       };
 
       btnGroup.append(prevBtn, nextBtn);

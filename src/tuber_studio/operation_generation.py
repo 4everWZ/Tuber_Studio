@@ -81,9 +81,13 @@ async def generate_with_recovery(
     deadline=None,
     context_data=None,
     reuse_completed=False,
+    max_recoveries=None,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     coordinator = coordinator_for(runtime, runtime.store, runtime.operations)
+    limits = episode_limits(max_tokens)
+    if max_recoveries is not None:
+        limits["max_recoveries"] = max_recoveries
     row = coordinator.find(channel, identity)
     if reuse_completed and row and row["state"] == "completed":
         if content_hash(row["binding"]) != content_hash(binding):
@@ -107,7 +111,7 @@ async def generate_with_recovery(
             {"kind": "generation_start"},
             parent_round_id=parent_round_id,
             deadline=deadline,
-            budget_limits=episode_limits(max_tokens),
+            budget_limits=limits,
         )
     elif run_initial:
         row = coordinator.restart_generation(
@@ -115,7 +119,7 @@ async def generate_with_recovery(
             binding=binding,
             parent_round_id=parent_round_id,
             deadline=deadline,
-            budget_limits=episode_limits(max_tokens),
+            budget_limits=limits,
         )
     elif row["can_resume"] and row["state"] != "needs_reconciliation":
         row = coordinator.resume(
@@ -123,7 +127,7 @@ async def generate_with_recovery(
             binding=binding,
             parent_round_id=parent_round_id,
             deadline=deadline,
-            budget_limits=episode_limits(max_tokens),
+            budget_limits=limits,
         )
     model = FeedbackModel(
         runtime,

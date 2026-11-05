@@ -61,7 +61,9 @@ class OperationsControl:
         with store.db:
             store.db.execute(
                 "INSERT OR IGNORE INTO operation_channel_blocks SELECT account_id,channel,"
-                "'发送中重启，等待核对平台状态' FROM operation_write_attempts WHERE status='sending'"
+                "'发送中重启，等待核对平台状态' FROM operation_write_attempts w "
+                "LEFT JOIN operation_write_bindings b ON w.root_token=b.root_token WHERE status='sending' "
+                "AND COALESCE(json_extract(b.binding_json,'$.source.discovery'),0)=0"
             )
             store.db.execute(
                 "UPDATE account_writes SET status='uncertain',error='发送中重启，等待核对状态' WHERE status='sending'"
@@ -196,7 +198,9 @@ class OperationsControl:
             self.store.db.execute("BEGIN IMMEDIATE")
             previous = self.revisions.resolve(token, account_id=account_id, binding=binding, receipt=receipt)
             if not self.store.db.execute(
-                "SELECT 1 FROM operation_write_attempts WHERE account_id=? AND channel=? AND resolved_status='uncertain'",
+                "SELECT 1 FROM operation_write_attempts w LEFT JOIN operation_write_bindings b "
+                "ON w.root_token=b.root_token WHERE account_id=? AND channel=? AND resolved_status='uncertain' "
+                "AND COALESCE(json_extract(b.binding_json,'$.source.discovery'),0)=0",
                 (previous["account_id"], previous["channel"]),
             ).fetchone():
                 self.store.db.execute(
@@ -320,7 +324,7 @@ class OperationsControl:
                 f"UPDATE {table} SET status=?,receipt=?,error=? WHERE token=?",
                 (status, json.dumps(receipt, ensure_ascii=False) if receipt else None, error, token),
             )
-            if status == "uncertain":
+            if status == "uncertain" and not (row["binding"] or {}).get("source", {}).get("discovery"):
                 self.store.db.execute(
                     "INSERT OR REPLACE INTO operation_channel_blocks VALUES(?,?,?)",
                     (row["account_id"], row["channel"], "发送结果不确定，等待核对平台状态"),

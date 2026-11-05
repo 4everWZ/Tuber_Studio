@@ -49,10 +49,11 @@ def admin(client, settings):
     return client
 
 
-READS = ["", "/tasks", "/rounds", "/intents", "/inbox"]
+READS = ["", "/tasks", "/rounds", "/intents", "/inbox", "/discovery", "/discovery/records"]
 WRITES = [
     ("PUT", "/settings", {}),
     ("POST", "/preflight", {}),
+    ("PUT", "/discovery", {"enabled": True}),
     ("POST", "/enable", {"enabled": False}),
     ("POST", "/round", {"preview": True}),
     ("POST", "/stop", {"emergency": True}),
@@ -215,6 +216,81 @@ def test_real_api_preview_evidence_and_approval_do_not_implicitly_submit(admin):
     assert admin.get("/api/automation").json()["automatic_sending_ready"] is False
 
 
+def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
+    store = admin.app.state.store
+    now = time.time()
+    for identity, status in enumerate(("pending_review", "publish_uncertain", "private_handoff"), 1):
+        store.execute(
+            "INSERT INTO comments(id,video_id,comment_id,thread_id,content,imported_at) VALUES(?,?,?,?,?,?)",
+            (identity, "BV1d8pU6xEZX", str(identity), str(identity), "公开来源", now),
+        )
+        store.execute(
+            "INSERT INTO drafts(id,comment_id,text,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+            (identity, identity, "PRIVATE" if status == "private_handoff" else "草稿", status, now, now),
+        )
+    admin.put("/api/automation/settings", json={"top_level_enabled": True}).raise_for_status()
+    preview = admin.post("/api/automation/round", json={"preview": True}).raise_for_status().json()
+    assert wait_round(admin, preview["id"])["status"] == "completed"
+    queue = "/api/comments/workbench"
+    review = admin.get(queue).raise_for_status().json()
+    assert review["total"] == 2
+    assert {row["channel"] for row in review["items"]} == {"comments", "browsing"}
+    row = next(item for item in review["items"] if item["channel"] == "browsing")
+    assert admin.get(f"{queue}/browsing/{row['id']}").json()["evidence_segments"][0]["id"] == "11:0"
+    assert admin.get(f"{queue}?view=verify").json()["items"][0]["id"] == "2"
+    assert admin.get(f"{queue}/comments/3").json() == {"id": 3, "status": "private_handoff"}
+    assert admin.get(f"{queue}?view=history").json()["items"][0]["excerpt"] == ""
+    assert admin.get(f"{queue}?offset=999").json()["offset"] == 0
+    assert admin.get(f"{queue}/comments/4").status_code == 404
+    assert not admin.app.state.comments.adapter.sent
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_independent_discovery_requires_restart_activation(settings, legacy):
+    with TestClient(make_app(settings)) as first:
+        first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        path = "/api/automation/discovery"
+        assert first.put(path, json={"enabled": True}).raise_for_status().json()["enabled"]
+        for _ in range(100):
+            if any(row["status"] == "published" for row in first.get("/api/automation/intents").json()):
+                break
+            time.sleep(0.01)
+        assert first.get("/api/automation/intents").json()[0]["status"] == "published"
+        if legacy:
+            first.app.state.browsing.store.set("browsing_discovery_account", None)
+    with TestClient(make_app(settings)) as second:
+        second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        state = second.get(path).json()
+        assert state["state"] == "off" and not state["enabled"]
+        assert state["last_round"] and state["sent"] == 1
+        activity = second.get(path + "/records?recent=true").json()["activity"]
+        assert any(row["status"] == "published" and row["title"] == "盐水实验" for row in activity)
+        assert not second.get("/api/automation").json()["active_round"]
+        assert second.get("/api/automation/intents").json()[0]["status"] == "published"
+        assert not second.app.state.comments.adapter.sent
+        second.app.state.comments.credentials = {"sessdata": "another-session", "csrf": "another-csrf"}
+        second.app.state.comments.adapter.account = "101"
+        assert second.get(path).json()["last_round"] is None
+        assert second.get(path + "/records?recent=true").json()["activity"] == []
+
+
+def test_discovery_source_api_validates_and_uses_explicit_selection(admin):
+    path = "/api/automation/settings"
+    admin.put(path, json={"autonomous_topics": True, "keywords": []}).raise_for_status()
+    for selection in (
+        {"mode": "search", "keywords": [], "watch_videos": []},
+        {"mode": "specified", "keywords": [], "watch_videos": ["bad-id"]},
+    ):
+        assert admin.put(path, json={"discovery_source": selection}).status_code == 400
+    selection = {"mode": "popular", "keywords": ["旧词"], "watch_videos": []}
+    response = admin.put(path, json={"discovery_source": selection})
+    assert response.raise_for_status().json()["source"]["mode"] == "popular"
+    settings = admin.get("/api/automation").json()["settings"]
+    assert (
+        settings["sources"] == ["popular"] and not settings["keywords"] and not settings["autonomous_topics"]
+    )
+
+
 def test_public_inbox_only_links_to_private_area_without_private_body(admin):
     assert admin.post("/api/automation/preflight").json()["account_id"] == "100"
     store = admin.app.state.store
@@ -313,4 +389,3 @@ def test_automation_settings_accepts_permission_matrix_with_extra_keys(admin):
     assert data["settings"]["reply_auto_publish"] is True
     assert data["settings"]["video_like_auto_publish"] is True
     assert data["settings"]["max_per_day"] == 25
-

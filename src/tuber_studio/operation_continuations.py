@@ -170,6 +170,7 @@ class ContinuationCoordinator:
         )
         row["budget"] = json.loads(metering["budget"]) if metering else {}
         row["limits"] = json.loads(metering["limits"]) if metering else {}
+        row["max_recoveries"] = row["limits"].get("max_recoveries", row["max_recoveries"])
         if row["parent_round_id"] and self.parent_repository is not None:
             parent = self.parent_repository.round(row["parent_round_id"])
             if parent:

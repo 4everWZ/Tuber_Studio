@@ -246,38 +246,32 @@ export function renderPermissionMatrix(status) {
   if ($("exp-deadline-seconds") && document.activeElement !== $("exp-deadline-seconds")) {
     $("exp-deadline-seconds").value = settings.deadline_seconds ?? 1800;
   }
-  if ($("exp-autonomous-topics") && document.activeElement !== $("exp-autonomous-topics")) {
-    $("exp-autonomous-topics").checked = Boolean(settings.autonomous_topics);
-  }
   if ($("exp-visual-enabled") && document.activeElement !== $("exp-visual-enabled")) {
     $("exp-visual-enabled").checked = settings.visual_enabled !== false;
   }
 }
 
+let roundSettingsDirty = false;
+
 export function renderOperationsQuickBar(status) {
   const settings = status.settings || {};
-  if ($("op-keywords") && document.activeElement !== $("op-keywords")) {
-    $("op-keywords").value = (settings.keywords || []).join(", ");
-  }
-  if ($("op-source") && document.activeElement !== $("op-source")) {
-    const src = (settings.sources && settings.sources[0]) || "recommend";
-    $("op-source").value = src;
-  }
-  if ($("op-max-replies") && document.activeElement !== $("op-max-replies")) {
+  if (!roundSettingsDirty) {
     $("op-max-replies").value = settings.max_replies_per_video ?? 2;
+    $("op-interval").value = settings.interval_seconds ?? 300;
+    $("op-save-quick-config").disabled = false;
   }
 
   const policyEnabled = status.policy?.enabled === true;
-  const hasActiveRound = Boolean(
-    status.active_round || (status.rounds && status.rounds.length) || (status.state === "running" && !policyEnabled)
-  );
+  const hasActiveRound = Boolean(status.active_round);
+  const emergency = Boolean(status.policy?.emergency);
 
   const toggleBtn = $("op-toggle-auto");
   if (toggleBtn) {
-    toggleBtn.textContent = policyEnabled ? "停止自主运营" : "开启自主运营";
-    toggleBtn.className = policyEnabled ? "danger" : "primary";
-    toggleBtn.title = policyEnabled ? "点击关闭后台周期性自主运营" : "点击开启后台周期性自主运营";
+    toggleBtn.textContent = policyEnabled ? "停止全渠道运营" : "开启全渠道运营";
+    toggleBtn.disabled = emergency || Boolean(status.discovery?.enabled);
   }
+  $("op-emergency").disabled = emergency;
+  $("op-reset-stop").hidden = !emergency;
 
   const stopRoundBtn = $("op-stop-round");
   if (stopRoundBtn) {
@@ -288,7 +282,7 @@ export function renderOperationsQuickBar(status) {
   const previewBtn = $("op-preview-round");
   if (previewBtn) {
     previewBtn.disabled = hasActiveRound;
-    previewBtn.textContent = hasActiveRound ? "轮次执行中…" : "单轮运营预览";
+    previewBtn.textContent = "只读单轮预览";
   }
 }
 
@@ -301,11 +295,10 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
   const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : (current.inspect_limit || 4);
   const decisionTokens = $("exp-decision-max-tokens") ? parseInt($("exp-decision-max-tokens").value || "8192", 10) : (current.decision_max_tokens || 8192);
   const deadlineSec = $("exp-deadline-seconds") ? parseInt($("exp-deadline-seconds").value || "1800", 10) : (current.deadline_seconds || 1800);
-  const autonomousTopics = $("exp-autonomous-topics") ? Boolean($("exp-autonomous-topics").checked) : Boolean(current.autonomous_topics);
   const visualEnabled = $("exp-visual-enabled") ? Boolean($("exp-visual-enabled").checked) : Boolean(current.visual_enabled ?? true);
 
   const allowedBrowsingKeys = new Set([
-    "sources", "keywords", "watch_videos", "autonomous_topics", "discovery_enabled",
+    "discovery_enabled",
     "top_level_enabled", "top_level_auto_publish", "reply_enabled", "reply_auto_publish",
     "video_like_enabled", "video_like_auto_publish", "video_fav_enabled", "video_fav_auto_publish",
     "max_replies_per_video", "auto_downgrade_on_error", "mentions_enabled", "mention_reply_enabled",
@@ -326,7 +319,6 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
     inspect_limit: Math.max(1, Math.min(20, inspectLimit || 4)),
     decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens || 8192)),
     deadline_seconds: Math.max(60, Math.min(3600, deadlineSec || 1800)),
-    autonomous_topics: autonomousTopics,
     visual_enabled: visualEnabled,
   };
 
@@ -427,32 +419,27 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
     });
   }
 
-  if ($("op-save-quick-config")) {
-    $("op-save-quick-config").onclick = async () => {
-      const rawKw = $("op-keywords")?.value || "";
-      const keywords = rawKw
-        .split(/[,，\n]/)
-        .map(k => k.trim())
-        .filter(k => k.length > 0)
-        .slice(0, 20);
-      const source = $("op-source")?.value || "recommend";
-      const maxReplies = parseInt($("op-max-replies")?.value || "2", 10);
-
-      const current = currentAutomationStatus?.settings || {};
+  const roundForm = $("op-round-settings");
+  if (roundForm) {
+    roundForm.addEventListener("input", () => { roundSettingsDirty = true; });
+    roundForm.onsubmit = async event => {
+      event.preventDefault();
+      const save = $("op-save-quick-config");
+      if (save.disabled) return;
       const payload = {
-        ...current,
-        keywords,
-        sources: [source],
-        max_replies_per_video: Math.max(0, Math.min(20, maxReplies)),
+        max_replies_per_video: Number($("op-max-replies").value),
+        interval_seconds: Number($("op-interval").value),
       };
-      delete payload.comment_handoff_enabled;
-
+      save.disabled = true;
       try {
         await api("/api/automation/settings", { method: "PUT", body: payload });
-        notice("运营关键词与来源设置已保存。");
+        roundSettingsDirty = false;
+        notice("轮次设置已保存。");
         await updatePermissionCapsule(api, accountPanel);
       } catch (err) {
         notice(err.message, true);
+      } finally {
+        save.disabled = false;
       }
     };
   }
@@ -475,6 +462,11 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
       try {
         const isEnabled = currentAutomationStatus?.policy?.enabled === true;
         const target = !isEnabled;
+        if (target) {
+          const account = accountPanel?.value?.profile?.uid || currentAutomationStatus?.account_id || "待核验";
+          const role = currentAutomationStatus?.character?.id || "当前角色";
+          if (!confirm(`开启全渠道运营？B 站 UID ${account}，角色 ${role}。评论、通知和私信会按现有授权与额度自动处理。`)) return;
+        }
         await api("/api/automation/enable", { method: "POST", body: { enabled: target } });
         notice(target ? "自主运营已开启。" : "自主运营已停止。");
         await automationPanel?.refresh();
@@ -494,6 +486,24 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
         await updatePermissionCapsule(api, accountPanel);
       } catch (e) {
         notice(e.message, true);
+      }
+    };
+  }
+  for (const [id, url, body, message] of [
+    ["op-emergency", "/api/automation/stop", { emergency: true }, "已紧急停止所有自动收发。"],
+    ["op-reset-stop", "/api/automation/reset-stop", undefined, "已解除紧急停止，可手动开始。"],
+  ]) {
+    $(id).onclick = async () => {
+      $(id).disabled = true;
+      try {
+        await api(url, { method: "POST", body });
+        notice(message);
+      } catch (error) {
+        notice(error.message, true);
+      } finally {
+        $(id).disabled = false;
+        await updatePermissionCapsule(api, accountPanel);
+        await automationPanel?.refresh();
       }
     };
   }
