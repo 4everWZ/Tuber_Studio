@@ -5,7 +5,9 @@ import hashlib
 import json
 import re
 import wave
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Protocol
 
@@ -23,6 +25,21 @@ SYSTEM_RULES = (
     "以当前角色的身份和第一人称交流。结合人设、彼此的关系、情绪和当前情境，"
     "自然回应对方的问题、建议或心情，延续已经聊到的内容。角色设定："
 )
+
+_turn_token_counts = ContextVar("turn_token_counts", default=None)
+
+
+def reuse_turn_token_counts(function):
+    """Share exact local tokenizer results only within one reply or evidence pass."""
+    @wraps(function)
+    async def run(*args, **kwargs):
+        scope = _turn_token_counts.set({})
+        try:
+            return await function(*args, **kwargs)
+        finally:
+            _turn_token_counts.reset(scope)
+
+    return run
 
 
 def single_system_messages(messages):
@@ -206,7 +223,19 @@ class LlamaCppProvider:
         return len(response.json()["tokens"])
 
     async def count_tokens(self, messages):
-        return await self._token_count(messages)
+        counts = _turn_token_counts.get()
+        if counts is None:
+            return await self._token_count(messages)
+        wire = json.dumps(single_system_messages(messages), sort_keys=True, ensure_ascii=False)
+        key = (
+            self,
+            self.config.get("model"),
+            self.config.get("enable_thinking", False),
+            hashlib.sha256(wire.encode()).digest(),
+        )
+        if key not in counts:
+            counts[key] = await self._token_count(messages)
+        return counts[key]
 
     async def prefill(self, messages):
         """Condition the real model on restored source text; discard its one token."""
@@ -289,7 +318,7 @@ class LlamaCppProvider:
         messages = single_system_messages(messages)
         output_budget = self.config.get("max_tokens", 160)
         budget = self.config["context_tokens"] * 95 // 100 - output_budget
-        self.last_tokens = await self._token_count(messages)
+        self.last_tokens = await self.count_tokens(messages)
         if self.last_tokens > budget:
             raise ContextWindowExceeded("输入超出真实token预算；需要模型压缩，禁止静默丢弃历史")
         schema = Reply.model_json_schema()
@@ -333,6 +362,17 @@ class LlamaCppProvider:
 
     async def generate_json(self, messages, schema, *, max_tokens):
         """A bounded schema-constrained task, independent of compaction output."""
+        return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling())
+
+    async def generate_video_response(self, messages, schema, *, max_tokens):
+        sampling = self.sampling() | {
+            "dry_multiplier": 0.8,
+            "dry_allowed_length": 5,
+            "dry_penalty_last_n": 512,
+        }
+        return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=sampling)
+
+    async def _generate_json(self, messages, schema, *, max_tokens, sampling):
         self._begin_generation_observation()
         json_schema_text(schema, max_tokens)
         await self.ensure_capacity()
@@ -347,7 +387,7 @@ class LlamaCppProvider:
             json={
                 "model": self.config.get("model", "local"),
                 "messages": messages,
-                **self.sampling(),
+                **sampling,
                 "max_tokens": max_tokens,
                 "stream": False,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
@@ -582,6 +622,27 @@ class VoiceService:
         if self.cache:
             self.cache.touch(audio.path, seconds=180)
         return audio
+
+    def live_parts(self, text, voice_id):
+        config = self.settings.data["tts"]
+        if (
+            config["kind"] != "gpt_sovits"
+            or config.get("local_backend") != "genie_onnx_int8"
+            or self.settings.voice(voice_id)["provider"] != "gpt_sovits"
+        ):
+            return [text]
+        parts, start = [], 0
+        for boundary in re.finditer(r"[，。！？；、!?;\n]|(?<![0-9]),|,(?![0-9])", text):
+            stop = boundary.end()
+            if (
+                sum(char.isalnum() for char in text[start:stop]) >= 5
+                and sum(char.isalnum() for char in text[stop:]) >= 5
+            ):
+                parts.append(text[start:stop])
+                start = stop
+                if len(parts) == 3:
+                    break
+        return [*parts, text[start:]]
 
     async def synthesize_live(self, text, voice_id):
         voice = self.settings.voice(voice_id)

@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.live_media import default_scene, inspect_wav
-from tuber_studio.models import Event
+from tuber_studio.models import Event, Reply
+from tuber_studio.providers import Audio
 
 
 def pcm(seconds=0.4, silence=False):
@@ -54,6 +55,74 @@ class Player:
 
     async def send_json(self, message):
         self.messages.append(message)
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime, store, monkeypatch, cancel):
+    text = "鱼鱼刚看完这一段，下一轮我们慢一点试试。"
+    runtime.settings.data["tts"].update(kind="gpt_sovits", local_backend="genie_onnx_int8")
+    monkeypatch.setattr(runtime.settings, "voice", lambda _: {"provider": "gpt_sovits"})
+    second_started = asyncio.Event()
+    second_release = asyncio.Event()
+    second_cancelled = asyncio.Event()
+    calls = []
+
+    async def reply(*_):
+        return Reply(spoken_text=text), None
+
+    async def synthesize(part, _voice):
+        calls.append(part)
+        if len(calls) == 2:
+            second_started.set()
+            try:
+                await second_release.wait()
+            except asyncio.CancelledError:
+                second_cancelled.set()
+                raise
+        return Audio(runtime.settings.audio / f"segment-{len(calls)}.wav", 0.4, part)
+
+    monkeypatch.setattr(runtime, "generate_reply", reply)
+    monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
+    player = Player()
+    owner = await runtime.attach_overlay(player)
+    await runtime.control("start")
+    result = await runtime.submit(Event(type="chat", text="下一轮怎么打？"))
+    job_id = result["job_id"]
+
+    def plays():
+        return [message for message in player.messages if message["type"] == "play"]
+
+    await wait_for(lambda: plays() and second_started.is_set())
+    assert [message["text"] for message in plays()] == ["鱼鱼刚看完这一段，"]
+    first = {"job_id": job_id, "playback_token": plays()[0]["playback_token"]}
+    assert not await runtime.acknowledge(owner, first | {"type": "ended"})
+    assert await runtime.acknowledge(owner, first | {"type": "started"})
+    first_audio_ms = runtime.timings["first_audio_ms"]
+    assert first_audio_ms is not None
+    assert await runtime.acknowledge(owner, first | {"type": "ended"})
+    assert not await runtime.acknowledge(owner, first | {"type": "ended"})
+    assert store.job(job_id)["status"] == "synthesizing"
+    assert not store.all("SELECT * FROM conversations")
+
+    if cancel:
+        await runtime.cancel_current()
+        assert second_cancelled.is_set()
+        assert store.job(job_id)["status"] == "cancelled"
+        assert len(plays()) == 1
+        assert not store.all("SELECT * FROM conversations")
+        return
+
+    second_release.set()
+    await wait_for(lambda: len(plays()) == 2)
+    second = {"job_id": job_id, "playback_token": plays()[1]["playback_token"]}
+    assert plays()[1]["text"] == "下一轮我们慢一点试试。"
+    assert second != first
+    assert not await runtime.acknowledge(owner, first | {"type": "ended"})
+    assert await runtime.acknowledge(owner, second | {"type": "started"})
+    assert runtime.timings["first_audio_ms"] == first_audio_ms
+    assert await runtime.acknowledge(owner, second | {"type": "ended"})
+    assert store.job(job_id)["status"] == "completed"
+    assert [row["reply_text"] for row in store.all("SELECT * FROM conversations")] == [text]
 
 
 async def test_song_is_real_playback_and_never_enters_dialogue_memory(runtime, store):

@@ -170,6 +170,58 @@ async def test_no_request_keeps_zero_visual_generations(browsing):
     assert not any(call[0] == "frames" for call in browsing.adapter.calls)
 
 
+async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(browsing):
+    browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
+    visual, _ = install_visual(browsing)
+    metadata = browsing.adapter.video_metadata
+    subtitles = browsing.adapter.subtitles
+    frames = browsing.adapter.video_frames
+    generate = browsing.runtime.llm.generate_json
+    frame_requests = []
+    response_inputs = []
+
+    async def two_parts(video):
+        data = await metadata(video)
+        data["parts"].append({"cid": "22", "title": "第二P", "duration": 120})
+        return data
+
+    async def later_subtitles(video, cid, languages):
+        data = await subtitles(video, cid, languages)
+        if cid == "22":
+            data["segments"][0].update(start=60, end=70, text="第二P的字幕。")
+        return data
+
+    async def part_frames(metadata, count, *, cid, timestamps):
+        frame_requests.append((cid, timestamps))
+        result = await frames(metadata, count)
+        result[0].update(id="22:65", cid="22", actual_time=65, requested_time=65)
+        return result
+
+    async def cite_second_part(messages, schema, *, max_tokens):
+        result = await generate(messages, schema, max_tokens=max_tokens)
+        if schema["title"] == "ContentDecision" and result["coverage_required"] == "visual":
+            result["evidence_ids"] = ["e2"]
+        if schema["title"] == "ResponseDecision":
+            data = model_packet(messages[-1]["content"])
+            response_inputs.append(data["content"])
+            result["evidence_ids"] = [data["evidence"][0]["id"]]
+        return result
+
+    browsing.adapter.video_metadata = two_parts
+    browsing.adapter.subtitles = later_subtitles
+    browsing.adapter.video_frames = part_frames
+    browsing.runtime.llm.generate_json = cite_second_part
+    await finished(browsing, preview=True)
+
+    assert frame_requests == [("22", [65.0])]
+    assert visual.generated == 1
+    assert len(response_inputs) == 1
+    assert "P2 画面 蓝色液体位于透明杯中。" in response_inputs[0]
+    assert "P2 字幕 第二P的字幕。" in response_inputs[0]
+    assert "P1 字幕" not in response_inputs[0]
+    assert browsing.intents()[0]["evidence"] == ["frame:22:65"]
+
+
 async def test_visual_request_respects_disabled_switch(browsing):
     visual, inputs = install_visual(browsing)
     browsing.store.set("browsing_policy", browsing.policy() | {"visual_enabled": False})

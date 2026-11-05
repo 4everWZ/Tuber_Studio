@@ -225,6 +225,13 @@ class APIProvider:
     async def generate_operation(self, messages, character, event_id, source_text=None):
         return await generate_operation_reply(self, messages, event_id)
 
+    async def complete_admitted_live_image(self, messages, schema, budget):
+        """Direct call for an already admitted device with context shifting disabled."""
+        if self.adapter != "llama_cpp":
+            raise ValueError("直播画面需要已准入的 llama.cpp 视觉节点")
+        json_schema_text(schema, budget)
+        return await self._complete(messages, budget=budget, structured=True, schema=schema)
+
     def prepare_json_messages(self, messages, schema, *, max_tokens):
         schema_text = json_schema_text(schema, max_tokens)
         # JSON-object mode is widely supported; do not assume a compatible API

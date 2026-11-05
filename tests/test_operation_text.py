@@ -52,6 +52,10 @@ def test_operations_keep_long_text_but_live_schema_and_style_limits_are_independ
     repeated = (("这是同一整段意外循环的输出。" * 5) + "\n") * 80
     assert operation_output_diagnostics(repeated)["needs_review"]
     assert validate_operation_text(repeated) == repeated  # Review signal, not an OC rejection.
+    loop = "车斗里的人一直望着前面，后座还空着，像是刚赶完一趟。" * 30
+    assert operation_output_diagnostics(loop)["needs_review"]
+    assert validate_operation_text(loop) == loop
+    assert not operation_output_diagnostics(LONG_TEXT)["needs_review"]
     with pytest.raises(ValueError, match="256KiB"):
         validate_operation_text("鲸" * (MAX_OPERATION_TEXT_BYTES // 3 + 1))
 

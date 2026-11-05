@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from tuber_studio.providers import LlamaCppProvider, validate_reply
+from tuber_studio.providers import LlamaCppProvider, reuse_turn_token_counts, validate_reply
 
 
 def test_oc_wording_and_style_length_are_flexible_but_event_binding_is_checked(store):
@@ -15,6 +15,31 @@ def test_oc_wording_and_style_length_are_flexible_but_event_binding_is_checked(s
         validate_reply(
             json.dumps({"spoken_text": "给你留了一碗热饭。", "reply_to": ["other"]}), role, "viewer:1"
         )
+
+
+async def test_exact_token_count_reuse_is_bound_to_the_current_wire_and_turn(settings, monkeypatch):
+    provider = LlamaCppProvider(settings.data["llm"])
+    calls = []
+
+    async def tokenize(messages):
+        calls.append(messages)
+        return len(calls)
+
+    monkeypatch.setattr(provider, "_token_count", tokenize)
+    messages = [{"role": "user", "content": "你好吗"}]
+
+    @reuse_turn_token_counts
+    async def turn():
+        count = await provider.count_tokens(messages)
+        assert count == await provider.count_tokens([dict(message) for message in messages])
+        assert count != await provider.count_tokens([{"role": "user", "content": "你在吗"}])
+
+    try:
+        await turn()
+        await turn()
+        assert len(calls) == 4
+    finally:
+        await provider.close()
 
 
 @pytest.mark.parametrize(

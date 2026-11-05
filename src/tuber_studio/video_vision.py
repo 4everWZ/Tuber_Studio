@@ -15,6 +15,7 @@ from contextlib import nullcontext
 from typing import Literal
 from uuid import uuid4
 
+import httpx
 from pydantic import Field, model_validator
 
 from .api_providers import APIProvider, validate_image
@@ -22,7 +23,8 @@ from .generation_meter import GenerationMeter
 from .http_api import response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling
-from .models import StrictModel
+from .models import Reply, StrictModel
+from .providers import validate_reply
 
 VIDEO_EVIDENCE_PROTOCOL = "sequential_captions_indexed_assessment_v2"
 
@@ -47,6 +49,7 @@ class VideoVisionConfig(StrictModel):
     properties_path: str = Field(default="/props", pattern=r"^/[A-Za-z0-9_/-]{1,160}$")
     image_profile: Literal["server_native", "gemma4_image_280"] = "server_native"
     image_order: Literal["text_first", "image_first"] = "text_first"
+    frame_strategy: Literal["sequential", "joint"] = "sequential"
 
     @model_validator(mode="after")
     def valid(self):
@@ -56,6 +59,8 @@ class VideoVisionConfig(StrictModel):
             raise ValueError("视觉输出预算没有留下输入空间")
         if self.enabled and not self.model.strip():
             raise ValueError("启用视觉须指定真实模型ID")
+        if self.frame_strategy == "joint" and self.max_frames > 3:
+            raise ValueError("联合视觉请求最多使用三帧")
         if any(
             len(value) > 2048
             for value in (
@@ -96,8 +101,12 @@ class ApiVideoEvidenceProvider:
 
     def identity(self):
         """Public configuration bound to an external device benchmark record."""
-        return self.config.model_dump(exclude={"enabled", "timeout_seconds"}) | {
-            "protocol": VIDEO_EVIDENCE_PROTOCOL
+        return self.config.model_dump(exclude={"enabled", "timeout_seconds", "frame_strategy"}) | {
+            "protocol": (
+                VIDEO_EVIDENCE_PROTOCOL
+                if self.config.frame_strategy == "sequential"
+                else "joint_captions_indexed_assessment_v1"
+            )
         }
 
     @property
@@ -279,6 +288,194 @@ class ApiVideoEvidenceProvider:
                 }
         return value, props, usage | {"elapsed_ms": round((time.monotonic() - started) * 1000, 3)}
 
+    async def _image_content(self, frame):
+        mime_type = frame.get("mime_type", "image/jpeg")
+        prepared = (
+            await asyncio.to_thread(prepare_image, frame["image"], mime_type, self.config.image_profile)
+            if self.config.image_profile != "server_native"
+            else {"data": frame["image"], "mime_type": mime_type, "metadata": None}
+        )
+        data = base64.b64encode(prepared["data"]).decode("ascii")
+        return {"type": "image_url", "image_url": {"url": f"data:{prepared['mime_type']};base64,{data}"}}, (
+            prepared["metadata"]
+        )
+
+    async def generate_live_reply(self, scene, messages, llm, event_id):
+        """One direct image generation with the same admitted live model and bounded input."""
+        live_endpoint = llm.get("base_url", "").rstrip("/").removesuffix("/v1")
+        visual_endpoint = self.config.base_url.rstrip("/").removesuffix("/v1")
+        if (
+            not self.capabilities()["admitted"]
+            or llm.get("kind") != "llama_cpp"
+            or llm.get("model") != self.config.model
+            or llm.get("context_tokens") != self.config.context_tokens
+            or live_endpoint != visual_endpoint
+        ):
+            return None
+        if (
+            type(scene.width) is not int
+            or type(scene.height) is not int
+            or not 0 < scene.width <= 4096
+            or not 0 < scene.height <= 4096
+            or scene.width * scene.height > self.config.max_pixels
+            or not isinstance(scene.image, bytes)
+            or len(scene.image) > self.config.max_bytes
+        ):
+            return None
+        validate_image(scene.image, scene.mime_type)
+        identity = self.identity()
+        expected = self._probe["properties"]
+        try:
+            props = await self._runtime_properties()
+            self._check_properties(props, expected, identity)
+        except (ValueError, httpx.HTTPError):
+            self._probe = self._admission = None
+            return None
+        image, _ = await self._image_content({"image": scene.image, "mime_type": scene.mime_type})
+        if not scene.current(scene.session_id):
+            return None
+        # Attach the snapshot to the last actual viewer message. The live turn
+        # still owns the generation lock and no visual bytes enter its history.
+        messages = scene.annotate(messages, image=image)
+        schema = Reply.model_json_schema()
+        schema["properties"]["reply_to"] |= {"items": {"type": "string", "enum": [event_id]}, "maxItems": 1}
+        budget = llm.get("max_tokens", 1024)
+        async with asyncio.timeout(self.config.timeout_seconds):
+            content, tokens = await self.api.complete_admitted_live_image(messages, schema, budget)
+        self._check_properties(props, expected, identity)
+        if tokens + budget > self.config.context_tokens * 95 // 100:
+            raise ValueError("直播画面输入超出实际窗口预算")
+        return validate_reply(content, None, event_id)
+
+    async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository):
+        captions, stages = [], []
+        for number, frame in enumerate(frames, 1):
+            image, preprocessing = await self._image_content(frame)
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"这张画面来自分P {frame['cid']}，实际采样时间为"
+                            f" {frame['actual_time']} 秒。描述这张画面中的人物、物品和动作，"
+                            "结合当前问题给出相关所见。当前问题：" + question,
+                        },
+                        image,
+                    ],
+                }
+            ]
+            if self.config.image_order == "image_first":
+                messages[0]["content"].reverse()
+            text, props, stage = await self._stage(
+                task,
+                deadline,
+                identity,
+                expected,
+                repository,
+                lambda: self.api.generate_text(messages, max_tokens=self.config.max_output_tokens),
+            )
+            expected = props
+            if not isinstance(text, str) or not text.strip() or len(text) > 4000:
+                raise ValueError("视觉逐帧观察须为非空且有界的自然文本")
+            captions.append({"frame": frame, "text": text})
+            stages.append(
+                stage
+                | {
+                    "stage": "caption",
+                    "number": number,
+                    "frame_id": frame["id"],
+                    "preprocessing": preprocessing,
+                }
+            )
+        messages = [
+            {
+                "role": "system",
+                "content": "围绕当前问题，根据下列逐帧观察作答。"
+                "sufficient是这些观察是否足以回答问题的判断；"
+                "used_frames填写所用观察的整数编号，summary写自然回答，"
+                "limitations写还需补充的相关信息。",
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "question": question,
+                        "observations": [
+                            {
+                                "number": number,
+                                "cid": item["frame"]["cid"],
+                                "actual_time": item["frame"]["actual_time"],
+                                "text": item["text"],
+                            }
+                            for number, item in enumerate(captions, 1)
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        assessment, props, stage = await self._stage(
+            task,
+            deadline,
+            identity,
+            expected,
+            repository,
+            lambda: self.api.generate_json(
+                messages, self._schema(len(captions)), max_tokens=self.config.max_output_tokens
+            ),
+        )
+        stages.append(stage | {"stage": "assessment"})
+        return captions, assessment, props, stages
+
+    async def _observe_joint(self, task, frames, question, deadline, identity, expected, repository):
+        content, preprocessing = [], []
+        for number, frame in enumerate(frames, 1):
+            image, metadata = await self._image_content(frame)
+            label = {
+                "type": "text",
+                "text": f"画面 {number}｜分P {frame['cid']}｜{frame['actual_time']} 秒",
+            }
+            content.extend((image, label) if self.config.image_order == "image_first" else (label, image))
+            preprocessing.append(metadata)
+        content.append({"type": "text", "text": "当前问题：" + question})
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "按图片输入顺序在captions写每张画面实际所见。"
+                    "根据当前问题填写sufficient、使用的画面序号used_frames、自然回答summary"
+                    "和仍需补充的信息limitations。区分看到的动作与对画面外情节的推测。"
+                ),
+            },
+            {"role": "user", "content": content},
+        ]
+        count = len(frames)
+        schema = self._schema(count)
+        schema["required"].append("captions")
+        schema["properties"]["captions"] = {
+            "type": "array",
+            "minItems": count,
+            "maxItems": count,
+            "items": {"type": "string", "minLength": 1, "maxLength": 4000},
+        }
+        value, props, stage = await self._stage(
+            task, deadline, identity, expected, repository,
+            lambda: self.api.generate_json(messages, schema, max_tokens=self.config.max_output_tokens),
+        )
+        texts = value.get("captions") if isinstance(value, dict) else None
+        if (
+            not isinstance(texts, list)
+            or len(texts) != count
+            or any(not isinstance(text, str) or not text.strip() or len(text) > 4000 for text in texts)
+        ):
+            raise ValueError("联合视觉观察须按输入顺序交付每一帧的非空描述")
+        captions = [{"frame": frame, "text": text} for frame, text in zip(frames, texts, strict=True)]
+        assessment = {key: value[key] for key in value if key != "captions"}
+        return captions, assessment, props, [
+            stage | {"stage": "joint_assessment", "preprocessing": preprocessing}
+        ]
+
     async def _generate(self, task, metadata, frames, question, *, deadline, probe=False):
         self._check_task(task, deadline)
         # Freeze the exact validated source fields before the first await.
@@ -292,107 +489,14 @@ class ApiVideoEvidenceProvider:
         repository = self.runtime.browsing_repository if task.get("round_id") else None
         scope = GenerationMeter(repository, task["round_id"]) if repository else nullcontext()
         before = repository.round(task["round_id"])["budget"].copy() if repository else None
-        captions, stages = [], []
         async with asyncio.timeout(min(self.config.timeout_seconds, max(0, deadline - time.time()))):
             with scope:
-                for number, frame in enumerate(frames, 1):
-                    prepared = (
-                        await asyncio.to_thread(
-                            prepare_image,
-                            frame["image"],
-                            frame.get("mime_type", "image/jpeg"),
-                            self.config.image_profile,
-                        )
-                        if self.config.image_profile != "server_native"
-                        else {
-                            "data": frame["image"],
-                            "mime_type": frame.get("mime_type", "image/jpeg"),
-                            "metadata": None,
-                        }
-                    )
-                    messages = [
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"这张画面来自分P {frame['cid']}，实际采样时间为"
-                                    f" {frame['actual_time']} 秒。描述这张画面中的人物、物品和动作，"
-                                    "结合当前问题给出相关所见。当前问题：" + question,
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": "data:"
-                                        + prepared["mime_type"]
-                                        + ";base64,"
-                                        + base64.b64encode(prepared["data"]).decode("ascii")
-                                    },
-                                },
-                            ],
-                        }
-                    ]
-                    if self.config.image_order == "image_first":
-                        messages[0]["content"].reverse()
-                    text, props, stage = await self._stage(
-                        task,
-                        deadline,
-                        identity,
-                        expected,
-                        repository,
-                        lambda: self.api.generate_text(messages, max_tokens=self.config.max_output_tokens),
-                    )
-                    expected = props
-                    if not isinstance(text, str) or not text.strip() or len(text) > 4000:
-                        raise ValueError("视觉逐帧观察须为非空且有界的自然文本")
-                    captions.append({"frame": frame, "text": text})
-                    stages.append(
-                        stage
-                        | {
-                            "stage": "caption",
-                            "number": number,
-                            "frame_id": frame["id"],
-                            "preprocessing": prepared["metadata"],
-                        }
-                    )
-                messages = [
-                    {
-                        "role": "system",
-                        "content": "围绕当前问题，根据下列逐帧观察作答。"
-                        "sufficient是这些观察是否足以回答问题的判断；"
-                        "used_frames填写所用观察的整数编号，summary写自然回答，"
-                        "limitations写还需补充的相关信息。",
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "question": question,
-                                "observations": [
-                                    {
-                                        "number": number,
-                                        "cid": item["frame"]["cid"],
-                                        "actual_time": item["frame"]["actual_time"],
-                                        "text": item["text"],
-                                    }
-                                    for number, item in enumerate(captions, 1)
-                                ],
-                            },
-                            ensure_ascii=False,
-                        ),
-                    },
-                ]
-                assessment, props, stage = await self._stage(
-                    task,
-                    deadline,
-                    identity,
-                    expected,
-                    repository,
-                    lambda: self.api.generate_json(
-                        messages, self._schema(len(captions)), max_tokens=self.config.max_output_tokens
-                    ),
+                observe = (
+                    self._observe_joint if self.config.frame_strategy == "joint" else self._observe_sequential
                 )
-                stages.append(stage | {"stage": "assessment"})
+                captions, assessment, props, stages = await observe(
+                    task, frames, question, deadline, identity, expected, repository
+                )
                 self._check_task(task, deadline)
                 try:
                     final_props = await self._runtime_properties()

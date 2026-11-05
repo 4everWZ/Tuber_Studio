@@ -1,8 +1,12 @@
+import time
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.models import Event
+from tuber_studio.live_scene import LiveScene
+from tuber_studio.models import Event, Reply
 
 
 class ReadOnlyPlatform:
@@ -18,6 +22,31 @@ def client(settings):
         res = test_client.post("/api/auth", json={"token": settings.admin_token})
         assert res.status_code == 200
         yield test_client
+
+
+async def test_live_reply_uses_only_current_trusted_scene(settings, monkeypatch):
+    current = True
+
+    def snapshot(session_id, event):
+        return LiveScene(
+            session_id if current else "old-session", time.monotonic(), "角色已经找到钥匙",
+        )
+
+    app = create_app(settings, ReadOnlyPlatform(), live_scene=snapshot)
+    async with app.router.lifespan_context(app):
+        runtime = app.state.runtime
+        runtime.session_id = "session-1"
+        generator = AsyncMock(return_value=Reply(spoken_text="让我看看。"))
+        monkeypatch.setattr(runtime.llm, "generate", generator)
+        event = Event(type="chat", display_name="观众", text="进度怎么样？").model_dump(mode="json")
+        await runtime.generate_reply("live:session-1", runtime.character, event)
+        messages = generator.await_args.args[0]
+        assert any("已经找到钥匙" in message["content"] for message in messages)
+        current = False
+        await runtime.generate_reply("live:session-1", runtime.character, event)
+        messages = generator.await_args.args[0]
+        assert not any("已经找到钥匙" in message["content"] for message in messages)
+        assert generator.await_count == 2
 
 
 def test_api_interactive_rules(client):

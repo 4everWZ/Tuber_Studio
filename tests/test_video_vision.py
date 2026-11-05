@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from tuber_studio.browsing_models import BrowsingPolicy
+from tuber_studio.live_scene import LiveScene
 from tuber_studio.video_vision import ApiVideoEvidenceProvider, VideoVisionConfig
 
 PNG = base64.b64decode(
@@ -172,6 +173,43 @@ async def test_enabled_model_name_alone_is_not_capability(provider):
     observed = await value.probe(FRAMES, metadata=META)
     assert observed["capabilities"]["images"] and not observed["capabilities"]["admitted"]
     assert len(generations(state)) == 6
+
+
+@pytest.mark.parametrize("provider", [{"frame_strategy": "joint"}], indirect=True)
+async def test_joint_observation_binds_frames_and_rejects_missing_caption(provider):
+    value, state = provider
+    state["result"]["captions"] = ["第一个圆形", "第二个方形"]
+    await admit(value)
+    state["requests"].clear()
+    result = await value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=time.time() + 10)
+    assert result["frame_observations"] == {"first": "第一个圆形", "second": "第二个方形"}
+    payloads = [json.loads(item.content) for item in generations(state)]
+    completed = [body for body in payloads if body["max_tokens"] > 1]
+    assert len(completed) == 1 and len(payloads) <= 2
+    assert sum(part["type"] == "image_url" for part in completed[0]["messages"][-1]["content"]) == 2
+    state["result"]["captions"].pop()
+    with pytest.raises(ValueError, match="每一帧"):
+        await value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=time.time() + 10)
+
+
+async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(provider):
+    value, state = provider
+    await admit(value)
+    state["requests"].clear()
+    state["result"] = {"spoken_text": "画面中是圆形。", "reply_to": ["live-1"]}
+    scene = LiveScene("session-1", time.monotonic(), "关卡开始", PNG, "image/png", 1, 1)
+    messages = [{"role": "user", "content": "你看到了什么？"}]
+    config = {
+        "kind": "llama_cpp", "model": "actual-vlm", "context_tokens": 131072,
+        "base_url": "http://127.0.0.1:18080",
+    }
+    assert await value.generate_live_reply(scene, messages, config | {"model": "other"}, "live-1") is None
+    assert await value.generate_live_reply(
+        scene, messages, config | {"base_url": "http://127.0.0.1:18081"}, "live-1"
+    ) is None
+    result = await value.generate_live_reply(scene, messages, config, "live-1")
+    assert result.spoken_text == "画面中是圆形。"
+    assert len(generations(state)) == 1 and messages[-1]["content"] == "你看到了什么？"
 
 
 async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):

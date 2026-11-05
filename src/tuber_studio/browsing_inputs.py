@@ -305,11 +305,12 @@ class ResponseDecisionInput:
                 if key in segment:
                     times.append(str(segment[key]) if segment[key] is not None else "?")
             time_label = "|" + "–".join(times) + "s" if times else ""
-            lines.append(f"[{ref.alias}{time_label}]" + segment["text"])
+            source_label = segment.get("source_label")
+            lines.append(f"[{ref.alias}{time_label}]" + (f"{source_label} " if source_label else "") + segment["text"])
             extra = {
                 key: value
                 for key, value in segment.items()
-                if key not in {"id", "cid", "text", "start", "end"}
+                if key not in {"id", "cid", "text", "start", "end", "source_label"}
             }
             if extra:
                 lines.append("补充：" + json.dumps(extra, ensure_ascii=False, separators=(",", ":")))

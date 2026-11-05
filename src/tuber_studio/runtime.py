@@ -24,6 +24,7 @@ from .inference_node_client import refresh_capabilities
 from .inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
 from .interactive_rules import InteractiveRulesService
 from .live_media import LiveMedia
+from .live_scene import LiveScene
 from .media_cache import MediaCache
 from .memory import missing_slots
 from .model_hub import is_model_installed
@@ -34,7 +35,7 @@ from .operation_generation import generate_with_recovery, reply_generation_bindi
 from .operation_text import operation_output_diagnostics
 from .operations_control import OperationsControl
 from .persona import uses_built_in_persona
-from .providers import VoiceService, public_error
+from .providers import VoiceService, public_error, reuse_turn_token_counts
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 from .runtime_modes import ObservationOwner, apply_mode_profile, inference_transition, profile_alignment_error
@@ -44,7 +45,7 @@ TERMINAL = {"completed", "failed", "cancelled", "expired"}
 
 
 class Runtime:
-    def __init__(self, settings, store, *, singing_provider=None):
+    def __init__(self, settings, store, *, singing_provider=None, live_scene=None):
         self.settings, self.store = settings, store
         self.operations = OperationsControl(store)
         self.browsing_repository = BrowsingRepository(store)
@@ -61,6 +62,7 @@ class Runtime:
         self.interactive_rules = InteractiveRulesService(store)
         self.draw_and_guess = DrawAndGuessService(daily_memory=self.daily_memory)
         self.game_livestream = GameLivestreamService(interactive_rules=self.interactive_rules)
+        self.live_scene = live_scene
         self.tool_registry = build_default_tool_registry(
             daily_memory=self.daily_memory,
             game_livestream=self.game_livestream,
@@ -92,7 +94,7 @@ class Runtime:
         self.playback_done = asyncio.Event()
         self.error = None
         self.last_played = None
-        self.timings = {"llm_ms": None, "tts_ms": None}
+        self.timings = {"llm_ms": None, "tts_ms": None, "first_audio_ms": None}
         self.accept_times = {}
         self.submissions = {}
         self.last_gift = False
@@ -410,6 +412,7 @@ class Runtime:
                             raise
                         raise ValueError("工作模式切换失败：" + public_error(error)) from None
 
+    @reuse_turn_token_counts
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):
         """Generate once with source memory; lexical diagnostics never rewrite speech."""
         context = context or self.context
@@ -451,7 +454,7 @@ class Runtime:
 
             def diagnose(value):
                 return (
-                    "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓"
+                    "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓"
                     if operation_output_diagnostics(value.spoken_text)["needs_review"]
                     else None
                 )
@@ -479,7 +482,17 @@ class Runtime:
                 },
             )
         else:
-            reply = await generate(messages, character, event["event_id"], event["text"])
+            scene = self.live_scene(self.session_id, event) if mode == "live" and self.live_scene else None
+            reply = None
+            if isinstance(scene, LiveScene) and scene.current(self.session_id):
+                visual = self.browsing.evidence.visual
+                scene_reply = getattr(visual, "generate_live_reply", None)
+                if scene.image and scene_reply:
+                    reply = await scene_reply(scene, messages, self.settings.data["llm"], event["event_id"])
+                if reply is None and scene.current(self.session_id):
+                    messages = scene.annotate(messages)
+            if reply is None:
+                reply = await generate(messages, character, event["event_id"], event["text"])
         missing = missing_slots(reply.spoken_text, evidence)
         supported = [
             slot
@@ -885,6 +898,7 @@ class Runtime:
 
     async def _process(self, job_id):
         try:
+            self.timings["first_audio_ms"] = None
             job = self.store.job(job_id)
             row = self.store.event(job["event_id"])
             event = row["payload"]
@@ -897,6 +911,7 @@ class Runtime:
                 self.store.execute("UPDATE events SET status='expired' WHERE id=?", (row["id"],))
                 return
             character = self.store.character(job["character_id"], job["character_version"])
+            parts = []
             async with self.generation_lock:
                 if event["type"] == "sfx":
                     asset = next(
@@ -971,11 +986,16 @@ class Runtime:
                         llm_ms=self.timings["llm_ms"],
                         answer_check=answer_check,
                     )
-                    started = time.perf_counter()
-                    audio = await self.voices.synthesize_live(reply.spoken_text, character["voice_profile"])
-                    self.timings["tts_ms"] = round((time.perf_counter() - started) * 1000)
-                    self.store.update_job(job_id, tts_ms=self.timings["tts_ms"], error=audio.warning)
+                    parts = self.voices.live_parts(reply.spoken_text, character["voice_profile"])
+                    if len(parts) == 1:
+                        started = time.perf_counter()
+                        audio = await self.voices.synthesize_live(reply.spoken_text, character["voice_profile"])
+                        self.timings["tts_ms"] = round((time.perf_counter() - started) * 1000)
+                        self.store.update_job(job_id, tts_ms=self.timings["tts_ms"], error=audio.warning)
                     emotion, animation = reply.emotion, reply.animation_id
+            if len(parts) > 1:
+                await self._play_live_parts(job_id, parts, character, reply, answer_check)
+                return
             # Preserve model suggestion separately in error when prerecorded text differs.
             suggestion = self.store.job(job_id)["text"]
             warning = audio.warning
@@ -1010,6 +1030,36 @@ class Runtime:
                 await self.send_overlay({"type": "stop", "job_id": job_id})
             self.error = message
 
+    async def _play_live_parts(self, job_id, parts, character, reply, answer_check):
+        async def synthesize(part):
+            async with self.generation_lock:
+                started = time.perf_counter()
+                audio = await self.voices.synthesize_live(part, character["voice_profile"])
+                return audio, round((time.perf_counter() - started) * 1000)
+
+        pending = None
+        tts_ms = 0
+        try:
+            for index, part in enumerate(parts):
+                audio, elapsed = await (pending if pending is not None else synthesize(part))
+                tts_ms += elapsed
+                self.timings["tts_ms"] = tts_ms
+                warning = "; ".join(filter(None, (audio.warning, (answer_check or {}).get("warning")))) or None
+                self.store.update_job(
+                    job_id, status="ready_to_play", tts_ms=tts_ms, audio_ref=audio.ref, error=warning,
+                )
+                final_segment = index == len(parts) - 1
+                pending = None if final_segment else asyncio.create_task(synthesize(parts[index + 1]))
+                await self._play(
+                    job_id, audio, character, reply.emotion, reply.animation_id, final_segment=final_segment,
+                )
+                if self.store.job(job_id)["status"] in TERMINAL:
+                    return
+        finally:
+            if pending is not None:
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+
     async def _process_song(self, job_id, job):
         snapshot = json.loads(job["media"])
         if time.time() - job["created_at"] > snapshot["ttl"]:
@@ -1029,7 +1079,9 @@ class Runtime:
         self.store.update_job(job_id, status="ready_to_play", text=audio.text, audio_ref=ref)
         await self._play(job_id, audio, character, "cheerful", "idle", media=snapshot, activity=activity)
 
-    async def _play(self, job_id, audio, character, emotion, animation, *, media=None, activity=None):
+    async def _play(
+        self, job_id, audio, character, emotion, animation, *, media=None, activity=None, final_segment=True,
+    ):
         deadline = time.monotonic() + self.settings.data.get("playback_wait_seconds", 45)
         while not self.overlay:
             if time.monotonic() > deadline:
@@ -1038,6 +1090,30 @@ class Runtime:
         token = secrets.token_urlsafe(24)
         self.store.update_job(job_id, playback_token=token)
         self.playback_done.clear()
+        self.playback = {
+            "job_id": job_id,
+            "song": media,
+            "text": audio.text,
+            "animation_id": animation,
+            "emotion": emotion,
+            "position": 0,
+            "duration": audio.duration,
+            "paused": False,
+            "started": False,
+            "final_segment": final_segment,
+            "reported_at": time.time(),
+            "mouth": 0,
+            "visual_warning": (
+                "缺少独立人声，口型保持待机"
+                if media and not activity
+                else "缺少角色嘴型素材"
+                if media
+                and not {"sing_open", "sing_closed"}.issubset(
+                    {asset["id"] for asset in self.settings.assets(character)}
+                )
+                else None
+            ),
+        }
         sent = await self.send_overlay(
             {
                 "type": "play",
@@ -1057,29 +1133,6 @@ class Runtime:
         )
         if not sent:
             raise ValueError("播放器连接已断开，未重播")
-        self.playback = {
-            "job_id": job_id,
-            "song": media,
-            "text": audio.text,
-            "animation_id": animation,
-            "emotion": emotion,
-            "position": 0,
-            "duration": audio.duration,
-            "paused": False,
-            "started": False,
-            "reported_at": time.time(),
-            "mouth": 0,
-            "visual_warning": (
-                "缺少独立人声，口型保持待机"
-                if media and not activity
-                else "缺少角色嘴型素材"
-                if media
-                and not {"sing_open", "sing_closed"}.issubset(
-                    {asset["id"] for asset in self.settings.assets(character)}
-                )
-                else None
-            ),
-        }
         remaining = audio.duration + 20
         while not self.playback_done.is_set():
             began = time.monotonic()
@@ -1117,7 +1170,8 @@ class Runtime:
         if not owner or owner != self.overlay_id or data.get("job_id") != self.current_id:
             return False
         job = self.store.job(self.current_id)
-        if not secrets.compare_digest(str(data.get("playback_token", "")), str(job["playback_token"] or "")):
+        token = job["playback_token"]
+        if not token or not secrets.compare_digest(str(data.get("playback_token", "")), token):
             return False
         if data.get("type") == "progress" and job["status"] == "playing" and self.playback:
             position, mouth = data.get("position"), data.get("mouth", 0)
@@ -1136,8 +1190,20 @@ class Runtime:
             return True
         if data.get("type") == "started" and job["status"] == "ready_to_play":
             self.store.update_job(job["id"], status="playing")
+            if self.timings["first_audio_ms"] is None:
+                received_at = self.store.event(job["event_id"])["created_at"]
+                self.timings["first_audio_ms"] = max(0, round((time.time() - received_at) * 1000))
             if self.playback:
                 self.playback["started"] = True
+            return True
+        if (
+            data.get("type") == "ended" and job["status"] == "playing"
+            and self.playback and not self.playback["final_segment"]
+        ):
+            self.store.update_job(job["id"], status="synthesizing", playback_token=None)
+            self.playback = None
+            self.playback_done.set()
+            self.media_changed.set()
             return True
         if data.get("type") == "ended" and self.store.complete(job["id"]):
             event = self.store.event(job["event_id"])["payload"]

@@ -16,6 +16,7 @@ import re
 import sys
 import time
 from copy import deepcopy
+from functools import partial
 from pathlib import Path
 
 from tuber_studio.browsing import SYSTEM_RULES, BrowsingService
@@ -131,9 +132,7 @@ def install_private_label_experiment(provider, observations):
     """One isolated native instance; no action, evidence or default-provider rewrite."""
     if not isinstance(provider, LlamaCppProvider):
         raise ValueError("Private reason-label experiment requires the native provider")
-    generate = provider.generate_json
-
-    async def generate_with_label(messages, schema, *, max_tokens):
+    async def generate_with_label(generate, messages, schema, *, max_tokens):
         variant = deepcopy(schema)
 
         def visit(value):
@@ -158,7 +157,8 @@ def install_private_label_experiment(provider, observations):
         observations.append({"raw_model_decision": deepcopy(raw), "canonical_decision": deepcopy(canonical)})
         return canonical
 
-    provider.generate_json = generate_with_label
+    provider.generate_json = partial(generate_with_label, provider.generate_json)
+    provider.generate_video_response = partial(generate_with_label, provider.generate_video_response)
 
 
 def nonsecret(value):
