@@ -16,6 +16,11 @@
 
   const { formatRelativeTime, humanizeKind, humanizeStatus, humanizeReason, humanizeRoundReport } = Formatters;
 
+  function escapeHtml(value) {
+    const chars = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+    return String(value ?? "").replace(/[&<>"]/g, char => chars[char]);
+  }
+
   class OperationsWorkbench {
     constructor(container, api, notify) {
       this.container = container;
@@ -31,6 +36,7 @@
       this.tasks = [];
       this.rounds = [];
       this.inbox = [];
+      this.refreshRequest = 0;
 
       this.selectedIntentId = null;
       this.selectedTaskId = null;
@@ -46,7 +52,7 @@
       this.renderedTaskStatus = null;
       this.renderedTab = null;
       this.userInteractingUntil = 0;
-      this.lastMasterSignature = "";
+      this.lastMasterView = "";
 
       // Paginators
       this.intentPaginator = new Paginator({
@@ -152,7 +158,7 @@
       }
       this.draftDirty = false;
       this.activeTab = tab;
-      this.lastMasterSignature = "";
+      this.lastMasterView = "";
 
       this.container.querySelectorAll(".op-nav-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tab === tab);
@@ -163,19 +169,24 @@
       this.renderDetail();
     }
 
-    computeMasterSignature() {
-      if (this.activeTab === "intents") {
-        const filtered = this.getFilteredIntents();
-        return `intents:${this.intentFilter}:${this.intentPaginator.currentPage}:${this.selectedIntentId}:${filtered.length}:${filtered.map(i => `${i.id}:${i.status}:${i.text?.length || 0}`).join(",")}`;
-      } else if (this.activeTab === "rounds") {
-        return `rounds:${this.roundPaginator.currentPage}:${this.rounds.length}:${this.rounds.map(r => `${r.id}:${r.status}`).join(",")}`;
-      } else if (this.activeTab === "tasks") {
-        const filtered = this.taskFilter ? this.tasks.filter(t => t.status === this.taskFilter) : this.tasks;
-        return `tasks:${this.taskFilter}:${this.taskPaginator.currentPage}:${this.selectedTaskId}:${filtered.length}:${filtered.map(t => `${t.id}:${t.status}`).join(",")}`;
-      } else if (this.activeTab === "inbox") {
-        return `inbox:${this.inbox.length}:${this.inbox.map(i => `${i.id || i.created_at}:${i.status || ""}`).join(",")}`;
+    masterView() {
+      switch (this.activeTab) {
+        case "intents": {
+          const titles = new Map(this.tasks.map(t => [t.bvid, t.title || t.metadata?.title]));
+          const rows = this.getFilteredIntents().map(i => [
+            i.id, i.status, i.text, i.reason, i.target?.title, titles.get(i.bvid || i.target?.bvid),
+          ]);
+          return [this.activeTab, this.intentFilter, this.selectedIntentId, rows];
+        }
+        case "rounds":
+          return [this.activeTab, this.rounds.map(r => [r.id, r.status, r.budget, r.error])];
+        case "tasks":
+          return [this.activeTab, this.taskFilter, this.selectedTaskId, this.tasks.map(t => [
+            t.id, t.status, t.title || t.metadata?.title, t.reason || t.error_kind || t.error || t.payload?.reason,
+          ])];
+        default:
+          return [this.activeTab, this.inbox];
       }
-      return "";
     }
 
     syncIntentDetailNonEditor(intent) {
@@ -238,10 +249,9 @@
         }
       }
 
-      // Master list rendering with signature memoization & scroll preservation
-      const newSignature = this.computeMasterSignature();
-      if (newSignature !== this.lastMasterSignature) {
-        this.lastMasterSignature = newSignature;
+      const view = JSON.stringify(this.masterView());
+      if (view !== this.lastMasterView) {
+        this.lastMasterView = view;
         const listContainer = this.container.querySelector("#op-master-list");
         const prevScroll = listContainer ? listContainer.scrollTop : 0;
         this.renderMasterSubbar();
@@ -336,7 +346,7 @@
             this.intentPaginator.currentPage = 1;
             const filtered = this.getFilteredIntents();
             this.selectedIntentId = filtered.length > 0 ? filtered[0].id : null;
-            this.lastMasterSignature = "";
+            this.lastMasterView = "";
             this.renderMasterSubbar();
             this.renderMasterList();
             this.renderDetail();
@@ -456,10 +466,10 @@
             </div>
             <span class="op-card-time">${timeAgo}</span>
           </div>
-          <div class="op-card-title" title="${videoTitle}">${videoTitle}</div>
-          <div class="op-card-snippet">${intent.text || "（点赞或收藏操作，无需文字）"}</div>
+          <div class="op-card-title" title="${escapeHtml(videoTitle)}">${escapeHtml(videoTitle)}</div>
+          <div class="op-card-snippet">${escapeHtml(intent.text || "（点赞或收藏操作，无需文字）")}</div>
           <div class="op-card-footer">
-            <span class="op-card-reason hint">💡 ${humanizeReason(intent.reason)}</span>
+            <span class="op-card-reason hint">💡 ${escapeHtml(humanizeReason(intent.reason))}</span>
           </div>
         `;
 
@@ -472,7 +482,7 @@
             this.draftDirty = false;
             this.unsavedDrafts.delete(this.selectedIntentId);
             this.selectedIntentId = intent.id;
-            this.lastMasterSignature = "";
+            this.lastMasterView = "";
             const allCards = listContainer.querySelectorAll(".op-candidate-card");
             allCards.forEach(c => c.classList.toggle("selected", c.dataset.id === intent.id));
             this.renderDetail();
@@ -501,10 +511,10 @@
 
         card.innerHTML = `
           <div class="op-round-header">
-            <span class="op-round-title">${report.title}</span>
+            <span class="op-round-title">${escapeHtml(report.title)}</span>
             <span class="op-tag-status ${report.statusInfo.className}">${report.statusInfo.label}</span>
           </div>
-          <p class="op-round-narrative">${report.narrative}</p>
+          <p class="op-round-narrative">${escapeHtml(report.narrative)}</p>
           <div class="op-round-metrics-grid">
             <div class="op-metric-chip">
               <span class="op-metric-k">浏览视频</span>
@@ -523,10 +533,6 @@
               <strong class="op-metric-v">${report.metrics.tokens}</strong>
             </div>
           </div>
-          <details class="op-tech-details">
-            <summary>⚙️ 技术底层明细 (展开排障)</summary>
-            <pre class="code-small">${JSON.stringify(round, null, 2)}</pre>
-          </details>
         `;
 
         listContainer.append(card);
@@ -569,10 +575,10 @@
 
         tr.innerHTML = `
           <td>
-            <button type="button" class="comment-link" style="text-align:left;font-weight:600;">${title}</button>
-            <small class="cell-sub">${task.bvid || "—"} · ${formatRelativeTime(task.created_at)}</small>
+            <button type="button" class="comment-link" style="text-align:left;font-weight:600;">${escapeHtml(title)}</button>
+            <small class="cell-sub">${escapeHtml(task.bvid || "—")} · ${formatRelativeTime(task.created_at)}</small>
           </td>
-          <td>${reasonText}</td>
+          <td>${escapeHtml(reasonText)}</td>
           <td><span class="op-tag-status ${statusInfo.className}">${statusInfo.label}</span></td>
         `;
 
@@ -613,11 +619,11 @@
 
         item.innerHTML = `
           <div class="op-card-header">
-            <strong>${sender}</strong>
+            <strong>${escapeHtml(sender)}</strong>
             <span class="op-card-time">${timeAgo}</span>
           </div>
-          <p class="quoted-text" style="margin: 6px 0;">${text}</p>
-          <small class="hint">${event.resource_title ? `来源视频：${event.resource_title}` : ""}</small>
+          <p class="quoted-text" style="margin: 6px 0;">${escapeHtml(text)}</p>
+          <small class="hint">${event.resource_title ? `来源视频：${escapeHtml(event.resource_title)}` : ""}</small>
         `;
         listContainer.append(item);
       });
@@ -670,7 +676,7 @@
       const bvid = intent.bvid || target.bvid || intent.source_id || "";
       const relatedTask = this.tasks.find(t => t.bvid === bvid);
       const videoTitle = relatedTask?.title || relatedTask?.metadata?.title || target.title || bvid;
-      const bvidUrl = bvid ? `https://www.bilibili.com/video/${bvid}` : "#";
+      const bvidUrl = bvid ? `https://www.bilibili.com/video/${encodeURIComponent(bvid)}` : "#";
 
       const kindInfo = humanizeKind(intent.kind);
       const statusInfo = humanizeStatus(intent.status);
@@ -713,10 +719,10 @@
           <div class="op-video-context-card">
             <div class="op-video-info">
               <span class="op-context-label">关联视频</span>
-              <h3 class="op-video-title">${videoTitle}</h3>
+              <h3 class="op-video-title">${escapeHtml(videoTitle)}</h3>
               <div class="op-video-links">
-                ${bvid ? `<a href="${bvidUrl}" target="_blank" rel="noreferrer" class="op-link-external">🎬 在 B 站打开原视频 (${bvid}) ↗</a>` : ""}
-                ${target.parent && target.parent !== "0" ? `<span class="op-badge-thread">💬 楼内回复目标评论 #${target.parent}</span>` : ""}
+                ${bvid ? `<a href="${bvidUrl}" target="_blank" rel="noreferrer" class="op-link-external">🎬 在 B 站打开原视频 (${escapeHtml(bvid)}) ↗</a>` : ""}
+                ${target.parent && target.parent !== "0" ? `<span class="op-badge-thread">💬 楼内回复目标评论 #${escapeHtml(target.parent)}</span>` : ""}
               </div>
             </div>
           </div>
@@ -724,7 +730,7 @@
           <!-- AI Motivation & Humanized Evidence -->
           <div class="op-ai-reason-card">
             <h4>💡 大肥鱼为什么想发言？</h4>
-            <p class="op-reason-text">${humanizeReason(intent.reason)}</p>
+            <p class="op-reason-text">${escapeHtml(humanizeReason(intent.reason))}</p>
           </div>
 
           <!-- Draft Editor Section -->
@@ -738,26 +744,24 @@
                 </button>
               </div>
             </div>
-            <textarea id="op-intent-editor" rows="6" ${isPublished ? "disabled" : ""}>${currentDraftText}</textarea>
+            <textarea id="op-intent-editor" rows="6" ${isPublished ? "disabled" : ""}></textarea>
             <div class="op-editor-tip hint">
               提示：您可以直接在上方修改台词文字，按 Ctrl+S 或点击「保存修改」，确认无误后点击「审核通过」或「立即发布」。
             </div>
           </div>
 
-          <!-- Collapsible Technical Trace / Receipts -->
-          <details class="op-tech-details" style="margin-top: 20px;">
-            <summary>⚙️ 技术证据引用与平台可见性回执</summary>
-            <pre class="code-small">${JSON.stringify({
-              target: target,
-              evidence: intent.evidence,
-              receipt: intent.receipt,
-              visibility: intent.visibility
-            }, null, 2)}</pre>
+          <details class="op-tech-details">
+            <summary>来源与发布结果</summary>
+            ${target.source_text ? `<p class="quoted-text">${escapeHtml(target.source_text)}</p>` : ""}
+            <p>引用材料 ${intent.evidence?.length ?? 0} 项</p>
+            <p>${escapeHtml(intent.receipt?.rpid ? `平台评论 ID ${intent.receipt.rpid}` : statusInfo.label)}
+            ${{visible: " · 平台可见", not_visible: " · 暂不可见", not_found: " · 未查到", check_failed: " · 核对失败"}[intent.visibility] || ""}</p>
           </details>
         </div>
       `;
 
       const editor = detailPane.querySelector("#op-intent-editor");
+      editor.value = currentDraftText;
       const editorStatus = detailPane.querySelector("#op-editor-status");
       const saveDraftBtn = detailPane.querySelector("#op-btn-save-draft");
       const approveBtn = detailPane.querySelector("#op-btn-approve");
@@ -971,7 +975,7 @@
 
       const title = task.title || task.metadata?.title || task.bvid || `任务 ${task.id}`;
       const statusInfo = humanizeStatus(task.status);
-      const bvidUrl = task.bvid ? `https://www.bilibili.com/video/${task.bvid}` : "#";
+      const bvidUrl = task.bvid ? `https://www.bilibili.com/video/${encodeURIComponent(task.bvid)}` : "#";
 
       detailPane.innerHTML = `
         <div class="op-inspector-content">
@@ -985,22 +989,18 @@
             </div>
           </div>
           <div class="op-video-context-card">
-            <h3 class="op-video-title">${title}</h3>
-            <p class="hint">${task.bvid || "—"}</p>
+            <h3 class="op-video-title">${escapeHtml(title)}</h3>
+            <p class="hint">${escapeHtml(task.bvid || "—")}</p>
           </div>
           <div class="op-ai-reason-card">
             <h4>💡 视频理解与决策</h4>
-            <p class="op-reason-text">${humanizeReason(task.reason || task.payload?.reason)}</p>
+            <p class="op-reason-text">${escapeHtml(humanizeReason(task.reason || task.payload?.reason))}</p>
           </div>
           <div class="actions" style="margin-top: 16px;">
             <button type="button" class="op-btn-action primary" id="op-btn-reread">
               🎬 重新深度分析视频并生成草稿
             </button>
           </div>
-          <details class="op-tech-details" style="margin-top: 20px;">
-            <summary>⚙️ 技术底层明细</summary>
-            <pre class="code-small">${JSON.stringify(task, null, 2)}</pre>
-          </details>
         </div>
       `;
 
@@ -1021,17 +1021,19 @@
     }
 
     async refresh() {
+      const request = ++this.refreshRequest;
       const [intentsRes, tasksRes, roundsRes, inboxRes] = await Promise.allSettled([
         this.api("/api/automation/intents"),
         this.api("/api/automation/tasks"),
         this.api("/api/automation/rounds"),
         this.api("/api/automation/inbox")
       ]);
+      if (request !== this.refreshRequest) return;
 
-      const intents = intentsRes.status === "fulfilled" ? intentsRes.value : [];
-      const tasks = tasksRes.status === "fulfilled" ? tasksRes.value : [];
-      const rounds = roundsRes.status === "fulfilled" ? roundsRes.value : [];
-      const rawInbox = inboxRes.status === "fulfilled" ? inboxRes.value : [];
+      const intents = intentsRes.status === "fulfilled" ? intentsRes.value : this.intents;
+      const tasks = tasksRes.status === "fulfilled" ? tasksRes.value : this.tasks;
+      const rounds = roundsRes.status === "fulfilled" ? roundsRes.value : this.rounds;
+      const rawInbox = inboxRes.status === "fulfilled" ? inboxRes.value : this.inbox;
       const inbox = Array.isArray(rawInbox) ? rawInbox : (Array.isArray(rawInbox?.items) ? rawInbox.items : []);
 
       this.updateData({ intents, tasks, rounds, inbox });

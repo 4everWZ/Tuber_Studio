@@ -3,13 +3,16 @@
 class InferenceNodePanel {
   constructor(root, api, notify) {
     this.root = root; this.api = api; this.notify = notify; this.busy = false; this.dirty = false;
-    root.innerHTML = `<div class="panel-heading"><h2>业务主机与推理节点</h2><span data-state class="badge">待读取</span></div>
-      <p class="hint">连接独立推理节点后，电脑保存账号、对话、关系和业务缓存；节点负责模型。运营用 Gemma 4 E2B，直播用 MiniCPM5＋Genie。</p>
+    root.innerHTML = `<div class="panel-heading"><h2>Jetson 推理</h2><span data-state class="badge">待读取</span></div>
+      <p class="hint">通过局域网连接 Jetson。账号、对话和任务保存在业务电脑。</p>
       <dl data-summary class="description-list"></dl>
       <form data-pair autocomplete="off"><div class="form-grid"><label>推理节点地址<input data-url type="url" placeholder="http://jetson.local:9012" required></label><label>配对凭据<input data-token type="password" autocomplete="new-password" spellcheck="false" placeholder="同一节点留空保留；更换节点须填写"></label></div>
-      <div class="actions"><button type="submit">保存并连接</button><button data-check type="button">检查节点</button><button data-probe type="button">验证视觉能力</button><button data-idle type="button">卸载并清理推理缓存</button></div></form>
+      <div class="actions"><button type="submit">保存并连接</button><button data-check type="button">检查连接</button></div></form>
       <p data-feedback class="hint" role="status">配对后重启与代码更新会保留连接设置。</p>
-      <details><summary>推理节点资产与缓存</summary><p class="hint">模型和声音资产受保护。卸载模型会释放内存中的 KV，业务缓存仍在电脑的媒体缓存面板管理。</p><div data-storage></div></details>`;
+      <details><summary>高级诊断与维护</summary>
+      <dl data-diagnostics class="description-list"></dl>
+      <div class="actions"><button data-probe type="button">验证视觉能力</button><button data-idle type="button">释放推理资源</button></div>
+      <div data-storage></div></details>`;
     this.$ = selector => root.querySelector(selector);
     this.$('[data-url]').oninput = () => { this.dirty = true; };
     this.$('[data-pair]').onsubmit = event => { event.preventDefault(); this.action(async () => {
@@ -41,13 +44,26 @@ class InferenceNodePanel {
   render(value) {
     if (!this.dirty) this.$('[data-url]').value = value.base_url || '';
     const caps = value.capabilities, resource = caps?.resource;
-    this.$('[data-state]').textContent = value.error ? '节点不可用' : caps ? `${value.mode === 'live' ? '直播' : '运营'} · ${value.model}` : '能力待检查';
-    const items = [['业务数据目录', value.business_data], ['推理节点', value.base_url], ['配对', value.paired ? '已持久保存' : '未配置'],
-      ['实际模型', caps?.model || value.model], ['可用内存', resource ? this.bytes(resource.available_bytes) : '未测量'],
-      ['节点进程内存', resource ? this.bytes(resource.process_tree_rss_bytes) : '未测量'],
-      ['最近检查', caps?.checked_at ? new Date(caps.checked_at * 1000).toLocaleString('zh-CN') : '尚未检查']];
-    const summary = this.$('[data-summary]'); summary.replaceChildren();
-    for (const [name, text] of items) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = name; dd.textContent = text || '—'; summary.append(dt, dd); }
+    this.$('[data-state]').textContent = value.error ? '连接异常' : caps ? '已连接' : '待检查';
+    const mode = value.mode === 'live' ? '直播' : value.mode === 'text' ? '运营' : '—';
+    const render = (selector, items) => {
+      const list = this.$(selector);
+      list.replaceChildren();
+      for (const [name, text] of items) {
+        const dt = document.createElement('dt'), dd = document.createElement('dd');
+        dt.textContent = name;
+        dd.textContent = text || '—';
+        list.append(dt, dd);
+      }
+    };
+    render('[data-summary]', [['模式', mode], ['当前模型', caps?.model || value.model]]);
+    render('[data-diagnostics]', [
+      ['业务数据目录', value.business_data],
+      ['节点可用内存', this.bytes(resource?.available_bytes)],
+      ['节点进程内存', this.bytes(resource?.process_tree_rss_bytes)],
+      ['最近检查', caps?.checked_at ? new Date(caps.checked_at * 1000).toLocaleString('zh-CN') : '尚未检查'],
+      ['异常', value.error],
+    ]);
     const storage = this.$('[data-storage]'); storage.replaceChildren();
     for (const entry of caps?.storage || []) { const p = document.createElement('p'); p.className = 'hint'; p.textContent = `${entry.path} · ${this.bytes(entry.used_bytes)}${entry.protected ? ' · 受保护' : ''}`; storage.append(p); }
   }

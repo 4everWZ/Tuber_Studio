@@ -80,11 +80,20 @@ export function renderAnswerCheck(draft) {
     answerEl.textContent = "检查记录格式异常，无法展示证据。";
     return;
   }
-  const evidence = {};
-  ["sources", "required_slots", "missing", "retried", "warning", "method", "status", "semantic_verdict"].forEach(key => {
-    if (Object.hasOwn(check, key)) evidence[key] = check[key];
-  });
-  answerEl.textContent = Object.keys(evidence).length ? JSON.stringify(evidence, null, 2) : "检查记录未提供来源、缺项、重试或提示字段。";
+  const summary = document.createElement("p");
+  const sources = check.sources || [];
+  summary.textContent = [
+    sources.length ? `引用了 ${sources.length} 条相关记录` : "没有引用历史记录",
+    check.retried ? "已补查一次" : "",
+    check.warning,
+  ].filter(Boolean).join(" · ");
+  answerEl.replaceChildren(summary);
+  for (const source of sources) {
+    const quote = document.createElement("blockquote");
+    quote.className = "quoted-text";
+    quote.textContent = source.text;
+    answerEl.append(quote);
+  }
 }
 
 export function renderDraft(model, commentContinuation, setBadge, describe) {
@@ -355,11 +364,15 @@ export function initCommentsModule(model, {
     refreshCommentsFn: doRefreshComments,
   });
 
+  let commentsRequest = 0;
   const doRefreshComments = async () => {
+    const query = commentQuery();
+    const request = ++commentsRequest;
     const [comments, tasks] = await Promise.all([
-      api(`/api/comments?${commentQuery()}`),
+      api(`/api/comments?${query}`),
       api("/api/comment-tasks")
     ]);
+    if (request !== commentsRequest || query !== commentQuery()) return;
     model.comments = list(comments);
     doRenderComments();
     renderCommentTasks(list(tasks), { node, cell, badge, empty });
@@ -399,7 +412,7 @@ export function initCommentsModule(model, {
       method: "POST",
       body: { video_id: $("filter-video")?.value.trim() || undefined }
     });
-    notice(`归类完成：${JSON.stringify(result)}`);
+    notice(`归类完成${result.updated == null ? "。" : `，已更新 ${result.updated} 条。`}`);
     await doRefreshComments();
   }));
 
@@ -452,7 +465,7 @@ export function initCommentsModule(model, {
     if (!comment?.draft) return;
     if (model.draftDirty) throw new Error("请先审核保存修改");
     const result = await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/publish`, { method: "POST" });
-    notice(`平台已返回发布回执：${JSON.stringify(result)}`);
+    notice(result.status === "published" ? "平台已确认发布。" : "请查看草稿的发布状态。");
     await doRefreshComments();
   }));
 

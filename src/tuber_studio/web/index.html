@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css">
+  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css?v=20261105.26"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css">
 </head>
 <body>
   <main id="login" class="login-shell" hidden>
@@ -136,7 +136,7 @@
               </article>
               <article class="panel" style="display:none;"><form id="comment-policy-form"><input id="auto-browse" type="checkbox"><input id="auto-reply" type="checkbox"><button id="stop-auto-reply" type="button"></button><textarea id="watch-videos"></textarea><input id="browse-interval" type="number"><input id="replies-hour" type="number"><input id="replies-day" type="number"><span id="reply-mode"></span><span id="comment-policy-overlay"></span><span id="comment-policy-overlay-text"></span><span id="comment-policy-base-note"></span></form></article>
               <div class="comment-toolbar"><label>视频筛选<input id="filter-video" placeholder="全部视频"></label><label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label><label>类别<select id="filter-category"><option value="">全部类别</option><option value="question">问题</option><option value="suggestion">建议 / 反馈</option><option value="interaction">适合互动</option><option value="spam">垃圾</option><option value="general">一般评论</option></select></label><label>草稿状态<select id="filter-status"><option value="">全部状态</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label><button id="filter-comments">筛选</button><button id="analyze-comments">归类评论</button><button id="generate-drafts" class="primary">为选中评论生成草稿</button><button id="compact-comments">压缩当前楼上下文</button><button id="rebuild-comments" aria-describedby="thread-rebuild-state">重建上下文</button></div><p id="comment-context-state" class="hint">上下文能力待验证。</p><p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。</p><p id="thread-rebuild-state" class="hint" role="status">仅从本地现存评论原文重建当前楼，不重新抓取外网；已有非空上下文不会覆盖，原文不存在时无法重建。</p>
-              <div class="comment-layout"><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel"><div class="panel-heading"><h2>回复草稿</h2><span id="draft-status" class="badge">选择评论</span></div><p id="draft-source" class="quoted-text">选择列表中的评论，查看角色草稿及来源。</p><dl id="draft-meta" class="description-list"></dl><label>编辑回复<textarea id="draft-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-draft" class="primary" disabled>审核通过</button><button id="reject-draft" disabled>拒绝</button><button id="copy-draft" disabled>复制回复</button><button id="publish-draft" disabled>发布已审核回复</button></div><a id="open-private-draft" href="#messages" hidden>查看私信工作台 →</a><p id="draft-note" class="hint">默认人工审核。平台凭证未配置时可复制回复。</p><section id="comment-continuation" hidden></section><details class="subsection"><summary>来源与完整性检查</summary><pre id="draft-answer-check" class="code-small">暂无检查证据。</pre></details></article></div>
+              <div class="comment-layout"><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel"><div class="panel-heading"><h2>回复草稿</h2><span id="draft-status" class="badge">选择评论</span></div><p id="draft-source" class="quoted-text">选择列表中的评论，查看角色草稿及来源。</p><dl id="draft-meta" class="description-list"></dl><label>编辑回复<textarea id="draft-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-draft" class="primary" disabled>审核通过</button><button id="reject-draft" disabled>拒绝</button><button id="copy-draft" disabled>复制回复</button><button id="publish-draft" disabled>发布已审核回复</button></div><a id="open-private-draft" href="#messages" hidden>查看私信工作台 →</a><p id="draft-note" class="hint">默认人工审核。平台凭证未配置时可复制回复。</p><section id="comment-continuation" hidden></section><details class="subsection"><summary>来源与完整性检查</summary><div id="draft-answer-check" class="hint">暂无检查证据。</div></details></article></div>
               <article class="panel"><div class="panel-heading"><h2>评论任务</h2><span class="hint">生成任务在后台执行，错误可见</span></div><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></div></article>
             </div>
           </details>
@@ -164,68 +164,6 @@
         <section data-section="overview">
           <div class="page-heading"><div><p class="eyebrow">运行工作区</p><h1>总览</h1></div><div class="actions"><button data-action="start" class="primary">启动 Mock 直播</button><a class="button" href="#live">调试直播</a></div></div>
           <div class="metrics"><div><span>待处理队列</span><strong id="metric-queue">—</strong></div><div><span>LLM / TTS 耗时</span><strong id="metric-time">—</strong></div><div><span>系统内存</span><strong id="metric-ram">—</strong></div><div><span>CPU / 本进程内存</span><strong id="metric-cpu">—</strong></div></div>
-          <!-- Jetson Orin Hardware & Inference Performance Monitor -->
-          <article class="panel jetson-monitor-card" id="jetson-monitor-card">
-            <div class="panel-heading">
-              <div class="jetson-title-group">
-                <span class="jetson-logo-icon">⚡</span>
-                <h2>Jetson Orin 边缘算力节点</h2>
-                <span id="jetson-node-endpoint" class="code-pill">—</span>
-              </div>
-              <div class="jetson-header-badges">
-                <span id="jetson-mode-badge" class="badge">文本/运营模式</span>
-                <span id="jetson-health-badge" class="badge">读取中…</span>
-              </div>
-            </div>
-            
-            <div class="jetson-grid">
-              <!-- Memory Usage Meter -->
-              <div class="jetson-metric-box">
-                <div class="jetson-metric-header">
-                  <span class="jetson-label">统一物理内存 (Unified RAM)</span>
-                  <span id="jetson-ram-text" class="jetson-value">— / — GB</span>
-                </div>
-                <div class="jetson-progress-bar">
-                  <div id="jetson-ram-bar" class="jetson-progress-fill" style="width: 0%;"></div>
-                </div>
-                <div class="jetson-metric-footer">
-                  <span>引擎驻留 RSS: <strong id="jetson-rss-text">—</strong></span>
-                  <span>可用内存: <strong id="jetson-available-text">—</strong></span>
-                  <span>Swap: <strong id="jetson-swap-text">—</strong></span>
-                </div>
-              </div>
-
-              <!-- Model & Multi-modal Info -->
-              <div class="jetson-metric-box">
-                <div class="jetson-metric-header">
-                  <span class="jetson-label">当前驻留模型</span>
-                  <span id="jetson-model-quant" class="jetson-badge-mini">—</span>
-                </div>
-                <div class="jetson-model-title" id="jetson-model-name">—</div>
-                <div class="jetson-metric-footer">
-                  <span>上下文配额: <strong id="jetson-context-text">—</strong></span>
-                  <span>视觉编码: <strong id="jetson-vision-status">—</strong></span>
-                </div>
-              </div>
-
-              <!-- Storage & Footprint -->
-              <div class="jetson-metric-box">
-                <div class="jetson-metric-header">
-                  <span class="jetson-label">边缘存储占用</span>
-                  <span id="jetson-storage-total" class="jetson-value">— GB</span>
-                </div>
-                <div class="jetson-storage-breakdown" id="jetson-storage-breakdown">
-                  <span class="jetson-storage-chip">模型: <b id="jetson-store-models">—</b></span>
-                  <span class="jetson-storage-chip">TTS: <b id="jetson-store-tts">—</b></span>
-                  <span class="jetson-storage-chip">推理引擎: <b id="jetson-store-engines">—</b></span>
-                </div>
-                <div class="jetson-metric-footer">
-                  <span>缓存状态: <strong id="jetson-cache-status">受保护</strong></span>
-                  <span id="jetson-last-check" class="muted">最近同步: —</span>
-                </div>
-              </div>
-            </div>
-          </article>
           <article class="panel daily-memory-card" id="daily-memory-card">
             <div class="panel-heading">
               <div>
@@ -240,7 +178,7 @@
             <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
             <div id="daily-memory-list" class="daily-memory-list"></div>
           </article>
-          <div class="overview-grid"><article class="panel"><div class="panel-heading"><h2>当前播报</h2><span id="current-status" class="badge">空闲</span></div><div class="current-character"><img id="character-image" alt="当前角色" hidden><div><h3 id="current-character-name">尚未选择角色</h3><p id="current-text" class="speech-text">启动直播并注入一条弹幕，查看处理及播报状态。</p><p id="current-detail" class="hint"></p></div></div><div class="actions"><button data-action="pause">暂停后续任务</button><button data-action="skip">跳过当前</button><button data-action="mute" class="danger">紧急静音</button></div><div class="subsection"><h3>最近实际播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article><article class="panel"><div class="panel-heading"><h2>运行连接</h2><button id="check-providers">检查连接</button></div><dl id="provider-summary" class="description-list"></dl><p class="hint">音频由独立 overlay 播放。只有播放器确认开始并结束，任务才计为已播报。</p><a href="#settings" class="inline-link">查看 OBS 播放器配置 →</a><pre id="provider-check" class="code-small" hidden></pre></article></div>
+          <div class="overview-grid"><article class="panel"><div class="panel-heading"><h2>当前播报</h2><span id="current-status" class="badge">空闲</span></div><div class="current-character"><img id="character-image" alt="当前角色" hidden><div><h3 id="current-character-name">尚未选择角色</h3><p id="current-text" class="speech-text">启动直播并注入一条弹幕，查看处理及播报状态。</p><p id="current-detail" class="hint"></p></div></div><div class="actions"><button data-action="pause">暂停后续任务</button><button data-action="skip">跳过当前</button><button data-action="mute" class="danger">紧急静音</button></div><div class="subsection"><h3>最近实际播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article><article class="panel"><div class="panel-heading"><h2>运行连接</h2><a href="#settings">推理设置</a></div><p class="hint">音频由独立 overlay 播放。只有播放器确认开始并结束，任务才计为已播报。</p><a href="#settings" class="inline-link">查看 OBS 播放器配置 →</a></article></div>
           <article class="panel"><div class="panel-heading"><h2>最近任务</h2><a href="#live" class="inline-link">查看事件与队列</a></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="overview-jobs"></tbody></table></div></article>
         </section>
         <section data-section="live" hidden>
@@ -333,21 +271,21 @@
               <!-- Tab 1: Model & Prompt Mode -->
               <div class="oc-tab-content active" id="tab-oc-model">
                 <div class="form-grid">
-                  <label>角色形态架构
+                  <label>角色来源
                     <select id="oc-persona-type">
-                      <option value="fine_tuned">★ 特化微调固有角色 (模型内化人设 · 推荐极简提示词)</option>
-                      <option value="prompt_oc">⚙ 通用提示词 OC (运行于通用基座模型 · 全量提示词工程)</option>
+                      <option value="fine_tuned">模型内建角色</option>
+                      <option value="prompt_oc">角色卡</option>
                     </select>
                   </label>
-                  <label>绑定的特化权重说明
+                  <label>绑定模型
                     <input id="oc-fine-tuned-model" placeholder="例如：MiniCPM-V-4.7-1B (大肥鱼专属微调)">
                   </label>
                 </div>
                 <div id="oc-compact-prompt-box" style="margin-top:12px;">
-                  <label>极简身份锚定提示词 (Compact System Prompt - 特化微调专享)
+                  <label>简短身份提示
                     <textarea id="oc-compact-prompt" class="code-editor" rows="3" placeholder="例如：你叫大肥鱼，是一只机灵傲娇、偏爱热白饭与海底小屋的深海鲸鱼娘主播。请用鲜活自然的第一人称短句与直播间观众互动。"></textarea>
                   </label>
-                  <p class="hint">针对微调专属模型，模型权重已内化性格与世界观。仅需 1~2 行简明锚定即可涌现生动人设，彻底剥除 800+ tokens 冗余规则与死板 Few-shot，极致降低 Jetson 首字延迟。</p>
+                  <p class="hint">填写一两句身份提示。任务、来源和历史仍按当前场景提供。</p>
                 </div>
               </div>
 
@@ -380,7 +318,7 @@
                 <label style="margin-top:10px;">表达规范与指导语 (Instructions)
                   <textarea id="oc-instructions" class="code-editor" rows="4"></textarea>
                 </label>
-                <p class="hint">通用提示词 OC 在通用大模型上扮演角色时需依赖完整示范；特化微调模型下系统将自动瘦身以加速推理。</p>
+                <p class="hint">角色卡用于通用模型。</p>
               </div>
 
               <!-- Tab 4: Assets & Voice -->
@@ -553,84 +491,29 @@
               <span id="matrix-save-feedback" class="hint" role="status"></span>
             </div>
           </article><article class="panel"><div class="panel-heading"><h2>表情包</h2><a href="#assets">管理表情包图库 →</a></div><p class="hint">按角色管理可用于私信与图文动态的图片、来源和许可；分别沿用对应工作台的审核与额度。</p></article>
+          <section class="panel" id="inference-node-panel"></section>
           <article class="panel" id="providers-panel">
             <div class="panel-heading">
-              <h2>模型与推理服务 (Inference & APIs)</h2>
+              <h2>自定义服务</h2>
               <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
             </div>
 
-            <!-- Deployment Mode Switcher: Local vs Remote -->
-            <div class="deploy-mode-switcher" id="deploy-mode-switcher">
-              <button type="button" class="deploy-mode-btn active" id="btn-mode-local" data-mode="local">🏠 本地部署 (Local: 本机 GGUF / 本机 Docker 9012)</button>
-              <button type="button" class="deploy-mode-btn" id="btn-mode-remote" data-mode="remote">🌐 远程 / 独立节点 (Remote: Jetson / 外部 API)</button>
-            </div>
-
-            <!-- Dafeiyu Fine-Tuned Model Status & Downloader Card -->
-            <div class="dafeiyu-model-card" id="dafeiyu-model-card">
-              <div class="model-card-header">
-                <div class="model-card-title">
-                  <span class="model-card-icon" id="dafeiyu-card-icon">🐳</span>
-                  <div>
-                    <strong id="dafeiyu-card-title">大肥鱼专属微调模型 (MiniCPM-V-4.7-1B Q4_K_M)</strong>
-                    <p class="hint" id="dafeiyu-card-desc" style="margin:2px 0 0 0;">DoRA + DARE-TIES 权重融合，已内化大肥鱼人设与白饭口癖；托管于 Hugging Face。</p>
-                  </div>
+            <details class="subsection">
+              <summary>高级模型与服务设置</summary>
+              <div class="subsection" id="dafeiyu-model-card" hidden>
+                <strong>本机大肥鱼模型</strong>
+                <span id="dafeiyu-model-badge" class="badge" role="status">待读取</span>
+                <p id="dafeiyu-missing-hint" class="hint"></p>
+                <progress id="dafeiyu-progress" max="100" hidden aria-label="下载进度"></progress>
+                <div id="dafeiyu-download" class="actions" hidden>
+                  <button type="button" id="btn-download-dafeiyu-model">下载到本机</button>
                 </div>
-                <span id="dafeiyu-model-badge" class="badge">检测中…</span>
+                <button type="button" id="btn-cancel-dafeiyu-download" hidden>取消下载</button>
               </div>
-              <div class="model-card-body">
-                <div id="dafeiyu-model-installed-view" hidden>
-                  <p class="hint" style="color:var(--text-success, #2e7d32);margin:4px 0;">✔ 本地模型已就绪：<code id="dafeiyu-model-path">runtime/models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf</code> (<span id="dafeiyu-model-size">—</span>)</p>
-                  <small class="muted">权重文件校验通过。可在下方模型下拉列表直接选用，并配合极简锚点 Prompt 运行。</small>
-                </div>
-                <div id="dafeiyu-model-missing-view">
-                  <p class="hint" id="dafeiyu-missing-hint" style="margin:4px 0;">全套本地部署检测：未在本地目录检测到微调权重。在下方选择模型并保存配置确认后，系统将自动拉取；也可点击下方按钮立即下载。</p>
-                  <div id="dafeiyu-progress-container" style="display:none;margin:8px 0;">
-                    <div style="background:var(--border, #e0e0e0);border-radius:4px;height:12px;overflow:hidden;position:relative;">
-                      <div id="dafeiyu-progress-fill" style="background:#1976d2;width:0%;height:100%;transition:width 0.3s;"></div>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;margin-top:4px;">
-                      <span id="dafeiyu-progress-text" class="hint">0% (0 / 640.9 MB)</span>
-                      <span id="dafeiyu-speed-text" class="hint">0.0 MB/s</span>
-                    </div>
-                  </div>
-                  <div style="display:flex;gap:8px;margin-top:8px;">
-                    <button type="button" id="btn-download-dafeiyu-model" class="button primary">📥 立即下载大肥鱼微调模型 (~640MB)</button>
-                    <button type="button" id="btn-cancel-dafeiyu-download" class="button quiet" style="display:none;">取消下载</button>
-                  </div>
-                </div>
+              <div class="actions">
+                <button type="button" id="btn-ping-providers">检查表单地址</button>
+                <span id="ping-provider-result" class="hint" role="status"></span>
               </div>
-            </div>
-
-            <!-- Ping Test Box -->
-            <div class="ping-test-box">
-              <div style="display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-weight:600;font-size:13px;">⚡ 端点连通性实测与网络延迟诊断：</span>
-                <button type="button" id="btn-ping-providers" class="button">一键测通所有端点</button>
-              </div>
-              <div id="ping-results-grid" class="ping-results-grid">
-                <div class="ping-card" id="ping-card-llm">
-                  <div class="ping-card-header">
-                    <span class="ping-title">LLM 文本推理</span>
-                    <span class="ping-badge" id="ping-llm-badge">待检测</span>
-                  </div>
-                  <p class="hint ping-detail" id="ping-llm-detail">点击上方按钮测试连通性</p>
-                </div>
-                <div class="ping-card" id="ping-card-tts">
-                  <div class="ping-card-header">
-                    <span class="ping-title">TTS 语音合成</span>
-                    <span class="ping-badge" id="ping-tts-badge">待检测</span>
-                  </div>
-                  <p class="hint ping-detail" id="ping-tts-detail">点击上方按钮测试连通性</p>
-                </div>
-                <div class="ping-card" id="ping-card-vision">
-                  <div class="ping-card-header">
-                    <span class="ping-title">视觉多模态能力</span>
-                    <span class="ping-badge" id="ping-vision-badge">纯文本回退</span>
-                  </div>
-                  <p class="hint ping-detail" id="ping-vision-detail">平滑回退模式：自动使用字幕与文本决策，不影响日常运营。</p>
-                </div>
-              </div>
-            </div>
 
             <form id="providers-form">
               <fieldset id="provider-fields" class="provider-fields">
@@ -647,21 +530,19 @@
                     <div>
                       <label style="display:flex;align-items:center;justify-content:space-between;">
                         <span>模型 ID</span>
-                        <span id="model-multimodal-badge" class="badge good" style="font-size:11px;font-weight:normal;">👁️ 支持多模态视觉</span>
                       </label>
                       <div style="display:flex;gap:6px;margin-top:4px;">
                         <select id="llm-model-select" style="flex:1;">
-                          <optgroup label="★ 专属微调人设模型 (Fine-Tuned Persona)" id="fine-tuned-models-group">
+                          <optgroup label="内建角色模型" id="fine-tuned-models-group">
                             <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
                           </optgroup>
-                          <optgroup label="⚙ 本地通用基座模型 (Base Models)" id="base-models-group">
+                          <optgroup label="本地通用模型" id="base-models-group">
                             <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
-                            <option value="MiniCPM-V-4.7-1B">MiniCPM-V-4.7-1B (原始基线)</option>
                           </optgroup>
                           <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
                           <option value="__custom__">自定义输入模型 ID…</option>
                         </select>
-                        <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">🔄 获取远端模型</button>
+                        <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">读取模型列表</button>
                       </div>
                       <div style="margin-top:6px;">
                         <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
@@ -726,10 +607,11 @@
                 <button id="check-providers-settings" type="button">检查已保存配置连接</button>
               </div>
               <p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p>
-              <pre id="providers-check-result" class="code-small" hidden></pre>
+              <p id="providers-check-result" class="hint" role="status" hidden></p>
             </form>
+            </details>
           </article>
-          <article class="panel"><div class="panel-heading"><h2>上下文能力与压缩</h2><span id="context-verified" class="badge">待验证</span></div><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用；配置目标不代表服务已支持。</p><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
+          <article class="panel"><div class="panel-heading"><h2>上下文管理</h2></div><details><summary>容量与压缩诊断</summary><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用。</p></details><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
           <article class="panel" id="retention-panel"><div class="panel-heading"><h2>对话数据留存</h2><span class="hint">按服务已保存策略自动执行</span></div>
             <form id="retention-form"><div class="retention-policy"><label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled></label><label class="check-field"><input id="retention-never" type="checkbox" disabled>永不自动清理</label><button id="retention-save" type="submit" disabled>保存留存策略</button></div><p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p></form>
             <dl id="retention-status" class="description-list"></dl><pre id="retention-last-result" class="code-small" hidden></pre>
@@ -737,7 +619,6 @@
               <div id="retention-preview-panel" class="retention-preview" hidden><p id="retention-preview-cutoff" class="hint"></p><dl id="retention-preview-counts" class="description-list"></dl><details><summary>完整预览结果</summary><pre id="retention-preview-detail" class="code-small"></pre></details><label class="check-field"><input id="retention-confirm" type="checkbox" disabled>我已核对以上范围与数量，确认永久清理这些记录</label><button id="retention-cleanup" class="danger" type="button" disabled>确认清理预览范围</button></div><p id="retention-cleanup-state" class="hint" role="status">请先预览待清理范围，再明确确认。</p>
             </div>
           </article>
-          <section class="panel" id="inference-node-panel"></section>
           <section class="panel" id="cache-panel"></section>
           <article class="panel" id="interactive-rules-card">
             <div class="panel-heading">
@@ -802,9 +683,9 @@
   </div>
   <script src="/static/modules/formatters.js" defer></script>
   <script src="/static/modules/pagination.js" defer></script>
-  <script src="/static/modules/operations-workbench.js" defer></script>
+  <script src="/static/modules/operations-workbench.js?v=20261105.26" defer></script>
   <script src="/static/cache-panel.js" defer></script>
-  <script src="/static/inference-node.js" defer></script>
+  <script src="/static/inference-node.js?v=20261105.26" defer></script>
   <script src="/static/memes.js" defer></script>
   <script src="/static/continuation.js" defer></script>
   <script src="/static/messages.js" defer></script>
@@ -812,6 +693,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261105.25"></script>
+  <script type="module" src="/static/app.js?v=20261105.26"></script>
 </body>
 </html>

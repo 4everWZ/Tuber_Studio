@@ -419,8 +419,10 @@ async def test_external_runtime_error_is_not_marked_safe_operator_guidance(manag
 @pytest.mark.asyncio
 async def test_remote_endpoint_save_succeeds_even_when_offline(runtime):
     settings = runtime.settings
-    # User configures remote Jetson TTS and LLM while Jetson is still booting / unreachable
+    original_broker = settings.data["inference_broker"].copy()
+    original_token = settings.inference_token
     patch = {
+        "credentials": {"llm": "test-endpoint-key"},
         "llm": {
             "kind": "llama_cpp",
             "base_url": "http://192.0.2.1:9012/llm",
@@ -438,7 +440,8 @@ async def test_remote_endpoint_save_succeeds_even_when_offline(runtime):
     result = await apply_settings(runtime, patch)
     assert result["llm"]["base_url"] == "http://192.0.2.1:9012/llm"
     assert result["tts"]["base_url"] == "http://192.0.2.1:9012/tts"
-    assert settings.data["inference_broker"]["base_url"] == "http://192.0.2.1:9012"
-    assert settings.data["inference_broker"]["deployment"] == "remote"
+    assert settings.data["inference_broker"].get("base_url") == original_broker.get("base_url")
+    assert settings.data["inference_broker"].get("deployment") == original_broker.get("deployment")
+    assert settings.inference_token == original_token
+    assert settings.provider_key("llm") == "test-endpoint-key"
     assert runtime.llm.profile_error is not None  # Warned as unreachable, not crashed!
-

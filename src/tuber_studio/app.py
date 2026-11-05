@@ -42,6 +42,7 @@ from .memes import MemeCatalog
 from .message_api import register_message_api
 from .models import Character, Event
 from .operation_recovery_api import register_operation_recovery_api
+from .provider_diagnostics import register_provider_diagnostics
 from .provider_settings import ProviderConfigurationError, apply_settings
 from .providers import public_error
 from .runtime import Runtime
@@ -446,7 +447,9 @@ def create_app(
             auto_download_triggered = False
             if model_hub.is_full_local_deployment(settings):
                 selected_model = settings.data.get("llm", {}).get("model", "")
-                if model_hub.is_dafeiyu_model(selected_model) and not model_hub.is_model_installed(settings.models):
+                if model_hub.is_dafeiyu_model(selected_model) and not model_hub.is_model_installed(
+                    settings.models
+                ):
                     model_hub.start_model_download(settings.models)
                     auto_download_triggered = True
             result["auto_download_triggered"] = auto_download_triggered
@@ -516,75 +519,12 @@ def create_app(
                     "tag": "纯文本",
                     "description": "通用纯文本模型（平滑回退至纯文本模式）",
                 },
-                {
-                    "id": "MiniCPM-V-4.7-1B",
-                    "name": "MiniCPM-V-4.7-1B",
-                    "installed": False,
-                    "multimodal": True,
-                    "tag": "多模态",
-                    "description": "原版多模态模型，具备视觉理解能力",
-                },
             ],
         }
 
     @app.get("/api/models/dafeiyu/status", dependencies=[Depends(require_admin)])
-    async def get_dafeiyu_model_status(
-        base_url: str | None = Query(None),
-        kind: str | None = Query(None),
-        model: str | None = Query(None),
-        api_key: str | None = Query(None),
-    ):
-        """Get real-time installation and download progress or remote node / API verification."""
-        data_override = dict(settings.data) if hasattr(settings, "data") else {}
-        if base_url is not None or kind is not None or model is not None:
-            llm_patch = dict(data_override.get("llm", {}))
-            if base_url is not None:
-                llm_patch["base_url"] = base_url.strip()
-            if kind is not None:
-                llm_patch["kind"] = kind.strip()
-            if model is not None:
-                llm_patch["model"] = model.strip()
-            data_override["llm"] = llm_patch
-
-        status = model_hub.get_model_status(settings.models, settings_or_data=data_override or settings)
-        category = status.get("deployment_category", "local_file")
-        endpoint = (base_url.strip() if base_url else None) or status.get("endpoint_url")
-        token = api_key.strip() if api_key else (settings.endpoint_key("llm") or settings.inference_token or "")
-        headers = {"X-Tuber-Inference-Key": token} if token else {}
-
-        if category == "self_hosted" and endpoint:
-            url = endpoint.rstrip("/")
-            try:
-                t0 = time.time()
-                async with httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(2.5, connect=1.5), trust_env=False) as client:
-                    test_url = url + "/health" if not url.endswith(("/health", "/docs")) else url
-                    resp = await client.get(test_url)
-                    status["node_online"] = resp.status_code < 400
-                    status["latency_ms"] = round((time.time() - t0) * 1000, 1)
-                    if resp.status_code == 200:
-                        try:
-                            data = resp.json()
-                            status["node_mode"] = data.get("mode")
-                            status["resident_model"] = data.get("active_provider") or data.get("selected_provider") or data.get("model")
-                        except Exception:
-                            pass
-                    # Query /props for actual loaded model and context window
-                    try:
-                        props_url = url.replace("/health", "").rstrip("/") + "/props"
-                        props_resp = await client.get(props_url)
-                        if props_resp.status_code == 200:
-                            pdata = props_resp.json()
-                            status["remote_n_ctx"] = pdata.get("default_generation_settings", {}).get("n_ctx")
-                            status["remote_model_alias"] = pdata.get("model_alias")
-                    except Exception:
-                        pass
-            except Exception as e:
-                status["node_online"] = False
-                status["node_error"] = str(e)
-        elif category == "cloud_api" and endpoint:
-            status["api_has_key"] = bool(token)
-            status["api_endpoint"] = endpoint
-        return status
+    async def get_dafeiyu_model_status():
+        return model_hub.get_model_status(settings.models, settings_or_data=settings)
 
     @app.post("/api/models/dafeiyu/download", dependencies=[Depends(require_admin)])
     async def trigger_dafeiyu_model_download():
@@ -597,146 +537,7 @@ def create_app(
         model_hub.cancel_model_download()
         return {"status": "cancelled"}
 
-    @app.get("/api/providers/models", dependencies=[Depends(require_admin)])
-    async def fetch_remote_models(base_url: str = Query(...), api_key: str | None = Query(None)):
-        """Fetch remote model list from user-specified OpenAI-compatible or Ollama endpoint."""
-        url = base_url.strip().rstrip("/")
-        if not url or not url.startswith(("http://", "https://")):
-            raise HTTPException(400, "Base URL 必须是以 http:// 或 https:// 开头的合法地址")
-
-        headers = {}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        candidate_paths = (
-            ["/models", "/v1/models"] if url.endswith("/v1") else ["/v1/models", "/models", "/api/tags"]
-        )
-
-        async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), trust_env=False) as client:
-            last_err = "无法连接至目标服务"
-            for path in candidate_paths:
-                target_url = (
-                    url + path
-                    if not url.endswith("/v1") or not path.startswith("/v1")
-                    else url + path[3:]
-                )
-                try:
-                    res = await client.get(target_url, headers=headers)
-                    if res.status_code == 200:
-                        data = res.json()
-                        models = []
-                        if isinstance(data.get("data"), list):
-                            models = [
-                                m.get("id")
-                                for m in data["data"]
-                                if isinstance(m, dict) and "id" in m
-                            ]
-                        elif isinstance(data.get("models"), list):
-                            models = [
-                                m.get("name") or m.get("model")
-                                for m in data["models"]
-                                if isinstance(m, dict)
-                            ]
-                        elif isinstance(data, list):
-                            models = [
-                                m.get("id") or m.get("name") for m in data if isinstance(m, dict)
-                            ]
-
-                        if models:
-                            return {
-                                "models": sorted(set(filter(None, models))),
-                                "endpoint": target_url,
-                            }
-                except (httpx.ConnectError, httpx.ConnectTimeout):
-                    last_err = f"无法连接目标地址（连接被拒绝或超时，请确认服务已启动：{url}）"
-                except Exception as e:
-                    last_err = f"请求失败: {e}"
-
-            return {"models": [], "error": last_err}
-
-    @app.post("/api/providers/ping", dependencies=[Depends(require_admin)])
-    async def ping_endpoints(payload: dict = Body(...)):
-        """Measure HTTP round-trip latency and connectivity for candidate endpoints."""
-        llm_url = (payload.get("llm_base_url") or payload.get("llm_url") or "").strip().rstrip("/")
-        tts_url = (payload.get("tts_base_url") or payload.get("tts_url") or "").strip().rstrip("/")
-        api_key = payload.get("llm_key")
-        token_path = runtime.settings.runtime / "inference-token"
-        infer_token = (
-            payload.get("inference_token")
-            or getattr(runtime.settings, "inference_token", None)
-            or (token_path.read_text(encoding="utf-8").strip() if token_path.exists() else None)
-        )
-
-        result = {
-            "llm": {"ok": False, "url": llm_url, "latency_ms": None, "detail": "未配置", "status_code": None},
-            "tts": {"ok": False, "url": tts_url, "latency_ms": None, "detail": "未配置", "status_code": None},
-        }
-
-        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0), trust_env=False) as client:
-            if llm_url:
-                t0 = time.perf_counter()
-                try:
-                    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-                    if not api_key and infer_token:
-                        headers["X-Tuber-Inference-Key"] = infer_token
-                        headers["Authorization"] = f"Bearer {infer_token}"
-                    test_url = llm_url if llm_url.endswith("/v1") else (llm_url + "/v1/models")
-                    res = await client.get(test_url, headers=headers)
-                    elapsed = round((time.perf_counter() - t0) * 1000)
-                    is_ok = res.status_code in (200, 401)
-                    result["llm"] = {
-                        "ok": is_ok,
-                        "url": llm_url,
-                        "status_code": res.status_code,
-                        "latency_ms": elapsed,
-                        "detail": (
-                            f"就绪 ({elapsed}ms)"
-                            if res.status_code == 200
-                            else (
-                                "需要提供正确的 API Key"
-                                if res.status_code == 401
-                                else f"HTTP {res.status_code}"
-                            )
-                        ),
-                    }
-                except httpx.ConnectError:
-                    result["llm"] = {"ok": False, "url": llm_url, "latency_ms": None, "detail": "连接被拒绝 (服务未启动或端口不通)", "status_code": None}
-                except httpx.TimeoutException:
-                    result["llm"] = {"ok": False, "url": llm_url, "latency_ms": None, "detail": "连接超时 (网络不通或地址有误)", "status_code": None}
-                except Exception as e:
-                    result["llm"] = {"ok": False, "url": llm_url, "latency_ms": None, "detail": f"测试失败: {e}", "status_code": None}
-
-            if tts_url:
-                t0 = time.perf_counter()
-                try:
-                    tts_headers = {}
-                    if infer_token:
-                        tts_headers["X-Tuber-Inference-Key"] = infer_token
-                        tts_headers["Authorization"] = f"Bearer {infer_token}"
-                    check_url = tts_url
-                    if tts_url.rstrip("/").endswith("/tts"):
-                        check_url = tts_url.rstrip("/") + "/docs"
-                    res = await client.get(check_url, headers=tts_headers)
-                    if res.status_code == 404 and check_url != tts_url:
-                        res = await client.get(tts_url, headers=tts_headers)
-                    elapsed = round((time.perf_counter() - t0) * 1000)
-                    result["tts"] = {
-                        "ok": res.status_code in (200, 404),
-                        "url": tts_url,
-                        "status_code": res.status_code,
-                        "latency_ms": elapsed,
-                        "detail": (
-                            f"就绪 ({elapsed}ms)"
-                            if res.status_code == 200
-                            else f"HTTP {res.status_code} ({elapsed}ms)"
-                        ),
-                    }
-                except httpx.ConnectError:
-                    result["tts"] = {"ok": False, "url": tts_url, "latency_ms": None, "detail": "连接被拒绝 (服务未启动或端口不通)", "status_code": None}
-                except Exception as e:
-                    result["tts"] = {"ok": False, "url": tts_url, "latency_ms": None, "detail": f"测试失败: {e}", "status_code": None}
-
-        return result
+    register_provider_diagnostics(app, settings, require_admin)
 
     @app.get("/api/context/status", dependencies=[Depends(require_admin)])
     async def context_status(video_id: str | None = None, thread_id: str | None = None):
@@ -900,6 +701,7 @@ def create_app(
     @app.post("/api/daily-memory/extract", dependencies=[Depends(require_admin)])
     async def extract_daily_memory(data: dict = Body(default={})):
         import datetime
+
         date_str = data.get("date") or datetime.date.today().isoformat()
         auto_approve = bool(data.get("auto_approve", False))
         async with runtime.generation_lock:
@@ -989,8 +791,7 @@ def create_app(
             "is_active": runtime.game_livestream.is_active(),
             "active_status": adapter.get_status(),
             "available_games": [
-                {"id": k, "display_name": a.display_name}
-                for k, a in runtime.game_livestream.adapters.items()
+                {"id": k, "display_name": a.display_name} for k, a in runtime.game_livestream.adapters.items()
             ],
         }
 

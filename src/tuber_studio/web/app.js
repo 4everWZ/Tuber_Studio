@@ -1,11 +1,11 @@
 "use strict";
 
-import { $, $$, formatBytes, formatDuration } from "./modules/core.js?v=20261105.25";
-import { api as baseApi } from "./modules/api.js?v=20261105.25";
+import { $, $$, formatBytes, formatDuration } from "./modules/core.js?v=20261105.26";
+import { api as baseApi } from "./modules/api.js?v=20261105.26";
 import {
   initInferenceProvidersUI as initProvidersUI,
   readProviderPayload,
-  loadLocalModelsDropdown as loadLocalModels,
+  loadLocalModelsDropdown,
   checkDafeiyuModelStatus as checkDafeiyuStatus,
   renderProviderForm,
   applySettings,
@@ -14,38 +14,37 @@ import {
   voiceAvailability,
   checkProviderConnections,
   publicSettings,
-} from "./modules/providers.js?v=20261105.25";
+} from "./modules/providers.js?v=20261105.26";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js?v=20261105.25";
+} from "./modules/operations.js?v=20261105.26";
 import {
   renderCharacterImage,
   initCharacterStudioUI,
-} from "./modules/character-studio.js?v=20261105.25";
+} from "./modules/character-studio.js?v=20261105.26";
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261105.25";
+} from "./modules/comments.js?v=20261105.26";
 import {
   localDateTime,
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261105.25";
+} from "./modules/dynamics.js?v=20261105.26";
 import {
   initMaintenanceModule,
-} from "./modules/maintenance.js?v=20261105.25";
+} from "./modules/maintenance.js?v=20261105.26";
 import {
   renderLiveFeatures,
   renderControls,
   renderInference,
   renderServiceStatusCapsule,
   initLiveModule,
-} from "./modules/live.js?v=20261105.25";
+} from "./modules/live.js?v=20261105.26";
 
 const api = (path, options = {}) => baseApi(path, options, showLogin);
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
-const loadLocalModelsDropdown = () => loadLocalModels(api);
 const checkDafeiyuModelStatus = () => checkDafeiyuStatus(api);
 const initInferenceProvidersUI = () => initProvidersUI(model, api, notice, busy, safeMessage, () => renderProviderForm(model, renderLiveFeatures));
 const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
@@ -236,8 +235,8 @@ function showLogin() {
 }
 
 async function enterWorkspace() {
+  await loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
   await Promise.all([
-    loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus }),
     loadVoices(),
     loadAssets(),
     characterStudio?.loadCharacters(),
@@ -476,6 +475,7 @@ async function changePage() {
         inferenceNodePanel.refresh(),
         updatePermissionCapsule(),
         interactiveGamesUI.refresh(),
+        loadLocalModelsDropdown(api),
         checkDafeiyuModelStatus()
       ]);
     }
@@ -599,7 +599,9 @@ $("login-form")?.addEventListener("submit", event => {
   busy(event.submitter, async () => {
     const token = $("token")?.value.trim();
     if (!token) return;
-    localStorage.setItem("tuber_token", token);
+    await api("/api/auth", { method: "POST", body: { token } });
+    $("token").value = "";
+    localStorage.removeItem("tuber_token");
     await enterWorkspace();
   });
 });
@@ -621,8 +623,8 @@ $("providers-form")?.addEventListener("submit", event => {
       let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
       if (result.auto_download_triggered) {
         message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
-        checkDafeiyuModelStatus();
       }
+      checkDafeiyuModelStatus();
       if ($("providers-save-state")) $("providers-save-state").textContent = message;
       notice(message);
       const checks = await Promise.allSettled([api("/api/status"), loadVoices()]);
@@ -645,6 +647,7 @@ $("reset-providers")?.addEventListener("click", () => {
   if (!model.settings || model.providersSaving) return;
   model.providersDirty = false;
   applySettings(model.settings, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
+  checkDafeiyuModelStatus();
   if ($("providers-save-state")) {
     $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。";
     $("providers-save-state").classList.remove("error-text");

@@ -131,8 +131,7 @@ def proposal(settings, body):
         data.setdefault(name, {}).update(patch)
         before, after = settings.data.get(name, {}), data[name]
         if (
-            after.get("kind") == "openai_compatible"
-            and after.get("base_url", "").rstrip("/") != before.get("base_url", "").rstrip("/")
+            after.get("base_url", "").rstrip("/") != before.get("base_url", "").rstrip("/")
             and settings.provider_keys.get(name)
             and not credentials.get(name)
             and name not in clear
@@ -148,36 +147,6 @@ def proposal(settings, body):
     )
     if data["llm"]["kind"] == "llama_cpp":
         broker.update(model=data["llm"]["model"], context_tokens=data["llm"]["context_tokens"])
-        current_local_model = (
-            previous_llm["model"]
-            if previous_llm["kind"] == "llama_cpp"
-            else settings.data.get("inference_broker", {}).get("model", "MiniCPM5-2B")
-        )
-        is_default_broker = (
-            broker.get("enabled")
-            and data["llm"].get("base_url", "").rstrip("/") == broker.get("base_url", "").rstrip("/")
-        )
-        if is_default_broker and data["llm"]["model"] != current_local_model and data["llm"]["model"] not in {
-            "minicpm_v_dafeiyu",
-            "gemma_e2b_dafeiyu",
-            "MiniCPM-V-4.7-1B",
-            "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
-            "MiniCPM5-2B",
-            "MiniCPM5-1B",
-        }:
-            raise ValueError("此设置不切换本地默认节点模型；请保持已安装的默认模型，或选择自定义本地/外部端点")
-    for candidate_url in (data.get("llm", {}).get("base_url"), data.get("tts", {}).get("base_url")):
-        if candidate_url:
-            from urllib.parse import urlsplit
-            try:
-                parsed = urlsplit(candidate_url)
-                if parsed.hostname and (parsed.port == 9012 or candidate_url.rstrip("/").endswith(("/llm", "/tts"))):
-                    is_remote = parsed.hostname not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
-                    broker["base_url"] = f"{parsed.scheme}://{parsed.netloc}"
-                    broker["deployment"] = "remote" if is_remote else "local"
-                    break
-            except Exception:
-                pass
     profiles = data.get("work_mode_profiles")
     mode = broker.get("mode")
     if profiles and mode in profiles:
@@ -198,8 +167,6 @@ async def apply_settings(runtime, body):
     data, keys = proposal(settings, body)
     staged = copy.copy(settings)
     staged.data, staged.provider_keys = data, keys
-    if keys.get("llm") or keys.get("tts"):
-        staged.inference_token = keys.get("llm") or keys.get("tts")
     created = []
     try:
         llm = create_llm(staged)
@@ -260,11 +227,6 @@ async def apply_settings(runtime, body):
             files_attempted = True
             settings.save_keys(keys)
             settings.save_public(data)
-            if staged.inference_token:
-                settings.inference_token = staged.inference_token
-                (settings.runtime / "inference-token").write_text(
-                    staged.inference_token.strip() + "\n", encoding="utf-8"
-                )
         except BaseException as failure:
 
             async def rollback():
@@ -317,5 +279,8 @@ async def apply_settings(runtime, body):
         elif runtime.inference_client is not None:
             old_clients.append(runtime.inference_client)
             runtime.inference_client = None
-        await asyncio.gather(*(client.close() if hasattr(client, "close") else client.aclose() for client in old_clients), return_exceptions=True)
+        await asyncio.gather(
+            *(client.close() if hasattr(client, "close") else client.aclose() for client in old_clients),
+            return_exceptions=True,
+        )
     return settings.public_data() | {"restart_required": False, "context_recount_required": True}

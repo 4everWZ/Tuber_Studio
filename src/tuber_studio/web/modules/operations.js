@@ -136,21 +136,10 @@ export function renderVisualFallbackStatus(status) {
   const matrixVisualEl = $("matrix-visual-status");
   if (!matrixVisualEl) return;
 
-  const vision = status?.vision;
-  const isAdmitted = vision?.admitted === true;
-  const isAvailable = vision?.available === true;
-
+  const ready = status?.vision?.admitted === true && status.vision.available === true;
   matrixVisualEl.hidden = false;
-  if (isAdmitted && isAvailable) {
-    matrixVisualEl.className = "hint visual-status-box ok";
-    matrixVisualEl.style.color = "var(--ok, #2e7d32)";
-    matrixVisualEl.textContent = "👁️ 视觉多模态分析: 已准入并就绪（支持视频关键帧抽帧分析）";
-  } else {
-    matrixVisualEl.className = "hint visual-status-box fallback";
-    matrixVisualEl.style.color = "var(--text, #374151)";
-    const detail = vision?.reason || "模型未配置视觉或未通过多模态准入";
-    matrixVisualEl.textContent = `📝 视觉回退: 纯字幕与文本分析决策模式（${detail}，系统已自动平滑回退，不影响日常运营）`;
-  }
+  matrixVisualEl.className = "hint visual-status-box";
+  matrixVisualEl.textContent = ready ? "视频可使用画面和字幕" : "视频使用字幕 · 视觉未就绪";
 }
 
 export async function updatePermissionCapsule(api, accountPanel) {

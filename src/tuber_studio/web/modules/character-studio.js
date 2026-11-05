@@ -24,17 +24,23 @@ export function updateOCTypeBadge(personaType) {
   const promptBox = $("oc-compact-prompt-box");
   const isFineTuned = personaType === "fine_tuned";
   if (badge) {
-    badge.textContent = isFineTuned ? "★ 特化微调固有角色 (超轻极速注入)" : "⚙ 经典通用基座 Prompt OC (全量规格注入)";
+    badge.textContent = isFineTuned ? "内建角色" : "角色卡";
     badge.className = `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`;
   }
-  if (promptBox) {
-    promptBox.style.display = isFineTuned ? "block" : "none";
+  if (promptBox) promptBox.hidden = !isFineTuned;
+  $("oc-fine-tuned-model").closest("label").hidden = !isFineTuned;
+  for (const tab of ["tab-oc-persona", "tab-oc-style"]) {
+    const button = document.querySelector(`[data-tab="${tab}"]`);
+    if (isFineTuned && button.classList.contains("active")) {
+      document.querySelector('[data-tab="tab-oc-model"]').click();
+    }
+    button.hidden = isFineTuned;
   }
 }
 
 export function syncCharacterJsonToVisual(character) {
   if (!character) return;
-  const personaType = character.persona_type || "fine_tuned";
+  const personaType = character.persona_type || "prompt_oc";
   if ($("oc-persona-type")) $("oc-persona-type").value = personaType;
   if ($("oc-fine-tuned-model")) $("oc-fine-tuned-model").value = character.fine_tuned_model || "";
   if ($("oc-compact-prompt")) $("oc-compact-prompt").value = character.compact_system_prompt || "";
@@ -67,7 +73,7 @@ export function syncVisualToCharacterJson(model) {
   } catch {
     charObj = model.character ? { ...model.character } : {};
   }
-  const personaType = $("oc-persona-type")?.value || "fine_tuned";
+  const personaType = $("oc-persona-type")?.value || "prompt_oc";
   charObj.persona_type = personaType;
   if ($("oc-fine-tuned-model")?.value.trim()) {
     charObj.fine_tuned_model = $("oc-fine-tuned-model").value.trim();
@@ -150,7 +156,7 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
   }
   model.characters.forEach(character => {
     const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
-    const isFineTuned = (character.persona_type || "fine_tuned") === "fine_tuned";
+    const isFineTuned = (character.persona_type || "prompt_oc") === "fine_tuned";
     const typeBadge = node("span", isFineTuned ? "★ 微调人设" : "⚙ 基座OC", `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`);
     button.append(typeBadge);
     button.append(node("small", `${character.id} · v${character.version ?? character.active_version ?? "—"}${character.id === model.status?.character?.id ? " · 当前角色" : ""}`));

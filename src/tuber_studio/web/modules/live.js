@@ -19,23 +19,6 @@ export function resourceModeName(mode) {
   return { live: "直播优先", text_only: "纯文本节约" }[mode] || mode || "未报告";
 }
 
-export function resourceName(key) {
-  return { tts: "TTS 服务", vlm: "视觉多模态", whisper: "语音识别" }[key] || key;
-}
-
-export function inferenceResidents(inference) {
-  const residents = [];
-  if (inference?.tts?.resident) residents.push("TTS 语音");
-  if (inference?.vlm?.loaded) residents.push("视觉多模态");
-  return residents.length ? residents.join(" · ") : "当前仅驻留文本大模型";
-}
-
-export function inferenceLabel(inference) {
-  if (inference?.kind === "llama_cpp") return "本地 llama.cpp / Jetson 原生";
-  if (inference?.kind === "openai_compatible") return "远程 OpenAI 兼容 Broker";
-  return inference?.kind || "—";
-}
-
 export function renderLiveFeatures(model) {
   const enabled = liveEnabled(model);
   const liveNotice = $("live-feature-notice");
@@ -93,11 +76,9 @@ export function renderControls(model) {
 
 export function renderInference(inference, model, describe) {
   describe($("inference-details"), [
-    ["运行架构", inferenceLabel(inference)],
-    ["活跃模型", inference?.active_model || inference?.model || "—"],
-    ["资源模式", resourceModeName(resourceMode(inference, model))],
-    ["驻留资源", inferenceResidents(inference)],
-    ["端点状态", inference?.remote_reachable !== false ? "正常直通" : "不可达 / 离线"],
+    ["当前模型", inference?.model || "—"],
+    ["模式", inference?.mode === "live" ? "直播" : "运营"],
+    ["服务状态", inference?.error ? "异常" : inference?.state === "active" ? "就绪" : "待检查"],
   ]);
   renderModeControls(inference, model);
 }
@@ -106,16 +87,13 @@ export function renderServiceStatusCapsule(status, node) {
   const capsule = $("service-status-capsule");
   if (!capsule) return;
   const inference = status.inference || {};
-  const tts = inference.tts || {};
-  const isOnline = inference.remote_reachable !== false;
-  capsule.className = `service-status-capsule ${isOnline ? "online" : "offline"}`;
+  const online = inference.error ? false : inference.state === "active" ? true : undefined;
+  capsule.className = `service-status-capsule ${online === false ? "offline" : online ? "online" : ""}`;
   const dot = capsule.querySelector(".status-dot") || node("span", "", "status-dot");
   const text = capsule.querySelector(".status-text") || node("span", "", "status-text");
-  const hostLabel = inference.host ? ` [${inference.host}]` : "";
-  const ttsState = tts.resident ? "TTS 已就绪" : "TTS 待命卸载 (省显存)";
-  text.textContent = isOnline ?
-    `🚀 节点在线${hostLabel} · 模型: ${inference.active_model || inference.model || "MiniCPM-V-4.7-1B"} · ${ttsState}` :
-    `⚠️ 节点离线${hostLabel} · 请检查 9012 Broker 服务`;
+  const activeModel = inference.model;
+  text.textContent = online === true ? (activeModel ? `推理已连接 · ${activeModel}` : "推理已连接") :
+    online === false ? "推理未连接 · 检查设置" : "推理状态待检查";
   if (!capsule.contains(dot)) capsule.prepend(dot);
   if (!capsule.contains(text)) capsule.append(text);
 }
