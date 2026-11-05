@@ -531,33 +531,59 @@ def create_app(
     async def get_dafeiyu_model_status(
         base_url: str | None = Query(None),
         kind: str | None = Query(None),
+        model: str | None = Query(None),
+        api_key: str | None = Query(None),
     ):
-        """Get real-time installation and download progress of the Da Feiyu model."""
+        """Get real-time installation and download progress or remote node / API verification."""
         data_override = dict(settings.data) if hasattr(settings, "data") else {}
-        if base_url is not None or kind is not None:
+        if base_url is not None or kind is not None or model is not None:
             llm_patch = dict(data_override.get("llm", {}))
             if base_url is not None:
                 llm_patch["base_url"] = base_url.strip()
             if kind is not None:
                 llm_patch["kind"] = kind.strip()
+            if model is not None:
+                llm_patch["model"] = model.strip()
             data_override["llm"] = llm_patch
 
         status = model_hub.get_model_status(settings.models, settings_or_data=data_override or settings)
         category = status.get("deployment_category", "local_file")
         endpoint = (base_url.strip() if base_url else None) or status.get("endpoint_url")
+        token = api_key.strip() if api_key else (settings.endpoint_key("llm") or settings.inference_token or "")
+        headers = {"X-Tuber-Inference-Key": token} if token else {}
+
         if category == "self_hosted" and endpoint:
             url = endpoint.rstrip("/")
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=1.0), trust_env=False) as client:
+                t0 = time.time()
+                async with httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(2.5, connect=1.5), trust_env=False) as client:
                     test_url = url + "/health" if not url.endswith(("/health", "/docs")) else url
                     resp = await client.get(test_url)
                     status["node_online"] = resp.status_code < 400
+                    status["latency_ms"] = round((time.time() - t0) * 1000, 1)
                     if resp.status_code == 200:
-                        data = resp.json()
-                        status["node_mode"] = data.get("mode")
-                        status["resident_model"] = data.get("selected_provider") or data.get("model")
-            except Exception:
+                        try:
+                            data = resp.json()
+                            status["node_mode"] = data.get("mode")
+                            status["resident_model"] = data.get("active_provider") or data.get("selected_provider") or data.get("model")
+                        except Exception:
+                            pass
+                    # Query /props for actual loaded model and context window
+                    try:
+                        props_url = url.replace("/health", "").rstrip("/") + "/props"
+                        props_resp = await client.get(props_url)
+                        if props_resp.status_code == 200:
+                            pdata = props_resp.json()
+                            status["remote_n_ctx"] = pdata.get("default_generation_settings", {}).get("n_ctx")
+                            status["remote_model_alias"] = pdata.get("model_alias")
+                    except Exception:
+                        pass
+            except Exception as e:
                 status["node_online"] = False
+                status["node_error"] = str(e)
+        elif category == "cloud_api" and endpoint:
+            status["api_has_key"] = bool(token)
+            status["api_endpoint"] = endpoint
         return status
 
     @app.post("/api/models/dafeiyu/download", dependencies=[Depends(require_admin)])

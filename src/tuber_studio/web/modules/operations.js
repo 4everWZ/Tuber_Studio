@@ -14,10 +14,14 @@ export function getAutomationStatus() {
 }
 
 export function calculatePermissionTier(settings = {}, account = null, hasCsrf = true) {
-  const hasSessdata = Boolean(account?.configured?.sessdata);
-  const accountLoggedIn = account?.state === "logged_in";
+  const effectiveConfigured = currentAutomationStatus?.effective?.comments?.credentials_configured ?? true;
+  const hasSessdata = account ? Boolean(account?.configured?.sessdata) : effectiveConfigured;
+  const accountLoggedIn = account
+    ? (account?.state === "logged_in" || account?.state === "unverified" || Boolean(account?.profile?.uid))
+    : effectiveConfigured;
+  const effectiveCsrf = account ? Boolean(hasCsrf && (account?.configured?.csrf ?? true)) : true;
 
-  if (!hasSessdata || !hasCsrf || !accountLoggedIn) {
+  if (!hasSessdata || !effectiveCsrf || !accountLoggedIn) {
     return {
       tier: "readonly",
       icon: "🛡️",
@@ -409,7 +413,7 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
 
   const matrixContainer = $("operations-permission-matrix");
   if (matrixContainer) {
-    matrixContainer.addEventListener("change", () => {
+    const handleMatrixChange = () => {
       // Immediate optimistic update of top capsule & badge
       const optimistic = getOptimisticSettingsFromDOM();
       const account = accountPanel?.value;
@@ -422,6 +426,13 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
       matrixSaveTimeout = setTimeout(() => {
         savePermissionMatrix(api, accountPanel, { silent: true }).catch(console.error);
       }, 100);
+    };
+
+    matrixContainer.addEventListener("change", handleMatrixChange);
+    matrixContainer.addEventListener("click", (e) => {
+      if (e.target && e.target.type === "radio") {
+        handleMatrixChange();
+      }
     });
 
     matrixContainer.addEventListener("input", (e) => {

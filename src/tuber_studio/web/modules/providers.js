@@ -99,9 +99,13 @@ export async function checkDafeiyuModelStatus(api) {
   try {
     const kind = $("llm-kind") ? $("llm-kind").value : "llama_cpp";
     const baseUrl = ($("llm-base-url")?.value || "").trim();
+    const model = ($("llm-model")?.value || "").trim();
+    const apiKey = ($("llm-key")?.value || "").trim();
     const query = new URLSearchParams();
     if (baseUrl) query.set("base_url", baseUrl);
     if (kind) query.set("kind", kind);
+    if (model) query.set("model", model);
+    if (apiKey) query.set("api_key", apiKey);
     const qs = query.toString();
     const status = await api(`/api/models/dafeiyu/status${qs ? `?${qs}` : ""}`);
     renderDafeiyuModelCard(status);
@@ -162,14 +166,16 @@ export function renderDafeiyuModelCard(status = {}) {
     category = (baseUrl.includes(":9012") || baseUrl.includes(":8000") || baseUrl.includes(":11434")) ? "self_hosted" : "local_file";
   }
 
+  // 1. Dedicated Self-hosted / Jetson Orin Broker Node
   if (category === "self_hosted") {
     if (cardIcon) cardIcon.textContent = "🚀";
     if (cardTitle) cardTitle.textContent = "Jetson Orin / 独立推理节点 (Broker 统一直通分发)";
-    if (cardDesc) cardDesc.textContent = "端点自动按模型名分发与装载；非直播时段卸载 TTS 节省显存。无需在当前电脑重复下载权重。";
+    if (cardDesc) cardDesc.textContent = "通过内网 / Tailscale 直通推理节点，Broker 自动路由与装载模型；非直播时段自动卸载 TTS 节省显存。";
 
-    const isOnline = status?.node_online !== false;
-    badge.className = `badge ${isOnline ? "good" : "active"}`;
-    badge.textContent = isOnline ? "✔ 服务节点已就绪" : "⚡ 独立服务端点";
+    const isOnline = status?.node_online === true;
+    const latency = status?.latency_ms != null ? ` · 延迟 ${status.latency_ms}ms` : "";
+    badge.className = `badge ${isOnline ? "good" : status?.node_online === false ? "warn" : "active"}`;
+    badge.textContent = isOnline ? `✔ 节点在线就绪${latency}` : status?.node_online === false ? "⚠️ 节点未连通 / 正在重试" : "⚡ 独立服务端点";
     if (installedView) installedView.hidden = false;
     if (missingView) missingView.hidden = true;
     if (progressBox) progressBox.style.display = "none";
@@ -178,23 +184,26 @@ export function renderDafeiyuModelCard(status = {}) {
 
     const pathEl = installedView.querySelector("p");
     if (pathEl) {
-      pathEl.style.color = "var(--text, #374151)";
-      pathEl.innerHTML = `✔ 独立服务节点：<code>${baseUrl || "http://127.0.0.1:9012/llm"}</code> · 模式: <strong>统一直通分发</strong>`;
+      pathEl.style.color = isOnline ? "var(--text-success, #2e7d32)" : "var(--text, #374151)";
+      const resident = status?.resident_model || status?.remote_model_alias || modelId || "MiniCPM5-1B";
+      const nCtx = status?.remote_n_ctx ? `${status.remote_n_ctx.toLocaleString()} tokens` : "131,072 tokens";
+      pathEl.innerHTML = `✔ <strong>推理节点端点：</strong><code>${baseUrl || "http://100.95.31.18:9012/llm"}</code> · 运行模型: <strong>${resident}</strong> (原生上限: ${nCtx})`;
     }
     const hintEl = installedView.querySelector("small");
     if (hintEl) {
-      hintEl.textContent = `请求直接发往节点端点，Broker 自动路由与装载对应模型；当前电脑无需重复校验或下载 .gguf 权重。`;
+      hintEl.textContent = `模型权重常驻于硬件节点，请求由 Broker 自动按模型名分发；当前 Windows 主机无需下载 640MB 权重文件，零本地显存占用。`;
     }
     return;
   }
 
+  // 2. Cloud Commercial API
   if (category === "cloud_api") {
     if (cardIcon) cardIcon.textContent = "🌐";
     if (cardTitle) cardTitle.textContent = "云端商业 API 接入 (OpenAI 兼容协议)";
-    if (cardDesc) cardDesc.textContent = "直接调用云端大语言模型与语音 API；无需本地显存与权重文件。";
+    if (cardDesc) cardDesc.textContent = "直接调用云端大型语言模型与语音 API；无需本地与节点显存，按 Token 计费。";
 
-    badge.className = "badge muted";
-    badge.textContent = "🌐 云端 API 接入";
+    badge.className = "badge active";
+    badge.textContent = "🌐 云端商业 API";
     if (installedView) installedView.hidden = false;
     if (missingView) missingView.hidden = true;
     if (progressBox) progressBox.style.display = "none";
@@ -204,7 +213,7 @@ export function renderDafeiyuModelCard(status = {}) {
     const pathEl = installedView.querySelector("p");
     if (pathEl) {
       pathEl.style.color = "var(--text, #374151)";
-      pathEl.innerHTML = `🌐 云端 API 接口：<code>${baseUrl || "未配置 Base URL"}</code> (模型: <strong>${modelId}</strong>)`;
+      pathEl.innerHTML = `🌐 <strong>云端 API 接口：</strong><code>${baseUrl || "未配置 Base URL"}</code> · 模型: <strong>${modelId || "未指定"}</strong>`;
     }
     const hintEl = installedView.querySelector("small");
     if (hintEl) {
@@ -213,7 +222,35 @@ export function renderDafeiyuModelCard(status = {}) {
     return;
   }
 
-  // Pure local_file
+  // 3. Local Custom File Path
+  const isCustomLocalPath = Boolean(
+    modelId && (modelId.endsWith(".gguf") || modelId.includes("/") || modelId.includes("\\"))
+  );
+  if (isCustomLocalPath) {
+    if (cardIcon) cardIcon.textContent = "📁";
+    if (cardTitle) cardTitle.textContent = "本地自定义 GGUF 模型文件";
+    if (cardDesc) cardDesc.textContent = "使用本机本地路径指定的 GGUF 权重文件运行 llama.cpp 推理。";
+    badge.className = "badge good";
+    badge.textContent = "✔ 本地自定义模型";
+    if (installedView) installedView.hidden = false;
+    if (missingView) missingView.hidden = true;
+    if (progressBox) progressBox.style.display = "none";
+    if (btnDownload) btnDownload.style.display = "none";
+    if (btnCancel) btnCancel.style.display = "none";
+
+    const pathEl = installedView.querySelector("p");
+    if (pathEl) {
+      pathEl.style.color = "var(--text-success, #2e7d32)";
+      pathEl.innerHTML = `✔ <strong>本地模型路径：</strong><code>${modelId}</code>`;
+    }
+    const hintEl = installedView.querySelector("small");
+    if (hintEl) {
+      hintEl.textContent = `本机 llama.cpp 运行时将直接从该文件路径加载权重。`;
+    }
+    return;
+  }
+
+  // 4. Pure local built-in Dafeiyu fine-tuned weights
   if (cardIcon) cardIcon.textContent = "🐳";
   if (cardTitle) cardTitle.textContent = "大肥鱼专属微调模型 (MiniCPM-V-4.7-1B Q4_K_M)";
   if (cardDesc) cardDesc.textContent = "DoRA + DARE-TIES 权重融合，已内化大肥鱼人设与白饭口癖；托管于 Hugging Face。";
@@ -404,14 +441,17 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
       }
       notice("已切换为【本地部署】模式（默认直通本机 Broker: 9012）。");
     } else {
-      $("llm-kind").value = "openai_compatible";
+      $("llm-kind").value = "llama_cpp";
       if (!$("llm-base-url").value || $("llm-base-url").value === "http://127.0.0.1:9012/llm") {
         $("llm-base-url").value = "http://100.95.31.18:9012/llm";
+      }
+      if (!$("llm-model").value || $("llm-model").value === "MiniCPM-V-4.7-1B") {
+        $("llm-model").value = "MiniCPM5-1B";
       }
       if (!$("tts-base-url").value || $("tts-base-url").value === "http://127.0.0.1:9012/tts") {
         $("tts-base-url").value = "http://100.95.31.18:9012/tts";
       }
-      notice("已切换为【远程 / 独立节点】模式（默认预填远端 Jetson Broker: 9012，亦可自定义填写外部端点）。");
+      notice("已切换为【远程 / 独立节点】模式（预填远端 Jetson Broker: 9012，亦可自定义填写外部端点）。");
     }
     syncModelSelectWithInput();
     model.providersDirty = true;
@@ -424,13 +464,20 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
   btnModeLocal?.addEventListener("click", () => setDeployMode("local"));
   btnModeRemote?.addEventListener("click", () => setDeployMode("remote"));
 
+  let checkDebounceTimer = null;
+  const triggerDebouncedCheck = () => {
+    renderDafeiyuModelCard({});
+    clearTimeout(checkDebounceTimer);
+    checkDebounceTimer = setTimeout(() => checkDafeiyuModelStatus(api), 300);
+  };
+
   $("llm-kind")?.addEventListener("change", () => {
-    const isLocal = $("llm-kind").value === "llama_cpp";
+    const isLocal = $("llm-kind").value === "llama_cpp" && (!($("llm-base-url")?.value || "").includes("100.") && !($("llm-base-url")?.value || "").includes("192.168."));
     btnModeLocal?.classList.toggle("active", isLocal);
     btnModeRemote?.classList.toggle("active", !isLocal);
     model.providersDirty = true;
     renderTTSFields(model);
-    checkDafeiyuModelStatus(api);
+    triggerDebouncedCheck();
     if (typeof onSettingsChanged === "function") onSettingsChanged();
   });
 
@@ -442,7 +489,12 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
 
   $("llm-base-url")?.addEventListener("input", () => {
     model.providersDirty = true;
-    checkDafeiyuModelStatus(api);
+    triggerDebouncedCheck();
+  });
+
+  $("llm-key")?.addEventListener("input", () => {
+    model.providersDirty = true;
+    triggerDebouncedCheck();
   });
 
   $("btn-download-dafeiyu-model")?.addEventListener("click", async () => {
@@ -474,12 +526,14 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
       } else if (select.value) {
         input.value = select.value;
         model.providersDirty = true;
+        triggerDebouncedCheck();
         if (typeof onSettingsChanged === "function") onSettingsChanged();
       }
     });
     input.addEventListener("input", () => {
       syncModelSelectWithInput();
       model.providersDirty = true;
+      triggerDebouncedCheck();
       if (typeof onSettingsChanged === "function") onSettingsChanged();
     });
   }

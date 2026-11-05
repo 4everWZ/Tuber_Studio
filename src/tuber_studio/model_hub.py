@@ -54,8 +54,7 @@ def get_deployment_category(settings_or_data) -> str:
         return "local_file"
 
     llm = data.get("llm", {})
-    broker = data.get("inference_broker", {})
-    base_url = (llm.get("base_url") or broker.get("base_url") or "").strip()
+    base_url = (llm.get("base_url") if "base_url" in llm else data.get("inference_broker", {}).get("base_url", "") or "").strip()
     kind = llm.get("kind", "llama_cpp")
 
     if not base_url:
@@ -109,7 +108,7 @@ def get_deployment_category(settings_or_data) -> str:
         return "cloud_api"
 
     if kind == "llama_cpp":
-        if broker.get("deployment") == "remote" or is_remote_host:
+        if is_remote_host:
             return "self_hosted"
         return "local_file"
 

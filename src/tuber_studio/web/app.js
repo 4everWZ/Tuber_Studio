@@ -1,7 +1,7 @@
 "use strict";
 
-import { $, $$, formatBytes, formatDuration } from "./modules/core.js";
-import { api as baseApi } from "./modules/api.js";
+import { $, $$, formatBytes, formatDuration } from "./modules/core.js?v=20261105.25";
+import { api as baseApi } from "./modules/api.js?v=20261105.25";
 import {
   initInferenceProvidersUI as initProvidersUI,
   readProviderPayload,
@@ -14,34 +14,34 @@ import {
   voiceAvailability,
   checkProviderConnections,
   publicSettings,
-} from "./modules/providers.js";
+} from "./modules/providers.js?v=20261105.25";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js";
+} from "./modules/operations.js?v=20261105.25";
 import {
   renderCharacterImage,
   initCharacterStudioUI,
-} from "./modules/character-studio.js";
+} from "./modules/character-studio.js?v=20261105.25";
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js";
+} from "./modules/comments.js?v=20261105.25";
 import {
   localDateTime,
   initDynamicsModule,
-} from "./modules/dynamics.js";
+} from "./modules/dynamics.js?v=20261105.25";
 import {
   initMaintenanceModule,
-} from "./modules/maintenance.js";
+} from "./modules/maintenance.js?v=20261105.25";
 import {
   renderLiveFeatures,
   renderControls,
   renderInference,
   renderServiceStatusCapsule,
   initLiveModule,
-} from "./modules/live.js";
+} from "./modules/live.js?v=20261105.25";
 
 const api = (path, options = {}) => baseApi(path, options, showLogin);
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
@@ -240,7 +240,8 @@ async function enterWorkspace() {
     loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus }),
     loadVoices(),
     loadAssets(),
-    characterStudio?.loadCharacters()
+    characterStudio?.loadCharacters(),
+    accountPanel.activate()
   ]);
   model.authenticated = true;
   $("login").hidden = true;
