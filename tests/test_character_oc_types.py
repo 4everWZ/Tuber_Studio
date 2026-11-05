@@ -1,5 +1,8 @@
-from tuber_studio.inference_profiles import DAFEIYU_MODEL
+import pytest
+
+from tuber_studio.inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
 from tuber_studio.models import Character
+from tuber_studio.persona import uses_built_in_persona
 from tuber_studio.providers import build_messages
 
 
@@ -57,7 +60,8 @@ def test_character_model_fine_tuned_persona():
     assert "大肥鱼" in char.compact_system_prompt
 
 
-def test_build_messages_fine_tuned_vs_prompt_oc():
+@pytest.mark.parametrize("mode", ["live", "comment_draft", "comment_channel_decision", "direct_message"])
+def test_build_messages_fine_tuned_vs_prompt_oc(mode):
     prompt_oc = {
         "id": "prompt_bot",
         "name": "Prompt OC",
@@ -83,6 +87,7 @@ def test_build_messages_fine_tuned_vs_prompt_oc():
             "不能破坏深海生物世界观",
             "对观众保持礼貌",
         ],
+        "lore": [{"text": "珊瑚村的料理故事", "keywords": ["吃什么"]}],
     }
 
     fine_tuned = {
@@ -94,41 +99,61 @@ def test_build_messages_fine_tuned_vs_prompt_oc():
         "core": prompt_oc["core"],
         "style": prompt_oc["style"],
         "rules": prompt_oc["rules"],
+        "lore": prompt_oc["lore"],
     }
 
     event = {"event_id": "e_test_1", "text": "主播今天吃什么？"}
     rel = {"affection": 10}
 
     # 1. Build messages for prompt_oc
-    oc_messages = build_messages(prompt_oc, event, rel, mode="live")
+    oc_messages = build_messages(prompt_oc, event, rel, mode=mode)
     oc_system_str = "\n".join(m["content"] for m in oc_messages if m["role"] == "system")
     assert "角色设定：" in oc_messages[0]["content"]
-    assert "角色互动示例：" in oc_system_str
+    assert ("角色互动示例：" in oc_system_str) == (mode != "comment_channel_decision")
     assert "必须展现人设细节" in oc_system_str
+    assert "珊瑚村的料理故事" in str(oc_messages)
 
     # 2. Build messages for fine_tuned
     settings = {
         "llm": {"kind": "llama_cpp", "model": DAFEIYU_MODEL, "base_url": "http://jetson.local:9012/llm"},
         "inference_broker": {"enabled": True, "base_url": "http://jetson.local:9012"},
     }
-    ft_messages = build_messages(fine_tuned, event, rel, mode="live", settings=settings)
+    ft_messages = build_messages(fine_tuned, event, rel, mode=mode, settings=settings)
     ft_system_str = "\n".join(m["content"] for m in ft_messages if m["role"] == "system")
     # Compact anchor prompt only
     assert ft_messages[0]["content"] == "你叫大肥鱼，深海鲸鱼娘主播。用自然短句与直播间观众互动。"
     assert "角色设定：" not in ft_messages[0]["content"]
     assert "角色互动示例：" not in ft_system_str
     assert "必须展现人设细节" not in ft_system_str
+    assert "珊瑚村的料理故事" not in str(ft_messages)
+    if mode == "live":
+        assert "用10到80字回答。" in oc_system_str
+        assert "用1到60字回答。" in ft_system_str
+        assert "用10到80字回答。" not in ft_system_str
 
     # Model choice controls the prompt source even if the selected role is of the other type.
-    builtin = build_messages(prompt_oc, event, rel, mode="live", settings=settings)
+    builtin = build_messages(prompt_oc, event, rel, mode=mode, settings=settings)
     assert builtin[0]["content"] == "你是大肥鱼。"
     assert "必须展现人设细节" not in str(builtin)
     base = build_messages(
         fine_tuned,
         event,
         rel,
-        mode="live",
+        mode=mode,
         settings={"llm": {"kind": "llama_cpp", "model": DAFEIYU_MODEL, "base_url": "http://localhost:8080"}},
     )
     assert "必须展现人设细节" in base[0]["content"]
     assert fine_tuned["compact_system_prompt"] not in str(base)
+
+
+@pytest.mark.parametrize(
+    ("route", "model", "expected"),
+    [("dafeiyu", DAFEIYU_MODEL, True), ("2b", DAFEIYU_KEY, False)],
+)
+def test_typed_node_route_owns_prompt_source(route, model, expected):
+    base_url = "http://jetson.local:9012"
+    settings = {
+        "inference_broker": {"enabled": True, "base_url": base_url},
+        "llm": {"base_url": f"{base_url}/llm/{route}", "model": model},
+    }
+    assert uses_built_in_persona(settings) is expected

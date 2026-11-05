@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -17,17 +18,38 @@ from .runtime_modes import ObservationOwner, close_clients, inference_transition
 from .video_vision import ApiVideoEvidenceProvider
 
 
+async def _read_capabilities(client, *, timeout):
+    try:
+        value = await response_json(client, "GET", "/capabilities", timeout=timeout)
+    except ValueError:
+        raise ValueError("推理节点协议不兼容") from None
+    if value.get("protocol") != "tuber-inference-node" or value.get("protocol_version") != 1:
+        raise ValueError("推理节点协议不兼容")
+    return value
+
+
+def _connection_error(error):
+    if isinstance(error, httpx.RequestError):
+        return ValueError("无法连接 Jetson 推理节点，请检查节点地址和服务状态")
+    code = error.response.status_code
+    if code in {401, 403}:
+        return ValueError("推理节点拒绝配对凭据，请检查凭据后重试")
+    if code in {404, 405} or error.response.is_redirect:
+        return ValueError("推理节点协议不兼容，请检查节点地址和版本")
+    return ValueError(f"推理节点请求失败（HTTP {code}）")
+
+
 async def refresh_capabilities(runtime):
     owner = ObservationOwner.capture(runtime)
     if not owner.client:
         raise ValueError("尚未配置推理节点")
     try:
-        value = await response_json(owner.client, "GET", "/capabilities", timeout=15)
-        if value.get("protocol") != "tuber-inference-node" or value.get("protocol_version") != 1:
-            raise ValueError("推理节点协议不兼容")
-    except Exception:
+        value = await _read_capabilities(owner.client, timeout=15)
+    except Exception as error:
         if not owner.current(runtime):
             return runtime.node_capabilities
+        if isinstance(error, (httpx.RequestError, httpx.HTTPStatusError)):
+            raise _connection_error(error) from None
         raise
     if not owner.current(runtime):
         return runtime.node_capabilities
@@ -72,10 +94,29 @@ async def pair_node(runtime, body):
     if not isinstance(body, dict) or set(body) - {"base_url", "token"}:
         raise ValueError("仅接受推理节点地址和配对凭据")
     base = endpoint(body.get("base_url"))
+    base_path = urlsplit(base).path
+    if base_path == "/llm":
+        base = base.removesuffix(base_path)
     settings = runtime.settings
     old_base = settings.data.get("inference_broker", {}).get("base_url", "").rstrip("/")
-    token = body.get("token") or (settings.inference_token if base == old_base else None)
-    validate_api_key(token)
+    same_node = base == old_base or (base_path in {"", "/llm"} and old_base == base + "/llm")
+    token = body.get("token")
+    token_path = settings.runtime / "inference-token"
+    if token in (None, "") and same_node:
+        token = settings.inference_token
+        if not token:
+            try:
+                token = token_path.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                pass
+            except (OSError, UnicodeError):
+                raise ValueError("无法读取已保存的推理节点配对凭据") from None
+    if token in (None, ""):
+        raise ValueError("请填写 Jetson 推理节点的配对凭据")
+    try:
+        validate_api_key(token)
+    except ValueError:
+        raise ValueError("推理节点配对凭据格式无效") from None
     _require_stopped(runtime)
     if runtime.generation_lock.locked() or runtime.mode_lock.locked():
         raise ValueError("请等待当前模型任务结束")
@@ -87,12 +128,7 @@ async def pair_node(runtime, body):
     )
     created, adopted = [], False
     try:
-        capabilities = await response_json(client, "GET", "/capabilities", timeout=10)
-        if (
-            capabilities.get("protocol") != "tuber-inference-node"
-            or capabilities.get("protocol_version") != 1
-        ):
-            raise ValueError("推理节点协议不兼容")
+        await _read_capabilities(client, timeout=10)
         async with runtime.mode_lock, runtime.generation_lock:
             with inference_transition(runtime):
                 _require_stopped(runtime)
@@ -101,7 +137,7 @@ async def pair_node(runtime, body):
                 previous_mode = before.get("mode")
                 if previous_mode not in {"text", "live"} or before.get("busy") is not False:
                     raise ValueError("推理节点正在切换或未提供可确认模式")
-                paths = (settings.runtime / "inference-token", settings.path)
+                paths = (token_path, settings.path)
                 snapshots = [path.read_bytes() if path.exists() else None for path in paths]
                 mode_attempted = files_attempted = False
                 try:
@@ -111,7 +147,7 @@ async def pair_node(runtime, body):
                     )
                     model = observed.get("model")
                     if observed.get("mode") != "text" or model not in {"Gemma4-E2B", DAFEIYU_MODEL}:
-                        raise ValueError("节点未提供可用的运营模型")
+                        raise ValueError("节点未提供可用的运营模型，请检查 Jetson 版本及运营模型设置")
                     if model == DAFEIYU_MODEL:
                         profile = observed["providers"][observed["selected_provider"]]
                         proposed = business_configuration(
@@ -213,6 +249,8 @@ async def pair_node(runtime, body):
                 runtime.client_cleanup.add(cleanup)
                 cleanup.add_done_callback(runtime.client_cleanup.discard)
         return status(runtime)
+    except (httpx.RequestError, httpx.HTTPStatusError) as error:
+        raise _connection_error(error) from None
     finally:
         if not adopted:
             await _settle(close_clients((*created, client)))

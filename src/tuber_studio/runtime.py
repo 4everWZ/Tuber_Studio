@@ -21,16 +21,19 @@ from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService
 from .generation_meter import budgeted_call
 from .inference_node_client import refresh_capabilities
+from .inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
 from .interactive_rules import InteractiveRulesService
 from .live_media import LiveMedia
 from .media_cache import MediaCache
 from .memory import missing_slots
+from .model_hub import is_model_installed
 from .models import OperationReply, Reply
 from .online_songs import OnlineSongs
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, reply_generation_binding
 from .operation_text import operation_output_diagnostics
 from .operations_control import OperationsControl
+from .persona import uses_built_in_persona
 from .providers import VoiceService, public_error
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
@@ -223,6 +226,7 @@ class Runtime:
             "state": self.state,
             "muted": self.muted,
             "character": self.character,
+            "persona": self.persona_status(),
             "session_id": self.session_id,
             "queue_length": len(self.queue),
             "overlay_connected": self.overlay is not None,
@@ -249,6 +253,34 @@ class Runtime:
             },
             "playback": self.playback,
             "operations_waiting": self.operations_waiting(),
+        }
+
+    def persona_status(self):
+        node_model_state = "unknown"
+        health = self.inference_status
+        capabilities = self.node_capabilities or {}
+        if self.inference_client and health.get("state") != "error":
+            running = health.get("providers", {}).get(DAFEIYU_KEY, {}).get("running")
+            if (
+                health.get("state") == "active"
+                and health.get("selected_provider") == DAFEIYU_KEY
+                and running is True
+            ):
+                node_model_state = "active"
+            elif not capabilities.get("monitoring_error"):
+                profile = capabilities.get("profiles", {}).get(DAFEIYU_KEY, {})
+                installed = profile.get("installed")
+                if installed is True:
+                    node_model_state = "installed"
+                elif installed is False:
+                    node_model_state = "not_installed"
+        data = self.settings.data
+        return {
+            "source": "fine_tuned" if uses_built_in_persona(data) else "character_card",
+            "configured_model": data["llm"]["model"],
+            "fine_tuned_model": DAFEIYU_MODEL,
+            "node_model_state": node_model_state,
+            "local_model_installed": is_model_installed(self.settings.models),
         }
 
     async def refresh_inference(self):

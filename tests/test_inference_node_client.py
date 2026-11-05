@@ -25,9 +25,16 @@ async def test_pair_uses_the_nodes_fine_tuned_model_without_claiming_vision(dist
                 200,
                 json={
                     "mode": "text",
+                    "state": "active",
                     "model": DAFEIYU_MODEL,
                     "selected_provider": DAFEIYU_KEY,
-                    "providers": {DAFEIYU_KEY: {"context_tokens": 65536, "native_context_tokens": 131072}},
+                    "providers": {
+                        DAFEIYU_KEY: {
+                            "running": True,
+                            "context_tokens": 65536,
+                            "native_context_tokens": 131072,
+                        }
+                    },
                 },
             )
         if request.url.path == "/llm/props":
@@ -45,6 +52,37 @@ async def test_pair_uses_the_nodes_fine_tuned_model_without_claiming_vision(dist
     assert runtime.llm.server_tokens == runtime.llm.config["context_tokens"] == 65536
     assert runtime.settings.data["work_mode_profiles"]["live"]["llm"]["model"] == "MiniCPM5-2B"
     assert runtime.settings.data["vision"]["kind"] == "disabled"
+    status = runtime.status()
+    assert status["character"].get("persona_type", "prompt_oc") == "prompt_oc"
+    assert status["persona"] == {
+        "source": "fine_tuned",
+        "configured_model": DAFEIYU_MODEL,
+        "fine_tuned_model": DAFEIYU_MODEL,
+        "node_model_state": "active",
+        "local_model_installed": False,
+    }
+
+
+async def test_persona_status_distinguishes_local_install_node_inventory_and_offline(
+    distributed, monkeypatch
+):
+    runtime, state = distributed
+    monkeypatch.setattr("tuber_studio.runtime.is_model_installed", lambda models: True)
+    initial = runtime.status()["persona"]
+    assert initial["source"] == "character_card"
+    assert initial["configured_model"] == "Gemma4-E2B"
+    assert initial["local_model_installed"] and initial["node_model_state"] == "unknown"
+
+    profile = {"installed": True}
+    runtime.node_capabilities = {"profiles": {DAFEIYU_KEY: profile}}
+    assert runtime.status()["persona"]["node_model_state"] == "installed"
+    profile["installed"] = False
+    assert runtime.status()["persona"]["node_model_state"] == "not_installed"
+
+    profile["installed"] = True
+    runtime.inference_status["state"] = "error"
+    assert runtime.status()["persona"]["node_model_state"] == "unknown"
+    assert state["requests"] == []
 
 
 async def test_pair_rebinds_text_vision_and_tts_clients_to_the_new_endpoint_and_token(distributed):
@@ -70,14 +108,85 @@ async def test_pair_rebinds_text_vision_and_tts_clients_to_the_new_endpoint_and_
 
 
 @pytest.mark.parametrize(
-    "base", [OTHER_NODE, NODE_URL + "/extra", "https://jetson.local.attacker.invalid:9012"]
+    "base", [OTHER_NODE, NODE_URL + "/extra/llm", "https://jetson.local.attacker.invalid:9012"]
 )
 async def test_similar_or_new_endpoint_requires_its_own_explicit_pairing_token(distributed, base):
     runtime, state = distributed
     before = runtime.settings.path.read_bytes()
-    with pytest.raises(ValueError, match="格式"):
+    runtime.settings.inference_token = None
+    with pytest.raises(ValueError, match="请填写.*配对凭据"):
         await inference_node_client.pair_node(runtime, {"base_url": base})
     assert state["requests"] == [] and runtime.settings.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("saved_suffix", ["", "/llm/"])
+async def test_pair_recovers_the_same_disabled_nodes_existing_token(distributed, saved_suffix):
+    runtime, state = distributed
+    settings = runtime.settings
+    token = settings.inference_token
+    settings.inference_token = None
+    settings.data["inference_broker"].update(enabled=False, base_url=NODE_URL + saved_suffix)
+    settings.save_public(settings.data)
+
+    result = await inference_node_client.pair_node(runtime, {"base_url": NODE_URL + "/llm/", "token": ""})
+
+    assert result["paired"] and result["base_url"] == NODE_URL
+    assert settings.inference_token == (settings.runtime / "inference-token").read_text() == token
+    assert state["requests"][0].url.path == "/capabilities"
+    assert state["requests"][0].headers["x-tuber-inference-key"] == token
+
+
+async def test_pair_missing_saved_credential_does_not_generate_one(distributed):
+    runtime, state = distributed
+    runtime.settings.inference_token = None
+    token_path = runtime.settings.runtime / "inference-token"
+    token_path.unlink()
+
+    with pytest.raises(ValueError, match="请填写.*配对凭据"):
+        await inference_node_client.pair_node(runtime, {"base_url": NODE_URL + "/llm"})
+
+    assert not token_path.exists() and state["requests"] == []
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [(401, "拒绝配对凭据"), (404, "协议不兼容"), (200, "协议不兼容"), (None, "无法连接")],
+)
+async def test_pair_explains_connection_failure_without_changing_the_node(distributed, failure, message):
+    runtime, state = distributed
+    before = runtime.settings.path.read_bytes()
+
+    async def candidate(request):
+        if failure is None:
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(failure, text="not a node response")
+
+    state["http_handler"] = candidate
+    with pytest.raises(ValueError, match=message):
+        await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
+
+    assert [request.url.path for request in state["requests"]] == ["/capabilities"]
+    assert runtime.settings.path.read_bytes() == before
+    assert runtime.settings.data["inference_broker"]["base_url"] == NODE_URL
+
+
+async def test_pair_legacy_model_alias_restores_candidate_node_mode(distributed):
+    runtime, state = distributed
+    state["mode"] = "live"
+    before = runtime.settings.path.read_bytes()
+
+    async def legacy_node(request):
+        if request.url.path == "/mode":
+            state["mode"] = json.loads(request.content)["mode"]
+            return httpx.Response(200, json={"mode": state["mode"], "model": "MiniCPM5-1B"})
+
+    state["http_handler"] = legacy_node
+    with pytest.raises(ValueError, match="未提供可用的运营模型"):
+        await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
+
+    assert state["mode"] == "live"
+    assert runtime.settings.path.read_bytes() == before
+    assert runtime.settings.data["inference_broker"]["base_url"] == NODE_URL
 
 
 @pytest.mark.parametrize("failure", ["token", "settings"])
