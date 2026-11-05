@@ -615,6 +615,7 @@ $("providers-form")?.addEventListener("submit", event => {
         $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
       }
       const result = await api("/api/settings/providers", { method: "PUT", body: payload });
+      model.providersDirty = false;
       applySettings(result, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
       let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
       if (result.auto_download_triggered) {
@@ -641,6 +642,7 @@ $("providers-form")?.addEventListener("submit", event => {
 
 $("reset-providers")?.addEventListener("click", () => {
   if (!model.settings || model.providersSaving) return;
+  model.providersDirty = false;
   applySettings(model.settings, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
   if ($("providers-save-state")) {
     $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。";
