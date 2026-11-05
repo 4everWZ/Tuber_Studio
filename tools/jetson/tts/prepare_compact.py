@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import importlib.metadata
 import os
 import shutil
@@ -71,24 +70,19 @@ def ensure_configuration(template: Path, target: Path, root: Path, *, check_only
     """Seed a missing configuration; existing files belong to the operator."""
     if check_only or target.exists():
         return False
-    configuration = template.read_text(encoding="utf-8").replace("/workspace/tuber", str(root))
+    configuration = template.read_bytes().replace(b"/workspace/tuber", str(root).encode("utf-8"))
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         # Exclusive creation also preserves a config installed concurrently.
-        with target.open("x", encoding="utf-8") as stream:
+        with target.open("xb") as stream:
             stream.write(configuration)
     except FileExistsError:
         return False
     return True
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--offline", action="store_true")
-    parser.add_argument("--check-only", action="store_true", help="Read-only offline validation")
-    args = parser.parse_args()
-    offline = args.offline or args.check_only
-    root = Path(os.environ.get("TUBER_ROOT", "/workspace/tuber"))
+def prepare_voice(root: Path, *, offline: bool, check_only: bool = False) -> None:
+    offline = offline or check_only
     tools = Path(__file__).resolve().parent
     runtime = root / "runtime/tts"
     image_source = os.environ.get("TUBER_GPT_SOVITS_ROOT")
@@ -129,10 +123,9 @@ def main() -> None:
         )
         fetch(url, runtime / relative, size, offline)
     ensure_configuration(
-        tools / "tts_infer.yaml", runtime / "tts_infer.yaml", root, check_only=args.check_only
+        tools.parents[2] / "config/jetson/tts-compact-dafeiyu.yaml",
+        runtime / "tts_infer.yaml",
+        root,
+        check_only=check_only,
     )
     print("TTS prerequisites ready; voice is CC BY-NC 4.0, attribution: 尹紫鹭幻想社（Bilibili）")
-
-
-if __name__ == "__main__":
-    main()

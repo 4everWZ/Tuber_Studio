@@ -52,7 +52,7 @@ def builtin(root: Path):
     preset["tts"].update(voice_id=VOICE, local_backend="genie_onnx_int8")
     seeds = {
         "studio.json": json.dumps(preset, ensure_ascii=False, indent=2).encode(),
-        "tts/tts_infer.yaml": checked(root, "config/jetson/tts_infer.yaml").read_bytes(),
+        "tts/tts_infer.yaml": checked(root, "config/jetson/tts-genie-yaoyao.yaml").read_bytes(),
     }
     for name, content in seeds.items():
         records.append(

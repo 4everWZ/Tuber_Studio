@@ -122,7 +122,7 @@ def test_preparation_reuses_public_metadata_and_preserves_operator_files(source,
     environment = load("tools/jetson/environment.py")
     for name in (
         "config/jetson/downloads.json",
-        "config/jetson/tts_infer.yaml",
+        "config/jetson/tts-genie-yaoyao.yaml",
         "config/studio.example.json",
         "tools/jetson/package-ready.py",
     ):
@@ -195,7 +195,7 @@ esac
     env = {**os.environ, "MOCK_STATE": str(state), "MOCK_DATA": str(data)}
 
     # Resolve PATH inside Bash so both native Linux and Git-for-Windows use shell paths.
-    def run(*, entry="run-ready.sh", extra=(), **overrides):
+    def run(*, extra=(), **overrides):
         return subprocess.run(
             [
                 bash,
@@ -203,7 +203,7 @@ esac
                 'export PATH="$(cd "$1" && pwd):$PATH"; shift; script=$1; source=$2; data=$3; shift 3; exec bash "$script" --source "$source" --data "$data" --replace "$@"',
                 "_",
                 scripts.as_posix(),
-                (ROOT / "tools/jetson" / entry).as_posix(),
+                (ROOT / "tools/jetson/run-ready.sh").as_posix(),
                 source.as_posix(),
                 data.as_posix(),
                 *extra,
@@ -243,10 +243,10 @@ def test_preflight_failure_preserves_existing_container(launcher):
     assert not any("--initialize-only" in line for line in lines)
 
 
-def test_repository_entry_reuses_the_locally_built_environment(launcher):
+def test_launcher_reuses_the_locally_built_environment(launcher):
     run, state = launcher
     (state / "image").touch()
-    result = run(entry="run-studio.sh")
+    result = run()
     assert result.returncode == 0, result.stderr
     lines = (state / "log").read_text().splitlines()
     assert not any(line.startswith("pull ") for line in lines)

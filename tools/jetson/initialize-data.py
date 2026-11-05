@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import runpy
 import sys
 import time
 import urllib.request
@@ -69,7 +68,7 @@ LLM_ARTIFACTS = {
 
 def prepare_llm(root: Path, key: str, offline: bool) -> None:
     """Prepare one fixed text model without changing the selected profile."""
-    from prepare import fetch
+    from prepare_compact import fetch
 
     from tuber_studio.inference import RESOURCES, native_context
 
@@ -189,21 +188,36 @@ def verify_nltk_consumers(directory: Path) -> None:
     print(f"Offline NLTK consumers ready: {len(lexicon)} words; hello world -> {phones}")
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true")
-    parser.add_argument("--candidate", choices=["qwen35"], help="Prepare only this optional text candidate")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--check-only", action="store_true", help="Read-only offline compact voice validation"
+    )
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--candidate", choices=["qwen35"], help="Prepare only this optional text candidate")
+    scope.add_argument(
+        "--compact-voice-only", action="store_true", help="Prepare only the compact DaFeiYu voice"
+    )
+    args = parser.parse_args(argv)
+    if args.check_only and not args.compact_voice_only:
+        parser.error("--check-only requires --compact-voice-only")
     root = Path(os.environ.get("TUBER_ROOT", "/workspace/tuber"))
-    sys.path.insert(0, str(root / "tools/jetson/tts"))
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "tts"))
+
+    if args.candidate:
+        prepare_llm(root, "llmqwen35", args.offline)
+        return
+    from prepare_compact import prepare_voice
+
+    if args.compact_voice_only:
+        prepare_voice(root, offline=args.offline, check_only=args.check_only)
+        return
+
     from tuber_studio.inference import RESOURCES
 
-    offline = args.offline
-    if args.candidate:
-        prepare_llm(root, "llmqwen35", offline)
-        return
     nltk_directory = root / "runtime/nltk_data"
-    ensure_nltk_data(nltk_directory, offline)
+    ensure_nltk_data(nltk_directory, args.offline)
     verify_nltk_consumers(nltk_directory)
     configuration = root / "runtime/studio.json"
     source = configuration if configuration.exists() else root / "config/studio.example.json"
@@ -212,11 +226,11 @@ def main() -> None:
     selected = next((key for key in LLM_ARTIFACTS if RESOURCES[key].alias == alias), None)
     if selected is None:
         raise RuntimeError("Configured LLM does not match a fixed downloadable profile")
-    prepare_llm(root, selected, offline)
+    prepare_llm(root, selected, args.offline)
     if not configuration.is_file():
         configuration.parent.mkdir(parents=True, exist_ok=True)
         configuration.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    runpy.run_path(str(root / "tools/jetson/tts/prepare.py"), run_name="__main__")
+    prepare_voice(root, offline=args.offline)
 
 
 if __name__ == "__main__":

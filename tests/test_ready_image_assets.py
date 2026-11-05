@@ -20,7 +20,7 @@ def project(tmp_path):
     source = Path(__file__).parents[1]
     for name in (
         "config/jetson/downloads.json",
-        "config/jetson/tts_infer.yaml",
+        "config/jetson/tts-genie-yaoyao.yaml",
         "config/studio.example.json",
         "tools/jetson/run-ready.sh",
     ):
@@ -43,6 +43,9 @@ def test_image_context_contains_only_presets_and_download_metadata(project):
         if p.is_file()
     }
     assert embedded == {"studio.json", "tts/tts_infer.yaml"}
+    assert (output / "builtin/files/tts/tts_infer.yaml").read_bytes() == (
+        project / "config/jetson/tts-genie-yaoyao.yaml"
+    ).read_bytes()
     assert result["embedded_asset_bytes"] < 10000
     assert result["download_bytes"] > 2_000_000_000
     manifest = json.loads((output / "builtin/manifest.json").read_text())

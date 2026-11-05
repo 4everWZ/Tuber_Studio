@@ -111,9 +111,9 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 开发者可以在宿主源码目录运行：
 
-    bash tools/jetson/run-studio.sh --host 127.0.0.1
+    bash tools/jetson/run-ready.sh --source "$PWD" --data "$PWD/runtime" --host 127.0.0.1
 
-该入口复用同一个启动器，将本项目runtime作为数据目录；优先使用本地构建的tuber-studio:environment-r36.4，不存在时采用发布环境，支持--image及--replace等参数。更改同一目录的源码前先停止本项目容器，避免运行中读到混合版本；git更新后重新执行启动器并传--replace。仅重启既有版本可docker stop／docker start，不拉取镜像。
+此命令将本项目的 runtime 作为数据目录。可用 `--image` 指定本地构建的环境。更改同一目录的源码前先停止本项目容器，避免运行中读到混合版本。更新后重新执行启动器并传 `--replace`。仅重启既有版本可使用 `docker stop` 和 `docker start`。
 
 启动器默认容器名为 `tuber-studio`。管理端口 9020 和受认证的 broker 端口 9012 默认绑定宿主回环。需要远程访问管理时使用下文 SSH 转发。可通过 `--port`／`--broker-port` 设置宿主端口。替换同名容器须传 `--replace` 并使用同一数据目录。程序与正式推理资产只读挂载，runtime 可写。容器继续使用独立 bridge、drop ALL capabilities、no-new-privileges 和有界临时目录。
 
@@ -129,6 +129,8 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
     docker inspect --format '{{.State.Health.Status}}' tuber-studio
     docker logs --tail 80 tuber-studio
+
+单独准备鲸鱼 compact 音色时，运行 `python tools/jetson/initialize-data.py --compact-voice-only`。已有依赖可用 `--offline` 离线准备，使用 `--check-only` 只检查现有资源。瑶瑶 Genie 由程序包首次初始化准备，两套音色模板均位于 `config/jetson/`。
 
 此前[程序内置镜像的设备证据](../../evaluations/results/ready-program-image-20261030.json)证明原资源链路的首次下载、断网复用与真实推理。环境分离后的[CI发布与Jetson迁移](../../evaluations/results/reusable-environment-release-20261031.json)已验证独立程序只读挂载、已有资源复用、实际131072模型回复和32kHz真实语音，原配置、令牌及业务记录保留；这次使用既有模型／音色数据，没有重复空卷完整下载。本地回归见[环境交付检查](../../evaluations/results/environment-delivery-20261031.json)。
 
@@ -147,7 +149,7 @@ CI镜像构建需要可读的基础CUDA／llama包及GHCR发布权限；使用�
     bash tools/jetson/build-ready-image.sh
     bash tools/jetson/run-ready.sh --image tuber-studio:environment-r36.4 --data ./tuber-data --host 127.0.0.1
 
-build-image.sh是同一环境构建的兼容入口；Dockerfile保留program-base／ready目标名称，但二者都不包含应用源码。构建上下文不读取runtime，不要求模型或生产凭证。普通更新不在设备重新构建；需要离线搬运时可对环境镜像使用docker save／load，同时携带对应程序包，模型资源仍须已经准备或能够下载。
+Dockerfile 的 program-base／ready 目标用于构建环境。构建上下文使用公开依赖，普通程序更新复用原环境。需要离线搬运时，可用 `docker save` 和 `docker load` 传输环境镜像，再携带对应程序包和已准备的模型资源。
 
 ## 存储目录与维护
 

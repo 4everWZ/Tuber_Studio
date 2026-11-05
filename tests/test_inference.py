@@ -1308,11 +1308,13 @@ def test_initializer_only_prepares_selected_or_explicit_candidate(
     monkeypatch.setattr(
         sys, "argv", ["initialize-data.py", "--offline"] + (["--candidate", "qwen35"] if candidate else [])
     )
-    monkeypatch.setattr(sys, "path", sys.path[:])
+    monkeypatch.syspath_prepend(str(source.parent / "tts"))
+    import prepare_compact
+
     monkeypatch.setattr(initializer, "ensure_nltk_data", lambda *args: events.append("nltk"))
     monkeypatch.setattr(initializer, "verify_nltk_consumers", lambda *args: None)
     monkeypatch.setattr(initializer, "prepare_llm", lambda root, key, offline: events.append((key, offline)))
-    monkeypatch.setattr(initializer.runpy, "run_path", lambda *args, **kwargs: events.append("tts"))
+    monkeypatch.setattr(prepare_compact, "prepare_voice", lambda *args, **kwargs: events.append("tts"))
     initializer.main()
     assert events == ([("llmqwen35", True)] if candidate else ["nltk", ("llmqwen35", True), "tts"])
     assert configuration.read_text() == original
