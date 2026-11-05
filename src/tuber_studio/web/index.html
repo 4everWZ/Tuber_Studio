@@ -622,6 +622,13 @@
                   </div>
                   <p class="hint ping-detail" id="ping-tts-detail">点击上方按钮测试连通性</p>
                 </div>
+                <div class="ping-card" id="ping-card-vision">
+                  <div class="ping-card-header">
+                    <span class="ping-title">视觉多模态能力</span>
+                    <span class="ping-badge" id="ping-vision-badge">纯文本回退</span>
+                  </div>
+                  <p class="hint ping-detail" id="ping-vision-detail">平滑回退模式：自动使用字幕与文本决策，不影响日常运营。</p>
+                </div>
               </div>
             </div>
 
@@ -638,22 +645,24 @@
                       </select>
                     </label>
                     <div>
-                      <label>模型 ID
-                        <div style="display:flex;gap:6px;margin-top:4px;">
-                          <select id="llm-model-select" style="flex:1;">
-                            <optgroup label="★ 专属微调人设模型 (Fine-Tuned Persona)" id="fine-tuned-models-group">
-                              <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
-                            </optgroup>
-                            <optgroup label="⚙ 本地通用基座模型 (Base Models)" id="base-models-group">
-                              <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
-                              <option value="MiniCPM-V-4.7-1B">MiniCPM-V-4.7-1B (原始基线)</option>
-                            </optgroup>
-                            <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
-                            <option value="__custom__">自定义输入模型 ID…</option>
-                          </select>
-                          <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">🔄 获取远端模型</button>
-                        </div>
+                      <label style="display:flex;align-items:center;justify-content:space-between;">
+                        <span>模型 ID</span>
+                        <span id="model-multimodal-badge" class="badge good" style="font-size:11px;font-weight:normal;">👁️ 支持多模态视觉</span>
                       </label>
+                      <div style="display:flex;gap:6px;margin-top:4px;">
+                        <select id="llm-model-select" style="flex:1;">
+                          <optgroup label="★ 专属微调人设模型 (Fine-Tuned Persona)" id="fine-tuned-models-group">
+                            <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
+                          </optgroup>
+                          <optgroup label="⚙ 本地通用基座模型 (Base Models)" id="base-models-group">
+                            <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
+                            <option value="MiniCPM-V-4.7-1B">MiniCPM-V-4.7-1B (原始基线)</option>
+                          </optgroup>
+                          <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
+                          <option value="__custom__">自定义输入模型 ID…</option>
+                        </select>
+                        <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">🔄 获取远端模型</button>
+                      </div>
                       <div style="margin-top:6px;">
                         <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
                       </div>
@@ -803,6 +812,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261105.4"></script>
+  <script type="module" src="/static/app.js?v=20261105.5"></script>
 </body>
 </html>
