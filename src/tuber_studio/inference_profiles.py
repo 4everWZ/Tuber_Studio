@@ -3,6 +3,19 @@
 import hashlib
 from pathlib import Path
 
+DAFEIYU_KEY = "llmdafeiyu"
+DAFEIYU_MODEL = "MiniCPM-V-4.7-1B"
+DAFEIYU_WEIGHTS = "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+DAFEIYU_ALIASES = {
+    DAFEIYU_KEY,
+    DAFEIYU_MODEL.lower(),
+    DAFEIYU_WEIGHTS.lower(),
+    "minicpm-v-4_7-1b",
+    "minicpm-v-4.7-1b-dafeiyu",
+    "minicpm-v-4_7-1b-dafeiyu",
+    "minicpm_v_dafeiyu",
+    "minicpm-v-4.7-1b (大肥鱼专属微调)",
+}
 GEMMA_KEY = "llmgemma4e2b"
 GEMMA_ENGINE = "runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server"
 GEMMA_ENGINE_SHA256 = "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e"

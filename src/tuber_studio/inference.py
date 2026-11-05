@@ -23,6 +23,10 @@ from fastapi.responses import JSONResponse, Response
 from .inference_cache import cache_summary, scan_cache
 from .inference_observation import BackgroundObservation
 from .inference_profiles import (
+    DAFEIYU_ALIASES,
+    DAFEIYU_KEY,
+    DAFEIYU_MODEL,
+    DAFEIYU_WEIGHTS,
     GEMMA_ARTIFACTS,
     GEMMA_ENGINE,
     GEMMA_ENGINE_SHA256,
@@ -56,6 +60,7 @@ class Resource:
 RESOURCES = {
     "llm2b": Resource("http://127.0.0.1:9013", "/health", "MiniCPM5-2B", "MiniCPM5-2B-Q4_K_M.gguf"),
     "llm1b": Resource("http://127.0.0.1:9010", "/health", "MiniCPM5-1B", "MiniCPM5-1B-Q4_K_M.gguf"),
+    DAFEIYU_KEY: Resource("http://127.0.0.1:9016", "/health", DAFEIYU_MODEL, DAFEIYU_WEIGHTS),
     "llm1bq8": Resource("http://127.0.0.1:9014", "/health", "MiniCPM5-1B-Q8_0", "MiniCPM5-1B-Q8_0.gguf"),
     "llmqwen35": Resource("http://127.0.0.1:9015", "/health", "Qwen3.5-2B", "Qwen_Qwen3.5-2B-Q4_K_M.gguf"),
     GEMMA_KEY: Resource("http://127.0.0.1:9030", "/health", "Gemma4-E2B", "gemma-4-E2B-it-Q4_0.gguf"),
@@ -68,18 +73,10 @@ def resolve_llm_resource_key(model_name: str | None, current_selected: str = "ll
     if not model_name or not isinstance(model_name, str):
         return current_selected
     name = model_name.strip().lower()
-    if name in {
-        "1b",
-        "llm1b",
-        "minicpm5-1b",
-        "minicpm-v-4.7-1b",
-        "minicpm-v-4_7-1b",
-        "minicpm-v-4_7-1b-dafeiyu",
-        "minicpm_v_dafeiyu",
-        "minicpm-v-4.7-1b (大肥鱼专属微调)",
-        "minicpm-v-4.7-1b (原始基线)",
-    }:
-        return "llm1b" if "llm1b" in RESOURCES else current_selected
+    if name in {"1b", "llm1b", "minicpm5-1b"}:
+        return "llm1b"
+    if name in DAFEIYU_ALIASES:
+        return DAFEIYU_KEY
     if name in {"2b", "llm2b", "minicpm5-2b", "minicpm5-2b (本地默认)"}:
         return "llm2b" if "llm2b" in RESOURCES else current_selected
     if name in {"1bq8", "llm1bq8", "minicpm5-1b-q8_0", "minicpm5-1b-q8"}:
@@ -94,7 +91,7 @@ def resolve_llm_resource_key(model_name: str | None, current_selected: str = "ll
 def resource_cache_type(key: str, configured: str) -> str | None:
     if not RESOURCES[key].model:
         return None
-    return configured if key in {"llm1b", "llm2b", GEMMA_KEY} else "q8_0"
+    return configured if key in {"llm1b", "llm2b", DAFEIYU_KEY, GEMMA_KEY} else "q8_0"
 
 
 def native_context(path: Path, *, expected_architecture: str | None = None) -> int:
@@ -174,10 +171,6 @@ class ProcessRunner:
         if key == GEMMA_KEY and self.node_settings:
             value = self.node_settings.get("gemma_model", "runtime/models/" + RESOURCES[key].model)
             return project_asset(self.root, value)
-        if key == "llm1b":
-            dafeiyu = (self.root / "runtime/models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").resolve()
-            if dafeiyu.is_file():
-                return dafeiyu
         return (self.root / "runtime/models" / RESOURCES[key].model).resolve()
 
     def gemma_assets(self):
@@ -766,10 +759,6 @@ class InferenceBroker:
     def model_path(self, key):
         if hasattr(self.runner, "model_path"):
             return self.runner.model_path(key)
-        if key == "llm1b":
-            dafeiyu = (self.root / "runtime/models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").resolve()
-            if dafeiyu.is_file():
-                return dafeiyu
         return (self.root / "runtime/models" / RESOURCES[key].model).resolve()
 
     async def initialize(self):
@@ -1572,7 +1561,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
     @app.api_route("/llm/{path:path}", methods=["GET", "POST"])
     async def llm(path: str, request: Request):
         first_segment = path.split("/")[0]
-        if first_segment in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b"}:
+        if first_segment in {"1b", "2b", "1bq8", "qwen35", "gemma4e2b", "dafeiyu"}:
             # Legacy typed route: /llm/{size}/{path:path}
             subpath = path[len(first_segment) + 1 :] if len(path) > len(first_segment) else ""
             return await dispatch(request, "llm" + first_segment, subpath, auto_rewrite_model=False)
@@ -1584,7 +1573,12 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
                 return {
                     "object": "list",
                     "data": [
-                        {"id": RESOURCES[k].alias, "object": "model", "owned_by": "tuber-studio", "active": k == manager.selected}
+                        {
+                            "id": RESOURCES[k].alias,
+                            "object": "model",
+                            "owned_by": "tuber-studio",
+                            "active": k == manager.selected,
+                        }
                         for k in RESOURCES
                         if RESOURCES[k].model
                     ],
@@ -1596,8 +1590,12 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             await manager.switch_model(target_key)
         elif manager.mode == "live":
             target_key = manager.selected
-        normalized_path = "v1/chat/completions" if path in {"chat/completions", "v1/chat/completions"} else path
-        return await dispatch(request, target_key, normalized_path, auto_rewrite_model=True, parsed_body=(body, data))
+        normalized_path = (
+            "v1/chat/completions" if path in {"chat/completions", "v1/chat/completions"} else path
+        )
+        return await dispatch(
+            request, target_key, normalized_path, auto_rewrite_model=True, parsed_body=(body, data)
+        )
 
     @app.api_route("/v1/chat/completions", methods=["POST"])
     @app.api_route("/chat/completions", methods=["POST"])
@@ -1608,7 +1606,9 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             await manager.switch_model(target_key)
         elif manager.mode == "live":
             target_key = manager.selected
-        return await dispatch(request, target_key, "v1/chat/completions", auto_rewrite_model=True, parsed_body=(body, data))
+        return await dispatch(
+            request, target_key, "v1/chat/completions", auto_rewrite_model=True, parsed_body=(body, data)
+        )
 
     @app.get("/v1/models")
     @app.get("/models")
@@ -1616,7 +1616,12 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
         return {
             "object": "list",
             "data": [
-                {"id": RESOURCES[k].alias, "object": "model", "owned_by": "tuber-studio", "active": k == manager.selected}
+                {
+                    "id": RESOURCES[k].alias,
+                    "object": "model",
+                    "owned_by": "tuber-studio",
+                    "active": k == manager.selected,
+                }
                 for k in RESOURCES
                 if RESOURCES[k].model
             ],

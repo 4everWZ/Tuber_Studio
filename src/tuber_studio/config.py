@@ -128,6 +128,7 @@ class Settings:
                 "/llm/1bq8",
                 "/llm/qwen35",
                 "/llm/gemma4e2b",
+                "/llm/dafeiyu",
                 "/vlm/gemma4e2b/v1",
             )
         }

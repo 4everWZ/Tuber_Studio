@@ -17,6 +17,7 @@ from .http_api import api_client, models_health, response_bytes
 from .llama_sampling import llama_cpp_sampling
 from .models import OperationReply, Reply
 from .operation_text import operation_character
+from .persona import built_in_anchor
 
 SYSTEM_RULES = (
     "以当前角色的身份和第一人称交流。结合人设、彼此的关系、情绪和当前情境，"
@@ -31,14 +32,13 @@ def single_system_messages(messages):
     return ([{"role": "system", "content": "\n\n".join(instructions)}] if instructions else []) + dialogue
 
 
-def build_messages(character, event, relationship, mode="live"):
-    if mode != "live":
+def build_messages(character, event, relationship, mode="live", *, settings=None):
+    anchor = built_in_anchor(character, settings)
+    if not anchor and mode != "live":
         character = operation_character(character)
 
-    is_fine_tuned = character.get("persona_type") == "fine_tuned" and character.get("compact_system_prompt")
-    if is_fine_tuned:
-        system_content = character["compact_system_prompt"].strip()
-    else:
+    system_content = anchor
+    if not anchor:
         fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
         system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
 
@@ -48,7 +48,7 @@ def build_messages(character, event, relationship, mode="live"):
     ]
     lore = [
         entry["text"]
-        for entry in character.get("lore", [])
+        for entry in (() if anchor else character.get("lore", []))
         if any(word in event["text"] for word in entry.get("keywords", []))
     ][:3]
     # Logical history and its compacted summary belong to ContextManager. Do not
@@ -59,18 +59,17 @@ def build_messages(character, event, relationship, mode="live"):
     if mode == "comment_channel_decision":
         return messages
 
-    if is_fine_tuned:
-        suffix_content = (
-            "回应当前观众，spoken_text填写你的角色台词。"
-            + (
-                f"用{character['style'].get('min_chars', 1)}到{character['style'].get('max_chars', 60)}字回答。"
-                if mode == "live"
-                else "按当前交流自然决定篇幅。"
-            )
-            + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
-            "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
+    suffix_content = (
+        "回应当前观众，spoken_text填写你的角色台词。"
+        + (
+            f"用{character['style'].get('min_chars', 1)}到{character['style'].get('max_chars', 60)}字回答。"
+            if mode == "live"
+            else "按当前交流自然决定篇幅。"
         )
-    else:
+        + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
+        "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
+    )
+    if not anchor:
         examples = [
             {
                 "观众": item["viewer"],
@@ -84,17 +83,7 @@ def build_messages(character, event, relationship, mode="live"):
             for item in character["core"].get("examples", [])[:3]
             if isinstance(item, dict) and "viewer" in item and "reply" in item
         ]
-        suffix_content = (
-            "回应当前观众，spoken_text填写你的角色台词。"
-            + (
-                f"用{character['style'].get('min_chars', 1)}到{character['style'].get('max_chars', 60)}字回答。"
-                if mode == "live"
-                else "按当前交流自然决定篇幅。"
-            )
-            + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
-            "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
-            "角色互动示例：" + json.dumps(examples, ensure_ascii=False)
-        )
+        suffix_content += "角色互动示例：" + json.dumps(examples, ensure_ascii=False)
     messages.append({"role": "system", "content": suffix_content})
     return messages
 
@@ -533,9 +522,7 @@ class VoiceService:
                 base_url=config["base_url"].rstrip("/") + "/",
                 timeout=config.get("timeout_seconds", 45),
                 trust_env=False,
-                headers={"X-Tuber-Inference-Key": tts_key}
-                if tts_key
-                else None,
+                headers={"X-Tuber-Inference-Key": tts_key} if tts_key else None,
             )
         )
 

@@ -3,10 +3,18 @@
 from copy import deepcopy
 
 from .http_api import endpoint
-from .inference_profiles import GEMMA_ARTIFACTS, GEMMA_ENGINE_SHA256
+from .inference_profiles import DAFEIYU_MODEL, GEMMA_ARTIFACTS, GEMMA_ENGINE_SHA256
 
 
-def business_configuration(current, node_url, *, mode="text"):
+def business_configuration(
+    current,
+    node_url,
+    *,
+    mode="text",
+    operations_model="Gemma4-E2B",
+    context_tokens=131072,
+    native_context_tokens=131072,
+):
     if mode not in {"text", "live"}:
         raise ValueError("工作模式应为text或live")
     base = endpoint(node_url)
@@ -14,7 +22,7 @@ def business_configuration(current, node_url, *, mode="text"):
     common = deepcopy(data["llm"])
     common.update(
         kind="llama_cpp",
-        context_tokens=131072,
+        context_tokens=context_tokens,
         native_context_tokens=131072,
         enable_thinking=True,
         operations_max_tokens=8192,
@@ -26,7 +34,7 @@ def business_configuration(current, node_url, *, mode="text"):
     operations = {
         **common,
         "base_url": base + "/llm",
-        "model": "Gemma4-E2B",
+        "model": operations_model,
         "temperature": 0.2,
         "summary_temperature": 0.2,
         "top_p": 0.95,
@@ -87,14 +95,19 @@ def business_configuration(current, node_url, *, mode="text"):
         "image_profile": "gemma4_image_280",
         "image_order": "image_first",
     }
+    if operations_model == DAFEIYU_MODEL:
+        operations["native_context_tokens"] = native_context_tokens
+        operations["temperature"] = operations["summary_temperature"] = 0.7
+        data["work_mode_profiles"]["text"]["vision"] = data["work_mode_profiles"]["live"]["vision"].copy()
+        data["video_vision"] = {"enabled": False}
     data.setdefault("features", {})["live_enabled"] = True
     data.setdefault("inference_broker", {}).update(
         enabled=True,
         deployment="remote",
         base_url=base,
         mode=mode,
-        model="Gemma4-E2B",
-        context_tokens=131072,
+        model=operations_model,
+        context_tokens=context_tokens,
         kv_cache_type="q4_0",
     )
     data["tts"].update(base_url=base + "/tts", kind="gpt_sovits", local_backend="genie_onnx_int8")

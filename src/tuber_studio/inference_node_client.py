@@ -7,10 +7,11 @@ import time
 import httpx
 
 from .api_providers import VisionService, create_llm
+from .browsing_models import DisabledVideoEvidence
 from .config import atomic_bytes, validate_api_key
 from .deployment_profiles import business_configuration
 from .http_api import endpoint, response_json
-from .inference_profiles import GEMMA_KEY
+from .inference_profiles import DAFEIYU_MODEL, GEMMA_KEY
 from .providers import VoiceService
 from .runtime_modes import ObservationOwner, close_clients, inference_transition
 from .video_vision import ApiVideoEvidenceProvider
@@ -108,9 +109,20 @@ async def pair_node(runtime, body):
                     observed = await response_json(
                         client, "POST", "/mode", payload={"mode": "text"}, timeout=600
                     )
-                    if observed.get("mode") != "text" or observed.get("model") != "Gemma4-E2B":
-                        raise ValueError("节点未确认选定的运营模型")
-                    proposed = business_configuration(settings.data, base)
+                    model = observed.get("model")
+                    if observed.get("mode") != "text" or model not in {"Gemma4-E2B", DAFEIYU_MODEL}:
+                        raise ValueError("节点未提供可用的运营模型")
+                    if model == DAFEIYU_MODEL:
+                        profile = observed["providers"][observed["selected_provider"]]
+                        proposed = business_configuration(
+                            settings.data,
+                            base,
+                            operations_model=model,
+                            context_tokens=profile["context_tokens"],
+                            native_context_tokens=profile["native_context_tokens"],
+                        )
+                    else:
+                        proposed = business_configuration(settings.data, base)
                     settings._validate(proposed)
                     staged = copy.copy(settings)
                     staged.data, staged.inference_token = proposed, token
@@ -123,13 +135,17 @@ async def pair_node(runtime, body):
                     created.append(voices)
                     visual = None
                     if getattr(runtime, "browsing", None):
-                        visual = ApiVideoEvidenceProvider(runtime, proposed["video_vision"], api_key=token)
+                        visual = (
+                            ApiVideoEvidenceProvider(runtime, proposed["video_vision"], api_key=token)
+                            if proposed["video_vision"]["enabled"]
+                            else DisabledVideoEvidence()
+                        )
                         created.append(visual)
                     await llm.ensure_capacity()
                     capabilities = await response_json(client, "GET", "/capabilities", timeout=10)
                     identity = proposed["video_vision"]
                     actual = capabilities.get("profiles", {}).get(GEMMA_KEY, {})
-                    if (
+                    if model == "Gemma4-E2B" and (
                         capabilities.get("mode") != "text"
                         or not actual.get("loaded")
                         or any(

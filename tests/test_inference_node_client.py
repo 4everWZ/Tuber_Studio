@@ -9,10 +9,42 @@ from test_distributed_modes import distributed as distributed
 
 from tuber_studio import inference_node_client
 from tuber_studio.config import atomic_bytes
+from tuber_studio.inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
 from tuber_studio.video_vision import ApiVideoEvidenceProvider
 
 OTHER_NODE = "http://second-jetson.local:9012"
 OTHER_TOKEN = "second-node-test-token-0123456789abcdef"
+
+
+async def test_pair_uses_the_nodes_fine_tuned_model_without_claiming_vision(distributed):
+    runtime, state = distributed
+
+    async def own_node(request):
+        if request.url.path == "/mode":
+            return httpx.Response(
+                200,
+                json={
+                    "mode": "text",
+                    "model": DAFEIYU_MODEL,
+                    "selected_provider": DAFEIYU_KEY,
+                    "providers": {DAFEIYU_KEY: {"context_tokens": 65536, "native_context_tokens": 131072}},
+                },
+            )
+        if request.url.path == "/llm/props":
+            return httpx.Response(
+                200,
+                json={
+                    "model_alias": DAFEIYU_MODEL,
+                    "default_generation_settings": {"n_ctx": 65536},
+                },
+            )
+
+    state["http_handler"] = own_node
+    result = await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
+    assert result["model"] == runtime.llm.config["model"] == DAFEIYU_MODEL
+    assert runtime.llm.server_tokens == runtime.llm.config["context_tokens"] == 65536
+    assert runtime.settings.data["work_mode_profiles"]["live"]["llm"]["model"] == "MiniCPM5-2B"
+    assert runtime.settings.data["vision"]["kind"] == "disabled"
 
 
 async def test_pair_rebinds_text_vision_and_tts_clients_to_the_new_endpoint_and_token(distributed):

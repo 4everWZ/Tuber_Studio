@@ -29,9 +29,14 @@ from .operation_feedback import (
     publication_binding,
 )
 from .operation_generation import generate_with_recovery
-from .operation_text import MAX_OPERATION_TEXT_BYTES, operation_character, operation_output_diagnostics
+from .operation_text import (
+    MAX_OPERATION_TEXT_BYTES,
+    operation_character,
+    operation_output_diagnostics,
+)
 from .operations_control import OperationsControl, canonical_intent
 from .operations_memory import OperationsMemory
+from .persona import built_in_anchor
 from .publication_errors import PlatformRejected, UnknownPublication
 from .runtime_modes import operation_generation_context
 
@@ -1016,10 +1021,11 @@ class Dynamics:
                     "role": "user",
                     "content": _json(
                         {
-                            "character": {
-                                k: operation_character(char)[k]
-                                for k in ("id", "version", "name", "core", "style", "rules")
-                                if k in char
+                            "character": built_in_anchor(char, self.settings.data)
+                            or {
+                                k: value
+                                for k, value in operation_character(char).items()
+                                if k in ("id", "version", "name", "core", "style", "rules")
                             },
                             "current_time": datetime.now().astimezone().isoformat(),
                             "recent_public_posts": [

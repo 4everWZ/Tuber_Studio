@@ -12,7 +12,7 @@ data=./tuber-data
 name=tuber-studio
 port=9020
 broker_port=9012
-host_ip=0.0.0.0
+host_ip=127.0.0.1
 replace=false
 while [[ $# -gt 0 ]]; do
   case "$1" in

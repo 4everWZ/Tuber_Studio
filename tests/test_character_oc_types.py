@@ -1,5 +1,4 @@
-
-
+from tuber_studio.inference_profiles import DAFEIYU_MODEL
 from tuber_studio.models import Character
 from tuber_studio.providers import build_messages
 
@@ -108,7 +107,11 @@ def test_build_messages_fine_tuned_vs_prompt_oc():
     assert "必须展现人设细节" in oc_system_str
 
     # 2. Build messages for fine_tuned
-    ft_messages = build_messages(fine_tuned, event, rel, mode="live")
+    settings = {
+        "llm": {"kind": "llama_cpp", "model": DAFEIYU_MODEL, "base_url": "http://jetson.local:9012/llm"},
+        "inference_broker": {"enabled": True, "base_url": "http://jetson.local:9012"},
+    }
+    ft_messages = build_messages(fine_tuned, event, rel, mode="live", settings=settings)
     ft_system_str = "\n".join(m["content"] for m in ft_messages if m["role"] == "system")
     # Compact anchor prompt only
     assert ft_messages[0]["content"] == "你叫大肥鱼，深海鲸鱼娘主播。用自然短句与直播间观众互动。"
@@ -116,5 +119,16 @@ def test_build_messages_fine_tuned_vs_prompt_oc():
     assert "角色互动示例：" not in ft_system_str
     assert "必须展现人设细节" not in ft_system_str
 
-    # Token/length saving should be significant (>50% reduction in system instructions)
-    assert len(ft_system_str) < len(oc_system_str) * 0.5
+    # Model choice controls the prompt source even if the selected role is of the other type.
+    builtin = build_messages(prompt_oc, event, rel, mode="live", settings=settings)
+    assert builtin[0]["content"] == "你是大肥鱼。"
+    assert "必须展现人设细节" not in str(builtin)
+    base = build_messages(
+        fine_tuned,
+        event,
+        rel,
+        mode="live",
+        settings={"llm": {"kind": "llama_cpp", "model": DAFEIYU_MODEL, "base_url": "http://localhost:8080"}},
+    )
+    assert "必须展现人设细节" in base[0]["content"]
+    assert fine_tuned["compact_system_prompt"] not in str(base)

@@ -53,8 +53,13 @@ from .operation_feedback import (
     publication_binding,
 )
 from .operation_generation import generate_with_recovery
-from .operation_text import operation_character, operation_output_diagnostics, validate_operation_text
+from .operation_text import (
+    operation_character,
+    operation_output_diagnostics,
+    validate_operation_text,
+)
 from .operations_control import canonical_intent
+from .persona import built_in_anchor
 from .providers import SYSTEM_RULES, public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 from .store import dump
@@ -747,8 +752,15 @@ class BrowsingService:
             self.repo.heartbeat(identity, owner, generation)
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
-        character = operation_character(self.store.character(row["character_id"], row["character_version"]))
-        view = classification_view(self.settings.root, character) if schema is ContentDecision else None
+        character = self.store.character(row["character_id"], row["character_version"])
+        anchor = built_in_anchor(character, self.settings.data)
+        if not anchor:
+            character = operation_character(character)
+        view = (
+            classification_view(self.settings.root, character)
+            if schema is ContentDecision and not anchor
+            else None
+        )
         if schema is ResponseDecision:
             response_input = response_input or ResponseDecisionInput(data)
             instruction += RESPONSE_REFERENCE_INSTRUCTION
@@ -759,7 +771,7 @@ class BrowsingService:
             if schema is ContentDecision
             else dump(data)
         )
-        role = SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")})
+        role = anchor or SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")})
         if view is not None:
             content = compact_content_input(data)
             role = "角色：" + view["brief"]
@@ -1138,8 +1150,12 @@ class BrowsingService:
         return chunks
 
     def _content_presentation(self, material, row):
-        character = operation_character(self.store.character(row["character_id"], row["character_version"]))
-        view = classification_view(self.settings.root, character)
+        character = self.store.character(row["character_id"], row["character_version"])
+        view = (
+            None
+            if built_in_anchor(character, self.settings.data)
+            else classification_view(self.settings.root, operation_character(character))
+        )
         return ContentDecisionInput(
             material,
             text_renderer=join_content_sources if view else None,

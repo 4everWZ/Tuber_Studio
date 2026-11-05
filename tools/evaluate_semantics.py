@@ -99,7 +99,9 @@ async def evaluate(config_path, character_id, seed=42):
         await provider.health()
         for case in cases["reply_cases"]:
             event = {"event_id": "evaluation:" + case["id"], "text": case["text"]}
-            prefix, initial, pending, suffix = ContextManager.parts(character, event, {}, "comment_draft")
+            prefix, initial, pending, suffix = ContextManager.parts(
+                character, event, {}, "comment_draft", settings=config
+            )
             messages = ContextManager.render(prefix, initial, [], pending, suffix)
             try:
                 reply = await provider.generate(messages, character, event["event_id"], event["text"])
@@ -114,7 +116,9 @@ async def evaluate(config_path, character_id, seed=42):
             except Exception as error:
                 results.append({"case": case["id"], "passed": False, "error": public_error(error)})
         event = {"event_id": "evaluation:recall", "text": cases["recall_question"]}
-        prefix, initial, pending, suffix = ContextManager.parts(character, event, {}, "comment_draft")
+        prefix, initial, pending, suffix = ContextManager.parts(
+            character, event, {}, "comment_draft", settings=config
+        )
         try:
             messages = ContextManager.render(prefix, initial, cases["history"], pending, suffix)
             reply = await provider.generate(messages, character, event["event_id"], event["text"])

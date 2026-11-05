@@ -7,10 +7,12 @@ import time
 import urllib.request
 from pathlib import Path
 
+from .inference_profiles import DAFEIYU_ALIASES, DAFEIYU_MODEL, DAFEIYU_WEIGHTS
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_NAME = "MiniCPM-V-4.7-1B (大肥鱼专属微调)"
-DEFAULT_MODEL_FILENAME = "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+DEFAULT_MODEL_NAME = f"{DAFEIYU_MODEL} (大肥鱼专属微调)"
+DEFAULT_MODEL_FILENAME = DAFEIYU_WEIGHTS
 DEFAULT_REPO_ID = "4everImmortality/dafeiyu-minicpmv"
 MIRROR_HF_URL = f"https://hf-mirror.com/{DEFAULT_REPO_ID}/resolve/main/{DEFAULT_MODEL_FILENAME}"
 OFFICIAL_HF_URL = f"https://huggingface.co/{DEFAULT_REPO_ID}/resolve/main/{DEFAULT_MODEL_FILENAME}"
@@ -54,7 +56,11 @@ def get_deployment_category(settings_or_data) -> str:
         return "local_file"
 
     llm = data.get("llm", {})
-    base_url = (llm.get("base_url") if "base_url" in llm else data.get("inference_broker", {}).get("base_url", "") or "").strip()
+    base_url = (
+        llm.get("base_url")
+        if "base_url" in llm
+        else data.get("inference_broker", {}).get("base_url", "") or ""
+    ).strip()
     kind = llm.get("kind", "llama_cpp")
 
     if not base_url:
@@ -69,10 +75,7 @@ def get_deployment_category(settings_or_data) -> str:
     except Exception:
         return "cloud_api" if kind == "openai_compatible" else "local_file"
 
-    is_remote_host = (
-        host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
-        and bool(host)
-    )
+    is_remote_host = host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"} and bool(host)
 
     if kind == "openai_compatible":
         is_private_or_local = (
@@ -122,16 +125,7 @@ def is_full_local_deployment(settings_or_data) -> bool:
 
 def is_dafeiyu_model(model_name: str | None) -> bool:
     """Check if the given model name refers to the fine-tuned Dafeiyu model."""
-    if not model_name or not isinstance(model_name, str):
-        return False
-    name = model_name.strip()
-    return name in {
-        DEFAULT_MODEL_NAME,
-        DEFAULT_MODEL_FILENAME,
-        "MiniCPM-V-4.7-1B",
-        "minicpm_v_dafeiyu",
-        "MiniCPM-V-4.7-1B (大肥鱼专属微调)",
-    }
+    return isinstance(model_name, str) and model_name.strip().lower() in DAFEIYU_ALIASES
 
 
 def is_model_installed(models_dir: Path | None = None) -> bool:
@@ -179,7 +173,9 @@ def get_model_status(models_dir: Path | None = None, settings_or_data=None) -> d
         "expected_size": EXPECTED_MODEL_SIZE,
         "download_status": "completed" if installed and state["status"] == "idle" else state["status"],
         "download_percent": 100.0 if installed and state["status"] == "idle" else state["percent"],
-        "downloaded_bytes": current_size if installed and state["status"] == "idle" else state["downloaded_bytes"],
+        "downloaded_bytes": current_size
+        if installed and state["status"] == "idle"
+        else state["downloaded_bytes"],
         "speed_mb_s": state["speed_mb_s"],
         "error": state["error"],
     }
@@ -316,6 +312,8 @@ def ensure_model_on_first_run(models_dir: Path | None = None) -> bool:
     target_dir = models_dir or _default_models_dir()
     if is_model_installed(target_dir):
         return True
-    logger.info("First run check: Da Feiyu fine-tuned model not found in %s. Initiating auto-download...", target_dir)
+    logger.info(
+        "First run check: Da Feiyu fine-tuned model not found in %s. Initiating auto-download...", target_dir
+    )
     start_model_download(target_dir, force=False)
     return False

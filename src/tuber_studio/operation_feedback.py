@@ -16,7 +16,12 @@ from .operation_continuations import (
     continuation_messages,
     continuation_schema,
 )
-from .operation_text import operation_character, operation_output_diagnostics, validate_operation_text
+from .operation_text import (
+    operation_character,
+    operation_output_diagnostics,
+    validate_operation_text,
+)
+from .persona import built_in_anchor
 from .providers import SYSTEM_RULES, public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 from .store import dump
@@ -176,12 +181,15 @@ class FeedbackModel:
         self.generation_context = generation_context
 
     def messages(self):
-        card = operation_character(self.character)
+        persona = built_in_anchor(self.character, self.runtime.settings.data)
+        if persona is None:
+            card = operation_character(self.character)
+            persona = SYSTEM_RULES + dump({key: card[key] for key in ("core", "style", "rules")})
         return continuation_messages(
             [
                 {
                     "role": "system",
-                    "content": SYSTEM_RULES + dump({key: card[key] for key in ("core", "style", "rules")}),
+                    "content": persona,
                 },
                 {"role": "user", "content": "本次交流的已核验来源与上下文：" + dump(self.context)},
             ]

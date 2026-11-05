@@ -20,6 +20,7 @@ from tuber_studio.inference import (
     create_app,
     native_context,
 )
+from tuber_studio.inference_profiles import DAFEIYU_KEY
 
 
 class Control:
@@ -1561,7 +1562,7 @@ async def test_unified_broker_model_switching(tmp_path):
         # 1. Switch model via /model in text mode
         resp = await client.post("/model", json={"model": "MiniCPM-V-4.7-1B"})
         assert resp.status_code == 200
-        assert broker.selected == "llm1b"
+        assert broker.selected == DAFEIYU_KEY
 
         # 2. Calling /llm with different model in text mode auto-switches
         resp = await client.post(

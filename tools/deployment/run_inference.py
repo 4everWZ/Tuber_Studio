@@ -141,11 +141,16 @@ def setup(args):
         raise ValueError("Writable data cannot be inside a read-only asset directory")
     node_file = data / "inference-node.json"
     node = load_json(node_file) if node_file.exists() else json.loads(json.dumps(DEFAULT_NODE))
-    for field, allowed in (
+    if not node_file.exists() and (mounts["models"] / "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").is_file():
+        node["operations_model"] = "MiniCPM-V-4.7-1B"
+    gemma_assets = (
         ("gemma_model", {"models"}),
         ("gemma_engine", {"engines"}),
         ("gemma_projector", {"models", "node-assets"}),
-    ):
+    )
+    if node.get("operations_model", "Gemma4-E2B") != "Gemma4-E2B":
+        gemma_assets = ()
+    for field, allowed in gemma_assets:
         path = PurePosixPath(node.get(field, DEFAULT_NODE[field]))
         if path.is_absolute():
             try:

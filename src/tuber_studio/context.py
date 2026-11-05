@@ -186,8 +186,8 @@ class ContextManager:
         self.last_key = row["key"]
 
     @staticmethod
-    def parts(character, event, relationship, mode):
-        scaffold = build_messages(character, event, relationship, mode)
+    def parts(character, event, relationship, mode, *, settings=None):
+        scaffold = build_messages(character, event, relationship, mode, settings=settings)
         prefix = scaffold[:2]
         initial_context = [dict(scaffold[2], kind="context")]
         pending = dict(
@@ -225,7 +225,11 @@ class ContextManager:
     ):
         row = self.window(scope, character)
         prefix, initial, pending, suffix = self.parts(
-            character, event or {"text": "", "event_id": "context:rebuild"}, relationship or {}, mode
+            character,
+            event or {"text": "", "event_id": "context:rebuild"},
+            relationship or {},
+            mode,
+            settings=self.settings.data,
         )
         if event is None:
             pending = None
@@ -244,9 +248,7 @@ class ContextManager:
                 }
             )
         if self.tool_registry:
-            augmentations = self.tool_registry.collect_context_augmentations(
-                character, event, mode
-            )
+            augmentations = self.tool_registry.collect_context_augmentations(character, event, mode)
             initial.extend(augmentations)
         history = json.loads(row["history"])
         messages = self.render(prefix, initial, history, pending, suffix)
@@ -348,7 +350,9 @@ class ContextManager:
         row = self.window(scope, character)
         if not json.loads(row["history"]):
             raise ValueError("当前范围没有可压缩历史；先完成互动或生成评论草稿")
-        prefix, initial, _, suffix = self.parts(character, {"text": "", "event_id": "compact"}, {}, mode)
+        prefix, initial, _, suffix = self.parts(
+            character, {"text": "", "event_id": "compact"}, {}, mode, settings=self.settings.data
+        )
         await self._compact(
             row,
             prefix,
