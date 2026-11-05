@@ -289,3 +289,28 @@ def test_emergency_stop_survives_app_recreation_and_blocks_base_automatic_flags(
         assert restored["policy"]["emergency"] is False and restored["policy"]["enabled"] is False
         assert restored["effective"]["comments"]["auto_reply"] is True
         assert second.app.state.comments.adapter.sent == []
+
+
+def test_automation_settings_accepts_permission_matrix_with_extra_keys(admin):
+    # Tests that frontend matrix auto-save filters extra parameters
+    # and correctly saves the automatic release permission tiers.
+    payload = {
+        "top_level_enabled": True,
+        "top_level_auto_publish": True,
+        "reply_enabled": True,
+        "reply_auto_publish": True,
+        "video_like_enabled": True,
+        "video_like_auto_publish": True,
+        "video_fav_enabled": False,
+        "video_fav_auto_publish": False,
+        "max_replies_per_video": 3,
+        "max_per_day": 25,
+    }
+    response = admin.put("/api/automation/settings", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["settings"]["top_level_auto_publish"] is True
+    assert data["settings"]["reply_auto_publish"] is True
+    assert data["settings"]["video_like_auto_publish"] is True
+    assert data["settings"]["max_per_day"] == 25
+

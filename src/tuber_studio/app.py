@@ -528,12 +528,25 @@ def create_app(
         }
 
     @app.get("/api/models/dafeiyu/status", dependencies=[Depends(require_admin)])
-    async def get_dafeiyu_model_status():
+    async def get_dafeiyu_model_status(
+        base_url: str | None = Query(None),
+        kind: str | None = Query(None),
+    ):
         """Get real-time installation and download progress of the Da Feiyu model."""
-        status = model_hub.get_model_status(settings.models, settings_or_data=settings)
+        data_override = dict(settings.data) if hasattr(settings, "data") else {}
+        if base_url is not None or kind is not None:
+            llm_patch = dict(data_override.get("llm", {}))
+            if base_url is not None:
+                llm_patch["base_url"] = base_url.strip()
+            if kind is not None:
+                llm_patch["kind"] = kind.strip()
+            data_override["llm"] = llm_patch
+
+        status = model_hub.get_model_status(settings.models, settings_or_data=data_override or settings)
         category = status.get("deployment_category", "local_file")
-        if category == "self_hosted" and status.get("endpoint_url"):
-            url = status["endpoint_url"].rstrip("/")
+        endpoint = (base_url.strip() if base_url else None) or status.get("endpoint_url")
+        if category == "self_hosted" and endpoint:
+            url = endpoint.rstrip("/")
             try:
                 async with httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=1.0), trust_env=False) as client:
                     test_url = url + "/health" if not url.endswith(("/health", "/docs")) else url

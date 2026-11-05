@@ -559,14 +559,20 @@
               <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
             </div>
 
+            <!-- Deployment Mode Switcher: Local vs Remote -->
+            <div class="deploy-mode-switcher" id="deploy-mode-switcher">
+              <button type="button" class="deploy-mode-btn active" id="btn-mode-local" data-mode="local">🏠 本地部署 (Local: 本机 GGUF / 本机 Docker 9012)</button>
+              <button type="button" class="deploy-mode-btn" id="btn-mode-remote" data-mode="remote">🌐 远程 / 独立节点 (Remote: Jetson / 外部 API)</button>
+            </div>
+
             <!-- Dafeiyu Fine-Tuned Model Status & Downloader Card -->
             <div class="dafeiyu-model-card" id="dafeiyu-model-card">
               <div class="model-card-header">
                 <div class="model-card-title">
-                  <span class="model-card-icon">🐳</span>
+                  <span class="model-card-icon" id="dafeiyu-card-icon">🐳</span>
                   <div>
-                    <strong>大肥鱼专属微调模型 (MiniCPM-V-4.7-1B Q4_K_M)</strong>
-                    <p class="hint" style="margin:2px 0 0 0;">DoRA + DARE-TIES 权重融合，已内化大肥鱼人设与白饭口癖；托管于 Hugging Face。</p>
+                    <strong id="dafeiyu-card-title">大肥鱼专属微调模型 (MiniCPM-V-4.7-1B Q4_K_M)</strong>
+                    <p class="hint" id="dafeiyu-card-desc" style="margin:2px 0 0 0;">DoRA + DARE-TIES 权重融合，已内化大肥鱼人设与白饭口癖；托管于 Hugging Face。</p>
                   </div>
                 </div>
                 <span id="dafeiyu-model-badge" class="badge">检测中…</span>
@@ -593,12 +599,6 @@
                   </div>
                 </div>
               </div>
-            </div>
-
-            <!-- Deployment Mode Switcher: Local vs Remote -->
-            <div class="deploy-mode-switcher" id="deploy-mode-switcher">
-              <button type="button" class="deploy-mode-btn active" id="btn-mode-local" data-mode="local">🏠 本地部署 (Local)</button>
-              <button type="button" class="deploy-mode-btn" id="btn-mode-remote" data-mode="remote">🌐 远程 / 云端 (Remote / API)</button>
             </div>
 
             <!-- Ping Test Box -->
@@ -803,6 +803,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261105.1"></script>
+  <script type="module" src="/static/app.js?v=20261105.2"></script>
 </body>
 </html>

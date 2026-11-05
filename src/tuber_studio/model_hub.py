@@ -58,32 +58,59 @@ def get_deployment_category(settings_or_data) -> str:
     base_url = (llm.get("base_url") or broker.get("base_url") or "").strip()
     kind = llm.get("kind", "llama_cpp")
 
+    if not base_url:
+        return "local_file" if kind == "llama_cpp" else "cloud_api"
+
+    from urllib.parse import urlsplit
+
+    try:
+        parsed = urlsplit(base_url)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except Exception:
+        return "cloud_api" if kind == "openai_compatible" else "local_file"
+
+    is_remote_host = (
+        host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
+        and bool(host)
+    )
+
     if kind == "openai_compatible":
-        if not base_url:
-            return "cloud_api"
-        from urllib.parse import urlsplit
-        try:
-            parsed = urlsplit(base_url)
-            host = (parsed.hostname or "").lower()
-            port = parsed.port
-            if port in {9012, 8000, 11434, 9013, 9010, 9014, 9015, 9030} or host in {"127.0.0.1", "localhost", "0.0.0.0"} or host.startswith(("192.168.", "10.", "100.")):
-                return "self_hosted"
-            return "cloud_api"
-        except Exception:
-            return "cloud_api"
+        is_private_or_local = (
+            not is_remote_host
+            or host.startswith(
+                (
+                    "192.168.",
+                    "10.",
+                    "100.",
+                    "172.16.",
+                    "172.17.",
+                    "172.18.",
+                    "172.19.",
+                    "172.20.",
+                    "172.21.",
+                    "172.22.",
+                    "172.23.",
+                    "172.24.",
+                    "172.25.",
+                    "172.26.",
+                    "172.27.",
+                    "172.28.",
+                    "172.29.",
+                    "172.30.",
+                    "172.31.",
+                )
+            )
+            or host.endswith(".local")
+        )
+        is_known_self_hosted_port = port in {9012, 8000, 11434, 9013, 9010, 9014, 9015, 9030, 19010, 8080}
+        if is_known_self_hosted_port or is_private_or_local:
+            return "self_hosted"
+        return "cloud_api"
 
     if kind == "llama_cpp":
-        if broker.get("deployment") == "remote":
+        if broker.get("deployment") == "remote" or is_remote_host:
             return "self_hosted"
-        if base_url:
-            from urllib.parse import urlsplit
-            try:
-                parsed = urlsplit(base_url)
-                host = (parsed.hostname or "").lower()
-                if host and host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-                    return "self_hosted"
-            except Exception:
-                pass
         return "local_file"
 
     return "local_file"

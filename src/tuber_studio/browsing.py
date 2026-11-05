@@ -186,7 +186,9 @@ class BrowsingService:
     async def configure(self, value):
         data = dict(value)
         data.pop("comment_handoff_enabled", None)
-        config = BrowsingPolicy.model_validate(data).model_dump()
+        current = self.policy()
+        merged = current | data
+        config = BrowsingPolicy.model_validate(merged).model_dump()
         # Changing base fields never snapshots/replaces the overlay's previous values.
         self.store.set("browsing_policy", config)
         self.operations.configure(

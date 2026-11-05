@@ -157,7 +157,9 @@ export async function updatePermissionCapsule(api, accountPanel) {
     const account = accountPanel?.value;
     const hasSessdata = Boolean(account?.configured?.sessdata);
     const hasCsrf = Boolean(account?.configured?.csrf);
-    const settings = status.settings || {};
+    const settings = (Date.now() < matrixUserInteractingUntil)
+      ? getOptimisticSettingsFromDOM()
+      : (status.settings || {});
 
     const tierInfo = calculatePermissionTier(settings, account, hasCsrf);
     applyPermissionTierUI(tierInfo);
@@ -177,7 +179,9 @@ export async function updatePermissionCapsule(api, accountPanel) {
       csrfEl.className = `status-tag ${hasCsrf ? "ok" : "warn"}`;
     }
 
-    renderPermissionMatrix(status);
+    if (Date.now() >= matrixUserInteractingUntil) {
+      renderPermissionMatrix(status);
+    }
     renderOperationsQuickBar(status);
     renderVisualFallbackStatus(status);
   } catch (e) {
@@ -304,7 +308,22 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
   const autonomousTopics = $("exp-autonomous-topics") ? Boolean($("exp-autonomous-topics").checked) : current.autonomous_topics;
   const visualEnabled = $("exp-visual-enabled") ? Boolean($("exp-visual-enabled").checked) : current.visual_enabled;
 
-  const payload = {
+  const allowedBrowsingKeys = new Set([
+    "sources", "keywords", "watch_videos", "autonomous_topics", "discovery_enabled",
+    "top_level_enabled", "top_level_auto_publish", "reply_enabled", "reply_auto_publish",
+    "video_like_enabled", "video_like_auto_publish", "video_fav_enabled", "video_fav_auto_publish",
+    "max_replies_per_video", "auto_downgrade_on_error", "mentions_enabled", "mention_reply_enabled",
+    "replies_enabled", "comment_handoff_enabled", "visual_enabled", "workers", "candidate_limit",
+    "inspect_limit", "max_search_terms", "max_pages", "max_reads", "max_model_calls",
+    "max_input_tokens", "max_output_tokens", "decision_max_tokens", "deadline_seconds",
+    "interval_seconds", "notification_interval_seconds", "read_retries", "max_takeovers",
+    "max_per_hour", "max_per_day", "recipient_cooldown_seconds", "top_level_limit",
+    "recent_sample_limit", "exclude_words", "allowed_author_uids", "excluded_author_uids",
+    "allowed_categories", "min_duration_seconds", "max_duration_seconds", "published_after",
+    "published_before", "languages", "report_enabled"
+  ]);
+
+  const merged = {
     ...current,
     ...optimisticSettings,
     candidate_limit: Math.max(1, Math.min(20, candidateLimit)),
@@ -314,7 +333,13 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
     autonomous_topics: autonomousTopics,
     visual_enabled: visualEnabled,
   };
-  delete payload.comment_handoff_enabled;
+
+  const payload = {};
+  for (const [k, v] of Object.entries(merged)) {
+    if (allowedBrowsingKeys.has(k)) {
+      payload[k] = v;
+    }
+  }
 
   const fb = $("matrix-save-feedback");
   if (fb && !isSilent) fb.textContent = "正在保存权限矩阵…";
@@ -330,6 +355,7 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
           body: {
             ...msgStatus.policy,
             allow_comment_handoff: optimisticSettings.comment_handoff_enabled,
+            auto_send: optimisticSettings.handoff_auto_send,
           },
         });
       }
@@ -338,7 +364,11 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
     }
 
     if (currentAutomationStatus) {
-      currentAutomationStatus.settings = { ...(currentAutomationStatus.settings || {}), ...payload };
+      currentAutomationStatus.settings = {
+        ...(currentAutomationStatus.settings || {}),
+        ...payload,
+        handoff_auto_send: optimisticSettings.handoff_auto_send,
+      };
     }
     const timeStr = new Date().toLocaleTimeString();
     if (fb) {

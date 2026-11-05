@@ -54,7 +54,13 @@ export async function loadLocalModelsDropdown(api) {
 
 export async function checkDafeiyuModelStatus(api) {
   try {
-    const status = await api("/api/models/dafeiyu/status");
+    const kind = $("llm-kind") ? $("llm-kind").value : "llama_cpp";
+    const baseUrl = ($("llm-base-url")?.value || "").trim();
+    const query = new URLSearchParams();
+    if (baseUrl) query.set("base_url", baseUrl);
+    if (kind) query.set("kind", kind);
+    const qs = query.toString();
+    const status = await api(`/api/models/dafeiyu/status${qs ? `?${qs}` : ""}`);
     renderDafeiyuModelCard(status);
     if (status.download_status === "downloading") {
       if (!dafeiyuModelTimer) {
@@ -74,7 +80,10 @@ export async function checkDafeiyuModelStatus(api) {
   }
 }
 
-export function renderDafeiyuModelCard(status) {
+export function renderDafeiyuModelCard(status = {}) {
+  const cardIcon = $("dafeiyu-card-icon");
+  const cardTitle = $("dafeiyu-card-title");
+  const cardDesc = $("dafeiyu-card-desc");
   const badge = $("dafeiyu-model-badge");
   const installedView = $("dafeiyu-model-installed-view");
   const missingView = $("dafeiyu-model-missing-view");
@@ -90,25 +99,31 @@ export function renderDafeiyuModelCard(status) {
   const currentKind = $("llm-kind") ? $("llm-kind").value : "llama_cpp";
   const baseUrl = ($("llm-base-url")?.value || "").trim();
   const modelId = ($("llm-model")?.value || "").trim() || "默认模型";
+  const isRemoteTab = $("btn-mode-remote")?.classList.contains("active");
 
   // Determine scenario category
-  let category = status?.deployment_category;
-  if (!category) {
-    if (currentKind === "openai_compatible") {
-      category = (baseUrl.includes("9012") || baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("100.") || baseUrl.includes("192.168.")) ? "self_hosted" : "cloud_api";
-    } else if (currentKind === "llama_cpp") {
-      category = (baseUrl && !baseUrl.includes("127.0.0.1:9012") && !baseUrl.includes("localhost:9012")) ? "self_hosted" : (baseUrl.includes("9012") ? "self_hosted" : "local_file");
-    } else {
-      category = "local_file";
-    }
-  }
-
-  // If baseUrl points to an explicit server endpoint (e.g. :9012/llm, :8000, or remote IP)
-  if (baseUrl && (baseUrl.includes(":9012") || baseUrl.includes(":8000") || baseUrl.includes(":11434") || baseUrl.includes("100.") || baseUrl.includes("192.168."))) {
-    category = "self_hosted";
+  let category = "local_file";
+  if (isRemoteTab || currentKind === "openai_compatible") {
+    const isLocalAddress = (
+      baseUrl.includes("9012") ||
+      baseUrl.includes("localhost") ||
+      baseUrl.includes("127.0.0.1") ||
+      baseUrl.includes("100.") ||
+      baseUrl.includes("192.168.") ||
+      baseUrl.includes("10.") ||
+      baseUrl.includes("172.")
+    );
+    category = (!baseUrl || isLocalAddress) ? "self_hosted" : "cloud_api";
+  } else {
+    // Local deployment tab
+    category = (baseUrl.includes(":9012") || baseUrl.includes(":8000") || baseUrl.includes(":11434")) ? "self_hosted" : "local_file";
   }
 
   if (category === "self_hosted") {
+    if (cardIcon) cardIcon.textContent = "🚀";
+    if (cardTitle) cardTitle.textContent = "Jetson Orin / 独立推理节点 (Broker 统一直通分发)";
+    if (cardDesc) cardDesc.textContent = "端点自动按模型名分发与装载；非直播时段卸载 TTS 节省显存。无需在当前电脑重复下载权重。";
+
     const isOnline = status?.node_online !== false;
     badge.className = `badge ${isOnline ? "good" : "active"}`;
     badge.textContent = isOnline ? "✔ 服务节点已就绪" : "⚡ 独立服务端点";
@@ -125,12 +140,16 @@ export function renderDafeiyuModelCard(status) {
     }
     const hintEl = installedView.querySelector("small");
     if (hintEl) {
-      hintEl.textContent = `请求将直接发往节点并由 Broker 自动按模型名分发；非直播时段自动卸载 TTS 节省显存。无需在当前电脑重复下载模型权重。`;
+      hintEl.textContent = `请求直接发往节点端点，Broker 自动路由与装载对应模型；当前电脑无需重复校验或下载 .gguf 权重。`;
     }
     return;
   }
 
   if (category === "cloud_api") {
+    if (cardIcon) cardIcon.textContent = "🌐";
+    if (cardTitle) cardTitle.textContent = "云端商业 API 接入 (OpenAI 兼容协议)";
+    if (cardDesc) cardDesc.textContent = "直接调用云端大语言模型与语音 API；无需本地显存与权重文件。";
+
     badge.className = "badge muted";
     badge.textContent = "🌐 云端 API 接入";
     if (installedView) installedView.hidden = false;
@@ -146,12 +165,16 @@ export function renderDafeiyuModelCard(status) {
     }
     const hintEl = installedView.querySelector("small");
     if (hintEl) {
-      hintEl.textContent = `通过 OpenAI 兼容 API 接入，无需本地模型权重及算力资源。`;
+      hintEl.textContent = `由第三方云服务进行模型计算，请核对下方 API Key 与模型 ID。`;
     }
     return;
   }
 
   // Pure local_file
+  if (cardIcon) cardIcon.textContent = "🐳";
+  if (cardTitle) cardTitle.textContent = "大肥鱼专属微调模型 (MiniCPM-V-4.7-1B Q4_K_M)";
+  if (cardDesc) cardDesc.textContent = "DoRA + DARE-TIES 权重融合，已内化大肥鱼人设与白饭口癖；托管于 Hugging Face。";
+
   if (status.installed) {
     badge.className = "badge good";
     badge.textContent = "✔ 本地权重已就绪";
@@ -326,30 +349,31 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
     btnModeRemote?.classList.toggle("active", !isLocal);
     if (isLocal) {
       $("llm-kind").value = "llama_cpp";
-      if (!$("llm-base-url").value || $("llm-base-url").value.startsWith("https://") || $("llm-base-url").value.includes("openai")) {
+      if (!$("llm-base-url").value || $("llm-base-url").value.startsWith("https://") || $("llm-base-url").value.includes("openai") || $("llm-base-url").value.includes("100.")) {
         $("llm-base-url").value = "http://127.0.0.1:9012/llm";
       }
       if (!$("llm-model").value || $("llm-model").value === "__custom__") {
         $("llm-model").value = "MiniCPM-V-4.7-1B";
       }
       $("tts-kind").value = "gpt_sovits";
-      if (!$("tts-base-url").value || $("tts-base-url").value.startsWith("https://")) {
+      if (!$("tts-base-url").value || $("tts-base-url").value.startsWith("https://") || $("tts-base-url").value.includes("100.")) {
         $("tts-base-url").value = "http://127.0.0.1:9012/tts";
       }
-      notice("已切换为【本地部署】模式。");
+      notice("已切换为【本地部署】模式（默认直通本机 Broker: 9012）。");
     } else {
       $("llm-kind").value = "openai_compatible";
-      if ($("llm-base-url").value === "http://127.0.0.1:9012/llm/2b" || $("llm-base-url").value === "http://127.0.0.1:9012/llm") {
-        $("llm-base-url").value = "";
+      if (!$("llm-base-url").value || $("llm-base-url").value === "http://127.0.0.1:9012/llm" || $("llm-base-url").value === "http://127.0.0.1:9012/llm/2b") {
+        $("llm-base-url").value = "http://100.95.31.18:9012/llm";
       }
-      if ($("tts-base-url").value === "http://127.0.0.1:9012/tts") {
+      if (!$("tts-base-url").value || $("tts-base-url").value === "http://127.0.0.1:9012/tts") {
         $("tts-base-url").value = "http://100.95.31.18:9012/tts";
       }
-      notice("已切换为【远程 / 云端】模式，可自定义填写 Base URL 与 API Key。");
+      notice("已切换为【远程 / 独立节点】模式（默认预填远端 Jetson Broker: 9012，亦可自定义填写外部端点）。");
     }
     syncModelSelectWithInput();
     model.providersDirty = true;
     renderTTSFields(model);
+    renderDafeiyuModelCard({});
     checkDafeiyuModelStatus(api);
     if (typeof onSettingsChanged === "function") onSettingsChanged();
   }
