@@ -76,24 +76,12 @@ export function calculatePermissionTier(settings = {}, account = null, hasCsrf =
 export function applyPermissionTierUI(tierInfo) {
   const { tier, icon, text, badgeText } = tierInfo;
 
-  // 1. Topbar capsule
-  const capsule = $("permission-capsule");
-  if (capsule) {
-    capsule.dataset.tier = tier;
-    const textEl = $("capsule-text");
-    const iconEl = $("capsule-icon");
-    if (textEl) textEl.textContent = text;
-    if (iconEl) iconEl.textContent = icon;
-  }
-
-  // 2. Operations workbench capsule
   const opCapsule = $("op-permission-capsule-btn");
   if (opCapsule) {
     opCapsule.dataset.tier = tier;
     opCapsule.innerHTML = `<span>${icon} ${text}</span>`;
   }
 
-  // 3. Settings matrix header badge
   const matrixBadge = $("matrix-capsule-badge");
   if (matrixBadge) {
     matrixBadge.textContent = badgeText;
@@ -385,7 +373,7 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
 
 export function initOperationsModule(api, accountPanel, automationPanel) {
   function jumpToPermissionMatrix() {
-    location.hash = "settings";
+    location.hash = "accounts";
     setTimeout(() => {
       const el = $("operations-permission-matrix");
       if (el) {
@@ -396,7 +384,6 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
     }, 150);
   }
 
-  if ($("permission-capsule")) $("permission-capsule").onclick = jumpToPermissionMatrix;
   if ($("op-permission-capsule-btn")) $("op-permission-capsule-btn").onclick = jumpToPermissionMatrix;
   if ($("matrix-save")) $("matrix-save").onclick = () => savePermissionMatrix(api, accountPanel, { silent: false });
 

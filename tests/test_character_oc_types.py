@@ -157,3 +157,7 @@ def test_typed_node_route_owns_prompt_source(route, model, expected):
         "llm": {"base_url": f"{base_url}/llm/{route}", "model": model},
     }
     assert uses_built_in_persona(settings) is expected
+
+
+def test_compatible_api_uses_card_even_with_a_matching_model_name():
+    assert not uses_built_in_persona({"llm": {"kind": "openai_compatible", "model": DAFEIYU_KEY}})

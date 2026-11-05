@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css?v=20261105.26"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css">
+  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css?v=20261105.26"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css"><link rel="stylesheet" href="/static/workbench.css">
 </head>
 <body>
   <main id="login" class="login-shell" hidden>
@@ -16,70 +16,40 @@
   </main>
   <div id="workspace" class="workspace" hidden>
     <aside class="sidebar">
-      <a class="brand" href="#comments"><span class="brand-mark">TS</span><span>Tuber Studio<small>本地角色运行时</small></span></a>
-      <nav aria-label="功能区">
-        <div class="nav-group-title">运营中心</div>
-        <a href="#comments" data-page="comments"><span aria-hidden="true">📺</span>社区运营</a>
-        <a href="#messages" data-page="messages"><span aria-hidden="true">✉</span>私信工作台</a>
-        <a href="#dynamics" data-page="dynamics"><span aria-hidden="true">✎</span>动态运营</a>
-
-        <div class="nav-group-title">直播互动</div>
-        <a href="#live" data-page="live"><span aria-hidden="true">🎮</span><span id="live-nav-label">直播与小游戏</span></a>
-        <a href="/live" target="_blank" class="nav-external"><span aria-hidden="true">🎙</span>独立直播推流 ↗</a>
-
-        <div class="nav-group-title">人设与资产</div>
-        <a href="#characters" data-page="characters"><span aria-hidden="true">♧</span>角色与 OC 管理</a>
-        <a href="#voices" data-page="voices"><span aria-hidden="true">♫</span>语音音色</a>
-        <a href="#assets" data-page="assets"><span aria-hidden="true">▧</span>素材与表情包</a>
-
-        <div class="nav-group-title">系统与总览</div>
-        <a href="#overview" data-page="overview"><span aria-hidden="true">◫</span>系统总览</a>
-        <a href="#settings" data-page="settings"><span aria-hidden="true">⚙</span>推理服务与设置</a>
+      <a class="brand" href="#comments" aria-label="Tuber Studio 首页"><span class="brand-mark" aria-hidden="true">TS</span></a>
+      <nav class="activity-bar" aria-label="工作区">
+        <a href="#comments" data-workspace="operations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h5"/></svg>运营</a>
+        <a href="#live" data-workspace="live"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v12H3zM16 10l5-3v10l-5-3"/></svg>直播</a>
+        <a href="#characters" data-workspace="character"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>角色</a>
+        <a href="#settings" data-workspace="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4"/></svg>设置</a>
       </nav>
-      <div class="sidebar-bottom"><span class="badge">本地角色原型</span><p>虚构 AI 同人角色<br>非 DeepSeek 官方账号</p><button id="logout" class="quiet">退出登录</button></div>
     </aside>
     <div class="main-shell">
-      <header class="topbar account-topbar">
-        <div class="service-status-capsule" id="service-status-capsule" title="点击跳转至推理设置进行快速诊断与配置">
-          <span class="status-indicator">
-            <span class="status-dot green" id="capsule-llm-dot"></span>
-            <span id="capsule-llm-label">LLM: 连接中</span>
-          </span>
-          <span class="status-divider">|</span>
-          <span class="status-indicator">
-            <span class="status-dot green" id="capsule-tts-dot"></span>
-            <span id="capsule-tts-label">TTS: 待检测</span>
-          </span>
-          <span class="status-divider">|</span>
-          <span class="status-indicator">
-            <span id="capsule-char-label">角色: 大肥鱼</span>
-          </span>
-        </div>
-        <div class="status-line">
-          <span id="live-state" class="badge">就绪</span>
-          <span id="global-character" class="badge active" hidden>—</span>
-          <span id="inference-state" class="muted" aria-live="polite"></span>
-          <button type="button" id="permission-capsule" class="permission-capsule" data-tier="draft" title="点击跳转至设置配置权限矩阵">
-            <span id="capsule-icon">📝</span> <span id="capsule-text">权限：草稿审核态</span>
-          </button>
-        </div>
-        <span id="connection" class="muted">连接中</span>
-        <div id="global-bilibili-account" class="global-bilibili-account"></div>
-        <div class="mode-workspace" style="display:none;">
-          <fieldset class="resource-modes" aria-describedby="resource-mode-help"><legend>资源工作模式</legend><div class="mode-buttons"><button type="button" data-inference-mode="text" aria-pressed="false" disabled>文本模式</button><button type="button" data-inference-mode="live" aria-pressed="false" disabled>直播（后续）</button></div></fieldset>
-          <p id="resource-mode-help" class="hint"></p>
+      <header class="topbar workbench-topbar">
+        <a href="#settings" class="service-status-capsule" id="service-status-capsule"><span class="status-dot" aria-hidden="true"></span><span class="status-text">推理状态待检查</span></a>
+        <div class="mode-workspace">
+          <div class="mode-buttons" role="group" aria-label="推理模式" aria-describedby="resource-mode-feedback">
+            <button type="button" data-inference-mode="text" aria-pressed="false" disabled>运营模式</button>
+            <button type="button" data-inference-mode="live" aria-pressed="false" disabled>直播模式</button>
+          </div>
           <span id="resource-mode-feedback" class="hint" role="status"></span>
-          <span id="overlay-state"></span>
-          <span id="context-state"></span>
         </div>
       </header>
+      <nav class="workspace-tabs" data-workspace-tabs="operations" aria-label="运营页面" hidden>
+        <a href="#comments" data-page="comments">评论</a><a href="#messages" data-page="messages">私信</a><a href="#dynamics" data-page="dynamics">动态</a>
+      </nav>
+      <nav class="workspace-tabs" data-workspace-tabs="character" aria-label="角色页面" hidden>
+        <a href="#characters" data-page="characters">角色</a><a href="#voices" data-page="voices">语音</a><a href="#assets" data-page="assets">素材</a>
+      </nav>
+      <nav class="workspace-tabs" data-workspace-tabs="settings" aria-label="设置页面" hidden>
+        <a href="#settings" data-page="settings">推理</a><a href="#accounts" data-page="accounts">账号与权限</a><a href="#overview" data-page="overview">维护</a>
+      </nav>
       <div id="notice" class="notice" role="status" hidden></div>
       <div id="runtime-error" class="notice error" role="alert" hidden></div>
       <div id="context-error" class="notice error" role="alert" hidden></div>
       <div id="context-warning" class="notice warning" role="status" hidden></div>
       <div id="inference-error" class="notice error" role="alert" hidden></div>
       <main class="content">
-        <section data-section="automation" hidden></section>
         <section data-section="comments" hidden>
           <div class="page-heading">
             <div>
@@ -161,38 +131,32 @@
           <details class="panel"><summary>允许用于公开动态的来源记忆</summary><p class="hint">已发布的本角色回复自动可用。下列记忆仅在勾选后进入动态运营来源；角色故事标为虚构，勾选即允许将其用于公开动态。</p><div class="table-scroll"><table><thead><tr><th>公开使用</th><th>来源记忆</th><th>类型 / 当地时间</th></tr></thead><tbody id="dynamic-memories"></tbody></table></div><p id="dynamic-memory-state" class="hint" role="status">仅列出当前角色版本可选择的来源记忆。</p></details>
           <article class="panel"><div class="panel-heading"><h2>评估决策</h2><span class="hint">保留发布、等待与失败原因</span></div><div class="table-scroll"><table><thead><tr><th>当地时间</th><th>决定</th><th>原因</th><th>来源 / 错误</th></tr></thead><tbody id="dynamic-decisions"></tbody></table></div><div id="dynamic-decision-continuation" hidden></div></article>
         </section>
-        <section data-section="overview">
-          <div class="page-heading"><div><p class="eyebrow">运行工作区</p><h1>总览</h1></div><div class="actions"><button data-action="start" class="primary">启动 Mock 直播</button><a class="button" href="#live">调试直播</a></div></div>
-          <div class="metrics"><div><span>待处理队列</span><strong id="metric-queue">—</strong></div><div><span>LLM / TTS 耗时</span><strong id="metric-time">—</strong></div><div><span>系统内存</span><strong id="metric-ram">—</strong></div><div><span>CPU / 本进程内存</span><strong id="metric-cpu">—</strong></div></div>
-          <article class="panel daily-memory-card" id="daily-memory-card">
-            <div class="panel-heading">
-              <div>
-                <h2>跨渠道每日记忆与社群趣事</h2>
-                <span class="hint">打通直播高光与评论热梗，为直播闲聊、视频回帖与动态提供鲜活谈资</span>
-              </div>
-              <div class="actions">
-                <button type="button" id="extract-daily-memory" class="primary">✨ 提炼今日趣事</button>
-                <button type="button" id="refresh-daily-memory">刷新</button>
-              </div>
+        <section data-section="overview" hidden>
+          <div class="page-heading"><h1>维护</h1></div>
+          <article class="panel"><div class="panel-heading"><h2>上下文管理</h2></div><details><summary>容量与压缩诊断</summary><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用。</p></details><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
+          <article class="panel" id="retention-panel"><div class="panel-heading"><h2>对话数据留存</h2><span class="hint">按服务已保存策略自动执行</span></div>
+            <form id="retention-form"><div class="retention-policy"><label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled></label><label class="check-field"><input id="retention-never" type="checkbox" disabled>永不自动清理</label><button id="retention-save" type="submit" disabled>保存留存策略</button></div><p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p></form>
+            <dl id="retention-status" class="description-list"></dl><pre id="retention-last-result" class="code-small" hidden></pre>
+            <div class="subsection"><h3>手动清理</h3><p class="hint">清理会永久删除到期的对话上下文、来源检索索引与直播记录，范围以预览为准。保留原始评论／私信、回复草稿、发送回执、角色、用户与关系。此操作不会切换资源模式。</p><div class="actions"><label class="inline-field">截至日期（可选）<input id="retention-before" type="date" aria-describedby="retention-date-help" disabled></label><button id="retention-preview" type="button" disabled>预览清理范围</button></div><p id="retention-date-help" class="hint">留空时按已保存策略计算；永不自动清理时需指定日期。所选日期按 UTC 整日计入，提交次日 00:00 UTC 作为不包含的截止边界。</p>
+              <div id="retention-preview-panel" class="retention-preview" hidden><p id="retention-preview-cutoff" class="hint"></p><dl id="retention-preview-counts" class="description-list"></dl><details><summary>完整预览结果</summary><pre id="retention-preview-detail" class="code-small"></pre></details><label class="check-field"><input id="retention-confirm" type="checkbox" disabled>我已核对以上范围与数量，确认永久清理这些记录</label><button id="retention-cleanup" class="danger" type="button" disabled>确认清理预览范围</button></div><p id="retention-cleanup-state" class="hint" role="status">请先预览待清理范围，再明确确认。</p>
             </div>
-            <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
-            <div id="daily-memory-list" class="daily-memory-list"></div>
           </article>
-          <div class="overview-grid"><article class="panel"><div class="panel-heading"><h2>当前播报</h2><span id="current-status" class="badge">空闲</span></div><div class="current-character"><img id="character-image" alt="当前角色" hidden><div><h3 id="current-character-name">尚未选择角色</h3><p id="current-text" class="speech-text">启动直播并注入一条弹幕，查看处理及播报状态。</p><p id="current-detail" class="hint"></p></div></div><div class="actions"><button data-action="pause">暂停后续任务</button><button data-action="skip">跳过当前</button><button data-action="mute" class="danger">紧急静音</button></div><div class="subsection"><h3>最近实际播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article><article class="panel"><div class="panel-heading"><h2>运行连接</h2><a href="#settings">推理设置</a></div><p class="hint">音频由独立 overlay 播放。只有播放器确认开始并结束，任务才计为已播报。</p><a href="#settings" class="inline-link">查看 OBS 播放器配置 →</a></article></div>
-          <article class="panel"><div class="panel-heading"><h2>最近任务</h2><a href="#live" class="inline-link">查看事件与队列</a></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="overview-jobs"></tbody></table></div></article>
+          <section class="panel" id="cache-panel"></section>
+          <article class="panel narrow" id="voice-cache-card"><div class="panel-heading"><h2>语音生成缓存</h2><span class="hint">生成音频与点歌一样有上限约束，支持 LRU 回收</span></div><p id="voice-cache-stats" class="hint">读取中…</p><div class="actions"><button type="button" id="voice-cache-clear">清理语音缓存</button></div><p id="voice-cache-state" class="hint" role="status"></p></article>
         </section>
         <section data-section="live" hidden>
-          <p id="live-feature-notice" class="feature-note" role="status">直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。</p>
-          <div class="page-heading"><div><p class="eyebrow">Mock 连接器</p><h1>直播控制</h1></div><div class="actions"><button data-action="start" class="primary">启动</button><button data-action="pause">暂停</button><button data-action="resume">恢复</button><button data-action="stop" class="danger">停止直播</button></div></div>
-          <div class="actions control-strip"><button data-action="mute" class="danger">紧急静音</button><button data-action="unmute">解除静音</button><button data-action="skip">跳过当前任务</button><button data-action="clear">清空待播队列</button><span class="hint">暂停保留队列；停止会取消当前及待播任务。</span></div>
-          <div class="live-grid"><article class="panel"><div class="panel-heading"><h2>离线事件调试台</h2><span class="badge">不连接真实平台</span></div><form id="event-form"><div class="form-grid"><label>事件类型<select id="event-type"><option value="chat">弹幕</option><option value="gift">礼物</option><option value="sfx">预录音效</option><option value="song">点歌</option><option value="disconnect">模拟断线</option></select></label><label>观众 ID<input id="event-user" value="debug-001" maxlength="100"></label><label>显示昵称<input id="event-name" value="调试观众" maxlength="100"></label><label>事件 ID<input id="event-id" placeholder="留空自动生成；重复 ID 用于去重测试" maxlength="180"></label></div><label>弹幕 / 事件内容<textarea id="event-text" rows="3" maxlength="1000" placeholder="例如：大肥鱼，今天在忙什么？" required></textarea></label><label id="sfx-label" hidden>预录素材 ID<input id="event-asset" placeholder="从素材页复制音频素材 ID"></label><div class="actions"><button type="submit" class="primary">注入事件</button><button type="button" id="fill-greeting">填入问候</button><span id="event-result" class="hint" role="status"></span></div></form></article><article class="panel"><div class="panel-heading"><h2>当前任务</h2><span id="live-current-status" class="badge">空闲</span></div><p id="live-current-text" class="speech-text">等待事件。</p><dl id="live-current-detail" class="description-list"></dl></article></div>
+          <p id="live-feature-notice" class="feature-note" role="status">当前推理配置未启用直播。请到推理设置连接支持直播的 Jetson。</p>
+          <div class="page-heading"><div><p class="eyebrow">本地调试会话</p><h1>直播</h1></div><div class="actions"><span id="live-state" class="badge">已停止</span><button data-action="start" class="primary">启动调试会话</button><button data-action="pause">暂停</button><button data-action="resume">恢复</button><button data-action="stop" class="danger">停止直播</button></div></div>
+          <div class="actions control-strip"><button data-action="mute" class="danger">紧急静音</button><button data-action="unmute">解除静音</button><button data-action="skip">跳过当前任务</button><button data-action="clear">清空待播队列</button><a href="/live" class="button" target="_blank" rel="noopener">打开独立推流页 ↗</a><a href="#interactive-rules-card" class="button">点歌设置</a><a href="#live-game-panel" class="button">游戏模拟</a><span class="hint">暂停保留队列；停止会取消当前及待播任务。</span></div>
+          <div class="live-grid"><article class="panel"><div class="panel-heading"><h2>离线事件调试台</h2><span class="badge">不连接真实平台</span></div><form id="event-form"><div class="form-grid"><label>事件类型<select id="event-type"><option value="chat">弹幕</option><option value="gift">礼物</option><option value="sfx">预录音效</option><option value="song">点歌</option><option value="disconnect">模拟断线</option></select></label><label>观众 ID<input id="event-user" value="debug-001" maxlength="100"></label><label>显示昵称<input id="event-name" value="调试观众" maxlength="100"></label><label>事件 ID<input id="event-id" placeholder="留空自动生成；重复 ID 用于去重测试" maxlength="180"></label></div><label>弹幕 / 事件内容<textarea id="event-text" rows="3" maxlength="1000" placeholder="例如：大肥鱼，今天在忙什么？" required></textarea></label><label id="sfx-label" hidden>预录素材 ID<input id="event-asset" placeholder="从素材页复制音频素材 ID"></label><div class="actions"><button type="submit" class="primary">注入事件</button><button type="button" id="fill-greeting">填入问候</button><span id="event-result" class="hint" role="status"></span></div></form></article><article class="panel"><div class="panel-heading"><h2>当前任务</h2><span id="live-current-status" class="badge">空闲</span></div><p id="live-current-text" class="speech-text">等待事件。</p><p id="live-current-detail" class="hint"></p><div class="subsection"><h3>最近播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article></div>
           <div class="live-grid" style="margin-top: 16px;">
             <article class="panel" id="live-game-panel">
               <div class="panel-heading">
-                <h2>🎮 游戏直播联动 (SRS v0.1)</h2>
+                <h2>游戏联动 · 离线模拟</h2>
                 <span id="live-game-name" class="badge">星露谷物语</span>
               </div>
-              <p id="live-game-summary" class="speech-text" style="font-size: 14px;">正在加载游戏状态...</p>
+              <p id="live-game-summary" class="speech-text" style="font-size: 14px;">正在读取模拟状态…</p>
+              <p class="hint">星露谷与植物大战僵尸目前提供离线模拟，实机接入单独验收。</p>
               <p id="live-game-activity" class="hint"></p>
               <div class="actions" style="margin-top: 10px;">
                 <button type="button" class="button primary small" data-game-switch="stardew_valley">切到《星露谷》</button>
@@ -222,15 +186,88 @@
           </div>
           <article class="panel"><div class="panel-heading"><h2>回复队列与记录</h2><button id="refresh-live">刷新</button></div><div class="table-scroll"><table><thead><tr><th>任务 / 时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="live-jobs"></tbody></table></div></article>
           <article class="panel"><div class="panel-heading"><h2>收到的事件</h2><span class="hint">重复、过期与过滤原因保留在记录中</span></div><div class="table-scroll"><table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table></div></article>
+          <article class="panel daily-memory-card" id="daily-memory-card">
+            <div class="panel-heading">
+              <div>
+                <h2>跨渠道每日记忆与社群趣事</h2>
+                <span class="hint">打通直播高光与评论热梗，为直播闲聊、视频回帖与动态提供鲜活谈资</span>
+              </div>
+              <div class="actions">
+                <button type="button" id="extract-daily-memory" class="primary">✨ 提炼今日趣事</button>
+                <button type="button" id="refresh-daily-memory">刷新</button>
+              </div>
+            </div>
+            <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
+            <div id="daily-memory-list" class="daily-memory-list"></div>
+          </article>
+          <article class="panel" id="interactive-rules-card">
+            <div class="panel-heading">
+              <h2>🎁 互动玩法与礼物门槛配置</h2>
+              <span class="hint">自定义点歌、你画我猜与游戏直播的触发规则</span>
+            </div>
+            <form id="interactive-rules-form">
+              <fieldset class="matrix-group">
+                <legend>一、点歌门槛规则</legend>
+                <div class="form-grid">
+                  <label>点歌触发方式
+                    <select id="rule-song-mode">
+                      <option value="free">免费（弹幕输入“点歌 歌名”即可）</option>
+                      <option value="gift_only">仅送礼（必须送出指定礼物/达标电池）</option>
+                    </select>
+                  </label>
+                  <label>最低礼物价值（电池）
+                    <input id="rule-song-coin" type="number" min="0" max="10000" value="0">
+                  </label>
+                  <label>指定礼物名称（逗号分隔，留空则不限礼物类型）
+                    <input id="rule-song-gifts" type="text" placeholder="例如：小心心, 辣条">
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="matrix-group" style="margin-top: 14px;">
+                <legend>二、“你画我猜”互动规则</legend>
+                <div class="form-grid">
+                  <label class="check-field" style="grid-column: 1 / -1;">
+                    <input id="rule-dg-enabled" type="checkbox" checked> 启用直播间“你画我猜”小游戏
+                  </label>
+                  <label>启动触发方式
+                    <select id="rule-dg-mode">
+                      <option value="gift_only">仅送礼触发</option>
+                      <option value="danmaku_or_gift">弹幕指令（#你画我猜）或送礼</option>
+                      <option value="host_only">仅主播/后台手动启动</option>
+                    </select>
+                  </label>
+                  <label>启动最低礼物电池
+                    <input id="rule-dg-coin" type="number" min="0" max="10000" value="10">
+                  </label>
+                  <label>指定触发礼物名称
+                    <input id="rule-dg-gifts" type="text" value="画笔, 小心心, 辣条">
+                  </label>
+                  <label>每轮竞猜时长（秒）
+                    <input id="rule-dg-duration" type="number" min="15" max="300" value="60">
+                  </label>
+                </div>
+              </fieldset>
+
+              <div class="actions" style="margin-top: 14px;">
+                <button type="submit" class="button primary">保存互动与礼物规则</button>
+              </div>
+            </form>
+          </article>
+          <details class="panel"><summary id="overlay-heading">OBS 播放器</summary><p id="overlay-help" class="muted">仅一个播放器页面可播放语音，后打开的页面会进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
         </section>
         <section data-section="characters" hidden>
-          <div class="page-heading">
-            <div>
-              <p class="eyebrow">角色形态分层 · 特化微调模型固有角色 · 通用提示词 OC 编排</p>
-              <h1>角色与 OC 工作台</h1>
-            </div>
+          <div class="page-heading"><div><h1>角色</h1><p class="hint">当前角色来源 · <strong id="persona-current">待读取</strong></p></div></div>
+          <div class="persona-views" role="group" aria-label="角色来源">
+            <button type="button" id="show-persona-model" aria-controls="persona-model-view" aria-pressed="false">模型内建</button>
+            <button type="button" id="show-persona-cards" aria-controls="persona-card-view" aria-pressed="false">角色卡</button>
           </div>
-          <div class="character-layout">
+          <article class="panel narrow" id="persona-model-view" hidden>
+            <div class="panel-heading"><h2>大肥鱼 · 模型内建</h2><span id="persona-model-state" class="badge">待确认</span></div>
+            <p id="persona-model-detail" class="hint"></p>
+            <div class="actions"><button type="button" id="persona-mode-action" class="primary" hidden>切回运营模式</button><a href="#settings">查看推理设置</a></div>
+          </article>
+          <div class="character-layout" id="persona-card-view" hidden>
             <article class="panel">
               <div class="panel-heading">
                 <h2>角色列表 (OCs)</h2>
@@ -247,7 +284,6 @@
               <div class="panel-heading">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <h2 id="editor-title" style="margin:0;">选择角色</h2>
-                  <span id="oc-type-badge" class="oc-badge fine-tuned">★ 特化微调固有角色</span>
                 </div>
                 <button id="activate-character" class="primary" disabled>激活此角色版本</button>
               </div>
@@ -261,36 +297,14 @@
 
               <!-- OC Tabs Navigation -->
               <div class="oc-tab-nav">
-                <button type="button" class="oc-tab-btn active" data-tab="tab-oc-model">模型与提示词模式</button>
-                <button type="button" class="oc-tab-btn" data-tab="tab-oc-persona">核心人设与性格</button>
+                <button type="button" class="oc-tab-btn active" data-tab="tab-oc-persona">核心人设与性格</button>
                 <button type="button" class="oc-tab-btn" data-tab="tab-oc-style">说话风格与示范</button>
                 <button type="button" class="oc-tab-btn" data-tab="tab-oc-assets">音色与形象</button>
                 <button type="button" class="oc-tab-btn" data-tab="tab-oc-json">高级 JSON 源码</button>
               </div>
 
-              <!-- Tab 1: Model & Prompt Mode -->
-              <div class="oc-tab-content active" id="tab-oc-model">
-                <div class="form-grid">
-                  <label>角色来源
-                    <select id="oc-persona-type">
-                      <option value="fine_tuned">模型内建角色</option>
-                      <option value="prompt_oc">角色卡</option>
-                    </select>
-                  </label>
-                  <label>绑定模型
-                    <input id="oc-fine-tuned-model" placeholder="例如：MiniCPM-V-4.7-1B (大肥鱼专属微调)">
-                  </label>
-                </div>
-                <div id="oc-compact-prompt-box" style="margin-top:12px;">
-                  <label>简短身份提示
-                    <textarea id="oc-compact-prompt" class="code-editor" rows="3" placeholder="例如：你叫大肥鱼，是一只机灵傲娇、偏爱热白饭与海底小屋的深海鲸鱼娘主播。请用鲜活自然的第一人称短句与直播间观众互动。"></textarea>
-                  </label>
-                  <p class="hint">填写一两句身份提示。任务、来源和历史仍按当前场景提供。</p>
-                </div>
-              </div>
-
               <!-- Tab 2: Persona & Lore -->
-              <div class="oc-tab-content" id="tab-oc-persona">
+              <div class="oc-tab-content active" id="tab-oc-persona">
                 <label>核心身份与世界观 (Identity)
                   <textarea id="oc-identity" class="code-editor" rows="4"></textarea>
                 </label>
@@ -348,17 +362,42 @@
                 <button id="reset-character" type="button" disabled>放弃未保存修改</button>
                 <span id="character-dirty" class="hint"></span>
               </div>
-              <details class="subsection" style="margin-top:10px;"><summary>预览完整人格结构</summary><pre id="character-preview" class="code-small"></pre></details>
             </article>
           </div>
         </section>
         <section data-section="voices" hidden>
-          <div class="page-heading"><div><p class="eyebrow">声音 Provider 与试听</p><h1>语音</h1></div><a href="#settings" class="button">配置语音 API</a></div><article class="panel"><div class="panel-heading"><h2>音色资产</h2><span class="hint">来源及许可依据配置显示</span></div><div class="table-scroll"><table><thead><tr><th>音色</th><th>Provider / 权重版本</th><th>参考素材</th><th>许可状态</th></tr></thead><tbody id="voices"></tbody></table></div></article><article class="panel narrow"><h2>短句试听</h2><form id="preview-form"><label>音色<select id="preview-voice" required></select></label><label>试听文字<textarea id="preview-text" rows="3" maxlength="120" required>你好呀，我是大肥鱼。今天也想和你说说话。</textarea></label><div class="actions"><button id="preview-submit" type="submit" class="primary">生成试听</button><span id="preview-state" class="hint" role="status"></span></div><audio id="preview-audio" controls preload="none" hidden></audio></form><p id="voice-preview-help" class="hint">预录和已配置的外部语音 API 可试听；本地 GPT-SoVITS 后续开放。试听不会启动直播，也不会替换角色音色。</p></article>
-          <article class="panel narrow" id="voice-cache-card"><div class="panel-heading"><h2>语音生成缓存</h2><span class="hint">生成音频与点歌一样有上限约束，支持 LRU 回收</span></div><p id="voice-cache-stats" class="hint">读取中…</p><div class="actions"><button type="button" id="voice-cache-clear">清理语音缓存</button><a href="#settings" class="button quiet">在设置中调整上限</a></div><p id="voice-cache-state" class="hint" role="status"></p></article>
+          <div class="page-heading"><h1>语音</h1></div>
+          <article class="panel narrow">
+            <div class="panel-heading"><h2>直播语音</h2><span id="tts-source-state" class="badge">读取中</span></div>
+            <form id="tts-form">
+              <label>语音来源<select id="tts-kind">
+                <option value="gpt_sovits">本地 Jetson</option>
+                <option value="openai_compatible">兼容 API</option>
+                <option value="prerecorded" hidden>预录配置</option>
+              </select></label>
+              <fieldset id="tts-api-fields" class="provider-fields" hidden disabled>
+                <label>服务地址<input id="tts-base-url" type="url" placeholder="https://服务地址/v1" required></label>
+                <div class="form-grid">
+                  <label>模型<input id="tts-model" required></label>
+                  <label>Voice ID<input id="tts-voice" required></label>
+                </div>
+                <label>API 密钥（可选）<input id="tts-key" type="password" autocomplete="new-password" spellcheck="false"></label>
+                <p id="tts-key-state" class="hint"></p>
+                <label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存的语音密钥</label>
+              </fieldset>
+              <p id="tts-source-help" class="hint"></p>
+              <div class="actions"><button class="primary" type="submit">保存语音来源</button><span id="tts-save-state" class="hint" role="status"></span></div>
+            </form>
+          </article>
+          <article class="panel narrow"><h2>短句试听</h2><form id="preview-form"><label>音色<select id="preview-voice" required></select></label><label>试听文字<textarea id="preview-text" rows="3" maxlength="120" required>你好呀，我是大肥鱼。今天也想和你说说话。</textarea></label><div class="actions"><button id="preview-submit" type="submit" class="primary">生成试听</button><span id="preview-state" class="hint" role="status"></span></div><audio id="preview-audio" controls preload="none" hidden></audio></form><p id="voice-preview-help" class="hint">请选择音色后试听。</p></article>
+          <details class="panel narrow"><summary>音色与许可</summary>
+            <div class="table-scroll"><table><thead><tr><th>音色</th><th>许可</th></tr></thead><tbody id="voices"></tbody></table></div>
+          </details>
         </section>
         <section data-section="assets" hidden><div class="page-heading"><div><p class="eyebrow">角色表情与预录素材</p><h1>素材与表情包</h1></div></div><div id="meme-gallery"></div><h2>角色与预录素材</h2><div id="asset-grid" class="asset-grid"></div></section>
-        <section data-section="settings" hidden>
-          <div class="page-heading"><div><p class="eyebrow">账号、模型、API 与数据留存</p><h1>设置</h1></div></div>
+        <section data-section="accounts" hidden>
+          <div class="page-heading"><h1>账号与权限</h1><button id="logout" type="button">退出工作台</button></div>
+          <div id="global-bilibili-account" class="global-bilibili-account"></div>
           <div id="account-settings"></div>
           <article class="panel" id="operations-permission-matrix">
             <div class="panel-heading">
@@ -491,6 +530,9 @@
               <span id="matrix-save-feedback" class="hint" role="status"></span>
             </div>
           </article><article class="panel"><div class="panel-heading"><h2>表情包</h2><a href="#assets">管理表情包图库 →</a></div><p class="hint">按角色管理可用于私信与图文动态的图片、来源和许可；分别沿用对应工作台的审核与额度。</p></article>
+        </section>
+        <section data-section="settings" hidden>
+          <div class="page-heading"><h1>推理</h1></div>
           <section class="panel" id="inference-node-panel"></section>
           <article class="panel" id="providers-panel">
             <div class="panel-heading">
@@ -571,34 +613,6 @@
                   <p id="llm-probe-help" class="hint" hidden>生成、摘要或重建进行准确 token 计数时，兼容 API 可能额外发送一次 1-token 用量探针并计费；相同输入会缓存计数。</p>
                 </fieldset>
 
-                <fieldset class="provider-group">
-                  <legend>语音来源与 TTS 配置</legend>
-                  <label>语音来源
-                    <select id="tts-kind">
-                      <option value="gpt_sovits">本地 / 远程 GPT-SoVITS / Genie ONNX (推荐)</option>
-                      <option value="openai_compatible">外部 OpenAI 兼容语音 API</option>
-                      <option value="prerecorded">预录音频原型</option>
-                    </select>
-                  </label>
-                  <div id="tts-base-url-container">
-                    <label>语音服务 Base URL
-                      <input id="tts-base-url" type="url" placeholder="http://127.0.0.1:9012/tts 或 http://<jetson-ip>:9012/tts" autocomplete="off">
-                    </label>
-                  </div>
-                  <div id="tts-external-api-fields" hidden>
-                    <div class="form-grid">
-                      <label>模型 ID<input id="tts-model" placeholder="填写语音服务的实际模型 ID" autocomplete="off"></label>
-                      <label>Voice ID<input id="tts-voice" placeholder="填写服务支持的 Voice ID" autocomplete="off"></label>
-                    </div>
-                  </div>
-                  <div class="provider-credential" id="tts-credential-fields">
-                    <label>API Key（外部 API 可选，留空保留已保存密钥）<input id="tts-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
-                    <span id="tts-key-state" class="hint">密钥状态待读取</span>
-                    <label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存密钥</label>
-                  </div>
-                  <p id="tts-settings-help" class="hint">本地/远程 Broker 默认地址通常为 http://127.0.0.1:9012/tts 或 http://&lt;jetson-ip&gt;:9012/tts；配置外部 API 可在语音页试听。</p>
-                  <p id="tts-local-engine" class="hint" role="status">本地引擎：正在读取已保存配置。</p>
-                </fieldset>
               </fieldset>
 
               <div class="actions">
@@ -611,71 +625,6 @@
             </form>
             </details>
           </article>
-          <article class="panel"><div class="panel-heading"><h2>上下文管理</h2></div><details><summary>容量与压缩诊断</summary><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用。</p></details><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
-          <article class="panel" id="retention-panel"><div class="panel-heading"><h2>对话数据留存</h2><span class="hint">按服务已保存策略自动执行</span></div>
-            <form id="retention-form"><div class="retention-policy"><label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled></label><label class="check-field"><input id="retention-never" type="checkbox" disabled>永不自动清理</label><button id="retention-save" type="submit" disabled>保存留存策略</button></div><p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p></form>
-            <dl id="retention-status" class="description-list"></dl><pre id="retention-last-result" class="code-small" hidden></pre>
-            <div class="subsection"><h3>手动清理</h3><p class="hint">清理会永久删除到期的对话上下文、来源检索索引与直播记录，范围以预览为准。保留原始评论／私信、回复草稿、发送回执、角色、用户与关系。此操作不会切换资源模式。</p><div class="actions"><label class="inline-field">截至日期（可选）<input id="retention-before" type="date" aria-describedby="retention-date-help" disabled></label><button id="retention-preview" type="button" disabled>预览清理范围</button></div><p id="retention-date-help" class="hint">留空时按已保存策略计算；永不自动清理时需指定日期。所选日期按 UTC 整日计入，提交次日 00:00 UTC 作为不包含的截止边界。</p>
-              <div id="retention-preview-panel" class="retention-preview" hidden><p id="retention-preview-cutoff" class="hint"></p><dl id="retention-preview-counts" class="description-list"></dl><details><summary>完整预览结果</summary><pre id="retention-preview-detail" class="code-small"></pre></details><label class="check-field"><input id="retention-confirm" type="checkbox" disabled>我已核对以上范围与数量，确认永久清理这些记录</label><button id="retention-cleanup" class="danger" type="button" disabled>确认清理预览范围</button></div><p id="retention-cleanup-state" class="hint" role="status">请先预览待清理范围，再明确确认。</p>
-            </div>
-          </article>
-          <section class="panel" id="cache-panel"></section>
-          <article class="panel" id="interactive-rules-card">
-            <div class="panel-heading">
-              <h2>🎁 互动玩法与礼物门槛配置</h2>
-              <span class="hint">自定义点歌、你画我猜与游戏直播的触发规则</span>
-            </div>
-            <form id="interactive-rules-form">
-              <fieldset class="matrix-group">
-                <legend>一、点歌门槛规则</legend>
-                <div class="form-grid">
-                  <label>点歌触发方式
-                    <select id="rule-song-mode">
-                      <option value="free">免费（弹幕输入“点歌 歌名”即可）</option>
-                      <option value="gift_only">仅送礼（必须送出指定礼物/达标电池）</option>
-                    </select>
-                  </label>
-                  <label>最低礼物价值（电池）
-                    <input id="rule-song-coin" type="number" min="0" max="10000" value="0">
-                  </label>
-                  <label>指定礼物名称（逗号分隔，留空则不限礼物类型）
-                    <input id="rule-song-gifts" type="text" placeholder="例如：小心心, 辣条">
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset class="matrix-group" style="margin-top: 14px;">
-                <legend>二、“你画我猜”互动规则</legend>
-                <div class="form-grid">
-                  <label class="check-field" style="grid-column: 1 / -1;">
-                    <input id="rule-dg-enabled" type="checkbox" checked> 启用直播间“你画我猜”小游戏
-                  </label>
-                  <label>启动触发方式
-                    <select id="rule-dg-mode">
-                      <option value="gift_only">仅送礼触发</option>
-                      <option value="danmaku_or_gift">弹幕指令（#你画我猜）或送礼</option>
-                      <option value="host_only">仅主播/后台手动启动</option>
-                    </select>
-                  </label>
-                  <label>启动最低礼物电池
-                    <input id="rule-dg-coin" type="number" min="0" max="10000" value="10">
-                  </label>
-                  <label>指定触发礼物名称
-                    <input id="rule-dg-gifts" type="text" value="画笔, 小心心, 辣条">
-                  </label>
-                  <label>每轮竞猜时长（秒）
-                    <input id="rule-dg-duration" type="number" min="15" max="300" value="60">
-                  </label>
-                </div>
-              </fieldset>
-
-              <div class="actions" style="margin-top: 14px;">
-                <button type="submit" class="button primary">保存互动与礼物规则</button>
-              </div>
-            </form>
-          </article>
-          <details class="panel"><summary id="overlay-heading">OBS 播放器配置（直播后续）</summary><p id="overlay-help" class="muted">直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
-          <details class="panel"><summary>当前已保存配置（脱敏，只读）</summary><p class="hint">API Key 不会回显；上方表单的未保存修改不会出现在此处。</p><pre id="settings-json" class="code-small"></pre></details>
         </section>
       </main>
       <footer>AI 生成内容 · 原型素材的来源与使用约束见「语音」和「素材」</footer>
@@ -685,7 +634,7 @@
   <script src="/static/modules/pagination.js" defer></script>
   <script src="/static/modules/operations-workbench.js?v=20261105.26" defer></script>
   <script src="/static/cache-panel.js" defer></script>
-  <script src="/static/inference-node.js?v=20261105.26" defer></script>
+  <script src="/static/inference-node.js?v=20261105.27" defer></script>
   <script src="/static/memes.js" defer></script>
   <script src="/static/continuation.js" defer></script>
   <script src="/static/messages.js" defer></script>
@@ -693,6 +642,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261105.26"></script>
+  <script type="module" src="/static/app.js?v=20261105.27"></script>
 </body>
 </html>

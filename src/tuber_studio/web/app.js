@@ -9,21 +9,19 @@ import {
   checkDafeiyuModelStatus as checkDafeiyuStatus,
   renderProviderForm,
   applySettings,
-  loadSettings,
-  renderVoicePreview,
-  voiceAvailability,
   checkProviderConnections,
   publicSettings,
-} from "./modules/providers.js?v=20261105.26";
+} from "./modules/providers.js?v=20261105.27";
+import { initVoiceSettings, renderVoicePreview, syncVoiceSettings, voiceAvailability } from "./modules/voices.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js?v=20261105.26";
+} from "./modules/operations.js?v=20261105.27";
 import {
-  renderCharacterImage,
+  renderPersona,
   initCharacterStudioUI,
-} from "./modules/character-studio.js?v=20261105.26";
+} from "./modules/character-studio.js?v=20261105.27";
 import {
   selectedThread,
   initCommentsModule,
@@ -38,10 +36,9 @@ import {
 import {
   renderLiveFeatures,
   renderControls,
-  renderInference,
   renderServiceStatusCapsule,
   initLiveModule,
-} from "./modules/live.js?v=20261105.26";
+} from "./modules/live.js?v=20261105.27";
 
 const api = (path, options = {}) => baseApi(path, options, showLogin);
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
@@ -68,6 +65,7 @@ const model = {
   threadContextPending: null,
   retention: null, retentionPreview: null, retentionDirty: false, retentionPending: null,
   providersDirty: false, providersSaving: false,
+  voiceSettingsDirty: false, voiceSettingsSaving: false,
   dynamicPolicy: null, dynamicPolicyDirty: false, dynamicSaving: false, dynamicEvaluating: false,
   dynamicPosts: [], dynamicDecisions: [], dynamicMemories: [], dynamicPostId: null, dynamicPostDirty: false, dynamicDecisionId: null,
   dynamicPostPending: false, dynamicMemorySaving: new Set(),
@@ -91,7 +89,15 @@ const commentContinuation = new OperationContinuationView($("comment-continuatio
 const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
 const dynamicDecisionContinuation = new OperationContinuationView($("dynamic-decision-continuation"), api, notice, refreshDynamics);
 const cachePanel = new CachePanel($("cache-panel"), api, notice);
-const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api, notice);
+const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api, async () => {
+  model.modeResult = null;
+  try {
+    await refreshSettings();
+    renderStatus(await api("/api/status"));
+  } catch (error) {
+    notice(`节点已配对，状态刷新失败：${error.message}`, true);
+  }
+});
 setInterval(() => { if (model.authenticated) cachePanel.refresh(); }, 5000);
 setInterval(() => { if (model.authenticated) inferenceNodePanel.refresh(); }, 10000);
 
@@ -234,13 +240,24 @@ function showLogin() {
   messagesPanel.closeImagePicker();
 }
 
+function applyWorkbenchSettings(settings) {
+  applySettings(settings, model, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
+  syncVoiceSettings(model);
+}
+
+async function refreshSettings() {
+  applyWorkbenchSettings(await api("/api/settings"));
+}
+
 async function enterWorkspace() {
-  await loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus });
+  model.voiceSettingsDirty = false;
+  await refreshSettings();
   await Promise.all([
     loadVoices(),
     loadAssets(),
     characterStudio?.loadCharacters(),
-    accountPanel.activate()
+    accountPanel.activate(),
+    api("/api/status").then(renderStatus)
   ]);
   model.authenticated = true;
   $("login").hidden = true;
@@ -256,7 +273,7 @@ function connectAdmin() {
   model.socket.onmessage = async event => {
     const message = JSON.parse(event.data);
     if (message.type === "job_updated" || message.type === "event_queued") {
-      if (["overview", "live"].includes(model.page)) await refreshLive();
+      if (model.page === "live") await refreshLive();
     }
     if (message.type === "context_updated" && message.context) renderContext(message.context);
     if (message.type === "status") renderStatus(message.data);
@@ -265,11 +282,16 @@ function connectAdmin() {
 
 function renderStatus(status) {
   model.status = status;
-  renderServiceStatusCapsule(status, node);
-  renderCharacterImage(model);
+  renderServiceStatusCapsule(status, model.settings);
   renderControls(model);
+  renderPersona(model);
+  setBadge($("live-state"), status.state);
+  const job = status.current_job;
+  setBadge($("live-current-status"), job?.status || "ready");
+  $("live-current-text").textContent = job?.text || (job ? "正在处理当前事件…" : "等待事件。");
+  $("live-current-detail").textContent = job?.error || status.error || "";
+  $("last-played").textContent = status.last_played?.text || "暂无已确认播放记录。";
   if (status.context) renderContext(status.context);
-  if (status.inference) renderInference(status.inference, model, describe);
   renderVoicePreview(model);
   if ($("character-version")) {
     $("character-version").title = `当前运行角色：${status.character?.name || "—"} v${status.character?.version ?? "—"}`;
@@ -362,7 +384,6 @@ async function loadAssets() {
     card.append(preview, meta);
     grid.append(card);
   });
-  renderCharacterImage(model);
 }
 
 async function loadVoices() {
@@ -374,17 +395,15 @@ async function loadVoices() {
   tbody?.replaceChildren();
   select.replaceChildren();
   if (!model.voices.length) {
-    if (tbody) empty(tbody, 4, "暂无可用音色。配置声音 Provider 后刷新。");
+    if (tbody) empty(tbody, 2, "暂无可用音色。");
     renderVoicePreview(model);
     return;
   }
   model.voices.forEach(voice => {
     if (tbody) {
       const row = node("tr");
-      cell(row, voice.name || voice.id, voice.id);
-      cell(row, voice.provider || voice.kind || "—", voice.weights_version || voice.version || "");
-      cell(row, voice.reference_asset || voice.reference_audio || voice.params?.ref_audio_path || "—");
-      cell(row, voice.license_status || "待确认", voice.source || voice.source_url || "");
+      cell(row, voice.name || voice.id);
+      cell(row, voice.license_status || "待确认");
       tbody.append(row);
     }
     const option = node("option", voice.name || voice.id);
@@ -392,7 +411,7 @@ async function loadVoices() {
     select.append(option);
   });
   if (model.voices.some(voice => voice.id === previous)) select.value = previous;
-  renderVoicePreview(model);
+  renderVoicePreview(model, !previous);
 }
 
 function safeMessage(message) {
@@ -430,28 +449,30 @@ async function compactContext(scope, videoId, threadId) {
 
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
-  const mapped = requested === "automation" ? "comments" : requested;
-  model.page = ["comments", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(mapped) ? mapped : "comments";
+  const anchors = { "account-settings": "accounts", "live-game-panel": "live", "interactive-rules-card": "live" };
+  const page = Object.hasOwn(anchors, requested) ? anchors[requested] : requested === "automation" ? "comments" : requested;
+  const pages = {
+    comments: ["operations", "评论"], messages: ["operations", "私信"], dynamics: ["operations", "动态"],
+    live: ["live", "直播"],
+    characters: ["character", "角色"], voices: ["character", "语音"], assets: ["character", "素材"],
+    settings: ["settings", "推理"], accounts: ["settings", "账号与权限"], overview: ["settings", "维护"],
+  };
+  model.page = Object.hasOwn(pages, page) ? page : "comments";
+  const [workspace, title] = pages[model.page];
   document.querySelectorAll("[data-section]").forEach(section => {
     section.hidden = section.dataset.section !== model.page;
   });
-  document.querySelectorAll("[data-page]").forEach(link => {
-    const active = link.dataset.page === model.page || (link.dataset.page === "comments" && mapped === "comments");
+  document.querySelectorAll("[data-workspace-tabs]").forEach(tabs => {
+    tabs.hidden = tabs.dataset.workspaceTabs !== workspace;
+  });
+  document.querySelectorAll("[data-page], [data-workspace]").forEach(link => {
+    const active = link.dataset.page === model.page || link.dataset.workspace === workspace;
     link.classList.toggle("selected", active);
-    if (active) link.setAttribute("aria-current", "page");
+    if (active) link.setAttribute("aria-current", link.dataset.workspace ? "location" : "page");
     else link.removeAttribute("aria-current");
   });
-  document.title = `${({
-    comments: "社区运营工作台",
-    messages: "私信工作台",
-    dynamics: "动态运营",
-    overview: "总览",
-    live: "直播控制",
-    characters: "角色",
-    voices: "语音",
-    assets: "素材与表情包",
-    settings: "设置"
-  })[model.page]} · Tuber Studio`;
+  document.title = `${title} · Tuber Studio`;
+  if (Object.hasOwn(anchors, requested)) $(requested).scrollIntoView();
 
   if (!model.authenticated) return;
   try {
@@ -463,18 +484,19 @@ async function changePage() {
       await refreshDynamics();
     } else if (model.page === "assets") {
       await memeGallery.refresh();
-    } else if (["overview", "live"].includes(model.page)) {
+    } else if (model.page === "live") {
       await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]);
     } else if (model.page === "voices") {
       await updateVoiceCacheUI();
+    } else if (model.page === "characters") {
+      renderPersona(model);
+    } else if (model.page === "overview") {
+      await Promise.allSettled([maintenanceModule?.loadRetention(), cachePanel.refresh(), updateVoiceCacheUI()]);
+    } else if (model.page === "accounts") {
+      await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule()]);
     } else if (model.page === "settings") {
       await Promise.all([
-        maintenanceModule?.loadRetention(),
-        cachePanel.refresh(),
-        accountPanel.settingsOpened(),
         inferenceNodePanel.refresh(),
-        updatePermissionCapsule(),
-        interactiveGamesUI.refresh(),
         loadLocalModelsDropdown(api),
         checkDafeiyuModelStatus()
       ]);
@@ -501,7 +523,7 @@ async function poll() {
   model.polling = true;
   try {
     renderStatus(await api("/api/status"));
-    if (["overview", "live"].includes(model.page)) await refreshLive();
+    if (model.page === "live") await refreshLive();
     if (model.page === "comments") await refreshComments();
   } catch (_) {
     // Non-blocking background poll
@@ -587,7 +609,7 @@ liveModule = initLiveModule(model, {
   empty,
   renderStatusFn: renderStatus,
   renderVoicePreviewFn: () => renderVoicePreview(model),
-  loadSettingsFn: () => loadSettings(model, api, { renderLiveFeatures, renderVoicePreviewFn: () => renderVoicePreview(model), renderStatusFn: renderStatus }),
+  loadSettingsFn: refreshSettings,
 });
 
 initOperationsModule(api, accountPanel, automationPanel);
@@ -670,6 +692,7 @@ $("clone-form")?.addEventListener("submit", event => {
 });
 
 $("preview-voice")?.addEventListener("change", () => renderVoicePreview(model));
+initVoiceSettings(model, api, busy, applyWorkbenchSettings);
 $("preview-form")?.addEventListener("submit", event => {
   event.preventDefault();
   busy(event.submitter, async () => {
@@ -759,7 +782,7 @@ if ($("refresh-operations")) {
 
 window.addEventListener("hashchange", changePage);
 window.addEventListener("beforeunload", event => {
-  if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) {
+  if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.voiceSettingsDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }

@@ -10,7 +10,7 @@ class BilibiliAccountUI {
     header.innerHTML = `<div class="bilibili-account" aria-label="B站账号">
       <span class="account-avatar"><span data-avatar-placeholder aria-hidden="true">B站</span><img data-avatar alt="" referrerpolicy="no-referrer" hidden></span>
       <div class="account-identity"><div class="account-name-line"><strong data-name>账号状态待读取</strong><span data-status class="account-state" role="status">待读取</span><small data-profile-note hidden>上次核验资料</small></div><div class="account-profile"><span data-uid>UID —</span><span data-coins>硬币 —</span><span data-fans>粉丝 —</span></div><span data-header-error class="account-inline-error" hidden></span></div>
-      <div class="account-header-actions"><button type="button" data-refresh>刷新账号</button><a href="${settings ? "#settings" : "/#settings"}">账号设置</a></div>
+      <div class="account-header-actions"><button type="button" data-refresh>刷新账号</button><a href="${settings ? "#account-settings" : "/#accounts"}">账号设置</a></div>
     </div>`;
     this.h = selector => header.querySelector(selector);
     this.h("[data-avatar]").onload = () => { if (this.active && this.avatarKey) { this.h("[data-avatar]").hidden = false; this.h("[data-avatar-placeholder]").hidden = true; } };

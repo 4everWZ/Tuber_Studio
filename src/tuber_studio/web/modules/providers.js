@@ -67,51 +67,6 @@ export async function checkDafeiyuModelStatus(api) {
   }
 }
 
-export function renderTTSFields(model) {
-  const ttsKind = $("tts-kind") ? $("tts-kind").value : "gpt_sovits";
-  const isPrerecorded = ttsKind === "prerecorded";
-  const isGptSovits = ttsKind === "gpt_sovits";
-  const isOpenAi = ttsKind === "openai_compatible";
-
-  const urlContainer = $("tts-base-url-container");
-  const extFields = $("tts-external-api-fields");
-  const credFields = $("tts-credential-fields");
-  const baseUrlInput = $("tts-base-url");
-
-  if (urlContainer) urlContainer.hidden = isPrerecorded;
-  if (extFields) extFields.hidden = !isOpenAi;
-  if (credFields) credFields.hidden = isPrerecorded;
-
-  if (baseUrlInput) {
-    baseUrlInput.disabled = isPrerecorded || Boolean(model.providersSaving);
-    baseUrlInput.required = !isPrerecorded;
-    if (isGptSovits) {
-      baseUrlInput.placeholder = "http://127.0.0.1:9012/tts 或 http://<jetson-ip>:9012/tts";
-    } else if (isOpenAi) {
-      baseUrlInput.placeholder = "服务提供的 Base URL（通常包含 /v1）";
-    }
-  }
-
-  const modelInput = $("tts-model");
-  const voiceInput = $("tts-voice");
-  if (modelInput) {
-    modelInput.required = isOpenAi;
-    modelInput.disabled = !isOpenAi || Boolean(model.providersSaving);
-  }
-  if (voiceInput) {
-    voiceInput.required = isOpenAi;
-    voiceInput.disabled = !isOpenAi || Boolean(model.providersSaving);
-  }
-
-  const keyInput = $("tts-key");
-  if (keyInput) keyInput.disabled = isPrerecorded || Boolean(model.providersSaving);
-
-  const ttsKeyStatus = $("tts-key-state");
-  if (ttsKeyStatus) {
-    ttsKeyStatus.textContent = model.settings?.provider_credentials?.tts ? "已有保存密钥（不回显）" : "未保存密钥";
-  }
-}
-
 export function readProviderPayload() {
   const integer = (id, title) => {
     const value = Number($(id).value);
@@ -148,12 +103,6 @@ export function readProviderPayload() {
       native_context_tokens: native,
       operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536),
     },
-    tts: {
-      kind: $("tts-kind")?.value || "gpt_sovits",
-      base_url: ($("tts-base-url")?.value || "").trim(),
-      model: ($("tts-model")?.value || "").trim(),
-      voice: ($("tts-voice")?.value || "").trim(),
-    },
     vision: {
       kind: isLlmApi ? "openai_compatible" : "disabled",
       location: "local",
@@ -164,16 +113,11 @@ export function readProviderPayload() {
     clear_credentials: [],
   };
 
-  ["llm", "tts"].forEach(kind => {
-    const key = $(`${kind}-key`);
-    const clearEl = $(`${kind}-clear-key`);
-    const clear = clearEl ? clearEl.checked : false;
-    if (key && !key.disabled && key.value && clear) {
-      throw new Error(`${kind.toUpperCase()} 请分别选择输入新密钥或清除已有密钥，不能同时操作。`);
-    }
-    if (clear) payload.clear_credentials.push(kind);
-    else if (key && !key.disabled && key.value) payload.credentials[kind] = key.value;
-  });
+  const key = $("llm-key");
+  const clear = $("llm-clear-key").checked;
+  if (!key.disabled && key.value && clear) throw new Error("请在填写新密钥和清除旧密钥之间选一项。");
+  if (clear) payload.clear_credentials.push("llm");
+  else if (!key.disabled && key.value) payload.credentials.llm = key.value;
 
   return payload;
 }
@@ -266,8 +210,6 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
     const btn = $("btn-ping-providers");
     const llmUrl = $("llm-base-url").value.trim();
     const llmKey = $("llm-key").value.trim();
-    const ttsUrl = $("tts-base-url").value.trim();
-    const ttsKey = $("tts-key").value.trim();
 
     const output = $("ping-provider-result");
     output.textContent = "正在检查…";
@@ -275,12 +217,9 @@ export function initInferenceProvidersUI(model, api, notice, busy, safeMessage, 
       try {
         const result = await api("/api/providers/ping", {
           method: "POST",
-          body: { llm_url: llmUrl, llm_key: llmKey, tts_url: ttsUrl, tts_key: ttsKey },
+          body: { llm_url: llmUrl, llm_key: llmKey },
         });
-        output.textContent = [
-          ["文本", result.llm],
-          ["语音", result.tts],
-        ].map(([name, item]) => `${name}：${item.detail}${item.latency_ms == null ? "" : `（${item.latency_ms} ms）`}`).join(" · ");
+        output.textContent = result.llm.detail;
       } catch (error) {
         output.textContent = safeMessage(error.message);
       }
@@ -302,7 +241,7 @@ export function publicSettings(value, key = "") {
 }
 
 export function clearProviderSecrets() {
-  ["llm", "tts"].forEach(kind => {
+  ["llm"].forEach(kind => {
     const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
     if (el) el.value = "";
     if (clear) clear.checked = false;
@@ -310,7 +249,7 @@ export function clearProviderSecrets() {
 }
 
 export function providerFormFromSettings(settings, model) {
-  const llm = settings.llm || {}, tts = settings.tts || {};
+  const llm = settings.llm || {};
   const fields = {
     "llm-kind": llm.kind || "llama_cpp",
     "llm-base-url": llm.base_url || "",
@@ -318,10 +257,6 @@ export function providerFormFromSettings(settings, model) {
     "llm-context-tokens": llm.context_tokens ?? 131072,
     "llm-native-tokens": llm.native_context_tokens ?? model?.status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
-    "tts-kind": tts.kind || "gpt_sovits",
-    "tts-base-url": tts.base_url || "",
-    "tts-model": tts.model || "",
-    "tts-voice": tts.voice || "",
   };
   Object.entries(fields).forEach(([id, value]) => {
     const el = $(id);
@@ -362,49 +297,12 @@ export function renderProviderForm(model, renderLiveFeatures) {
       "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
       "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
   }
-  renderTTSFields(model);
   if (typeof renderLiveFeatures === "function") renderLiveFeatures(model);
-}
-
-export function voiceAvailability(voice, model) {
-  const provider = voice?.provider || voice?.kind;
-  if (provider === "gpt_sovits") {
-    const tts = model?.settings?.tts;
-    if (tts?.kind !== "gpt_sovits") return "当前语音来源未选择 GPT-SoVITS / Genie";
-    if (!tts?.base_url) return "请先配置语音服务 Base URL";
-    return "";
-  }
-  if (provider === "openai_compatible" && (model?.settings?.tts?.kind !== "openai_compatible" || !model?.settings?.tts?.model || !model?.settings?.tts?.voice)) {
-    return "请先配置外部语音 API 的模型和 Voice ID";
-  }
-  if (!["gpt_sovits", "openai_compatible", "prerecorded"].includes(provider)) return "此语音 Provider 尚未准入";
-  return "";
-}
-
-export function renderVoicePreview(model, localEngineLabel = "GPT-SoVITS") {
-  const select = $("preview-voice");
-  if (!select) return;
-  [...select.options].forEach(option => {
-    const voice = model?.voices?.find(item => item.id === option.value);
-    const reason = voiceAvailability(voice, model);
-    option.disabled = !!reason;
-    option.textContent = `${voice?.name || option.value}${reason ? "（暂不可用）" : ""}`;
-  });
-  const selected = model?.voices?.find(voice => voice.id === select.value);
-  const reason = selected ? voiceAvailability(selected, model) : "暂无可用音色";
-  const button = $("preview-submit");
-  if (button && button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
-  if ($("voice-preview-help")) {
-    $("voice-preview-help").textContent = reason || ((selected?.provider || selected?.kind) === "gpt_sovits" ?
-      `本地引擎：${localEngineLabel}，仅使用服务选定音色。点击生成后再播放；不会启动直播或切换资源模式。` :
-      "预录和已配置的外部语音 API 可独立试听；不会启动直播、切换资源模式或替换角色音色。");
-  }
 }
 
 export function applySettings(settings, model, { renderLiveFeatures, renderVoicePreviewFn, renderStatusFn } = {}) {
   model.settings = { ...model.settings, ...settings };
   settings = model.settings;
-  if ($("settings-json")) $("settings-json").textContent = JSON.stringify(publicSettings(settings), null, 2);
   if (!model.providersDirty) providerFormFromSettings(settings, model);
   renderProviderForm(model, renderLiveFeatures);
   if (renderVoicePreviewFn) renderVoicePreviewFn();
@@ -413,10 +311,6 @@ export function applySettings(settings, model, { renderLiveFeatures, renderVoice
   try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
   if ($("overlay-url")) $("overlay-url").value = url;
   if ($("open-overlay")) $("open-overlay").href = url;
-}
-
-export async function loadSettings(model, api, deps = {}) {
-  applySettings(await api("/api/settings"), model, deps);
 }
 
 export async function checkProviderConnections(output, api) {

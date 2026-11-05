@@ -7,6 +7,8 @@ def uses_built_in_persona(settings):
     """Resolve the role source for the configured provider and model."""
     settings = settings or {}
     llm = settings.get("llm", {})
+    if llm.get("kind") == "openai_compatible":
+        return False
     model = llm.get("model", "").strip().lower()
     broker = settings.get("inference_broker", {})
     base = broker.get("base_url", "").rstrip("/")

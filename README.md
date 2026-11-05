@@ -22,9 +22,11 @@ uv sync --python 3.12
 uv run python -m tuber_studio --port 8020
 ```
 
-Open [the local workbench](http://127.0.0.1:8020) and sign in with the token in `runtime/admin-token`. In **Inference Services and Settings**, pair a Jetson or open the custom service settings to configure another model endpoint. For an offline tour, choose demo text and prerecorded audio.
+Open [the local workbench](http://127.0.0.1:8020) and sign in with the token in `runtime/admin-token`. Use **Settings → Inference** to pair a Jetson or configure another model endpoint. The workbench has four areas: Operations, Live, Character and Settings. The mode switch at the top controls inference resources.
 
-For Bilibili operations, configure and verify the platform account in Settings. Start with a known video or an imported comment set. Generate a draft, review it in the workbench and authorize publication when ready. See the [operations guide](docs/guides/operations.md) for policies, read-only preview and emergency stop.
+Under **Character → Voice**, local Jetson speech is the default. An OpenAI-compatible speech endpoint can also supply previews and spoken livestream replies. Demo text and prerecorded audio are available for an offline tour.
+
+For Bilibili operations, configure and verify the platform account under **Settings → Account and permissions**. Start with a known video or an imported comment set. Generate a draft, review it in the workbench and authorize publication when ready. See the [operations guide](docs/guides/operations.md) for policies, read-only preview and emergency stop.
 
 ## Deployment
 

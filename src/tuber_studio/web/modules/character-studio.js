@@ -2,48 +2,37 @@
 
 import { $ } from "./core.js";
 
-export function renderCharacterImage(model) {
-  const image = $("character-image");
-  if (!image) return;
-  const id = model.status?.character?.id;
-  const asset = model.assets?.find(item => item.character_id === id && ["idle", "default"].includes(item.tag || item.event_tag));
-  const url = asset?.url || asset?.path;
-  if (!url) {
-    image.hidden = true;
-    return;
-  }
-  if (image.dataset.url !== url) {
-    image.dataset.url = url;
-    image.src = url;
-    image.hidden = false;
-  }
+export function renderPersona(model) {
+  const persona = model.status?.persona;
+  const builtIn = persona?.source === "fine_tuned";
+  const view = model.personaView ?? (!persona || builtIn ? "model" : "cards");
+  const cardName = model.status?.character?.name;
+  $("persona-current").textContent = !persona ? "正在读取当前角色" :
+    builtIn ? "大肥鱼 · 模型内建" : ["角色卡", cardName].filter(Boolean).join(" · ");
+  $("persona-model-view").hidden = view !== "model";
+  $("persona-card-view").hidden = view !== "cards";
+  $("show-persona-model").setAttribute("aria-pressed", String(view === "model"));
+  $("show-persona-cards").setAttribute("aria-pressed", String(view === "cards"));
+
+  const states = { active: "节点已加载", installed: "节点已安装", not_installed: "节点未安装" };
+  $("persona-model-state").textContent = states[persona?.node_model_state] ??
+    (persona?.local_model_installed ? "本机已有模型文件" : "节点状态待确认");
+  $("persona-model-detail").textContent = persona?.fine_tuned_model ?? "";
+  const modeAction = $("persona-mode-action");
+  const textMode = document.querySelector('[data-inference-mode="text"]');
+  modeAction.hidden = !persona || builtIn || !textMode ||
+    textMode.getAttribute("aria-pressed") === "true" ||
+    model.settings?.work_mode_profiles?.text?.llm?.model !== persona.fine_tuned_model;
+  modeAction.disabled = !textMode || textMode.disabled;
 }
 
-export function updateOCTypeBadge(personaType) {
-  const badge = $("oc-type-badge");
-  const promptBox = $("oc-compact-prompt-box");
-  const isFineTuned = personaType === "fine_tuned";
-  if (badge) {
-    badge.textContent = isFineTuned ? "内建角色" : "角色卡";
-    badge.className = `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`;
-  }
-  if (promptBox) promptBox.hidden = !isFineTuned;
-  $("oc-fine-tuned-model").closest("label").hidden = !isFineTuned;
-  for (const tab of ["tab-oc-persona", "tab-oc-style"]) {
-    const button = document.querySelector(`[data-tab="${tab}"]`);
-    if (isFineTuned && button.classList.contains("active")) {
-      document.querySelector('[data-tab="tab-oc-model"]').click();
-    }
-    button.hidden = isFineTuned;
-  }
+function editableCard(character) {
+  const { persona_type, fine_tuned_model, compact_system_prompt, ...card } = character;
+  return card;
 }
 
 export function syncCharacterJsonToVisual(character) {
   if (!character) return;
-  const personaType = character.persona_type || "prompt_oc";
-  if ($("oc-persona-type")) $("oc-persona-type").value = personaType;
-  if ($("oc-fine-tuned-model")) $("oc-fine-tuned-model").value = character.fine_tuned_model || "";
-  if ($("oc-compact-prompt")) $("oc-compact-prompt").value = character.compact_system_prompt || "";
   if ($("oc-identity")) $("oc-identity").value = character.core?.identity || "";
   if ($("oc-background")) $("oc-background").value = character.core?.background || "";
   if ($("oc-traits")) {
@@ -60,30 +49,16 @@ export function syncCharacterJsonToVisual(character) {
     const inst = character.style?.instructions;
     $("oc-instructions").value = Array.isArray(inst) ? inst.join("\n") : (inst || "");
   }
-  if ($("oc-voice-profile")) $("oc-voice-profile").value = character.voice_profile_id || "";
+  if ($("oc-voice-profile")) $("oc-voice-profile").value = character.voice_profile || "";
   if ($("oc-avatar-manifest")) $("oc-avatar-manifest").value = character.avatar_manifest || "";
-
-  updateOCTypeBadge(personaType);
 }
 
 export function syncVisualToCharacterJson(model) {
   let charObj;
   try {
-    charObj = JSON.parse($("character-editor").value);
+    charObj = editableCard(JSON.parse($("character-editor").value));
   } catch {
-    charObj = model.character ? { ...model.character } : {};
-  }
-  const personaType = $("oc-persona-type")?.value || "prompt_oc";
-  charObj.persona_type = personaType;
-  if ($("oc-fine-tuned-model")?.value.trim()) {
-    charObj.fine_tuned_model = $("oc-fine-tuned-model").value.trim();
-  } else {
-    delete charObj.fine_tuned_model;
-  }
-  if ($("oc-compact-prompt")?.value.trim()) {
-    charObj.compact_system_prompt = $("oc-compact-prompt").value.trim();
-  } else {
-    delete charObj.compact_system_prompt;
+    charObj = editableCard(model.character || {});
   }
 
   charObj.core = charObj.core || {};
@@ -103,11 +78,7 @@ export function syncVisualToCharacterJson(model) {
     charObj.style.instructions = $("oc-instructions").value.split("\n").map(s => s.trim()).filter(Boolean);
   }
 
-  if ($("oc-voice-profile")?.value.trim()) {
-    charObj.voice_profile_id = $("oc-voice-profile").value.trim();
-  } else {
-    delete charObj.voice_profile_id;
-  }
+  if ($("oc-voice-profile")) charObj.voice_profile = $("oc-voice-profile").value.trim();
   if ($("oc-avatar-manifest")?.value.trim()) {
     charObj.avatar_manifest = $("oc-avatar-manifest").value.trim();
   } else {
@@ -115,14 +86,6 @@ export function syncVisualToCharacterJson(model) {
   }
 
   $("character-editor").value = JSON.stringify(charObj, null, 2);
-  $("character-preview").textContent = JSON.stringify({
-    persona_type: charObj.persona_type,
-    core: charObj.core,
-    style: charObj.style,
-    rules: charObj.rules,
-    lore: charObj.lore,
-  }, null, 2);
-  updateOCTypeBadge(personaType);
   model.characterDirty = true;
   $("character-dirty").textContent = "有未保存修改";
 }
@@ -130,18 +93,11 @@ export function syncVisualToCharacterJson(model) {
 export function setCharacterEditor(character, model) {
   model.character = character;
   model.characterDirty = false;
-  $("character-editor").value = JSON.stringify(character, null, 2);
+  $("character-editor").value = JSON.stringify(editableCard(character), null, 2);
   ["character-editor", "save-character", "reset-character", "activate-character"].forEach(id => {
     if ($(id)) $(id).disabled = false;
   });
   $("editor-title").textContent = `${character.name || character.id} · v${character.version}`;
-  $("character-preview").textContent = JSON.stringify({
-    persona_type: character.persona_type,
-    core: character.core,
-    style: character.style,
-    rules: character.rules,
-    lore: character.lore,
-  }, null, 2);
   $("character-dirty").textContent = "";
   syncCharacterJsonToVisual(character);
 }
@@ -156,10 +112,7 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
   }
   model.characters.forEach(character => {
     const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
-    const isFineTuned = (character.persona_type || "prompt_oc") === "fine_tuned";
-    const typeBadge = node("span", isFineTuned ? "★ 微调人设" : "⚙ 基座OC", `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`);
-    button.append(typeBadge);
-    button.append(node("small", `${character.id} · v${character.version ?? character.active_version ?? "—"}${character.id === model.status?.character?.id ? " · 当前角色" : ""}`));
+    button.append(node("small", `v${character.version ?? character.active_version ?? "—"}${character.id === model.status?.character?.id ? " · 已选用" : ""}`));
     button.addEventListener("click", () => busy(button, async () => {
       if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换所选角色？")) return;
       await onSelect(character.id);
@@ -213,6 +166,15 @@ export function initCharacterStudioUI(model, {
   memeGallery,
   renderStatus,
 }) {
+  for (const [id, view] of [["show-persona-model", "model"], ["show-persona-cards", "cards"]]) {
+    $(id).addEventListener("click", () => {
+      model.personaView = view;
+      renderPersona(model);
+    });
+  }
+  $("persona-mode-action").addEventListener("click", () => {
+    document.querySelector('[data-inference-mode="text"]').click();
+  });
   document.querySelectorAll(".oc-tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const targetId = btn.dataset.tab;
@@ -224,7 +186,6 @@ export function initCharacterStudioUI(model, {
   });
 
   const visualIds = [
-    "oc-persona-type", "oc-fine-tuned-model", "oc-compact-prompt",
     "oc-identity", "oc-background", "oc-traits",
     "oc-min-chars", "oc-max-chars", "oc-catchphrases", "oc-instructions",
     "oc-voice-profile", "oc-avatar-manifest"
@@ -296,9 +257,10 @@ export function initCharacterStudioUI(model, {
       if (!character || typeof character !== "object" || Array.isArray(character)) {
         throw new Error("角色配置必须为 JSON 对象");
       }
+      const { persona_type, fine_tuned_model, compact_system_prompt } = model.character;
       const result = await api(`/api/characters/${encodeURIComponent(model.characterId)}`, {
         method: "PUT",
-        body: character,
+        body: { ...editableCard(character), persona_type, fine_tuned_model, compact_system_prompt },
       });
       notice(`角色已保存为 v${result.version}。`);
       await doLoadCharacters();

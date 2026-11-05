@@ -1,25 +1,30 @@
 "use strict";
 
 class InferenceNodePanel {
-  constructor(root, api, notify) {
-    this.root = root; this.api = api; this.notify = notify; this.busy = false; this.dirty = false;
+  constructor(root, api, onPaired) {
+    this.root = root; this.api = api; this.busy = false; this.dirty = false; this.paired = false;
     root.innerHTML = `<div class="panel-heading"><h2>Jetson 推理</h2><span data-state class="badge">待读取</span></div>
       <p class="hint">通过局域网连接 Jetson。账号、对话和任务保存在业务电脑。</p>
       <dl data-summary class="description-list"></dl>
-      <form data-pair autocomplete="off"><div class="form-grid"><label>推理节点地址<input data-url type="url" placeholder="http://jetson.local:9012" required></label><label>配对凭据<input data-token type="password" autocomplete="new-password" spellcheck="false" placeholder="同一节点留空保留；更换节点须填写"></label></div>
-      <div class="actions"><button type="submit">保存并连接</button><button data-check type="button">检查连接</button></div></form>
+      <form data-pair autocomplete="off"><div class="form-grid"><label>推理节点地址<input data-url type="url" placeholder="http://jetson.local:9012" required></label><label>配对凭据<input data-token type="password" autocomplete="new-password" spellcheck="false" placeholder="同一节点已有凭据可留空"></label></div>
+      <div class="actions"><button type="submit">保存并连接</button><button data-check type="button" hidden>刷新连接状态</button></div></form>
       <p data-feedback class="hint" role="status">配对后重启与代码更新会保留连接设置。</p>
       <details><summary>高级诊断与维护</summary>
       <dl data-diagnostics class="description-list"></dl>
       <div class="actions"><button data-probe type="button">验证视觉能力</button><button data-idle type="button">释放推理资源</button></div>
       <div data-storage></div></details>`;
     this.$ = selector => root.querySelector(selector);
-    this.$('[data-url]').oninput = () => { this.dirty = true; };
+    this.$('[data-url]').oninput = () => {
+      this.dirty = true;
+      this.$('[data-check]').hidden = true;
+    };
     this.$('[data-pair]').onsubmit = event => { event.preventDefault(); this.action(async () => {
       const token = this.$('[data-token]').value.trim();
       const body = {base_url: this.$('[data-url]').value.trim(), ...(token ? {token} : {})};
+      this.feedback('正在配对并加载运营模型…');
       const value = await api('/api/inference/node', {method:'PUT', body});
       this.$('[data-token]').value = ''; this.dirty = false; this.render(value);
+      await onPaired();
       return '已连接，运营配置已保存。';
     }); };
     this.$('[data-check]').onclick = () => this.action(async () => { this.render(await api('/api/inference/node/check', {method:'POST'})); return '节点能力已刷新。'; });
@@ -44,7 +49,9 @@ class InferenceNodePanel {
   render(value) {
     if (!this.dirty) this.$('[data-url]').value = value.base_url || '';
     const caps = value.capabilities, resource = caps?.resource;
-    this.$('[data-state]').textContent = value.error ? '连接异常' : caps ? '已连接' : '待检查';
+    this.paired = value.paired === true;
+    this.$('[data-check]').hidden = !this.paired || this.dirty;
+    this.$('[data-state]').textContent = value.error ? '连接异常' : caps ? '已连接' : this.paired ? '待确认' : '未配对';
     const mode = value.mode === 'live' ? '直播' : value.mode === 'text' ? '运营' : '—';
     const render = (selector, items) => {
       const list = this.$(selector);
@@ -56,7 +63,7 @@ class InferenceNodePanel {
         list.append(dt, dd);
       }
     };
-    render('[data-summary]', [['模式', mode], ['当前模型', caps?.model || value.model]]);
+    render('[data-summary]', [['模式', mode], ['当前模型', caps?.model]]);
     render('[data-diagnostics]', [
       ['业务数据目录', value.business_data],
       ['节点可用内存', this.bytes(resource?.available_bytes)],

@@ -11,12 +11,12 @@ export function resourcesTransitioning(model) {
   return !!(model.modeSwitch || (inference?.operation?.mode != null && inference.operation.mode !== inference.mode));
 }
 
-export function resourceMode(inference, model) {
-  return model?.modeSwitch?.target || inference?.operation?.mode || inference?.mode || "text_only";
+function resourceMode(inference) {
+  return ["text", "live"].includes(inference?.mode) ? inference.mode : null;
 }
 
-export function resourceModeName(mode) {
-  return { live: "直播优先", text_only: "纯文本节约" }[mode] || mode || "未报告";
+function resourceModeName(mode) {
+  return mode === "live" ? "直播模式" : "运营模式";
 }
 
 export function renderLiveFeatures(model) {
@@ -28,16 +28,20 @@ export function renderLiveFeatures(model) {
 }
 
 export function renderModeControls(inference = {}, model) {
-  const currentMode = resourceMode(inference, model);
+  const currentMode = inference.state && inference.state !== "error" ? resourceMode(inference) : null;
+  const hasBroker = model.settings?.inference_broker?.enabled === true;
   const transitioning = resourcesTransitioning(model);
-  const btnLive = $("mode-live");
-  const btnText = $("mode-text");
-  if (btnLive && btnText) {
-    btnLive.classList.toggle("selected", currentMode === "live");
-    btnText.classList.toggle("selected", currentMode === "text_only");
-    btnLive.disabled = transitioning || currentMode === "live";
-    btnText.disabled = transitioning || currentMode === "text_only";
-  }
+  document.querySelectorAll("[data-inference-mode]").forEach(button => {
+    const target = button.dataset.inferenceMode;
+    button.setAttribute("aria-pressed", String(target === currentMode));
+    button.disabled = !hasBroker || transitioning || target === currentMode || (target === "live" && !liveEnabled(model));
+  });
+  const pending = model.modeSwitch?.target || inference.operation?.mode;
+  const feedback = $("resource-mode-feedback");
+  feedback.textContent = transitioning ? `正在切换至${resourceModeName(pending)}…` :
+    model.modeResult?.text || (!hasBroker ? "请先连接推理节点" :
+      !liveEnabled(model) ? "当前配置未启用直播" : !currentMode ? "等待设备确认模式" : "");
+  feedback.classList.toggle("error-text", !transitioning && model.modeResult?.error === true);
 }
 
 export function renderControls(model) {
@@ -74,35 +78,24 @@ export function renderControls(model) {
   renderModeControls(status.inference, model);
 }
 
-export function renderInference(inference, model, describe) {
-  describe($("inference-details"), [
-    ["当前模型", inference?.model || "—"],
-    ["模式", inference?.mode === "live" ? "直播" : "运营"],
-    ["服务状态", inference?.error ? "异常" : inference?.state === "active" ? "就绪" : "待检查"],
-  ]);
-  renderModeControls(inference, model);
-}
-
-export function renderServiceStatusCapsule(status, node) {
+export function renderServiceStatusCapsule(status, settings) {
   const capsule = $("service-status-capsule");
-  if (!capsule) return;
   const inference = status.inference || {};
-  const online = inference.error ? false : inference.state === "active" ? true : undefined;
+  const online = inference.error ? false : ["active", "idle"].includes(inference.state) ? true : undefined;
   capsule.className = `service-status-capsule ${online === false ? "offline" : online ? "online" : ""}`;
-  const dot = capsule.querySelector(".status-dot") || node("span", "", "status-dot");
-  const text = capsule.querySelector(".status-text") || node("span", "", "status-text");
-  const activeModel = inference.model;
-  text.textContent = online === true ? (activeModel ? `推理已连接 · ${activeModel}` : "推理已连接") :
-    online === false ? "推理未连接 · 检查设置" : "推理状态待检查";
-  if (!capsule.contains(dot)) capsule.prepend(dot);
-  if (!capsule.contains(text)) capsule.append(text);
+  const modelName = inference.state === "active" ?
+    (status.persona?.source === "fine_tuned" ? "大肥鱼" : inference.model) : "";
+  const source = settings?.inference_broker?.deployment === "remote" ? "Jetson" : "推理";
+  capsule.querySelector(".status-text").textContent =
+    online === true ? [source + " 已连接", modelName].filter(Boolean).join(" · ") :
+    online === false ? source + " 连接异常" :
+    settings?.inference_broker?.enabled ? "推理状态待确认" : "推理节点未连接";
 }
 
 export async function refreshLive({ api, list, node, cell, time, label, badge, empty }) {
   const results = await Promise.all([api("/api/jobs?limit=50"), api("/api/events?limit=50")]);
   const jobs = list(results[0]);
-  renderJobs($("overview-jobs"), jobs.slice(0, 8), false, { node, cell, time, badge, empty });
-  renderJobs($("live-jobs"), jobs, true, { node, cell, time, badge, empty });
+  renderJobs($("live-jobs"), jobs, { node, cell, time, badge, empty });
   const events = list(results[1]);
   const tbody = $("events");
   if (!tbody) return;
@@ -121,13 +114,13 @@ export async function refreshLive({ api, list, node, cell, time, label, badge, e
   });
 }
 
-export function renderJobs(tbody, jobs, withId, { node, cell, time, badge, empty }) {
+function renderJobs(tbody, jobs, { node, cell, time, badge, empty }) {
   if (!tbody) return;
   if (!jobs.length) return empty(tbody, 5, "暂无任务。注入事件后可查看处理状态。");
   tbody.replaceChildren();
   jobs.forEach(job => {
     const row = node("tr");
-    cell(row, time(job.created_at), withId ? job.id : "");
+    cell(row, time(job.created_at), job.id);
     cell(row, `${job.character_id || "—"} · v${job.character_version ?? "—"}`);
     cell(row, job.text || job.spoken_text || "—");
     cell(row, badge(job.status));
@@ -147,41 +140,34 @@ export async function switchResourceMode(target, model, {
     notice("直播特性尚未在此安装中启用。");
     return;
   }
-  const previousMode = resourceMode(model.status?.inference, model);
-  if (!previousMode || model.modeSwitch) return;
-  model.modeSwitch = { target, previousMode };
+  if (!model.settings?.inference_broker?.enabled || model.modeSwitch) return;
+  if (target === "text" && ["live", "paused", "degraded"].includes(model.status?.state) &&
+      !confirm("切回运营模式会结束当前直播会话。继续切换？")) return;
+  model.modeSwitch = { target };
   model.modeResult = null;
   renderModeControls(model.status?.inference, model);
   renderControls(model);
   if (renderVoicePreviewFn) renderVoicePreviewFn();
   try {
     const result = await api("/api/inference/mode", { method: "POST", body: { mode: target } });
-    if (resourceMode(result, model) !== target) {
+    if (resourceMode(result) !== target) {
       throw new Error("接口返回的资源模式与请求不符，请检查实际资源状态。");
     }
     model.modeSwitch = null;
-    model.modeResult = { mode: target, error: false, text: `已切换到${resourceModeName(target)}模式。` };
-    if (renderStatusFn) {
-      renderStatusFn({ ...model.status, inference: result });
-      try {
-        renderStatusFn(await api("/api/status"));
-      } catch (err) {
-        notice(`模式已切换，状态刷新失败：${err.message}`, true);
-      }
-    }
-    if (loadSettingsFn) await loadSettingsFn();
+    model.modeResult = null;
+    if (renderStatusFn) renderStatusFn({ ...model.status, inference: result });
   } catch (error) {
     model.modeSwitch = null;
-    model.modeResult = { mode: previousMode, error: true, text: `切换失败：${error.message}` };
-    renderModeControls(model.status?.inference, model);
-    if (renderStatusFn) {
-      try {
-        renderStatusFn(await api("/api/status"));
-      } catch (_) {}
-    }
+    model.modeResult = { error: true, text: `切换失败：${error.message}` };
   } finally {
     renderControls(model);
     if (renderVoicePreviewFn) renderVoicePreviewFn();
+  }
+  try {
+    if (renderStatusFn) renderStatusFn(await api("/api/status"));
+    if (loadSettingsFn) await loadSettingsFn();
+  } catch (error) {
+    if (!model.modeResult) notice(`状态刷新失败：${error.message}`, true);
   }
 }
 

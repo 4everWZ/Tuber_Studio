@@ -205,7 +205,7 @@ def test_provider_settings_auto_download_on_confirm(settings, monkeypatch):
     with TestClient(app) as client:
         # Mock apply_settings returning success
         async def fake_apply(runtime, data):
-                return {"status": "ok", "context_recount_required": True}
+            return {"status": "ok", "context_recount_required": True}
 
         monkeypatch.setattr("tuber_studio.app.apply_settings", fake_apply)
 
