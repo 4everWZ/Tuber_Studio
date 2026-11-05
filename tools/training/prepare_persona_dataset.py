@@ -1,8 +1,7 @@
-"""Prepare high-quality anime persona adaptation dataset for Da Feiyu (大肥鱼).
+"""Reproduce the legacy synthetic Da Feiyu experiment.
 
-Extracts character traits, speech habits, and interaction examples from config/characters.json,
-integrates open-source roleplay/dialogue data, and generates paired SFT and SimPO/DPO datasets
-with zero/minimal manual authoring.
+This generator reuses seed answers and splits after expansion. Use
+build_grounded_corpus.py for reviewed, source-separated training data.
 """
 
 from __future__ import annotations
@@ -286,12 +285,15 @@ def generate_4group_eval_cases() -> list[dict]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare persona dataset for Da Feiyu fine-tuning.")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--legacy-reproduce", action="store_true", help="enable the historical corpus generator")
     parser.add_argument("--characters", type=Path, default=DEFAULT_CHARACTERS_PATH, help="Path to characters.json")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Output directory")
     parser.add_argument("--target-count", type=int, default=1500, help="Target SFT sample count")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
+    if not args.legacy_reproduce:
+        parser.error("use build_grounded_corpus.py for new training, or pass --legacy-reproduce")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     char_spec = load_character_spec(args.characters)

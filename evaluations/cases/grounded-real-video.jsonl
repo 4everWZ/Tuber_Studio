@@ -1,0 +1,40 @@
+{"id":"cc-01","kind":"cc","bvid":"BV1Dcxy66E7Q","segments":[16,21],"question":"这一段说亚马逊原住民把电鳗叫什么？","criterion":"按字幕答 POOCU 或引用后面的使人昏睡的称呼。"}
+{"id":"cc-02","kind":"cc","bvid":"BV18Cx26SELq","segments":[18,26],"question":"字幕说这些螃蟹总共花了多少？","criterion":"答 520，别从题目推算单价。"}
+{"id":"cc-03","kind":"cc","bvid":"BV1umpj6RETg","segments":[18,26],"question":"第一个路由失败时怎么处理？用户看到的模型 ID 有几个？","criterion":"自动降级到下一项，仍只看到一个模型 ID。"}
+{"id":"cc-04","kind":"cc","bvid":"BV1Y3sZ67Eat","segments":[17,25],"question":"字幕里他们抱怨对面的菜为什么不好拿？","criterion":"因为离得远、不好够到。"}
+{"id":"cc-05","kind":"cc","bvid":"BV1j3x16XEuR","segments":[22,26],"question":"他给这次跑步定的天数和每日距离是多少？","criterion":"连续目标 100 天，每天 3 km，勿编造成果。"}
+{"id":"cc-06","kind":"cc","bvid":"BV1x1xJ6eELi","segments":[15,20],"question":"字幕把什么无生命的东西说成会跳舞？","criterion":"帐篷，理解为比喻或搞笑旁白。"}
+{"id":"cc-07","kind":"cc","bvid":"BV1XJ4g6WEyL","segments":[18,23],"question":"对方说只努力还不够，要看到什么？","criterion":"要看到结果。"}
+{"id":"cc-08","kind":"cc","bvid":"BV1EPnG6DEJC","segments":[18,25],"question":"它根据互动会更倾向看哪类视频？","criterion":"倾向观看对方感兴趣或喜欢的类型。"}
+{"id":"cc-09","kind":"cc","bvid":"BV1Vk766mEn8","segments":[18,26],"question":"字幕说低预算装机为何偏向 DDR4？","criterion":"同容量 DDR4 显著便宜于 DDR5，限定为视频中的说法。"}
+{"id":"cc-10","kind":"cc","bvid":"BV1Tbn26aEZC","segments":[12,16],"question":"字幕里家里还缺什么？","criterion":"几个大箱子和一块麦田。"}
+{"id":"cc-11","kind":"cc","bvid":"BV16Axe6bEhh","segments":[13,19],"question":"这段怎么形容它读盘面消耗的视觉 token？","criterion":"字幕称读盘面不花一个视觉 token。"}
+{"id":"cc-12","kind":"cc","bvid":"BV1WspC6sEDg","segments":[5,9],"question":"要被拍的人被吩咐做哪两件事？","criterion":"举好牌子并看镜头。"}
+{"id":"vis-01","kind":"visual","bvid":"BV16Axe6bEhh","frames":[1],"question":"柱状图的条形是竖着还是横着画的？","criterion":"横向条形。"}
+{"id":"vis-02","kind":"visual","bvid":"BV18Cx26SELq","frames":[0],"question":"第一格里螃蟹主要在哪种容器里？","criterion":"火上的大圆锅或炒锅。"}
+{"id":"vis-03","kind":"visual","bvid":"BV1Dcxy66E7Q","frames":[1],"question":"鱼身剖面示意图里被放大标记的部位是什么颜色？","criterion":"绿色或亮绿色。"}
+{"id":"vis-04","kind":"visual","bvid":"BV1EPnG6DEJC","frames":[0],"question":"这个聊天界面是浅底还是深底？","criterion":"深色背景。"}
+{"id":"vis-05","kind":"visual","bvid":"BV1j3x16XEuR","frames":[0,1],"question":"哪个画面里人在室外跑步，哪个是室内讲话？","criterion":"第一格室外跑步，第二格室内讲话。"}
+{"id":"vis-06","kind":"visual","bvid":"BV1Tbn26aEZC","frames":[1],"question":"这个游戏角色站在一堆什么东西旁边？","criterion":"箱子，画面也可见工作台。"}
+{"id":"vis-07","kind":"visual","bvid":"BV1umpj6RETg","frames":[0,2],"question":"哪个画面是表格样的界面，哪个画面是蓝发角色特写？","criterion":"第一格有表格，第二格是蓝发角色特写。"}
+{"id":"vis-08","kind":"visual","bvid":"BV1Vk766mEn8","frames":[2],"question":"游戏画面的对比被排成几栏？","criterion":"并列三栏。"}
+{"id":"vis-09","kind":"visual","bvid":"BV1WspC6sEDg","frames":[0],"question":"角色头发最显眼的颜色是什么？","criterion":"蓝色。"}
+{"id":"vis-10","kind":"visual","bvid":"BV1x1xJ6eELi","frames":[0],"question":"穿蓝上衣的人此刻是站直的还是身体几乎趴下了？","criterion":"身体很低、前倾接近趴地或撑地。"}
+{"id":"vis-11","kind":"visual","bvid":"BV1XJ4g6WEyL","frames":[0],"question":"正中人物身边围着什么样的图形？","criterion":"彩色漫画对话气泡。"}
+{"id":"vis-12","kind":"visual","bvid":"BV1Y3sZ67Eat","frames":[1],"question":"手里用什么工具夹盘上的圆东西？","criterion":"金属夹子或餐夹。"}
+{"id":"both-01","kind":"both","bvid":"BV1Dcxy66E7Q","segments":[16,21],"frames":[1],"question":"字幕怎么称呼电鳗？示意图里标记是什么颜色？","criterion":"POOCU 或字幕中的催眠称呼，加绿色标记。"}
+{"id":"both-02","kind":"both","bvid":"BV18Cx26SELq","segments":[18,26],"frames":[0],"question":"字幕里说总价多少？锅里的东西是下锅前还是已经在烹煮？","criterion":"520，画面是烹煮中的螃蟹。"}
+{"id":"both-03","kind":"both","bvid":"BV1umpj6RETg","segments":[18,26],"frames":[0],"question":"失败怎么兜底？另外面板截图是浅底还是深底？","criterion":"自动降级到下一项，第一帧面板浅底。"}
+{"id":"both-04","kind":"both","bvid":"BV1j3x16XEuR","segments":[22,26],"frames":[2],"question":"每天目标多少公里？另一帧跑者是在室内还是操场一带？","criterion":"每天 3 公里，截图是室外操场或草地一带。"}
+{"id":"both-05","kind":"both","bvid":"BV1EPnG6DEJC","segments":[18,25],"frames":[0],"question":"它想多看谁喜欢的内容？第一格页面主色又是什么？","criterion":"对方或用户喜欢的内容，深色界面。"}
+{"id":"both-06","kind":"both","bvid":"BV1Vk766mEn8","segments":[18,26],"frames":[2],"question":"字幕说哪代同容量更便宜？游戏截图有几路横向对比？","criterion":"DDR4，同屏三路。"}
+{"id":"both-07","kind":"both","bvid":"BV1Tbn26aEZC","segments":[12,16],"frames":[1],"question":"字幕说还缺什么？截图中能不能看到已经放着的箱子？","criterion":"还缺几个大箱子和麦田，画面里已有箱子。两条并不冲突。"}
+{"id":"both-08","kind":"both","bvid":"BV1WspC6sEDg","segments":[5,9],"frames":[0],"question":"字幕让人举什么？截图中角色头发又是什么颜色？","criterion":"举牌子，蓝色头发。"}
+{"id":"wait-01","kind":"missing","bvid":"BV1Dcxy66E7Q","segments":[16,21],"question":"这一段拍摄现场的水深准确有多少米？","criterion":"字幕只讲称呼，无水深，须暂缓。"}
+{"id":"wait-02","kind":"missing","bvid":"BV1Tbn26aEZC","frames":[1],"question":"最后一秒游戏里种出了几株成熟小麦？","criterion":"给的帧是室内箱子，未见最后一秒，须暂缓。"}
+{"id":"wait-03","kind":"missing","bvid":"BV1Y3sZ67Eat","segments":[17,25],"question":"能读出镜头右后方的价签写了多少吗？","criterion":"仅有字幕，无法读价签，须暂缓。"}
+{"id":"wait-04","kind":"missing","bvid":"BV1j3x16XEuR","segments":[22,26],"question":"这些字幕里，跑者第一天的平均心率精确是多少？","criterion":"只给计划，未给平均心率，须暂缓。"}
+{"id":"wait-05","kind":"missing","bvid":"BV1Vk766mEn8","frames":[0],"question":"视频结尾三款处理器的平均帧数排名是什么？","criterion":"仅给硬件外观截图，须暂缓。"}
+{"id":"wait-06","kind":"missing","bvid":"BV1WspC6sEDg","segments":[5,9],"question":"被要求举的牌子具体是什么颜色？","criterion":"字幕没颜色、未提供画面，须暂缓。"}
+{"id":"wait-07","kind":"missing","bvid":"BV16Axe6bEhh","frames":[1],"question":"这张图出现前说的完整第一句话是哪句？","criterion":"只给图，不能还原此前原话，须暂缓。"}
+{"id":"wait-08","kind":"missing","bvid":"BV1XJ4g6WEyL","question":"只根据当前材料，说出第三分 P 的最后一位说话者。","criterion":"无证据，须暂缓。"}

@@ -1,0 +1,43 @@
+{
+  "criterion": "回应同时覆盖冻结判据中的事实要点，所选引用支持要点，额外事实无明显错误；暂缓须返回 wait、空正文和空引用。",
+  "answer_threshold": 28,
+  "wait_threshold": 8,
+  "reviewed": {
+    "old": {
+      "answer_pass": ["vis-09", "vis-12"],
+      "wait_pass": ["wait-01", "wait-06", "wait-08"]
+    },
+    "base": {
+      "answer_pass": ["cc-01", "cc-02", "cc-05", "cc-09", "cc-10", "cc-11", "vis-03", "vis-07", "vis-09", "vis-12"],
+      "wait_pass": ["wait-01", "wait-02", "wait-03", "wait-04", "wait-06", "wait-07", "wait-08"]
+    },
+    "text": {
+      "answer_pass": [
+        "cc-01", "cc-03", "cc-04", "cc-05", "cc-06", "cc-07", "cc-08", "cc-09", "cc-10", "cc-11",
+        "vis-05", "vis-06", "vis-07", "vis-09", "vis-10", "vis-11", "vis-12"
+      ],
+      "wait_pass": ["wait-08"]
+    },
+    "vision": {
+      "answer_pass": [
+        "cc-01", "cc-02", "cc-03", "cc-04", "cc-06", "cc-07", "cc-08", "cc-09", "cc-10", "cc-11",
+        "vis-02", "vis-03", "vis-05", "vis-06", "vis-07", "vis-08", "vis-09", "vis-10", "vis-12"
+      ],
+      "wait_pass": ["wait-08"]
+    },
+    "vision-stage": {
+      "answer_pass": [
+        "cc-01", "cc-02", "cc-03", "cc-04", "cc-06", "cc-07", "cc-08", "cc-09", "cc-10", "cc-11",
+        "vis-01", "vis-02", "vis-03", "vis-05", "vis-08", "vis-09", "vis-10", "vis-11", "vis-12"
+      ],
+      "wait_pass": ["wait-05", "wait-08"]
+    },
+    "gemma": {
+      "answer_pass": [
+        "cc-01", "cc-02", "cc-03", "cc-05", "cc-07", "cc-08", "cc-09", "cc-10", "cc-11",
+        "vis-01", "vis-02", "vis-03", "vis-04", "vis-06", "vis-09", "vis-10"
+      ],
+      "wait_pass": ["wait-01", "wait-02", "wait-03", "wait-04", "wait-05", "wait-06", "wait-07", "wait-08"]
+    }
+  }
+}

@@ -577,7 +577,7 @@ async def test_two_real_model_invocations_reuse_alias_but_keep_chunk_ownership(b
     assert row["config"]["max_model_calls"] >= 2
 
 
-async def test_one_group_expands_to_twelve_real_segments_through_sqlite_intent(browsing):
+async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_citations(browsing):
     async def subtitles(bvid, cid, languages):
         return {
             "bvid": bvid,
@@ -596,13 +596,15 @@ async def test_one_group_expands_to_twelve_real_segments_through_sqlite_intent(b
     expected = [f"11:{i}" for i in range(12)]
     task = browsing.tasks()[0]
     assert task["decisions"][0]["evidence_ids"] == expected
-    assert set(browsing.intents()[0]["evidence"]) == set(expected)
+    assert browsing.intents()[0]["evidence"] == [expected[0]]
     assert browsing.intents()[0]["status"] == "pending_review"
     cached = browsing.evidence.load(browsing.intents()[0]["material_keys"][0])
     assert [segment["id"] for segment in cached["parts"][0]["segments"]] == expected
     assert cached["parts"][0]["content_hash"] == "unchanged-subtitle-version"
     model_calls = [packet for kind, packet in browsing.runtime.llm.calls if kind == "ContentDecision"]
     assert model_calls[0]["segments"] == [{"id": "e1"}]
+    response = next(packet for kind, packet in browsing.runtime.llm.calls if kind == "ResponseDecision")
+    assert [item["id"] for item in response["evidence"]] == [f"r{i}" for i in range(1, 13)]
     assert not browsing.adapter.sent
 
 

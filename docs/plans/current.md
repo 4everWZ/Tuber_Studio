@@ -6,6 +6,14 @@
 
 先处理[推理配置与凭证边界](#推理配置与凭证边界)，再核验真实账号读取、渠道判断与获准写入。模型语义未通过时，对应用例保持人工审核。
 
+大肥鱼视觉 SFT 已在工作站对照续训和重训，并用一批独立视频复测。续训配合单请求先材料后问题，图文引用和缺证据处理改善，部分图文事实仍会漏答，基础纠错仍弱。Jetson 释放空闲旧进程后，续训候选与 Genie 共驻并接收 130,914 token，准确召回开头代号。生产路由已恢复原配置。刷视频 p95、真实 Mock 直播播放延迟和统一视觉档继续按各自场景验收。[第二轮训练与逐例复核](../../evaluations/results/grounded-sft-v2-20261105/README.md)
+
+角色训练覆盖 ChatAnime 的 60 个源场景，并混合 DeepSeek 网页开启和关闭 DeepThink 时的优质台词及 ChatAnime 第三轮扩写。第七轮从第六轮最佳视频 LoRA 续训，真实视频事实和引用仍为 20/32，直播只在个别新场景改善，仍会复读、串视角。候选留在工作站。[第六轮数据与对照](../../evaluations/results/grounded-persona-v6-20261105/README.md) · [第七轮原答与复核](../../evaluations/results/grounded-persona-v7-20261105/README.md)
+
+随后在工作站对照了原版、V2 和 V6 的 36 道跨领域短答，另跑一次最多 32 步的正文偏好实验。复测覆盖直播、普通评论、私信、公开动态和真帧评论。候选的普通问答和旧视频事实引用略退，实际运营视频仍有长循环，保留 V6 作为工作站对照。[通用、运营与偏好原答](../../evaluations/results/grounded-preference-20261105/README.md)
+
+后续修正了多分 P 补读的时码与引用绑定，并压低了视频主评的长循环。最后一轮在 V6 上试了单次解码先写内部事实备注再写台词，六对新前文更正只有一对两侧都答对，未采用。保留工作站的 V6 候选和刷视频修复，生产推理配置沿用现有版本。[刷视频回归](../../evaluations/results/grounded-repair-20261105/README.md) · [最后一轮多轮原答](../../evaluations/results/grounded-live-revision-20261106/README.md)
+
 | 工作 | 已有证据 | 通过条件 |
 | --- | --- | --- |
 | 外部 LLM／TTS | 已实现配置、独立凭证及回滚。[非直播验收](../../evaluations/results/nonlive-providers-20261029.json)覆盖本地和 HTTP 替身。 | 用操作者的真实服务分别核验 endpoint、model／voice、生成、容量声明、配额和声音使用条款。 |

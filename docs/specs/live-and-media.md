@@ -25,6 +25,7 @@ UC-02：礼物按唯一ID、档位和冷却选预录或语音／特效并记录�
 ### 不变式
 
 - 人工停止／静音／接管先于自动语音；新礼物默认不打断已开始音频，人工或明确紧急事件除外。
+- 受信任的应用装配可通过 `create_app(live_scene=...)` 为指定观众事件提供 `LiveScene`。快照按当前场次和单调时钟核对，最多保留五秒用于本次回复。文字状态进入当前观众输入，合格且实际模型一致的视觉节点可用一次生成直接看图。快照字节只在本次请求中使用；失去视觉准入时可以根据有效状态生成，过期快照由现有文字路径接管。游戏控制继续由游戏适配器仲裁。
 - 每个语音事件只有一个有效状态，WS重连／重启不重放旧礼物或已完成任务。
 - 礼物和普通消息同样受内容约束，付费不增加工具权限。
 - 默认单LLM／单TTS、有限队列，直播优先于离线评论；模型驻留与生成按资源规范控制。
@@ -40,6 +41,8 @@ PlatformConnector.events() → AsyncIterator[NormalizedEvent]。事件至少包�
 任务语义：received → normalized → filtered/queued → selected → generating → synthesizing → ready_to_play → playing → completed，另有expired／skipped／failed／cancelled，记录状态与时间。仅completed算回应。静音、跳过、停止、切角色／版本取消当前并通知停音，清队列不把任务记播完。
 
 OverlayBus.emit(audio,animation,subtitle) → Ack，以相同播放ID／nonce关联媒体。单一播放者持当前nonce先started再ended才completed；缺播放器、错误、超时、断线、取消、重启不算完成也不重播。第二页待机，断线立即停音／清字幕，忽略过期确认。
+
+本地 Genie 的动态直播台词按标点拆成最多四段。首段合成后即可送播，最多预合成下一段。每段使用独立播放 nonce，最后一段确认结束时才完成整条任务并写入对话记忆。短句、预录、外部 TTS 和点歌各走已有路径。`first_audio_ms` 从服务器接收事件到首段浏览器 `playing` 确认。
 
 持久语义包括events的平台事件键、场次、用户、类型、原始数据、状态；response_jobs的源事件集合、角色版本、状态、台词、情绪、音频引用及耗时。去重与保留期配合，重启取消遗留活动任务并保留完成事实。
 

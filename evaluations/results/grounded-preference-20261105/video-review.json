@@ -1,0 +1,281 @@
+{
+  "facts": 21,
+  "joint": 19,
+  "both_joint": 8,
+  "gaps": {
+    "cautious_reply": 4,
+    "wait": 2,
+    "unsupported_claim": 1,
+    "irrelevant_reply": 1
+  },
+  "cases": [
+    {
+      "id": "oil-cc",
+      "kind": "cc",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "oil-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "oil-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "oil-both-b",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "oil-gap",
+      "kind": "missing",
+      "gap": "cautious_reply"
+    },
+    {
+      "id": "shop-cc",
+      "kind": "cc",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "shop-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "shop-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "shop-both-b",
+      "kind": "both",
+      "facts": false,
+      "support_cited": true,
+      "joint": false,
+      "note": "只描述了屏幕和收纳箱，漏答收入暴涨。"
+    },
+    {
+      "id": "shop-gap",
+      "kind": "missing",
+      "gap": "wait"
+    },
+    {
+      "id": "budget-cc",
+      "kind": "cc",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "budget-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "budget-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "budget-both-b",
+      "kind": "both",
+      "facts": false,
+      "support_cited": true,
+      "joint": false,
+      "note": "看到了兼职字样，漏答 24 小时。"
+    },
+    {
+      "id": "budget-gap",
+      "kind": "missing",
+      "gap": "unsupported_claim"
+    },
+    {
+      "id": "history-cc",
+      "kind": "cc",
+      "facts": false,
+      "support_cited": true,
+      "joint": false
+    },
+    {
+      "id": "history-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "history-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true,
+      "note": "答对四叔与金帽，同时补了对应的画面引用。"
+    },
+    {
+      "id": "history-both-b",
+      "kind": "both",
+      "facts": false,
+      "support_cited": true,
+      "joint": false
+    },
+    {
+      "id": "history-gap",
+      "kind": "missing",
+      "gap": "cautious_reply"
+    },
+    {
+      "id": "park-cc",
+      "kind": "cc",
+      "facts": false,
+      "support_cited": true,
+      "joint": false
+    },
+    {
+      "id": "park-vis",
+      "kind": "visual",
+      "facts": false,
+      "support_cited": false,
+      "joint": false
+    },
+    {
+      "id": "park-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "park-both-b",
+      "kind": "both",
+      "facts": false,
+      "support_cited": true,
+      "joint": false
+    },
+    {
+      "id": "park-gap",
+      "kind": "missing",
+      "gap": "cautious_reply"
+    },
+    {
+      "id": "comments-cc",
+      "kind": "cc",
+      "facts": false,
+      "support_cited": true,
+      "joint": false
+    },
+    {
+      "id": "comments-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "comments-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "comments-both-b",
+      "kind": "both",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "comments-gap",
+      "kind": "missing",
+      "gap": "irrelevant_reply"
+    },
+    {
+      "id": "donate-cc",
+      "kind": "cc",
+      "facts": false,
+      "support_cited": false,
+      "joint": false
+    },
+    {
+      "id": "donate-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "donate-both-a",
+      "kind": "both",
+      "facts": false,
+      "support_cited": true,
+      "joint": false
+    },
+    {
+      "id": "donate-both-b",
+      "kind": "both",
+      "facts": false,
+      "support_cited": false,
+      "joint": false
+    },
+    {
+      "id": "donate-gap",
+      "kind": "missing",
+      "gap": "cautious_reply",
+      "note": "明确说资料没提体检日期，避免把旁白体重变成自己的。"
+    },
+    {
+      "id": "drama-cc",
+      "kind": "cc",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "drama-vis",
+      "kind": "visual",
+      "facts": true,
+      "support_cited": true,
+      "joint": true
+    },
+    {
+      "id": "drama-both-a",
+      "kind": "both",
+      "facts": true,
+      "support_cited": false,
+      "joint": false
+    },
+    {
+      "id": "drama-both-b",
+      "kind": "both",
+      "facts": true,
+      "support_cited": false,
+      "joint": false
+    },
+    {
+      "id": "drama-gap",
+      "kind": "missing",
+      "gap": "wait"
+    }
+  ]
+}

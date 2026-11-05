@@ -1,0 +1,25 @@
+{
+  "before": {
+    "state": "active",
+    "mode": "text",
+    "busy": false,
+    "active_provider": "llmdafeiyu",
+    "selected_provider": "llmdafeiyu",
+    "model": "MiniCPM-V-4.7-1B",
+    "requested_context_tokens": 131072,
+    "kv_cache_type": "q4_0"
+  },
+  "idle_verified": true,
+  "probe_exit_code": 0,
+  "after": {
+    "state": "active",
+    "mode": "text",
+    "busy": false,
+    "active_provider": "llmdafeiyu",
+    "selected_provider": "llmdafeiyu",
+    "model": "MiniCPM-V-4.7-1B",
+    "requested_context_tokens": 131072,
+    "kv_cache_type": "q4_0"
+  },
+  "restored": true
+}

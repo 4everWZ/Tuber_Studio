@@ -59,6 +59,7 @@ def create_app(
     singing_provider=None,
     message_adapter=None,
     video_evidence_factory=None,
+    live_scene=None,
 ):
     settings = settings or Settings()
     writer = acquire_business_writer(settings.runtime)
@@ -71,7 +72,7 @@ def create_app(
         writer.__exit__(None, None, None)
         raise
     sessions = AuthSessions(settings, store)
-    runtime = Runtime(settings, store, singing_provider=singing_provider)
+    runtime = Runtime(settings, store, singing_provider=singing_provider, live_scene=live_scene)
     comments = Comments(settings, store, runtime, adapter)
     account = BilibiliAccount(comments)
     memes = MemeCatalog(settings, store)

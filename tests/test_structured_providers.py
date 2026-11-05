@@ -130,6 +130,19 @@ async def test_structured_capacity_is_checked_before_generating(providers, kind)
     assert not any("response_format" in json.loads(r.content) for r in requests if r.content)
 
 
+async def test_video_repetition_sampling_is_scoped_to_video_response(providers):
+    provider, requests = await providers("local")
+    assert await provider.generate_video_response(MESSAGES, SCHEMA, max_tokens=32) == {"entries": ["甲"]}
+    video = json.loads(requests[-1].content)
+    await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
+    ordinary = json.loads(requests[-1].content)
+    assert video == ordinary | {
+        "dry_multiplier": 0.8,
+        "dry_allowed_length": 5,
+        "dry_penalty_last_n": 512,
+    }
+
+
 @pytest.mark.parametrize("kind", ["local", "api"])
 @pytest.mark.parametrize(
     ("finish", "content", "extra"),

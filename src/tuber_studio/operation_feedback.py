@@ -346,7 +346,7 @@ class FeedbackModel:
             raise GenerationFeedback("平台已拒绝这个正文版本，选择修订或暂缓", original_output=value)
         if operation_output_diagnostics(text)["needs_review"]:
             raise GenerationFeedback(
-                "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓",
+                "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓",
                 original_output=value,
                 kind="style_diagnostic",
                 accepted_value=text,

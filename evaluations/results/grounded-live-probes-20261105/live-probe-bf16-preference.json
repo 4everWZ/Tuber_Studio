@@ -1,0 +1,870 @@
+{
+  "v7": [
+    {
+      "id": "paired-set-cue-a",
+      "group": "roleplay",
+      "pair": "set-cue",
+      "turns": [
+        "调暗灯光是你的活，我只负责把投影停掉。",
+        "我打手势了，你该干嘛？"
+      ],
+      "criterion": "自己调暗灯光",
+      "candidates": [
+        "我去把灯调暗。",
+        "我去把投影停掉。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -2.01131534576416,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -2.1209661960601807,
+            "tokens": 6
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -1.934177279472351,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -1.9910467863082886,
+            "tokens": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-set-cue-b",
+      "group": "roleplay",
+      "pair": "set-cue",
+      "turns": [
+        "调暗灯光是我的活，你只负责把投影停掉。",
+        "我打手势了，你该干嘛？"
+      ],
+      "criterion": "自己停投影",
+      "candidates": [
+        "我去把灯调暗。",
+        "我去把投影停掉。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -2.038433790206909,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -2.289562225341797,
+            "tokens": 6
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -1.9407060146331787,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -2.0501420497894287,
+            "tokens": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-ramen-bet-a",
+      "group": "roleplay",
+      "pair": "ramen-bet",
+      "turns": [
+        "我押队友先认输，你押他会摘下头盔。结果他认输了，没摘头盔。",
+        "所以这回谁赢赌约？"
+      ],
+      "criterion": "观众赢",
+      "candidates": [
+        "你赢了赌约。",
+        "我赢了赌约。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -1.8401657342910767,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.729021668434143,
+            "tokens": 5
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -1.7305179834365845,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.718105673789978,
+            "tokens": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-ramen-bet-b",
+      "group": "roleplay",
+      "pair": "ramen-bet",
+      "turns": [
+        "我押队友先认输，你押他会摘下头盔。结果他没认输，倒把头盔摘了。",
+        "所以这回谁赢赌约？"
+      ],
+      "criterion": "大肥鱼赢",
+      "candidates": [
+        "你赢了赌约。",
+        "我赢了赌约。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -1.9281692504882812,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.8161687850952148,
+            "tokens": 5
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -1.8144216537475586,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.8329505920410156,
+            "tokens": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-host-tag-a",
+      "group": "roleplay",
+      "pair": "host-tag",
+      "turns": [
+        "一会儿我负责读获奖名单，你只管给制作组说句谢谢。",
+        "轮到你了，有一句话先说给大家听吗？"
+      ],
+      "criterion": "实际说谢谢并留名单给观众",
+      "candidates": [
+        "谢谢制作组。获奖名单交给你念。",
+        "获奖名单还没到我这儿，你发我一下。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.614612102508545,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -5.0115485191345215,
+            "tokens": 10
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -5.365150451660156,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.962893486022949,
+            "tokens": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-host-tag-b",
+      "group": "roleplay",
+      "pair": "host-tag",
+      "turns": [
+        "一会儿你负责读获奖名单，我来谢制作组。名单还没发你。",
+        "轮到你了，有一句话先说给大家听吗？"
+      ],
+      "criterion": "说等名单或请观众给名单，不抢感谢分工或编名字",
+      "candidates": [
+        "谢谢制作组。获奖名单交给你念。",
+        "获奖名单还没到我这儿，你发我一下。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.650966644287109,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.713454723358154,
+            "tokens": 10
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.771604061126709,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.61195182800293,
+            "tokens": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-sound-mute-a",
+      "group": "roleplay",
+      "pair": "sound-mute",
+      "turns": [
+        "终场字幕已经做好了，掌声也录好了，但这一版别放掌声。",
+        "你帮我说一下，结尾还该怎么弄？"
+      ],
+      "criterion": "字幕保留、不放掌声",
+      "candidates": [
+        "保留终场字幕，掌声先不放。",
+        "保留掌声，再补终场字幕。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.287156105041504,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.560079097747803,
+            "tokens": 9
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.234683990478516,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.570028781890869,
+            "tokens": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-sound-mute-b",
+      "group": "roleplay",
+      "pair": "sound-mute",
+      "turns": [
+        "终场字幕还没做，掌声已经录好，这一版就把掌声用上。",
+        "你帮我说一下，结尾还该怎么弄？"
+      ],
+      "criterion": "掌声保留、补字幕",
+      "candidates": [
+        "保留终场字幕，掌声先不放。",
+        "保留掌声，再补终场字幕。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.785490989685059,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.445833683013916,
+            "tokens": 9
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.92545747756958,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.223422527313232,
+            "tokens": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-special-win-a",
+      "group": "roleplay",
+      "pair": "special-win",
+      "turns": [
+        "我进决赛了，但朋友差一名就能进。他还在语音里，咱别太闹。",
+        "你给我们接一句？"
+      ],
+      "criterion": "简短低调，顾及朋友差一名",
+      "candidates": [
+        "轻声恭喜你，等队友缓过来咱再聊。",
+        "你俩一起进决赛啦！我来给你们欢呼！"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.510672092437744,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -3.9655604362487793,
+            "tokens": 11
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.730020999908447,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -3.761486768722534,
+            "tokens": 11
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-special-win-b",
+      "group": "roleplay",
+      "pair": "special-win",
+      "turns": [
+        "我和朋友一起进决赛了。他就在语音里，要听你放开了喊。",
+        "你给我们接一句？"
+      ],
+      "criterion": "兴奋祝贺两人一起晋级",
+      "candidates": [
+        "轻声恭喜你，等队友缓过来咱再聊。",
+        "你俩一起进决赛啦！我来给你们欢呼！"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.834388732910156,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -3.2221152782440186,
+            "tokens": 11
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -5.020415782928467,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -2.9727795124053955,
+            "tokens": 11
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-door-sign-a",
+      "group": "roleplay",
+      "pair": "door-sign",
+      "turns": [
+        "这个巷口的角色叫『等会儿』，他从不赴约。你给另一头那个准时出现的角色起个相配的名字。",
+        "你会让他在名牌上写哪几个字？"
+      ],
+      "criterion": "另起与准时出现相配的名字",
+      "candidates": [
+        "叫「踩点到」，准时出现在门口。",
+        "叫「先溜了」，总比别人提前走。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.875010967254639,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -4.386674880981445,
+            "tokens": 12
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.618396759033203,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -4.235864639282227,
+            "tokens": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-door-sign-b",
+      "group": "roleplay",
+      "pair": "door-sign",
+      "turns": [
+        "这个巷口的角色叫『等会儿』，他从不赴约。你给另一头那个专门提前离场的角色起个相配的名字。",
+        "你会让他在名牌上写哪几个字？"
+      ],
+      "criterion": "另起与提前走相配的名字",
+      "candidates": [
+        "叫「踩点到」，准时出现在门口。",
+        "叫「先溜了」，总比别人提前走。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.783673286437988,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -4.085088729858398,
+            "tokens": 12
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.516083240509033,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -3.816696882247925,
+            "tokens": 12
+          }
+        ]
+      }
+    }
+  ],
+  "base": [
+    {
+      "id": "paired-set-cue-a",
+      "group": "roleplay",
+      "pair": "set-cue",
+      "turns": [
+        "调暗灯光是你的活，我只负责把投影停掉。",
+        "我打手势了，你该干嘛？"
+      ],
+      "criterion": "自己调暗灯光",
+      "candidates": [
+        "我去把灯调暗。",
+        "我去把投影停掉。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -2.0545125007629395,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -2.3466830253601074,
+            "tokens": 6
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -2.241549491882324,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -2.3319478034973145,
+            "tokens": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-set-cue-b",
+      "group": "roleplay",
+      "pair": "set-cue",
+      "turns": [
+        "调暗灯光是我的活，你只负责把投影停掉。",
+        "我打手势了，你该干嘛？"
+      ],
+      "criterion": "自己停投影",
+      "candidates": [
+        "我去把灯调暗。",
+        "我去把投影停掉。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -1.968044638633728,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -2.038630962371826,
+            "tokens": 6
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -2.100661039352417,
+            "tokens": 6
+          },
+          {
+            "mean_logp": -1.866001844406128,
+            "tokens": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-ramen-bet-a",
+      "group": "roleplay",
+      "pair": "ramen-bet",
+      "turns": [
+        "我押队友先认输，你押他会摘下头盔。结果他认输了，没摘头盔。",
+        "所以这回谁赢赌约？"
+      ],
+      "criterion": "观众赢",
+      "candidates": [
+        "你赢了赌约。",
+        "我赢了赌约。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -1.5833524465560913,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.8168185949325562,
+            "tokens": 5
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -1.337663173675537,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.6208637952804565,
+            "tokens": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-ramen-bet-b",
+      "group": "roleplay",
+      "pair": "ramen-bet",
+      "turns": [
+        "我押队友先认输，你押他会摘下头盔。结果他没认输，倒把头盔摘了。",
+        "所以这回谁赢赌约？"
+      ],
+      "criterion": "大肥鱼赢",
+      "candidates": [
+        "你赢了赌约。",
+        "我赢了赌约。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -1.5748306512832642,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.9611895084381104,
+            "tokens": 5
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -1.3233569860458374,
+            "tokens": 5
+          },
+          {
+            "mean_logp": -1.7989600896835327,
+            "tokens": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-host-tag-a",
+      "group": "roleplay",
+      "pair": "host-tag",
+      "turns": [
+        "一会儿我负责读获奖名单，你只管给制作组说句谢谢。",
+        "轮到你了，有一句话先说给大家听吗？"
+      ],
+      "criterion": "实际说谢谢并留名单给观众",
+      "candidates": [
+        "谢谢制作组。获奖名单交给你念。",
+        "获奖名单还没到我这儿，你发我一下。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.5741095542907715,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -5.045632839202881,
+            "tokens": 10
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -5.13620662689209,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -5.078898906707764,
+            "tokens": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-host-tag-b",
+      "group": "roleplay",
+      "pair": "host-tag",
+      "turns": [
+        "一会儿你负责读获奖名单，我来谢制作组。名单还没发你。",
+        "轮到你了，有一句话先说给大家听吗？"
+      ],
+      "criterion": "说等名单或请观众给名单，不抢感谢分工或编名字",
+      "candidates": [
+        "谢谢制作组。获奖名单交给你念。",
+        "获奖名单还没到我这儿，你发我一下。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.361184120178223,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.735826015472412,
+            "tokens": 10
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.986636638641357,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.493035793304443,
+            "tokens": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-sound-mute-a",
+      "group": "roleplay",
+      "pair": "sound-mute",
+      "turns": [
+        "终场字幕已经做好了，掌声也录好了，但这一版别放掌声。",
+        "你帮我说一下，结尾还该怎么弄？"
+      ],
+      "criterion": "字幕保留、不放掌声",
+      "candidates": [
+        "保留终场字幕，掌声先不放。",
+        "保留掌声，再补终场字幕。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.558828830718994,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.668856143951416,
+            "tokens": 9
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.784167766571045,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.993862628936768,
+            "tokens": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-sound-mute-b",
+      "group": "roleplay",
+      "pair": "sound-mute",
+      "turns": [
+        "终场字幕还没做，掌声已经录好，这一版就把掌声用上。",
+        "你帮我说一下，结尾还该怎么弄？"
+      ],
+      "criterion": "掌声保留、补字幕",
+      "candidates": [
+        "保留终场字幕，掌声先不放。",
+        "保留掌声，再补终场字幕。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.046448707580566,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.476741313934326,
+            "tokens": 9
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -5.43548059463501,
+            "tokens": 9
+          },
+          {
+            "mean_logp": -4.311428546905518,
+            "tokens": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-special-win-a",
+      "group": "roleplay",
+      "pair": "special-win",
+      "turns": [
+        "我进决赛了，但朋友差一名就能进。他还在语音里，咱别太闹。",
+        "你给我们接一句？"
+      ],
+      "criterion": "简短低调，顾及朋友差一名",
+      "candidates": [
+        "轻声恭喜你，等队友缓过来咱再聊。",
+        "你俩一起进决赛啦！我来给你们欢呼！"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -4.834782600402832,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -4.193872451782227,
+            "tokens": 11
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.917750835418701,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -4.416877746582031,
+            "tokens": 11
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-special-win-b",
+      "group": "roleplay",
+      "pair": "special-win",
+      "turns": [
+        "我和朋友一起进决赛了。他就在语音里，要听你放开了喊。",
+        "你给我们接一句？"
+      ],
+      "criterion": "兴奋祝贺两人一起晋级",
+      "candidates": [
+        "轻声恭喜你，等队友缓过来咱再聊。",
+        "你俩一起进决赛啦！我来给你们欢呼！"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.31306791305542,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -3.3902220726013184,
+            "tokens": 11
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -5.390695095062256,
+            "tokens": 11
+          },
+          {
+            "mean_logp": -3.5431859493255615,
+            "tokens": 11
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-door-sign-a",
+      "group": "roleplay",
+      "pair": "door-sign",
+      "turns": [
+        "这个巷口的角色叫『等会儿』，他从不赴约。你给另一头那个准时出现的角色起个相配的名字。",
+        "你会让他在名牌上写哪几个字？"
+      ],
+      "criterion": "另起与准时出现相配的名字",
+      "candidates": [
+        "叫「踩点到」，准时出现在门口。",
+        "叫「先溜了」，总比别人提前走。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.197196006774902,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -5.075100898742676,
+            "tokens": 12
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.915351390838623,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -4.784543037414551,
+            "tokens": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": "paired-door-sign-b",
+      "group": "roleplay",
+      "pair": "door-sign",
+      "turns": [
+        "这个巷口的角色叫『等会儿』，他从不赴约。你给另一头那个专门提前离场的角色起个相配的名字。",
+        "你会让他在名牌上写哪几个字？"
+      ],
+      "criterion": "另起与提前走相配的名字",
+      "candidates": [
+        "叫「踩点到」，准时出现在门口。",
+        "叫「先溜了」，总比别人提前走。"
+      ],
+      "scores": {
+        "history": [
+          {
+            "mean_logp": -5.025939464569092,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -4.51828670501709,
+            "tokens": 12
+          }
+        ],
+        "recapped": [
+          {
+            "mean_logp": -4.642709732055664,
+            "tokens": 10
+          },
+          {
+            "mean_logp": -3.999244213104248,
+            "tokens": 12
+          }
+        ]
+      }
+    }
+  ]
+}

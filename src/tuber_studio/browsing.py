@@ -61,7 +61,7 @@ from .operation_text import (
 )
 from .operations_control import canonical_intent
 from .persona import built_in_anchor
-from .providers import SYSTEM_RULES, public_error
+from .providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from .publication_errors import PlatformRejected, UnknownPublication
 from .store import dump
 
@@ -73,17 +73,6 @@ agent_depth = contextvars.ContextVar("browsing_agent_depth", default=0)
 
 def normalized(text):
     return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
-
-
-def sanitize_comment_text(text: str) -> str:
-    if not text:
-        return text
-    text = re.sub(r"大家都在深海思考中呢[！。，…\s]*", "", text)
-    text = re.sub(r"本鱼在深海思考了一下[，。]?", "本鱼仔细琢磨了一下，", text)
-    text = re.sub(r"陪你一起深海思考[，。]?", "陪你一起琢磨琢磨，", text)
-    text = re.sub(r"深海思考中[…\.]*", "", text)
-    text = re.sub(r"深海思考", "琢磨", text)
-    return text.strip()
 
 
 class BrowsingService:
@@ -389,7 +378,7 @@ class BrowsingService:
                 await asyncio.sleep(0.5 * (attempt + 1))
 
     async def _prepare_evidence(
-        self, video, config, *, force=False, task=None, deadline=None, require_visual=False
+        self, video, config, *, force=False, task=None, deadline=None, require_visual=False, visual_source_ids=()
     ):
         """Keep visual generation and token probes inside their parent round."""
         identity = read_round.get()
@@ -404,7 +393,8 @@ class BrowsingService:
                 raise ValueError("视觉任务的父轮已不存在")
             deadline = min(deadline or row["deadline"], row["deadline"])
         return await self.evidence.prepare(
-            video, config, force=force, task=task, deadline=deadline, require_visual=require_visual
+            video, config, force=force, task=task, deadline=deadline,
+            require_visual=require_visual, visual_source_ids=visual_source_ids,
         )
 
     async def run(
@@ -920,6 +910,11 @@ class BrowsingService:
         )
         if schema is ResponseDecision:
             response_input = response_input or ResponseDecisionInput(data)
+            if data.get("kind") == "top_level" and data.get("coverage") == "sampled_visual":
+                instruction += (
+                    "按材料类型和时码区分字幕与画面。台词如果提到两者，就分别引用能支持它们的编号。"
+                    "只看到了片段，可以就那个细节接话。"
+                )
             instruction += RESPONSE_REFERENCE_INSTRUCTION
         content = (
             response_input.format()
@@ -969,6 +964,7 @@ class BrowsingService:
     ):
         self._check_round(row)
         response_input = ResponseDecisionInput(data) if schema is ResponseDecision else None
+        video_response = schema is ResponseDecision and data.get("kind") == "top_level"
         character, messages, model_schema = self._model_input(
             row, schema, data, instruction, response_input=response_input
         )
@@ -1001,6 +997,10 @@ class BrowsingService:
                 guard()
                 tokens = None
                 with GenerationMeter(self.repo, row["id"]):
+                    if video_response and getattr(self.runtime.llm, "generation_metered", False):
+                        generate_video = getattr(self.runtime.llm, "generate_video_response", None)
+                        if generate_video is not None:
+                            return await generate_video(packet, model_schema, max_tokens=output)
                     if not getattr(self.runtime.llm, "generation_metered", False):
                         counted = (
                             self.runtime.llm.prepare_json_messages(packet, model_schema, max_tokens=output)
@@ -1067,6 +1067,8 @@ class BrowsingService:
         }
         if response_input is not None:
             binding["input_format"] = response_input.FORMAT_VERSION
+        if video_response:
+            binding["video_response"] = "aligned-source-dry-v1"
         independent = row["config"].get("discovery_publish")
         retry = discovery_retry.get()
         if independent:
@@ -1234,6 +1236,40 @@ class BrowsingService:
         return [dict(s, cid=part["cid"]) for part in material["parts"] for s in part["segments"]]
 
     @staticmethod
+    def _video_response_segments(material, allowed):
+        """Offer matching CC and observed frames without fetching again."""
+        numbers = {str(part["cid"]): i for i, part in enumerate(material["metadata"]["parts"], 1)}
+        tracks, frames, selected = {}, [], []
+        for part in material["parts"]:
+            cid = str(part["cid"])
+            visual = part.get("visual", False)
+            for segment in part["segments"]:
+                source = dict(segment, cid=cid, source_label=f"P{numbers[cid]} {'画面' if visual else '字幕'}")
+                if source["id"] in allowed:
+                    selected.append(source)
+                if visual:
+                    frames.append(source)
+                else:
+                    tracks.setdefault(cid, []).append(source)
+        added = set(allowed)
+        for frame in frames:
+            subtitles = [
+                segment
+                for segment in tracks.get(frame["cid"], ())
+                if segment.get("start") is not None
+                and segment.get("end") is not None
+                and segment["start"] <= frame["start"] <= segment["end"]
+            ]
+            if frame["id"] in allowed and subtitles and not any(s["id"] in added for s in subtitles):
+                subtitle = min(subtitles, key=lambda s: abs((s["start"] + s["end"]) / 2 - frame["start"]))
+                selected.append(subtitle)
+                added.add(subtitle["id"])
+            if frame["id"] not in added and any(s["id"] in allowed for s in subtitles):
+                selected.append(frame)
+                added.add(frame["id"])
+        return selected
+
+    @staticmethod
     def _metadata_summary(metadata):
         return {
             key: metadata[key]
@@ -1329,6 +1365,7 @@ class BrowsingService:
             source_grouper=classification_source_groups if view else None,
         )
 
+    @reuse_turn_token_counts
     async def _content_decisions(self, material, row, metrics):
         decisions = []
         presentation = self._content_presentation(material, row)
@@ -1349,68 +1386,79 @@ class BrowsingService:
             decisions.append(bind_content_decision(decision, aliases))
         return decisions
 
-    async def _evaluate_task(self, result, row, metrics):
+    async def _followup_visual(self, result, row, metrics, decisions, followup):
         identity, material = result["id"], result["material"]
-        heartbeat = result["heartbeat"]
-        decisions, followup = [], None
-        payload = {}
-        try:
-            decisions = await self._content_decisions(material, row, metrics)
-            if any(decision.coverage_required == "visual" for decision in decisions) and not any(
-                part.get("visual") for part in material["parts"]
-            ):
-                followup = {
-                    "status": "requested" if row["config"]["visual_enabled"] else "disabled",
-                    "decisions_before": [decision.model_dump() for decision in decisions],
-                    "source_material_key": result["material_key"],
-                }
-                if row["config"]["visual_enabled"]:
-                    initial = json.loads(
-                        self.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
-                            "payload"
-                        ]
-                    ) | {"decisions": followup["decisions_before"], "visual_followup": followup}
+        if any(decision.coverage_required == "visual" for decision in decisions) and not any(
+            part.get("visual") for part in material["parts"]
+        ):
+            followup.update(
+                status="requested" if row["config"]["visual_enabled"] else "disabled",
+                decisions_before=[decision.model_dump() for decision in decisions],
+                source_material_key=result["material_key"],
+            )
+            if row["config"]["visual_enabled"]:
+                initial = json.loads(
+                    self.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
+                        "payload"
+                    ]
+                ) | {"decisions": followup["decisions_before"], "visual_followup": followup}
+                self.repo.complete(
+                    identity,
+                    result["owner"],
+                    result["generation"],
+                    "evidence_ready",
+                    initial,
+                    result["material_key"],
+                )
+                try:
+                    key, material = await self._prepare_evidence(
+                        material["metadata"]["bvid"],
+                        row["config"],
+                        require_visual=True,
+                        visual_source_ids={
+                            ref
+                            for decision in decisions
+                            if decision.coverage_required == "visual"
+                            for ref in decision.evidence_ids
+                        },
+                        task={"id": identity},
+                        deadline=row["deadline"],
+                    )
+                    result.update(material_key=key, material=material)
+                    followup.update(status="prepared", material_key=key)
                     self.repo.complete(
                         identity,
                         result["owner"],
                         result["generation"],
                         "evidence_ready",
-                        initial,
-                        result["material_key"],
+                        initial
+                        | {
+                            "coverage": material["coverage"],
+                            "missing_parts": material["missing_parts"],
+                            "visual_followup": followup,
+                        },
+                        key,
                     )
-                    try:
-                        key, material = await self._prepare_evidence(
-                            material["metadata"]["bvid"],
-                            row["config"],
-                            require_visual=True,
-                            task={"id": identity},
-                            deadline=row["deadline"],
-                        )
-                        result.update(material_key=key, material=material)
-                        followup.update(status="prepared", material_key=key)
-                        self.repo.complete(
-                            identity,
-                            result["owner"],
-                            result["generation"],
-                            "evidence_ready",
-                            initial
-                            | {
-                                "coverage": material["coverage"],
-                                "missing_parts": material["missing_parts"],
-                                "visual_followup": followup,
-                            },
-                            key,
-                        )
-                        decisions = await self._content_decisions(material, row, metrics)
-                        followup.update(
-                            status="completed",
-                            needs_visual_again=any(
-                                decision.coverage_required == "visual" for decision in decisions
-                            ),
-                        )
-                    except Exception as error:
-                        followup.update(status="failed", error=public_error(error))
-                        raise
+                    decisions = await self._content_decisions(material, row, metrics)
+                    followup.update(
+                        status="completed",
+                        needs_visual_again=any(
+                            decision.coverage_required == "visual" for decision in decisions
+                        ),
+                    )
+                except Exception as error:
+                    followup.update(status="failed", error=public_error(error))
+                    raise
+        return material, decisions
+
+    async def _evaluate_task(self, result, row, metrics):
+        identity, material = result["id"], result["material"]
+        heartbeat = result["heartbeat"]
+        decisions, followup = [], {}
+        payload = {}
+        try:
+            decisions = await self._content_decisions(material, row, metrics)
+            material, decisions = await self._followup_visual(result, row, metrics, decisions, followup)
             actionable = [
                 d
                 for d in decisions
@@ -1431,7 +1479,7 @@ class BrowsingService:
                 ],
                 "evidence_ids": sorted({ref for decision in decisions for ref in decision.evidence_ids}),
             }
-            if followup is not None:
+            if followup:
                 payload["visual_followup"] = followup
             bvid = material["metadata"]["bvid"]
             aid = str(material["metadata"]["aid"])
@@ -1489,7 +1537,7 @@ class BrowsingService:
                         "parent": "0",
                     }
                     intent = self._intent(
-                        row, "top_level", target, response, [result["material_key"]], chosen
+                        row, "top_level", target, response, [result["material_key"]], response.evidence_ids
                     )
                     payload["intent_id"] = intent["id"]
                     status = "selected"
@@ -1681,7 +1729,7 @@ class BrowsingService:
                             "source_text": item_text,
                         }
                         thread_intent = self._intent(
-                            row, "reply_public", target, thread_response, [result["material_key"]], chosen
+                            row, "reply_public", target, thread_response, [result["material_key"]], thread_response.evidence_ids
                         )
                         if "reply_intent_ids" not in payload:
                             payload["reply_intent_ids"] = []
@@ -1726,7 +1774,7 @@ class BrowsingService:
                         else {}
                     ),
                     "decisions": [decision.model_dump() for decision in decisions],
-                    **({"visual_followup": followup} if followup is not None else {}),
+                    **({"visual_followup": followup} if followup else {}),
                 },
                 result["material_key"],
                 public_error(error),
@@ -1736,7 +1784,10 @@ class BrowsingService:
             await asyncio.gather(heartbeat, return_exceptions=True)
 
     async def _response(self, row, material, context, allowed, kind, metrics):
-        segments = [s for s in self._segments(material) if s["id"] in allowed] if material else []
+        if material and kind == "top_level" and material["coverage"] == "sampled_visual":
+            segments = self._video_response_segments(material, allowed)
+        else:
+            segments = [s for s in self._segments(material) if s["id"] in allowed] if material else []
         recent = self.store.all(
             "SELECT text FROM browsing_intents WHERE status='published' AND character_id=? ORDER BY updated_at DESC LIMIT ?",
             (row["character_id"], row["config"]["recent_sample_limit"]),
@@ -1764,9 +1815,8 @@ class BrowsingService:
             metrics,
             diagnose=lambda value: (
                 self.repetition_reason(value.text, recent, context)
-                or ("包含固定口癖套话（如深海思考）" if "深海思考" in value.text else None)
                 or (
-                    "正文包含大量重复段落；结合表达意图选择保留、修订或暂缓"
+                    "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓"
                     if operation_output_diagnostics(value.text)["needs_review"]
                     else None
                 )
@@ -1827,12 +1877,7 @@ class BrowsingService:
                 max_tokens=1024,
             )
         except Exception:
-            return VideoEngagementDecision(
-                should_like=bool(actionable),
-                like_reason="结合视频看点自主点赞" if actionable else "",
-                should_favorite=False,
-                favorite_reason="",
-            )
+            return VideoEngagementDecision()
 
     def _intent(self, row, kind, target, response, material_keys, evidence_ids):
         resource = target.get("bvid") or "dynamic:" + str(target["oid"])
@@ -1879,7 +1924,7 @@ class BrowsingService:
                 else "automatic_pending"
                 if independent
                 else "pending_review",
-                "" if kind == "private_handoff" else sanitize_comment_text(response.text),
+                "" if kind == "private_handoff" else response.text.strip(),
                 response.reason,
                 dump(target),
                 dump(sorted(evidence_ids)),
