@@ -15,11 +15,22 @@ import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-  renderPermissionMatrix,
-  renderOperationsQuickBar,
-  calculatePermissionTier,
-  applyPermissionTierUI,
 } from "./modules/operations.js";
+import {
+  renderCharacterImage,
+  initCharacterStudioUI,
+} from "./modules/character-studio.js";
+import {
+  selectedThread,
+  initCommentsModule,
+} from "./modules/comments.js";
+import {
+  localDateTime,
+  initDynamicsModule,
+} from "./modules/dynamics.js";
+import {
+  initMaintenanceModule,
+} from "./modules/maintenance.js";
 
 const api = (path, options = {}) => baseApi(path, options, showLogin);
 const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
@@ -54,6 +65,16 @@ const model = {
   dynamicMemorySummary: null,
   dynamicMemeCache: new Map(), dynamicMemePending: new Set(), dynamicMemeContext: null, dynamicMemePreviewKey: null,
 };
+
+let commentsModule = null;
+let dynamicsModule = null;
+let characterStudio = null;
+let maintenanceModule = null;
+
+const refreshComments = async () => commentsModule?.refreshComments();
+const refreshDynamics = async () => dynamicsModule?.refreshDynamics();
+const refreshThreadContext = async () => commentsModule?.refreshThreadContext();
+
 const commentContinuation = new OperationContinuationView($("comment-continuation"), api, notice, refreshComments);
 const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
 const dynamicDecisionContinuation = new OperationContinuationView($("dynamic-decision-continuation"), api, notice, refreshDynamics);
@@ -61,16 +82,38 @@ const cachePanel = new CachePanel($("cache-panel"), api, notice);
 const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api, notice);
 setInterval(() => { if (model.authenticated) cachePanel.refresh(); }, 5000);
 setInterval(() => { if (model.authenticated) inferenceNodePanel.refresh(); }, 10000);
+
 const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
 const interactiveGamesUI = new InteractiveGamesUI({ notify: notice });
-const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => { model.dynamicMemeCache.clear(); messagesPanel.memeCache.clear(); });
-const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), settings: $("account-settings"), api, notify: notice, onSessionRevoked: showLogin, onChange: () => {
-  if (!model.authenticated) return;
-  Promise.allSettled([loadPolicy(), updatePermissionCapsule(), ...(model.page === "messages" ? [messagesPanel.refresh()] : [])]).then(results => results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); }));
-}});
-const dynamicMemePicker = new MemePicker(api, (id, asset) => selectDynamicMeme(id, asset, model.dynamicMemeContext), {title: "选择动态配图", description: "只显示此动态所属角色已启用且可用的图片。最多附加1张，保留原正文；修改配图后需要重新审核。"});
+const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
+  model.dynamicMemeCache.clear();
+  messagesPanel.memeCache.clear();
+});
+const accountPanel = new BilibiliAccountUI({
+  header: $("global-bilibili-account"),
+  settings: $("account-settings"),
+  api,
+  notify: notice,
+  onSessionRevoked: showLogin,
+  onChange: () => {
+    if (!model.authenticated) return;
+    Promise.allSettled([
+      commentsModule?.loadPolicy(),
+      updatePermissionCapsule(),
+      ...(model.page === "messages" ? [messagesPanel.refresh()] : [])
+    ]).then(results => results.forEach(result => {
+      if (result.status === "rejected") notice(result.reason.message, true);
+    }));
+  }
+});
+
+const dynamicMemePicker = new MemePicker(api, (id, asset) => dynamicsModule?.selectDynamicMeme(id, asset, model.dynamicMemeContext), {
+  title: "选择动态配图",
+  description: "只显示此动态所属角色已启用且可用的图片。最多附加1张，保留原正文；修改配图后需要重新审核。"
+});
+
 const names = {
   stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
   connecting: "连接中", error: "错误", queued: "排队中", generating: "生成台词", synthesizing: "合成语音",
@@ -82,8 +125,9 @@ const names = {
   suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
   gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示", llama_cpp: "llama.cpp",
   invalidated: "已失效", post: "生成动态", wait: "等待", role_story: "虚构角色故事",
-  checkpoint:"进度已保存", needs_material:"等待补充材料", deciding:"Agent 处理中", awaiting_review:"待审核", needs_reconciliation:"发送结果待核对", waiting:"等待下一步", abandoned:"已暂缓",
+  checkpoint: "进度已保存", needs_material: "等待补充材料", deciding: "Agent 处理中", awaiting_review: "待审核", needs_reconciliation: "发送结果待核对", waiting: "等待下一步", abandoned: "已暂缓",
 };
+
 function label(value) { return names[value] || value || "—"; }
 function display(value) { return value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); }
 function node(tag, text, className) {
@@ -96,17 +140,23 @@ function list(data) { return Array.isArray(data) ? data : data?.items || data?.r
 function time(value) {
   if (!value) return "—";
   const date = new Date(typeof value === "number" ? value * 1000 : value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleTimeString("zh-CN", {hour12: false});
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleTimeString("zh-CN", { hour12: false });
 }
 function badge(value) {
   const good = ["completed", "approved", "published", "live", "ready", "copied"];
   const bad = ["failed", "error", "cancelled", "rejected", "degraded", "publish_uncertain", "publish_failed"];
   return node("span", label(value), `badge ${good.includes(value) ? "good" : bad.includes(value) ? "bad" : ""}`);
 }
-function setBadge(element, value) { const valueNode = badge(value); element.className = valueNode.className; element.textContent = valueNode.textContent; }
+function setBadge(element, value) {
+  const valueNode = badge(value);
+  element.className = valueNode.className;
+  element.textContent = valueNode.textContent;
+}
+
 let noticeTimer = null;
 function notice(message, error = false) {
   const element = $("notice");
+  if (!element) return;
   element.textContent = safeMessage(message);
   element.hidden = !message;
   element.classList.toggle("error", error);
@@ -116,688 +166,355 @@ function notice(message, error = false) {
     noticeTimer = setTimeout(() => { element.hidden = true; }, error ? 10000 : 4000);
   }
 }
+
 function describe(element, entries) {
+  if (!element) return;
   element.replaceChildren();
   entries.forEach(([key, value]) => element.append(node("dt", key), node("dd", display(value))));
 }
+
 function empty(tbody, colspan, text) {
-  tbody.replaceChildren(); const row = node("tr"); const cell = node("td", text, "empty-cell");
-  cell.colSpan = colspan; row.append(cell); tbody.append(row);
+  if (!tbody) return;
+  tbody.replaceChildren();
+  const row = node("tr");
+  const cell = node("td", text, "empty-cell");
+  cell.colSpan = colspan;
+  row.append(cell);
+  tbody.append(row);
 }
+
 function cell(row, value, small) {
   const element = node("td");
   element.append(value instanceof Node ? value : node("span", display(value)));
   if (small) element.append(node("small", small, "cell-sub"));
-  row.append(element); return element;
+  row.append(element);
+  return element;
 }
+
 async function busy(button, action) {
-  const wasDisabled = button.disabled; button.disabled = true; button.setAttribute("aria-busy", "true");
-  try { return await action(); } catch (error) { notice(error.message, true); return undefined; }
-  finally {
-    button.disabled = wasDisabled; button.removeAttribute("aria-busy");
+  if (!button) return action();
+  const wasDisabled = button.disabled;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    return await action();
+  } catch (error) {
+    notice(error.message, true);
+    return undefined;
+  } finally {
+    button.disabled = wasDisabled;
+    button.removeAttribute("aria-busy");
     if (model.status) renderControls();
     if (model.status?.context) renderContext(model.status.context);
     if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
     if (button.id === "preview-submit") renderVoicePreview();
-    if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) renderDraft();
-    if (["approve-dynamic", "reject-dynamic", "publish-dynamic"].includes(button.id)) renderDynamicPost();
-    if (["save-dynamic-policy", "stop-dynamics", "evaluate-dynamics"].includes(button.id)) renderDynamicPolicy();
+    if (["approve-draft", "reject-draft", "copy-draft", "publish-draft"].includes(button.id)) commentsModule?.renderDraft();
+    if (["approve-dynamic", "reject-dynamic", "publish-dynamic"].includes(button.id)) dynamicsModule?.renderDynamicPost();
+    if (["save-dynamic-policy", "stop-dynamics", "evaluate-dynamics"].includes(button.id)) dynamicsModule?.renderDynamicPolicy();
   }
 }
+
 function showLogin() {
-  model.authenticated = false; $("workspace").hidden = true; $("login").hidden = false;
+  model.authenticated = false;
+  $("workspace").hidden = true;
+  $("login").hidden = false;
   accountPanel.deactivate();
   messagesPanel.closeImagePicker();
-  dynamicMemePicker.close(true); model.dynamicMemeContext = null;
-  clearProviderSecrets();
-  model.socket?.close(); model.socket = null;
 }
+
 async function enterWorkspace() {
-  const status = await api("/api/status");
-  model.authenticated = true; $("login").hidden = true; $("workspace").hidden = false;
-  renderStatus(status); connectAdmin();
-  const results = await Promise.allSettled([loadCharacters(), loadAssets(), loadVoices(), loadSettings(), loadPolicy(), accountPanel.activate(), updatePermissionCapsule(), interactiveGamesUI.init(), loadLocalModelsDropdown(), checkDafeiyuModelStatus()]);
-  results.forEach(result => { if (result.status === "rejected") notice(result.reason.message, true); });
+  await Promise.all([loadSettings(), loadVoices(), loadAssets(), characterStudio?.loadCharacters()]);
+  model.authenticated = true;
+  $("login").hidden = true;
+  $("workspace").hidden = false;
+  connectAdmin();
   await changePage();
 }
+
 function connectAdmin() {
-  if (!model.authenticated || model.socket) return;
-  const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/admin`);
-  model.socket = socket;
-  socket.onopen = () => { $("connection").textContent = "实时连接"; };
-  socket.onmessage = event => {
-    try { const data = JSON.parse(event.data); if (data.type === "status") renderStatus(data.data); } catch { /* Keep polling available. */ }
+  if (model.socket) model.socket.close();
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  model.socket = new WebSocket(`${protocol}//${location.host}/ws/admin`);
+  model.socket.onmessage = async event => {
+    const message = JSON.parse(event.data);
+    if (message.type === "job_updated" || message.type === "event_queued") {
+      if (["overview", "live"].includes(model.page)) await refreshLive();
+    }
+    if (message.type === "context_updated" && message.context) renderContext(message.context);
+    if (message.type === "status") renderStatus(message.data);
   };
-  socket.onclose = () => {
-    if (model.socket === socket) model.socket = null;
-    $("connection").textContent = "轮询更新";
-    if (model.authenticated) setTimeout(connectAdmin, 4000);
-  };
-  socket.onerror = () => { $("connection").textContent = "轮询更新"; };
 }
+
 function renderControls() {
-  const status = model.status; if (!status) return;
-  document.querySelectorAll("[data-action]").forEach(button => {
-    if (button.getAttribute("aria-busy") === "true") return;
-    const action = button.dataset.action;
-    if (!liveEnabled() && !(action === "stop" && status.state !== "stopped")) { button.disabled = true; return; }
-    button.disabled = action === "start" ? status.state !== "stopped" :
-      action === "pause" ? !["live", "degraded"].includes(status.state) :
-      action === "resume" ? status.state !== "paused" :
-      action === "stop" ? status.state === "stopped" :
-      action === "mute" ? !!status.muted : action === "unmute" ? !status.muted :
-      action === "skip" ? !status.current_job : action === "clear" ? !status.queue_length : false;
-    if (["start", "resume"].includes(action) && resourcesTransitioning()) button.disabled = true;
-  });
-  $("event-form").querySelectorAll("input, select, textarea, button").forEach(input => { if (input.getAttribute("aria-busy") !== "true") input.disabled = !liveEnabled() || resourcesTransitioning(); });
-  if ($("compact-live").getAttribute("aria-busy") !== "true") $("compact-live").disabled = !liveEnabled();
-  renderLiveFeatures();
-  updateMultimodalBadge();
+  const status = model.status || { state: "stopped" };
+  const running = status.state === "live";
+  $("start").disabled = running;
+  $("pause").disabled = !running;
+  $("stop").disabled = status.state === "stopped";
+  renderModeControls(status.inference);
 }
+
 function liveEnabled() { return model.settings?.features?.live_enabled === true; }
 function resourcesTransitioning() {
   const inference = model.status?.inference;
-  return !!model.modeSwitch || !!inference?.switching_to || ["loading", "switching", "starting"].includes(inference?.state);
+  return !!(model.modeSwitch || (inference?.operation?.mode != null && inference.operation.mode !== inference.mode));
 }
 function localVoiceId() {
-  return model.settings?.tts?.voice_id || model.voices.find(voice => (voice.provider || voice.kind) === "gpt_sovits")?.id;
+  return model.settings?.tts?.voice || model.status?.character?.voice_profile_id || "dafeiyu";
 }
 function localEngineLabel() {
-  const backend = model.settings?.tts?.local_backend;
-  return backend === "genie_onnx_int8" ? "Genie ONNX INT8" : backend || "compact（兼容配置，未准入）";
+  return model.settings?.tts?.kind === "gpt_sovits" ? "GPT-SoVITS" : (model.settings?.tts?.kind || "未配置");
 }
 function renderLiveFeatures() {
   const enabled = liveEnabled();
-  if ($("live-nav-label")) $("live-nav-label").textContent = enabled ? "Mock 直播" : "直播（后续）";
-  const liveInferenceModeBtn = document.querySelector('[data-inference-mode="live"]');
-  if (liveInferenceModeBtn) liveInferenceModeBtn.textContent = enabled ? "直播模式" : "直播（后续）";
-  if ($("live-feature-notice")) $("live-feature-notice").textContent = enabled ? `本地 Mock 直播已开放：启动会加载直播资源；仅处理手动注入事件，不连接 B站或抖音。停止直播后，切回${resourceModeName("text")}模式才会卸载 TTS。` : "直播与本地动态语音后续开放。当前可在评论工作台处理文本，或在设置中配置外部模型与语音 API。";
-  if ($("live-feature-notice")) $("live-feature-notice").hidden = false;
-  if ($("overlay-heading")) $("overlay-heading").textContent = enabled ? "OBS / Mock 播放器配置" : "OBS 播放器配置（直播后续）";
-  if ($("overlay-help")) $("overlay-help").textContent = enabled ? "手动打开播放器后，在 Mock 直播中注入事件即可播报。仅一个 overlay 页面获得播放权，第二个页面进入待机；不会连接真实直播平台。" : "直播与本地动态语音后续开放。已有播放器入口保留；仅一个 overlay 页面获得播放权，第二个页面进入待机。";
-  const localOption = $("tts-kind").querySelector('option[value="gpt_sovits"]');
-  localOption.textContent = enabled ? "本地 GPT-SoVITS 音色" : "本地 GPT-SoVITS（后续）";
-  $("tts-local-engine").textContent = model.settings ? `已保存本地引擎：${localEngineLabel()} · 音色：${localVoiceId() || "未配置"}。${model.settings.tts?.kind !== "gpt_sovits" ? "当前语音来源未使用此引擎。" : !enabled ? "本地动态语音尚未启用。" : model.settings.tts?.local_backend !== "genie_onnx_int8" ? "此后端未准入本地试听。" : "需手动进入直播模式；引擎与音色由服务配置，只读展示。"}` : "本地引擎：正在读取已保存配置。";
-  $("tts-settings-help").textContent = enabled ? "外部 API 使用 external_api 音色；本地 Genie 仅使用服务选定音色。试听不会切换资源模式或替换角色音色。" : "配置外部 API 后，在语音页选择 external_api 试听；已有角色音色不会自动替换。本地动态语音和直播后续开放。";
+  const liveNotice = $("live-feature-notice");
+  if (liveNotice) liveNotice.hidden = enabled;
+  const startBtn = $("start");
+  if (startBtn && !enabled) startBtn.title = "直播特性未启用";
 }
+
 function renderStatus(status) {
-  if (!status) return; model.status = status;
-  if (status.comment_policy) renderCommentPolicy(status.comment_policy);
-  setBadge($("live-state"), status.state);
-  if (status.muted) $("live-state").textContent += " · 静音";
-  const character = status.character;
-  $("global-character").textContent = character ? `${character.name} · v${character.version}` : "未选择角色";
-  $("overlay-state").textContent = status.overlay_connected ? "播放器已连接" : "播放器未连接";
-  $("runtime-error").textContent = status.error ? display(status.error) : "";
-  $("runtime-error").hidden = !status.error;
-  $("metric-queue").textContent = display(status.queue_length ?? 0);
-  const timings = status.timings || {};
-  const ms = value => value == null ? "—" : `${Math.round(value)} ms`;
-  $("metric-time").textContent = `${ms(timings.llm_ms)} / ${ms(timings.tts_ms)}`;
-  const resources = status.resources || {};
-  $("metric-ram").textContent = resources.ram_used_mb == null ? "—" : `${(resources.ram_used_mb / 1024).toFixed(1)} / ${(resources.ram_total_mb / 1024).toFixed(1)} GB`;
-  $("metric-cpu").textContent = resources.cpu_percent == null ? "—" : `${resources.cpu_percent}% / ${Math.round(resources.process_mb || 0)} MB`;
-  $("current-character-name").textContent = character ? `${character.name} · v${character.version}` : "未选择角色";
-  const job = status.current_job;
-  setBadge($("current-status"), job?.status || "ready"); setBadge($("live-current-status"), job?.status || "ready");
-  const text = job?.text || job?.spoken_text || (job ? "正在处理观众事件…" : "当前没有待播报台词。");
-  $("current-text").textContent = text; $("live-current-text").textContent = text;
-  $("current-detail").textContent = job ? `任务 ${job.id} · ${job.emotion || "—"}` : !liveEnabled() ? "首版以评论与文本为主，直播与本地动态语音后续开放。" : status.state === "stopped" ? "启动 Mock 直播，在调试台注入事件。" : "等待下一条可回应事件。";
-  describe($("live-current-detail"), job ? [["任务 ID", job.id], ["源事件", job.event_id], ["角色版本", `${job.character_id} · v${job.character_version}`], ["LLM / TTS", `${ms(job.llm_ms)} / ${ms(job.tts_ms)}`], ["错误", job.error || "无"]] : [["队列长度", status.queue_length ?? 0], ["会话", status.session_id || "未启动"]]);
-  const last = status.last_played;
-  $("last-played").textContent = last ? typeof last === "string" ? last : `${last.text || last.spoken_text || ""}${last.completed_at ? ` · ${time(last.completed_at)}` : ""}` : "暂无已确认播放记录。";
-  const providers = status.providers || {};
-  describe($("provider-summary"), [["平台", "Mock · 真实直播接入后置"], ["LLM", display(providers.llm)], ["TTS", display(providers.tts)], ...(status.inference ? [["推理资源", inferenceLabel(status.inference)]] : []), ["播放器", status.overlay_connected ? "已连接" : "未连接"], ["会话", status.session_id || "未启动"]]);
-  renderCharacterImage(); renderControls();
-  renderContext(status.context);
-  renderInference(status.inference); renderVoicePreview();
-  if (model.dynamicPolicy) renderDynamicPolicy();
-  renderJetsonOverview();
+  model.status = status;
   renderServiceStatusCapsule(status);
+  renderCharacterImage(model);
+  renderControls();
+  if (status.context) renderContext(status.context);
+  if (status.inference) renderInference(status.inference);
+  renderVoicePreview();
+  if ($("character-version")) {
+    $("character-version").title = `当前运行角色：${status.character?.name || "—"} v${status.character?.version ?? "—"}`;
+  }
 }
 
 function renderServiceStatusCapsule(status) {
   const capsule = $("service-status-capsule");
   if (!capsule) return;
-  const providers = status?.providers || {};
-  const llmDot = $("capsule-llm-dot");
-  const llmLabel = $("capsule-llm-label");
-  const ttsDot = $("capsule-tts-dot");
-  const ttsLabel = $("capsule-tts-label");
-  const charLabel = $("capsule-char-label");
-
-  if (llmDot && llmLabel) {
-    const llmDesc = providers.llm;
-    if (status?.error && String(status.error).includes("LLM")) {
-      llmDot.className = "status-dot red";
-      llmLabel.textContent = "LLM: 连接异常";
-    } else if (llmDesc) {
-      llmDot.className = "status-dot green";
-      llmLabel.textContent = `LLM: ${llmDesc}`;
-    } else {
-      llmDot.className = "status-dot amber";
-      llmLabel.textContent = "LLM: 未配置";
-    }
-  }
-
-  if (ttsDot && ttsLabel) {
-    const ttsDesc = providers.tts;
-    if (status?.error && String(status.error).includes("TTS")) {
-      ttsDot.className = "status-dot red";
-      ttsLabel.textContent = "TTS: 异常";
-    } else if (ttsDesc && ttsDesc !== "prerecorded") {
-      ttsDot.className = "status-dot green";
-      ttsLabel.textContent = `TTS: ${ttsDesc}`;
-    } else if (ttsDesc === "prerecorded") {
-      ttsDot.className = "status-dot amber";
-      ttsLabel.textContent = "TTS: 预录音频";
-    } else {
-      ttsDot.className = "status-dot amber";
-      ttsLabel.textContent = "TTS: 未启动";
-    }
-  }
-
-  if (charLabel) {
-    const character = status?.character;
-    const name = character?.name || character?.id || "大肥鱼";
-    charLabel.textContent = `角色: ${name}`;
-  }
+  const inference = status.inference || {};
+  const tts = inference.tts || {};
+  const isOnline = inference.remote_reachable !== false;
+  capsule.className = `service-status-capsule ${isOnline ? "online" : "offline"}`;
+  const dot = capsule.querySelector(".status-dot") || node("span", "", "status-dot");
+  const text = capsule.querySelector(".status-text") || node("span", "", "status-text");
+  const hostLabel = inference.host ? ` [${inference.host}]` : "";
+  const ttsState = tts.resident ? "TTS 已就绪" : "TTS 待命卸载 (省显存)";
+  text.textContent = isOnline ?
+    `🚀 节点在线${hostLabel} · 模型: ${inference.active_model || inference.model || "MiniCPM-V-4.7-1B"} · ${ttsState}` :
+    `⚠️ 节点离线${hostLabel} · 请检查 9012 Broker 服务`;
+  if (!capsule.contains(dot)) capsule.prepend(dot);
+  if (!capsule.contains(text)) capsule.append(text);
 }
 
-let lastJetsonFetchTime = 0;
-let cachedJetsonNodeData = null;
-
-async function fetchJetsonMetrics(force = false) {
-  const now = Date.now();
-  if (!force && cachedJetsonNodeData && (now - lastJetsonFetchTime < 10000)) {
-    return cachedJetsonNodeData;
-  }
-  try {
-    cachedJetsonNodeData = await api("/api/inference/node");
-    lastJetsonFetchTime = now;
-  } catch (e) {
-    console.warn("Failed to fetch inference node metrics:", e);
-  }
-  return cachedJetsonNodeData;
-}
-
-async function renderJetsonOverview() {
-  const card = $("jetson-monitor-card");
-  if (!card) return;
-  const node = await fetchJetsonMetrics();
-  if (!node) {
-    const healthBadge = $("jetson-health-badge");
-    if (healthBadge) {
-      healthBadge.textContent = "离线 / 未连接";
-      healthBadge.className = "badge bad";
-    }
-    return;
-  }
-
-  const caps = node.capabilities || {};
-  const res = caps.resource || {};
-  const endpointEl = $("jetson-node-endpoint");
-  if (endpointEl) endpointEl.textContent = node.base_url || "未配置节点地址";
-
-  const modeBadge = $("jetson-mode-badge");
-  if (modeBadge) modeBadge.textContent = node.mode === "live" ? "直播模式" : "文本/运营模式";
-
-  const healthBadge = $("jetson-health-badge");
-  if (healthBadge) {
-    if (node.error) {
-      healthBadge.textContent = "异常";
-      healthBadge.className = "badge bad";
-    } else if (node.paired) {
-      healthBadge.textContent = "🟢 运行正常";
-      healthBadge.className = "badge good";
-    } else {
-      healthBadge.textContent = "未配对";
-      healthBadge.className = "badge";
-    }
-  }
-
-  const toGB = b => (b ? (b / (1024 * 1024 * 1024)).toFixed(2) : "0");
-  const toMB = b => (b ? (b / (1024 * 1024)).toFixed(1) : "0");
-  const totalGB = toGB(res.total_bytes);
-  const availGB = toGB(res.available_bytes);
-  const rssGB = toGB(res.process_tree_rss_bytes);
-  const swapMB = toMB(res.swap_used_bytes);
-
-  const ramText = $("jetson-ram-text");
-  if (ramText) ramText.textContent = `${availGB} GB 可用 / ${totalGB} GB 总计`;
-
-  const ramBar = $("jetson-ram-bar");
-  if (ramBar && res.total_bytes) {
-    const usedBytes = res.total_bytes - (res.available_bytes || 0);
-    const pct = Math.min(100, Math.max(0, (usedBytes / res.total_bytes) * 100));
-    ramBar.style.width = `${pct.toFixed(1)}%`;
-    ramBar.className = `jetson-progress-fill ${pct > 85 ? "high" : pct > 65 ? "medium" : "normal"}`;
-  }
-
-  const rssText = $("jetson-rss-text");
-  if (rssText) rssText.textContent = `${rssGB} GB`;
-  const availText = $("jetson-available-text");
-  if (availText) availText.textContent = `${availGB} GB`;
-  const swapText = $("jetson-swap-text");
-  if (swapText) swapText.textContent = `${swapMB} MB`;
-
-  const activeProfile = caps.profiles?.[caps.selected_provider] || caps.profiles?.llmgemma4e2b || {};
-  const modelName = $("jetson-model-name");
-  if (modelName) modelName.textContent = activeProfile.alias || caps.model || node.model || "—";
-
-  const modelQuant = $("jetson-model-quant");
-  if (modelQuant) {
-    const qModel = activeProfile.quantization || "Q4_0";
-    const qProj = activeProfile.projector_quantization ? ` / ${activeProfile.projector_quantization} Proj` : "";
-    modelQuant.textContent = `${qModel}${qProj}`;
-  }
-
-  const contextText = $("jetson-context-text");
-  if (contextText) {
-    const ctx = activeProfile.context_tokens || caps.requested_context_tokens || 131072;
-    contextText.textContent = `${(ctx / 1024).toFixed(0)}K (${ctx.toLocaleString()} Tokens)`;
-  }
-
-  const visionStatus = $("jetson-vision-status");
-  if (visionStatus) {
-    visionStatus.textContent = activeProfile.supports_vision ? "支持 / 已就绪" : "纯文本";
-  }
-
-  const storageList = caps.storage || [];
-  let totalStorageBytes = 0;
-  let modelsBytes = 0;
-  let ttsBytes = 0;
-  let engineBytes = 0;
-
-  for (const s of storageList) {
-    const bytes = s.used_bytes || 0;
-    totalStorageBytes += bytes;
-    if (s.kind === "models") modelsBytes = bytes;
-    else if (s.kind === "tts") ttsBytes = bytes;
-    else if (s.kind === "engines") engineBytes = bytes;
-  }
-
-  const storeTotal = $("jetson-storage-total");
-  if (storeTotal) storeTotal.textContent = `${toGB(totalStorageBytes)} GB`;
-  const storeModels = $("jetson-store-models");
-  if (storeModels) storeModels.textContent = `${toGB(modelsBytes)} GB`;
-  const storeTts = $("jetson-store-tts");
-  if (storeTts) storeTts.textContent = `${toGB(ttsBytes)} GB`;
-  const storeEngines = $("jetson-store-engines");
-  if (storeEngines) storeEngines.textContent = `${toMB(engineBytes)} MB`;
-
-  const lastCheck = $("jetson-last-check");
-  if (lastCheck && caps.checked_at) {
-    const d = new Date(caps.checked_at * 1000);
-    lastCheck.textContent = `最近同步: ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
-  }
-}
 function resourceMode(inference) {
-  if (inference?.mode === "exclusive") return "text";
-  return ["text", "live"].includes(inference?.mode) ? inference.mode : null;
+  return model.modeSwitch?.mode || inference?.operation?.mode || inference?.mode || "text_only";
 }
 function resourceModeName(mode) {
-  return mode === "live" ? "直播" : model.settings?.work_mode_profiles ? "运营" : "文本";
+  return { live: "直播优先", text_only: "纯文本节约" }[mode] || mode || "未报告";
 }
 function resourceName(key) {
-  if (key === "tts" && model.settings?.tts?.local_backend === "genie_onnx_int8") return "Genie TTS";
-  return ({llmgemma4e2b: "Gemma 4 E2B", gemma4e2b: "Gemma 4 E2B", llm2b: "MiniCPM 2B", "2b": "MiniCPM 2B", llm1b: "MiniCPM 1B", "1b": "MiniCPM 1B", llm1bq8: "MiniCPM 1B Q8", "1bq8": "MiniCPM 1B Q8", llmqwen35: "Qwen3.5-2B", qwen35: "Qwen3.5-2B", tts: "TTS"})[key] || key;
+  return { tts: "TTS 服务", vlm: "视觉多模态", whisper: "语音识别" }[key] || key;
 }
 function inferenceResidents(inference) {
-  if (inference.mode === "standalone") {
-    if (model.settings?.llm?.kind === "openai_compatible") return "API 模型驻留由服务方管理";
-    return model.settings?.llm?.kind === "demo" ? "演示模式不加载模型" : "独立端点，驻留状态未报告";
-  }
-  const providers = Object.entries(inference.providers || {});
-  if (providers.length) {
-    const residents = providers.filter(([, provider]) => provider?.running === true).map(([key]) => resourceName(key));
-    const sleeping = providers.filter(([key, provider]) => key === "tts" && provider?.is_sleeping === true && provider?.running !== true).map(([key]) => resourceName(key));
-    if (residents.length) return `驻留：${residents.join("、")}${sleeping.length ? ` · ${sleeping.join("、")}休眠` : ""}`;
-    return providers.some(([, provider]) => provider?.running == null) ? "驻留状态待确认" : "无模型驻留";
-  }
-  const active = inference.active ?? inference.active_provider;
-  return active ? `驻留：${resourceName(active)}` : "模型已休眠";
+  const residents = [];
+  if (inference.tts?.resident) residents.push("TTS 语音");
+  if (inference.vlm?.loaded) residents.push("视觉多模态");
+  return residents.length ? residents.join(" · ") : "当前仅驻留文本大模型";
 }
 function inferenceLabel(inference) {
-  const mode = resourceMode(inference);
-  const prefix = mode ? `${resourceModeName(mode)} · ` : inference.mode === "standalone" ? "独立Provider · " : "";
-  const residents = inferenceResidents(inference);
-  if (inference.switching_to) return `${prefix}正在加载 ${resourceName(inference.switching_to)}… · ${residents}`;
-  if (inference.error) return `${prefix}${inference.error.includes("transition") ? "资源切换失败" : "推理节点异常"} · ${residents}`;
-  if (["loading", "switching", "starting"].includes(inference.state)) return `${prefix}模型加载中… · ${residents}`;
-  return `${prefix}${inference.busy ? "资源忙 · " : ""}${residents}`;
+  if (inference.kind === "llama_cpp") return "本地 llama.cpp / Jetson 原生";
+  if (inference.kind === "openai_compatible") return "远程 OpenAI 兼容 Broker";
+  return inference.kind || "—";
 }
-function renderModeControls(inference) {
-  const actual = resourceMode(inference), pending = model.modeSwitch;
-  const transitioning = !!inference?.switching_to || ["loading", "switching", "starting"].includes(inference?.state);
-  const selected = pending ? pending.previousMode : actual;
-  document.querySelectorAll("[data-inference-mode]").forEach(button => {
-    if (button.dataset.inferenceMode === "text") button.textContent = `${resourceModeName("text")}模式`;
-    button.setAttribute("aria-pressed", String(button.dataset.inferenceMode === selected));
-    button.disabled = !actual || !!pending || transitioning || (button.dataset.inferenceMode === "live" && !liveEnabled()) || (button.dataset.inferenceMode === actual && !inference?.error);
-    button.setAttribute("aria-busy", String(!!pending || transitioning));
-  });
-  const feedback = $("resource-mode-feedback");
-  const result = model.modeResult?.mode === actual ? model.modeResult : null;
-  $("resource-mode-help").textContent = model.settings?.work_mode_profiles ? `运营使用 ${model.settings.work_mode_profiles.text.llm.model}，直播使用 ${model.settings.work_mode_profiles.live.llm.model}＋语音模型。切回运营会停止直播并卸载语音模型。` : liveEnabled() ? "切回文本会停止当前直播并卸载TTS；直播模式预加载并共驻LLM与TTS。" : "首版以评论与文本为主；直播和本地动态语音后续开放。默认 MiniCPM 模型只处理文本。";
-  const text = pending ? `正在切换到${resourceModeName(pending.target)}，等待模型就绪…` : inference?.error ? `资源错误：${inference.error}` :
-    inference?.mode === "standalone" ? "当前独立Provider不支持资源模式切换。" : !actual ? "等待资源模式状态。" :
-    transitioning ? "资源切换中，页面导航不会改变工作模式。" : result?.text || `当前模式：${resourceModeName(actual)}`;
-  if (feedback.textContent !== text) feedback.textContent = text;
-  feedback.classList.toggle("error-text", !!(result?.error || inference?.error) && !pending);
-}
-function renderInference(inference) {
-  $("inference-state").hidden = !inference;
-  renderModeControls(inference);
-  if (!inference) { $("inference-error").hidden = true; return; }
-  $("inference-state").textContent = inferenceLabel(inference);
-  $("inference-state").classList.toggle("bad", !!inference.error);
-  $("inference-state").title = inference.mode === "standalone" ? "独立 API 的模型驻留由服务方管理；容量声明与实际 token 用量分别显示。" : inference.switching_to ? "资源切换期间任务等待模型加载。上下文容量验证与模型驻留状态分别记录。" : "驻留或休眠表示模型资源状态，不改变已验证的上下文容量。";
-  $("inference-error").hidden = !inference.error;
-  $("inference-error").textContent = inference.error ? (inference.error.includes("transition") ? `推理资源切换失败：${inference.error}` : `推理节点异常：${inference.error}`) : "";
-}
-async function switchResourceMode(target) {
-  if (target === "live" && !liveEnabled()) { notice("直播与本地动态语音后续开放。"); return; }
-  const previousMode = resourceMode(model.status?.inference);
-  if (!previousMode || model.modeSwitch) return;
-  model.modeSwitch = {target, previousMode}; model.modeResult = null;
-  renderModeControls(model.status.inference); renderControls(); renderVoicePreview();
-  try {
-    const result = await api("/api/inference/mode", {method: "POST", body: {mode: target}});
-    if (resourceMode(result) !== target) throw new Error("接口返回的资源模式与请求不符，请检查实际资源状态。");
-    model.modeSwitch = null;
-    model.modeResult = {mode: target, error: false, text: `已切换到${resourceModeName(target)}模式。`};
-    renderStatus({...model.status, inference: result});
-    try { renderStatus(await api("/api/status")); }
-    catch (error) { notice(`模式已切换，状态刷新失败：${error.message}`, true); }
-    await loadSettings();
-  } catch (error) {
-    model.modeSwitch = null; model.modeResult = {mode: previousMode, error: true, text: `切换失败：${error.message}`};
-    renderModeControls(model.status?.inference);
-    try { renderStatus(await api("/api/status")); } catch { /* Keep the last confirmed state visible. */ }
-  } finally {
-    renderControls(); renderVoicePreview();
+
+function renderModeControls(inference = {}) {
+  const currentMode = resourceMode(inference);
+  const transitioning = resourcesTransitioning();
+  const btnLive = $("mode-live");
+  const btnText = $("mode-text");
+  if (btnLive && btnText) {
+    btnLive.classList.toggle("selected", currentMode === "live");
+    btnText.classList.toggle("selected", currentMode === "text_only");
+    btnLive.disabled = transitioning || currentMode === "live";
+    btnText.disabled = transitioning || currentMode === "text_only";
   }
 }
+
+function renderInference(inference) {
+  describe($("inference-details"), [
+    ["运行架构", inferenceLabel(inference)],
+    ["活跃模型", inference.active_model || inference.model || "—"],
+    ["资源模式", resourceModeName(resourceMode(inference))],
+    ["驻留资源", inferenceResidents(inference)],
+    ["端点状态", inference.remote_reachable !== false ? "正常直通" : "不可达 / 离线"],
+  ]);
+  renderModeControls(inference);
+}
+
 function tokenCount(value) {
-  if (value == null) return "未报告";
-  return typeof value === "number" && Number.isFinite(value) ? `${value.toLocaleString("zh-CN")} tokens` : display(value);
+  return typeof value === "number" ? `${value.toLocaleString("en-US")} tokens` : "—";
 }
 function occupancyText(context) {
-  const value = context.occupancy_percent;
-  return typeof value === "number" && Number.isFinite(value) ? `约 ${value.toFixed(2)}%` : "未报告";
+  if (!context?.configured_tokens || context.active_tokens == null) return "—";
+  return `${Math.round((context.active_tokens / context.configured_tokens) * 100)}%`;
 }
 function renderContext(context) {
-  if (!context) return;
-  const configured = Number(context.configured_tokens || 0), server = Number(context.server_tokens || 0), native = Number(context.native_tokens || 0);
-  const mismatch = (configured > 0 && server > 0 && server < configured) || (configured > 0 && native > 0 && native < configured);
-  const unavailable = !!context.profile_error || mismatch;
-  const external = model.settings?.llm?.kind === "openai_compatible";
-  const verified = !!context.verified && !unavailable && !external;
-  const usable = !unavailable && (verified || (external && configured >= 4096));
-  const rounds = `累计 ${context.compact_count ?? 0} 轮 · 最近 ${context.compaction_passes_last ?? 0} 轮`;
-  const concise = unavailable ? "上下文配置不可用" : external ? `API 声明 ${tokenCount(context.configured_tokens)} · ${occupancyText(context)} · ${rounds}` : verified ? `${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)} · ${occupancyText(context)} · ${rounds}` : "上下文能力待验证";
-  $("context-state").textContent = concise; $("context-state").classList.toggle("bad", unavailable);
-  const error = context.profile_error || (mismatch ? `上下文配置未满足：目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，模型原生 ${tokenCount(context.native_tokens)}。` : "");
-  const errors = [error, context.last_compaction_error ? `最近压缩失败：${context.last_compaction_error}` : ""].filter(Boolean);
-  $("context-error").hidden = !errors.length; $("context-error").textContent = errors.join(" ");
-  const warning = context.last_compaction_warning ? `压缩提示：${context.last_compaction_warning}` : "";
-  $("context-warning").hidden = !warning;
-  if ($("context-warning").textContent !== warning) $("context-warning").textContent = warning;
-  $("comment-context-state").textContent = error || (external ? `API 窗口由操作者声明：${tokenCount(context.configured_tokens)}；当前完整输入 ${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}），压缩${rounds}。容量未经本机验证。` : verified ? `真实完整输入占用 ${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}）；压缩${rounds}。` : `上下文目标 ${tokenCount(context.configured_tokens)}，实际服务 ${tokenCount(context.server_tokens)}，尚未验证。`);
-  $("context-verified").textContent = unavailable ? "配置不可用" : external ? "API 容量由操作者声明" : verified ? "实际服务已验证" : "待验证";
-  $("context-verified").className = `badge ${verified ? "good" : unavailable ? "bad" : ""}`;
-  describe($("context-details"), [["活动范围", context.scope || "暂无活动历史"], ["配置目标", tokenCount(context.configured_tokens)], [external ? "API 服务容量声明" : "实际服务容量", tokenCount(context.server_tokens)], [external ? "API 上限声明" : "模型原生容量", tokenCount(context.native_tokens)], ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`], ["累计已安装压缩轮数", context.compact_count ?? 0], ["最近操作尝试轮数", context.compaction_passes_last ?? 0], ["最近摘要预算", (context.summary_budgets_last || []).map(value => `${value} tokens`).join(" / ") || "尚未压缩"], ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`], ["最近压缩提示", context.last_compaction_warning || "无"], ["最近压缩错误", context.last_compaction_error || "无"]]);
-  $("context-profile-note").textContent = error || (external ? "外部 API 的容量来自操作者声明；可用连接、实际 token 用量与容量上限是不同证据，不能标为本机已验证 128K。" : "模型原生能力、运行服务实际容量及配置目标分别显示。上方设置保存成功后立即应用，并重新校验服务容量。");
+  const usable = context.usable !== false;
+  const external = context.source === "external_declared";
+  const error = context.error || "";
+  describe($("context-details"), [
+    ["活动范围", context.scope || "暂无活动历史"],
+    ["配置目标", tokenCount(context.configured_tokens)],
+    [external ? "API 服务容量声明" : "实际服务容量", tokenCount(context.server_tokens)],
+    [external ? "API 上限声明" : "模型原生容量", tokenCount(context.native_tokens)],
+    ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`],
+    ["累计已安装压缩轮数", context.compact_count ?? 0],
+    ["最近操作尝试轮数", context.compaction_passes_last ?? 0],
+    ["最近摘要预算", (context.summary_budgets_last || []).map(value => `${value} tokens`).join(" / ") || "尚未压缩"],
+    ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`],
+    ["最近压缩提示", context.last_compaction_warning || "无"],
+    ["最近压缩错误", context.last_compaction_error || "无"]
+  ]);
+  if ($("context-profile-note")) {
+    $("context-profile-note").textContent = error || (external ?
+      "外部 API 的容量来自操作者声明；可用连接、实际 token 用量与容量上限是不同证据，不能标为本机已验证 128K。" :
+      "模型原生能力、运行服务实际容量及配置目标分别显示。上方设置保存成功后立即应用，并重新校验服务容量。");
+  }
   const generate = $("generate-drafts");
-  if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !usable;
-  generate.title = usable ? "" : error || "等待实际上下文能力验证";
+  if (generate) {
+    if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !usable;
+    generate.title = usable ? "" : error || "等待实际上下文能力验证";
+  }
 }
-function renderCharacterImage() {
-  const image = $("character-image"); const id = model.status?.character?.id;
-  const asset = model.assets.find(item => item.character_id === id && ["idle", "default"].includes(item.tag || item.event_tag));
-  const url = asset?.url || asset?.path;
-  if (!url) { image.hidden = true; return; }
-  if (image.dataset.url !== url) { image.dataset.url = url; image.src = url; image.hidden = false; }
-}
+
 async function refreshLive() {
   const results = await Promise.all([api("/api/jobs?limit=50"), api("/api/events?limit=50")]);
-  const jobs = list(results[0]); renderJobs($("overview-jobs"), jobs.slice(0, 8)); renderJobs($("live-jobs"), jobs, true);
-  const events = list(results[1]); const tbody = $("events");
+  const jobs = list(results[0]);
+  renderJobs($("overview-jobs"), jobs.slice(0, 8));
+  renderJobs($("live-jobs"), jobs, true);
+  const events = list(results[1]);
+  const tbody = $("events");
+  if (!tbody) return;
   if (!events.length) return empty(tbody, 5, "暂无事件。在上方调试台注入一条弹幕。");
   tbody.replaceChildren();
   events.forEach(event => {
     const payload = event.payload || event;
-    const row = node("tr"); cell(row, time(payload.timestamp || event.created_at), event.event_id || event.platform_event_id || event.id);
+    const row = node("tr");
+    cell(row, time(payload.timestamp || event.created_at), event.event_id || event.platform_event_id || event.id);
     cell(row, payload.display_name || "匿名观众", `${payload.platform || "—"} · ${payload.platform_user_id || "未知 ID"}`);
-    cell(row, label(payload.type)); cell(row, payload.text || "—");
+    cell(row, label(payload.type));
+    cell(row, payload.text || "—");
     const duplicateCount = event.duplicate_count || event.duplicates || 0;
-    cell(row, badge(event.status), event.reason || event.error || (duplicateCount ? `重复 ${duplicateCount} 次` : "")); tbody.append(row);
+    cell(row, badge(event.status), event.reason || event.error || (duplicateCount ? `重复 ${duplicateCount} 次` : ""));
+    tbody.append(row);
   });
 }
+
 function renderJobs(tbody, jobs, withId = false) {
+  if (!tbody) return;
   if (!jobs.length) return empty(tbody, 5, "暂无任务。注入事件后可查看处理状态。");
   tbody.replaceChildren();
   jobs.forEach(job => {
-    const row = node("tr"); cell(row, time(job.created_at), withId ? job.id : "");
-    cell(row, `${job.character_id || "—"} · v${job.character_version ?? "—"}`); cell(row, job.text || job.spoken_text || "—");
+    const row = node("tr");
+    cell(row, time(job.created_at), withId ? job.id : "");
+    cell(row, `${job.character_id || "—"} · v${job.character_version ?? "—"}`);
+    cell(row, job.text || job.spoken_text || "—");
     cell(row, badge(job.status));
-    cell(row, job.llm_ms != null || job.tts_ms != null ? `${Math.round(job.llm_ms || 0)} / ${Math.round(job.tts_ms || 0)} ms` : "—", job.error || job.reason || ""); tbody.append(row);
+    cell(row, job.llm_ms != null || job.tts_ms != null ? `${Math.round(job.llm_ms || 0)} / ${Math.round(job.tts_ms || 0)} ms` : "—", job.error || job.reason || "");
+    tbody.append(row);
   });
 }
-async function loadCharacters() {
-  model.characters = list(await api("/api/characters")); renderCharacterList();
-  memeGallery.setCharacters(model.characters, model.status?.character?.id);
-  if (!model.characterId && model.characters.length) await selectCharacter(model.status?.character?.id || model.characters[0].id);
-}
-function renderCharacterList() {
-  const container = $("character-list"); container.replaceChildren();
-  if (!model.characters.length) { container.append(node("p", "暂无角色配置。", "muted")); return; }
-  model.characters.forEach(character => {
-    const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
-    const isFineTuned = (character.persona_type || "fine_tuned") === "fine_tuned";
-    const typeBadge = node("span", isFineTuned ? "★ 微调人设" : "⚙ 基座OC", `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`);
-    button.append(typeBadge);
-    button.append(node("small", `${character.id} · v${character.version ?? character.active_version ?? "—"}${character.id === model.status?.character?.id ? " · 当前角色" : ""}`));
-    button.addEventListener("click", () => busy(button, async () => {
-      if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换所选角色？")) return;
-      await selectCharacter(character.id);
-    })); container.append(button);
-  });
-}
-async function selectCharacter(id, version) {
-  const versions = list(await api(`/api/characters/${encodeURIComponent(id)}/versions`));
-  model.characterId = id; model.versions = versions;
-  const select = $("character-version"); select.replaceChildren();
-  versions.slice().sort((a, b) => b.version - a.version).forEach(character => {
-    const option = node("option", `v${character.version}${character.name ? ` · ${character.name}` : ""}`);
-    option.value = character.version; select.append(option);
-  });
-  const target = versions.find(character => character.version === Number(version)) || versions.slice().sort((a, b) => b.version - a.version)[0] || model.characters.find(character => character.id === id);
-  if (!target) throw new Error("角色配置不可用");
-  select.disabled = false; select.value = String(target.version);
-  setCharacterEditor(target); renderCharacterList();
-}
-function setCharacterEditor(character) {
-  model.character = character; model.characterDirty = false;
-  $("character-editor").value = JSON.stringify(character, null, 2);
-  ["character-editor", "save-character", "reset-character", "activate-character"].forEach(id => { $(id).disabled = false; });
-  $("editor-title").textContent = `${character.name || character.id} · v${character.version}`;
-  $("character-preview").textContent = JSON.stringify({persona_type: character.persona_type, core: character.core, style: character.style, rules: character.rules, lore: character.lore}, null, 2);
-  $("character-dirty").textContent = "";
-  syncCharacterJsonToVisual(character);
-}
 
-function updateOCTypeBadge(personaType) {
-  const badge = $("oc-type-badge");
-  const promptBox = $("oc-compact-prompt-box");
-  const isFineTuned = personaType === "fine_tuned";
-  if (badge) {
-    badge.textContent = isFineTuned ? "★ 特化微调固有角色 (超轻极速注入)" : "⚙ 经典通用基座 Prompt OC (全量规格注入)";
-    badge.className = `oc-badge ${isFineTuned ? "fine-tuned" : "prompt-oc"}`;
-  }
-  if (promptBox) {
-    promptBox.style.display = isFineTuned ? "block" : "none";
-  }
-}
-
-function syncCharacterJsonToVisual(character) {
-  if (!character) return;
-  const personaType = character.persona_type || "fine_tuned";
-  if ($("oc-persona-type")) $("oc-persona-type").value = personaType;
-  if ($("oc-fine-tuned-model")) $("oc-fine-tuned-model").value = character.fine_tuned_model || "";
-  if ($("oc-compact-prompt")) $("oc-compact-prompt").value = character.compact_system_prompt || "";
-  if ($("oc-identity")) $("oc-identity").value = character.core?.identity || "";
-  if ($("oc-background")) $("oc-background").value = character.core?.background || "";
-  if ($("oc-traits")) {
-    const traits = character.core?.traits;
-    $("oc-traits").value = Array.isArray(traits) ? traits.join("、") : (traits || "");
-  }
-  if ($("oc-min-chars")) $("oc-min-chars").value = character.style?.min_chars ?? 15;
-  if ($("oc-max-chars")) $("oc-max-chars").value = character.style?.max_chars ?? 60;
-  if ($("oc-catchphrases")) {
-    const cp = character.style?.catchphrases;
-    $("oc-catchphrases").value = Array.isArray(cp) ? cp.join("\n") : (cp || "");
-  }
-  if ($("oc-instructions")) {
-    const inst = character.style?.instructions;
-    $("oc-instructions").value = Array.isArray(inst) ? inst.join("\n") : (inst || "");
-  }
-  if ($("oc-voice-profile")) $("oc-voice-profile").value = character.voice_profile_id || "";
-  if ($("oc-avatar-manifest")) $("oc-avatar-manifest").value = character.avatar_manifest || "";
-
-  updateOCTypeBadge(personaType);
-}
-
-function syncVisualToCharacterJson() {
-  let charObj;
-  try {
-    charObj = JSON.parse($("character-editor").value);
-  } catch {
-    charObj = model.character ? {...model.character} : {};
-  }
-  const personaType = $("oc-persona-type")?.value || "fine_tuned";
-  charObj.persona_type = personaType;
-  if ($("oc-fine-tuned-model")?.value.trim()) {
-    charObj.fine_tuned_model = $("oc-fine-tuned-model").value.trim();
-  } else {
-    delete charObj.fine_tuned_model;
-  }
-  if ($("oc-compact-prompt")?.value.trim()) {
-    charObj.compact_system_prompt = $("oc-compact-prompt").value.trim();
-  } else {
-    delete charObj.compact_system_prompt;
-  }
-
-  charObj.core = charObj.core || {};
-  if ($("oc-identity")) charObj.core.identity = $("oc-identity").value.trim();
-  if ($("oc-background")) charObj.core.background = $("oc-background").value.trim();
-  if ($("oc-traits")) {
-    charObj.core.traits = $("oc-traits").value.split(/[、,，\n]+/).map(s => s.trim()).filter(Boolean);
-  }
-
-  charObj.style = charObj.style || {};
-  if ($("oc-min-chars")) charObj.style.min_chars = Number($("oc-min-chars").value) || 15;
-  if ($("oc-max-chars")) charObj.style.max_chars = Number($("oc-max-chars").value) || 60;
-  if ($("oc-catchphrases")) {
-    charObj.style.catchphrases = $("oc-catchphrases").value.split("\n").map(s => s.trim()).filter(Boolean);
-  }
-  if ($("oc-instructions")) {
-    charObj.style.instructions = $("oc-instructions").value.split("\n").map(s => s.trim()).filter(Boolean);
-  }
-
-  if ($("oc-voice-profile")?.value.trim()) {
-    charObj.voice_profile_id = $("oc-voice-profile").value.trim();
-  } else {
-    delete charObj.voice_profile_id;
-  }
-  if ($("oc-avatar-manifest")?.value.trim()) {
-    charObj.avatar_manifest = $("oc-avatar-manifest").value.trim();
-  } else {
-    delete charObj.avatar_manifest;
-  }
-
-  $("character-editor").value = JSON.stringify(charObj, null, 2);
-  $("character-preview").textContent = JSON.stringify({persona_type: charObj.persona_type, core: charObj.core, style: charObj.style, rules: charObj.rules, lore: charObj.lore}, null, 2);
-  updateOCTypeBadge(personaType);
-  model.characterDirty = true;
-  $("character-dirty").textContent = "有未保存修改";
-}
-
-function initOCStudioUI() {
-  document.querySelectorAll(".oc-tab-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const targetId = btn.dataset.tab;
-      document.querySelectorAll(".oc-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
-      document.querySelectorAll(".oc-tab-content").forEach(content => {
-        content.classList.toggle("active", content.id === targetId);
-      });
-    });
-  });
-
-  const visualIds = [
-    "oc-persona-type", "oc-fine-tuned-model", "oc-compact-prompt",
-    "oc-identity", "oc-background", "oc-traits",
-    "oc-min-chars", "oc-max-chars", "oc-catchphrases", "oc-instructions",
-    "oc-voice-profile", "oc-avatar-manifest"
-  ];
-  visualIds.forEach(id => {
-    const el = $(id);
-    if (el) {
-      el.addEventListener("input", syncVisualToCharacterJson);
-      el.addEventListener("change", syncVisualToCharacterJson);
-    }
-  });
-
-  $("character-editor")?.addEventListener("input", () => {
-    model.characterDirty = true;
-    $("character-dirty").textContent = "有未保存修改";
-    try {
-      const parsed = JSON.parse($("character-editor").value);
-      if (parsed && typeof parsed === "object") {
-        syncCharacterJsonToVisual(parsed);
-      }
-    } catch {
-      // mid-typing invalid json
-    }
-  });
-}
 async function loadAssets() {
-  model.assets = list(await api("/api/assets")); const grid = $("asset-grid"); grid.replaceChildren();
-  if (!model.assets.length) { grid.append(node("p", "暂无已配置素材。", "muted")); return; }
+  model.assets = list(await api("/api/assets"));
+  const grid = $("asset-grid");
+  if (!grid) return;
+  grid.replaceChildren();
+  if (!model.assets.length) {
+    grid.append(node("p", "暂无已配置素材。", "muted"));
+    return;
+  }
   model.assets.forEach(asset => {
-    const card = node("article", null, "asset-card"); const preview = node("div", null, "asset-preview");
+    const card = node("article", null, "asset-card");
+    const preview = node("div", null, "asset-preview");
     const url = asset.url || asset.path || "";
     const audioAsset = /\.(wav|mp3|ogg|flac)(?:\?|$)/i.test(url) || asset.kind === "audio" || asset.type === "audio";
-    if (audioAsset) { const audio = document.createElement("audio"); audio.controls = true; audio.preload = "none"; audio.src = url; preview.append(audio); }
-    else { const image = document.createElement("img"); image.src = url; image.alt = asset.tag || asset.event_tag || asset.id; image.loading = "lazy"; image.onerror = () => { image.hidden = true; preview.append(node("span", "素材不可用", "muted")); }; preview.append(image); }
-    const meta = node("div", null, "asset-meta"); meta.append(node("h3", asset.id), badge(asset.tag || asset.event_tag || asset.kind || "素材"), node("p", `${asset.character_id || "通用"} · ${asset.license_status || "许可待确认"}`, "muted"));
-    const source = asset.source || asset.source_url; if (source) { const p = node("p"); if (/^https?:\/\//.test(source)) { const link = node("a", "查看来源"); link.href = source; link.target = "_blank"; link.rel = "noopener noreferrer"; p.append(link); } else p.textContent = display(source); meta.append(p); }
-    card.append(preview, meta); grid.append(card);
-  }); renderCharacterImage();
+    if (audioAsset) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "none";
+      audio.src = url;
+      preview.append(audio);
+    } else {
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = asset.tag || asset.event_tag || asset.id;
+      image.loading = "lazy";
+      image.onerror = () => {
+        image.hidden = true;
+        preview.append(node("span", "素材不可用", "muted"));
+      };
+      preview.append(image);
+    }
+    const meta = node("div", null, "asset-meta");
+    meta.append(node("h3", asset.id), badge(asset.tag || asset.event_tag || asset.kind || "素材"), node("p", `${asset.character_id || "通用"} · ${asset.license_status || "许可待确认"}`, "muted"));
+    const source = asset.source || asset.source_url;
+    if (source) {
+      const p = node("p");
+      if (/^https?:\/\//.test(source)) {
+        const link = node("a", "查看来源");
+        link.href = source;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        p.append(link);
+      } else {
+        p.textContent = display(source);
+      }
+      meta.append(p);
+    }
+    card.append(preview, meta);
+    grid.append(card);
+  });
+  renderCharacterImage(model);
 }
+
 async function loadVoices() {
-  const previous = $("preview-voice").value;
-  model.voices = list(await api("/api/voices")); const tbody = $("voices"); const select = $("preview-voice");
-  tbody.replaceChildren(); select.replaceChildren();
-  if (!model.voices.length) { empty(tbody, 4, "暂无可用音色。配置声音 Provider 后刷新。"); renderVoicePreview(); return; }
+  const select = $("preview-voice");
+  if (!select) return;
+  const previous = select.value;
+  model.voices = list(await api("/api/voices"));
+  const tbody = $("voices");
+  tbody?.replaceChildren();
+  select.replaceChildren();
+  if (!model.voices.length) {
+    if (tbody) empty(tbody, 4, "暂无可用音色。配置声音 Provider 后刷新。");
+    renderVoicePreview();
+    return;
+  }
   model.voices.forEach(voice => {
-    const row = node("tr"); cell(row, voice.name || voice.id, voice.id); cell(row, voice.provider || voice.kind || "—", voice.weights_version || voice.version || "");
-    cell(row, voice.reference_asset || voice.reference_audio || voice.params?.ref_audio_path || "—"); cell(row, voice.license_status || "待确认", voice.source || voice.source_url || ""); tbody.append(row);
-    const option = node("option", voice.name || voice.id); option.value = voice.id; select.append(option);
+    if (tbody) {
+      const row = node("tr");
+      cell(row, voice.name || voice.id, voice.id);
+      cell(row, voice.provider || voice.kind || "—", voice.weights_version || voice.version || "");
+      cell(row, voice.reference_asset || voice.reference_audio || voice.params?.ref_audio_path || "—");
+      cell(row, voice.license_status || "待确认", voice.source || voice.source_url || "");
+      tbody.append(row);
+    }
+    const option = node("option", voice.name || voice.id);
+    option.value = voice.id;
+    select.append(option);
   });
   if (model.voices.some(voice => voice.id === previous)) select.value = previous;
   renderVoicePreview();
-  updateVoiceCacheUI();
 }
+
 function safeMessage(message) {
-  let text = String(message ?? "");
-  ["llm", "tts", "vision"].forEach(kind => {
-    const secret = $(`${kind}-key`)?.value;
-    if (secret) text = text.split(secret).join("[密钥已隐藏]");
-  });
-  return text;
+  if (!message) return "";
+  return String(message)
+    .replace(/(sessdata=)[^&;\s]+/gi, "$1[已隐藏]")
+    .replace(/(bili_jct=)[^&;\s]+/gi, "$1[已隐藏]")
+    .replace(/(token=)[^&;\s]+/gi, "$1[已隐藏]")
+    .replace(/(api[_-]?key=)[^&;\s]+/gi, "$1[已隐藏]");
 }
+
 function publicSettings(value, key = "") {
   if (key === "credentials" && value != null) return "[已隐藏]";
   if (typeof value === "string") {
@@ -805,9 +522,12 @@ function publicSettings(value, key = "") {
     return safeMessage(value).replace(/([#?&](?:token|key)=)[^&#\s]+/gi, "$1[已隐藏]");
   }
   if (Array.isArray(value)) return value.map(item => publicSettings(item, key));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, publicSettings(item, name)]));
+  }
   return value;
 }
+
 function clearProviderSecrets() {
   ["llm", "tts"].forEach(kind => {
     const el = $(`${kind}-key`), clear = $(`${kind}-clear-key`);
@@ -815,17 +535,30 @@ function clearProviderSecrets() {
     if (clear) clear.checked = false;
   });
 }
+
 function providerFormFromSettings(settings) {
   const llm = settings.llm || {}, tts = settings.tts || {};
   const fields = {
-    "llm-kind": llm.kind || "llama_cpp", "llm-base-url": llm.base_url || "", "llm-model": llm.model || "",
-    "llm-context-tokens": llm.context_tokens ?? 131072, "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
+    "llm-kind": llm.kind || "llama_cpp",
+    "llm-base-url": llm.base_url || "",
+    "llm-model": llm.model || "",
+    "llm-context-tokens": llm.context_tokens ?? 131072,
+    "llm-native-tokens": llm.native_context_tokens ?? model.status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
-    "tts-kind": tts.kind || "gpt_sovits", "tts-base-url": tts.base_url || "", "tts-model": tts.model || "", "tts-voice": tts.voice || "",
+    "tts-kind": tts.kind || "gpt_sovits",
+    "tts-base-url": tts.base_url || "",
+    "tts-model": tts.model || "",
+    "tts-voice": tts.voice || "",
   };
-  Object.entries(fields).forEach(([id, value]) => { const el = $(id); if (el) el.value = String(value); });
-  if ($("llm-live-output-budget")) $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
-  clearProviderSecrets(); model.providersDirty = false;
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = $(id);
+    if (el) el.value = String(value);
+  });
+  if ($("llm-live-output-budget")) {
+    $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
+  }
+  clearProviderSecrets();
+  model.providersDirty = false;
   syncModelSelectWithInput();
   const isLocal = (llm.kind || "llama_cpp") === "llama_cpp" && (!llm.base_url || llm.base_url.includes("127.0.0.1") || llm.base_url.includes("localhost"));
   const btnLocal = $("btn-mode-local"), btnRemote = $("btn-mode-remote");
@@ -834,6 +567,7 @@ function providerFormFromSettings(settings) {
     btnRemote.classList.toggle("active", !isLocal);
   }
 }
+
 function renderProviderForm() {
   if ($("provider-fields")) $("provider-fields").disabled = !!model.providersSaving;
   if ($("save-providers")) {
@@ -842,39 +576,46 @@ function renderProviderForm() {
   }
   if ($("reset-providers")) $("reset-providers").disabled = !!model.providersSaving || !model.providersDirty;
   if ($("check-providers-settings")) $("check-providers-settings").disabled = !!model.providersSaving;
-  if ($("providers-dirty")) $("providers-dirty").textContent = model.providersSaving ? "正在保存并应用…" : model.providersDirty ? "有未保存修改" : model.settings ? "已保存配置" : "正在读取已保存配置…";
-  const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
+  if ($("providers-dirty")) {
+    $("providers-dirty").textContent = model.providersSaving ? "正在保存并应用…" :
+      model.providersDirty ? "有未保存修改" :
+      model.settings ? "已保存配置" : "正在读取已保存配置…";
+  }
+  const external = $("llm-kind")?.value === "openai_compatible", demo = $("llm-kind")?.value === "demo";
   ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
     const el = $(id);
     if (el) el.disabled = demo || !!model.providersSaving;
   });
-  $("llm-base-url").required = !demo; $("llm-model").required = !demo;
-  $("llm-probe-help").hidden = !external;
-  if ($("llm-capacity-help")) $("llm-capacity-help").textContent = external ? "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" : "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
+  if ($("llm-base-url")) $("llm-base-url").required = !demo;
+  if ($("llm-model")) $("llm-model").required = !demo;
+  if ($("llm-probe-help")) $("llm-probe-help").hidden = !external;
+  if ($("llm-capacity-help")) {
+    $("llm-capacity-help").textContent = external ?
+      "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
+      "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
+  }
   renderTTSFields(model);
   renderLiveFeatures();
   updateMultimodalBadge();
 }
+
 function applySettings(settings, fillForm = false) {
-  model.settings = {...model.settings, ...settings}; settings = model.settings;
-  $("settings-json").textContent = JSON.stringify(publicSettings(settings), null, 2);
+  model.settings = { ...model.settings, ...settings };
+  settings = model.settings;
+  if ($("settings-json")) $("settings-json").textContent = JSON.stringify(publicSettings(settings), null, 2);
   if (fillForm || !model.providersDirty) providerFormFromSettings(settings);
-  renderProviderForm(); renderVoicePreview();
+  renderProviderForm();
+  renderVoicePreview();
   if (model.status) renderStatus(model.status);
   let url = model.settings.overlay_url || "/overlay";
   try { url = new URL(url, location.origin).href; } catch { url = `${location.origin}/overlay`; }
-  $("overlay-url").value = url; $("open-overlay").href = url;
+  if ($("overlay-url")) $("overlay-url").value = url;
+  if ($("open-overlay")) $("open-overlay").href = url;
 }
 
-
-
-
-
-
-
-
-
-async function loadSettings() { applySettings(await api("/api/settings")); }
+async function loadSettings() {
+  applySettings(await api("/api/settings"));
+}
 
 function voiceAvailability(voice) {
   const provider = voice?.provider || voice?.kind;
@@ -884,639 +625,125 @@ function voiceAvailability(voice) {
     if (!tts?.base_url) return "请先配置语音服务 Base URL";
     return "";
   }
-  if (provider === "openai_compatible" && (model.settings?.tts?.kind !== "openai_compatible" || !model.settings?.tts?.model || !model.settings?.tts?.voice)) return "请先配置外部语音 API 的模型和 Voice ID";
+  if (provider === "openai_compatible" && (model.settings?.tts?.kind !== "openai_compatible" || !model.settings?.tts?.model || !model.settings?.tts?.voice)) {
+    return "请先配置外部语音 API 的模型和 Voice ID";
+  }
   if (!["gpt_sovits", "openai_compatible", "prerecorded"].includes(provider)) return "此语音 Provider 尚未准入";
   return "";
 }
+
 function renderVoicePreview() {
   const select = $("preview-voice");
+  if (!select) return;
   [...select.options].forEach(option => {
-    const voice = model.voices.find(item => item.id === option.value), reason = voiceAvailability(voice);
-    option.disabled = !!reason; option.textContent = `${voice?.name || option.value}${reason ? "（暂不可用）" : ""}`;
+    const voice = model.voices.find(item => item.id === option.value);
+    const reason = voiceAvailability(voice);
+    option.disabled = !!reason;
+    option.textContent = `${voice?.name || option.value}${reason ? "（暂不可用）" : ""}`;
   });
   const selected = model.voices.find(voice => voice.id === select.value);
   const reason = selected ? voiceAvailability(selected) : "暂无可用音色";
   const button = $("preview-submit");
-  if (button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
-  $("voice-preview-help").textContent = reason || ((selected?.provider || selected?.kind) === "gpt_sovits" ? `本地引擎：${localEngineLabel()}，仅使用服务选定音色。点击生成后再播放；不会启动直播或切换资源模式。` : "预录和已配置的外部语音 API 可独立试听；不会启动直播、切换资源模式或替换角色音色。");
+  if (button && button.getAttribute("aria-busy") !== "true") button.disabled = !!reason;
+  if ($("voice-preview-help")) {
+    $("voice-preview-help").textContent = reason || ((selected?.provider || selected?.kind) === "gpt_sovits" ?
+      `本地引擎：${localEngineLabel()}，仅使用服务选定音色。点击生成后再播放；不会启动直播或切换资源模式。` :
+      "预录和已配置的外部语音 API 可独立试听；不会启动直播、切换资源模式或替换角色音色。");
+  }
 }
+
 async function checkProviderConnections(output) {
-  $(output).hidden = false; $(output).textContent = "检查已保存配置的连接中…";
-  try { $(output).textContent = JSON.stringify(publicSettings(await api("/api/providers/check", {method: "POST"})), null, 2); }
-  catch (error) { $(output).textContent = safeMessage(error.message); throw error; }
+  const el = $(output);
+  if (!el) return;
+  el.hidden = false;
+  el.textContent = "检查已保存配置的连接中…";
+  try {
+    el.textContent = JSON.stringify(publicSettings(await api("/api/providers/check", { method: "POST" })), null, 2);
+  } catch (error) {
+    el.textContent = safeMessage(error.message);
+    throw error;
+  }
 }
+
 function dateTime(value) {
   if (value == null) return "—";
   const date = new Date(typeof value === "number" ? value * 1000 : value);
-  return Number.isNaN(date.getTime()) ? display(value) : date.toISOString();
+  return Number.isNaN(date.getTime()) ? display(value) : date.toISOString().replace("T", " ").slice(0, 19);
 }
-function renderRetentionControls() {
-  const loaded = !!model.retention, pending = !!model.retentionPending;
-  $("retention-never").disabled = !loaded || pending;
-  $("retention-days").disabled = !loaded || pending || $("retention-never").checked;
-  $("retention-days").required = !$("retention-never").checked;
-  $("retention-before").disabled = !loaded || pending;
-  $("retention-save").disabled = !loaded || pending || !model.retentionDirty;
-  $("retention-preview").disabled = !loaded || pending || model.retentionDirty;
-  $("retention-confirm").disabled = pending || !model.retentionPreview;
-  $("retention-cleanup").disabled = pending || !model.retentionPreview || !$("retention-confirm").checked;
-  for (const kind of ["save", "preview", "cleanup"]) $("retention-" + kind).setAttribute("aria-busy", String(model.retentionPending === kind));
-}
-function invalidateRetentionPreview(message = "请先预览待清理范围，再明确确认。", error = false) {
-  model.retentionPreview = null; $("retention-confirm").checked = false;
-  $("retention-preview-panel").hidden = true; $("retention-cleanup-state").textContent = message;
-  $("retention-cleanup-state").classList.toggle("error-text", error);
-  renderRetentionControls();
-}
-async function loadRetention() {
+
+async function compactContext(scope, videoId, threadId) {
+  if (scope === "comments" && (!videoId || !threadId)) throw new Error("请先选择要压缩的视频与单个楼ID；不同楼上下文不会合并。");
+  const payload = { scope, ...(scope === "comments" ? { video_id: videoId, thread_id: threadId } : {}) };
+  if ($("compaction-result")) $("compaction-result").textContent = "正在使用当前文本模型压缩上下文…";
+  notice("上下文压缩已开始，请等待当前文本模型返回。");
   try {
-    model.retention = await api("/api/retention");
-    if (!model.retentionDirty) {
-      $("retention-never").checked = model.retention.days == null;
-      $("retention-days").value = model.retention.days ?? 30;
-    }
-    const lastCompleteDay = new Date(); lastCompleteDay.setUTCDate(lastCompleteDay.getUTCDate() - 1);
-    $("retention-before").max = lastCompleteDay.toISOString().slice(0, 10);
-    const policy = model.retention;
-    describe($("retention-status"), [["已保存策略", policy.days == null ? "永不自动清理" : `保留 ${policy.days} 天`], ["自动清理", policy.enabled ? "已启用" : "已关闭"], ["最近执行（UTC）", dateTime(policy.last_run)], ["下次执行（UTC）", dateTime(policy.next_run)]]);
-    $("retention-last-result").hidden = policy.last_result == null;
-    $("retention-last-result").textContent = policy.last_result == null ? "" : JSON.stringify(policy.last_result, null, 2);
-    $("retention-policy-state").textContent = model.retentionDirty ? "有未保存修改，请保存后预览。" : "显示服务已保存策略。";
-    $("retention-policy-state").classList.remove("error-text");
+    const result = await api("/api/context/compact", { method: "POST", body: payload });
+    const message = result.message || result.detail || (result.compacted === false ? "没有可压缩的历史。" : "压缩请求已完成，请查看实际上下文占用与压缩次数。");
+    if ($("compaction-result")) $("compaction-result").textContent = message;
+    notice(message);
+    renderStatus(await api("/api/status"));
+    if (scope === "comments") await refreshThreadContext();
   } catch (error) {
-    $("retention-policy-state").textContent = `留存策略读取失败：${error.message}`;
-    $("retention-policy-state").classList.add("error-text");
+    if ($("compaction-result")) $("compaction-result").textContent = `压缩失败：${error.message}`;
     throw error;
-  } finally { renderRetentionControls(); }
-}
-function retentionRequest() {
-  if (model.retentionDirty) throw new Error("请先保存留存策略，再预览清理范围。");
-  const selectedDate = $("retention-before").value;
-  if (!selectedDate) {
-    if (!model.retention || model.retention.days == null || model.retention.enabled === false) throw new Error("当前不自动清理；手动清理请指定截至日期。");
-    return {};
   }
-  const cutoff = new Date(selectedDate + "T00:00:00.000Z");
-  if (Number.isNaN(cutoff.getTime())) throw new Error("请选择有效的截至日期。");
-  cutoff.setUTCDate(cutoff.getUTCDate() + 1);
-  if (cutoff.getTime() > Date.now()) throw new Error("截至日期必须是已结束的 UTC 日期；未来截止时间不能清理。");
-  return {before: cutoff.toISOString()};
 }
-async function retentionAction(kind, action) {
-  if (model.retentionPending) return;
-  model.retentionPending = kind; renderRetentionControls();
-  try { await action(); }
-  catch (error) {
-    if (kind !== "save") invalidateRetentionPreview(`操作未完成：${error.message} 请重新预览后再清理。`, true);
-    else { $("retention-policy-state").textContent = `策略保存失败：${error.message}`; $("retention-policy-state").classList.add("error-text"); }
-    notice(error.message, true);
-  } finally { model.retentionPending = null; renderRetentionControls(); }
-}
-function commentQuery() {
-  const params = new URLSearchParams();
-  [["video_id", "filter-video"], ["thread_id", "filter-thread"], ["category", "filter-category"], ["status", "filter-status"]].forEach(([key, id]) => { if ($(id).value.trim()) params.set(key, $(id).value.trim()); });
-  return params.toString();
-}
-async function refreshComments() {
-  const [comments, tasks] = await Promise.all([api(`/api/comments?${commentQuery()}`), api("/api/comment-tasks")]);
-  model.comments = list(comments); renderComments(); renderCommentTasks(list(tasks));
-  await refreshThreadContext();
-}
-function selectedThread() {
-  const selected = model.comments.find(item => item.id === model.commentId);
-  let videoId = $("filter-video").value.trim(), threadId = $("filter-thread").value.trim();
-  if ((!videoId || !threadId) && selected) {
-    const selectedId = selected.thread_id || selected.comment_id;
-    if ((!videoId || videoId === selected.video_id) && (!threadId || threadId === selectedId)) {
-      videoId = selected.video_id; threadId = selectedId;
-    }
-  }
-  return videoId && threadId ? {videoId, threadId, key: JSON.stringify([videoId, threadId])} : null;
-}
-async function refreshThreadContext() {
-  const target = selectedThread();
-  if (!target) { $("thread-context-state").textContent = "选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。"; return; }
-  if (model.threadContextPending === target.key) return;
-  model.threadContextPending = target.key;
-  $("thread-context-state").textContent = `正在读取 ${target.videoId} / 楼 ${target.threadId} 的上下文…`;
-  try {
-    const query = new URLSearchParams({video_id: target.videoId, thread_id: target.threadId});
-    const context = await api(`/api/context/status?${query}`);
-    if (selectedThread()?.key !== target.key) return;
-    $("thread-context-state").textContent = `所选楼 ${target.videoId} / ${target.threadId}：${tokenCount(context.active_tokens ?? 0)} / ${tokenCount(context.configured_tokens)}（${occupancyText(context)}），累计压缩 ${context.compact_count ?? 0} 轮、最近 ${context.compaction_passes_last ?? 0} 轮。${context.last_compaction_warning || ""}`;
-  } catch (error) {
-    if (selectedThread()?.key === target.key) $("thread-context-state").textContent = `所选楼上下文读取失败：${error.message}`;
-  } finally { if (model.threadContextPending === target.key) model.threadContextPending = null; }
-}
-function renderComments() {
-  const tbody = $("comments"); $("comment-count").textContent = `(${model.comments.length})`;
-  // Preserve an open category menu or an in-flight save while background polling continues.
-  if (model.categorySaving.size || document.activeElement?.matches("#comments .category-select")) {
-    updateCommentSelection(); renderDraft(); return;
-  }
-  if (!model.comments.length) empty(tbody, 4, "暂无匹配评论。读取视频或导入已有评论后开始。");
-  else {
-    tbody.replaceChildren();
-    model.comments.forEach(comment => {
-      const row = node("tr", null, comment.id === model.commentId ? "selected-row" : "");
-      const check = document.createElement("input"); check.type = "checkbox"; check.checked = model.selectedComments.has(comment.id); check.setAttribute("aria-label", `选择 ${comment.display_name || "观众"} 的评论`);
-      check.onchange = () => { check.checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id); updateCommentSelection(); }; cell(row, check);
-      const text = node("button", comment.content, "comment-link"); text.onclick = () => selectComment(comment.id);
-      const contentCell = cell(row, text, `${comment.display_name || "匿名观众"} · ${comment.platform_user_id || "未知 ID"} · ${comment.video_id || ""}${comment.like_count != null ? ` · ${comment.like_count} 赞` : ""}`);
-      const threadButton = node("button", `楼 ${comment.thread_id || comment.comment_id}`, "thread-link");
-      threadButton.title = "只查看此楼，并将压缩操作限定到该楼";
-      threadButton.onclick = () => busy(threadButton, async () => {
-        $("filter-video").value = comment.video_id; $("filter-thread").value = comment.thread_id || comment.comment_id;
-        $("compact-video-id").value = comment.video_id; $("compact-thread-id").value = comment.thread_id || comment.comment_id;
-        await refreshComments();
-      });
-      contentCell.append(threadButton);
-      if (comment.parent_comment_id) contentCell.append(node("small", `父评论 ${comment.parent_comment_id}`, "cell-sub"));
-      const categorySelect = node("select", null, "category-select");
-      categorySelect.setAttribute("aria-label", `评论 ${comment.comment_id} 的分类`);
-      ["question", "suggestion", "interaction", "spam", "general"].forEach(value => {
-        const option = node("option", label(value)); option.value = value; categorySelect.append(option);
-      });
-      categorySelect.value = comment.category || "general";
-      const categoryCell = cell(row, categorySelect);
-      const categoryFeedback = node("small", comment.category_source === "operator" ? "人工分类" : "", "cell-sub");
-      categoryFeedback.setAttribute("aria-live", "polite"); categoryCell.append(categoryFeedback);
-      categorySelect.onchange = () => saveCommentCategory(comment, categorySelect, categoryFeedback);
-      cell(row, comment.draft ? badge(comment.draft.status) : comment.continuation ? badge(comment.continuation.state) : "未生成"); tbody.append(row);
-    });
-  }
-  updateCommentSelection(); renderDraft();
-}
-async function saveCommentCategory(comment, select, feedback) {
-  const previous = comment.category || "general", category = select.value;
-  model.categorySaving.add(comment.id); select.disabled = true; feedback.textContent = "保存中…";
-  try {
-    const result = await api(`/api/comments/${encodeURIComponent(comment.id)}/category`, {method: "PUT", body: {category}});
-    const current = model.comments.find(item => item.id === comment.id);
-    if (current) { current.category = result.category || category; current.category_source = "operator"; }
-    comment.category = result.category || category; comment.category_source = "operator";
-    select.value = comment.category; feedback.textContent = "人工分类 · 已保存";
-  } catch (error) { select.value = previous; feedback.textContent = "保存失败，可重试"; notice(error.message, true); }
-  finally { model.categorySaving.delete(comment.id); select.disabled = false; }
-}
-function updateCommentSelection() {
-  $("selected-comment-count").textContent = `已选 ${model.selectedComments.size} 条`;
-  const selected = model.comments.filter(comment => model.selectedComments.has(comment.id)).length;
-  $("select-comments").checked = !!model.comments.length && selected === model.comments.length;
-  $("select-comments").indeterminate = selected > 0 && selected < model.comments.length;
-}
-function selectComment(id) {
-  if (model.draftDirty && !confirm("回复有未保存修改。放弃修改并查看其他评论？")) return;
-  model.commentId = id; model.draftDirty = false; model.draftId = null;
-  const comment = model.comments.find(item => item.id === id);
-  if (comment) { $("compact-video-id").value = comment.video_id; $("compact-thread-id").value = comment.thread_id || comment.comment_id; }
-  renderComments();
-  refreshThreadContext();
-}
-function renderAnswerCheck(draft) {
-  let check = draft?.answer_check;
-  if (!check) { $("draft-answer-check").textContent = "暂无记忆核对记录。"; return; }
-  if (typeof check === "string") {
-    try { check = JSON.parse(check); } catch { $("draft-answer-check").textContent = "检查记录格式异常，无法展示证据。"; return; }
-  }
-  if (!check || typeof check !== "object" || Array.isArray(check)) { $("draft-answer-check").textContent = "检查记录格式异常，无法展示证据。"; return; }
-  const evidence = {};
-  ["sources", "required_slots", "missing", "retried", "warning", "method", "status", "semantic_verdict"].forEach(key => { if (Object.hasOwn(check, key)) evidence[key] = check[key]; });
-  $("draft-answer-check").textContent = Object.keys(evidence).length ? JSON.stringify(evidence, null, 2) : "检查记录未提供来源、缺项、重试或提示字段。";
-}
-function renderDraft(force = false) {
-  const comment = model.comments.find(item => item.id === model.commentId);
-  if (!comment) {
-    commentContinuation.render(null);
-    if (model.draftDirty) return;
-    renderAnswerCheck(null);
-    $("draft-source").textContent = "选择列表中的评论，查看角色草稿及来源。";
-    $("open-private-draft").hidden = true; $("draft-text").value = ""; $("draft-text").disabled = true; $("draft-status").textContent = "选择评论";
-    describe($("draft-meta"), []); ["approve-draft", "reject-draft", "copy-draft", "publish-draft"].forEach(id => { $(id).disabled = true; }); return;
-  }
-  const draft = comment.draft;
-  renderAnswerCheck(draft);
-  $("draft-source").textContent = `${comment.display_name || "匿名观众"}：${comment.content}`;
-  setBadge($("draft-status"), draft?.status || comment.continuation?.state || "未生成");
-  describe($("draft-meta"), [["来源评论", `${comment.video_id} / ${comment.comment_id}`], ["与当前OC的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : "匿名用户"], ["楼ID", comment.thread_id || comment.comment_id], ["父评论ID", comment.parent_comment_id || "顶层"], ["角色版本", draft ? `${draft.character_id} · v${draft.character_version}` : "—"], ["模型", draft?.model || "—"], ...(draft?.publish_receipt || draft?.receipt ? [["平台回执", draft.publish_receipt || draft.receipt]] : [])]);
-  if (force || !model.draftDirty || model.draftId !== draft?.id) { $("draft-text").value = draft?.text || ""; model.draftId = draft?.id || null; model.draftDirty = false; }
-  const locked = draft && ["published", "publishing", "publish_uncertain", "private_handoff"].includes(draft.status);
-  commentContinuation.render(draft?.status === "private_handoff" ? null : draft?.continuation || comment.continuation, {channel: "comments", localId: draft?.id || comment.id, dirty: model.draftDirty, entityStatus: draft?.status});
-  $("draft-text").disabled = !draft || locked;
-  $("approve-draft").disabled = !draft || locked;
-  $("reject-draft").disabled = !draft || locked;
-  $("copy-draft").disabled = !draft || draft.status === "private_handoff";
-  $("open-private-draft").hidden = draft?.status !== "private_handoff";
-  $("publish-draft").disabled = !draft || draft.status !== "approved" || !model.policy?.credentials_configured || model.draftDirty;
-  $("draft-note").textContent = draft?.status === "private_handoff" ? "在私信工作台审核这份回复并查看发送回执。" : draft?.error ? `错误：${draft.error}` : model.draftDirty ? "文字已修改，先审核保存后再发布或复制。" : model.policy?.auto_reply ? "自动回复已开启；新草稿可能自动发布。当前草稿以此处状态与平台回执为准。" : "人工审核模式。审核通过后可复制；账号凭证已配置时可发布。";
-}
-function renderCommentTasks(tasks) {
-  const tbody = $("comment-tasks"); if (!tasks.length) return empty(tbody, 4, "暂无评论任务。选中评论后生成角色草稿。");
-  tbody.replaceChildren(); tasks.forEach(task => { const row = node("tr"); cell(row, task.kind || task.type || "生成回复", task.id); cell(row, badge(task.status)); cell(row, task.total != null ? `${task.done || 0} / ${task.total}${task.errors ? ` · ${task.errors} 失败` : ""}` : task.progress ?? task.result ?? task.completed_count ?? "—"); cell(row, task.error || task.reason || "—"); tbody.append(row); });
-}
-async function loadPolicy() {
-  renderCommentPolicy(await api("/api/comments/policy"));
-}
-function renderCommentPolicy(policy) {
-  model.policy = policy;
-  const base = policy.base || policy;
-  if (!model.commentPolicyDirty) {
-    $("auto-browse").checked = !!base.auto_browse; $("auto-reply").checked = !!base.auto_reply;
-    $("watch-videos").value = (base.watch_videos || []).join("\n");
-    $("browse-interval").value = base.browse_interval_seconds || 300;
-    $("replies-hour").value = base.max_replies_per_hour || 5; $("replies-day").value = base.max_replies_per_day || 20;
-  }
-  $("reply-mode").textContent = policy.auto_reply ? "自动回复已开启" : "人工审核";
-  $("comment-fetch-mode").textContent = policy.auto_reply ? "公开读取 · 自动回复已开启" : "公开读取 · 人工审核";
-  $("reply-mode").className = `badge ${policy.auto_reply ? "active" : ""}`;
-  $("comment-policy-overlay").hidden = !policy.automation_override && !policy.emergency;
-  $("comment-policy-overlay-text").textContent = policy.emergency ? "紧急停止已生效，所有自动收发被阻止。这里编辑个人基础设置；解除紧停前不会恢复自动业务。" : "自动化覆盖正在生效。这里编辑个人基础设置，被覆盖项目关闭自动化后生效；立即停止请前往自动化工作区。";
-  $("comment-policy-base-note").textContent = model.commentPolicyDirty ? "有未保存的基础设置。" : policy.automation_override ? "保存个人基础设置；被覆盖项目关闭自动化后生效。" : "默认人工审核。开启基础自动回复后，新草稿按来源和额度校验处理。";
-  $("stop-auto-reply").textContent = policy.emergency ? "紧急停止已生效" : policy.automation_override ? "前往自动化紧急停止" : "停止基础自动回复";
-  $("stop-auto-reply").disabled = !!policy.emergency;
-  renderDraft();
-}
-async function loadPopularVideos() {
-  const data = list(await api("/api/comments/videos")); const container = $("popular-videos");
-  container.hidden = false; container.replaceChildren();
-  if (!data.length) { container.append(node("p", "暂无可读取的热门视频，可直接输入视频链接。", "muted")); return; }
-  data.slice(0, 12).forEach(video => {
-    const button = node("button", video.title); button.append(node("small", `${typeof video.owner === "object" ? video.owner.name || "" : video.owner || ""} · ${video.bvid}`));
-    button.onclick = () => { $("comment-video").value = video.bvid; $("filter-video").value = video.bvid; $("fetch-state").textContent = `已选择：${video.title}。点击「读取评论」获取内容。`; container.hidden = true; $("refresh-videos").textContent = "逛逛热门视频"; $("comment-video").focus(); }; container.append(button);
-  });
-  $("refresh-videos").textContent = "收起热门视频";
-}
-function boundedInteger(id, title, minimum, maximum) {
-  const value = Number($(id).value);
-  if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`${title}须为 ${minimum} 至 ${maximum} 的整数。`);
-  return value;
-}
-function renderDynamicPolicy() {
-  const policy = model.dynamicPolicy;
-  $("dynamic-policy-fields").disabled = !policy || model.dynamicSaving;
-  $("save-dynamic-policy").disabled = !policy || model.dynamicSaving || !model.dynamicPolicyDirty;
-  $("stop-dynamics").disabled = !policy?.enabled || model.dynamicSaving;
-  $("evaluate-dynamics").disabled = !policy || model.dynamicEvaluating || model.dynamicSaving;
-  $("evaluate-dynamics").setAttribute("aria-busy", String(model.dynamicEvaluating));
-  $("save-dynamic-policy").setAttribute("aria-busy", String(model.dynamicSaving));
-  if (!policy) return;
-  $("dynamic-mode").textContent = !policy.enabled ? "运营已停止" : policy.auto_publish ? "运营中 · 自动发布" : "运营中 · 人工审核";
-  $("dynamic-mode").className = `badge ${policy.enabled ? "active" : ""}`;
-  const character = model.status?.character;
-  describe($("dynamic-policy-status"), [["当前角色", character ? `${character.name} · v${character.version}` : "未报告"], ["共用B站账号", policy.credentials_configured ? "已配置（不回显）" : "未配置，可手动生成草稿"], ["下次评估（当地时间）", localDateTime(policy.next_evaluation_at)], ["退避至（当地时间）", localDateTime(policy.backoff_until)], ["最近错误", policy.last_error || "无"], ["表单", model.dynamicPolicyDirty ? "有未保存修改" : "显示已保存策略"]]);
-}
-function localDateTime(value) {
-  if (value == null) return "—";
-  const date = new Date(typeof value === "number" ? value * 1000 : value);
-  return Number.isNaN(date.getTime()) ? display(value) : date.toLocaleString("zh-CN", {hour12: false});
-}
-function dynamicPolicyFromServer(policy) {
-  model.dynamicPolicy = policy;
-  if (!model.dynamicPolicyDirty) {
-    $("dynamic-enabled").checked = !!policy.enabled;
-    $("dynamic-auto-publish").checked = policy.auto_publish !== false;
-    $("dynamic-use-memes").checked = !!policy.use_memes;
-    $("dynamic-evaluate-interval").value = policy.evaluate_interval_seconds ?? 1800;
-    $("dynamic-min-post-interval").value = policy.min_post_interval_seconds ?? 21600;
-    $("dynamic-max-posts").value = policy.max_posts_per_day ?? 2;
-    $("dynamic-memory-summary-max").value = policy.memory_summary_max_tokens ?? 2048;
-  }
-  renderDynamicPolicy();
-}
-function appendDynamicSources(container, sources) {
-  container.replaceChildren();
-  if (!Array.isArray(sources) || !sources.length) { container.append(node("p", "暂无可展示的来源原文。", "hint")); return; }
-  sources.forEach(source => {
-    const entry = node("div", null, "dynamic-source");
-    entry.append(node("strong", `${source.fictional ? "虚构角色故事" : "公开来源"} · ${source.type || "来源"} · ${source.id || "—"}`));
-    entry.append(node("p", source.text || "未返回来源文字。"));
-    if (source.original_comment) entry.append(node("p", `原评论：${display(source.original_comment)}`, "hint"));
-    if (source.source_url) {
-      try {
-        const url = new URL(source.source_url);
-        if (url.protocol === "https:") { const link = node("a", "打开来源"); link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer"; entry.append(link); }
-      } catch { /* Source text remains visible without an unsafe or invalid link. */ }
-    }
-    container.append(entry);
-  });
-}
-function renderDynamicPosts() {
-  const body = $("dynamic-posts"); $("dynamic-count").textContent = `${model.dynamicPosts.length} 条`;
-  if (!model.dynamicPosts.length) empty(body, 3, "暂无动态。可先评估并生成一份待审核草稿。");
-  else {
-    body.replaceChildren();
-    model.dynamicPosts.forEach(post => {
-      const row = node("tr", null, post.id === model.dynamicPostId ? "selected-row" : "");
-      cell(row, localDateTime(post.created_at), `${post.character_id} · v${post.character_version}`);
-      const button = node("button", post.content || "查看动态", "comment-link");
-      button.onclick = () => {
-        if (model.dynamicPostDirty && post.id !== model.dynamicPostId && !confirm("动态有未保存修改。放弃修改并选择另一条？")) return;
-        if (post.id !== model.dynamicPostId) model.dynamicPostDirty = false;
-        model.dynamicPostId = post.id; renderDynamicPosts(); refreshDynamicMemeInfo(post);
-      };
-      cell(row, button); cell(row, badge(post.status)); body.append(row);
-    });
-  }
-  renderDynamicPost();
-}
-function renderDynamicPost() {
-  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
-  const editable = !!post && ["pending_review", "approved", "rejected"].includes(post.status);
-  const imageInfo = post?.meme_id ? model.dynamicMemeCache.get(`${post.character_id}:${post.meme_id}`) : null;
-  const unavailable = !!post?.meme_id && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
-  if (post) setBadge($("dynamic-post-status"), post.status);
-  else { $("dynamic-post-status").className = "badge"; $("dynamic-post-status").textContent = "选择动态"; }
-  $("dynamic-post-text").disabled = !editable || model.dynamicPostPending;
-  if (!model.dynamicPostDirty) $("dynamic-post-text").value = post?.content || "";
-  $("approve-dynamic").disabled = !editable || model.dynamicPostPending;
-  $("reject-dynamic").disabled = !editable || model.dynamicPostPending;
-  $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || unavailable || !model.dynamicPolicy?.credentials_configured;
-  $("publish-dynamic").textContent = post?.meme_id ? "发布已审核图文" : "发布已审核动态";
-  $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending;
-  $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || !post?.meme_id;
-  for (const button of $("dynamic-posts").querySelectorAll("button")) button.disabled = model.dynamicPostPending;
-  $("dynamic-meme-preview").hidden = !post?.meme_id;
-  if (post?.meme_id) {
-    $("dynamic-meme-name").textContent = imageInfo?.asset?.title || post.meme_id;
-    $("dynamic-meme-availability").textContent = unavailable ? "当前配图已禁用或缺失，请更换图片或移除配图。" : imageInfo?.error ? "配图状态暂未取得，可到图库核对；发布前会再次检查。" : "配图将在发布前重新检查可用性。";
-    const key = `${post.id}:${post.character_id}:${post.meme_id}`;
-    if (model.dynamicMemePreviewKey !== key) { model.dynamicMemePreviewKey = key; $("dynamic-meme-image").replaceChildren(memePreview({asset_id: post.meme_id, title: imageInfo?.asset?.title || "动态配图"}, post.character_id)); }
-  } else if (model.dynamicMemePreviewKey) { model.dynamicMemePreviewKey = null; $("dynamic-meme-image").replaceChildren(); }
-  describe($("dynamic-post-meta"), post ? [["动态ID", post.id], ["角色", `${post.character_id} · v${post.character_version}`], ["模型", post.model], ["决策原因", post.reason || "未报告"], ["发布时间（当地时间）", localDateTime(post.published_at)]] : []);
-  appendDynamicSources($("dynamic-post-sources"), post?.sources);
-  $("dynamic-post-receipt").textContent = JSON.stringify(publicSettings({receipt: post?.receipt ?? null, error: post?.error ?? null}), null, 2);
-  $("dynamic-post-note").textContent = !post ? "从列表选择动态，查看来源、决策与平台回执。" : model.dynamicPostDirty ? "有未保存修改；审核通过后保存，再发布。" : post.error ? `操作未完成：${post.error}` : post.status === "publish_uncertain" ? "发布结果不确定，请核对平台回执；不会自动重发。" : post.status === "published" ? "已发布，平台回执见下方。" : !model.dynamicPolicy?.credentials_configured ? "未配置B站账号；可生成和审核草稿，发布前请到设置页的B站账号区配置凭证。" : "手动评估生成的草稿始终保留人工审核，后台不会补发。";
-  $("dynamic-post-note").classList.toggle("error-text", !!post?.error || post?.status === "publish_uncertain");
-  dynamicContinuation.render(post?.continuation, {channel: "dynamics", localId: post?.id, dirty: model.dynamicPostDirty, entityStatus: post?.status});
-}
-async function refreshDynamicMemeInfo(post) {
-  if (!post?.meme_id) return;
-  const key = `${post.character_id}:${post.meme_id}`, cached = model.dynamicMemeCache.get(key);
-  if (model.dynamicMemePending.has(key) || (cached && Date.now() - cached.at < 30000)) return;
-  model.dynamicMemePending.add(key);
-  try {
-    const value = await api(`/api/memes?character=${encodeURIComponent(post.character_id)}`);
-    model.dynamicMemeCache.set(key, {asset: list(value).find(item => item.asset_id === post.meme_id) || null, at: Date.now()});
-  } catch (error) { model.dynamicMemeCache.set(key, {error: safeMessage(error.message), at: Date.now()}); }
-  finally { model.dynamicMemePending.delete(key); if (model.dynamicPostId === post.id) renderDynamicPost(); }
-}
-async function selectDynamicMeme(meme_id, asset = null, context = null) {
-  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
-  if (!post || model.dynamicPostPending) throw new Error("动态正在处理中或尚未选择，请稍后重试。");
-  if (context && (context.id !== post.id || context.character !== post.character_id || context.version !== post.character_version)) throw new Error("动态或角色已变化，请重新选择配图。");
-  model.dynamicPostPending = true; renderDynamicPost();
-  try {
-    await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/review`, {method: "POST", body: {action: "edit", text: $("dynamic-post-text").value, meme_id}});
-    if (asset) model.dynamicMemeCache.set(`${post.character_id}:${asset.asset_id}`, {asset, at: Date.now()});
-    model.dynamicPostDirty = false; await refreshDynamics(); notice(meme_id ? "已为动态附加1张图片，正文保留；请重新审核。" : "已移除动态配图，正文保留；请重新审核。");
-  } finally { model.dynamicPostPending = false; renderDynamicPost(); }
-}
-function renderDynamicDecisions() {
-  const body = $("dynamic-decisions");
-  const selected = model.dynamicDecisions.find(item => item.id === model.dynamicDecisionId);
-  dynamicDecisionContinuation.render(selected?.continuation, {channel:"dynamics", localId:selected?.id, entityStatus:selected?.status});
-  if (!model.dynamicDecisions.length) return empty(body, 4, "暂无评估决策。手动评估或开启运营后查看。");
-  body.replaceChildren();
-  model.dynamicDecisions.forEach(decision => {
-    const row = node("tr"); cell(row, localDateTime(decision.created_at), `${decision.character_id} · v${decision.character_version}${decision.manual ? " · 手动" : " · 后台"}`);
-    cell(row, badge(decision.action), label(decision.status));
-    const reason = cell(row, decision.reason || "未报告", decision.error || "");
-    if (decision.continuation?.phase === "generation") {
-      const progress = node("button", "查看生成进度", "secondary"); progress.type = "button";
-      progress.onclick = () => {model.dynamicDecisionId = decision.id; renderDynamicDecisions(); dynamicDecisionContinuation.root.scrollIntoView({block:"nearest"});};
-      reason.append(progress);
-    }
-    const details = node("details"); details.append(node("summary", `来源 ${list(decision.sources).length} 条`));
-    const sources = node("div"); appendDynamicSources(sources, decision.sources); details.append(sources); cell(row, details); body.append(row);
-  });
-}
-function renderDynamicMemories() {
-  if (model.dynamicMemorySaving.size) return;
-  const body = $("dynamic-memories");
-  if (!model.dynamicMemories.length) return empty(body, 3, "当前角色暂无可选择的来源记忆；已发布回复无需手动授权。");
-  body.replaceChildren();
-  model.dynamicMemories.forEach(memory => {
-    const row = node("tr"), check = node("input"); check.type = "checkbox"; check.checked = !!memory.public;
-    check.setAttribute("aria-label", `允许记忆 ${memory.id} 用于公开动态`);
-    check.onchange = async () => {
-      const before = !!memory.public; model.dynamicMemorySaving.add(memory.id); check.disabled = true;
-      try {
-        await api(`/api/dynamics/memories/${encodeURIComponent(memory.id)}`, {method: "PUT", body: {public: check.checked}});
-        memory.public = check.checked;
-        $("dynamic-memory-state").textContent = check.checked ? "已允许该记忆用于公开动态。" : "已撤销该记忆的后续公开使用；已发布内容保留原回执。";
-        $("dynamic-memory-state").classList.remove("error-text");
-      } catch (error) {
-        check.checked = before; $("dynamic-memory-state").textContent = `授权保存失败：${safeMessage(error.message)}`;
-        $("dynamic-memory-state").classList.add("error-text");
-      } finally { model.dynamicMemorySaving.delete(memory.id); check.disabled = false; }
-    };
-    cell(row, check); cell(row, memory.text, `${memory.character_id} · v${memory.character_version} · ${memory.id}`);
-    cell(row, memory.fictional || memory.kind === "role_story" ? "虚构角色故事" : label(memory.kind), localDateTime(memory.created_at)); body.append(row);
-  });
-}
-function renderDynamicMemorySummary(summary) {
-  const state = $("dynamic-summary-valid");
-  state.textContent = summary.valid ? "有效" : "待更新";
-  state.className = `badge ${summary.valid ? "good" : ""}`;
-  describe($("dynamic-summary-meta"), [["角色", summary.character_id ? `${summary.character_id} · v${summary.character_version}` : "未报告"], ["实际用量 / 摘要上限", `${tokenCount(summary.token_count)} / ${tokenCount(summary.max_tokens)}`], ["最近更新（当地时间）", localDateTime(summary.updated_at)]]);
-  $("dynamic-summary-state").textContent = summary.valid ? "当前有效摘要供运营评估使用；原文保留在来源核对中。" : "尚无有效摘要或来源／策略已变化；下次评估将更新摘要。";
-  const body = $("dynamic-summary-entries"), entries = list(summary.entries);
-  if (!entries.length) { empty(body, 3, "暂无运营记忆摘要摘录。公开来源就绪后评估生成。"); return; }
-  body.replaceChildren();
-  entries.forEach(entry => {
-    const row = node("tr"); cell(row, entry.source_id || "未返回来源ID"); cell(row, entry.quote || "未返回摘录");
-    cell(row, entry.fictional ? "虚构角色故事" : "公开互动摘录"); body.append(row);
-  });
-}
-async function refreshDynamics() {
-  const [policy, posts, decisions, memories, summary] = await Promise.all([api("/api/dynamics/policy"), api("/api/dynamics/posts"), api("/api/dynamics/decisions"), api("/api/dynamics/memories?limit=100"), api("/api/dynamics/memory-summary")]);
-  const first = !model.dynamicListsLoaded;
-  const credentialsChanged = model.dynamicPolicy?.credentials_configured !== policy.credentials_configured;
-  dynamicPolicyFromServer(policy);
-  if (first || JSON.stringify(model.dynamicPosts) !== JSON.stringify(list(posts))) {
-    model.dynamicPosts = list(posts); renderDynamicPosts();
-  } else if (credentialsChanged) renderDynamicPost();
-  if (first || JSON.stringify(model.dynamicDecisions) !== JSON.stringify(list(decisions))) {
-    model.dynamicDecisions = list(decisions); renderDynamicDecisions();
-  }
-  if (!model.dynamicMemorySaving.size && (first || JSON.stringify(model.dynamicMemories) !== JSON.stringify(list(memories)))) {
-    model.dynamicMemories = list(memories); renderDynamicMemories();
-  }
-  if (JSON.stringify(model.dynamicMemorySummary) !== JSON.stringify(summary)) {
-    model.dynamicMemorySummary = summary; renderDynamicMemorySummary(summary);
-  }
-  model.dynamicListsLoaded = true;
-  await refreshDynamicMemeInfo(model.dynamicPosts.find(item => item.id === model.dynamicPostId));
-}
-async function saveDynamicPolicy(stop = false) {
-  if (model.dynamicSaving) return;
-  const payload = stop ? {enabled: false} : {
-    enabled: $("dynamic-enabled").checked, auto_publish: $("dynamic-auto-publish").checked, use_memes: $("dynamic-use-memes").checked,
-    evaluate_interval_seconds: boundedInteger("dynamic-evaluate-interval", "动态评估间隔", 300, 86400),
-    min_post_interval_seconds: boundedInteger("dynamic-min-post-interval", "最短发布间隔", 21600, 604800),
-    max_posts_per_day: boundedInteger("dynamic-max-posts", "每日动态数", 1, 2),
-    memory_summary_max_tokens: boundedInteger("dynamic-memory-summary-max", "运营记忆摘要长度", 256, 4096),
-  };
-  model.dynamicSaving = true; renderDynamicPolicy();
-  try {
-    const policy = await api("/api/dynamics/policy", {method: "PUT", body: payload});
-    if (stop) $("dynamic-enabled").checked = false;
-    else model.dynamicPolicyDirty = false;
-    dynamicPolicyFromServer(policy);
-    $("dynamic-policy-state").classList.remove("error-text");
-    $("dynamic-policy-state").textContent = !policy.enabled ? "动态运营已停止；已发布请求以平台回执为准。" : policy.auto_publish ? "运营已开启，后台评估可直接发布；手动评估仍只生成草稿。" : "运营已开启，所有新动态保留人工审核。";
-    notice($("dynamic-policy-state").textContent);
-  } catch (error) {
-    $("dynamic-policy-state").textContent = `策略保存失败：${safeMessage(error.message)}。输入已保留。`;
-    $("dynamic-policy-state").classList.add("error-text"); throw error;
-  } finally { model.dynamicSaving = false; renderDynamicPolicy(); }
-}
-async function reviewDynamic(action) {
-  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
-  if (!post || model.dynamicPostPending) return;
-  model.dynamicPostPending = true; renderDynamicPost();
-  try {
-    await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/review`, {method: "POST", body: {action, text: $("dynamic-post-text").value}});
-    model.dynamicPostDirty = false; await refreshDynamics();
-    $("dynamic-post-note").textContent = action === "approve" ? "审核已保存，尚未手动发布。" : "动态已拒绝。";
-  } finally { model.dynamicPostPending = false; renderDynamicPost(); }
-}
+
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
   const mapped = requested === "automation" ? "comments" : requested;
   model.page = ["comments", "messages", "dynamics", "overview", "live", "characters", "voices", "assets", "settings"].includes(mapped) ? mapped : "comments";
-  document.querySelectorAll("[data-section]").forEach(section => { section.hidden = section.dataset.section !== model.page; });
-  document.querySelectorAll("[data-page]").forEach(link => { const active = link.dataset.page === model.page || (link.dataset.page === "comments" && mapped === "comments"); link.classList.toggle("selected", active); if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
-  document.title = `${({comments: "社区运营工作台", messages: "私信工作台", dynamics: "动态运营", overview: "总览", live: "直播控制", characters: "角色", voices: "语音", assets: "素材与表情包", settings: "设置"})[model.page]} · Tuber Studio`;
+  document.querySelectorAll("[data-section]").forEach(section => {
+    section.hidden = section.dataset.section !== model.page;
+  });
+  document.querySelectorAll("[data-page]").forEach(link => {
+    const active = link.dataset.page === model.page || (link.dataset.page === "comments" && mapped === "comments");
+    link.classList.toggle("selected", active);
+    if (active) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  document.title = `${({
+    comments: "社区运营工作台",
+    messages: "私信工作台",
+    dynamics: "动态运营",
+    overview: "总览",
+    live: "直播控制",
+    characters: "角色",
+    voices: "语音",
+    assets: "素材与表情包",
+    settings: "设置"
+  })[model.page]} · Tuber Studio`;
+
   if (!model.authenticated) return;
-  try { if (model.page === "comments") await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]); else if (model.page === "messages") await messagesPanel.refresh(); else if (model.page === "dynamics") await refreshDynamics(); else if (model.page === "assets") await memeGallery.refresh(); else if (["overview", "live"].includes(model.page)) await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]); else if (model.page === "voices") await updateVoiceCacheUI(); else if (model.page === "settings") await Promise.all([loadRetention(), cachePanel.refresh(), accountPanel.settingsOpened(), inferenceNodePanel.refresh(), updatePermissionCapsule(), interactiveGamesUI.refresh(), checkDafeiyuModelStatus()]); }
-  catch (error) { notice(error.message, true); }
-}
-async function poll() {
-  if (!model.authenticated || model.polling || document.hidden) return;
-  model.polling = true;
   try {
-    renderStatus(await api("/api/status"));
-    if (["overview", "live"].includes(model.page)) await refreshLive();
-    if (model.page === "comments") { await refreshComments(); await automationPanel.refresh(); }
-    if (model.page === "dynamics") await refreshDynamics();
-    if (model.page === "messages") await messagesPanel.refresh();
-    await updatePermissionCapsule();
-  } catch (error) { $("connection").textContent = "连接失败，等待重试"; if (error.status !== 401) notice(error.message, true); }
-  finally { model.polling = false; }
+    if (model.page === "comments") {
+      await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]);
+    } else if (model.page === "messages") {
+      await messagesPanel.refresh();
+    } else if (model.page === "dynamics") {
+      await refreshDynamics();
+    } else if (model.page === "assets") {
+      await memeGallery.refresh();
+    } else if (["overview", "live"].includes(model.page)) {
+      await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]);
+    } else if (model.page === "voices") {
+      await updateVoiceCacheUI();
+    } else if (model.page === "settings") {
+      await Promise.all([
+        maintenanceModule?.loadRetention(),
+        cachePanel.refresh(),
+        accountPanel.settingsOpened(),
+        inferenceNodePanel.refresh(),
+        updatePermissionCapsule(),
+        interactiveGamesUI.refresh(),
+        checkDafeiyuModelStatus()
+      ]);
+    }
+  } catch (error) {
+    notice(error.message, true);
+  }
 }
 
-$("login-form").onsubmit = event => {
-  event.preventDefault(); const button = event.submitter; $("login-error").textContent = "";
-  busy(button, async () => {
-    try { await api("/api/auth", {method: "POST", body: {token: $("token").value}}); $("token").value = ""; await enterWorkspace(); }
-    catch (error) { $("login-error").textContent = error.message; }
-  });
-};
-$("logout").onclick = () => busy($("logout"), async () => { await api("/api/logout", {method: "POST"}); showLogin(); });
-document.querySelectorAll("[data-inference-mode]").forEach(button => {
-  button.onclick = () => switchResourceMode(button.dataset.inferenceMode);
-});
-document.querySelectorAll("[data-action]").forEach(button => {
-  button.onclick = () => busy(button, async () => {
-    const action = button.dataset.action;
-    if (action === "clear" && !confirm("清空所有待播任务？当前播放不会因此标记为完成。")) return;
-    const result = await api(`/api/live/${action}`, {method: "POST"});
-    notice(`已执行：${button.textContent}`); renderStatus(result.state ? result : await api("/api/status")); await refreshLive();
-  });
-});
-$("event-type").onchange = () => { $("sfx-label").hidden = $("event-type").value !== "sfx"; };
-$("fill-greeting").onclick = () => { $("event-text").value = "大肥鱼，今天在忙什么？"; $("event-text").focus(); };
-$("event-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    const payload = {event_id: $("event-id").value.trim() || crypto.randomUUID(), platform: "mock", room_id: "debug", platform_user_id: $("event-user").value.trim() || null, display_name: $("event-name").value.trim() || "匿名观众", type: $("event-type").value, timestamp: new Date().toISOString(), text: $("event-text").value, metadata: {}};
-    if ($("event-asset").value.trim()) payload.metadata.asset_id = $("event-asset").value.trim();
-    const result = await api("/api/live/mock-event", {method: "POST", body: payload});
-    $("event-result").textContent = `${label(result.status || "received")} · ${payload.event_id}${result.reason ? ` · ${result.reason}` : ""}`;
-    await refreshLive();
-  });
-};
-$("refresh-live").onclick = () => busy($("refresh-live"), refreshLive);
-$("check-providers").onclick = () => busy($("check-providers"), async () => {
-  await checkProviderConnections("provider-check");
-});
-$("providers-form").addEventListener("input", () => { model.providersDirty = true; renderProviderForm(); });
-$("providers-form").addEventListener("change", () => { model.providersDirty = true; renderProviderForm(); });
-$("providers-form").onsubmit = async event => {
-  event.preventDefault(); if (model.providersSaving) return;
-  try {
-    const payload = readProviderPayload();
-    model.providersSaving = true; renderProviderForm();
-    $("providers-save-state").classList.remove("error-text"); $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
-    const result = await api("/api/settings/providers", {method: "PUT", body: payload});
-    applySettings(result, true);
-    let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
-    if (result.auto_download_triggered) {
-      message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
-      checkDafeiyuModelStatus();
-    }
-    $("providers-save-state").textContent = message; notice(message);
-    const checks = await Promise.allSettled([api("/api/status"), loadVoices()]);
-    if (checks[0].status === "fulfilled") renderStatus(checks[0].value);
-    const failed = checks.filter(item => item.status === "rejected");
-    if (failed.length) $("providers-save-state").textContent = `${message} 状态刷新失败：${safeMessage(failed[0].reason.message)}。可稍后刷新。`;
-  } catch (error) {
-    const message = `保存失败：${safeMessage(error.message)}${error.status === 409 ? " 请先暂停或等待正在生成 / 发布的任务结束，再重试。" : ""} 当前输入已保留。`;
-    $("providers-save-state").textContent = message; $("providers-save-state").classList.add("error-text"); notice(message, true);
-  } finally { model.providersSaving = false; renderProviderForm(); }
-};
-$("reset-providers").onclick = () => {
-  if (!model.settings || model.providersSaving) return;
-  providerFormFromSettings(model.settings); renderProviderForm();
-  $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。"; $("providers-save-state").classList.remove("error-text");
-};
-$("check-providers-settings").onclick = () => busy($("check-providers-settings"), () => checkProviderConnections("providers-check-result"));
-$("character-editor").oninput = () => { model.characterDirty = true; $("character-dirty").textContent = "有未保存修改"; };
-$("character-version").onchange = () => {
-  const version = Number($("character-version").value);
-  if (model.characterDirty && !confirm("放弃未保存修改并查看此版本？")) { $("character-version").value = String(model.character.version); return; }
-  const character = model.versions.find(item => item.version === version); if (character) setCharacterEditor(character);
-};
-$("reset-character").onclick = () => { if (!model.characterDirty || confirm("放弃未保存的角色修改？")) setCharacterEditor(model.character); };
-$("character-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    let character; try { character = JSON.parse($("character-editor").value); } catch (error) { throw new Error(`角色 JSON 格式错误：${error.message}`); }
-    if (!character || typeof character !== "object" || Array.isArray(character)) throw new Error("角色配置必须为 JSON 对象");
-    const result = await api(`/api/characters/${encodeURIComponent(model.characterId)}`, {method: "PUT", body: character});
-    model.characterDirty = false; await loadCharacters(); await selectCharacter(model.characterId, result.version); notice(`已保存新角色版本 v${result.version ?? ""}`);
-  });
-};
-$("activate-character").onclick = () => busy($("activate-character"), async () => {
-  if (model.characterDirty) throw new Error("请先保存或放弃未保存的角色修改，再激活版本。");
-  if (!confirm(`激活 ${model.character.name} v${model.character.version}？旧角色尚未播报的任务将被取消。`)) return;
-  await api(`/api/characters/${encodeURIComponent(model.characterId)}/activate`, {method: "POST", body: {version: model.character.version}});
-  renderStatus(await api("/api/status")); await loadCharacters(); notice("角色版本已激活。");
-});
-$("clone-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    if (!model.characterId) throw new Error("请先选择要复制的角色");
-    const id = $("clone-id").value.trim(); const name = $("clone-name").value.trim();
-    await api(`/api/characters/${encodeURIComponent(model.characterId)}/clone`, {method: "POST", body: {id, name}});
-    await loadCharacters(); await selectCharacter(id); notice("已创建新角色，可以编辑人格、风格和音色。");
-  });
-};
-$("preview-voice").onchange = renderVoicePreview;
-$("preview-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    const voice = model.voices.find(item => item.id === $("preview-voice").value);
-    const unavailable = voiceAvailability(voice); if (unavailable) throw new Error(unavailable);
-    $("preview-state").textContent = "等待合成…"; $("preview-audio").pause();
-    try {
-      const result = await api("/api/tts/preview", {method: "POST", body: {text: $("preview-text").value, voice_id: $("preview-voice").value}});
-      $("preview-audio").src = result.audio_ref; $("preview-audio").hidden = false;
-      const recorded = voice?.provider === "prerecorded";
-      const actualText = recorded && result.text ? ` 实际录音台词：${result.text}` : "";
-      $("preview-state").textContent = safeMessage(`${recorded ? "预录已准备" : "合成完成"}${result.duration != null ? ` · ${Number(result.duration).toFixed(2)} 秒` : ""}，点击播放试听。${actualText}${result.warning ? ` ${result.warning}` : ""}`);
-      await updateVoiceCacheUI();
-    }
-    catch (error) { $("preview-state").textContent = `合成失败：${safeMessage(error.message)}`; throw error; }
-  });
-};
 async function updateVoiceCacheUI() {
   const statsEl = $("voice-cache-stats");
   if (!statsEl) return;
@@ -1528,9 +755,195 @@ async function updateVoiceCacheUI() {
     }
   } catch (_) {}
 }
+
+async function poll() {
+  if (!model.authenticated || model.polling || document.hidden) return;
+  model.polling = true;
+  try {
+    renderStatus(await api("/api/status"));
+    if (["overview", "live"].includes(model.page)) await refreshLive();
+    if (model.page === "comments") await refreshComments();
+  } catch (_) {
+    // Non-blocking background poll
+  } finally {
+    model.polling = false;
+  }
+}
+
+// -------------------------------------------------------------
+// Module Wires & Initialization
+// -------------------------------------------------------------
+
+characterStudio = initCharacterStudioUI(model, {
+  api,
+  busy,
+  notice,
+  node,
+  list,
+  memeGallery,
+  renderStatus,
+});
+
+commentsModule = initCommentsModule(model, {
+  api,
+  busy,
+  notice,
+  node,
+  cell,
+  list,
+  label,
+  badge,
+  empty,
+  tokenCount,
+  occupancyText,
+  commentContinuation,
+  setBadge,
+  describe,
+});
+
+dynamicsModule = initDynamicsModule(model, {
+  api,
+  busy,
+  notice,
+  node,
+  cell,
+  list,
+  label,
+  badge,
+  empty,
+  describe,
+  display,
+  setBadge,
+  tokenCount,
+  safeMessage,
+  publicSettings,
+  memePreview: window.memePreview,
+  dynamicContinuation,
+  dynamicDecisionContinuation,
+  dynamicMemePicker,
+});
+
+maintenanceModule = initMaintenanceModule(model, {
+  api,
+  busy,
+  notice,
+  node,
+  cell,
+  list,
+  describe,
+  dateTime,
+  refreshCommentsFn: refreshComments,
+});
+
+initOperationsModule(api, accountPanel, automationPanel);
+initInferenceProvidersUI();
+
+// Form submits & remaining listeners
+$("login-form")?.addEventListener("submit", event => {
+  event.preventDefault();
+  busy(event.submitter, async () => {
+    const token = $("token")?.value.trim();
+    if (!token) return;
+    localStorage.setItem("tuber_token", token);
+    await enterWorkspace();
+  });
+});
+
+$("providers-form")?.addEventListener("submit", event => {
+  event.preventDefault();
+  busy(event.submitter, async () => {
+    const payload = readProviderPayload(model);
+    model.providersSaving = true;
+    renderProviderForm();
+    try {
+      if ($("providers-save-state")) {
+        $("providers-save-state").classList.remove("error-text");
+        $("providers-save-state").textContent = "正在保存并应用，请等待服务返回…";
+      }
+      const result = await api("/api/settings/providers", { method: "PUT", body: payload });
+      applySettings(result, true);
+      let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
+      if (result.auto_download_triggered) {
+        message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
+        checkDafeiyuModelStatus();
+      }
+      if ($("providers-save-state")) $("providers-save-state").textContent = message;
+      notice(message);
+      const checks = await Promise.allSettled([api("/api/status"), loadVoices()]);
+      if (checks[0].status === "fulfilled") renderStatus(checks[0].value);
+    } catch (error) {
+      const message = `保存失败：${safeMessage(error.message)}${error.status === 409 ? " 请先暂停或等待正在生成 / 发布的任务结束，再重试。" : ""} 当前输入已保留。`;
+      if ($("providers-save-state")) {
+        $("providers-save-state").textContent = message;
+        $("providers-save-state").classList.add("error-text");
+      }
+      notice(message, true);
+    } finally {
+      model.providersSaving = false;
+      renderProviderForm();
+    }
+  });
+});
+
+$("reset-providers")?.addEventListener("click", () => {
+  if (!model.settings || model.providersSaving) return;
+  providerFormFromSettings(model.settings);
+  renderProviderForm();
+  if ($("providers-save-state")) {
+    $("providers-save-state").textContent = "已恢复当前已保存配置；未提交的密钥输入已清除。";
+    $("providers-save-state").classList.remove("error-text");
+  }
+});
+
+$("check-providers-settings")?.addEventListener("click", () => busy($("check-providers-settings"), () => checkProviderConnections("providers-check-result")));
+
+$("clone-form")?.addEventListener("submit", event => {
+  event.preventDefault();
+  busy(event.submitter, async () => {
+    if (!model.characterId) throw new Error("请先选择要复制的角色");
+    const id = $("clone-id")?.value.trim();
+    const name = $("clone-name")?.value.trim();
+    await api(`/api/characters/${encodeURIComponent(model.characterId)}/clone`, { method: "POST", body: { id, name } });
+    await characterStudio?.loadCharacters();
+    await characterStudio?.selectCharacter(id);
+    notice("已创建新角色，可以编辑人格、风格和音色。");
+  });
+});
+
+$("preview-voice")?.addEventListener("change", renderVoicePreview);
+$("preview-form")?.addEventListener("submit", event => {
+  event.preventDefault();
+  busy(event.submitter, async () => {
+    const voice = model.voices.find(item => item.id === $("preview-voice")?.value);
+    const unavailable = voiceAvailability(voice);
+    if (unavailable) throw new Error(unavailable);
+    if ($("preview-state")) $("preview-state").textContent = "等待合成…";
+    $("preview-audio")?.pause();
+    try {
+      const result = await api("/api/tts/preview", {
+        method: "POST",
+        body: { text: $("preview-text")?.value, voice_id: $("preview-voice")?.value }
+      });
+      if ($("preview-audio")) {
+        $("preview-audio").src = result.audio_ref;
+        $("preview-audio").hidden = false;
+      }
+      const recorded = voice?.provider === "prerecorded";
+      const actualText = recorded && result.text ? ` 实际录音台词：${result.text}` : "";
+      if ($("preview-state")) {
+        $("preview-state").textContent = safeMessage(`${recorded ? "预录已准备" : "合成完成"}${result.duration != null ? ` · ${Number(result.duration).toFixed(2)} 秒` : ""}，点击播放试听。${actualText}${result.warning ? ` ${result.warning}` : ""}`);
+      }
+      await updateVoiceCacheUI();
+    } catch (error) {
+      if ($("preview-state")) $("preview-state").textContent = `合成失败：${safeMessage(error.message)}`;
+      throw error;
+    }
+  });
+});
+
 if ($("voice-cache-clear")) {
   $("voice-cache-clear").onclick = () => busy($("voice-cache-clear"), async () => {
-    const res = await api("/api/cache/speech/clear", {method: "POST"});
+    const res = await api("/api/cache/speech/clear", { method: "POST" });
     const stateEl = $("voice-cache-state");
     if (stateEl) {
       stateEl.textContent = `已清理 ${res.result?.removed_files || 0} 个音频文件，释放 ${cachePanel.bytes(res.result?.freed_bytes || 0)} 空间。`;
@@ -1539,232 +952,44 @@ if ($("voice-cache-clear")) {
     await cachePanel.refresh();
   });
 }
-$("copy-overlay").onclick = () => busy($("copy-overlay"), async () => { await navigator.clipboard.writeText($("overlay-url").value); notice("播放器链接已复制。"); });
-$("refresh-videos").onclick = () => busy($("refresh-videos"), async () => {
-  if (!$("popular-videos").hidden) { $("popular-videos").hidden = true; $("refresh-videos").textContent = "逛逛热门视频"; return; }
-  await loadPopularVideos();
-});
-$("fetch-comments-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    $("fetch-state").textContent = "正在读取公开评论…";
-    $("popular-videos").hidden = true; $("refresh-videos").textContent = "逛逛热门视频";
-    try {
-      const result = await api("/api/comments/fetch", {method: "POST", body: {video: $("comment-video").value.trim(), max_pages: Number($("comment-pages").value)}});
-      $("fetch-state").textContent = `读取完成：导入 ${result.imported ?? 0} 条${result.duplicates != null ? `，重复 ${result.duplicates} 条` : ""}${result.warning ? `。${result.warning}` : ""}`;
-      if (result.video_id) { $("filter-video").value = result.video_id; $("import-video").value = result.video_id; }
-      await refreshComments();
-    } catch (error) { $("fetch-state").textContent = `读取失败：${error.message}。可重试或导入已有评论。`; throw error; }
-  });
-};
-function readImportPayload() {
-  const raw = $("import-comments").value.trim(), payload = {video_id: $("import-video").value.trim()};
-  if (!payload.video_id || !raw) throw new Error("请填写视频标识和评论数据");
-  if (raw.startsWith("[") || raw.startsWith("{")) {
-    let value; try { value = JSON.parse(raw); } catch (error) { throw new Error(`评论 JSON 格式错误：${error.message}`); }
-    payload.items = Array.isArray(value) ? value : value.items;
-    if (!Array.isArray(payload.items)) throw new Error("JSON 必须是评论数组，或含 items 数组的对象");
-  } else payload.csv_text = raw;
-  const mapping = $("import-mapping").value.trim();
-  if (mapping) {
-    try { payload.field_mapping = JSON.parse(mapping); } catch (error) { throw new Error(`字段映射 JSON 格式错误：${error.message}`); }
-    if (!payload.field_mapping || typeof payload.field_mapping !== "object" || Array.isArray(payload.field_mapping)) throw new Error("字段映射必须是 JSON 对象");
-    const targets = ["comment_id", "platform_user_id", "display_name", "content", "like_count", "created_at", "thread_id", "parent_comment_id"];
-    Object.entries(payload.field_mapping).forEach(([target, source]) => {
-      if (!targets.includes(target)) throw new Error(`不支持的目标字段：${target}`);
-      if (typeof source !== "string" || !source.trim()) throw new Error(`${target} 的来源字段名必须是非空字符串`);
-    });
-  }
-  return payload;
-}
-function invalidateImportPreview() {
-  model.importPreviewSignature = null; $("submit-import").disabled = true;
-  $("import-preview").hidden = true; $("import-preview-state").textContent = "输入已变更，请重新预览。";
-}
-["import-video", "import-comments", "import-mapping"].forEach(id => { $(id).addEventListener("input", invalidateImportPreview); });
-$("preview-import").onclick = () => busy($("preview-import"), async () => {
-  if (!$("import-comments-form").reportValidity()) return;
-  invalidateImportPreview(); $("import-preview-state").textContent = "正在规范化并预览数据…";
-  try {
-    const payload = readImportPayload(), signature = JSON.stringify(payload);
-    const result = await api("/api/comments/import/preview", {method: "POST", body: payload});
-    let stillCurrent = false; try { stillCurrent = JSON.stringify(readImportPayload()) === signature; } catch { /* Input changed while previewing. */ }
-    if (!stillCurrent) { invalidateImportPreview(); return; }
-    const items = list(result); const tbody = $("import-preview-rows"); tbody.replaceChildren();
-    if (!items.length) empty(tbody, 7, "没有可预览的数据。");
-    else items.slice(0, 10).forEach(item => {
-      const row = node("tr"); cell(row, item.comment_id); cell(row, item.thread_id || item.comment_id); cell(row, item.parent_comment_id || "—"); cell(row, item.platform_user_id || "未知 ID", item.display_name || "匿名观众");
-      cell(row, item.content); cell(row, item.like_count ?? 0); cell(row, item.created_at || "—"); tbody.append(row);
-    });
-    $("import-preview").hidden = false;
-    $("import-preview-state").textContent = `共 ${result.total ?? items.length} 条，预览前 ${Math.min(items.length, 10)} 条；尚未写入。`;
-    model.importPreviewSignature = signature; $("submit-import").disabled = !items.length;
-  } catch (error) { $("import-preview-state").textContent = `预览失败：${error.message}`; throw error; }
-});
-$("import-comments-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter || $("submit-import"), async () => {
-    const payload = readImportPayload();
-    if (!model.importPreviewSignature || JSON.stringify(payload) !== model.importPreviewSignature) throw new Error("请先预览当前数据，再提交导入");
-    const result = await api("/api/comments/import", {method: "POST", body: payload});
-    model.importPreviewSignature = null; $("submit-import").disabled = true;
-    $("import-preview-state").textContent = `已导入 ${result.imported ?? 0} 条${result.duplicates != null ? `，重复 ${result.duplicates} 条` : ""}。修改数据后可再次预览。`;
-    $("filter-video").value = result.video_id || payload.video_id; notice(`导入 ${result.imported ?? 0} 条评论。`); await refreshComments();
-  });
-};
-$("filter-comments").onclick = () => busy($("filter-comments"), refreshComments);
-$("analyze-comments").onclick = () => busy($("analyze-comments"), async () => { const result = await api("/api/comments/analyze", {method: "POST", body: {video_id: $("filter-video").value.trim() || undefined}}); notice(`归类完成：${JSON.stringify(result)}`); await refreshComments(); });
-$("generate-drafts").onclick = () => busy($("generate-drafts"), async () => {
-  if (!model.selectedComments.size) throw new Error("请先选择评论");
-  await api("/api/comments/drafts", {method: "POST", body: {comment_ids: [...model.selectedComments]}});
-  notice("生成任务已加入队列，可在下方查看进度。"); await refreshComments();
-});
-$("select-comments").onchange = () => { model.comments.forEach(comment => { $("select-comments").checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id); }); renderComments(); };
-$("draft-text").oninput = () => { model.draftDirty = true; renderDraft(); };
-async function reviewDraft(action) {
-  const comment = model.comments.find(item => item.id === model.commentId); if (!comment?.draft) throw new Error("请先选择已有草稿的评论");
-  await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/review`, {method: "POST", body: {action, text: $("draft-text").value}});
-  model.draftDirty = false; await refreshComments(); notice(action === "approve" ? "草稿已审核保存。" : "草稿已拒绝。");
-}
-$("approve-draft").onclick = () => busy($("approve-draft"), () => reviewDraft("approve"));
-$("reject-draft").onclick = () => busy($("reject-draft"), () => reviewDraft("reject"));
-$("copy-draft").onclick = () => busy($("copy-draft"), async () => {
-  const comment = model.comments.find(item => item.id === model.commentId); if (!comment?.draft) return;
-  if (model.draftDirty) throw new Error("请先审核保存修改，再复制已保存的回复");
-  await navigator.clipboard.writeText($("draft-text").value);
-  await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/copy`, {method: "POST"});
-  notice("回复已复制，未执行平台发布。"); await refreshComments();
-});
-$("publish-draft").onclick = () => busy($("publish-draft"), async () => {
-  const comment = model.comments.find(item => item.id === model.commentId); if (!comment?.draft) return;
-  if (model.draftDirty) throw new Error("请先审核保存修改");
-  const result = await api(`/api/comments/drafts/${encodeURIComponent(comment.draft.id)}/publish`, {method: "POST"});
-  notice(`平台已返回发布回执：${JSON.stringify(result)}`); await refreshComments();
-});
-$("comment-policy-form").onsubmit = event => {
-  event.preventDefault(); busy(event.submitter, async () => {
-    const payload = {auto_browse: $("auto-browse").checked, auto_reply: $("auto-reply").checked, watch_videos: $("watch-videos").value.split(/[\s,，]+/).filter(Boolean), browse_interval_seconds: Number($("browse-interval").value), max_replies_per_hour: Number($("replies-hour").value), max_replies_per_day: Number($("replies-day").value)};
-    await api("/api/comments/policy", {method: "PUT", body: payload});
-    model.commentPolicyDirty = false;
-    await loadPolicy(); notice(model.policy.automation_override ? "个人基础设置已保存；被覆盖项目关闭自动化后生效。" : "回复基础设置已保存，请以当前生效状态为准。");
-  });
-};
-$("stop-auto-reply").onclick = () => busy($("stop-auto-reply"), async () => {
-  if (model.policy?.automation_override) {location.hash = "automation"; notice("自动化正在覆盖此开关，请在工作区停止本轮、关闭总开关或紧急停止所有自动收发。"); return;}
-  await api("/api/comments/policy", {method: "PUT", body: {auto_reply: false}}); await loadPolicy(); notice("基础自动回复已停止。已提交给平台的请求以回执为准。");
-});
-$("comment-policy-form").addEventListener("input", () => {model.commentPolicyDirty = true; $("comment-policy-base-note").textContent = "有未保存的基础设置；自动化覆盖项目关闭总开关后生效。";});
-$("dynamic-policy-form").addEventListener("input", () => { model.dynamicPolicyDirty = true; renderDynamicPolicy(); });
-$("dynamic-policy-form").addEventListener("change", () => { model.dynamicPolicyDirty = true; renderDynamicPolicy(); });
-$("dynamic-policy-form").onsubmit = event => { event.preventDefault(); busy($("save-dynamic-policy"), () => saveDynamicPolicy()); };
-$("stop-dynamics").onclick = () => busy($("stop-dynamics"), () => saveDynamicPolicy(true));
-$("refresh-dynamics").onclick = () => busy($("refresh-dynamics"), refreshDynamics);
-$("evaluate-dynamics").onclick = () => busy($("evaluate-dynamics"), async () => {
-  if (model.dynamicEvaluating || !model.dynamicPolicy) return;
-  model.dynamicEvaluating = true; renderDynamicPolicy();
-  $("dynamic-policy-state").classList.remove("error-text");
-  $("dynamic-policy-state").textContent = "正在评估当前角色的公开来源，手动评估不会自动发布…";
-  notice("");
-  try {
-    const result = await api("/api/dynamics/evaluate", {method: "POST", body: {}});
-    await refreshDynamics();
-    if (result.post_id != null && !model.dynamicPostDirty) { model.dynamicPostId = result.post_id; renderDynamicPosts(); }
-    $("dynamic-policy-state").textContent = result.action === "wait" ? `本轮决定等待：${result.reason || "当前没有适合发布的内容。"}` : result.action === "error" ? `评估未完成：${result.error || result.reason || "请查看决策记录。"}` : "评估完成；生成的草稿等待人工审核，不会由后台补发。";
-    $("dynamic-policy-state").classList.toggle("error-text", result.action === "error");
-  } catch (error) {
-    $("dynamic-policy-state").textContent = `评估失败：${safeMessage(error.message)}。可查看已保留的决策与错误。`;
-    $("dynamic-policy-state").classList.add("error-text"); throw error;
-  } finally { model.dynamicEvaluating = false; renderDynamicPolicy(); }
-});
-$("dynamic-post-text").oninput = () => { model.dynamicPostDirty = true; renderDynamicPost(); };
-$("dynamic-pick-meme").onclick = () => { const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId); if (!post) return; model.dynamicMemeContext = {id: post.id, character: post.character_id, version: post.character_version}; dynamicMemePicker.open(post.character_id, post.meme_id); };
-$("dynamic-clear-meme").onclick = () => busy($("dynamic-clear-meme"), () => selectDynamicMeme(null));
-$("approve-dynamic").onclick = () => busy($("approve-dynamic"), () => reviewDynamic("approve"));
-$("reject-dynamic").onclick = () => busy($("reject-dynamic"), () => reviewDynamic("reject"));
-$("publish-dynamic").onclick = () => busy($("publish-dynamic"), async () => {
-  const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
-  if (!post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending) return;
-  model.dynamicPostPending = true; renderDynamicPost();
-  try {
-    await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, {method: "POST"});
-    await refreshDynamics();
-  } catch (error) {
-    await refreshDynamics().catch(() => {}); notice(`动态发布未完成：${safeMessage(error.message)}，请核对平台回执。`, true);
-  } finally { model.dynamicPostPending = false; renderDynamicPost(); }
-});
-async function compactContext(scope, videoId, threadId) {
-  if (scope === "comments" && (!videoId || !threadId)) throw new Error("请先选择要压缩的视频与单个楼ID；不同楼上下文不会合并。");
-  const payload = {scope, ...(scope === "comments" ? {video_id: videoId, thread_id: threadId} : {})};
-  $("compaction-result").textContent = "正在使用当前文本模型压缩上下文…";
-  notice("上下文压缩已开始，请等待当前文本模型返回。");
-  try {
-    const result = await api("/api/context/compact", {method: "POST", body: payload});
-    const message = result.message || result.detail || (result.compacted === false ? "没有可压缩的历史。" : "压缩请求已完成，请查看实际上下文占用与压缩次数。");
-    $("compaction-result").textContent = message; notice(message);
-    renderStatus(await api("/api/status"));
-    if (scope === "comments") await refreshThreadContext();
-  } catch (error) { $("compaction-result").textContent = `压缩失败：${error.message}`; throw error; }
-}
-$("compact-live").onclick = () => busy($("compact-live"), () => compactContext("live"));
-$("compact-comments-settings").onclick = () => busy($("compact-comments-settings"), () => compactContext("comments", $("compact-video-id").value.trim(), $("compact-thread-id").value.trim()));
-$("compact-comments").onclick = () => busy($("compact-comments"), () => {
-  const target = selectedThread();
+
+$("copy-overlay")?.addEventListener("click", () => busy($("copy-overlay"), async () => {
+  await navigator.clipboard.writeText($("overlay-url")?.value || "");
+  notice("播放器链接已复制。");
+}));
+
+$("compact-live")?.addEventListener("click", () => busy($("compact-live"), () => compactContext("live")));
+$("compact-comments-settings")?.addEventListener("click", () => busy($("compact-comments-settings"), () => compactContext("comments", $("compact-video-id")?.value.trim(), $("compact-thread-id")?.value.trim())));
+$("compact-comments")?.addEventListener("click", () => busy($("compact-comments"), () => {
+  const target = selectedThread(model);
   return compactContext("comments", target?.videoId, target?.threadId);
-});
-$("rebuild-comments").onclick = () => busy($("rebuild-comments"), async () => {
-  const target = selectedThread();
+}));
+
+$("rebuild-comments")?.addEventListener("click", () => busy($("rebuild-comments"), async () => {
+  const target = selectedThread(model);
   if (!target) throw new Error("请先选择评论或筛选视频与单个楼ID，再重建该楼上下文。");
-  $("thread-rebuild-state").textContent = `正在使用本地现存原文重建 ${target.videoId} / ${target.threadId}…`;
+  if ($("thread-rebuild-state")) $("thread-rebuild-state").textContent = `正在使用本地现存原文重建 ${target.videoId} / ${target.threadId}…`;
   try {
-    const result = await api("/api/context/rebuild", {method: "POST", body: {scope: "comments", video_id: target.videoId, thread_id: target.threadId}});
+    const result = await api("/api/context/rebuild", {
+      method: "POST",
+      body: { scope: "comments", video_id: target.videoId, thread_id: target.threadId }
+    });
     let message = result.message || result.detail || (result.rebuilt === false ? "本次未重建上下文，请检查该楼现存原文。" : `楼 ${target.videoId} / ${target.threadId} 上下文已重建，请查看实际占用。`);
     if (result.prefilled === false) message += " 诊断：未执行真实模型 prefill，不能据此认定模型已预热。";
     else if (result.prefilled === true) message += ` 模型 prefill 已完成${result.input_tokens != null ? `，输入 ${result.input_tokens} tokens` : ""}。`;
-    $("thread-rebuild-state").textContent = message; notice(message);
+    if ($("thread-rebuild-state")) $("thread-rebuild-state").textContent = message;
+    notice(message);
     await refreshThreadContext();
-  } catch (error) { $("thread-rebuild-state").textContent = `重建失败：${error.message}`; throw error; }
-});
-["retention-days", "retention-never"].forEach(id => $(id).addEventListener("input", () => {
-  model.retentionDirty = true; $("retention-policy-state").textContent = "有未保存修改，请保存后预览。";
-  $("retention-policy-state").classList.remove("error-text");
-  invalidateRetentionPreview();
+  } catch (error) {
+    if ($("thread-rebuild-state")) $("thread-rebuild-state").textContent = `重建失败：${error.message}`;
+    throw error;
+  }
 }));
-$("retention-before").oninput = () => invalidateRetentionPreview("截至日期已变更，请重新预览。");
-$("retention-confirm").onchange = renderRetentionControls;
-$("retention-form").onsubmit = event => {
-  event.preventDefault(); retentionAction("save", async () => {
-    const days = $("retention-never").checked ? null : Number($("retention-days").value);
-    if (days !== null && (!Number.isSafeInteger(days) || days < 1 || days > 36500)) throw new Error("保留天数必须为 1 至 36500 的整数。");
-    await api("/api/retention", {method: "PUT", body: {days}});
-    model.retentionDirty = false; invalidateRetentionPreview(); await loadRetention();
-    $("retention-policy-state").textContent = "留存策略已保存；本次未执行手动清理。";
-  });
-};
-$("retention-preview").onclick = () => retentionAction("preview", async () => {
-  const payload = retentionRequest(), signature = JSON.stringify(payload);
-  invalidateRetentionPreview("正在统计待清理记录；尚未删除…");
-  const result = await api("/api/retention/preview", {method: "POST", body: payload});
-  if (JSON.stringify(retentionRequest()) !== signature) return;
-  if (result.cutoff == null) throw new Error("服务未返回清理截止时间，请指定日期后重新预览。");
-  model.retentionPreview = {signature, cutoff: result.cutoff};
-  $("retention-preview-cutoff").textContent = `删除时间早于 ${result.cutoff} 的适用记录（UTC，边界不包含）。`;
-  const countLabels = {context_windows: "上下文窗口", grounded_memory: "来源检索索引", conversations: "对话记录", jobs: "直播任务", events: "直播事件", sessions: "直播会话", dynamic_memory_summaries: "运营记忆摘要"};
-  describe($("retention-preview-counts"), Object.entries(result.counts || {}).map(([key, count]) => [countLabels[key] || key, count]));
-  $("retention-preview-detail").textContent = JSON.stringify(result, null, 2);
-  $("retention-preview-panel").hidden = false;
-  $("retention-cleanup-state").textContent = "预览完成，尚未删除。请核对数量和范围后确认。";
-});
-$("retention-cleanup").onclick = () => retentionAction("cleanup", async () => {
-  const preview = model.retentionPreview;
-  if (!preview || !$("retention-confirm").checked || JSON.stringify(retentionRequest()) !== preview.signature) throw new Error("请先预览当前范围并明确确认清理。");
-  const result = await api("/api/retention/cleanup", {method: "POST", body: {before: preview.cutoff, confirm: true}});
-  invalidateRetentionPreview();
-  $("retention-cleanup-state").textContent = `清理已完成，实际结果：${JSON.stringify(result.counts || result)}`;
-  await loadRetention();
-  if (model.page === "comments") await refreshComments();
-});
-$("character-image").onerror = () => { $("character-image").hidden = true; };
 
-// Operations Module Initialization (Decoupled & Real-Time Sync)
-initOperationsModule(api, accountPanel, automationPanel);
+$("character-image")?.addEventListener("error", () => {
+  const img = $("character-image");
+  if (img) img.hidden = true;
+});
 
 if ($("refresh-operations")) {
   $("refresh-operations").onclick = async () => {
@@ -1774,9 +999,19 @@ if ($("refresh-operations")) {
 }
 
 window.addEventListener("hashchange", changePage);
-window.addEventListener("beforeunload", event => { if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; } });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+window.addEventListener("beforeunload", event => {
+  if (model.characterDirty || model.draftDirty || model.commentPolicyDirty || model.providersDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || automationPanel.dirty || automationPanel.draftDirty || messagesPanel.hasUnsaved()) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) poll();
+});
 setInterval(poll, 2500);
-initOCStudioUI();
-initInferenceProvidersUI();
-enterWorkspace().catch(error => { showLogin(); if (error.status !== 401) $("login-error").textContent = error.message; });
+
+// Auto-login or show workspace
+enterWorkspace().catch(error => {
+  showLogin();
+  if (error.status !== 401 && $("login-error")) $("login-error").textContent = error.message;
+});
