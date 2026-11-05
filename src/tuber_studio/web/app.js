@@ -5,12 +5,12 @@ import { api as baseApi } from "./modules/api.js";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js";
+import { MessagesPanel } from "./messages.js?v=20261105.29";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js?v=20261105.27";
+} from "./modules/operations.js?v=20261105.29";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -18,11 +18,11 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261105.26";
+} from "./modules/comments.js?v=20261105.29";
 import {
   localDateTime,
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261105.26";
+} from "./modules/dynamics.js?v=20261105.29";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261105.26";
@@ -256,6 +256,12 @@ function renderStatus(status) {
   renderControls(model);
   renderPersona(model);
   setBadge($("live-state"), status.state);
+  $("overview-live-state").textContent = label(status.state);
+  $("overview-queue").textContent = status.queue_length ?? "—";
+  $("overview-player").textContent = status.overlay_connected ? "已连接" : "未连接";
+  $("overview-speech").textContent = {
+    gpt_sovits: "本地语音", openai_compatible: "兼容 API", prerecorded: "预录音频",
+  }[status.providers?.tts] || "待确认";
   const job = status.current_job;
   setBadge($("live-current-status"), job?.status || "ready");
   $("live-current-text").textContent = job?.text || (job ? "正在处理当前事件…" : "等待事件。");
@@ -410,13 +416,16 @@ async function compactContext(scope, videoId, threadId) {
 
 async function changePage() {
   const requested = location.hash.slice(1) || "comments";
-  const anchors = { "account-settings": "accounts", "live-game-panel": "live", "interactive-rules-card": "live" };
-  const page = Object.hasOwn(anchors, requested) ? anchors[requested] : requested === "automation" ? "comments" : requested;
+  const target = $(requested);
+  const anchor = target?.hasAttribute("data-workspace-anchor") ? target : null;
+  const page = anchor?.closest("[data-section]")?.dataset.section || requested;
   const pages = {
-    comments: ["operations", "评论"], messages: ["operations", "私信"], dynamics: ["operations", "动态"],
-    live: ["live", "直播"],
+    comments: ["operations", "评论与草稿"], automation: ["operations", "自主运营"],
+    messages: ["operations", "私信"], dynamics: ["operations", "动态"],
+    live: ["live", "直播控制与队列"], "live-interaction": ["live", "互动与游戏"], "live-player": ["live", "OBS 播放器"],
     characters: ["character", "角色"], voices: ["character", "语音"], assets: ["character", "素材"],
-    settings: ["settings", "推理"], accounts: ["settings", "账号与权限"], overview: ["settings", "维护"],
+    settings: ["settings", "Jetson 推理"], providers: ["settings", "模型与 API"],
+    accounts: ["settings", "账号与权限"], overview: ["settings", "概览与维护"],
   };
   model.page = Object.hasOwn(pages, page) ? page : "comments";
   const [workspace, title] = pages[model.page];
@@ -433,12 +442,21 @@ async function changePage() {
     else link.removeAttribute("aria-current");
   });
   document.title = `${title} · Tuber Studio`;
-  if (Object.hasOwn(anchors, requested)) $(requested).scrollIntoView();
+  if (anchor) {
+    for (let element = anchor; element; element = element.parentElement) {
+      if (element instanceof HTMLDetailsElement) element.open = true;
+    }
+    anchor.scrollIntoView();
+  } else {
+    window.scrollTo(0, 0);
+  }
 
   if (!model.authenticated) return;
   try {
     if (model.page === "comments") {
-      await Promise.allSettled([refreshComments(), automationPanel.refresh(), updatePermissionCapsule()]);
+      await refreshComments();
+    } else if (model.page === "automation") {
+      await Promise.allSettled([automationPanel.refresh(), updatePermissionCapsule()]);
     } else if (model.page === "messages") {
       await messagesPanel.refresh();
     } else if (model.page === "dynamics") {
@@ -446,7 +464,9 @@ async function changePage() {
     } else if (model.page === "assets") {
       await memeGallery.refresh();
     } else if (model.page === "live") {
-      await Promise.allSettled([refreshLive(), dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]);
+      await refreshLive();
+    } else if (model.page === "live-interaction") {
+      await Promise.allSettled([dailyMemoryUI.refresh(), interactiveGamesUI.refresh()]);
     } else if (model.page === "voices") {
       await updateVoiceCacheUI();
     } else if (model.page === "characters") {
@@ -456,7 +476,9 @@ async function changePage() {
     } else if (model.page === "accounts") {
       await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule()]);
     } else if (model.page === "settings") {
-      await Promise.all([inferenceNodePanel.refresh(), inferenceProviders.refresh()]);
+      await inferenceNodePanel.refresh();
+    } else if (model.page === "providers") {
+      await inferenceProviders.refresh();
     }
   } catch (error) {
     notice(error.message, true);

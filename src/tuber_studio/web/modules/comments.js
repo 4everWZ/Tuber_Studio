@@ -158,7 +158,7 @@ export function renderDraft(model, commentContinuation, setBadge, describe) {
       "在私信工作台审核这份回复并查看发送回执。" :
       draft?.error ? `错误：${draft.error}` :
       model.draftDirty ? "文字已修改，先审核保存后再发布或复制。" :
-      model.policy?.auto_reply ? "自动回复已开启；新草稿可能自动发布。当前草稿以此处状态与平台回执为准。" :
+      model.policy?.auto_reply ? "已配置自动回复。手动生成的草稿需要审核，其他草稿以此处状态与平台回执为准。" :
       "人工审核模式。审核通过后可复制；账号凭证已配置时可发布。";
   }
 }
@@ -304,11 +304,11 @@ export function renderCommentPolicy(policy, model, commentContinuation, setBadge
     if ($("replies-day")) $("replies-day").value = base.max_replies_per_day || 20;
   }
   if ($("reply-mode")) {
-    $("reply-mode").textContent = policy.auto_reply ? "自动回复已开启" : "人工审核";
+    $("reply-mode").textContent = policy.auto_reply ? "已配置自动回复" : "人工审核";
     $("reply-mode").className = `badge ${policy.auto_reply ? "active" : ""}`;
   }
   if ($("comment-fetch-mode")) {
-    $("comment-fetch-mode").textContent = policy.auto_reply ? "公开读取 · 自动回复已开启" : "公开读取 · 人工审核";
+    $("comment-fetch-mode").textContent = policy.auto_reply ? "公开读取 · 已配置自动回复" : "公开读取 · 人工审核";
   }
   if ($("comment-policy-overlay")) $("comment-policy-overlay").hidden = !policy.automation_override && !policy.emergency;
   if ($("comment-policy-overlay-text")) {

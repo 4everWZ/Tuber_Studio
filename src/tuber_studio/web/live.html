@@ -4,7 +4,7 @@
 <body>
   <main id="login" class="login" hidden><form id="login-form" class="panel"><span class="brand-icon">🐋</span><h1>进入直播工作台</h1><label>管理员令牌<input id="token" type="password" autocomplete="current-password" required></label><button class="primary">登录</button><p id="login-error" role="alert"></p><a href="/">返回评论工作台</a></form></main>
   <div id="workspace" hidden>
-    <header class="topbar account-topbar"><a class="brand" href="/live"><span class="brand-icon">🐋</span><span>大肥鱼 <small>LIVE STUDIO</small></span></a><nav aria-label="工作区"><a href="/live" aria-current="page">直播工作台</a><a href="/#comments">评论运营 ↗</a></nav><div class="top-status"><span id="session-state" class="status">连接中</span><span id="player-state">播放器未连接</span><button id="open-overlay">打开 OBS 播放器 ↗</button></div><div id="global-bilibili-account" class="global-bilibili-account"></div></header>
+    <header class="topbar account-topbar"><a class="brand" href="/live"><span class="brand-icon">🐋</span><span>大肥鱼 <small>LIVE STUDIO</small></span></a><nav aria-label="工作区"><a href="/#live">回到直播控制 ↗</a><a href="/#comments">评论运营 ↗</a></nav><div class="top-status"><span id="session-state" class="status">连接中</span><span id="player-state">播放器未连接</span><button id="open-overlay">打开 OBS 播放器 ↗</button></div><div id="global-bilibili-account" class="global-bilibili-account"></div></header>
     <div id="feedback" class="feedback" role="status" hidden></div>
     <div class="studio-heading"><div><p class="eyebrow">你的水下小舞台</p><h1>直播工作台 <span>♡</span></h1></div><div class="actions"><span id="save-state">布局已保存</span><button id="undo-layout" disabled>撤销布局修改</button><button id="save-layout" class="primary" disabled>保存布局</button></div></div>
     <div class="editor-layout">

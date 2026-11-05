@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css?v=20261105.26"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css"><link rel="stylesheet" href="/static/workbench.css">
+  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css?v=20261105.26"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css"><link rel="stylesheet" href="/static/workbench.css?v=20261105.29">
 </head>
 <body>
   <main id="login" class="login-shell" hidden>
@@ -36,21 +36,24 @@
         </div>
       </header>
       <nav class="workspace-tabs" data-workspace-tabs="operations" aria-label="运营页面" hidden>
-        <a href="#comments" data-page="comments">评论</a><a href="#messages" data-page="messages">私信</a><a href="#dynamics" data-page="dynamics">动态</a>
+        <a href="#comments" data-page="comments">评论与草稿</a><a href="#automation" data-page="automation">自主运营</a><a href="#messages" data-page="messages">私信</a><a href="#dynamics" data-page="dynamics">动态</a>
+      </nav>
+      <nav class="workspace-tabs" data-workspace-tabs="live" aria-label="直播页面" hidden>
+        <a href="#live" data-page="live">控制与队列</a><a href="/live">场景与曲库 ↗</a><a href="#live-interaction" data-page="live-interaction">互动与游戏</a><a href="#live-player" data-page="live-player">OBS 播放器</a>
       </nav>
       <nav class="workspace-tabs" data-workspace-tabs="character" aria-label="角色页面" hidden>
         <a href="#characters" data-page="characters">角色</a><a href="#voices" data-page="voices">语音</a><a href="#assets" data-page="assets">素材</a>
       </nav>
       <nav class="workspace-tabs" data-workspace-tabs="settings" aria-label="设置页面" hidden>
-        <a href="#settings" data-page="settings">推理</a><a href="#accounts" data-page="accounts">账号与权限</a><a href="#overview" data-page="overview">维护</a>
+        <a href="#settings" data-page="settings">Jetson 推理</a><a href="#providers" data-page="providers">模型与 API</a><a href="#accounts" data-page="accounts">账号与权限</a><a href="#overview" data-page="overview">概览与维护</a>
       </nav>
       <div id="notice" class="notice" role="status" hidden></div>
       <main class="content">
-        <section data-section="comments" hidden>
+        <section data-section="automation" hidden>
           <div class="page-heading">
             <div>
               <p class="eyebrow">视频浏览 · 角色主评 · 评论互动 · 审核发布</p>
-              <h1>社区运营工作台</h1>
+              <h1>自主运营</h1>
             </div>
             <div class="actions">
               <button id="op-preview-round" type="button">单轮运营预览</button>
@@ -86,27 +89,30 @@
             </button>
           </div>
 
+          <p id="automatic-sending-state" class="feature-note" role="status" hidden></p>
+          <p class="hint">单轮运营预览只取材和生成草稿，发布由正式运营轮或人工操作触发。</p>
           <div id="automation-panel"></div>
-
-          <details class="panel" style="margin-top: 24px;">
-            <summary style="font-weight:600;font-size:13px;color:var(--ink);">高级工具：手动录入指定视频 / CSV 评论导入 / 历史列表</summary>
-            <div style="padding-top:16px;">
-              <article class="panel">
-                <div class="panel-heading"><h2>读取视频评论</h2><span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span></div>
-                <form id="fetch-comments-form" class="fetch-row"><label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label><label>最多页数<select id="comment-pages"><option value="1">1 页</option><option value="2">2 页</option><option value="3">3 页</option><option value="5">5 页</option></select></label><button class="primary" type="submit">读取评论</button></form>
-                <p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p>
-                <div id="popular-videos" class="video-list" hidden></div>
-                <details class="subsection"><summary>导入已有 JSON / CSV 评论</summary>
-                  <form id="import-comments-form"><label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label><label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="6" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"这期会有续集吗？"}]' required></textarea></label><p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。内容保留在输入框，导入失败后可以修正重试。</p><details><summary>高级字段映射（标准字段可留空）</summary><label>字段映射 JSON<textarea id="import-mapping" class="code-editor compact-editor" rows="3" placeholder='{"comment_id":"id","platform_user_id":"uid","display_name":"name","content":"message"}' spellcheck="false"></textarea></label><p class="hint">按「目标字段: 来源字段」填写。目标支持 comment_id、platform_user_id、display_name、content、like_count、created_at、thread_id、parent_comment_id；未填写的字段使用同名来源。楼ID缺省取评论ID，父评论ID可空。</p></details><div class="actions import-actions"><button id="preview-import" type="button">预览导入</button><button id="submit-import" class="primary" type="submit" disabled>导入评论</button><span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span></div><div id="import-preview" class="table-scroll import-preview" hidden><table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table></div></form>
-                </details>
-              </article>
-              <article class="panel" style="display:none;"><form id="comment-policy-form"><input id="auto-browse" type="checkbox"><input id="auto-reply" type="checkbox"><button id="stop-auto-reply" type="button"></button><textarea id="watch-videos"></textarea><input id="browse-interval" type="number"><input id="replies-hour" type="number"><input id="replies-day" type="number"><span id="reply-mode"></span><span id="comment-policy-overlay"></span><span id="comment-policy-overlay-text"></span><span id="comment-policy-base-note"></span></form></article>
-              <div class="comment-toolbar"><label>视频筛选<input id="filter-video" placeholder="全部视频"></label><label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label><label>类别<select id="filter-category"><option value="">全部类别</option><option value="question">问题</option><option value="suggestion">建议 / 反馈</option><option value="interaction">适合互动</option><option value="spam">垃圾</option><option value="general">一般评论</option></select></label><label>草稿状态<select id="filter-status"><option value="">全部状态</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label><button id="filter-comments">筛选</button><button id="analyze-comments">归类评论</button><button id="generate-drafts" class="primary">为选中评论生成草稿</button><button id="compact-comments">压缩当前楼上下文</button><button id="rebuild-comments" aria-describedby="thread-rebuild-state">重建上下文</button></div><p id="comment-context-state" class="hint">上下文能力待验证。</p><p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。</p><p id="thread-rebuild-state" class="hint" role="status">仅从本地现存评论原文重建当前楼，不重新抓取外网；已有非空上下文不会覆盖，原文不存在时无法重建。</p>
-              <div class="comment-layout"><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel"><div class="panel-heading"><h2>回复草稿</h2><span id="draft-status" class="badge">选择评论</span></div><p id="draft-source" class="quoted-text">选择列表中的评论，查看角色草稿及来源。</p><dl id="draft-meta" class="description-list"></dl><label>编辑回复<textarea id="draft-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-draft" class="primary" disabled>审核通过</button><button id="reject-draft" disabled>拒绝</button><button id="copy-draft" disabled>复制回复</button><button id="publish-draft" disabled>发布已审核回复</button></div><a id="open-private-draft" href="#messages" hidden>查看私信工作台 →</a><p id="draft-note" class="hint">默认人工审核。平台凭证未配置时可复制回复。</p><section id="comment-continuation" hidden></section><details class="subsection"><summary>来源与完整性检查</summary><div id="draft-answer-check" class="hint">暂无检查证据。</div></details></article></div>
-              <article class="panel"><div class="panel-heading"><h2>评论任务</h2><span class="hint">生成任务在后台执行，错误可见</span></div><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></div></article>
-            </div>
-          </details>
         </section>
+        <section data-section="comments" hidden>
+          <div class="page-heading"><h1>评论与草稿</h1><div class="actions">
+            <a class="button" href="#comment-import">导入评论</a>
+            <a class="button" href="#comment-review">查看草稿</a>
+            <a class="button" href="#automation">自主运营 →</a>
+          </div></div>
+
+          <article class="panel">
+            <div class="panel-heading"><h2>读取视频评论</h2><span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span></div>
+            <form id="fetch-comments-form" class="fetch-row"><label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label><label>最多页数<select id="comment-pages"><option value="1">1 页</option><option value="2">2 页</option><option value="3">3 页</option><option value="5">5 页</option></select></label><button class="primary" type="submit">读取评论</button></form>
+            <p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p>
+            <div id="popular-videos" class="video-list" hidden></div>
+            <details class="subsection" id="comment-import" data-workspace-anchor><summary>导入已有 JSON / CSV 评论</summary>
+              <form id="import-comments-form"><label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label><label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="6" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"这期会有续集吗？"}]' required></textarea></label><p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。内容保留在输入框，导入失败后可以修正重试。</p><details><summary>高级字段映射（标准字段可留空）</summary><label>字段映射 JSON<textarea id="import-mapping" class="code-editor compact-editor" rows="3" placeholder='{"comment_id":"id","platform_user_id":"uid","display_name":"name","content":"message"}' spellcheck="false"></textarea></label><p class="hint">按「目标字段: 来源字段」填写。目标支持 comment_id、platform_user_id、display_name、content、like_count、created_at、thread_id、parent_comment_id；未填写的字段使用同名来源。楼ID缺省取评论ID，父评论ID可空。</p></details><div class="actions import-actions"><button id="preview-import" type="button">预览导入</button><button id="submit-import" class="primary" type="submit" disabled>导入评论</button><span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span></div><div id="import-preview" class="table-scroll import-preview" hidden><table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table></div></form>
+            </details>
+          </article>
+          <article class="panel" style="display:none;"><form id="comment-policy-form"><input id="auto-browse" type="checkbox"><input id="auto-reply" type="checkbox"><button id="stop-auto-reply" type="button"></button><textarea id="watch-videos"></textarea><input id="browse-interval" type="number"><input id="replies-hour" type="number"><input id="replies-day" type="number"><span id="reply-mode"></span><span id="comment-policy-overlay"></span><span id="comment-policy-overlay-text"></span><span id="comment-policy-base-note"></span></form></article>
+          <div class="comment-toolbar"><label>视频筛选<input id="filter-video" placeholder="全部视频"></label><label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label><label>类别<select id="filter-category"><option value="">全部类别</option><option value="question">问题</option><option value="suggestion">建议 / 反馈</option><option value="interaction">适合互动</option><option value="spam">垃圾</option><option value="general">一般评论</option></select></label><label>草稿状态<select id="filter-status"><option value="">全部状态</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label><button id="filter-comments">筛选</button><button id="analyze-comments">归类评论</button><button id="generate-drafts" class="primary">为选中评论生成草稿</button><button id="compact-comments">压缩当前楼上下文</button><button id="rebuild-comments" aria-describedby="thread-rebuild-state">重建上下文</button></div><p id="comment-context-state" class="hint">上下文能力待验证。</p><p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文；不同楼不会合并。</p><p id="thread-rebuild-state" class="hint" role="status">仅从本地现存评论原文重建当前楼，不重新抓取外网；已有非空上下文不会覆盖，原文不存在时无法重建。</p>
+          <div class="comment-layout" id="comment-review" data-workspace-anchor><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel"><div class="panel-heading"><h2>回复草稿</h2><span id="draft-status" class="badge">选择评论</span></div><p id="draft-source" class="quoted-text">选择列表中的评论，查看角色草稿及来源。</p><dl id="draft-meta" class="description-list"></dl><label>编辑回复<textarea id="draft-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-draft" class="primary" disabled>审核通过</button><button id="reject-draft" disabled>拒绝</button><button id="copy-draft" disabled>复制回复</button><button id="publish-draft" disabled>发布已审核回复</button></div><a id="open-private-draft" href="#messages" hidden>查看私信工作台 →</a><p id="draft-note" class="hint">默认人工审核。平台凭证未配置时可复制回复。</p><section id="comment-continuation" hidden></section><details class="subsection"><summary>来源与完整性检查</summary><div id="draft-answer-check" class="hint">暂无检查证据。</div></details></article></div>
+          <article class="panel"><div class="panel-heading"><h2>评论任务</h2><span class="hint">生成任务在后台执行，错误可见</span></div><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></div></article>
         </section>
         <section data-section="messages" hidden><div id="messages-panel"></div></section>
         <section data-section="dynamics" hidden>
@@ -116,7 +122,7 @@
               <div class="policy-checks"><label><input id="dynamic-enabled" type="checkbox">开启动态运营</label><label><input id="dynamic-auto-publish" type="checkbox" checked>自动发布（关闭则人工审核）</label><label><input id="dynamic-use-memes" type="checkbox">允许模型为正文附加一张表情包</label></div>
               <p class="hint">默认关闭运营。开启运营且勾选自动发布后，后台会以当前角色直接发布动态；至少间隔 6 小时，滚动 24 小时最多尝试 2 次（含失败），也可决定等待。</p>
               <div class="form-grid"><label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="300" max="86400" step="1" value="1800" required></label><label>最短发布间隔（秒）<input id="dynamic-min-post-interval" type="number" min="21600" max="604800" step="1" value="21600" required></label><label>24 小时最多尝试（含失败）<input id="dynamic-max-posts" type="number" min="1" max="2" step="1" value="2" required></label><label>运营记忆摘要（tokens）<input id="dynamic-memory-summary-max" type="number" min="256" max="4096" step="1" value="2048" required></label></div>
-            </fieldset><div class="actions"><button id="save-dynamic-policy" type="submit" disabled>保存运营策略</button><button id="evaluate-dynamics" type="button" disabled>评估并生成草稿</button><a href="#settings" class="inline-link">配置共用的 B站账号</a></div></form>
+            </fieldset><div class="actions"><button id="save-dynamic-policy" type="submit" disabled>保存运营策略</button><button id="evaluate-dynamics" type="button" disabled>评估并生成草稿</button><a href="#account-settings" class="inline-link">配置共用的 B站账号</a></div></form>
             <p id="dynamic-policy-state" class="hint" role="status">手动评估始终生成待审核草稿，不直接发布。账号凭证在设置页统一管理。</p>
             <dl id="dynamic-policy-status" class="description-list"></dl>
           </article>
@@ -128,7 +134,17 @@
           <article class="panel"><div class="panel-heading"><h2>评估决策</h2><span class="hint">保留发布、等待与失败原因</span></div><div class="table-scroll"><table><thead><tr><th>当地时间</th><th>决定</th><th>原因</th><th>来源 / 错误</th></tr></thead><tbody id="dynamic-decisions"></tbody></table></div><div id="dynamic-decision-continuation" hidden></div></article>
         </section>
         <section data-section="overview" hidden>
-          <div class="page-heading"><h1>维护</h1></div>
+          <div class="page-heading"><h1>概览与维护</h1></div>
+          <article class="panel">
+            <div class="panel-heading"><h2>当前运行状态</h2></div>
+            <dl class="workspace-overview">
+              <div><dt>直播会话</dt><dd id="overview-live-state">待确认</dd></div>
+              <div><dt>待播队列</dt><dd id="overview-queue">—</dd></div>
+              <div><dt>OBS 播放器</dt><dd id="overview-player">待确认</dd></div>
+              <div><dt>语音来源</dt><dd id="overview-speech">待确认</dd></div>
+            </dl>
+            <div class="actions"><a class="button" href="#live">控制与队列</a><a class="button" href="#live-player">OBS 播放器</a><a class="button" href="#voices">语音设置</a></div>
+          </article>
           <article class="panel"><div class="panel-heading"><h2>上下文管理</h2></div><details><summary>容量与压缩诊断</summary><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用。</p></details><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
           <article class="panel" id="retention-panel"><div class="panel-heading"><h2>对话数据留存</h2><span class="hint">按服务已保存策略自动执行</span></div>
             <form id="retention-form"><div class="retention-policy"><label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled></label><label class="check-field"><input id="retention-never" type="checkbox" disabled>永不自动清理</label><button id="retention-save" type="submit" disabled>保存留存策略</button></div><p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p></form>
@@ -138,15 +154,23 @@
             </div>
           </article>
           <section class="panel" id="cache-panel"></section>
-          <article class="panel narrow" id="voice-cache-card"><div class="panel-heading"><h2>语音生成缓存</h2><span class="hint">生成音频与点歌一样有上限约束，支持 LRU 回收</span></div><p id="voice-cache-stats" class="hint">读取中…</p><div class="actions"><button type="button" id="voice-cache-clear">清理语音缓存</button></div><p id="voice-cache-state" class="hint" role="status"></p></article>
+          <article class="panel narrow" id="voice-cache-card" data-workspace-anchor><div class="panel-heading"><h2>语音生成缓存</h2><span class="hint">生成音频与点歌一样有上限约束，支持 LRU 回收</span></div><p id="voice-cache-stats" class="hint">读取中…</p><div class="actions"><button type="button" id="voice-cache-clear">清理语音缓存</button></div><p id="voice-cache-state" class="hint" role="status"></p></article>
         </section>
         <section data-section="live" hidden>
           <p id="live-feature-notice" class="feature-note" role="status">当前推理配置未启用直播。请到推理设置连接支持直播的 Jetson。</p>
           <div class="page-heading"><div><p class="eyebrow">本地调试会话</p><h1>直播</h1></div><div class="actions"><span id="live-state" class="badge">已停止</span><button data-action="start" class="primary">启动调试会话</button><button data-action="pause">暂停</button><button data-action="resume">恢复</button><button data-action="stop" class="danger">停止直播</button></div></div>
-          <div class="actions control-strip"><button data-action="mute" class="danger">紧急静音</button><button data-action="unmute">解除静音</button><button data-action="skip">跳过当前任务</button><button data-action="clear">清空待播队列</button><a href="/live" class="button" target="_blank" rel="noopener">打开独立推流页 ↗</a><a href="#interactive-rules-card" class="button">点歌设置</a><a href="#live-game-panel" class="button">游戏模拟</a><span class="hint">暂停保留队列；停止会取消当前及待播任务。</span></div>
+          <div class="actions control-strip"><button data-action="mute" class="danger">紧急静音</button><button data-action="unmute">解除静音</button><button data-action="skip">跳过当前任务</button><button data-action="clear">清空待播队列</button><span class="hint">暂停保留队列；停止会取消当前及待播任务。</span></div>
           <div class="live-grid"><article class="panel"><div class="panel-heading"><h2>离线事件调试台</h2><span class="badge">不连接真实平台</span></div><form id="event-form"><div class="form-grid"><label>事件类型<select id="event-type"><option value="chat">弹幕</option><option value="gift">礼物</option><option value="sfx">预录音效</option><option value="song">点歌</option><option value="disconnect">模拟断线</option></select></label><label>观众 ID<input id="event-user" value="debug-001" maxlength="100"></label><label>显示昵称<input id="event-name" value="调试观众" maxlength="100"></label><label>事件 ID<input id="event-id" placeholder="留空自动生成；重复 ID 用于去重测试" maxlength="180"></label></div><label>弹幕 / 事件内容<textarea id="event-text" rows="3" maxlength="1000" placeholder="例如：大肥鱼，今天在忙什么？" required></textarea></label><label id="sfx-label" hidden>预录素材 ID<input id="event-asset" placeholder="从素材页复制音频素材 ID"></label><div class="actions"><button type="submit" class="primary">注入事件</button><button type="button" id="fill-greeting">填入问候</button><span id="event-result" class="hint" role="status"></span></div></form></article><article class="panel"><div class="panel-heading"><h2>当前任务</h2><span id="live-current-status" class="badge">空闲</span></div><p id="live-current-text" class="speech-text">等待事件。</p><p id="live-current-detail" class="hint"></p><div class="subsection"><h3>最近播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article></div>
+          <article class="panel"><div class="panel-heading"><h2>回复队列与记录</h2><button id="refresh-live">刷新</button></div><div class="table-scroll"><table><thead><tr><th>任务 / 时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="live-jobs"></tbody></table></div></article>
+          <article class="panel"><div class="panel-heading"><h2>收到的事件</h2><span class="hint">重复、过期与过滤原因保留在记录中</span></div><div class="table-scroll"><table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table></div></article>
+        </section>
+        <section data-section="live-interaction" hidden>
+          <div class="page-heading"><h1>互动与游戏</h1><div class="actions">
+            <a class="button" href="#interactive-rules-card">点歌与礼物规则</a>
+            <a class="button" href="#daily-memory-card">每日记忆</a>
+          </div></div>
           <div class="live-grid" style="margin-top: 16px;">
-            <article class="panel" id="live-game-panel">
+            <article class="panel" id="live-game-panel" data-workspace-anchor>
               <div class="panel-heading">
                 <h2>游戏联动 · 离线模拟</h2>
                 <span id="live-game-name" class="badge">星露谷物语</span>
@@ -180,9 +204,7 @@
               </p>
             </article>
           </div>
-          <article class="panel"><div class="panel-heading"><h2>回复队列与记录</h2><button id="refresh-live">刷新</button></div><div class="table-scroll"><table><thead><tr><th>任务 / 时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="live-jobs"></tbody></table></div></article>
-          <article class="panel"><div class="panel-heading"><h2>收到的事件</h2><span class="hint">重复、过期与过滤原因保留在记录中</span></div><div class="table-scroll"><table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table></div></article>
-          <article class="panel daily-memory-card" id="daily-memory-card">
+          <article class="panel daily-memory-card" id="daily-memory-card" data-workspace-anchor>
             <div class="panel-heading">
               <div>
                 <h2>跨渠道每日记忆与社群趣事</h2>
@@ -196,7 +218,7 @@
             <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
             <div id="daily-memory-list" class="daily-memory-list"></div>
           </article>
-          <article class="panel" id="interactive-rules-card">
+          <article class="panel" id="interactive-rules-card" data-workspace-anchor>
             <div class="panel-heading">
               <h2>🎁 互动玩法与礼物门槛配置</h2>
               <span class="hint">自定义点歌、你画我猜与游戏直播的触发规则</span>
@@ -250,7 +272,10 @@
               </div>
             </form>
           </article>
-          <details class="panel"><summary id="overlay-heading">OBS 播放器</summary><p id="overlay-help" class="muted">仅一个播放器页面可播放语音，后打开的页面会进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
+        </section>
+        <section data-section="live-player" hidden>
+          <div class="page-heading"><h1>OBS 播放器</h1><a class="button" href="/live">打开场景编排 ↗</a></div>
+          <article class="panel narrow"><h2 id="overlay-heading">OBS 浏览器源</h2><p id="overlay-help" class="muted">仅一个播放器页面可播放语音，后打开的页面会进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></article>
         </section>
         <section data-section="characters" hidden>
           <div class="page-heading"><div><h1>角色</h1><p class="hint">当前角色来源 · <strong id="persona-current">待读取</strong></p></div></div>
@@ -362,7 +387,7 @@
           </div>
         </section>
         <section data-section="voices" hidden>
-          <div class="page-heading"><h1>语音</h1></div>
+          <div class="page-heading"><h1>语音</h1><a class="button" href="#voice-cache-card">语音缓存</a></div>
           <article class="panel narrow">
             <div class="panel-heading"><h2>直播语音</h2><span id="tts-source-state" class="badge">读取中</span></div>
             <form id="tts-form">
@@ -394,8 +419,8 @@
         <section data-section="accounts" hidden>
           <div class="page-heading"><h1>账号与权限</h1><button id="logout" type="button">退出工作台</button></div>
           <div id="global-bilibili-account" class="global-bilibili-account"></div>
-          <div id="account-settings"></div>
-          <article class="panel" id="operations-permission-matrix">
+          <div id="account-settings" data-workspace-anchor></div>
+          <article class="panel" id="operations-permission-matrix" data-workspace-anchor>
             <div class="panel-heading">
               <h2>运营权限与自动化控制</h2>
               <span id="matrix-capsule-badge" class="badge">草稿审核态</span>
@@ -530,14 +555,17 @@
         <section data-section="settings" hidden>
           <div class="page-heading"><h1>推理</h1></div>
           <section class="panel" id="inference-node-panel"></section>
+          <div class="actions"><a class="button" href="#providers">配置其他模型或 API</a><a class="button" href="#voices">配置语音</a></div>
+        </section>
+        <section data-section="providers" hidden>
+          <div class="page-heading"><h1>模型与 API</h1><a class="button" href="#settings">Jetson 节点</a></div>
           <article class="panel" id="providers-panel">
             <div class="panel-heading">
               <h2>自定义服务</h2>
               <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
             </div>
 
-            <details class="subsection">
-              <summary>高级模型与服务设置</summary>
+            <div class="subsection">
               <div class="subsection" id="dafeiyu-model-card" hidden>
                 <strong>本机大肥鱼模型</strong>
                 <span id="dafeiyu-model-badge" class="badge" role="status">待读取</span>
@@ -619,7 +647,7 @@
               <p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p>
               <p id="providers-check-result" class="hint" role="status" hidden></p>
             </form>
-            </details>
+            </div>
           </article>
         </section>
       </main>
@@ -628,7 +656,7 @@
   </div>
   <script src="/static/modules/formatters.js" defer></script>
   <script src="/static/modules/pagination.js" defer></script>
-  <script src="/static/modules/operations-workbench.js?v=20261105.26" defer></script>
+  <script src="/static/modules/operations-workbench.js?v=20261105.29" defer></script>
   <script src="/static/cache-panel.js" defer></script>
   <script src="/static/inference-node.js?v=20261105.27" defer></script>
   <script src="/static/continuation.js" defer></script>
@@ -636,6 +664,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261105.28"></script>
+  <script type="module" src="/static/app.js?v=20261105.29"></script>
 </body>
 </html>

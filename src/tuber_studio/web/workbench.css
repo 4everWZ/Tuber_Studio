@@ -92,6 +92,17 @@
   background: var(--soft);
 }
 .workspace-tabs a.selected { border-bottom-color: var(--accent); }
+.op-review-note { margin: 0 0 12px; }
+[data-workspace-anchor] { scroll-margin-top: 12px; }
+[data-workspace-anchor]:target { outline: 2px solid var(--line); outline-offset: 3px; }
+.workspace-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.workspace-overview dt { color: var(--muted); font-size: 12px; }
+.workspace-overview dd { margin: 4px 0 0; font-weight: 600; }
 .persona-views { display: flex; gap: 4px; margin-bottom: 16px; }
 .content section { min-width: 0; }
 

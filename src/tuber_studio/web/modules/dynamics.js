@@ -30,7 +30,7 @@ export function renderDynamicPolicy(model, describe, display) {
   if (!policy) return;
 
   if ($("dynamic-mode")) {
-    $("dynamic-mode").textContent = !policy.enabled ? "运营已停止" : policy.auto_publish ? "运营中 · 自动发布" : "运营中 · 人工审核";
+    $("dynamic-mode").textContent = !policy.enabled ? "运营已停止" : policy.auto_publish ? "运营中 · 已配置自动发布" : "运营中 · 人工审核";
     $("dynamic-mode").className = `badge ${policy.enabled ? "active" : ""}`;
   }
   const character = model.status?.character;

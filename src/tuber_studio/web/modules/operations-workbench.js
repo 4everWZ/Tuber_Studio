@@ -189,6 +189,13 @@
       }
     }
 
+    intentReviewNote(intent) {
+      if (intent.status !== "pending_review") return "";
+      const round = this.rounds.find(item => item.id === intent.round_id);
+      if (round?.preview) return "来自预览轮，需人工审核。";
+      return intent.auto_authorized ? "" : "这条草稿生成时未获得自动发布授权，需人工审核。";
+    }
+
     syncIntentDetailNonEditor(intent) {
       const detailPane = this.container.querySelector("#op-detail-pane");
       if (!detailPane) return;
@@ -196,6 +203,11 @@
       const isPending = intent.status === "pending_review";
       const isApproved = intent.status === "approved";
       const isPublished = intent.status === "published";
+      const reviewNote = detailPane.querySelector(".op-review-note");
+      if (reviewNote) {
+        reviewNote.textContent = this.intentReviewNote(intent);
+        reviewNote.hidden = !reviewNote.textContent;
+      }
 
       const statusInfo = humanizeStatus(intent.status);
       const statusTag = detailPane.querySelector(".op-inspector-meta .op-tag-status");
@@ -686,6 +698,7 @@
 
       const isModified = this.unsavedDrafts.has(intent.id);
       const currentDraftText = isModified ? this.unsavedDrafts.get(intent.id) : (intent.text || "");
+      const reviewNote = this.intentReviewNote(intent);
 
       this.renderedIntentId = intent.id;
       this.renderedIntentStatus = intent.status;
@@ -714,6 +727,8 @@
               </button>
             </div>
           </div>
+
+          <p class="hint op-review-note"${reviewNote ? "" : " hidden"}>${escapeHtml(reviewNote)}</p>
 
           <!-- Target Video Context Card -->
           <div class="op-video-context-card">

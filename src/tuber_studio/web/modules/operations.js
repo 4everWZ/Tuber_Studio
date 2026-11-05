@@ -13,6 +13,14 @@ export function getAutomationStatus() {
   return currentAutomationStatus;
 }
 
+function hasAutomaticRules(settings) {
+  return (settings.top_level_enabled && settings.top_level_auto_publish) ||
+    (settings.reply_enabled && settings.reply_auto_publish) ||
+    (settings.video_like_enabled && settings.video_like_auto_publish) ||
+    (settings.video_fav_enabled && settings.video_fav_auto_publish) ||
+    (settings.comment_handoff_enabled && settings.handoff_auto_send);
+}
+
 export function calculatePermissionTier(settings = {}, account = null, hasCsrf = true) {
   const effectiveConfigured = currentAutomationStatus?.effective?.comments?.credentials_configured ?? true;
   const hasSessdata = account ? Boolean(account?.configured?.sessdata) : effectiveConfigured;
@@ -47,21 +55,29 @@ export function calculatePermissionTier(settings = {}, account = null, hasCsrf =
     };
   }
 
-  const hasAutoPublish = Boolean(
-    settings.top_level_auto_publish ||
-    settings.reply_auto_publish ||
-    settings.video_like_auto_publish ||
-    settings.video_fav_auto_publish ||
-    settings.handoff_auto_send
-  );
-
-  if (hasAutoPublish) {
+  if (hasAutomaticRules(settings)) {
     const maxDaily = settings.max_per_day || 20;
+    if (currentAutomationStatus?.automatic_sending_ready !== true) {
+      return {
+        tier: "draft",
+        icon: "📝",
+        text: "权限：已配置自动放行 · 当前待审核",
+        badgeText: "已配置自动放行 · 模型验收待完成"
+      };
+    }
+    if (!currentAutomationStatus.policy?.enabled || currentAutomationStatus.state !== "running") {
+      return {
+        tier: "draft",
+        icon: "📝",
+        text: "权限：已配置自动放行 · 自主运营未运行",
+        badgeText: "已配置自动放行 · 自主运营未运行"
+      };
+    }
     return {
       tier: "autopublish",
       icon: "⚡",
-      text: `权限：模型自动放行（每日上限 ${maxDaily} 条）`,
-      badgeText: "完全自治态（自动放行）"
+      text: `权限：已授权动作可自动放行（每日上限 ${maxDaily} 条）`,
+      badgeText: "已授权动作可自动放行"
     };
   }
 
@@ -142,8 +158,12 @@ export async function updatePermissionCapsule(api, accountPanel) {
       ? getOptimisticSettingsFromDOM()
       : (status.settings || {});
 
-    const tierInfo = calculatePermissionTier(settings, account, hasCsrf);
+    const tierInfo = calculatePermissionTier(status.settings, account, hasCsrf);
     applyPermissionTierUI(tierInfo);
+    const sendingState = $("automatic-sending-state");
+    sendingState.hidden = !hasAutomaticRules(status.settings) || status.automatic_sending_ready !== false;
+    sendingState.textContent = sendingState.hidden ? "" :
+      "当前模型与角色组合缺少有效的语义验收，自动运营生成的草稿仍需审核。单轮运营预览也会保留草稿。";
 
     // Matrix Credentials state
     const sessdataEl = $("matrix-sessdata-status");
@@ -276,11 +296,6 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
   const isSilent = options && options.silent === true;
   const optimisticSettings = getOptimisticSettingsFromDOM();
 
-  // 1. Instant Optimistic UI Update
-  const account = accountPanel?.value;
-  const hasCsrf = Boolean(account?.configured?.csrf);
-  applyPermissionTierUI(calculatePermissionTier(optimisticSettings, account, hasCsrf));
-
   const current = currentAutomationStatus?.settings || {};
   const candidateLimit = $("exp-candidate-limit") ? parseInt($("exp-candidate-limit").value || "20", 10) : (current.candidate_limit || 20);
   const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : (current.inspect_limit || 4);
@@ -373,15 +388,7 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
 
 export function initOperationsModule(api, accountPanel, automationPanel) {
   function jumpToPermissionMatrix() {
-    location.hash = "accounts";
-    setTimeout(() => {
-      const el = $("operations-permission-matrix");
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        el.classList.add("highlight-panel");
-        setTimeout(() => el.classList.remove("highlight-panel"), 2000);
-      }
-    }, 150);
+    location.hash = "operations-permission-matrix";
   }
 
   if ($("op-permission-capsule-btn")) $("op-permission-capsule-btn").onclick = jumpToPermissionMatrix;
@@ -390,12 +397,6 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
   const matrixContainer = $("operations-permission-matrix");
   if (matrixContainer) {
     const handleMatrixChange = () => {
-      // Immediate optimistic update of top capsule & badge
-      const optimistic = getOptimisticSettingsFromDOM();
-      const account = accountPanel?.value;
-      const hasCsrf = Boolean(account?.configured?.csrf);
-      applyPermissionTierUI(calculatePermissionTier(optimistic, account, hasCsrf));
-
       // Debounced auto-save
       matrixUserInteractingUntil = Date.now() + 5000;
       clearTimeout(matrixSaveTimeout);
