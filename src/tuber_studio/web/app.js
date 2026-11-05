@@ -13,6 +13,7 @@ import {
   renderVoicePreview,
   voiceAvailability,
   checkProviderConnections,
+  publicSettings,
 } from "./modules/providers.js";
 import {
   initOperationsModule,
@@ -554,8 +555,8 @@ dynamicsModule = initDynamicsModule(model, {
   setBadge,
   tokenCount,
   safeMessage,
-  publicSettings: window.publicSettings,
-  memePreview: window.memePreview,
+  publicSettings,
+  memePreview: typeof memePreview === "function" ? memePreview : window.memePreview,
   dynamicContinuation,
   dynamicDecisionContinuation,
   dynamicMemePicker,
