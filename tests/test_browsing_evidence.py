@@ -3,7 +3,6 @@
 import asyncio
 import base64
 import copy
-import hashlib
 import json
 import time
 
@@ -189,7 +188,7 @@ async def test_cache_persists_raw_parts_and_same_material_is_shared_across_oc(
     assert material["parts"][0]["segments"][0]["id"] == "456:1:0"
     assert material["parts"][1]["is_ai"] is True and material["coverage"] == "all_available_cc"
     raw = (service.directory / f"{identity}.json").read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == identity
+    assert json.loads(raw) == material
     assert b"oc-first" not in raw and b"oc-other" not in raw
     assert runtime.cache.status()["settings"]["music_limit_mib"] == 15 * 1024
     assert runtime.cache.usage("browsing")["bytes"] == len(raw)
@@ -437,11 +436,13 @@ async def test_cache_cleanup_invalidates_notes_and_preserves_pending_draft_evide
     assert runtime.store.one("SELECT id FROM browsing_intents WHERE id='pending'")
 
 
-async def test_expired_or_changed_original_material_cannot_be_loaded(evidence_factory, runtime, config):
+async def test_material_formatting_does_not_invalidate_the_source(evidence_factory, runtime, config):
     service = evidence_factory()
-    identity, _ = await service.prepare(BV, config)
+    identity, material = await service.prepare(BV, config)
     path = service.directory / f"{identity}.json"
     path.write_bytes(path.read_bytes() + b" ")
+    assert service.load(identity) == material
+    path.write_bytes(b"{")
     with pytest.raises(EvidenceUnavailable) as changed:
         service.load(identity)
     assert changed.value.kind == "changed"

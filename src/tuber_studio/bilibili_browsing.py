@@ -9,7 +9,6 @@ not its permissions, prompts, ASR fallback, or host. Reads never mark read.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import html
 import json
 import math
@@ -431,7 +430,6 @@ class BrowsingAdapter(BilibiliAdapter):
         return {
             **{key: track[key] for key in ("bvid", "cid", "track_id", "language", "is_ai")},
             "segments": segments,
-            "content_hash": hashlib.sha256(buffer).hexdigest(),
             "coverage": {
                 "complete": True,
                 "segment_count": len(segments),

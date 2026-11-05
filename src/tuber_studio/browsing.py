@@ -960,7 +960,7 @@ class BrowsingService:
             raise ValueError("视频证据为空")
         for key, version in zip(evidence["material_keys"], evidence["source_versions"], strict=True):
             mat = self.evidence.load(key)
-            if mat["source_version"] != version and self.evidence.legacy_source_version(mat) != version:
+            if not self.evidence.matches_source_version(mat, version):
                 raise ValueError("视频来源版本已失效")
 
     async def validate_private_source(self, draft):
@@ -1009,40 +1009,23 @@ class BrowsingService:
     async def _refresh_material_keys(self, keys, versions):
         result = []
         for key, version in zip(keys, versions, strict=True):
-            source = self.store.one("SELECT bvid FROM browsing_materials WHERE id=?", (key,))
-            if not source:
-                raise ValueError("原始来源标识已移除，不能恢复旧证据")
-            bvid = source["bvid"]
-            cached = None
             try:
-                cached = self.evidence.load(key)
-            except Exception:
-                pass
-
-            if cached is not None:
-                # If cached evidence exists on disk for this key, check if remote video was replaced
-                try:
-                    fresh_meta = await self.adapter.video_metadata(bvid)
-                except Exception:
-                    fresh_meta = None
-                if fresh_meta:
-                    old_meta = cached.get("metadata", {})
-                    if str(fresh_meta.get("aid")) != str(old_meta.get("aid")):
-                        raise ValueError("视频来源材料已变化，不能使用旧候选")
-                    # For controlled mock tests, verify description if adapter explicitly specifies it
-                    if hasattr(self.adapter, "description") and fresh_meta.get("description") != old_meta.get(
-                        "description"
-                    ):
-                        raise ValueError("视频来源材料已变化，不能使用旧候选")
-                self.store.execute(
-                    "UPDATE browsing_materials SET expires_at=? WHERE id=?",
-                    (time.time() + 21600, key),
-                )
-                result.append(key)
-                continue
-
-            identity, material = await self._prepare_evidence(bvid, self.effective(), force=True)
-            result.append(identity)
+                material = self.evidence.load(key)
+            except EvidenceUnavailable:
+                source = self.store.one("SELECT bvid FROM browsing_materials WHERE id=?", (key,))
+                if not source:
+                    raise ValueError("原始来源标识已移除，不能恢复旧证据") from None
+                key, material = await self._prepare_evidence(source["bvid"], self.effective(), force=True)
+            else:
+                old_meta = material["metadata"]
+                fresh_meta = await self._read(self.adapter.video_metadata, old_meta["bvid"])
+                if str(fresh_meta.get("aid")) != str(old_meta.get("aid")) or fresh_meta.get(
+                    "description"
+                ) != old_meta.get("description"):
+                    raise ValueError("视频来源材料已变化，不能使用旧候选")
+            if not self.evidence.matches_source_version(material, version):
+                raise ValueError("视频来源材料已变化，不能使用旧候选")
+            result.append(key)
         return result
 
     async def linked_message_evidence(self, draft):
@@ -1166,6 +1149,7 @@ class BrowsingService:
     async def _content_decisions(self, material, row, metrics):
         decisions = []
         presentation = self._content_presentation(material, row)
+        version = material.get("source_version") or self.evidence.source_version(material)
         for chunk in await self._chunks(material, row):
             data, aliases = presentation.present(chunk)
             decision = await self._model(
@@ -1175,7 +1159,7 @@ class BrowsingService:
                 self._content_instruction(),
                 metrics,
                 source_binding={
-                    "source_version": self.evidence.source_version(material),
+                    "source_version": version,
                     "chunk_ids": [segment["id"] for segment in chunk],
                 },
             )

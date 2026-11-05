@@ -445,10 +445,13 @@ async def test_shared_quota_and_uncertain_block_new_auto_writes(browsing):
     assert len(browsing.adapter.sent) == 1
 
 
-async def test_source_change_invalidates_reviewed_reply(browsing):
+@pytest.mark.parametrize("expired", [False, True])
+async def test_source_change_invalidates_reviewed_reply(browsing, expired):
     await finished(browsing, preview=True)
     intent = browsing.intents()[0]
     browsing.review(intent["id"], "approve")
+    if expired:
+        browsing.store.execute("UPDATE browsing_materials SET expires_at=0")
     browsing.adapter.description = "原始视频说明已修改"
     with pytest.raises(ValueError, match="材料已变化"):
         await browsing.publish(intent["id"])

@@ -38,7 +38,7 @@ class BrowsingEvidence:
         self.directory.mkdir(exist_ok=True)
 
     def load(self, identity, *, allow_expired=False):
-        if not isinstance(identity, str) or not re.fullmatch(r"[a-f0-9]{64}", identity):
+        if not isinstance(identity, str) or not re.fullmatch(r"(?:[a-f0-9]{32}|[a-f0-9]{64})", identity):
             raise EvidenceUnavailable("invalid", "浏览材料标识无效")
         row = self.store.one("SELECT * FROM browsing_materials WHERE id=?", (identity,))
         if not row or (not allow_expired and row["expires_at"] < time.time()):
@@ -48,15 +48,21 @@ class BrowsingEvidence:
             raise EvidenceUnavailable("cleared", "原始材料已清理，旧笔记不能独立用作事实")
         if path.stat().st_size > 2 * 1024 * 1024:
             raise EvidenceUnavailable("too_large", "浏览材料超出原始字节上限")
-        raw = path.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != identity:
-            raise EvidenceUnavailable("changed", "原始材料版本不一致")
+        try:
+            material = json.loads(path.read_bytes())
+            if material["metadata"]["bvid"] != row["bvid"]:
+                raise ValueError
+        except (ValueError, KeyError, TypeError) as error:
+            raise EvidenceUnavailable("changed", "浏览材料无法读取，需重新取材") from error
         self.runtime.cache.touch(path)
-        return json.loads(raw)
+        return material
 
     @staticmethod
-    def legacy_source_version(material):
+    def source_version(material, *, legacy=False):
         metadata = material["metadata"]
+        tags = metadata.get("tags")
+        if isinstance(tags, list) and not legacy:
+            tags = sorted(tag for tag in tags if isinstance(tag, str))
         stable = {
             k: metadata.get(k)
             for k in (
@@ -64,7 +70,6 @@ class BrowsingEvidence:
                 "aid",
                 "title",
                 "description",
-                "tags",
                 "owner_uid",
                 "parts",
                 "duration",
@@ -72,6 +77,7 @@ class BrowsingEvidence:
                 "category_id",
             )
         }
+        stable["tags"] = tags
         stable["parts_evidence"] = [
             {
                 k: part.get(k)
@@ -92,47 +98,8 @@ class BrowsingEvidence:
         ]
         return hashlib.sha256(json.dumps(stable, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
-    @staticmethod
-    def source_version(material):
-        metadata = material["metadata"]
-        raw_tags = metadata.get("tags")
-        sorted_tags = (
-            sorted([t for t in raw_tags if isinstance(t, str)]) if isinstance(raw_tags, list) else raw_tags
-        )
-        stable = {
-            k: metadata.get(k)
-            for k in (
-                "bvid",
-                "aid",
-                "title",
-                "description",
-                "owner_uid",
-                "parts",
-                "duration",
-                "published_at",
-                "category_id",
-            )
-        }
-        stable["tags"] = sorted_tags
-        stable["parts_evidence"] = [
-            {
-                k: part.get(k)
-                for k in (
-                    "cid",
-                    "track_id",
-                    "language",
-                    "is_ai",
-                    "segments",
-                    "coverage",
-                    "visual",
-                    "visual_provider",
-                    "frame_evidence",
-                    "limitations",
-                )
-            }
-            for part in material["parts"]
-        ]
-        return hashlib.sha256(json.dumps(stable, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    def matches_source_version(self, material, version):
+        return material["source_version"] == version or self.source_version(material, legacy=True) == version
 
     @asynccontextmanager
     async def _flight(self, key, factory):
@@ -379,7 +346,7 @@ class BrowsingEvidence:
         raw = json.dumps(material, ensure_ascii=False, sort_keys=True).encode()
         if len(raw) > 2 * 1024 * 1024:
             raise EvidenceUnavailable("too_large", "字幕原始材料超过2MiB，未截断冒充完整读取")
-        identity = hashlib.sha256(raw).hexdigest()
+        identity = uuid4().hex
         path = self.directory / (identity + ".json")
         async with self.runtime.cache.write("browsing", len(raw)) as allowed:
             if len(raw) > allowed:
@@ -389,7 +356,7 @@ class BrowsingEvidence:
                 temporary.write_bytes(raw)
                 temporary.replace(path)
                 self.store.execute(
-                    "INSERT OR REPLACE INTO browsing_materials VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO browsing_materials VALUES(?,?,?,?,?,?)",
                     (
                         identity,
                         material["metadata"]["bvid"],
