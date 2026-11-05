@@ -11,6 +11,8 @@ done
 data=./tuber-data
 name=tuber-studio
 port=9020
+broker_port=9012
+host_ip=0.0.0.0
 replace=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,15 +22,17 @@ while [[ $# -gt 0 ]]; do
     --data) data=${2:?}; shift 2 ;;
     --name) name=${2:?}; shift 2 ;;
     --port) port=${2:?}; shift 2 ;;
+    --broker-port) broker_port=${2:?}; shift 2 ;;
+    --host) host_ip=${2:?}; shift 2 ;;
     --replace) replace=true; shift ;;
-    *) echo 'Usage: run-ready.sh [--environment base|online] [--source PROGRAM_DIR] [--image IMAGE] [--data DIR] [--name NAME] [--port PORT] [--replace]' >&2; exit 2 ;;
+    *) echo 'Usage: run-ready.sh [--environment base|online] [--source PROGRAM_DIR] [--image IMAGE] [--data DIR] [--name NAME] [--port PORT] [--broker-port BROKER_PORT] [--host HOST] [--replace]' >&2; exit 2 ;;
   esac
 done
 [[ -n "$source_root" && -f "$source_root/src/tuber_studio/portable.py" ]] || { echo 'Extract program.tar.gz beside this launcher, or provide --source PROGRAM_DIR.' >&2; exit 2; }
 source_root=$(realpath -e -- "$source_root")
 if [[ $(id -u) == 0 ]]; then echo 'Run as the data owner, not root.' >&2; exit 1; fi
-[[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ && "$port" =~ ^[0-9]+$ ]] || exit 2
-(( port > 0 && port < 65536 )) || exit 2
+[[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ && "$port" =~ ^[0-9]+$ && "$broker_port" =~ ^[0-9]+$ ]] || exit 2
+(( port > 0 && port < 65536 && broker_port > 0 && broker_port < 65536 )) || exit 2
 proposed=$(realpath -m -- "$data")
 case "$proposed" in /|"$HOME"|/etc|/home|/tmp|/var|/usr|/opt|/run|/dev|/proc|/sys) echo 'Use a dedicated application data directory.' >&2; exit 1 ;; esac
 mkdir -p -- "$data"
@@ -94,10 +98,15 @@ fi
 if docker inspect "$name" >/dev/null 2>&1; then docker stop --time 45 "$name"; docker rm "$name"; fi
 docker run -d --pull=never --name "$name" --runtime nvidia "${security[@]}" "${program_mounts[@]}" "${mounts[@]}" \
   --network "$network" \
-  --publish "127.0.0.1:$port:9020" --restart unless-stopped --stop-timeout 45 \
+  --publish "$host_ip:$port:9020" \
+  --publish "$host_ip:$broker_port:9012" \
+  --restart unless-stopped --stop-timeout 45 \
   --label tuber-studio.service=stack "$image"
 profile_file=$(mktemp "$data/.environment-profile.XXXXXX")
 printf '%s\n' "$environment_profile" > "$profile_file"
 mv -T -- "$profile_file" "$data/environment-profile"
-echo "Workbench: http://127.0.0.1:$port"
+echo "Workbench: http://${host_ip}:$port (Jetson IP:$port)"
+echo "Inference Broker: http://${host_ip}:$broker_port"
+echo "  - LLM endpoint: http://${host_ip}:$broker_port/llm"
+echo "  - TTS endpoint: http://${host_ip}:$broker_port/tts"
 echo "Administrator token: $data/admin-token (private; generated per installation)"

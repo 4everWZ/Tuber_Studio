@@ -569,7 +569,9 @@ def parser():
     result.add_argument("--image")
     result.add_argument("--name", default="tuber-inference")
     result.add_argument(
-        "--host", default="127.0.0.1", help="Host interface for the authenticated broker only"
+        "--host",
+        default=os.environ.get("TUBER_INFERENCE_HOST", "127.0.0.1"),
+        help="Host interface for the authenticated broker only (set 0.0.0.0 for LAN/remote access)",
     )
     result.add_argument(
         "--port", type=int, default=9012, help="Published host port; native worker ports stay private"

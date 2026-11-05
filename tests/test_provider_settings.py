@@ -414,3 +414,31 @@ async def test_external_runtime_error_is_not_marked_safe_operator_guidance(manag
     assert not isinstance(failure.value, ProviderConfigurationError)
     assert state["window"] == 65536 and state["resident"]
     assert_rollback(runtime, previous, created)
+
+
+@pytest.mark.asyncio
+async def test_remote_endpoint_save_succeeds_even_when_offline(runtime):
+    settings = runtime.settings
+    # User configures remote Jetson TTS and LLM while Jetson is still booting / unreachable
+    patch = {
+        "llm": {
+            "kind": "llama_cpp",
+            "base_url": "http://100.95.31.18:9012/llm",
+            "model": "MiniCPM-V-4.7-1B",
+            "context_tokens": 8192,
+            "native_context_tokens": 131072,
+        },
+        "tts": {
+            "kind": "gpt_sovits",
+            "base_url": "http://100.95.31.18:9012/tts",
+            "model": "",
+            "voice": "whale_sovits_v2",
+        },
+    }
+    result = await apply_settings(runtime, patch)
+    assert result["llm"]["base_url"] == "http://100.95.31.18:9012/llm"
+    assert result["tts"]["base_url"] == "http://100.95.31.18:9012/tts"
+    assert settings.data["inference_broker"]["base_url"] == "http://100.95.31.18:9012"
+    assert settings.data["inference_broker"]["deployment"] == "remote"
+    assert runtime.llm.profile_error is not None  # Warned as unreachable, not crashed!
+

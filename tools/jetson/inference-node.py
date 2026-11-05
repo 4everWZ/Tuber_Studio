@@ -30,7 +30,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("TUBER_ROOT", "/workspace/tuber")))
     parser.add_argument("--config", type=Path)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default=os.environ.get("TUBER_INFERENCE_HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=9012)
     parser.add_argument("--no-warm-start", action="store_true")
     parser.add_argument("--healthcheck", action="store_true")

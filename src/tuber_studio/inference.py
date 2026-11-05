@@ -1664,9 +1664,12 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
 
 
 def main():
+    import os
+
     import uvicorn
 
-    uvicorn.run(create_app(), host="127.0.0.1", port=9012, access_log=False, ws="none")
+    host = os.environ.get("TUBER_INFERENCE_HOST", "0.0.0.0")
+    uvicorn.run(create_app(), host=host, port=9012, access_log=False, ws="none")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """One container and Python environment for the web app, broker and GPU children."""
 
 import asyncio
+import os
 import signal
 from contextlib import AsyncExitStack, contextmanager
 
@@ -53,7 +54,7 @@ async def serve(stopped=None):
     broker = StackServer(
         uvicorn.Config(
             broker_app,
-            host="127.0.0.1",
+            host=os.environ.get("TUBER_BROKER_HOST", "0.0.0.0"),
             port=9012,
             ws="none",
             lifespan="off",

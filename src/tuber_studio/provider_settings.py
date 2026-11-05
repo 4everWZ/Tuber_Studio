@@ -3,9 +3,11 @@
 import asyncio
 import copy
 
+import httpx
+
 from .api_providers import VisionService, create_llm
 from .config import atomic_bytes, validate_api_key
-from .providers import VoiceService
+from .providers import VoiceService, public_error
 
 FIELDS = {
     "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens"},
@@ -164,6 +166,18 @@ def proposal(settings, body):
             "MiniCPM5-1B",
         }:
             raise ValueError("此设置不切换本地默认节点模型；请保持已安装的默认模型，或选择自定义本地/外部端点")
+    for candidate_url in (data.get("llm", {}).get("base_url"), data.get("tts", {}).get("base_url")):
+        if candidate_url:
+            from urllib.parse import urlsplit
+            try:
+                parsed = urlsplit(candidate_url)
+                if parsed.hostname and (parsed.port == 9012 or candidate_url.rstrip("/").endswith(("/llm", "/tts"))):
+                    is_remote = parsed.hostname not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
+                    broker["base_url"] = f"{parsed.scheme}://{parsed.netloc}"
+                    broker["deployment"] = "remote" if is_remote else "local"
+                    break
+            except Exception:
+                pass
     profiles = data.get("work_mode_profiles")
     mode = broker.get("mode")
     if profiles and mode in profiles:
@@ -211,21 +225,36 @@ async def apply_settings(runtime, body):
                 settings.credentials_path.read_bytes() if settings.credentials_path.exists() else None
             )
             if runtime.inference_client:
-                snapshot = await _broker_snapshot(runtime.inference_client, old_window)
-                # A lost response can follow a committed RPC. Record ownership
-                # before sending, never infer "not executed" from an exception.
-                broker_attempted = True
-                if data["llm"]["kind"] == "llama_cpp":
-                    context_attempted = True
-                    response = await runtime.inference_client.post(
-                        "/context", json={"context_tokens": data["llm"]["context_tokens"]}
-                    )
-                    response.raise_for_status()
-                else:
-                    response = await runtime.inference_client.post("/idle", json={})
-                    response.raise_for_status()
+                try:
+                    snapshot = await _broker_snapshot(runtime.inference_client, old_window)
+                except (httpx.ConnectError, httpx.ConnectTimeout):
+                    snapshot = None
+                if snapshot is not None:
+                    # A lost response can follow a committed RPC. Record ownership
+                    # before sending, never infer "not executed" from an exception.
+                    broker_attempted = True
+                    if data["llm"]["kind"] == "llama_cpp":
+                        context_attempted = True
+                        response = await runtime.inference_client.post(
+                            "/context", json={"context_tokens": data["llm"]["context_tokens"]}
+                        )
+                        response.raise_for_status()
+                    else:
+                        response = await runtime.inference_client.post("/idle", json={})
+                        response.raise_for_status()
             if data["llm"]["kind"] == "llama_cpp":
-                await llm.ensure_capacity()
+                try:
+                    await llm.ensure_capacity()
+                except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                    llm.profile_error = f"服务暂未连接: {public_error(exc)}"
+                except httpx.RequestError as exc:
+                    llm_url = data.get("llm", {}).get("base_url", "")
+                    if any(c in llm_url for c in ("100.", "192.168.", "10.", "172.")) or not any(
+                        h in llm_url for h in ("127.0.0.1", "localhost")
+                    ):
+                        llm.profile_error = f"远端连接异常: {public_error(exc)}"
+                    else:
+                        raise
             files_attempted = True
             settings.save_keys(keys)
             settings.save_public(data)
@@ -263,9 +292,23 @@ async def apply_settings(runtime, body):
                 raise asyncio.CancelledError from None
             raise
         settings.data, settings.provider_keys = data, keys
-        old_clients = runtime.llm, runtime.voices, runtime.vision
+        old_clients = [runtime.llm, runtime.voices, runtime.vision]
         runtime.llm, runtime.voices, runtime.vision = llm, voices, vision
         runtime.context.provider = llm
         runtime.error = None
-        await asyncio.gather(*(client.close() for client in old_clients), return_exceptions=True)
+        broker_conf = data.get("inference_broker", {})
+        if broker_conf.get("enabled"):
+            old_inference = runtime.inference_client
+            runtime.inference_client = httpx.AsyncClient(
+                base_url=broker_conf.get("base_url", "http://127.0.0.1:9012"),
+                headers={"X-Tuber-Inference-Key": settings.inference_token},
+                timeout=httpx.Timeout(400, connect=5),
+                trust_env=False,
+            )
+            if old_inference is not None:
+                old_clients.append(old_inference)
+        elif runtime.inference_client is not None:
+            old_clients.append(runtime.inference_client)
+            runtime.inference_client = None
+        await asyncio.gather(*(client.close() if hasattr(client, "close") else client.aclose() for client in old_clients), return_exceptions=True)
     return settings.public_data() | {"restart_required": False, "context_recount_required": True}

@@ -69,7 +69,7 @@ ENV PATH=/opt/studio-venv/bin:/opt/llama/bin:$PATH \
     OMP_NUM_THREADS=2 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
-EXPOSE 9020
+EXPOSE 9020 9012
 # Normal deployment overrides this with the host project owner's numeric UID/GID.
 # A direct image launch must not silently inherit the CUDA base image's root user.
 USER 65532:65532

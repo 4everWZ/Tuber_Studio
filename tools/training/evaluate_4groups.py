@@ -181,7 +181,7 @@ def main():
 
     if not args.mock and args.base_model and args.merged_model:
         import torch
-        from transformers import AutoTokenizer, AutoModelForImageTextToText, AutoModelForCausalLM
+        from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer
 
         def load_model_and_tokenizer(model_path: str):
             logger.info("Loading model from %s...", model_path)
