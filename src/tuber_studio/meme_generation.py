@@ -12,9 +12,8 @@ from typing import Literal, Protocol
 
 from pydantic import ConfigDict, Field, StrictBytes, field_validator
 
-from .live_media import StrictModel
 from .memes import MAX_BYTES, MemeLicense, MemeProvider
-from .models import Emotion
+from .models import Emotion, StrictModel
 
 
 class MemeGenerationRequest(StrictModel):

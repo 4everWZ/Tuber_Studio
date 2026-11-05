@@ -18,9 +18,8 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import Field, field_validator
 
-from .live_media import StrictModel
 from .media_cache import linked
-from .models import Emotion
+from .models import Emotion, StrictModel
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PIXELS = 4096 * 4096

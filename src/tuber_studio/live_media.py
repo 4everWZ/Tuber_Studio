@@ -12,17 +12,14 @@ from typing import Literal
 from mutagen import MutagenError
 from mutagen.flac import FLAC
 from mutagen.mp3 import MP3
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
+from .models import StrictModel
 from .providers import Audio
 
 MAX_UPLOAD = 96 * 1024 * 1024
 BLOB = re.compile(r"^[a-f0-9]{64}$")
 MEDIA_TYPES = {".wav": "audio/wav", ".flac": "audio/flac", ".mp3": "audio/mpeg"}
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class SceneItem(StrictModel):

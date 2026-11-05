@@ -4,7 +4,7 @@ from typing import Literal, Protocol
 
 from pydantic import Field, field_validator, model_validator
 
-from .live_media import StrictModel
+from .models import StrictModel
 from .operation_text import validate_operation_text
 
 

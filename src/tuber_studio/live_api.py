@@ -12,8 +12,9 @@ from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import Field
 
-from .live_media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, StrictModel, default_scene, inspect_audio
+from .live_media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from .media_cache import CachePolicy
+from .models import StrictModel
 from .online_songs import SongRequestSettings
 
 

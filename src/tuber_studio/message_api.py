@@ -6,7 +6,7 @@ from fastapi import Depends
 from pydantic import Field
 
 from .direct_messages import MessagePolicy
-from .live_media import StrictModel
+from .models import StrictModel
 
 
 class ReviewMessage(StrictModel):

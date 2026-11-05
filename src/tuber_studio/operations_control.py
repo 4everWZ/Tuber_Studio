@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pydantic import Field
 
-from .live_media import StrictModel
+from .models import StrictModel
 from .operations_revisions import OperationRevisions
 
 
@@ -165,6 +165,7 @@ class OperationsControl:
             (str(account_id), channel),
         ):
             raise ValueError("该渠道存在不确定写入，等待核对平台状态")
+        return policy
 
     def get_attempt(self, token):
         return self.revisions.get(token)
@@ -175,7 +176,7 @@ class OperationsControl:
             previous = self.revisions.rejected_head(previous_token)
             automatic = bool(previous["automatic"]) if automatic is None else automatic
             character = {"id": previous["character_id"], "version": previous["character_version"]}
-            self.assert_allowed(
+            policy = self.assert_allowed(
                 automatic=automatic,
                 channel=previous["channel"],
                 account_id=previous["account_id"],
@@ -187,7 +188,7 @@ class OperationsControl:
                 binding=binding,
                 content_hash=content_hash,
                 automatic=automatic,
-                epoch=self.policy()["epoch"],
+                epoch=policy["epoch"],
             )
 
     def reconcile_attempt(self, token, *, account_id, binding, receipt):
@@ -219,22 +220,18 @@ class OperationsControl:
         revision_ticket=None,
         content_hash=None,
     ):
-        self.assert_allowed(
-            automatic=automatic, channel=channel, account_id=account_id, character=character, epoch=epoch
-        )
         if not isinstance(intent, str) or not intent or len(intent) > 1000 or not str(account_id):
             raise ValueError("发送需要固定账号与来源意图")
-        policy, now, token = self.policy(), time.time(), str(uuid4())
+        now, token = time.time(), str(uuid4())
         limits = limits or {}
         db = self.store.db
         # No await occurs in this transaction. Separate processes contend on
         # SQLite's write lock rather than racing independent in-memory locks.
         with db:
             db.execute("BEGIN IMMEDIATE")
-            self.assert_allowed(
+            policy = self.assert_allowed(
                 automatic=automatic, channel=channel, account_id=account_id, character=character, epoch=epoch
             )
-            policy = self.policy()
             previous = None
             if revision_ticket is not None:
                 previous = self.revisions.validate_ticket(
@@ -242,7 +239,7 @@ class OperationsControl:
                     binding=binding,
                     content_hash=content_hash,
                     automatic=automatic,
-                    epoch=self.policy()["epoch"],
+                    epoch=policy["epoch"],
                     identity={
                         "account_id": str(account_id),
                         "character_id": character["id"],

@@ -12,8 +12,8 @@ from pydantic import Field, model_validator
 from .bilibili import PublishUncertain
 from .bilibili_messages import BilibiliMessagesAdapter, MessagePreparationCancelled
 from .generation_meter import GenerationMeter, budgeted_json
-from .live_media import StrictModel
 from .meme_selection import select_meme
+from .models import StrictModel
 from .operation_continuations import GenerationFeedback, content_hash
 from .operation_feedback import (
     FeedbackPublication,

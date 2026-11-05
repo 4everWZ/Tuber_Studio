@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from .live_media import StrictModel
+from .models import StrictModel
 
 MIB = 1024 * 1024
 MUSIC_MAX_MIB = 15 * 1024

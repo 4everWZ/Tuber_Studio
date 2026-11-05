@@ -6,8 +6,8 @@ import binascii
 from fastapi import Depends, Response
 from pydantic import Field
 
-from .live_media import StrictModel
 from .memes import MAX_BYTES, MemeLicense, MemeSource
+from .models import StrictModel
 
 MAX_REQUEST = ((MAX_BYTES + 2) // 3) * 4 + 65536
 

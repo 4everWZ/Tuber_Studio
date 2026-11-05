@@ -26,7 +26,7 @@ from .generation_meter import (
     reserve_counters,
     settle_counters,
 )
-from .live_media import StrictModel
+from .models import StrictModel
 from .store import dump
 
 continuation_context = ContextVar("operation_continuation_context", default=None)

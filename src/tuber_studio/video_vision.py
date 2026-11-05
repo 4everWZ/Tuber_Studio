@@ -21,8 +21,8 @@ from .api_providers import APIProvider, validate_image
 from .generation_meter import GenerationMeter
 from .http_api import response_json
 from .image_preprocessing import prepare_image
-from .live_media import StrictModel
 from .llama_sampling import LlamaCppSampling
+from .models import StrictModel
 
 VIDEO_EVIDENCE_PROTOCOL = "sequential_captions_indexed_assessment_v2"
 

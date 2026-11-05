@@ -641,7 +641,7 @@ class Runtime:
             try:
                 if event.type == "chat":
                     # 1. Check if Draw & Guess is active and user guessed correctly
-                    if hasattr(self, "draw_and_guess") and self.draw_and_guess.is_active():
+                    if self.draw_and_guess.is_active():
                         matched_win = self.draw_and_guess.check_guess(
                             user_id=event.platform_user_id,
                             display_name=event.display_name,
@@ -658,7 +658,7 @@ class Runtime:
                             )
 
                     # 2. Check if chat command requests to start Draw & Guess
-                    if not event.metadata.get("draw_guess_won") and hasattr(self, "interactive_rules"):
+                    if not event.metadata.get("draw_guess_won"):
                         should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
                         if should_start:
                             start_info = self.draw_and_guess.start_round(trigger_user=event.display_name)
@@ -670,12 +670,8 @@ class Runtime:
                             )
 
                     # 3. Check if chat command requests switching game
-                    if (
-                        not (event.metadata.get("draw_guess_won") or event.metadata.get("draw_guess_start"))
-                        and hasattr(self, "interactive_rules")
-                        and hasattr(self, "game_livestream")
-                    ):
-                        target_gid, gname = self.interactive_rules.match_game_switch(event)
+                    if not (event.metadata.get("draw_guess_won") or event.metadata.get("draw_guess_start")):
+                        target_gid, _ = self.interactive_rules.match_game_switch(event)
                         if target_gid and target_gid != self.game_livestream.active_game_id:
                             sw_info = self.game_livestream.switch_game(
                                 target_gid, reason=f"{event.display_name} 弹幕点播"
@@ -702,58 +698,48 @@ class Runtime:
                             update={"type": "song", "text": online_snapshot["song"]["title"], "metadata": {}}
                         )
                 elif event.type == "gift":
-                    # Check gift triggers
-                    if hasattr(self, "interactive_rules"):
-                        # 1. Game switch via gift (if targeted game switch requested)
-                        target_gid, gname = (
-                            self.interactive_rules.match_game_switch(event)
-                            if hasattr(self, "game_livestream")
-                            else (None, None)
+                    # 1. Game switch via gift (if targeted game switch requested)
+                    target_gid, _ = self.interactive_rules.match_game_switch(event)
+                    if target_gid and target_gid != self.game_livestream.active_game_id:
+                        sw_info = self.game_livestream.switch_game(
+                            target_gid, reason=f"{event.display_name} 送礼点播"
                         )
-                        if target_gid and target_gid != self.game_livestream.active_game_id:
-                            sw_info = self.game_livestream.switch_game(
-                                target_gid, reason=f"{event.display_name} 送礼点播"
+                        event = event.model_copy(
+                            update={
+                                "text": sw_info["spoken_text"],
+                                "metadata": {**event.metadata, "game_switch": sw_info},
+                            }
+                        )
+                    else:
+                        # 2. In-game bounty action via gift
+                        action, label = self.interactive_rules.match_game_action(
+                            event, self.game_livestream.active_game_id
+                        )
+                        if action and label:
+                            gname, _, _ = self.interactive_rules.extract_gift_info(event)
+                            act_info = self.game_livestream.handle_gift_action(
+                                action, label, event.display_name, gname
                             )
                             event = event.model_copy(
                                 update={
-                                    "text": sw_info["spoken_text"],
-                                    "metadata": {**event.metadata, "game_switch": sw_info},
+                                    "text": act_info["spoken_text"],
+                                    "metadata": {**event.metadata, "game_action": act_info},
                                 }
                             )
                         else:
-                            # 2. In-game bounty action via gift
-                            action, label = (
-                                self.interactive_rules.match_game_action(
-                                    event, self.game_livestream.active_game_id
-                                )
-                                if hasattr(self, "game_livestream")
-                                else (None, None)
-                            )
-                            if action and label:
+                            # 3. Draw & Guess via gift
+                            should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
+                            if should_start:
                                 gname, _, _ = self.interactive_rules.extract_gift_info(event)
-                                act_info = self.game_livestream.handle_gift_action(
-                                    action, label, event.display_name, gname
+                                start_info = self.draw_and_guess.start_round(
+                                    trigger_user=event.display_name, gift_name=gname
                                 )
                                 event = event.model_copy(
                                     update={
-                                        "text": act_info["spoken_text"],
-                                        "metadata": {**event.metadata, "game_action": act_info},
+                                        "text": start_info["spoken_text"],
+                                        "metadata": {**event.metadata, "draw_guess_start": start_info},
                                     }
                                 )
-                            else:
-                                # 3. Draw & Guess via gift
-                                should_start, _ = self.interactive_rules.match_draw_and_guess_start(event)
-                                if should_start:
-                                    gname, _, _ = self.interactive_rules.extract_gift_info(event)
-                                    start_info = self.draw_and_guess.start_round(
-                                        trigger_user=event.display_name, gift_name=gname
-                                    )
-                                    event = event.model_copy(
-                                        update={
-                                            "text": start_info["spoken_text"],
-                                            "metadata": {**event.metadata, "draw_guess_start": start_info},
-                                        }
-                                    )
                 elif event.type == "song" and "online_id" in event.metadata:
                     online_snapshot = await self.online_songs.selection(event.metadata["online_id"], event)
             except ValueError as error:

@@ -13,6 +13,10 @@ Emotion = Literal["idle", "cheerful", "angry", "shy", "confused", "excited"]
 Animation = Literal["idle", "talk", "talk_happy", "angry", "shy", "confused", "gift"]
 
 
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
 class Event(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=160)
