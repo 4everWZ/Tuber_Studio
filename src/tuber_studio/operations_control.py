@@ -324,7 +324,9 @@ class OperationsControl:
                 f"UPDATE {table} SET status=?,receipt=?,error=? WHERE token=?",
                 (status, json.dumps(receipt, ensure_ascii=False) if receipt else None, error, token),
             )
-            if status == "uncertain" and not (row["binding"] or {}).get("source", {}).get("discovery"):
+            source = (row["binding"] or {}).get("source")
+            independent = isinstance(source, dict) and source.get("discovery") is True
+            if status == "uncertain" and not independent:
                 self.store.db.execute(
                     "INSERT OR REPLACE INTO operation_channel_blocks VALUES(?,?,?)",
                     (row["account_id"], row["channel"], "发送结果不确定，等待核对平台状态"),

@@ -2153,7 +2153,8 @@ class BrowsingService:
                 )
                 if saved:
                     attempt = self.operations.get_attempt(saved["token"])
-                    if (attempt["binding"] or {}).get("source", {}).get("local_id") == identity:
+                    source = ((attempt or {}).get("binding") or {}).get("source")
+                    if isinstance(source, dict) and source.get("local_id") == identity:
                         feedback.record_unknown(
                             "browsing",
                             identity,
