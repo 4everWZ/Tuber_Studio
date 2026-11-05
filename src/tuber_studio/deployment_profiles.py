@@ -54,6 +54,7 @@ def business_configuration(
         **common,
         "base_url": base + "/llm",
         "model": "MiniCPM5-2B",
+        "max_tokens": 1024,
         "temperature": 1.0,
         "summary_temperature": 1.0,
     }

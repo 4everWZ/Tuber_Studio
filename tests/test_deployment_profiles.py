@@ -5,7 +5,7 @@ from tuber_studio.http_api import endpoint
 
 
 def test_business_modes_preserve_operator_data_and_separate_thinking_models(settings):
-    original = settings.data.copy()
+    original = settings.data | {"llm": settings.data["llm"] | {"max_tokens": 160}}
     original["operator_extension"] = {"keep": "unchanged"}
     data = business_configuration(original, "http://100.95.31.18:9012")
     settings._validate(data)
@@ -17,6 +17,7 @@ def test_business_modes_preserve_operator_data_and_separate_thinking_models(sett
     assert data["video_vision"]["image_profile"] == "gemma4_image_280"
     live = mode_configuration(data, "live")
     assert live["llm"]["model"] == "MiniCPM5-2B" and live["vision"]["kind"] == "disabled"
+    assert live["llm"]["max_tokens"] == 1024
     assert live["tts"]["local_backend"] == "genie_onnx_int8"
     assert live["operator_extension"] == original["operator_extension"]
     assert original["llm"]["kind"] == "demo"
