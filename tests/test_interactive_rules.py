@@ -1,6 +1,6 @@
 import pytest
 
-from tuber_studio.interactive_rules import (
+from tuber_studio.live.interactive_rules import (
     InteractiveRulesService,
     default_rules,
 )

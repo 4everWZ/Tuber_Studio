@@ -13,9 +13,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from .api_providers import validate_image
-from .bilibili_browsing import CREDIT
 from .browsing_models import DisabledVideoEvidence, browsing_filter_reason
 from .media_cache import linked
+from .platforms.bilibili_browsing import CREDIT
 
 
 class EvidenceUnavailable(ValueError):

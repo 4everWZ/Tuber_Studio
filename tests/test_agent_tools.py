@@ -7,8 +7,8 @@ from tuber_studio.agent_tools import (
     build_default_tool_registry,
 )
 from tuber_studio.daily_memory import DailyMemoryService
-from tuber_studio.draw_and_guess import DrawAndGuessService
-from tuber_studio.game_livestream import GameLivestreamService
+from tuber_studio.live.draw_and_guess import DrawAndGuessService
+from tuber_studio.live.game_livestream import GameLivestreamService
 
 
 def test_tool_registry_registration():

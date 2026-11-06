@@ -35,8 +35,8 @@ from .direct_messages import DirectMessages
 from .dynamics import Dynamics
 from .inference_node_client import pair_node, refresh_capabilities
 from .inference_node_client import status as inference_node_status
-from .live_api import register_live_api
-from .live_media import MAX_UPLOAD
+from .live.api import register_live_api
+from .live.media import MAX_UPLOAD
 from .meme_api import MAX_REQUEST as MAX_MEME_REQUEST
 from .meme_api import register_meme_api
 from .memes import MemeCatalog

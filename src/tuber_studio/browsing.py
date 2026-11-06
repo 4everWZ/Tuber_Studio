@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import psutil
 
-from .bilibili import PublishUncertain
 from .browsing_discovery import BackgroundDiscovery
 from .browsing_evidence import BrowsingEvidence, EvidenceUnavailable
 from .browsing_inputs import (
@@ -61,6 +60,7 @@ from .operation_text import (
 )
 from .operations_control import canonical_intent
 from .persona import built_in_anchor
+from .platforms.bilibili import PublishUncertain
 from .providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from .publication_errors import PlatformRejected, UnknownPublication
 from .store import dump

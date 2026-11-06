@@ -8,7 +8,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from tuber_studio.bilibili import BilibiliAdapter, PublishUncertain
+from tuber_studio.platforms.bilibili import BilibiliAdapter, PublishUncertain
 
 BV = "BV1d8pU6xEZX"
 AID = 117441451525192
@@ -73,7 +73,7 @@ def wbi_nav(code=0):
 
 
 async def test_wbi_query_signature_matches_fixed_vector_without_mutating_input(adapter_factory, monkeypatch):
-    monkeypatch.setattr("tuber_studio.bilibili.time.time", lambda: 1702204169)
+    monkeypatch.setattr("tuber_studio.platforms.bilibili.time.time", lambda: 1702204169)
     requests = []
 
     def handle(request):
@@ -120,7 +120,7 @@ async def test_wbi_denial_never_retries_or_echoes_credentials(adapter_factory, f
 
 
 async def test_wbi_resigns_query_and_preserves_trusted_web_location(adapter_factory, monkeypatch):
-    monkeypatch.setattr("tuber_studio.bilibili.time.time", lambda: 1702204169)
+    monkeypatch.setattr("tuber_studio.platforms.bilibili.time.time", lambda: 1702204169)
     adapter = await adapter_factory(lambda request: wbi_nav())
     original = {"wts": 1, "w_rid": "stale", "web_location": 123}
     signed = await adapter.wbi_params(original)

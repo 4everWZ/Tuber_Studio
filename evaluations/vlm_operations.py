@@ -46,7 +46,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 import httpcore
 import httpx
 
-from tuber_studio.bilibili_browsing import BrowsingAdapter
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 
 if __package__:
     from . import vlm_images

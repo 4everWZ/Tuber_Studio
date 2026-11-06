@@ -9,8 +9,6 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .bilibili import PublishUncertain
-from .bilibili_messages import BilibiliMessagesAdapter, MessagePreparationCancelled
 from .generation_meter import GenerationMeter, budgeted_json
 from .meme_selection import select_meme
 from .models import StrictModel
@@ -27,6 +25,8 @@ from .operation_feedback import (
 from .operation_generation import generate_with_recovery, reply_generation_binding
 from .operation_text import validate_operation_text
 from .operations_control import canonical_intent
+from .platforms.bilibili import PublishUncertain
+from .platforms.bilibili_messages import BilibiliMessagesAdapter, MessagePreparationCancelled
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 

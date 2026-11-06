@@ -11,8 +11,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..memes import MAX_BYTES
 from .bilibili import _data
-from .memes import MAX_BYTES
 
 UPLOAD_URL = "https://api.bilibili.com/x/dynamic/feed/draw/upload_bfs"
 FORMATS = {"image/gif": "gif", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}

@@ -7,8 +7,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from tuber_studio.bilibili import PublishUncertain
-from tuber_studio.bilibili_browsing import BrowsingAdapter, PlatformReadError
+from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter, PlatformReadError
 
 BV = "BV1d8pU6xEZX"
 

@@ -11,11 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.live_media import inspect_audio
+from tuber_studio.live.media import inspect_audio
+from tuber_studio.live.online_songs import OnlineSongs, SongRequestSettings, cache_bytes, parse_lrc
+from tuber_studio.live.song_component import SongComponent
+from tuber_studio.live.song_download import public_address
 from tuber_studio.models import Event
-from tuber_studio.online_songs import OnlineSongs, SongRequestSettings, cache_bytes, parse_lrc
-from tuber_studio.song_component import SongComponent
-from tuber_studio.song_download import public_address
 
 FIXTURES = Path(__file__).parent / "fixtures/audio"
 SONG = {"id": "123", "title": "测试歌", "artist": "测试歌手", "artists": ["测试歌手"], "duration": 3.0}
@@ -63,7 +63,7 @@ async def enabled(runtime, monkeypatch, *, fmt="flac"):
         path.write_bytes(data)
         return hashlib.sha256(data).hexdigest(), len(data)
 
-    monkeypatch.setattr("tuber_studio.online_songs.download", download)
+    monkeypatch.setattr("tuber_studio.live.online_songs.download", download)
     await online.configure({"enabled": True, "live_allowed": True, "license_note": "自有生成测试波形"})
     await runtime.control("start")
     await runtime.control("pause")
@@ -140,7 +140,7 @@ async def test_disable_cancels_online_preparation_and_queue_preserves_chat(runti
         finally:
             cancelled.set()
 
-    monkeypatch.setattr("tuber_studio.online_songs.download", slow_download)
+    monkeypatch.setattr("tuber_studio.live.online_songs.download", slow_download)
     first = await runtime.submit(Event(type="song", metadata={"online_id": "123"}))
     chat = await runtime.submit(Event(type="chat", text="今天天气不错"))
     await entered.wait()
@@ -358,7 +358,7 @@ def test_optional_environment_dependencies_can_be_separate_from_readonly_helper(
         path = libraries / name / "package.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}")
-    monkeypatch.setattr("tuber_studio.song_component.shutil.which", lambda name: "/image/node")
+    monkeypatch.setattr("tuber_studio.live.song_component.shutil.which", lambda name: "/image/node")
     monkeypatch.setenv("NODE_PATH", str(libraries))
     assert component.installed()
     assert not (component.directory / "node_modules").exists()

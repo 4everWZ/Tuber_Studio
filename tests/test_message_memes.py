@@ -8,11 +8,11 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from tuber_studio.bilibili import PublishUncertain
-from tuber_studio.bilibili_messages import BilibiliMessagesAdapter
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.memes import MemeCatalog
+from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 import time
 from unittest.mock import MagicMock
 
-from tuber_studio.draw_and_guess import (
+from tuber_studio.live.draw_and_guess import (
     WORD_BANK,
     DrawAndGuessService,
     normalize_guess,

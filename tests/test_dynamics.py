@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 
 from tuber_studio import dynamics as module
-from tuber_studio.bilibili import PublishUncertain
 from tuber_studio.dynamics import Dynamics
 from tuber_studio.memory import GroundedMemory
+from tuber_studio.platforms.bilibili import PublishUncertain
 
 
 class Model:

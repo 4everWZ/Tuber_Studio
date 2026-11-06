@@ -14,8 +14,8 @@ from mutagen.flac import FLAC
 from mutagen.mp3 import MP3
 from pydantic import Field
 
-from .models import StrictModel
-from .providers import Audio
+from ..models import StrictModel
+from ..providers import Audio
 
 MAX_UPLOAD = 96 * 1024 * 1024
 BLOB = re.compile(r"^[a-f0-9]{64}$")

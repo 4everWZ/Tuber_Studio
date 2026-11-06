@@ -10,10 +10,10 @@ import time
 
 import httpx
 
+from ..operation_text import validate_operation_text
+from ..publication_errors import platform_rejection
 from .bilibili import _ERRORS, BilibiliAdapter, PublishUncertain, _positive_id
 from .bilibili_images import upload_image
-from .operation_text import validate_operation_text
-from .publication_errors import platform_rejection
 
 ORIGIN = "https://api.vc.bilibili.com"
 
@@ -57,7 +57,7 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
         return rows[:30]
 
     async def reconcile_publication(self, target, *, author_uid, text, started_at, receipt=None):
-        from .publication_reconciliation import reconcile_message
+        from .bilibili_reconciliation import reconcile_message
 
         return await reconcile_message(
             self._get, target, author_uid=author_uid, text=text, started_at=started_at, receipt=receipt

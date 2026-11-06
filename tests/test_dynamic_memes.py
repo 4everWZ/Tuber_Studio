@@ -7,10 +7,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from tuber_studio.bilibili import BilibiliAdapter
 from tuber_studio.dynamics import Dynamics
 from tuber_studio.memes import MemeCatalog
 from tuber_studio.memory import GroundedMemory
+from tuber_studio.platforms.bilibili import BilibiliAdapter
 
 CAPTION = "海底小剧场：今天又开饭啦。\n作者：测试用户"
 

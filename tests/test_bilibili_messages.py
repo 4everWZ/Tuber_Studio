@@ -5,8 +5,8 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from tuber_studio.bilibili import PublishUncertain
-from tuber_studio.bilibili_messages import BilibiliMessagesAdapter
+from tuber_studio.platforms.bilibili import PublishUncertain
+from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
 
 
 def nav():

@@ -10,9 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.live_media import LiveMedia
+from tuber_studio.live.media import LiveMedia
+from tuber_studio.live.singing import SingingResult
 from tuber_studio.models import Event
-from tuber_studio.singing import SingingResult
 
 
 class FixtureProvider:

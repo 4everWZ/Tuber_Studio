@@ -10,10 +10,10 @@ import re
 
 import httpx
 
+from ..operation_text import validate_operation_text
+from ..publication_errors import platform_rejection
 from .bilibili import _ERRORS, PublishUncertain, _data, _positive_id
 from .bilibili_images import upload_image
-from .operation_text import validate_operation_text
-from .publication_errors import platform_rejection
 
 
 class PublishCancelled(ValueError):

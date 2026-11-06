@@ -9,7 +9,6 @@ import time
 from collections import deque
 from uuid import uuid4
 
-from .bilibili import BilibiliAdapter, PublishUncertain
 from .config import atomic_json
 from .media_cache import linked
 from .operation_continuations import content_hash
@@ -21,6 +20,7 @@ from .operation_feedback import (
 )
 from .operation_text import validate_operation_text
 from .operations_control import OperationsControl, canonical_intent
+from .platforms.bilibili import BilibiliAdapter, PublishUncertain
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 from .runtime_modes import operation_generation_context
@@ -64,7 +64,7 @@ class Comments:
         )
         self.credentials = credentials
         if adapter is None:
-            from .bilibili_browsing import BrowsingAdapter
+            from .platforms.bilibili_browsing import BrowsingAdapter
 
             adapter = BrowsingAdapter(credentials)
             self.injected = False
@@ -169,7 +169,7 @@ class Comments:
         for value in credential.values():
             if not isinstance(value, str) or not 0 < len(value) <= 2000 or re.search(r"[\r\n;]", value):
                 raise ValueError("凭证格式无效")
-        from .bilibili_browsing import BrowsingAdapter
+        from .platforms.bilibili_browsing import BrowsingAdapter
 
         async with self.publish_lock:
             if expected is not None and self.credentials != expected:

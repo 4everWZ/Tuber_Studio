@@ -6,10 +6,10 @@ import time
 import httpx
 import pytest
 
-from tuber_studio.bilibili_browsing import BrowsingAdapter
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.operations_control import OperationsControl, canonical_intent
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 from tuber_studio.store import Store
 
 

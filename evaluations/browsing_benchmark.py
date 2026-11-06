@@ -28,7 +28,6 @@ from pathlib import Path
 import httpx
 import psutil
 
-from tuber_studio.bilibili_browsing import BrowsingAdapter
 from tuber_studio.browsing import BrowsingService, read_round
 from tuber_studio.browsing_evidence import BrowsingEvidence
 from tuber_studio.browsing_models import BrowsingPolicy
@@ -38,6 +37,7 @@ from tuber_studio.config import Settings
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
 from tuber_studio.media_cache import MediaCache
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 from tuber_studio.runtime import Runtime
 from tuber_studio.store import Store
 

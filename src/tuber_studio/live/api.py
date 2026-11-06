@@ -12,9 +12,9 @@ from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import Field
 
-from .live_media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
-from .media_cache import CachePolicy
-from .models import StrictModel
+from ..media_cache import CachePolicy
+from ..models import StrictModel
+from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from .online_songs import SongRequestSettings
 
 
@@ -75,7 +75,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.get("/live")
     async def workbench():
-        return FileResponse(Path(__file__).parent / "web/live.html")
+        return FileResponse(Path(__file__).parents[1] / "web/live.html")
 
     @app.get("/api/live/view", dependencies=[Depends(require_view)])
     async def live_view():

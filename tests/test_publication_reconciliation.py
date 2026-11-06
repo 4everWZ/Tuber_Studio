@@ -8,9 +8,9 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 
-from tuber_studio.bilibili import BilibiliAdapter
-from tuber_studio.bilibili_browsing import BrowsingAdapter
-from tuber_studio.bilibili_messages import BilibiliMessagesAdapter
+from tuber_studio.platforms.bilibili import BilibiliAdapter
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
+from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
 
 TEXT = "（尾巴晃晃）\n本鱼接住啦～"
 TARGET = {"oid": "123", "type": 1, "root": "100", "parent": "200"}

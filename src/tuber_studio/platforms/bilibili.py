@@ -21,9 +21,9 @@ from urllib.parse import urlencode, urlsplit
 
 import httpx
 
-from .operation_text import validate_operation_text
-from .publication_errors import PublishUncertain as PublishUncertain
-from .publication_errors import platform_rejection
+from ..operation_text import validate_operation_text
+from ..publication_errors import PublishUncertain as PublishUncertain
+from ..publication_errors import platform_rejection
 
 _BV = re.compile(r"BV1[0-9A-Za-z]{9}\Z")
 _AV = re.compile(r"av([1-9][0-9]{0,18})\Z", re.IGNORECASE)
@@ -489,7 +489,7 @@ class BilibiliAdapter:
         }
 
     async def reconcile_publication(self, target, *, author_uid, text, started_at, receipt=None):
-        from .publication_reconciliation import reconcile_comment
+        from .bilibili_reconciliation import reconcile_comment
 
         target = dict(target)
         if not target.get("oid") and target.get("resource_type", "video") == "video":
@@ -516,7 +516,7 @@ class BilibiliAdapter:
         )
 
     async def reconcile_dynamic_publication(self, target, *, author_uid, text, started_at, receipt=None):
-        from .publication_reconciliation import reconcile_dynamic
+        from .bilibili_reconciliation import reconcile_dynamic
 
         async def read(path, params):
             return await self._get(path, await self.wbi_params(params))

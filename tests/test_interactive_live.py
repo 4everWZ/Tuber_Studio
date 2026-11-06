@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.live_scene import LiveScene
+from tuber_studio.live.scene import LiveScene
 from tuber_studio.models import Event, Reply
 
 

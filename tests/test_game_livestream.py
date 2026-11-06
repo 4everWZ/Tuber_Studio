@@ -1,5 +1,5 @@
 
-from tuber_studio.game_livestream import (
+from tuber_studio.live.game_livestream import (
     GameLivestreamService,
     PvZAdapter,
     StardewValleyAdapter,

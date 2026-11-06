@@ -9,15 +9,6 @@ import unicodedata
 from contextlib import nullcontext
 from datetime import datetime
 
-from .bilibili import PublishUncertain
-from .bilibili_dynamics import (
-    PublishCancelled,
-    PublishPreparationCancelled,
-    PublishPreparationFailed,
-    publish_image,
-    publish_text,
-    validate_text,
-)
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
 from .operation_continuations import content_hash
@@ -37,6 +28,15 @@ from .operation_text import (
 from .operations_control import OperationsControl, canonical_intent
 from .operations_memory import OperationsMemory
 from .persona import built_in_anchor
+from .platforms.bilibili import PublishUncertain
+from .platforms.bilibili_dynamics import (
+    PublishCancelled,
+    PublishPreparationCancelled,
+    PublishPreparationFailed,
+    publish_image,
+    publish_text,
+    validate_text,
+)
 from .publication_errors import PlatformRejected, UnknownPublication
 from .runtime_modes import operation_generation_context
 

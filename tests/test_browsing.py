@@ -355,7 +355,7 @@ async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch)
 
 @pytest.mark.parametrize("failed_reads", [1, 3])
 async def test_discovery_retries_once_then_continues_other_videos(browsing, monkeypatch, failed_reads):
-    from tuber_studio.bilibili_browsing import PlatformReadError
+    from tuber_studio.platforms.bilibili_browsing import PlatformReadError
 
     first, second = BV, "BV1xx411c7mD"
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
@@ -409,7 +409,7 @@ async def test_discovery_retries_once_then_continues_other_videos(browsing, monk
 
 
 async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishing(browsing, monkeypatch):
-    from tuber_studio.bilibili import PublishUncertain
+    from tuber_studio.platforms.bilibili import PublishUncertain
 
     first, second = BV, "BV1xx411c7mD"
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
@@ -575,7 +575,7 @@ async def test_content_decision_requests_required_sources_before_generation(brow
 
 @pytest.mark.parametrize("entrypoint", ["video", "comment"])
 async def test_browsing_reads_comments_through_real_adapter_fetch(browsing, entrypoint):
-    from tuber_studio.bilibili_browsing import BrowsingAdapter
+    from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 
     requests = []
     text = "我也想试试这个盐水实验"
@@ -703,7 +703,7 @@ async def test_rejected_top_level_stays_deduplicated_after_reread(browsing):
 
 
 async def test_shared_quota_and_uncertain_block_new_auto_writes(browsing):
-    from tuber_studio.bilibili import PublishUncertain
+    from tuber_studio.platforms.bilibili import PublishUncertain
 
     await finished(browsing, preview=True)
     intent = browsing.intents()[0]

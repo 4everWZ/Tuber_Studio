@@ -8,10 +8,10 @@ import httpx
 import pytest
 
 from tuber_studio.api_providers import APIProvider
-from tuber_studio.bilibili_browsing import BrowsingAdapter
 from tuber_studio.browsing_models import BrowsingPolicy
 from tuber_studio.comments import Comments
 from tuber_studio.generation_meter import GenerationMeter
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 
 BV = "BV1d8pU6xEZX"
 
@@ -454,9 +454,9 @@ def test_uncertain_response_raw_is_private_scoped_and_never_creates_recipient(
 async def test_other_channels_revise_real_business_rejection_under_same_intent(
     settings, store, runtime, channel
 ):
-    from tuber_studio.bilibili_messages import BilibiliMessagesAdapter
     from tuber_studio.direct_messages import DirectMessages
     from tuber_studio.dynamics import Dynamics
+    from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
 
     comments, comment_draft, _, requests = await prepared_service(settings, store, runtime)
     writes = []

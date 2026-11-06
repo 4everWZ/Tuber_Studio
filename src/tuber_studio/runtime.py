@@ -17,19 +17,19 @@ from .api_providers import VisionService, create_llm
 from .browsing_store import BrowsingRepository
 from .context import ContextManager
 from .daily_memory import DailyMemoryService
-from .draw_and_guess import DrawAndGuessService
-from .game_livestream import GameLivestreamService
 from .generation_meter import budgeted_call
 from .inference_node_client import refresh_capabilities
 from .inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL, GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
-from .interactive_rules import InteractiveRulesService
-from .live_media import LiveMedia
-from .live_scene import LiveScene
+from .live.draw_and_guess import DrawAndGuessService
+from .live.game_livestream import GameLivestreamService
+from .live.interactive_rules import InteractiveRulesService
+from .live.media import LiveMedia
+from .live.online_songs import OnlineSongs
+from .live.scene import LiveScene
 from .media_cache import MediaCache
 from .memory import missing_slots
 from .model_hub import is_model_installed
 from .models import OperationReply, Reply
-from .online_songs import OnlineSongs
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, reply_generation_binding
 from .operation_text import operation_output_diagnostics

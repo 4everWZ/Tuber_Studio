@@ -3,8 +3,8 @@ import json
 import httpx
 import pytest
 
-from tuber_studio.bilibili import BilibiliAdapter, PublishUncertain
-from tuber_studio.bilibili_dynamics import PublishCancelled, publish_text
+from tuber_studio.platforms.bilibili import BilibiliAdapter, PublishUncertain
+from tuber_studio.platforms.bilibili_dynamics import PublishCancelled, publish_text
 
 
 @pytest.fixture

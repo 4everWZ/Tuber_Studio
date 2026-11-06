@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, avatar_url
-from tuber_studio.bilibili_browsing import BrowsingAdapter
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6LQAAAABJRU5ErkJggg=="

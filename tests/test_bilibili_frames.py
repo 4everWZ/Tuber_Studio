@@ -5,8 +5,13 @@ import zlib
 import httpx
 import pytest
 
-from tuber_studio.bilibili_browsing import BrowsingAdapter, PlatformReadError
-from tuber_studio.bilibili_frames import FfmpegTiles, FrameSampler, public_storyboard_url, storyboard_entries
+from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter, PlatformReadError
+from tuber_studio.platforms.bilibili_frames import (
+    FfmpegTiles,
+    FrameSampler,
+    public_storyboard_url,
+    storyboard_entries,
+)
 
 BV = "BV1xx411c7mD"
 META = {"bvid": BV, "aid": "12", "parts": [{"cid": "34", "duration": 40}]}

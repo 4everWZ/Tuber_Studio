@@ -18,10 +18,10 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..operation_text import validate_operation_text
+from ..publication_errors import platform_rejection
+from ..subtitle_presentation import deduplicate_subtitles
 from .bilibili import _BV, BilibiliAdapter, PublishUncertain, _positive_id, _video_params
-from .operation_text import validate_operation_text
-from .publication_errors import platform_rejection
-from .subtitle_presentation import deduplicate_subtitles
 
 MAX_SUBTITLE_BYTES = 2 * 1024 * 1024
 MAX_API_BYTES = 4 * 1024 * 1024
