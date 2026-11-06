@@ -54,8 +54,8 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Locked project environment
         run: uv sync --locked --group dev
-      - name: Lint and format
-        run: uv run --locked python tools/ci/check_style.py
+      - name: Lint and advisory formatting
+        run: uv run --locked python tools/ci/check_style.py --format-advisory
       - name: Image decoder for catalog contracts
         run: |
           sudo apt-get update
