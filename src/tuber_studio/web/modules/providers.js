@@ -316,7 +316,6 @@ function renderProviderForm(settings, dirty, saving) {
   });
   $("llm-base-url").required = !demo;
   $("llm-model").required = !demo;
-  $("llm-probe-help").hidden = !external;
   $("llm-capacity-help").textContent = external ?
     "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
     "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";

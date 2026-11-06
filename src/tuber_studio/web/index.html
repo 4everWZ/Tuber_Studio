@@ -18,7 +18,7 @@
       <h1>Tuber Studio</h1>
       <p class="muted">本地 AI 角色运营与直播工坊</p>
       <label>管理令牌<input id="token" type="password" autocomplete="current-password" placeholder="请输入启动令牌..." required></label>
-      <p class="hint">使用服务启动时生成的管理令牌。同一浏览器可保持登录；退出或重置管理令牌后需重新登录。</p>
+      <p class="hint">本机访问可直接打开工作台。远程访问使用管理令牌，同一浏览器可保持登录。</p>
       <button class="primary" type="submit">登录工作台</button>
       <p id="login-error" role="alert" class="error-text"></p>
     </form>
@@ -153,7 +153,7 @@
       </nav>
 
       <div class="explorer-tree-footer">
-        <button type="button" class="btn-win-action" onclick="document.getElementById('logout')?.click()">
+        <button id="logout-sidebar" type="button" class="btn-win-action" onclick="document.getElementById('logout')?.click()">
           <span>🚪</span> 退出登录
         </button>
       </div>
@@ -252,33 +252,11 @@
             <button id="discovery-toggle" type="button" class="primary win-btn-lg" disabled>开始自动刷视频</button>
           </div>
 
-          <!-- 同一逻辑集成面板：来源、策略与状态一体化 -->
           <div class="win-group-box">
-            <div class="win-group-title">发现来源与任务参数</div>
-            <form id="discovery-source-form" class="discovery-source-form win-form-grid" data-workspace-anchor>
-              <div class="form-row-unified">
-                <label>发现来源
-                  <select id="discovery-source" disabled>
-                    <option value="recommend">首页推荐</option>
-                    <option value="search">关键词搜索</option>
-                    <option value="popular">热门榜单</option>
-                    <option value="autonomous">由大肥鱼自主选题</option>
-                    <option value="specified">指定特定视频 BV</option>
-                  </select>
-                </label>
-                <div id="discovery-keywords-field" hidden style="flex:1;">
-                  <label>关键词<input id="discovery-keywords" placeholder="多个关键词用逗号隔开"></label>
-                </div>
-                <div id="discovery-videos-field" hidden style="flex:1;">
-                  <label>视频 BV 号<input id="discovery-videos" placeholder="多个 BV 号用逗号隔开"></label>
-                </div>
-                <div class="form-actions-inline">
-                  <button id="discovery-save-source" type="submit" class="win-btn" disabled>保存来源配置</button>
-                  <a href="#automation-settings" class="button quiet">高级运营策略 →</a>
-                </div>
-              </div>
-              <p id="discovery-source-note" class="hint" role="status"></p>
-            </form>
+            <div class="panel-heading">
+              <div class="win-group-title">刷视频状态</div>
+              <a href="#automation-settings" class="button quiet">运营设置 →</a>
+            </div>
 
             <div id="discovery-attention" class="win-attention-banner" aria-live="polite" hidden>
               <div class="attention-header">⚠️ 需要操作者介入处理</div>
@@ -318,7 +296,10 @@
             <a href="#automation" class="button quiet">← 返回控制台</a>
           </div>
           <div class="win-group-box">
-            <div class="win-group-title">最近已发布记录</div>
+            <div class="panel-heading">
+              <div class="win-group-title">最近已发布记录</div>
+              <a href="#comments/history" class="win-link-btn">查看全部已执行评论 →</a>
+            </div>
             <div id="discovery-published"></div>
           </div>
           <div id="automation-panel" style="margin-top:16px;"></div>
@@ -332,25 +313,76 @@
             <a href="#automation-settings" class="prop-tab active">⚙️ 策略与停止控制</a>
           </div>
           <div class="page-heading win-heading">
-            <h1>刷视频运营策略与应急控制</h1>
+            <h1>刷视频与运营设置</h1>
             <a href="#automation" class="button quiet">← 返回控制台</a>
           </div>
 
           <div class="win-group-box automation-settings">
-            <div class="win-group-title">轮次节拍配置</div>
+            <div class="win-group-title">自动刷视频来源</div>
+            <form id="discovery-source-form" class="discovery-source-form win-form-grid" data-workspace-anchor>
+              <div class="form-row-unified">
+                <label>发现来源
+                  <select id="discovery-source" disabled>
+                    <option value="recommend">首页推荐</option>
+                    <option value="search">关键词搜索</option>
+                    <option value="popular">热门榜单</option>
+                    <option value="autonomous">由大肥鱼自主选题</option>
+                    <option value="specified">指定特定视频 BV</option>
+                  </select>
+                </label>
+                <div id="discovery-keywords-field" hidden style="flex:1;">
+                  <label>关键词<input id="discovery-keywords" placeholder="多个关键词用逗号隔开"></label>
+                </div>
+                <div id="discovery-videos-field" hidden style="flex:1;">
+                  <label>视频 BV 号<input id="discovery-videos" placeholder="多个 BV 号用逗号隔开"></label>
+                </div>
+                <button id="discovery-save-source" type="submit" class="win-btn" disabled>保存来源配置</button>
+              </div>
+              <p id="discovery-source-note" class="hint" role="status"></p>
+            </form>
+          </div>
+
+          <div class="win-group-box automation-settings" id="operation-round-settings" data-workspace-anchor style="margin-top:16px;">
+            <div class="win-group-title">共享轮次参数</div>
+            <p class="hint">自动刷视频、只读预览和全渠道运营共用这些设置。</p>
             <form id="op-round-settings" class="discovery-source-form win-form-row">
               <div class="form-grid">
                 <label>单视频回复上限
                   <input id="op-max-replies" type="number" min="0" max="20" required>
-                  <small class="hint">单视频最多互动条数</small>
+                  <small class="hint">每日按视频计数，0 为关闭跟帖</small>
                 </label>
                 <label>轮次间隔（秒）
                   <input type="number" id="op-interval" min="60" max="86400" step="1" required>
                   <small class="hint">完成一轮到启动下一轮的等待时间</small>
                 </label>
+                <label>视频 Agent 并发数
+                  <input type="number" id="op-workers" min="1" max="8" step="1" required>
+                  <small class="hint">单轮最多同时处理的视频数</small>
+                </label>
+              </div>
+              <div class="win-subgroup-box" style="margin-top:14px;">
+                <div class="win-subgroup-title">取材与模型参数</div>
+                <div class="form-grid">
+                  <label>每轮候选视频上限
+                    <input id="exp-candidate-limit" type="number" min="1" max="20" required>
+                  </label>
+                  <label>每轮细看视频上限
+                    <input id="exp-inspect-limit" type="number" min="1" max="20" required>
+                  </label>
+                  <label>单次决策最大输出 Token
+                    <input id="exp-decision-max-tokens" type="number" min="512" max="65536" required>
+                  </label>
+                  <label>单轮运行超时（秒）
+                    <input id="exp-deadline-seconds" type="number" min="10" max="1800" required>
+                  </label>
+                  <label class="check-field" style="grid-column:1 / -1;">
+                    <input id="exp-visual-enabled" type="checkbox"> 启用视频画面分析
+                  </label>
+                </div>
               </div>
               <div class="actions" style="margin-top:12px;">
                 <button id="op-save-quick-config" type="submit" class="primary" disabled>保存轮次参数</button>
+                <p id="op-round-settings-note" class="hint" role="status"></p>
               </div>
             </form>
           </div>
@@ -359,9 +391,9 @@
             <div class="win-group-title">全渠道自主运营与紧急停止熔断</div>
             <p class="hint">全渠道运营覆盖视频评论、消息通知和私信。紧急停止同时阻止各渠道自动收发，重启后仍保持生效。</p>
             <div class="actions" style="margin-top:10px;">
-              <button id="op-preview-round" type="button" class="win-btn">只读单轮预览</button>
-              <button id="op-toggle-auto" type="button" class="primary">开启全渠道自主运营</button>
-              <button id="op-stop-round" type="button" class="win-btn">仅停止当前轮</button>
+              <button id="op-preview-round" type="button" class="win-btn" disabled>只读单轮预览</button>
+              <button id="op-toggle-auto" type="button" class="primary" disabled>开启全渠道自主运营</button>
+              <button id="op-stop-round" type="button" class="win-btn" disabled>仅停止当前轮</button>
               <button id="op-emergency" type="button" class="danger">🛑 紧急停止所有自动收发</button>
               <button id="op-reset-stop" type="button" class="win-btn" hidden>解除紧急停止</button>
               <button id="refresh-operations" type="button" class="win-btn">刷新状态</button>
@@ -396,18 +428,18 @@
 
           <section id="comment-queue">
             <div class="queue-toolbar win-filter-bar">
-              <label for="queue-view" style="margin:0; font-weight:600;">待办状态筛选：</label>
+              <label for="queue-view" style="margin:0; font-weight:600;">处理状态</label>
               <select id="queue-view" style="width:auto; min-width:140px;">
                 <option value="review">待审核 (Review)</option>
                 <option value="verify">待核对 (Verify)</option>
                 <option value="processing">处理中 (Processing)</option>
-                <option value="history">已归档历史 (History)</option>
+                <option value="history">已执行与历史</option>
               </select>
             </div>
             <p id="queue-feedback" class="hint" role="status"></p>
             <div class="review-layout win-split-pane" style="margin-top:12px;">
               <article class="win-group-box">
-                <div class="win-group-title">公开评论待办列表</div>
+                <div class="win-group-title">公开评论记录</div>
                 <div id="queue-list" class="win-table-container"></div>
                 <div class="actions queue-pagination" style="margin-top:12px;">
                   <button id="queue-prev" type="button" class="win-btn" disabled>上一页</button>
@@ -510,6 +542,7 @@
                 </div>
                 <p id="draft-source" class="quoted-text">选择一条评论，查看原文和所在楼。</p>
                 <dl id="draft-meta" class="description-list"></dl>
+                <button id="open-comment-memory" type="button" hidden class="win-btn">用户档案</button>
                 <a id="open-comment-draft" href="#comments" hidden class="win-link-btn">到待办处理草稿</a>
                 <section id="comment-continuation" hidden></section>
                 <div class="win-subgroup-box" style="margin-top:12px;">
@@ -1307,10 +1340,6 @@
             <fieldset class="matrix-group">
               <legend>三、安全熔断与频率阈值</legend>
               <div class="form-grid">
-                <label>单视频每日最大回复数上限
-                  <input id="matrix-max-replies-video" type="number" min="0" max="20" value="2">
-                  <small class="hint">每日 00:00 刷新；0 为不回帖；达到上限当日跳过</small>
-                </label>
                 <label>全天互动总量上限 (安全熔断)
                   <input id="matrix-max-per-day" type="number" min="1" max="200" value="20">
                   <small class="hint">24小时内所有发布总上限，超限系统自动熔断停止</small>
@@ -1320,29 +1349,8 @@
                   遇到连续平台报错自动降级为“仅草稿待核对”
                 </label>
               </div>
+              <p class="hint"><a href="#operation-round-settings">设置单视频回复上限、并发数和取材参数</a></p>
             </fieldset>
-
-            <div class="win-subgroup-box experimental-settings-hub" style="margin-top: 14px;">
-              <div class="win-subgroup-title">🔬 实验性调优参数 (Advanced Experimental Settings)</div>
-              <div class="form-grid" style="margin-top: 10px;">
-                <label>单视频候选检索上限 (Candidate Limit)
-                  <input id="exp-candidate-limit" type="number" min="1" max="50" value="20">
-                </label>
-                <label>单视频深度细看上限 (Inspect Limit)
-                  <input id="exp-inspect-limit" type="number" min="1" max="20" value="4">
-                </label>
-                <label>单视频决策最大输出 Token
-                  <input id="exp-decision-max-tokens" type="number" min="512" max="65536" value="8192">
-                </label>
-                <label>单轮运行超时时间 (秒)
-                  <input id="exp-deadline-seconds" type="number" min="60" max="3600" value="1800">
-                </label>
-                <label class="check-field" style="grid-column: 1 / -1;">
-                  <input id="exp-visual-enabled" type="checkbox" checked>
-                  启用实验性视觉多帧分析 (Visual Analysis)
-                </label>
-              </div>
-            </div>
 
             <div class="actions" style="margin-top:14px;">
               <button id="matrix-save" type="button" class="primary win-btn">保存权限矩阵配置</button>
@@ -1568,9 +1576,9 @@
   <script src="/static/inference-node.js?v=20261105.27" defer></script>
   <script src="/static/continuation.js" defer></script>
   <script src="/static/automation.js?v=20261105.32" defer></script>
-  <script src="/static/account.js" defer></script>
+  <script src="/static/account.js?v=20261107.02" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261106.01"></script>
+  <script type="module" src="/static/app.js?v=20261107.02"></script>
 </body>
 </html>

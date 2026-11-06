@@ -34,6 +34,38 @@ def test_admin_api_requires_auth_and_cross_origin_writes_are_rejected(client, se
     assert client.get("/api/status").status_code == 401
 
 
+def test_direct_loopback_workbench_needs_no_management_token(settings, monkeypatch):
+    monkeypatch.delenv("TUBER_ADMIN_TOKEN", raising=False)
+    app = create_app(settings, ReadOnlyPlatform())
+    with TestClient(app, client=("127.0.0.1", 49152), base_url="http://localhost:8020") as local:
+        assert local.get("/api/settings").raise_for_status().json()["local_access"] is True
+        assert local.post("/api/live/start").status_code == 200
+        assert not local.cookies.get("tuber_admin")
+        with local.websocket_connect(
+            "ws://localhost:8020/ws/admin", headers={"Origin": "http://localhost:8020"}
+        ) as socket:
+            assert socket.receive_json()["type"] == "status"
+        assert local.get("/api/settings", headers={"Host": "untrusted.example"}).status_code == 401
+        assert local.get("/api/settings", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 401
+        assert local.get("/api/settings", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 401
+        assert local.post("/api/live/stop", headers={"Origin": "http://localhost:8019"}).status_code == 403
+    with TestClient(
+        create_app(settings, ReadOnlyPlatform()),
+        client=("100.64.0.2", 49152),
+        base_url="http://localhost:8020",
+    ) as remote:
+        assert remote.get("/api/status").status_code == 401
+        assert remote.post("/api/auth", json={"token": settings.admin_token}).status_code == 200
+        assert remote.get("/api/settings").raise_for_status().json()["local_access"] is False
+
+    monkeypatch.setenv("TUBER_ADMIN_TOKEN", "required-local-key")
+    with TestClient(
+        create_app(settings, ReadOnlyPlatform()), client=("::1", 49152), base_url="http://[::1]:8020"
+    ) as local:
+        assert local.get("/api/status").status_code == 401
+        assert local.post("/api/auth", json={"token": "required-local-key"}).status_code == 200
+
+
 def test_overlay_credential_never_grants_admin_access(client, settings):
     assert client.post("/api/overlay/auth", json={"token": settings.overlay_token}).status_code == 200
     assert client.get("/api/status").status_code == 401

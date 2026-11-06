@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js";
-import { evidenceList } from "./comment-queue.js?v=20261105.31";
+import { evidenceList } from "./comment-queue.js?v=20261107.01";
 
 const states = {
   off: "待命", starting: "启动检查", discovering: "正在找视频", reading: "正在取材",
@@ -71,7 +71,7 @@ export function initIssueLog(api, page) {
         row.append(node("summary", `${item.kind === "top_level" ? "主评" : "跟帖"} · ${item.bvid} · ${time(item.updated_at)}`));
         if (item.text) row.append(node("blockquote", item.text, "quoted-text"));
         if (item.receipt_id) row.append(node("p", `平台回执 ${item.receipt_id}`, "hint"));
-        row.append(link("查看来源与回执", `#comments/browsing/${item.id}`));
+        row.append(link("查看来源与回执", `#comments/history/browsing/${item.id}`));
         row.addEventListener("toggle", async () => {
           if (!row.open || row.dataset.evidenceLoaded) return;
           row.dataset.evidenceLoaded = "true";
@@ -276,6 +276,9 @@ export function initDiscoveryActivity(api) {
       if (record.receipt) {
         content.append(node("p", "平台回执", "hint"),
           node("pre", JSON.stringify(record.receipt, null, 2), "operation-revision-text"));
+      }
+      if (!task && item.status === "published") {
+        content.append(link("在评论历史中查看", `#comments/history/browsing/${encodeURIComponent(item.id)}`), " · ");
       }
       if (record.error && (item.failures || item.status === "publish_uncertain")) {
         content.append(link("查看告警与错误", "#issues"), " · ");

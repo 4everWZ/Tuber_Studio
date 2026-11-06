@@ -2,7 +2,7 @@
 import { MemePicker, memePreviewUrl } from "./memes.js";
 
 export class MessagesPanel {
-  constructor(root,api,notify) {
+  constructor(root,api,notify,openProfile) {
     this.root=root;this.api=api;this.notify=notify;this.value=null;this.selected=null;this.user=null;this.dirty=false;this.policyDirty=false;this.busy=false;
     this.unsavedByAccount=new Map();this.refreshRequest=0;this.memeCache=new Map();this.pickerContext=null;
     root.innerHTML=`<div class="page-heading"><div><p class="eyebrow">PRIVATE MESSAGES</p><h1>私信工作台</h1></div><div class="actions"><button data-sync>读取最新私信</button><button data-refresh>刷新</button><button data-stop class="danger">停止自动收发</button></div></div>
@@ -12,6 +12,17 @@ export class MessagesPanel {
       <p data-status role="status"></p><p data-error class="error-text" role="alert"></p>
       <div class="message-layout"><section class="panel"><h2>用户与来信</h2><label>会话<select data-users><option value="">选择用户</option></select></label><p data-relation class="hint"></p><div data-inbox></div></section><section class="panel"><h2>私信草稿与回执</h2><div data-drafts class="message-drafts"></div><p data-source class="quoted-text">选择草稿查看来源和回复。</p><p data-draft-status></p><label>私信内容<textarea data-text rows="6" disabled></textarea></label><div class="actions"><button data-review="edit">保存草稿</button><button data-review="approve" class="primary">审核通过</button><button data-review="reject">拒绝</button><button data-copy>复制已审核内容</button><button data-send class="primary">发送已审核私信</button><button data-retry>重试生成</button></div><pre data-receipt class="code-small"></pre></section></div>`;
     this.$=selector=>root.querySelector(selector);
+    const profileButton = this.element("button", "用户档案");
+    profileButton.type = "button";
+    profileButton.dataset.userProfile = "";
+    profileButton.hidden = true;
+    this.$("[data-relation]").after(profileButton);
+    profileButton.onclick = () => {
+      const accountId = this.value?.account_id;
+      const user = this.value?.users.find(item => `${item.platform}|${item.platform_user_id}` === this.user);
+      if (accountId && user) openProfile({ platform: user.platform, userId: user.platform_user_id,
+        accountId, name: user.display_name, onChange: () => this.refresh() });
+    };
     const progress=this.element('section');progress.dataset.messageContinuation='';this.$('[data-receipt]').before(progress);this.continuation=new OperationContinuationView(progress,api,notify,()=>this.refresh());
     this.privateSelected=null;
     const privateSection=this.element('section',null,'panel');privateSection.dataset.privateGenerations='';privateSection.hidden=true;
@@ -114,8 +125,8 @@ export class MessagesPanel {
     this.$('[data-retry]').disabled=!row||!['failed','cancelled'].includes(row.status)||this.busy;
     this.$('[data-retry]').hidden=row?.continuation?.phase==='generation';
   }
-  async conversation(){if(!this.user){this.$('[data-inbox]').replaceChildren();this.$('[data-relation]').textContent='';return;}const account=this.value.account_id;const [platform,user_id]=this.user.split('|');const value=await this.api(`/api/messages/conversation?platform=${encodeURIComponent(platform)}&user_id=${encodeURIComponent(user_id)}`);if(this.user!==`${platform}|${user_id}`||this.value.account_id!==account||('account_id' in value&&value.account_id!==account))return;
-    const r=value.relationship;this.$('[data-relation]').textContent=`与当前OC的好感度 ${r.affinity??20} / 100 · ${r.stage||'陌生'}（评论／私信共享）`;
+  async conversation(){const profile=this.$('[data-user-profile]');profile.hidden=!this.user||!this.value?.account_id;if(!this.user){this.$('[data-inbox]').replaceChildren();this.$('[data-relation]').textContent='';return;}const account=this.value.account_id;const [platform,user_id]=this.user.split('|');const value=await this.api(`/api/messages/conversation?platform=${encodeURIComponent(platform)}&user_id=${encodeURIComponent(user_id)}`);if(this.user!==`${platform}|${user_id}`||this.value.account_id!==account||('account_id' in value&&value.account_id!==account))return;
+    const r=value.relationship;this.$('[data-relation]').textContent=typeof r.affinity==='number'?`与当前OC的好感度 ${r.affinity} / 100 · ${r.stage}（评论／私信共享）`:'个性化未启用';
     const signature=JSON.stringify([this.user,value.messages,value.drafts.map(draft=>[draft.id,draft.source_kind,draft.source_id])]);if(signature===this.inboxSignature)return;this.inboxSignature=signature;
     this.$('[data-inbox]').replaceChildren(...value.messages.map(row=>{const item=this.element('article',null,'message-incoming');item.append(this.element('small',new Date(row.sent_at*1000).toLocaleString()),this.element('p',row.content));const known=value.drafts.find(draft=>draft.source_kind==='message'&&draft.source_id===row.id);const button=this.element('button',known?'查看已有回复':'生成私信回复');button.onclick=()=>this.action(async()=>{const result=known?{draft_id:known.id}:await this.api(`/api/messages/inbox/${row.id}/reply`,{method:'POST'});this.selected=result.draft_id;this.dirty=false;await this.refresh();});item.append(button);return item;}));
   }

@@ -69,10 +69,11 @@ function renderCommentSource(model, commentContinuation, setBadge, describe) {
   setBadge($("draft-status"), draft?.status || comment?.continuation?.state || "选择评论");
   describe($("draft-meta"), comment ? [
     ["来源评论", `${comment.video_id} / ${comment.comment_id}`],
-    ["与当前 OC 的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : "匿名用户"],
+    ["与当前 OC 的关系", typeof comment.relationship?.affinity === "number" ? `${comment.relationship.affinity} / 100 · ${comment.relationship.stage}` : comment.platform_user_id ? "个性化未启用" : "匿名用户"],
     ["楼 ID", comment.thread_id || comment.comment_id],
     ["父评论 ID", comment.parent_comment_id || "顶层"],
   ] : []);
+  $("open-comment-memory").hidden = !(comment?.platform === "bilibili" && comment.platform_user_id && comment.relationship_account_id);
   open.hidden = !draft;
   if (draft) {
     open.href = draft.status === "private_handoff" ? "#messages" : `#comments/comments/${draft.id}`;

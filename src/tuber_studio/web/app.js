@@ -2,18 +2,19 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initCommentQueue } from "./modules/comment-queue.js?v=20261105.31";
-import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261105.33";
-import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.01";
+import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.01";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.01";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261105.29";
+import { MessagesPanel } from "./messages.js?v=20261107.02";
+import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
   savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js?v=20261105.33";
+} from "./modules/operations.js?v=20261107.01";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -21,7 +22,7 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261105.30";
+} from "./modules/comments.js?v=20261107.02";
 import {
   localDateTime,
   initDynamicsModule,
@@ -45,7 +46,7 @@ const api = async (path, options = {}) => {
     throw error;
   }
 };
-const updatePermissionCapsule = () => updateCapsuleModule(api, accountPanel);
+const updatePermissionCapsule = options => updateCapsuleModule(api, accountPanel, options);
 const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
 
 const model = {
@@ -93,7 +94,11 @@ const inferenceNodePanel = new InferenceNodePanel($("inference-node-panel"), api
 setInterval(() => { if (model.authenticated && !document.hidden && model.page === "overview") cachePanel.refresh(); }, 5000);
 setInterval(() => { if (model.authenticated && !document.hidden && model.page === "settings") inferenceNodePanel.refresh(); }, 10000);
 
-const messagesPanel = new MessagesPanel($("messages-panel"), api, notice);
+const userMemoryEditor = new UserMemoryEditor(api);
+const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope => {
+  const characterId = model.status?.character?.id;
+  if (characterId) userMemoryEditor.open({ ...scope, characterId });
+});
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 automationPanel.onStatus = renderOperationsQuickBar;
 const issueLog = initIssueLog(api, () => model.page);
@@ -131,6 +136,15 @@ const accountPanel = new BilibiliAccountUI({
     }));
   }
 });
+
+$("open-comment-memory").onclick = () => {
+  const comment = model.comments?.find(item => item.id === model.commentId);
+  const accountId = comment?.relationship_account_id;
+  const characterId = model.status?.character?.id;
+  if (!accountId || !characterId || !comment?.platform_user_id) return;
+  userMemoryEditor.open({ platform: comment.platform, userId: comment.platform_user_id, accountId,
+    characterId, name: comment.display_name, onChange: refreshComments });
+};
 
 const dynamicMemePicker = new MemePicker(api, (id, asset) => dynamicsModule?.selectDynamicMeme(id, asset, model.dynamicMemeContext), {
   title: "选择动态配图",
@@ -218,14 +232,20 @@ async function busy(button, action) {
 
 function showLogin() {
   model.authenticated = false;
+  model.socket?.close();
   $("workspace").hidden = true;
   $("login").hidden = false;
   accountPanel.deactivate();
   messagesPanel.closeImagePicker();
+  userMemoryEditor.close();
 }
 
 function applyWorkbenchSettings(settings) {
   model.settings = { ...model.settings, ...settings };
+  const localAccess = model.settings.local_access === true;
+  $("logout").hidden = localAccess;
+  $("logout-sidebar").hidden = localAccess;
+  accountPanel.setLocalAccess(localAccess);
   inferenceProviders.sync();
   voiceSettings.sync();
   renderLiveFeatures(model);
@@ -461,7 +481,7 @@ async function changePage() {
     (root === "automation" && routeKind === "round" ? "automation-records" : root);
   const pages = {
     comments: "评论与草稿", automation: "自动刷视频", messages: "私信", dynamics: "动态",
-    "automation-records": "运行记录", "automation-settings": "刷视频设置", issues: "告警与错误",
+    "automation-records": "运行记录", "automation-settings": "刷视频与运营设置", issues: "告警与错误",
     live: "直播控制", "live-scene": "场景编排", "live-music": "曲库与点歌",
     "live-interaction": "互动与游戏",
     characters: "角色工作室", voices: "语音", assets: "素材与表情包",
@@ -494,8 +514,10 @@ async function changePage() {
   if (!model.authenticated) return;
   try {
     if (model.page === "comments") {
-      const validKey = ["comments", "browsing", "jobs"].includes(routeKind) && /^[\w-]+$/.test(routeId || "");
-      await commentQueue.open(anchor ? "sources" : null, validKey ? `${routeKind}/${routeId}` : null);
+      const queueView = commentQueueViews.includes(routeKind) ? routeKind : null;
+      const [channel, identity] = queueView ? [routeId, taskId] : [routeKind, routeId];
+      const validKey = ["comments", "browsing", "jobs"].includes(channel) && /^[\w-]+$/.test(identity || "");
+      await commentQueue.open(anchor ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
     } else if (model.page === "automation") {
       await discoveryPanel.refresh();
       if (model.page === "automation") await refreshDiscoveryActivity();
@@ -503,7 +525,7 @@ async function changePage() {
       const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
       await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
     } else if (model.page === "automation-settings") {
-      await Promise.allSettled([updatePermissionCapsule(), automationPanel.loadRecovery()]);
+      await Promise.allSettled([discoveryPanel.refresh(), updatePermissionCapsule(), automationPanel.loadRecovery()]);
     } else if (model.page === "issues") {
       issueLog.render();
       await issueLog.refresh();
@@ -549,6 +571,7 @@ async function poll() {
     if (model.page === "automation") updates.push(refreshDiscoveryActivity());
     if (model.page === "live") updates.push(refreshLive());
     if (model.page === "comments") updates.push(commentQueue.isSources() ? refreshComments() : commentQueue.refresh());
+    if (model.page === "automation-settings") updates.push(updatePermissionCapsule({ background: true }));
     if (model.page === "automation-records") updates.push(automationPanel.refresh({ background: true }));
     if (model.page === "issues" || model.page === "automation-records") updates.push(issueLog.refresh());
     await Promise.allSettled(updates);
@@ -639,7 +662,7 @@ liveModule = initLiveModule(model, {
   loadSettingsFn: refreshSettings,
 });
 
-initOperationsModule(api, accountPanel, automationPanel);
+initOperationsModule(api, accountPanel);
 const inferenceProviders = initInferenceProvidersUI(model, {
   api,
   busy,
@@ -654,12 +677,22 @@ $("login-form")?.addEventListener("submit", event => {
   busy(event.submitter, async () => {
     const token = $("token")?.value.trim();
     if (!token) return;
-    await api("/api/auth", { method: "POST", body: { token } });
-    $("token").value = "";
-    localStorage.removeItem("tuber_token");
-    await enterWorkspace();
+    $("login-error").textContent = "";
+    try {
+      await api("/api/auth", { method: "POST", body: { token } });
+      $("token").value = "";
+      localStorage.removeItem("tuber_token");
+      await enterWorkspace();
+    } catch (error) {
+      $("login-error").textContent = error.message;
+    }
   });
 });
+
+$("logout").addEventListener("click", event => busy(event.currentTarget, async () => {
+  await api("/api/logout", { method: "POST" });
+  showLogin();
+}));
 
 $("clone-form")?.addEventListener("submit", event => {
   event.preventDefault();
@@ -745,8 +778,7 @@ $("character-image")?.addEventListener("error", () => {
 
 if ($("refresh-operations")) {
   $("refresh-operations").onclick = async () => {
-    await Promise.allSettled([automationPanel.refresh(), updatePermissionCapsule()]);
-    await discoveryPanel.refresh();
+    await Promise.allSettled([updatePermissionCapsule(), discoveryPanel.refresh()]);
     notice("运营状态已刷新。");
   };
 }

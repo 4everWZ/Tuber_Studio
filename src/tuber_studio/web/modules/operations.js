@@ -6,6 +6,8 @@
 import { $, safeMessage, notice } from "./core.js";
 
 let currentAutomationStatus = null;
+let statusRequest = 0;
+let statusRequestedAt = 0;
 let matrixUserInteractingUntil = 0;
 let matrixSaveTimeout = null;
 
@@ -112,14 +114,10 @@ export function getOptimisticSettingsFromDOM() {
   const likeVal = document.querySelector('input[name="matrix_video_like"]:checked')?.value || "1";
   const favVal = document.querySelector('input[name="matrix_video_fav"]:checked')?.value || "1";
 
-  const maxRepliesVideo = parseInt($("matrix-max-replies-video")?.value || "2", 10);
   const maxPerDay = parseInt($("matrix-max-per-day")?.value || "20", 10);
   const autoDowngrade = !!$("matrix-auto-downgrade")?.checked;
 
-  const current = currentAutomationStatus?.settings || {};
-
   return {
-    ...current,
     top_level_enabled: topVal !== "0",
     top_level_auto_publish: topVal === "2",
     reply_enabled: replyVal !== "0",
@@ -130,8 +128,7 @@ export function getOptimisticSettingsFromDOM() {
     video_like_auto_publish: likeVal === "2",
     video_fav_enabled: favVal !== "0",
     video_fav_auto_publish: favVal === "2",
-    max_replies_per_video: maxRepliesVideo,
-    max_per_day: maxPerDay,
+    max_per_day: Math.max(1, Math.min(200, maxPerDay || 20)),
     auto_downgrade_on_error: autoDowngrade,
   };
 }
@@ -146,24 +143,25 @@ export function renderVisualFallbackStatus(status) {
   matrixVisualEl.textContent = ready ? "视频可使用画面和字幕" : "视频使用字幕 · 视觉未就绪";
 }
 
-export async function updatePermissionCapsule(api, accountPanel) {
+export async function updatePermissionCapsule(api, accountPanel, { background = false } = {}) {
+  const now = Date.now();
+  if (background && now - statusRequestedAt < 8000) return;
+  statusRequestedAt = now;
+  const request = ++statusRequest;
   try {
     const status = await api("/api/automation");
+    if (request !== statusRequest) return;
     currentAutomationStatus = status;
 
     const account = accountPanel?.value;
     const hasSessdata = Boolean(account?.configured?.sessdata);
     const hasCsrf = Boolean(account?.configured?.csrf);
-    const settings = (Date.now() < matrixUserInteractingUntil)
-      ? getOptimisticSettingsFromDOM()
-      : (status.settings || {});
-
     const tierInfo = calculatePermissionTier(status.settings, account, hasCsrf);
     applyPermissionTierUI(tierInfo);
     const sendingState = $("automatic-sending-state");
     sendingState.hidden = !hasAutomaticRules(status.settings) || status.automatic_sending_ready !== false;
     sendingState.textContent = sendingState.hidden ? "" :
-      "当前模型与角色组合缺少有效的语义验收，自动运营生成的草稿仍需审核。单轮运营预览也会保留草稿。";
+      "当前模型与角色组合缺少有效的语义验收，全渠道运营生成的草稿仍需审核。只读预览也会保留草稿。";
 
     // Matrix Credentials state
     const sessdataEl = $("matrix-sessdata-status");
@@ -208,7 +206,8 @@ export function renderPermissionMatrix(status) {
   if (replyRadio && document.activeElement?.name !== "matrix_reply") replyRadio.checked = true;
 
   // 3. DM
-  const dmVal = !settings.comment_handoff_enabled ? "0" : settings.handoff_auto_send ? "2" : "1";
+  const messages = status.base?.messages;
+  const dmVal = !messages?.allow_comment_handoff ? "0" : messages.auto_send ? "2" : "1";
   const dmRadio = document.querySelector(`input[name="matrix_dm"][value="${dmVal}"]`);
   if (dmRadio && document.activeElement?.name !== "matrix_dm") dmRadio.checked = true;
 
@@ -223,43 +222,33 @@ export function renderPermissionMatrix(status) {
   if (favRadio && document.activeElement?.name !== "matrix_video_fav") favRadio.checked = true;
 
   // 6. Thresholds
-  if ($("matrix-max-replies-video") && document.activeElement !== $("matrix-max-replies-video")) {
-    $("matrix-max-replies-video").value = settings.max_replies_per_video ?? 2;
-  }
   if ($("matrix-max-per-day") && document.activeElement !== $("matrix-max-per-day")) {
     $("matrix-max-per-day").value = settings.max_per_day ?? 20;
   }
   if ($("matrix-auto-downgrade") && document.activeElement !== $("matrix-auto-downgrade")) {
     $("matrix-auto-downgrade").checked = settings.auto_downgrade_on_error !== false;
   }
-
-  // 7. Advanced settings
-  if ($("exp-candidate-limit") && document.activeElement !== $("exp-candidate-limit")) {
-    $("exp-candidate-limit").value = settings.candidate_limit ?? 20;
-  }
-  if ($("exp-inspect-limit") && document.activeElement !== $("exp-inspect-limit")) {
-    $("exp-inspect-limit").value = settings.inspect_limit ?? 4;
-  }
-  if ($("exp-decision-max-tokens") && document.activeElement !== $("exp-decision-max-tokens")) {
-    $("exp-decision-max-tokens").value = settings.decision_max_tokens ?? 8192;
-  }
-  if ($("exp-deadline-seconds") && document.activeElement !== $("exp-deadline-seconds")) {
-    $("exp-deadline-seconds").value = settings.deadline_seconds ?? 1800;
-  }
-  if ($("exp-visual-enabled") && document.activeElement !== $("exp-visual-enabled")) {
-    $("exp-visual-enabled").checked = settings.visual_enabled !== false;
-  }
 }
 
+const roundNumberFields = [
+  ["max_replies_per_video", "op-max-replies", 2],
+  ["interval_seconds", "op-interval", 300],
+  ["workers", "op-workers", 4],
+  ["candidate_limit", "exp-candidate-limit", 20],
+  ["inspect_limit", "exp-inspect-limit", 4],
+  ["decision_max_tokens", "exp-decision-max-tokens", 8192],
+  ["deadline_seconds", "exp-deadline-seconds", 1800],
+];
 let roundSettingsDirty = false;
+let roundSettingsSaving = false;
 
 export function renderOperationsQuickBar(status) {
   const settings = status.settings || {};
   if (!roundSettingsDirty) {
-    $("op-max-replies").value = settings.max_replies_per_video ?? 2;
-    $("op-interval").value = settings.interval_seconds ?? 300;
-    $("op-save-quick-config").disabled = false;
+    for (const [name, id, fallback] of roundNumberFields) $(id).value = settings[name] ?? fallback;
+    $("exp-visual-enabled").checked = settings.visual_enabled !== false;
   }
+  $("op-save-quick-config").disabled = roundSettingsSaving;
 
   const policyEnabled = status.policy?.enabled === true;
   const hasActiveRound = Boolean(status.active_round);
@@ -288,77 +277,21 @@ export function renderOperationsQuickBar(status) {
 
 export async function savePermissionMatrix(api, accountPanel, options = {}) {
   const isSilent = options && options.silent === true;
-  const optimisticSettings = getOptimisticSettingsFromDOM();
-
-  const current = currentAutomationStatus?.settings || {};
-  const candidateLimit = $("exp-candidate-limit") ? parseInt($("exp-candidate-limit").value || "20", 10) : (current.candidate_limit || 20);
-  const inspectLimit = $("exp-inspect-limit") ? parseInt($("exp-inspect-limit").value || "4", 10) : (current.inspect_limit || 4);
-  const decisionTokens = $("exp-decision-max-tokens") ? parseInt($("exp-decision-max-tokens").value || "8192", 10) : (current.decision_max_tokens || 8192);
-  const deadlineSec = $("exp-deadline-seconds") ? parseInt($("exp-deadline-seconds").value || "1800", 10) : (current.deadline_seconds || 1800);
-  const visualEnabled = $("exp-visual-enabled") ? Boolean($("exp-visual-enabled").checked) : Boolean(current.visual_enabled ?? true);
-
-  const allowedBrowsingKeys = new Set([
-    "discovery_enabled",
-    "top_level_enabled", "top_level_auto_publish", "reply_enabled", "reply_auto_publish",
-    "video_like_enabled", "video_like_auto_publish", "video_fav_enabled", "video_fav_auto_publish",
-    "max_replies_per_video", "auto_downgrade_on_error", "mentions_enabled", "mention_reply_enabled",
-    "replies_enabled", "visual_enabled", "workers", "candidate_limit",
-    "inspect_limit", "max_search_terms", "max_pages", "max_reads", "max_model_calls",
-    "max_input_tokens", "max_output_tokens", "decision_max_tokens", "deadline_seconds",
-    "interval_seconds", "notification_interval_seconds", "read_retries", "max_takeovers",
-    "max_per_hour", "max_per_day", "recipient_cooldown_seconds", "top_level_limit",
-    "recent_sample_limit", "exclude_words", "allowed_author_uids", "excluded_author_uids",
-    "allowed_categories", "min_duration_seconds", "max_duration_seconds", "published_after",
-    "published_before", "languages", "report_enabled"
-  ]);
-
-  const merged = {
-    ...current,
-    ...optimisticSettings,
-    candidate_limit: Math.max(1, Math.min(20, candidateLimit || 20)),
-    inspect_limit: Math.max(1, Math.min(20, inspectLimit || 4)),
-    decision_max_tokens: Math.max(512, Math.min(65536, decisionTokens || 8192)),
-    deadline_seconds: Math.max(60, Math.min(3600, deadlineSec || 1800)),
-    visual_enabled: visualEnabled,
-  };
-
-  const payload = {};
-  for (const [k, v] of Object.entries(merged)) {
-    if (allowedBrowsingKeys.has(k)) {
-      payload[k] = v;
-    }
-  }
-  delete payload.comment_handoff_enabled;
-  delete payload.handoff_auto_send;
+  const { comment_handoff_enabled, handoff_auto_send, ...payload } = getOptimisticSettingsFromDOM();
 
   const fb = $("matrix-save-feedback");
   if (fb && !isSilent) fb.textContent = "正在保存权限矩阵…";
 
+  let browsingSaved = false;
   try {
-    await api("/api/automation/settings", { method: "PUT", body: payload });
-    // Also sync message handoff policy to messages API
-    try {
-      const msgStatus = await api("/api/messages");
-      if (msgStatus && msgStatus.policy) {
-        await api("/api/messages/policy", {
-          method: "PUT",
-          body: {
-            ...msgStatus.policy,
-            allow_comment_handoff: optimisticSettings.comment_handoff_enabled,
-            auto_send: optimisticSettings.handoff_auto_send,
-          },
-        });
-      }
-    } catch (_dmErr) {
-      // Ignored if direct messages not active
-    }
-
-    if (currentAutomationStatus) {
-      currentAutomationStatus.settings = {
-        ...(currentAutomationStatus.settings || {}),
-        ...payload,
-        handoff_auto_send: optimisticSettings.handoff_auto_send,
-      };
+    const saved = await api("/api/automation/settings", { method: "PUT", body: payload });
+    browsingSaved = true;
+    const messages = saved.base?.messages;
+    if (messages && (messages.allow_comment_handoff !== comment_handoff_enabled || messages.auto_send !== handoff_auto_send)) {
+      await api("/api/messages/policy", {
+        method: "PUT",
+        body: { ...messages, allow_comment_handoff: comment_handoff_enabled, auto_send: handoff_auto_send },
+      });
     }
     const timeStr = new Date().toLocaleTimeString();
     if (fb) {
@@ -367,18 +300,19 @@ export async function savePermissionMatrix(api, accountPanel, options = {}) {
     } else if (!isSilent) {
       notice("权限矩阵已保存并即时生效。");
     }
-    await updatePermissionCapsule(api, accountPanel);
   } catch (err) {
+    const message = `${browsingSaved ? "运营设置已保存，私信设置保存失败" : "保存失败"}：${safeMessage(err.message)}`;
     if (fb) {
-      fb.textContent = `保存失败：${safeMessage(err.message)}`;
+      fb.textContent = message;
       fb.style.color = "var(--danger, #d32f2f)";
     } else {
-      notice(err.message, true);
+      notice(message, true);
     }
   }
+  await updatePermissionCapsule(api, accountPanel);
 }
 
-export function initOperationsModule(api, accountPanel, automationPanel) {
+export function initOperationsModule(api, accountPanel) {
   function jumpToPermissionMatrix() {
     location.hash = "operations-permission-matrix";
   }
@@ -421,24 +355,31 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
 
   const roundForm = $("op-round-settings");
   if (roundForm) {
-    roundForm.addEventListener("input", () => { roundSettingsDirty = true; });
+    const feedback = $("op-round-settings-note");
+    roundForm.addEventListener("input", () => { roundSettingsDirty = true; feedback.textContent = "有未保存的修改。"; });
     roundForm.onsubmit = async event => {
       event.preventDefault();
       const save = $("op-save-quick-config");
       if (save.disabled) return;
-      const payload = {
-        max_replies_per_video: Number($("op-max-replies").value),
-        interval_seconds: Number($("op-interval").value),
-      };
+      const payload = Object.fromEntries(roundNumberFields.map(([name, id]) => [name, Number($(id).value)]));
+      payload.visual_enabled = $("exp-visual-enabled").checked;
+      const fields = [...roundForm.querySelectorAll("input")];
+      roundSettingsSaving = true;
       save.disabled = true;
+      for (const field of fields) field.disabled = true;
+      feedback.textContent = "正在保存轮次参数…";
       try {
-        await api("/api/automation/settings", { method: "PUT", body: payload });
+        const status = await api("/api/automation/settings", { method: "PUT", body: payload });
+        ++statusRequest;
+        currentAutomationStatus = status;
         roundSettingsDirty = false;
-        notice("轮次设置已保存。");
-        await updatePermissionCapsule(api, accountPanel);
+        renderOperationsQuickBar(status);
+        feedback.textContent = "轮次参数已保存，从下一轮起使用。";
       } catch (err) {
-        notice(err.message, true);
+        feedback.textContent = `保存失败：${safeMessage(err.message)}`;
       } finally {
+        roundSettingsSaving = false;
+        for (const field of fields) field.disabled = false;
         save.disabled = false;
       }
     };
@@ -449,7 +390,6 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
       try {
         await api("/api/automation/round", { method: "POST", body: { preview: true } });
         notice("单轮运营预览已排队启动，候选将存为待审核草稿。");
-        await automationPanel?.refresh();
         await updatePermissionCapsule(api, accountPanel);
       } catch (e) {
         notice(e.message, true);
@@ -469,7 +409,6 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
         }
         await api("/api/automation/enable", { method: "POST", body: { enabled: target } });
         notice(target ? "自主运营已开启。" : "自主运营已停止。");
-        await automationPanel?.refresh();
         await updatePermissionCapsule(api, accountPanel);
       } catch (e) {
         notice(e.message, true);
@@ -482,7 +421,6 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
       try {
         await api("/api/automation/stop", { method: "POST", body: { emergency: false } });
         notice("已请求中止当前轮次。");
-        await automationPanel?.refresh();
         await updatePermissionCapsule(api, accountPanel);
       } catch (e) {
         notice(e.message, true);
@@ -503,7 +441,6 @@ export function initOperationsModule(api, accountPanel, automationPanel) {
       } finally {
         $(id).disabled = false;
         await updatePermissionCapsule(api, accountPanel);
-        await automationPanel?.refresh();
       }
     };
   }

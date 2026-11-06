@@ -31,7 +31,7 @@ class BilibiliAccountUI {
         <div class="actions"><button data-save type="submit" class="primary" disabled>保存账号凭证</button><button data-verify type="button">验证登录 / 刷新资料</button><button data-clear type="button" class="danger">清除已保存凭证</button></div>
       </fieldset></form><p data-account-warnings class="hint account-feedback" role="status" hidden></p><p data-account-feedback class="hint account-feedback" role="status"></p>
     </article>
-    <article class="panel" aria-labelledby="management-login-heading"><div class="panel-heading"><h2 id="management-login-heading">工作台管理登录</h2></div><p class="hint">同一浏览器可保持登录。退出、清除浏览器数据或重置管理令牌后，需要重新登录。</p><p class="hint">重置令牌会立即退出所有管理登录，新令牌仅在重置成功后显示一次。</p><button data-reset-open type="button" class="danger">重置管理令牌…</button></article>`;
+    <article class="panel" data-remote-management aria-labelledby="management-login-heading"><div class="panel-heading"><h2 id="management-login-heading">工作台远程登录</h2></div><p class="hint">同一浏览器可保持登录。退出、清除浏览器数据或重置管理令牌后，需要重新登录。</p><p class="hint">重置令牌会立即退出所有远程管理登录，新令牌仅在重置成功后显示一次。</p><button data-reset-open type="button" class="danger">重置管理令牌…</button></article>`;
     this.s = selector => this.settings.querySelector(selector);
     this.s("[data-credentials-form]").onsubmit = event => { event.preventDefault(); this.saveCredentials(); };
     this.s("[data-sessdata]").oninput = this.s("[data-csrf]").oninput = () => this.renderControls();
@@ -49,6 +49,7 @@ class BilibiliAccountUI {
     this.d("[data-token-done]").onclick = () => { this.d("[data-new-token]").value = ""; this.tokenPresented = false; this.dialog.close(); document.getElementById("token")?.focus(); };
     this.dialog.addEventListener("cancel", event => { if (this.resetPending || this.tokenPresented) event.preventDefault(); });
   }
+  setLocalAccess(enabled) { if (this.settings) this.s("[data-remote-management]").hidden = enabled; }
   async activate() { this.active = true; await this.load(); await this.verifyIfNeeded(); }
   async settingsOpened() { await this.load(); await this.verifyIfNeeded(); }
   async verifyIfNeeded() { if (this.value?.configured?.sessdata && this.value.state === "unverified" && Date.now() - this.lastRefreshAttempt > 30000) await this.refreshProfile(); }

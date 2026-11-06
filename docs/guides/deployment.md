@@ -7,9 +7,9 @@
     uv sync --python 3.12
     uv run python -m tuber_studio --port 8020
 
-打开本地8020，管理令牌从runtime/admin-token读取，不放URL。配置读取runtime/studio.json，不存在时用config/studio.example.json；Provider／API／窗口可在设置页保存并应用，手工编辑配置文件后才需要重启。业务服务启动不代表模型／TTS已经加载或通过容量验证。
+直接打开 `http://127.0.0.1:8020` 即可使用个人工作台。配置读取runtime/studio.json，不存在时用config/studio.example.json；Provider／API／窗口可在设置页保存并应用，手工编辑配置文件后才需要重启。业务服务启动不代表模型／TTS已经加载或通过容量验证。
 
-首次登录后浏览器保留管理会话。保留runtime/studio.sqlite3和admin-token即可跨服务重启及代码更新继续使用；不要把数据卷当程序更新目录清空。主动退出仅撤销当前管理会话；设置页重置令牌会退出所有管理会话并一次性显示新令牌，OBS不受影响。TUBER_ADMIN_TOKEN配置的令牌需在环境中更新。旧版内存会话不能迁移恢复，首次升级可能需要登录一次；之后活动会话按日续期，不要求每次启动重新输入。浏览器清除登录数据后重新登录。
+远程或代理访问从 `runtime/admin-token` 读取管理令牌，登录后浏览器保留会话。保留 `runtime/studio.sqlite3` 和 `admin-token` 可跨服务重启及代码更新继续使用。远程管理设置可重置令牌和退出登录。若部署显式设置 `TUBER_ADMIN_TOKEN`，本机访问也使用该令牌，轮换在环境中完成。
 
 B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留空不覆盖；显式清除才移除。顶部验证实际UID、头像、硬币和粉丝数，未知统计显示“—”；自动状态读取只查本地缓存，验证及刷新才只读访问平台。同一凭据的上次成功资料与核验时间持久保存，重启或暂时查询失败仍可查看，超过5分钟标注待验证；明确失效、换账号或清除凭据才移除旧资料。退出管理界面不清除B站凭证。
 
@@ -167,7 +167,7 @@ Dockerfile 的 program-base／ready 目标用于构建环境。构建上下文�
 
     powershell -File tools/windows-tunnel.ps1
 
-默认本地8021转发Jetson回环9020；可用-LocalPort改本地端口。打开 [Jetson工作台](http://127.0.0.1:8021)，从Jetson项目runtime/admin-token在本机终端取得管理令牌，不复制到公开配置。无需公开9011／9012／9013，OBS使用同一后台生成的独立overlay链接。
+默认本地8021转发Jetson回环9020；可用 `-LocalPort` 改本地端口。打开 [Jetson工作台](http://127.0.0.1:8021)。Docker 桥接部署由容器看到桥接连接，登录时从 Jetson 数据目录的 `admin-token` 读取令牌。OBS使用同一后台生成的独立overlay链接。
 
 电脑业务模式按上文直接访问电脑后端，不需要把整套Jetson后台转发回来；设置页分别显示业务主机与推理节点资源。
 

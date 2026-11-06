@@ -8,6 +8,13 @@ const statuses = {
   private_handoff: "已转私信", queued: "排队中", running: "处理中", completed: "已完成",
   failed: "失败", partial: "部分完成", cancelled: "已取消",
 };
+export const commentQueueViews = ["review", "verify", "processing", "history"];
+const queueViewForStatus = status => {
+  if (["pending_review", "approved"].includes(status)) return "review";
+  if (status === "publish_uncertain") return "verify";
+  if (["queued", "running", "publishing"].includes(status)) return "processing";
+  return "history";
+};
 const keyOf = row => row && `${row.channel}/${row.id}`;
 
 function link(label, href) {
@@ -45,7 +52,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
   const list = $("queue-list"), detail = $("queue-detail"), feedback = $("queue-feedback");
   const filter = $("queue-view"), sourcesButton = $("open-manual-comments");
   const draftEdits = new Map();
-  let view = "review", offset = 0, routeKey = null, selected = null, version = 0;
+  let view = "review", offset = 0, routeKey = null, inferRouteView = false, selected = null, version = 0;
   let rows = [], listSignature = "", detailSignature = "", active = false, busy = false, loaded = false, focusedKey = null;
 
   function emptyDetail(text) {
@@ -54,13 +61,13 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
   }
 
   function renderRows(data) {
-    const signature = JSON.stringify([data.items, selected]);
+    const signature = JSON.stringify([view, data.items, selected]);
     if (signature !== listSignature) {
       const focused = document.activeElement?.closest("[data-queue-key]")?.dataset.queueKey;
       list.replaceChildren();
       for (const row of data.items) {
         const id = keyOf(row);
-        const item = link("", `#comments/${id}`);
+        const item = link("", `#comments/${view}/${id}`);
         item.dataset.queueKey = id;
         item.className = "queue-row";
         if (id === selected) item.setAttribute("aria-current", "true");
@@ -112,7 +119,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
     editor.rows = 5;
     editor.value = draftEdits.get(key) ?? row.text ?? "";
     editor.readOnly = !editable;
-    const field = node("label", "草稿正文");
+    const field = node("label", status === "published" ? "回复正文" : "草稿正文");
     field.append(editor);
     detail.append(field);
     const actions = node("div", null, "actions");
@@ -206,8 +213,15 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
   async function refresh(forceDetail = false) {
     if (!active || view === "sources") return;
     const request = ++version;
-    if (!loaded) feedback.textContent = "正在读取评论待办…";
+    if (!loaded) feedback.textContent = "正在读取评论记录…";
     try {
+      let routedDetail;
+      if (routeKey && inferRouteView) {
+        routedDetail = await api(`/api/comments/workbench/${routeKey}`);
+        if (request !== version || !active) return;
+        setView(queueViewForStatus(routedDetail.status));
+        inferRouteView = false;
+      }
       const data = await api(`/api/comments/workbench?view=${view}&limit=${pageSize}&offset=${offset}`);
       if (request !== version || !active) return;
       loaded = true;
@@ -224,9 +238,9 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
         feedback.append("此视图暂无记录。", link(idle ? " 前往开始自动刷视频" : " 查看自动刷视频状态", "#automation"));
       }
       if (!selected) emptyDetail("选择一条记录查看来源和下一步操作。");
-      else if (forceDetail || !detailSignature || previous !== selected || previousRow?.updated_at !== current?.updated_at || (routeKey && !current)) {
+      else if (routedDetail || forceDetail || !detailSignature || previous !== selected || previousRow?.updated_at !== current?.updated_at || (routeKey && !current)) {
         const key = selected;
-        const row = await api(`/api/comments/workbench/${key}`);
+        const row = routedDetail || await api(`/api/comments/workbench/${key}`);
         if (request === version && active) renderDetail(key, row);
       }
     } catch (error) {
@@ -235,11 +249,17 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
     }
   }
 
+  function setView(nextView) {
+    if (view !== nextView) offset = 0;
+    view = nextView;
+    if (view !== "sources") filter.value = view;
+  }
+
   function open(nextView, nextKey = null) {
     active = true;
-    if (nextView) view = nextView;
-    else if (view === "sources") view = filter.value;
+    setView(nextView || (view === "sources" ? filter.value : view));
     routeKey = nextKey;
+    inferRouteView = Boolean(routeKey && !nextView);
     $("comment-sources").hidden = view !== "sources";
     $("comment-queue").hidden = view === "sources";
     sourcesButton.textContent = view === "sources" ? "返回草稿待办" : "评论来源与手动取材";
@@ -248,14 +268,21 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
     return refresh();
   }
 
+  function clearLinkedRecord(nextView) {
+    const hash = `#comments/${nextView}`;
+    if (location.hash !== hash) history.pushState(null, "", hash);
+    routeKey = null;
+    inferRouteView = false;
+  }
+
   filter.onchange = () => {
     offset = 0;
-    if (location.hash !== "#comments") history.pushState(null, "", "#comments");
+    clearLinkedRecord(filter.value);
     return open(filter.value);
   };
   sourcesButton.onclick = () => { location.hash = view === "sources" ? "comments" : "comment-acquisition"; };
-  $("queue-prev").onclick = () => { offset = Math.max(0, offset - pageSize); return refresh(); };
-  $("queue-next").onclick = () => { offset += pageSize; return refresh(); };
+  $("queue-prev").onclick = () => { clearLinkedRecord(view); offset = Math.max(0, offset - pageSize); return refresh(); };
+  $("queue-next").onclick = () => { clearLinkedRecord(view); offset += pageSize; return refresh(); };
   emptyDetail("选择一条记录查看来源和下一步操作。");
   return {
     open, refresh: () => !busy && refresh(), isSources: () => active && view === "sources",

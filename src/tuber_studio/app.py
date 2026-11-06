@@ -1,7 +1,8 @@
-"""Authenticated local management API and separately scoped OBS playback channel."""
+"""Local workbench, authenticated remote management, and scoped OBS playback."""
 
 import asyncio
 import json
+import os
 import secrets
 import time
 import weakref
@@ -120,10 +121,28 @@ def create_app(
     app.state.memes = memes
     app.state.auth_sessions = sessions
 
+    def local_access(connection):
+        loopback = {"127.0.0.1", "::1"}
+        return (
+            not os.getenv("TUBER_ADMIN_TOKEN")
+            and connection.client is not None
+            and connection.client.host in loopback
+            and "host" in connection.headers
+            and connection.url.hostname in loopback | {"localhost"}
+            and connection.headers.get("sec-fetch-site") != "cross-site"
+            and not any(
+                header in connection.headers
+                for header in ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto")
+            )
+            and same_origin(connection)
+        )
+
     def admin_ok(connection):
         bearer = connection.headers.get("authorization", "")
-        return sessions.valid(connection.cookies.get(COOKIE_NAME)) or (
-            bearer.startswith("Bearer ") and sessions.authenticate(bearer[7:])
+        return (
+            local_access(connection)
+            or sessions.valid(connection.cookies.get(COOKIE_NAME))
+            or (bearer.startswith("Bearer ") and sessions.authenticate(bearer[7:]))
         )
 
     def admin_cookie(response, request, session):
@@ -287,6 +306,7 @@ def create_app(
     @app.get("/api/settings", dependencies=[Depends(require_admin)])
     async def config(request: Request):
         return settings.public_data() | {
+            "local_access": local_access(request),
             "config_path": str(settings.path),
             "overlay_url": str(request.base_url).rstrip("/") + "/overlay#token=" + settings.overlay_token,
             "platform": "Mock；B站评论已接入，B站／抖音直播后置",

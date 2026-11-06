@@ -1,4 +1,4 @@
-"""Exercise the shared browser account and request clients in Node."""
+"""Exercise browser account, operations, and request clients in Node."""
 
 import shutil
 import subprocess
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize("script", ["account_ui.test.cjs", "web_api.test.cjs"])
+@pytest.mark.parametrize("script", ["account_ui.test.cjs", "web_api.test.cjs", "web_operations.test.cjs"])
 def test_shared_web_clients(script):
     node = shutil.which("node")
     if not node:
