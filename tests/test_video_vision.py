@@ -200,13 +200,18 @@ async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(pr
     scene = LiveScene("session-1", time.monotonic(), "关卡开始", PNG, "image/png", 1, 1)
     messages = [{"role": "user", "content": "你看到了什么？"}]
     config = {
-        "kind": "llama_cpp", "model": "actual-vlm", "context_tokens": 131072,
+        "kind": "llama_cpp",
+        "model": "actual-vlm",
+        "context_tokens": 131072,
         "base_url": "http://127.0.0.1:18080",
     }
     assert await value.generate_live_reply(scene, messages, config | {"model": "other"}, "live-1") is None
-    assert await value.generate_live_reply(
-        scene, messages, config | {"base_url": "http://127.0.0.1:18081"}, "live-1"
-    ) is None
+    assert (
+        await value.generate_live_reply(
+            scene, messages, config | {"base_url": "http://127.0.0.1:18081"}, "live-1"
+        )
+        is None
+    )
     result = await value.generate_live_reply(scene, messages, config, "live-1")
     assert result.spoken_text == "画面中是圆形。"
     assert len(generations(state)) == 1 and messages[-1]["content"] == "你看到了什么？"

@@ -13,8 +13,13 @@ from grounded_sft import read_jsonl
 
 def ask(client, model, messages, *, schema=None):
     body = {
-        "model": model, "messages": messages, "temperature": 0, "seed": 42, "max_tokens": 384,
-        "chat_template_kwargs": {"enable_thinking": False}, "stream": False,
+        "model": model,
+        "messages": messages,
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 384,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "stream": False,
     }
     if schema is not None:
         body["response_format"] = {"type": "json_object", "schema": schema}
@@ -51,11 +56,14 @@ def source_notes_schema(aliases, frame_aliases):
             ("visual", [alias for alias in aliases if alias in frame_aliases]),
         ):
             notes[name] = {
-                "type": "object", "additionalProperties": False, "required": ["fact", "refs"],
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["fact", "refs"],
                 "properties": {
                     "fact": {"type": "string", "maxLength": 48 if choices else 0},
                     "refs": {
-                        "type": "array", "maxItems": min(2, len(choices)),
+                        "type": "array",
+                        "maxItems": min(2, len(choices)),
                         "items": {"type": "string", "enum": choices} if choices else {"type": "string"},
                     },
                 },
@@ -76,12 +84,24 @@ def replay(client, model, root, row, prompt, staged, *, evidence_first=False, so
         label = f"{reference}画面 {index}｜{frame['seconds']} 秒"
         if staged:
             query = (
-                label + "。只描述这一帧真实可见、与问题有关的对象、文字或动作。看不清或画面没显示就说明。"
-                + "当前问题：" + row["question"]
+                label
+                + "。只描述这一帧真实可见、与问题有关的对象、文字或动作。看不清或画面没显示就说明。"
+                + "当前问题："
+                + row["question"]
             )
-            capture = ask(client, model, [{"role": "user", "content": [
-                image, {"type": "text", "text": query},
-            ]}])
+            capture = ask(
+                client,
+                model,
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            image,
+                            {"type": "text", "text": query},
+                        ],
+                    }
+                ],
+            )
             metrics.append(capture)
             if capture["finish_reason"] != "stop":
                 raise ValueError(f"视觉观察未完整结束：{capture['finish_reason']}")
@@ -93,30 +113,38 @@ def replay(client, model, root, row, prompt, staged, *, evidence_first=False, so
     elif evidence_first or source_notes:
         frame_aliases = {frame["alias"] for frame in row["frames"]}
         captions = "\n".join(
-            f"[{alias}] {source['text']}" for alias, source in row["references"].items()
+            f"[{alias}] {source['text']}"
+            for alias, source in row["references"].items()
             if alias not in frame_aliases
         )
         instruction = (
             "先在 caption 和 visual 各找一句与问题直接相关的事实及短编号，无关或缺失就留空。"
             "再把找到的事实合成台词，evidence_ids 汇合两边的编号。"
-            if source_notes else "问题有几部分就分别答几部分。字幕事实与画面事实分别引用支持它们的编号。"
+            if source_notes
+            else "问题有几部分就分别答几部分。字幕事实与画面事实分别引用支持它们的编号。"
         )
         viewer["content"] = [
             {"type": "text", "text": "字幕资料：\n" + (captions or "（无字幕）")},
             *images,
-            {"type": "text", "text": (
-                "\n观众问：" + row["question"] + "\n"
-                + instruction + "\n"
-                "关键细节在资料中找不到时，选择 wait。"
-            )},
+            {
+                "type": "text",
+                "text": (
+                    "\n观众问：" + row["question"] + "\n" + instruction + "\n"
+                    "关键细节在资料中找不到时，选择 wait。"
+                ),
+            },
         ]
     elif images:
         viewer["content"] = [*images, {"type": "text", "text": viewer["content"]}]
-    schema = source_notes_schema(row["allowed"], frame_aliases) if source_notes else replay_schema(row["allowed"])
+    schema = (
+        source_notes_schema(row["allowed"], frame_aliases) if source_notes else replay_schema(row["allowed"])
+    )
     result = ask(client, model, messages, schema=schema)
-    record = {
-        key: row[key] for key in ("id", "kind", "question", "criterion", "allowed", "references")
-    } | result | {"observations": metrics}
+    record = (
+        {key: row[key] for key in ("id", "kind", "question", "criterion", "allowed", "references")}
+        | result
+        | {"observations": metrics}
+    )
     if result["finish_reason"] == "stop":
         try:
             record["parsed"] = json.loads(result["text"])
@@ -155,8 +183,14 @@ def main():
         for row in read_jsonl(args.replay / "cases.jsonl"):
             try:
                 result = replay(
-                    client, args.model, args.replay, row, prompt, args.staged,
-                    evidence_first=args.evidence_first, source_notes=args.source_notes,
+                    client,
+                    args.model,
+                    args.replay,
+                    row,
+                    prompt,
+                    args.staged,
+                    evidence_first=args.evidence_first,
+                    source_notes=args.source_notes,
                 )
             except (httpx.HTTPError, ValueError, KeyError, IndexError) as error:
                 result = {"id": row["id"], "error": str(error)}

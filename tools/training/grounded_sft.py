@@ -20,7 +20,8 @@ FOCUSED_EXPECTED = {
     for split, extra in {"train": 160, "validation": 16}.items()
 }
 PERSONA_EXPECTED = {
-    split: FOCUSED_EXPECTED[split] | {
+    split: FOCUSED_EXPECTED[split]
+    | {
         "oc": FOCUSED_EXPECTED[split]["oc"] + oc,
         "video": FOCUSED_EXPECTED[split]["video"] + video,
     }
@@ -35,23 +36,29 @@ DEEPTHINK_EXPECTED = {
     for split, scenes in {"train": 24, "validation": 6}.items()
 }
 PAIRED_EXPECTED = {
-    split: DEEPTHINK_EXPECTED[split] | {
+    split: DEEPTHINK_EXPECTED[split]
+    | {
         "oc": DEEPTHINK_EXPECTED[split]["oc"] + 4 * pairs + 3 * anime,
         "video": FOCUSED_EXPECTED[split]["video"],
     }
     for split, (pairs, anime) in {"train": (12, 14), "validation": (4, 0)}.items()
 }
 PAIRED_CURATED_EXPECTED = PAIRED_EXPECTED | {
-    "train": PAIRED_EXPECTED["train"] | {"oc": PAIRED_EXPECTED["train"]["oc"] - FOCUSED_EXPECTED["train"]["oc"]},
+    "train": PAIRED_EXPECTED["train"]
+    | {"oc": PAIRED_EXPECTED["train"]["oc"] - FOCUSED_EXPECTED["train"]["oc"]},
 }
 PAIRED_TEACHER_EXPECTED = {
     split: PAIRED_CURATED_EXPECTED[split] | {"oc": PAIRED_CURATED_EXPECTED[split]["oc"] + added}
     for split, added in {"train": 24, "validation": 2}.items()
 }
 CURRICULA = {
-    "original": EXPECTED, "mixed-evidence": FOCUSED_EXPECTED, "roleplay": PERSONA_EXPECTED,
-    "roleplay-anime": ANIME_EXPECTED, "roleplay-deepthink": DEEPTHINK_EXPECTED,
-    "roleplay-paired": PAIRED_EXPECTED, "roleplay-paired-curated": PAIRED_CURATED_EXPECTED,
+    "original": EXPECTED,
+    "mixed-evidence": FOCUSED_EXPECTED,
+    "roleplay": PERSONA_EXPECTED,
+    "roleplay-anime": ANIME_EXPECTED,
+    "roleplay-deepthink": DEEPTHINK_EXPECTED,
+    "roleplay-paired": PAIRED_EXPECTED,
+    "roleplay-paired-curated": PAIRED_CURATED_EXPECTED,
     "roleplay-paired-teacher": PAIRED_TEACHER_EXPECTED,
 }
 BOUNDARIES = ("<|im_start|>", "<|im_end|>", "<think>", "</think>", "<image>", "</image>")
@@ -75,7 +82,9 @@ def read_corpus(directory, *, pilot, expected=EXPECTED):
             if identity in ids:
                 raise ValueError(f"duplicate sample ID: {identity}")
             ids.add(identity)
-            if row.get("review") not in {"human", "verified_source", "model_reviewed"} or not row.get("sources"):
+            if row.get("review") not in {"human", "verified_source", "model_reviewed"} or not row.get(
+                "sources"
+            ):
                 raise ValueError(f"{identity}: approval and provenance are required")
             if row["review"] == "model_reviewed" and (
                 row["category"] != "oc" or row.get("review_score") not in {2, 3} or not row.get("reviewer")
@@ -122,9 +131,11 @@ def model_inputs(processor, root, row, *, text_only=False, generation=False):
     from PIL import Image
 
     use_frames = row.get("frames") and not text_only
-    messages = [dict(message) for message in row.get("text_messages", row["messages"])] if text_only else [
-        dict(message) for message in row["messages"]
-    ]
+    messages = (
+        [dict(message) for message in row.get("text_messages", row["messages"])]
+        if text_only
+        else [dict(message) for message in row["messages"]]
+    )
     images = []
     if use_frames:
         if messages[-2]["role"] != "user":
@@ -137,10 +148,12 @@ def model_inputs(processor, root, row, *, text_only=False, generation=False):
             with Image.open(path) as image:
                 images.append(image.convert("RGB"))
             alias = f"[{frame['alias']}] " if frame.get("alias") else ""
-            content.extend([
-                {"type": "text", "text": f"\n{alias}画面 {index}｜{frame['seconds']} 秒\n"},
-                {"type": "image"},
-            ])
+            content.extend(
+                [
+                    {"type": "text", "text": f"\n{alias}画面 {index}｜{frame['seconds']} 秒\n"},
+                    {"type": "image"},
+                ]
+            )
         content.append({"type": "text", "text": "\n" + messages[-2]["content"]})
         messages[-2]["content"] = content
     rendered = processor.apply_chat_template(
@@ -149,7 +162,9 @@ def model_inputs(processor, root, row, *, text_only=False, generation=False):
         add_generation_prompt=generation,
         enable_thinking=False,
     )
-    return dict(processor(text=rendered, images=images or None, add_special_tokens=False, return_tensors="pt"))
+    return dict(
+        processor(text=rendered, images=images or None, add_special_tokens=False, return_tensors="pt")
+    )
 
 
 def assistant_spans(tokenizer, ids):
@@ -211,8 +226,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--strategy", choices=("text", "vision"), required=True)
     parser.add_argument("--curriculum", choices=CURRICULA, default="original")
-    parser.add_argument("--current-live-turn-only", action="store_true", help="mask spoken history on marked live-reply rows")
-    parser.add_argument("--roleplay-repeat", type=int, default=1, help="training-only repeat of authored roleplay rows")
+    parser.add_argument(
+        "--current-live-turn-only", action="store_true", help="mask spoken history on marked live-reply rows"
+    )
+    parser.add_argument(
+        "--roleplay-repeat", type=int, default=1, help="training-only repeat of authored roleplay rows"
+    )
     parser.add_argument("--init-adapter", type=Path, help="initialize a new run from adapter weights")
     parser.add_argument("--use-dora", action="store_true", help="initialize a DoRA adapter instead of LoRA")
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -245,14 +264,19 @@ def main():
     training_rows = splits["train"]
     if args.roleplay_repeat > 1:
         authored = [
-            row for row in training_rows
-            if row["id"].startswith("original-oc-") or row["id"].endswith(("-oc-reaction", "-oc-reaction-wire"))
+            row
+            for row in training_rows
+            if row["id"].startswith("original-oc-")
+            or row["id"].endswith(("-oc-reaction", "-oc-reaction-wire"))
         ]
         training_rows = training_rows + authored * (args.roleplay_repeat - 1)
     processor = load_processor(args.base)
     datasets = {
         split: Examples(
-            rows, processor, root, text_only=args.strategy == "text",
+            rows,
+            processor,
+            root,
+            text_only=args.strategy == "text",
             current_live_turn_only=args.current_live_turn_only,
         )
         for split, rows in splits.items()
@@ -266,7 +290,10 @@ def main():
         print(f"{split}: {len(dataset)}", flush=True)
     if args.roleplay_repeat > 1:
         datasets["train"] = Examples(
-            training_rows, processor, root, text_only=args.strategy == "text",
+            training_rows,
+            processor,
+            root,
+            text_only=args.strategy == "text",
             current_live_turn_only=args.current_live_turn_only,
         )
 
@@ -277,23 +304,33 @@ def main():
     base.config.downsample_mode = "4x"
     base.config.use_cache = False
     targets = [
-        name for name, module in base.named_modules()
+        name
+        for name, module in base.named_modules()
         if name.startswith("model.language_model.")
         and isinstance(module, torch.nn.Linear)
-        and name.rsplit(".", 1)[-1] in {"q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"}
+        and name.rsplit(".", 1)[-1]
+        in {"q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"}
     ]
     if not targets:
         raise ValueError("no language projections matched the pinned checkpoint")
     model = (
         PeftModel.from_pretrained(base, str(args.init_adapter), is_trainable=True)
         if args.init_adapter
-        else get_peft_model(base, LoraConfig(
-            r=16, lora_alpha=32, lora_dropout=0.05, target_modules=targets, use_dora=args.use_dora,
-        ))
+        else get_peft_model(
+            base,
+            LoraConfig(
+                r=16,
+                lora_alpha=32,
+                lora_dropout=0.05,
+                target_modules=targets,
+                use_dora=args.use_dora,
+            ),
+        )
     )
     if any(
         "model.language_model." not in name
-        for name, parameter in model.named_parameters() if parameter.requires_grad
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
     ):
         raise ValueError("trainable parameters escaped the language backbone")
     model.print_trainable_parameters()
@@ -329,17 +366,35 @@ def main():
     result = trainer.train(resume_from_checkpoint=str(args.resume) if args.resume else None)
     trainer.save_model(str(args.output / "adapter"))
     processor.save_pretrained(args.output / "processor")
-    (args.output / "run.json").write_text(json.dumps({
-        "base": MODEL, "revision": REVISION, "strategy": args.strategy, "pilot": args.pilot,
-        "curriculum": args.curriculum, "init_adapter": str(args.init_adapter) if args.init_adapter else None,
-        "learning_rate": args.learning_rate, "epochs": args.epochs,
-        "current_live_turn_only": args.current_live_turn_only,
-        "adapter_method": "dora" if model.peft_config["default"].use_dora else "lora",
-        "roleplay_repeat": args.roleplay_repeat, "train_examples_per_epoch": len(training_rows),
-        "counts": {split: dict(Counter(row["category"] for row in rows)) for split, rows in splits.items()},
-        "train": result.metrics, "checkpoints": trainer.state.log_history,
-        "dependencies": {name: version(name) for name in ("torch", "transformers", "peft", "accelerate")},
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    (args.output / "run.json").write_text(
+        json.dumps(
+            {
+                "base": MODEL,
+                "revision": REVISION,
+                "strategy": args.strategy,
+                "pilot": args.pilot,
+                "curriculum": args.curriculum,
+                "init_adapter": str(args.init_adapter) if args.init_adapter else None,
+                "learning_rate": args.learning_rate,
+                "epochs": args.epochs,
+                "current_live_turn_only": args.current_live_turn_only,
+                "adapter_method": "dora" if model.peft_config["default"].use_dora else "lora",
+                "roleplay_repeat": args.roleplay_repeat,
+                "train_examples_per_epoch": len(training_rows),
+                "counts": {
+                    split: dict(Counter(row["category"] for row in rows)) for split, rows in splits.items()
+                },
+                "train": result.metrics,
+                "checkpoints": trainer.state.log_history,
+                "dependencies": {
+                    name: version(name) for name in ("torch", "transformers", "peft", "accelerate")
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

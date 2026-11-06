@@ -1,21 +1,27 @@
 """Score fixed spoken replies directly, without sampling or A/B output labels."""
+
 import argparse
-from pathlib import Path
 import json
+from pathlib import Path
 
 import torch
-from peft import PeftModel
-from transformers import AutoModelForImageTextToText
-
 from grounded_sft import load_processor, read_jsonl
+from peft import PeftModel
 from probe_grounded_live import plain_messages
+from transformers import AutoModelForImageTextToText
 
 
 def continuation_score(model, tokenizer, prompt, answer):
-    encoded = tokenizer(prompt + answer, add_special_tokens=False, return_offsets_mapping=True, return_tensors="pt")
+    encoded = tokenizer(
+        prompt + answer, add_special_tokens=False, return_offsets_mapping=True, return_tensors="pt"
+    )
     offsets = encoded.pop("offset_mapping")[0].tolist()
     positions = torch.tensor(
-        [i for i, (start, end) in enumerate(offsets) if end > len(prompt) and start < len(prompt) + len(answer)],
+        [
+            i
+            for i, (start, end) in enumerate(offsets)
+            if end > len(prompt) and start < len(prompt) + len(answer)
+        ],
         device=model.device,
     )
     if not len(positions) or positions[0] == 0:
@@ -39,11 +45,12 @@ def score(args, model, processor):
         ):
             prompt = processor.apply_chat_template(
                 plain_messages(previous, spec["history_reply"], latest),
-                tokenize=False, add_generation_prompt=True, enable_thinking=False,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
             )
             rows[mode] = [
-                continuation_score(model, processor.tokenizer, prompt, answer)
-                for answer in spec["options"]
+                continuation_score(model, processor.tokenizer, prompt, answer) for answer in spec["options"]
             ]
         yield case | {"candidates": spec["options"], "scores": rows}
 
@@ -55,7 +62,10 @@ def main():
     args = parser.parse_args()
     processor = load_processor(args.base)
     model = AutoModelForImageTextToText.from_pretrained(
-        args.base, dtype=torch.bfloat16, local_files_only=True, device_map={"": "cuda:0"},
+        args.base,
+        dtype=torch.bfloat16,
+        local_files_only=True,
+        device_map={"": "cuda:0"},
     )
     model = PeftModel.from_pretrained(model, str(args.adapter)).eval()
     with torch.inference_mode():

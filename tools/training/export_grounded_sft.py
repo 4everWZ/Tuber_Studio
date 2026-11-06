@@ -15,7 +15,9 @@ ENGINE = "0ec4027a2a0183de87c007069adddc06e665f7de"
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", type=Path, required=True)
-    parser.add_argument("--reference-model", type=Path, help="merged BF16 reference used to train this delta adapter")
+    parser.add_argument(
+        "--reference-model", type=Path, help="merged BF16 reference used to train this delta adapter"
+    )
     parser.add_argument("--adapter", type=Path, required=True)
     parser.add_argument("--adapter-scale", type=float, default=1)
     parser.add_argument("--llama-cpp", type=Path, required=True)
@@ -38,7 +40,9 @@ def main():
     merged = args.output / "merged"
     processor = load_processor(args.base)
     model = AutoModelForImageTextToText.from_pretrained(
-        args.reference_model or args.base, dtype=torch.bfloat16, local_files_only=True,
+        args.reference_model or args.base,
+        dtype=torch.bfloat16,
+        local_files_only=True,
     )
     model = PeftModel.from_pretrained(model, str(args.adapter))
     for module in model.modules():
@@ -55,7 +59,8 @@ def main():
     )
     converter = [sys.executable, str(args.llama_cpp / "convert_hf_to_gguf.py"), str(merged)]
     fp16, projector, model_file = (
-        args.output / "model-f16.gguf", args.output / "mmproj-4x-f16.gguf",
+        args.output / "model-f16.gguf",
+        args.output / "mmproj-4x-f16.gguf",
         args.output / "MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf",
     )
     subprocess.run([*converter, "--no-mtp", "--outtype", "f16", "--outfile", str(fp16)], check=True)
@@ -67,12 +72,25 @@ def main():
     files = {}
     for artifact in (model_file, projector):
         with artifact.open("rb") as stream:
-            files[artifact.name] = {"bytes": artifact.stat().st_size, "sha256": hashlib.file_digest(stream, "sha256").hexdigest()}
-    (args.output / "bundle.json").write_text(json.dumps({
-        "model_alias": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded", "base_revision": REVISION, "engine_revision": engine,
-        "adapter": str(args.adapter), "adapter_scale": args.adapter_scale, "artifacts": files,
-        **({"reference_model": str(args.reference_model)} if args.reference_model else {}),
-    }, indent=2), encoding="utf-8")
+            files[artifact.name] = {
+                "bytes": artifact.stat().st_size,
+                "sha256": hashlib.file_digest(stream, "sha256").hexdigest(),
+            }
+    (args.output / "bundle.json").write_text(
+        json.dumps(
+            {
+                "model_alias": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+                "base_revision": REVISION,
+                "engine_revision": engine,
+                "adapter": str(args.adapter),
+                "adapter_scale": args.adapter_scale,
+                "artifacts": files,
+                **({"reference_model": str(args.reference_model)} if args.reference_model else {}),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

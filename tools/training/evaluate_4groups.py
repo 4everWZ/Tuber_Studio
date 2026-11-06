@@ -36,8 +36,14 @@ COMPACT_SYSTEM_PROMPT = """你叫大肥鱼，Q版鲸鱼娘主播。机灵爱逗�
 
 FEW_SHOT_EXAMPLES = [
     {"user": "鱼鱼今天吃什么？", "assistant": "当然是白饭呀，再给我加一勺！"},
-    {"user": "刚才那段讲得真好，我听明白了。", "assistant": "真的？那我再得意一小会儿。尾巴怎么自己摇起来了……"},
-    {"user": "今天忙了一整天，心里还是闷闷的。", "assistant": "过来坐会儿，鱼鱼陪着。想吐槽我就听，想安静一点也行。"},
+    {
+        "user": "刚才那段讲得真好，我听明白了。",
+        "assistant": "真的？那我再得意一小会儿。尾巴怎么自己摇起来了……",
+    },
+    {
+        "user": "今天忙了一整天，心里还是闷闷的。",
+        "assistant": "过来坐会儿，鱼鱼陪着。想吐槽我就听，想安静一点也行。",
+    },
 ]
 
 
@@ -105,7 +111,9 @@ def build_group_messages(group: str, user_prompt: str) -> list[dict[str, str]]:
     raise ValueError(f"Unknown group: {group}")
 
 
-def evaluate_response_quality(reply: str, expected_traits: list[str], disallowed: list[str]) -> dict[str, Any]:
+def evaluate_response_quality(
+    reply: str, expected_traits: list[str], disallowed: list[str]
+) -> dict[str, Any]:
     """Scores response on character traits presence and lack of robotic patterns."""
     matched_traits = [trait for trait in expected_traits if any(t in reply for t in trait.split("/"))]
     violations = [p for p in disallowed if p in reply]
@@ -142,14 +150,18 @@ def generate_markdown_report(results: list[dict[str, Any]], model_label: str) ->
         for grp_key in ["A", "B", "C", "D"]:
             res = case["groups"][grp_key]
             reply_escaped = res["reply"].replace("\n", "<br>").replace("|", "\\|")
-            violation_str = "❌ " + ",".join(res["eval"]["violations"]) if res["eval"]["violations"] else "✅ 无"
+            violation_str = (
+                "❌ " + ",".join(res["eval"]["violations"]) if res["eval"]["violations"] else "✅ 无"
+            )
             lines.append(
                 f"| **组 {grp_key}** | {reply_escaped} | {res['eval']['char_len']} | {res['eval']['score']} | {violation_str} |"
             )
         lines.append("\n")
 
     lines.append("## 结论与人设收益分析")
-    lines.append("1. **组 C vs 组 A**：验证了微调后是否能彻底摆脱长提示词依赖，在极简 Prompt 下依然保持“大肥鱼”口吻与小动作。")
+    lines.append(
+        "1. **组 C vs 组 A**：验证了微调后是否能彻底摆脱长提示词依赖，在极简 Prompt 下依然保持“大肥鱼”口吻与小动作。"
+    )
     lines.append("2. **组 C vs 组 B**：排除了 Few-Shot 示例对结果的修饰效应，直接考察权重内化的人设深度。")
     lines.append("3. **违规抑制**：检查 SimPO 对“作为一个AI/无法感受”等机器人腔调的消除效果。")
     return "\n".join(lines)
@@ -158,7 +170,9 @@ def generate_markdown_report(results: list[dict[str, Any]], model_label: str) ->
 def main():
     parser = argparse.ArgumentParser(description="Run 4-group comparative persona evaluation.")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH, help="Path to eval cases json")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_REPORT, help="Output markdown report path")
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT_REPORT, help="Output markdown report path"
+    )
     parser.add_argument("--model-label", type=str, default="MiniCPM-V-4.7-1B", help="Model name label")
     parser.add_argument("--base-model", type=str, default=None, help="Base model HF repo or local directory")
     parser.add_argument("--merged-model", type=str, default=None, help="Merged model directory")
@@ -170,14 +184,16 @@ def main():
 
     evaluated_cases = []
     for c in cases:
-        evaluated_cases.append({
-            "id": c["id"],
-            "title": c.get("title", c["id"]),
-            "prompt": c["prompt"],
-            "expected_traits": c.get("expected_traits", []),
-            "disallowed_patterns": c.get("disallowed_patterns", c.get("disallowed", [])),
-            "groups": {},
-        })
+        evaluated_cases.append(
+            {
+                "id": c["id"],
+                "title": c.get("title", c["id"]),
+                "prompt": c["prompt"],
+                "expected_traits": c.get("expected_traits", []),
+                "disallowed_patterns": c.get("disallowed_patterns", c.get("disallowed", [])),
+                "groups": {},
+            }
+        )
 
     if not args.mock and args.base_model and args.merged_model:
         import torch
@@ -194,7 +210,9 @@ def main():
                     device_map="auto",
                 )
             except Exception as e:
-                logger.info("AutoModelForImageTextToText failed (%s), falling back to AutoModelForCausalLM...", e)
+                logger.info(
+                    "AutoModelForImageTextToText failed (%s), falling back to AutoModelForCausalLM...", e
+                )
                 model = AutoModelForCausalLM.from_pretrained(
                     model_path,
                     dtype=torch.bfloat16,
@@ -217,7 +235,7 @@ def main():
                     eos_token_id=tokenizer.eos_token_id,
                     pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
                 )
-            gen_ids = output_ids[0][inputs["input_ids"].shape[1]:]
+            gen_ids = output_ids[0][inputs["input_ids"].shape[1] :]
             return tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
 
         # Step 1: Base Model (Groups A and B)
@@ -239,6 +257,7 @@ def main():
         del base_model
         del base_tok
         import gc
+
         gc.collect()
         torch.cuda.empty_cache()
 

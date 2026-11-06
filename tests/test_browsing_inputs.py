@@ -445,7 +445,9 @@ def test_content_view_does_not_replace_full_persona_for_response_generation(brow
     row = {"character_id": character["id"], "character_version": character["version"]}
     value = material()
     data, _ = browsing.decisions._content_presentation(value, row).present(segments(value))
-    _, messages, schema = browsing.decisions._model_input(row, ContentDecision, data, browsing.decisions._content_instruction())
+    _, messages, schema = browsing.decisions._model_input(
+        row, ContentDecision, data, browsing.decisions._content_instruction()
+    )
     assert messages[0]["content"] == "角色：" + view["brief"]
     assert messages[1]["content"] == CLASSIFICATION_INSTRUCTION
     assert messages[-1]["content"] == "公开来源材料：" + compact_content_input(data)
@@ -477,16 +479,23 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
 
     value = material()
     data, _ = browsing.decisions._content_presentation(value, row).present(segments(value))
-    _, classify, _ = browsing.decisions._model_input(row, ContentDecision, data, browsing.decisions._content_instruction())
-    _, engagement, _ = browsing.decisions._model_input(row, VideoEngagementDecision, {"title": "盐水实验"}, "判断是否点赞")
+    _, classify, _ = browsing.decisions._model_input(
+        row, ContentDecision, data, browsing.decisions._content_instruction()
+    )
+    _, engagement, _ = browsing.decisions._model_input(
+        row, VideoEngagementDecision, {"title": "盐水实验"}, "判断是否点赞"
+    )
     assert classify[0]["content"] == engagement[0]["content"] == DAFEIYU_IDENTITY
 
     for kind in ("top_level", "thread_reply"):
         response = {
-            "kind": kind, "coverage": "sampled_visual",
+            "kind": kind,
+            "coverage": "sampled_visual",
             "evidence": [{"id": "source", "text": "原始素材", "start": 0, "end": 2}],
         }
-        _, reply, schema = browsing.decisions._model_input(row, ResponseDecision, response, RESPONSE_INSTRUCTION)
+        _, reply, schema = browsing.decisions._model_input(
+            row, ResponseDecision, response, RESPONSE_INSTRUCTION
+        )
         assert reply[0]["content"] == GROUNDED_DAFEIYU_CARD
         assert "evidence_ids选择本次短编号" in reply[1]["content"]
         assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
@@ -494,7 +503,8 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
             assert "分别引用" in reply[1]["content"]
 
     custom = character | {
-        "persona_type": "fine_tuned", "fine_tuned_model": GROUNDED_DAFEIYU_MODEL,
+        "persona_type": "fine_tuned",
+        "fine_tuned_model": GROUNDED_DAFEIYU_MODEL,
         "compact_system_prompt": "一张明确绑定的角色短卡。",
     }
     assert built_in_anchor(custom, settings) == custom["compact_system_prompt"]

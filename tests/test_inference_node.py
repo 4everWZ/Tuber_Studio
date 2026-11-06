@@ -171,10 +171,13 @@ async def test_node_accepts_persistent_bearer_pairing_and_exposes_actual_capabil
     await broker.close()
 
 
-@pytest.mark.parametrize("profile,key,alias", [
-    ("gemma4e2b", GEMMA_KEY, "Gemma4-E2B"),
-    ("dafeiyu", GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL),
-])
+@pytest.mark.parametrize(
+    "profile,key,alias",
+    [
+        ("gemma4e2b", GEMMA_KEY, "Gemma4-E2B"),
+        ("dafeiyu", GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL),
+    ],
+)
 async def test_node_vision_route_is_explicit_and_shares_the_same_mode_lease(tmp_path, profile, key, alias):
     broker, _, _ = await mode_broker(tmp_path, key, alias)
     application = create_app(tmp_path, broker=broker, warm_start=False)
@@ -184,9 +187,7 @@ async def test_node_vision_route_is_explicit_and_shares_the_same_mode_lease(tmp_
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=application), base_url="http://node", headers={HEADER: token}
     ) as client:
-        assert (
-            await client.post(f"/llm/{profile}/v1/chat/completions", json=body)
-        ).status_code == 404
+        assert (await client.post(f"/llm/{profile}/v1/chat/completions", json=body)).status_code == 404
         assert (await client.post("/llm/v1/chat/completions", json=body)).status_code == 422
         assert (await client.post(route, json=body)).status_code == 200
         await broker.switch_mode("live")

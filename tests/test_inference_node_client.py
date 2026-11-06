@@ -32,10 +32,13 @@ OTHER_NODE = "http://second-jetson.local:9012"
 OTHER_TOKEN = "second-node-test-token-0123456789abcdef"
 
 
-@pytest.mark.parametrize("key,model", [
-    (DAFEIYU_KEY, DAFEIYU_MODEL),
-    (GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL),
-])
+@pytest.mark.parametrize(
+    "key,model",
+    [
+        (DAFEIYU_KEY, DAFEIYU_MODEL),
+        (GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL),
+    ],
+)
 async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distributed, key, model):
     runtime, state = distributed
     runtime.browsing = StubBrowsing(DisabledVideoEvidence())
@@ -43,17 +46,22 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
 
     async def own_node(request):
         if grounded and request.url.path == "/capabilities":
-            return httpx.Response(200, json={
-                "protocol": "tuber-inference-node",
-                "protocol_version": 1,
-                "mode": "text",
-                "profiles": {key: {
-                    "loaded": True,
-                    "model_sha256": GROUNDED_DAFEIYU_ARTIFACTS["model"],
-                    "projector_sha256": GROUNDED_DAFEIYU_ARTIFACTS["projector"],
-                    "runtime_sha256": GROUNDED_DAFEIYU_ARTIFACTS["engine"],
-                }},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "protocol": "tuber-inference-node",
+                    "protocol_version": 1,
+                    "mode": "text",
+                    "profiles": {
+                        key: {
+                            "loaded": True,
+                            "model_sha256": GROUNDED_DAFEIYU_ARTIFACTS["model"],
+                            "projector_sha256": GROUNDED_DAFEIYU_ARTIFACTS["projector"],
+                            "runtime_sha256": GROUNDED_DAFEIYU_ARTIFACTS["engine"],
+                        }
+                    },
+                },
+            )
         if request.url.path == "/mode":
             return httpx.Response(
                 200,
@@ -300,7 +308,9 @@ async def test_pair_second_cancellation_keeps_transition_locks_until_candidate_i
         await asyncio.wait_for(rollback_entered.wait(), 2)
         pairing.cancel()
         await asyncio.sleep(0)
-        assert runtime.inference.mode_lock.locked() and runtime.generation_lock.locked() and not pairing.done()
+        assert (
+            runtime.inference.mode_lock.locked() and runtime.generation_lock.locked() and not pairing.done()
+        )
         assert runtime.llm is old and not old.client.is_closed
         rollback_release.set()
         with pytest.raises(asyncio.CancelledError):

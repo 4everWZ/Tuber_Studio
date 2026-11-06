@@ -7,7 +7,7 @@ from tuber_studio.daily_memory import DailyMemoryService
 
 def test_is_retrospective_query():
     service = DailyMemoryService(None)
-    
+
     # Retrospective triggers
     assert service.is_retrospective_query("你还记得上周有人说你尾巴太胖吗？")
     assert service.is_retrospective_query("上次直播玩星露谷好玩吗？")
@@ -173,4 +173,3 @@ async def test_context_manager_passive_fallback_e2e(settings, store):
     assert "气鼓鼓" in clue_msg["content"]
     # Check length discipline (<100 characters total for clue message)
     assert len(clue_msg["content"]) < 120
-
