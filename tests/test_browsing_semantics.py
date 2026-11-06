@@ -211,7 +211,7 @@ async def test_same_twelve_cases_use_real_native_provider_json_with_isolated_ove
             decision = {"reason": "insufficient_evidence", "action": "skip", "evidence_ids": [], "text": ""}
             for branch in payload["response_format"]["schema"]["oneOf"]:
                 props = branch["properties"]
-                if "explicit_private_request" in props["reason"]["enum"]:
+                if "explicit_private_request" in props.get("reason", {}).get("enum", []):
                     decision = {
                         "reason": "explicit_private_request",
                         "action": "handoff_private",
@@ -281,6 +281,10 @@ async def test_same_twelve_cases_use_real_native_provider_json_with_isolated_ove
             assert result["explicit_overrides"][key] == getattr(args, key)
     assert all(item["chat_template_kwargs"]["enable_thinking"] for item in generations)
     assert all(item["response_format"]["schema"]["title"] == "ResponseDecision" for item in generations)
+    assert all(
+        any("web_fetch" in branch["properties"] for branch in item["response_format"]["schema"]["oneOf"])
+        for item in generations
+    )
     assert all("public fixture persona" in json.dumps(item) for item in generations)
     assert "private-lore-must-not-import" not in json.dumps(requests)
     assert "private-memory-must-not-import" not in json.dumps(requests)

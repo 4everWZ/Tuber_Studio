@@ -24,7 +24,7 @@ B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留�
 
 该命令只检查，不改文件；每次都会分别报告 lint 和 format 的结果，任一失败就返回非零退出码。仅看到 `ruff check` 成功不代表格式检查通过。格式问题可运行 `uv run --locked ruff format src tests tools` 修复，检查差异后重新运行上述入口；修改之后再提交，不要把修改前的检查结果当作当前提交已通过。
 
-CI 使用同一入口的 `--format-advisory` 模式：格式差异保留日志和警告，但不阻塞后续测试、打包；lint 错误、检查工具执行错误及测试失败仍然阻塞。上面的本地默认命令保留严格检查，不会自动修改代码。
+CI 运行 Python／Node 功能测试。Lint 和格式检查保留为本地命令，可用 `--format-advisory` 将格式差异作为提示。Python 测试通过后交付独立程序包。
 
 代码检查不替代功能测试。运行受改动影响的 pytest 测试，并以对应 PR 提交的 Linux CPU CI 结果确认完整套件与打包结果。若本地因 NumPy、ONNX 或 PyYAML 等可选依赖缺失而跳过测试，应如实报告；不要因此修改 Jetson 的生产依赖。
 
@@ -142,9 +142,9 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 ### 环境镜像何时更新
 
-CI照常执行Python／Node检查并交付独立程序包。环境标识只依赖pyproject.toml、uv.lock、Dockerfile、TTS依赖清单及固定Genie依赖；应用、WebUI、角色／素材、初始化和运维脚本变动不改变标识。CI先查询env-<指纹>，已发布则跳过构建；只有新环境未发布时才构建ARM64镜像。默认分支的environment-r36.4别名仅在目标环境变更时更新。
+Jetson 基础镜像与程序测试、打包独立运行。环境标识只依赖pyproject.toml、uv.lock、Dockerfile、TTS依赖清单及固定Genie依赖；应用、WebUI、角色／素材、初始化和运维脚本变动不改变标识。CI先查询env-<指纹>，已发布则跳过构建；只有新环境未发布时才构建ARM64镜像。默认分支的environment-r36.4别名仅在目标环境变更时更新。
 
-CI另外发布可选online-env-<指纹>环境：在已发布的基础环境上只增加Node和npm依赖，不重建CUDA／Python底座。指纹由基础环境、组件Dockerfile及package.json／package-lock.json决定；helper、UI和其他程序代码更新复用同一镜像。发布前沿用组件协议测试，目标机器安装后仍需真实搜索、取流与播放器验收。
+CI另外发布可选online-env-<指纹>环境：在已发布的基础环境上只增加Node和npm依赖，不重建CUDA／Python底座。指纹由基础环境、组件Dockerfile及package.json／package-lock.json决定；helper、UI和其他程序代码更新复用同一镜像。组件协议测试通过后发布扩展环境，默认分支的environment-online-r36.4别名也会在复用已发布环境时对齐。目标机器安装后仍需真实搜索、取流与播放器验收。
 
 CI镜像构建需要可读的基础CUDA／llama包及GHCR发布权限；使用限定packages:write和短命GITHUB_TOKEN，不将凭证分发给操作者。默认原生ubuntu-24.04-arm runner，真正构建前才执行磁盘预检。发布、匿名访问、设备启动与模型质量分别验收。
 

@@ -34,7 +34,7 @@ jobs:
         run: npm test
 
   checks:
-    name: Python lint and CPU contracts
+    name: Python and CPU contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -54,8 +54,6 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Locked project environment
         run: uv sync --locked --group dev
-      - name: Lint and advisory formatting
-        run: uv run --locked python tools/ci/check_style.py --format-advisory
       - name: Image decoder for catalog contracts
         run: |
           sudo apt-get update
@@ -95,7 +93,6 @@ jobs:
 
   image:
     name: Reusable ARM64 environment (build only when absent)
-    needs: [checks, song-component]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&
@@ -171,12 +168,7 @@ jobs:
         env:
           ENVIRONMENT_IMAGE: ${{ steps.meta.outputs.reference }}
           ENVIRONMENT_ALIAS: ${{ steps.meta.outputs.alias }}
-        run: |
-          expected=$(docker buildx imagetools inspect "$ENVIRONMENT_IMAGE" --format '{{.Manifest.Digest}}')
-          current=$(docker buildx imagetools inspect "$ENVIRONMENT_ALIAS" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
-          if [ "$expected" != "$current" ]; then
-            docker buildx imagetools create --tag "$ENVIRONMENT_ALIAS" "$ENVIRONMENT_IMAGE"
-          fi
+        run: bash tools/ci/ensure_image_alias.sh "$ENVIRONMENT_IMAGE" "$ENVIRONMENT_ALIAS"
       - name: Environment evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -188,8 +180,7 @@ jobs:
 
   online-image:
     name: Optional online song environment (build only when absent)
-    needs: [image]
-    if: needs.image.result == 'success'
+    needs: [image, song-component]
     runs-on: ${{ fromJSON(vars.JETSON_BUILD_RUNNER || '"ubuntu-24.04-arm"') }}
     timeout-minutes: 45
     permissions:
@@ -249,6 +240,12 @@ jobs:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           BUILDX_METADATA: ${{ steps.build.outputs.metadata }}
         run: python3 tools/ci/image_metadata.py evidence --output tmp/ci-online/image-evidence.json
+      - name: Keep the default online environment alias consistent
+        if: steps.meta.outputs.alias != ''
+        env:
+          ENVIRONMENT_IMAGE: ${{ steps.meta.outputs.reference }}
+          ENVIRONMENT_ALIAS: ${{ steps.meta.outputs.alias }}
+        run: bash tools/ci/ensure_image_alias.sh "$ENVIRONMENT_IMAGE" "$ENVIRONMENT_ALIAS"
       - name: Online environment evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

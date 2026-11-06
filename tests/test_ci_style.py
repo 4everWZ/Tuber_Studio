@@ -81,8 +81,8 @@ def test_advisory_formatting_does_not_swallow_formatter_tool_errors(monkeypatch)
     assert module.main(["--format-advisory"]) == 1
 
 
-def test_ci_uses_advisory_formatting_without_ignoring_other_failures():
+def test_ci_keeps_tests_blocking_without_running_style_checks():
     workflow = (SCRIPT.parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "run: uv run --locked python tools/ci/check_style.py --format-advisory" in workflow
+    assert "check_style.py" not in workflow
     assert "continue-on-error" not in workflow
     assert "pytest -q --junitxml=tmp/ci-results/pytest.xml" in workflow

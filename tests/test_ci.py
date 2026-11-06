@@ -136,7 +136,8 @@ def test_fixed_action_revisions_and_publish_permission_scope():
     assert "pull_request" in workflow["on"] and "workflow_dispatch" in workflow["on"]
     assert "workflow_dispatch" in workflow["jobs"]["image"]["if"]
     assert "github.event_name == 'push'" in workflow["jobs"]["image"]["if"]
-    assert set(workflow["jobs"]["image"]["needs"]) == {"checks", "song-component"}
+    assert not workflow["jobs"]["image"].get("needs")
+    assert set(workflow["jobs"]["online-image"]["needs"]) == {"image", "song-component"}
     steps = workflow["jobs"]["image"]["steps"]
     build = next(step for step in steps if step.get("id") == "build")
     assert build["if"] == "steps.lookup.outputs.missing == 'true'"
