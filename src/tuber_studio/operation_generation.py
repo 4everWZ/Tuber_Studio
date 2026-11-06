@@ -58,6 +58,10 @@ def recoverable_feedback(error, provider):
     if isinstance(error, GenerationFeedback):
         return error
     raw = getattr(provider, "last_content", None)
+    if getattr(provider, "last_finish_reason", None) == "length":
+        return GenerationFeedback(
+            "finish_reason=length：输出额度耗尽，保留本次可见输出", original_output=raw, kind="output_limit"
+        )
     if raw is None:
         raise error
     return GenerationFeedback(str(error), original_output=raw)

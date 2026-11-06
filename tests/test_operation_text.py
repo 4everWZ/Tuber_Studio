@@ -31,6 +31,22 @@ from tuber_studio.video_vision import VideoVisionConfig
 LONG_TEXT = "\n".join(f"第{i}段，鱼鱼顺着这件事聊一聊自己的想法，也听听你接下来怎么说。" for i in range(80))
 
 
+@pytest.mark.parametrize(
+    ("text", "loop"),
+    [
+        ("选默认配置，选默认配置，选默认配置。然后点保存。", True),
+        ("选择一或者二选择一或者二选择一或者二", True),
+        ("记忆那一步选择一或者二选一或者二选二。", True),
+        ("选默认配置，选默认配置。", False),
+        ("哈哈哈哈哈哈哈哈，白饭白饭白饭！", False),
+        ("先看第一帧，再看第二帧，最后看第三帧。", False),
+    ],
+)
+def test_adjacent_phrase_loop_distinguishes_short_stutters_from_natural_echoes(text, loop):
+    result = operation_output_diagnostics(text)
+    assert result["adjacent_phrase_loop"] is loop and result["needs_review"] is loop
+
+
 def test_operations_keep_long_text_but_live_schema_and_style_limits_are_independent(store):
     card = store.character()
     snapshot = copy.deepcopy(card)

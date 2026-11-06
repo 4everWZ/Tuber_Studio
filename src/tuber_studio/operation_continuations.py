@@ -534,6 +534,7 @@ class ContinuationCoordinator:
                 )
                 token = continuation_context.set(row)
                 raw_decision = None
+                revising = False
                 try:
                     with model_scope() if model_scope else self.generation_scope(identity):
                         raw_decision = await self._bounded(row, decide, row)
@@ -580,6 +581,7 @@ class ContinuationCoordinator:
                             owner=owner,
                         )
                         continue
+                    revising = True
                     with model_scope() if model_scope else self.generation_scope(identity):
                         value = await self._bounded(row, revise, row, decision)
                     await self._guard_current(identity, owner, guard)
@@ -596,6 +598,17 @@ class ContinuationCoordinator:
                         feedback=feedback,
                     )
                     accepted = getattr(error, "accepted_value", None)
+                    same_style = (
+                        feedback["kind"] == "style_diagnostic"
+                        and feedback == row["feedback"]
+                        and accepted is not None
+                        and visible_payload(accepted) == visible_payload(candidate)
+                    )
+                    repeated_limit = feedback["kind"] == row["feedback"].get("kind") == "output_limit"
+                    if revising and (same_style or repeated_limit):
+                        feedback["message"] += "。修订后仍无进展，已暂停本轮自动恢复"
+                        self._state(identity, "checkpoint", feedback=feedback, output=accepted, owner=owner)
+                        return ContinuationResult("checkpoint", continuation_id=identity)
                     if accepted is not None:
                         if feedback["kind"] != "style_diagnostic":
                             raise ValueError("只有正文诊断可保留已校验候选") from None

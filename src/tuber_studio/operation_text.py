@@ -5,6 +5,8 @@ from collections import Counter
 
 # A local transport/storage resource bound, not a claimed Bilibili word limit.
 MAX_OPERATION_TEXT_BYTES = 256 * 1024
+_ADJACENT_PHRASES = re.compile(r"([^\W_]{4,40}?)(?:\1){2,}")
+_UNBROKEN_PHRASE = re.compile(r"([^\W_]{5,40}?)\1")
 
 
 def reply_output_budget(config, mode):
@@ -34,8 +36,11 @@ def validate_operation_text(text, *, label="正文"):
 
 
 def operation_output_diagnostics(text):
-    # Report substantial repeated passages for review; short laughter and
-    # catchphrases do not become failed replies or trigger automatic rewrites.
+    # Keep short exclamations and natural laughter out of the loop diagnostic.
+    adjacent = any(
+        len(set(match[1])) >= 3
+        for match in _ADJACENT_PHRASES.finditer(re.sub(r"[，、,。！？!?；; \t]+", "", text))
+    ) or any(len(set(match[1])) >= 4 for match in _UNBROKEN_PHRASE.finditer(text))
     paragraphs = Counter(line.strip() for line in text.splitlines() if len(line.strip()) >= 40)
     repeated = sum(len(line) * count for line, count in paragraphs.items() if count >= 8)
     clauses = Counter(
@@ -47,8 +52,10 @@ def operation_output_diagnostics(text):
         "visible_utf8_bytes": len(text.encode("utf-8")),
         "repeated_paragraph_characters": repeated,
         "repeated_clause_characters": repeated_clauses,
+        "adjacent_phrase_loop": adjacent,
         "needs_review": (
-            len(text) >= 4096
+            adjacent
+            or len(text) >= 4096
             and repeated > len(text) * 0.8
             or repeated_clauses >= 480
             and repeated_clauses > len(text) * 0.6

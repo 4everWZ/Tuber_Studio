@@ -11,13 +11,21 @@ from tuber_studio import web_fetch
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.models import OperationReply
-from tuber_studio.operation_generation import generate_with_recovery
+from tuber_studio.operation_generation import GenerationDeferred, generate_with_recovery
 from tuber_studio.operation_text import operation_output_diagnostics
 from tuber_studio.operations.browsing.models import BrowsingPolicy, ResponseDecision
 
 
 async def model_for(
-    runtime, settings, *, first=None, corrected=None, first_finish="stop", decision="revise", failure=None
+    runtime,
+    settings,
+    *,
+    first=None,
+    corrected=None,
+    first_finish="stop",
+    corrected_finish="stop",
+    decision="revise",
+    failure=None,
 ):
     requests, generated = [], []
     if corrected is None:
@@ -38,7 +46,7 @@ async def model_for(
             if failure:
                 raise failure
             value = (first if first is not None else corrected) if not generated else corrected
-            finish = first_finish if not generated else "stop"
+            finish = first_finish if not generated else corrected_finish
             generated.append(value)
             text = json.dumps(value, ensure_ascii=False)
         return httpx.Response(
@@ -167,6 +175,39 @@ async def test_parseable_length_result_is_not_adopted_as_a_finished_reply(runtim
     assert any(
         "finish_reason=length" in message["content"] for body in requests[2:] for message in body["messages"]
     )
+
+
+async def test_two_output_limits_checkpoint_even_when_the_partial_text_changes(runtime, settings):
+    first = {"spoken_text": "刚蒸好的那锅饭……", "reply_to": ["source-event"]}
+    _, generated, corrected = await model_for(
+        runtime, settings, first=first, first_finish="length", corrected_finish="length"
+    )
+    with pytest.raises(GenerationDeferred, match="修订后仍无进展") as failure:
+        await generate(runtime)
+    row = runtime.continuations.find("test-generation", "one-source")
+    assert generated == [first, corrected]
+    assert row["state"] == "checkpoint" and row["recoveries"] == 1 and row["current_output"] is None
+    assert failure.value.continuation["feedback"]["kind"] == "output_limit"
+
+
+async def test_revision_that_repeats_the_same_loop_checkpoints(runtime, settings):
+    text = "选默认配置，选默认配置，选默认配置。"
+    repeated = {"spoken_text": text, "reply_to": ["source-event"]}
+    _, generated, _ = await model_for(runtime, settings, first=repeated, corrected=repeated)
+
+    def diagnose(value):
+        return (
+            "正文出现连续短语循环"
+            if operation_output_diagnostics(value.spoken_text)["needs_review"]
+            else None
+        )
+
+    with pytest.raises(GenerationDeferred, match="修订后仍无进展"):
+        await generate(runtime, diagnose=diagnose)
+    row = runtime.continuations.find("test-generation", "one-source")
+    assert generated == [repeated, repeated]
+    assert row["state"] == "checkpoint" and row["recoveries"] == 1
+    assert row["current_output"]["spoken_text"] == text
 
 
 async def test_agent_may_keep_valid_intentional_style_without_regenerating(runtime, settings):
