@@ -7,7 +7,9 @@ from .inference_profiles import DAFEIYU_ALIASES, DAFEIYU_MODEL
 from .inference_profiles import GROUNDED_DAFEIYU_MODEL as GROUNDED_DAFEIYU_MODEL
 
 DAFEIYU_IDENTITY = "你是大肥鱼。"
-GROUNDED_DAFEIYU_CARD = (Path(__file__).parent / "prompts/dafeiyu-grounded.md").read_text(encoding="utf-8").strip()
+GROUNDED_DAFEIYU_CARD = (
+    (Path(__file__).parent / "prompts/dafeiyu-grounded.md").read_text(encoding="utf-8").strip()
+)
 
 
 def uses_built_in_persona(settings):

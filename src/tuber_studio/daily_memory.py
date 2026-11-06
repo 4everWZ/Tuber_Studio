@@ -19,21 +19,99 @@ HIGHLIGHT_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
 HIGHLIGHT_STATUSES = ("active", "pending_review", "archived")
 
 RETROSPECTIVE_CUES = (
-    "还记得", "记不记得", "记得吗", "还记不记得", "记得不", "忘记没", "有印象",
-    "上次", "上回", "之前", "那天", "那次", "那时候", "当时",
-    "曾经", "以前", "上周", "上个月", "前几天", "前段时间", "早前",
+    "还记得",
+    "记不记得",
+    "记得吗",
+    "还记不记得",
+    "记得不",
+    "忘记没",
+    "有印象",
+    "上次",
+    "上回",
+    "之前",
+    "那天",
+    "那次",
+    "那时候",
+    "当时",
+    "曾经",
+    "以前",
+    "上周",
+    "上个月",
+    "前几天",
+    "前段时间",
+    "早前",
 )
 RETROSPECTIVE_PATTERN = re.compile(
     r"还?记得|记不记得|有印象|忘记没|上次|上回|之前|那天|那次|那时候|当时|曾经|以前|上周|上个月|前几天|前段时间|早前"
 )
 
 SCAFFOLDING_WORDS = {
-    "你", "我", "他", "她", "它", "们", "还", "记得", "记不记得", "记得吗", "有印象", "忘记",
-    "上次", "上回", "之前", "那天", "那次", "那时候", "当时", "曾经", "以前", "上周", "上个月",
-    "前几天", "几天前", "十天前", "前段时间", "早前", "昨天", "今天", "明天", "有人", "观众", "弹幕",
-    "说", "道", "问", "吗", "呢", "吧", "呀", "啊", "哦", "嗯", "什么", "怎么", "哪里", "哪个",
-    "为什么", "是不是", "有没有", "能不能", "那件事", "那事", "事情", "关于", "大肥鱼", "肥鱼",
-    "主播", "鲸鱼", "知道", "觉得", "不是", "就是", "那个", "这个",
+    "你",
+    "我",
+    "他",
+    "她",
+    "它",
+    "们",
+    "还",
+    "记得",
+    "记不记得",
+    "记得吗",
+    "有印象",
+    "忘记",
+    "上次",
+    "上回",
+    "之前",
+    "那天",
+    "那次",
+    "那时候",
+    "当时",
+    "曾经",
+    "以前",
+    "上周",
+    "上个月",
+    "前几天",
+    "几天前",
+    "十天前",
+    "前段时间",
+    "早前",
+    "昨天",
+    "今天",
+    "明天",
+    "有人",
+    "观众",
+    "弹幕",
+    "说",
+    "道",
+    "问",
+    "吗",
+    "呢",
+    "吧",
+    "呀",
+    "啊",
+    "哦",
+    "嗯",
+    "什么",
+    "怎么",
+    "哪里",
+    "哪个",
+    "为什么",
+    "是不是",
+    "有没有",
+    "能不能",
+    "那件事",
+    "那事",
+    "事情",
+    "关于",
+    "大肥鱼",
+    "肥鱼",
+    "主播",
+    "鲸鱼",
+    "知道",
+    "觉得",
+    "不是",
+    "就是",
+    "那个",
+    "这个",
 }
 
 DISTILLATION_PROMPT = """你叫{name}，是一只活泼机灵、爱吐槽又有点傲娇的深海鲸鱼娘虚拟主播。
@@ -84,7 +162,7 @@ class DailyMemoryService:
     def candidate_sources(self, date_str: str, character_id: str, limit: int = 15) -> list[dict[str, Any]]:
         """Collect potential highlight candidates from comments and conversations for a date."""
         candidates = []
-        
+
         # 1. Fetch notable comments (high likes, interaction categories, or replied drafts)
         comment_rows = self.store.all(
             """
@@ -102,14 +180,16 @@ class DailyMemoryService:
             content = (row["content"] or "").strip()
             if not content or len(content) < 3:
                 continue
-            candidates.append({
-                "source_type": "comment",
-                "source_ref": f"video:{row['video_id']}:comment:{row['comment_id']}",
-                "source_user": desensitize_user(row["display_name"]),
-                "content": content,
-                "like_count": row["like_count"] or 0,
-                "replied": bool(row["draft_status"] in ("published", "approved")),
-            })
+            candidates.append(
+                {
+                    "source_type": "comment",
+                    "source_ref": f"video:{row['video_id']}:comment:{row['comment_id']}",
+                    "source_user": desensitize_user(row["display_name"]),
+                    "content": content,
+                    "like_count": row["like_count"] or 0,
+                    "replied": bool(row["draft_status"] in ("published", "approved")),
+                }
+            )
 
         # 2. Fetch live conversation interactions for the date
         conv_rows = self.store.all(
@@ -127,14 +207,16 @@ class DailyMemoryService:
             reply = (row["reply_text"] or "").strip()
             if not user_msg:
                 continue
-            candidates.append({
-                "source_type": "live",
-                "source_ref": f"live:{row['session_id']}",
-                "source_user": "直播间观众",
-                "content": f"观众说：{user_msg} | 主播回：{reply}" if reply else user_msg,
-                "like_count": 0,
-                "replied": bool(reply),
-            })
+            candidates.append(
+                {
+                    "source_type": "live",
+                    "source_ref": f"live:{row['session_id']}",
+                    "source_user": "直播间观众",
+                    "content": f"观众说：{user_msg} | 主播回：{reply}" if reply else user_msg,
+                    "like_count": 0,
+                    "replied": bool(reply),
+                }
+            )
 
         return candidates[:limit]
 
@@ -315,7 +397,7 @@ class DailyMemoryService:
         max_tokens: int = 160,
     ) -> list[dict[str, Any]]:
         """Retrieve bounded, active anecdotes for prompt injection.
-        
+
         Strictly limits count and length to prevent context bloat.
         """
         today = datetime.date.today()
@@ -363,12 +445,14 @@ class DailyMemoryService:
             anecdote = row["anecdote"]
             if total_chars + len(anecdote) > char_cap and selected:
                 break
-            selected.append({
-                "id": row["id"],
-                "date": row["highlight_date"],
-                "topic": row["headline"],
-                "memory": anecdote,
-            })
+            selected.append(
+                {
+                    "id": row["id"],
+                    "date": row["highlight_date"],
+                    "topic": row["headline"],
+                    "memory": anecdote,
+                }
+            )
             total_chars += len(anecdote)
             if len(selected) >= limit:
                 break
@@ -532,7 +616,7 @@ class DailyMemoryService:
                    headline, source_ref, source_user, quote, anecdote, tags, status,
                    created_at, updated_at
             FROM daily_highlights
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY highlight_date DESC, id DESC
             LIMIT ?
         """

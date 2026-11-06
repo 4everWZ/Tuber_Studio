@@ -1,14 +1,14 @@
 """One-pass V6-referenced preference update, with a fixed retention quarter."""
+
 import argparse
 import json
 import random
 from pathlib import Path
 
 import torch
+from grounded_sft import MAX_TOKENS, REVISION, Examples, assistant_spans, load_processor, model_inputs
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForImageTextToText, set_seed
-
-from grounded_sft import Examples, MAX_TOKENS, REVISION, assistant_spans, load_processor, model_inputs
 
 BETA = 0.1
 MICROBATCHES = 4
@@ -29,10 +29,11 @@ def scored_answer(processor, corpus, row, side):
         raise ValueError(f"{row['id']}: prompt exceeds {MAX_TOKENS} tokens")
     begin, end = assistant_spans(processor.tokenizer, tokens)[-1]
     encoded = processor.tokenizer(target, add_special_tokens=False, return_offsets_mapping=True)
-    if tokens[begin:end - 1] != encoded.input_ids:
+    if tokens[begin : end - 1] != encoded.input_ids:
         raise ValueError(f"{row['id']}: target tokens differ from native template")
     positions = [
-        begin + offset for offset, (left, right) in enumerate(encoded.offset_mapping)
+        begin + offset
+        for offset, (left, right) in enumerate(encoded.offset_mapping)
         if left < stop and right > start
     ]
     if not positions:
@@ -94,13 +95,18 @@ def main():
         for side in ("chosen", "rejected"):
             scored_answer(processor, args.corpus, row, side)
     base = AutoModelForImageTextToText.from_pretrained(
-        args.reference, dtype=torch.bfloat16, local_files_only=True,
-        attn_implementation="sdpa", device_map={"": "cuda:0"},
+        args.reference,
+        dtype=torch.bfloat16,
+        local_files_only=True,
+        attn_implementation="sdpa",
+        device_map={"": "cuda:0"},
     )
     base.config.use_cache = False
     targets = [
-        name for name, module in base.named_modules()
-        if name.startswith("model.language_model.") and isinstance(module, torch.nn.Linear)
+        name
+        for name, module in base.named_modules()
+        if name.startswith("model.language_model.")
+        and isinstance(module, torch.nn.Linear)
         and name.rsplit(".", 1)[-1] in {"q_proj", "k_proj", "v_proj", "o_proj"}
     ]
     if not targets:
@@ -117,7 +123,7 @@ def main():
     with (args.output / "run.jsonl").open("w", encoding="utf-8") as log:
         for step in range(1, 33):
             optimizer.zero_grad(set_to_none=True)
-            batch = preferences[(step - 1) * 3:step * 3]
+            batch = preferences[(step - 1) * 3 : step * 3]
             outcomes = [preference_backward(model, row, processor, args.corpus) for row in batch]
             retained = device_inputs(model, retention[step - 1])
             retained_loss = model(**retained, use_cache=False).loss
@@ -125,10 +131,14 @@ def main():
             norm = torch.nn.utils.clip_grad_norm_(parameters, 1.0, error_if_nonfinite=True)
             optimizer.step()
             record = {
-                "step": step, "preferences": [row["id"] for row in batch],
-                "retention": retention_rows[step - 1]["id"], "pair_loss": [r[0] for r in outcomes],
-                "current_margin": [r[1] for r in outcomes], "reference_margin": [r[2] for r in outcomes],
-                "retention_loss": float(retained_loss.detach()), "gradient_norm": float(norm),
+                "step": step,
+                "preferences": [row["id"] for row in batch],
+                "retention": retention_rows[step - 1]["id"],
+                "pair_loss": [r[0] for r in outcomes],
+                "current_margin": [r[1] for r in outcomes],
+                "reference_margin": [r[2] for r in outcomes],
+                "retention_loss": float(retained_loss.detach()),
+                "gradient_norm": float(norm),
             }
             print(record, flush=True)
             log.write(json.dumps(record, ensure_ascii=False) + "\n")

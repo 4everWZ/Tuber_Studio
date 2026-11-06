@@ -1,4 +1,5 @@
 """Build one fixed preference-and-retention pass from authored exchanges."""
+
 import argparse
 import json
 from pathlib import Path
@@ -17,19 +18,46 @@ HERE = Path(__file__).parent
 SETTINGS = {"llm": {"kind": "llama_cpp", "model": GROUNDED_DAFEIYU_MODEL}}
 TRIPLES = {"rain-signal", "countdown", "wrong-switch", "extra-button", "silent-show", "new-time", "visit-day"}
 VIDEO_PAIRS = (
-    ("caminandes-00", "caminandes-05"), ("caminandes-07", "caminandes-12"),
-    ("caminandes-19", "caminandes-22"), ("sintel-01", "sintel-04"),
-    ("sintel-06", "sintel-09"), ("sintel-11", "sintel-14"),
+    ("caminandes-00", "caminandes-05"),
+    ("caminandes-07", "caminandes-12"),
+    ("caminandes-19", "caminandes-22"),
+    ("sintel-01", "sintel-04"),
+    ("sintel-06", "sintel-09"),
+    ("sintel-11", "sintel-14"),
 )
 RETENTION = (
-    "caminandes-01-joint", "caminandes-03-joint", "caminandes-08-contrast", "caminandes-13-joint",
-    "caminandes-15-draft", "caminandes-18-missing", "sintel-00-joint", "sintel-02-joint",
-    "sintel-05-contrast", "sintel-07-draft", "sintel-08-missing", "sintel-10-joint",
-    "encoding", "network", "ice", "music", "photography", "timezones", "humidity", "causal",
-    "chatanime-38-live-3", "chatanime-53-live-3", "chatanime-46-live-2", "chatanime-54-live-2",
-    "deepthink-oc-pocket-sketches-live-2", "deepthink-oc-patch-win-live-2",
-    "teacher-oc-wall-flash-live-2", "teacher-oc-guard-booth-live-2",
-    "operation-00-select", "operation-02-public", "operation-04-thread", "operation-08-private",
+    "caminandes-01-joint",
+    "caminandes-03-joint",
+    "caminandes-08-contrast",
+    "caminandes-13-joint",
+    "caminandes-15-draft",
+    "caminandes-18-missing",
+    "sintel-00-joint",
+    "sintel-02-joint",
+    "sintel-05-contrast",
+    "sintel-07-draft",
+    "sintel-08-missing",
+    "sintel-10-joint",
+    "encoding",
+    "network",
+    "ice",
+    "music",
+    "photography",
+    "timezones",
+    "humidity",
+    "causal",
+    "chatanime-38-live-3",
+    "chatanime-53-live-3",
+    "chatanime-46-live-2",
+    "chatanime-54-live-2",
+    "deepthink-oc-pocket-sketches-live-2",
+    "deepthink-oc-patch-win-live-2",
+    "teacher-oc-wall-flash-live-2",
+    "teacher-oc-guard-booth-live-2",
+    "operation-00-select",
+    "operation-02-public",
+    "operation-04-thread",
+    "operation-08-private",
 )
 
 
@@ -50,15 +78,25 @@ def chat_prompt(character, mode, first, final, triple):
     event = {"event_id": f"m{len(turns) + 1}", "type": event_type, "text": final}
     prefix, initial, current, suffix = ContextManager.parts(character, event, {}, mode, settings=SETTINGS)
     wire = single_system_messages(ContextManager.render(prefix, initial, history, current, suffix))
-    return wire, {"spoken_text": "", "emotion": "idle", "animation_id": "talk", "reply_to": [event["event_id"]]}
+    return wire, {
+        "spoken_text": "",
+        "emotion": "idle",
+        "animation_id": "talk",
+        "reply_to": [event["event_id"]],
+    }
 
 
 def record(key, mode, messages, target, chosen, rejected, *, frames=None, sources=None):
     field = next(name for name in ("spoken_text", "content", "text") if name in target)
     return {
-        "id": key, "mode": mode, "messages": messages,
-        "chosen": target | {field: chosen}, "rejected": target | {field: rejected},
-        "text_field": field, "frames": frames or [], "sources": sources or [],
+        "id": key,
+        "mode": mode,
+        "messages": messages,
+        "chosen": target | {field: chosen},
+        "rejected": target | {field: rejected},
+        "text_field": field,
+        "frames": frames or [],
+        "sources": sources or [],
     }
 
 
@@ -71,10 +109,17 @@ def authored(character):
             if mode == "dynamic":
                 source = {"id": "public1", "text": first, "fictional": "小剧场" in first}
                 messages = dynamic_decision_messages(
-                    character, SETTINGS, [], [source], current_time="2026-11-05T22:00:00+08:00",
+                    character,
+                    SETTINGS,
+                    [],
+                    [source],
+                    current_time="2026-11-05T22:00:00+08:00",
                 )
                 target = {
-                    "action": "post", "reason": "分享已公开的内容", "content": "", "source_ids": ["public1"],
+                    "action": "post",
+                    "reason": "分享已公开的内容",
+                    "content": "",
+                    "source_ids": ["public1"],
                     "next_evaluation_seconds": 1800,
                 }
             else:
@@ -88,24 +133,43 @@ def video_preferences(rows):
         for arm, key, chosen, rejected in (("a", a, texts[0], texts[1]), ("b", b, texts[1], texts[0])):
             original = rows[f"{key}-joint"]
             evidence = [
-                {"id": f"shot-{i}", "text": f"随附画面 {i}", "cid": "1", "kind": "visual",
-                 "start": frame["seconds"], "end": frame["seconds"]}
+                {
+                    "id": f"shot-{i}",
+                    "text": f"随附画面 {i}",
+                    "cid": "1",
+                    "kind": "visual",
+                    "start": frame["seconds"],
+                    "end": frame["seconds"],
+                }
                 for i, frame in enumerate(original["frames"], 1)
             ]
-            material = ResponseDecisionInput({
-                "kind": "top_level", "thread": {"question": "结合这两格画面给一条具体的评论。"},
-                "coverage": "sampled_visual", "evidence": evidence,
-            })
+            material = ResponseDecisionInput(
+                {
+                    "kind": "top_level",
+                    "thread": {"question": "结合这两格画面给一条具体的评论。"},
+                    "coverage": "sampled_visual",
+                    "evidence": evidence,
+                }
+            )
             refs = [ref.alias for ref in material.references]
             messages = [
-                {"role": "system", "content": "你是大肥鱼。\n\n" + RESPONSE_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION},
+                {
+                    "role": "system",
+                    "content": "你是大肥鱼。\n\n" + RESPONSE_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION,
+                },
                 {"role": "user", "content": "公开来源材料：" + material.format()},
             ]
             target = {"action": "reply_public", "reason": "specific_detail", "text": "", "evidence_ids": refs}
             frames = [frame | {"alias": alias} for frame, alias in zip(original["frames"], refs, strict=True)]
             yield record(
-                f"frames-{a}-{b}-{arm}", "video", messages, target, chosen, rejected,
-                frames=frames, sources=original["sources"],
+                f"frames-{a}-{b}-{arm}",
+                "video",
+                messages,
+                target,
+                chosen,
+                rejected,
+                frames=frames,
+                sources=original["sources"],
             )
 
 

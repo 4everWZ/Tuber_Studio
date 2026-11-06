@@ -64,6 +64,7 @@ def main():
     logger.info("Loading base model...")
     try:
         from transformers import AutoModelForImageTextToText
+
         base_model = AutoModelForImageTextToText.from_pretrained(
             args.base_model,
             dtype=torch.bfloat16,
@@ -92,7 +93,9 @@ def main():
     print("=" * 60)
     print("\nNext step: Convert to GGUF Q4_K_M for Jetson Orin Nano deployment:")
     print("1. Convert to GGUF:")
-    print(f"   python third_party/llama.cpp/convert_hf_to_gguf.py {args.output_dir} --outfile {args.output_dir}/model-f16.gguf")
+    print(
+        f"   python third_party/llama.cpp/convert_hf_to_gguf.py {args.output_dir} --outfile {args.output_dir}/model-f16.gguf"
+    )
     print("2. Quantize to Q4_K_M:")
     print(f"   ./llama-quantize {args.output_dir}/model-f16.gguf {args.output_dir}/model-Q4_K_M.gguf Q4_K_M")
     print("=" * 60)

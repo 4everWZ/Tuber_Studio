@@ -13,8 +13,25 @@ CHATANIME_SOURCE = (
     "https://github.com/LanlanQiu/ChatAnime/blob/2169710041b1130b79530be610c0adef886f96fb/data/human.json"
 )
 EXCLUDE = (
-    "原神", "崩坏", "火影", "海贼王", "宝可梦", "漫威", "哈利波特", "哆啦", "初音", "路飞",
-    "纳西妲", "鸣人", "淫", "性爱", "色情", "裸", "性奴", "强奸", "纳粹",
+    "原神",
+    "崩坏",
+    "火影",
+    "海贼王",
+    "宝可梦",
+    "漫威",
+    "哈利波特",
+    "哆啦",
+    "初音",
+    "路飞",
+    "纳西妲",
+    "鸣人",
+    "淫",
+    "性爱",
+    "色情",
+    "裸",
+    "性奴",
+    "强奸",
+    "纳粹",
 )
 SETTINGS = (
     "这次是日常聊天，从原材料提取一个具体生活难题，重新给出能实行的一步。",
@@ -55,9 +72,14 @@ def chatanime_candidates(path, variants):
             if scenarios.setdefault(identity, question) != question:
                 raise ValueError(f"ChatAnime scenario {identity} has divergent first questions")
     return [
-        (f"chatanime-{identity:02d}-{variant}", f"chatanime-{identity:02d}", question,
-         "validation" if identity % 7 == 0 else "train", SETTINGS[(identity + variant) % len(SETTINGS)],
-         CHATANIME_SOURCE)
+        (
+            f"chatanime-{identity:02d}-{variant}",
+            f"chatanime-{identity:02d}",
+            question,
+            "validation" if identity % 7 == 0 else "train",
+            SETTINGS[(identity + variant) % len(SETTINGS)],
+            CHATANIME_SOURCE,
+        )
         for identity, question in sorted(scenarios.items())
         for variant in range(variants)
     ]
@@ -68,7 +90,7 @@ def parse_dialogue(text):
     markers = ("观众：", "大肥鱼：", "观众：", "大肥鱼：")
     if len(lines) != len(markers) or not all(line.startswith(marker) for line, marker in zip(lines, markers)):
         return None
-    contents = [line[len(marker):].strip() for line, marker in zip(lines, markers)]
+    contents = [line[len(marker) :].strip() for line, marker in zip(lines, markers)]
     if any(not 5 <= len(content) <= 110 for content in contents):
         return None
     return [
@@ -98,8 +120,14 @@ def main():
     from transformers import AutoModelForImageTextToText, AutoTokenizer, set_seed
 
     set_seed(42)
-    card = next(item for item in json.loads(args.characters.read_text(encoding="utf-8")) if item["id"] == "whale")
-    core = {key: card["core"][key] for key in ("identity", "traits", "background", "interaction") if key in card["core"]}
+    card = next(
+        item for item in json.loads(args.characters.read_text(encoding="utf-8")) if item["id"] == "whale"
+    )
+    core = {
+        key: card["core"][key]
+        for key in ("identity", "traits", "background", "interaction")
+        if key in card["core"]
+    }
     instruction = (
         "你是中文动画直播编剧。只借鉴给出的合成场景里的人际处境或对话走向，"
         "把场景重新写成观众和大肥鱼的两轮互动。问题和回复都要重写，原角色、身份、世界观和台词都换掉。"
@@ -108,21 +136,31 @@ def main():
         "动作融入能念出来的短台词。只有题目自然带到时才用白饭、尾巴、海底、贝壳灯或气泡。"
         "观众从一件实际事情开口，避免用「你刚才说」开头虚构场景之前的对话。"
         "严格输出四行，依次以观众：、大肥鱼：、观众：、大肥鱼：开头。"
-        "角色资料：" + json.dumps({"core": core, "style": card["style"], "rules": card["rules"]}, ensure_ascii=False)
+        "角色资料："
+        + json.dumps({"core": core, "style": card["style"], "rules": card["rules"]}, ensure_ascii=False)
     )
     tokenizer = AutoTokenizer.from_pretrained(args.teacher, padding_side="left", local_files_only=True)
     model = AutoModelForImageTextToText.from_pretrained(
-        args.teacher, dtype=torch.bfloat16, device_map={"": "cuda:0"}, local_files_only=True,
+        args.teacher,
+        dtype=torch.bfloat16,
+        device_map={"": "cuda:0"},
+        local_files_only=True,
     ).eval()
     if args.source_kind == "chatanime":
         rows = chatanime_candidates(args.source, args.variants)
     else:
         rows = [
-            (f"rp-{index}", f"rp-{index}", scene, "validation" if index % 9 == 0 else "train",
-             SETTINGS[index % len(SETTINGS)], SOURCE)
+            (
+                f"rp-{index}",
+                f"rp-{index}",
+                scene,
+                "validation" if index % 9 == 0 else "train",
+                SETTINGS[index % len(SETTINGS)],
+                SOURCE,
+            )
             for index, scene in candidates(args.source)
         ]
-    rows = rows[:args.limit]
+    rows = rows[: args.limit]
     # Split by source scene before rewriting. Outputs remain drafts until reviewed.
     done = set()
     if args.output.exists():
@@ -130,7 +168,7 @@ def main():
             done.update(json.loads(line)["id"] for line in previous if line.strip())
     with args.output.open("a", encoding="utf-8") as output, torch.inference_mode():
         for start in range(0, len(rows), args.batch):
-            batch = [row for row in rows[start:start + args.batch] if row[0] not in done]
+            batch = [row for row in rows[start : start + args.batch] if row[0] not in done]
             if not batch:
                 continue
             prompts = [
@@ -139,18 +177,29 @@ def main():
                         {"role": "system", "content": instruction},
                         {"role": "user", "content": setting + "\n素材：\n" + scene},
                     ],
-                    tokenize=False, add_generation_prompt=True, enable_thinking=False,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
                 )
                 for _, _, scene, _, setting, _ in batch
             ]
-            inputs = tokenizer(prompts, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
+            inputs = tokenizer(prompts, padding=True, return_tensors="pt", add_special_tokens=False).to(
+                model.device
+            )
             result = model.generate(**inputs, max_new_tokens=180, do_sample=True, temperature=0.75, top_p=0.9)
-            answers = tokenizer.batch_decode(result[:, inputs.input_ids.shape[-1]:], skip_special_tokens=True)
+            answers = tokenizer.batch_decode(
+                result[:, inputs.input_ids.shape[-1] :], skip_special_tokens=True
+            )
             for (identity, group, _, split, _, uri), answer in zip(batch, answers, strict=True):
                 row = {
-                    "id": identity, "category": "oc", "review": "draft", "split": split,
+                    "id": identity,
+                    "category": "oc",
+                    "review": "draft",
+                    "split": split,
                     "sources": [{"group": group, "uri": uri, "license": "Apache-2.0"}],
-                    "teacher": args.teacher.name, "messages": parse_dialogue(answer), "draft": answer,
+                    "teacher": args.teacher.name,
+                    "messages": parse_dialogue(answer),
+                    "draft": answer,
                 }
                 output.write(json.dumps(row, ensure_ascii=False) + "\n")
             output.flush()

@@ -1,4 +1,5 @@
 """Intervene on one part of the live dialogue input at a time."""
+
 import argparse
 import asyncio
 import json
@@ -20,7 +21,11 @@ def event(index, text):
 def live_messages(character, settings, previous, answer, current):
     _, _, pending, _ = ContextManager.parts(character, event(1, previous), {}, "live", settings=settings)
     prefix, initial, latest, suffix = ContextManager.parts(
-        character, event(2, current), {}, "live", settings=settings,
+        character,
+        event(2, current),
+        {},
+        "live",
+        settings=settings,
     )
     history = [pending, {"role": "assistant", "content": answer}]
     return ContextManager.render(prefix, initial, history, latest, suffix)
@@ -37,8 +42,11 @@ def plain_messages(previous, answer, current):
 
 async def complete(client, config, sampling, messages, schema=None):
     payload = {
-        "model": config["model"], "messages": messages, **sampling,
-        "seed": config["seed"], "max_tokens": 24 if schema else config["max_tokens"],
+        "model": config["model"],
+        "messages": messages,
+        **sampling,
+        "seed": config["seed"],
+        "max_tokens": 24 if schema else config["max_tokens"],
         "chat_template_kwargs": {"enable_thinking": False},
     }
     if schema:
@@ -57,8 +65,11 @@ async def complete(client, config, sampling, messages, schema=None):
         except json.JSONDecodeError:
             pass
     return {
-        "raw": raw, "spoken_text": structured.get("spoken_text", raw), "pick": structured.get("pick"),
-        "finish": choice["finish_reason"], "usage": result.get("usage", {}),
+        "raw": raw,
+        "spoken_text": structured.get("spoken_text", raw),
+        "pick": structured.get("pick"),
+        "finish": choice["finish_reason"],
+        "usage": result.get("usage", {}),
     }
 
 
@@ -66,19 +77,29 @@ async def replay(args):
     cases = read_jsonl(args.cases)
     specs = {row["pair"]: row for row in read_jsonl(args.interventions)}
     baseline = {row["id"]: row["replies"][0]["spoken_text"] for row in read_jsonl(args.history)}
-    character = next(row for row in json.loads(args.characters.read_text(encoding="utf-8")) if row["id"] == "whale")
+    character = next(
+        row for row in json.loads(args.characters.read_text(encoding="utf-8")) if row["id"] == "whale"
+    )
     character = historical_grounded_character(character)
     config = {
-        "base_url": args.endpoint, "model": GROUNDED_DAFEIYU_MODEL, "kind": "llama_cpp", "context_tokens": 4096,
-        "temperature": 0.0, "max_tokens": 180, "seed": 42, "enable_thinking": False,
+        "base_url": args.endpoint,
+        "model": GROUNDED_DAFEIYU_MODEL,
+        "kind": "llama_cpp",
+        "context_tokens": 4096,
+        "temperature": 0.0,
+        "max_tokens": 180,
+        "seed": 42,
+        "enable_thinking": False,
     }
     settings = {"llm": config}
     provider = LlamaCppProvider(config)
     sampling = provider.sampling()
     labels = ("A", "B")
     schema = {
-        "type": "object", "properties": {"pick": {"type": "string", "enum": list(labels)}},
-        "required": ["pick"], "additionalProperties": False,
+        "type": "object",
+        "properties": {"pick": {"type": "string", "enum": list(labels)}},
+        "required": ["pick"],
+        "additionalProperties": False,
     }
     try:
         async with httpx.AsyncClient(base_url=args.endpoint, timeout=180) as client:
@@ -102,21 +123,32 @@ async def replay(args):
                         except (ValueError, RuntimeError) as error:
                             replies[name] = {"error": str(error), "raw": provider.last_content}
                     replies["live_without_grammar"] = await complete(
-                        client, config, sampling, single_system_messages(natural),
+                        client,
+                        config,
+                        sampling,
+                        single_system_messages(natural),
                     )
                     for name, latest in (("plain_neutral", question), ("plain_recapped", recapped)):
                         replies[name] = await complete(
-                            client, config, sampling, plain_messages(previous, neutral, latest),
+                            client,
+                            config,
+                            sampling,
+                            plain_messages(previous, neutral, latest),
                         )
                     picks = {}
                     for name, latest in (("history", question), ("recapped", recapped)):
                         for order in ((0, 1), (1, 0)):
                             alternatives = "\n".join(
-                                f"{label}．{spec['options'][option]}" for label, option in zip(labels, order, strict=True)
+                                f"{label}．{spec['options'][option]}"
+                                for label, option in zip(labels, order, strict=True)
                             )
                             choice_prompt = f"{latest}\n选符合前文的一项，只给选项字母。\n{alternatives}"
                             response = await complete(
-                                client, config, sampling, plain_messages(previous, neutral, choice_prompt), schema,
+                                client,
+                                config,
+                                sampling,
+                                plain_messages(previous, neutral, choice_prompt),
+                                schema,
                             )
                             expected = 0 if case["id"].endswith("-a") else 1
                             response["expected"] = labels[order.index(expected)]

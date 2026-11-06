@@ -30,8 +30,7 @@ EXPLANATION = (
     "回应当前观众的问题。根据提供的字幕与画面说具体事实。"
     "材料足够时用reply_public，text写角色台词，reason用specific_detail。"
     "问题缺相关证据时用wait，reason用insufficient_evidence，text为空。"
-    "只返回JSON对象，包含action、reason、text、evidence_ids。"
-    + RESPONSE_REFERENCE_INSTRUCTION
+    "只返回JSON对象，包含action、reason、text、evidence_ids。" + RESPONSE_REFERENCE_INSTRUCTION
 )
 
 
@@ -61,8 +60,7 @@ def rows_for(scene, observations, cue, index):
         for i, frame in enumerate(frames, 1)
     ]
     factual_shots = [
-        shot | {"text": observed["text"]}
-        for shot, observed in zip(shot_refs, observations, strict=True)
+        shot | {"text": observed["text"]} for shot, observed in zip(shot_refs, observations, strict=True)
     ]
     slot = index % (len(shot_refs) + 1)
 
@@ -70,18 +68,27 @@ def rows_for(scene, observations, cue, index):
         return [*shots[:slot], distractor, cc, *shots[slot:]]
 
     def packet(segments):
-        return ResponseDecisionInput({
-            "kind": "reply", "thread": {"question": question}, "evidence": segments,
-            "coverage": "sampled_visual" if any(s["kind"] == "visual" for s in segments) else "excerpt",
-        })
+        return ResponseDecisionInput(
+            {
+                "kind": "reply",
+                "thread": {"question": question},
+                "evidence": segments,
+                "coverage": "sampled_visual" if any(s["kind"] == "visual" for s in segments) else "excerpt",
+            }
+        )
 
     def dialogue(segments, enough):
         value = packet(segments)
         supporting = [ref.alias for ref in value.references if ref.canonical_id != "other"]
         target = (
-            {"action": "reply_public", "reason": "specific_detail", "text": response, "evidence_ids": supporting}
-            if enough else
-            {"action": "wait", "reason": "insufficient_evidence", "text": "", "evidence_ids": []}
+            {
+                "action": "reply_public",
+                "reason": "specific_detail",
+                "text": response,
+                "evidence_ids": supporting,
+            }
+            if enough
+            else {"action": "wait", "reason": "insufficient_evidence", "text": "", "evidence_ids": []}
         )
         value.validate_wire(target)
         return exchange(value.format(), dump(target), ANCHOR + "\n\n" + EXPLANATION)
@@ -97,7 +104,12 @@ def rows_for(scene, observations, cue, index):
     for name, given, text, pictures, enough in variants:
         extra = {"frames": pictures, "text_messages": dialogue(text, enough)} if pictures else {}
         yield sample(
-            scene["id"] + "-v2-" + name, "video", split, dialogue(given, enough), prov, **extra,
+            scene["id"] + "-v2-" + name,
+            "video",
+            split,
+            dialogue(given, enough),
+            prov,
+            **extra,
         )
 
 
@@ -114,11 +126,17 @@ def main():
         for index, scene in enumerate(row for row in list(rows) if row["id"].endswith("-react")):
             joint = indexed[scene["id"].removesuffix("-react") + "-joint"]
             captions = json.loads(joint["messages"][-1]["content"])["captions"]
-            rows.extend(rows_for(
-                scene, [{"text": caption} for caption in captions], CUES[index % len(CUES)], index,
-            ))
+            rows.extend(
+                rows_for(
+                    scene,
+                    [{"text": caption} for caption in captions],
+                    CUES[index % len(CUES)],
+                    index,
+                )
+            )
         (args.output / f"{split}.jsonl").write_text(
-            "".join(dump(row) + "\n" for row in rows), encoding="utf-8",
+            "".join(dump(row) + "\n" for row in rows),
+            encoding="utf-8",
         )
     read_corpus(args.output, pilot=False, expected=FOCUSED_EXPECTED)
 
