@@ -297,7 +297,16 @@ function renderStatus(status) {
   if ($("character-version")) {
     $("character-version").title = `当前运行角色：${status.character?.name || "—"} v${status.character?.version ?? "—"}`;
   }
+  // 更新 Windows 经典底部状态栏
+  if ($("sb-status-mode")) $("sb-status-mode").textContent = status.mode === "live" ? "直播模式" : "运营模式";
+  if ($("sb-status-char")) $("sb-status-char").textContent = `${status.character?.name || "大肥鱼"} v${status.character?.version ?? 1}`;
+  if ($("sb-status-engine")) $("sb-status-engine").textContent = status.providers?.llm ? `${status.providers.llm} (${label(status.state)})` : "就绪";
 }
+
+setInterval(() => {
+  const clock = $("sb-status-time");
+  if (clock) clock.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+}, 1000);
 
 function tokenCount(value) {
   return typeof value === "number" ? `${value.toLocaleString("en-US")} tokens` : "—";

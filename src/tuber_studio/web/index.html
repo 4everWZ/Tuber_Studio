@@ -1,55 +1,222 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tuber Studio · 控制台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/app.css?v=20261105.26"><link rel="stylesheet" href="/static/account.css"><link rel="stylesheet" href="/static/continuation.css"><link rel="stylesheet" href="/static/memes.css"><link rel="stylesheet" href="/static/workbench.css?v=20261105.33">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tuber Studio · 控制台</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css?v=20261106.01">
+  <link rel="stylesheet" href="/static/account.css">
+  <link rel="stylesheet" href="/static/continuation.css">
+  <link rel="stylesheet" href="/static/memes.css">
+  <link rel="stylesheet" href="/static/workbench.css?v=20261105.33">
 </head>
-<body>
+<body class="win-desktop">
   <main id="login" class="login-shell" hidden>
     <form id="login-form" class="login-panel">
-      <div class="brand-mark" aria-hidden="true">TS</div><h1>Tuber Studio</h1>
-      <p class="muted">本地 AI 角色工作台</p>
-      <label>管理令牌<input id="token" type="password" autocomplete="current-password" required></label>
+      <div class="brand-mark" aria-hidden="true">TS</div>
+      <h1>Tuber Studio</h1>
+      <p class="muted">本地 AI 角色运营与直播工坊</p>
+      <label>管理令牌<input id="token" type="password" autocomplete="current-password" placeholder="请输入启动令牌..." required></label>
       <p class="hint">使用服务启动时生成的管理令牌。同一浏览器可保持登录；退出或重置管理令牌后需重新登录。</p>
-      <button class="primary" type="submit">登录工作台</button><p id="login-error" role="alert" class="error-text"></p>
+      <button class="primary" type="submit">登录工作台</button>
+      <p id="login-error" role="alert" class="error-text"></p>
     </form>
   </main>
-  <div id="workspace" class="workspace" hidden>
-    <aside class="sidebar" id="workspace-sidebar">
-      <a class="brand" href="#automation"><span class="brand-mark" aria-hidden="true">TS</span>Tuber Studio</a>
-      <button type="button" id="close-workspace-menu">关闭栏目</button>
-      <nav class="workspace-nav" aria-label="工作区">
-        <div class="nav-group"><p>运营</p>
-          <a href="#automation" data-page="automation">自动刷视频</a>
-          <a href="#comments" data-page="comments">评论与草稿</a>
-          <a href="#messages" data-page="messages">私信</a>
-          <a href="#dynamics" data-page="dynamics">动态</a>
+
+  <div id="workspace" class="workspace win-layout" hidden>
+    <!-- 左侧：Windows 资源管理器树形导航栏 (Navigation Tree Pane) -->
+    <aside class="sidebar win-explorer-tree" id="workspace-sidebar">
+      <div class="explorer-brand-box">
+        <a class="brand" href="#automation">
+          <span class="brand-mark" aria-hidden="true">TS</span>
+          <div class="brand-info">
+            <span class="brand-name">Tuber Studio</span>
+            <span class="brand-version">大肥鱼工坊 Pro</span>
+          </div>
+        </a>
+        <button type="button" id="close-workspace-menu" class="btn-close-pane" aria-label="关闭侧边栏">✕</button>
+      </div>
+
+      <nav class="explorer-nav" aria-label="工作区树状导航">
+        <!-- 社区运营中心 -->
+        <div class="tree-group">
+          <div class="tree-group-header">
+            <span class="tree-arrow">▾</span>
+            <span class="tree-folder-icon">📁</span>
+            <span class="tree-title">社区运营</span>
+          </div>
+          <div class="tree-group-items">
+            <a href="#automation" data-page="automation" class="tree-node">
+              <span class="node-icon">⚡</span>
+              <span class="node-text">自动刷视频</span>
+            </a>
+            <a href="#comments" data-page="comments" class="tree-node">
+              <span class="node-icon">💬</span>
+              <span class="node-text">评论与草稿待办</span>
+            </a>
+            <a href="#messages" data-page="messages" class="tree-node">
+              <span class="node-icon">✉️</span>
+              <span class="node-text">私信消息</span>
+            </a>
+            <a href="#dynamics" data-page="dynamics" class="tree-node">
+              <span class="node-icon">📢</span>
+              <span class="node-text">动态运营</span>
+            </a>
+            <a href="#automation-records" data-page="automation-records" class="tree-node">
+              <span class="node-icon">📋</span>
+              <span class="node-text">运行与发布记录</span>
+            </a>
+            <a href="#automation-settings" data-page="automation-settings" class="tree-node">
+              <span class="node-icon">⚙️</span>
+              <span class="node-text">刷视频控制策略</span>
+            </a>
+          </div>
         </div>
-        <div class="nav-group workspace-tools">
-          <a href="#live" data-page="live" data-workspace-home="live">直播工作台</a>
-          <a href="#characters" data-page="characters" data-workspace-home="character">角色工作室</a>
-          <a href="#settings" data-page="settings" data-workspace-home="settings">设置</a>
+
+        <!-- 直播与演播工坊 -->
+        <div class="tree-group">
+          <div class="tree-group-header">
+            <span class="tree-arrow">▾</span>
+            <span class="tree-folder-icon">📁</span>
+            <span class="tree-title">直播演播</span>
+          </div>
+          <div class="tree-group-items">
+            <a href="#live" data-page="live" data-workspace-home="live" class="tree-node">
+              <span class="node-icon">🎛️</span>
+              <span class="node-text">直播控制台</span>
+            </a>
+            <a href="#live-scene" data-page="live-scene" class="tree-node">
+              <span class="node-icon">🎬</span>
+              <span class="node-text">场景与编排</span>
+            </a>
+            <a href="#live-music" data-page="live-music" class="tree-node">
+              <span class="node-icon">🎵</span>
+              <span class="node-text">曲库与点歌台</span>
+            </a>
+            <a href="#live-interaction" data-page="live-interaction" class="tree-node">
+              <span class="node-icon">🎮</span>
+              <span class="node-text">互动玩法与游戏</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- 角色与资产工坊 -->
+        <div class="tree-group">
+          <div class="tree-group-header">
+            <span class="tree-arrow">▾</span>
+            <span class="tree-folder-icon">📁</span>
+            <span class="tree-title">角色设定</span>
+          </div>
+          <div class="tree-group-items">
+            <a href="#characters" data-page="characters" data-workspace-home="character" class="tree-node">
+              <span class="node-icon">🐋</span>
+              <span class="node-text">大肥鱼 OC 角色卡</span>
+            </a>
+            <a href="#voices" data-page="voices" class="tree-node">
+              <span class="node-icon">🎙️</span>
+              <span class="node-text">语音与音色设置</span>
+            </a>
+            <a href="#assets" data-page="assets" class="tree-node">
+              <span class="node-icon">🖼️</span>
+              <span class="node-text">素材与表情包</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- 系统管理与配置 -->
+        <div class="tree-group">
+          <div class="tree-group-header">
+            <span class="tree-arrow">▾</span>
+            <span class="tree-folder-icon">📁</span>
+            <span class="tree-title">系统管理</span>
+          </div>
+          <div class="tree-group-items">
+            <a href="#settings" data-page="settings" data-workspace-home="settings" class="tree-node">
+              <span class="node-icon">🤖</span>
+              <span class="node-text">推理端点与模型</span>
+            </a>
+            <a href="#accounts" data-page="accounts" class="tree-node">
+              <span class="node-icon">👤</span>
+              <span class="node-text">账号与权限矩阵</span>
+            </a>
+            <a href="#overview" data-page="overview" class="tree-node">
+              <span class="node-icon">💾</span>
+              <span class="node-text">存储与维护</span>
+            </a>
+            <a href="#issues" data-page="issues" class="tree-node">
+              <span class="node-icon">⚠️</span>
+              <span class="node-text">告警与诊断错误</span>
+            </a>
+          </div>
         </div>
       </nav>
+
+      <div class="explorer-tree-footer">
+        <button type="button" class="btn-win-action" onclick="document.getElementById('logout')?.click()">
+          <span>🚪</span> 退出登录
+        </button>
+      </div>
     </aside>
+
     <button type="button" id="workspace-backdrop" aria-label="关闭栏目" tabindex="-1"></button>
-    <div class="main-shell">
-      <header class="topbar workbench-topbar">
-        <button type="button" id="workspace-menu" aria-controls="workspace-sidebar" aria-expanded="false">栏目</button>
-        <a href="#characters" id="workspace-character" class="status-link">角色待确认</a>
-        <a href="#settings" class="service-status-capsule" id="service-status-capsule"><span class="status-dot" aria-hidden="true"></span><span class="status-text">推理状态待检查</span></a>
-        <div class="mode-workspace">
-          <div class="mode-buttons" role="group" aria-label="推理模式" aria-describedby="resource-mode-feedback">
-            <button type="button" data-inference-mode="text" aria-pressed="false" disabled>运营模式</button>
-            <button type="button" data-inference-mode="live" aria-pressed="false" disabled>直播模式</button>
+
+    <!-- 右侧：主界面 (Command Bar + Property Pages + Status Bar) -->
+    <div class="main-shell win-main-shell">
+      <!-- 经典 Windows Command Bar / 工具栏 -->
+      <header class="topbar win-command-bar">
+        <div class="command-bar-left">
+          <button type="button" id="workspace-menu" class="btn-command-toggle" aria-controls="workspace-sidebar" aria-expanded="false">
+            <span>☰</span> 导航栏
+          </button>
+          
+          <div class="command-separator"></div>
+
+          <!-- 当前角色指示胶囊 -->
+          <a href="#characters" id="workspace-character" class="win-badge-pill" title="查看当前角色设定">
+            <span class="pill-icon">🐋</span>
+            <span class="pill-text">角色待确认</span>
+          </a>
+
+          <!-- 推理状态胶囊 -->
+          <a href="#settings" class="service-status-capsule win-badge-pill" id="service-status-capsule" title="查看推理端点与健康度">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="status-text">推理状态待检查</span>
+          </a>
+
+          <!-- 推理模式单选切换组 -->
+          <div class="mode-workspace win-segmented-bar">
+            <div class="mode-buttons" role="group" aria-label="推理模式" aria-describedby="resource-mode-feedback">
+              <button type="button" data-inference-mode="text" aria-pressed="false" disabled class="btn-segment">
+                <span>📝 运营模式</span>
+              </button>
+              <button type="button" data-inference-mode="live" aria-pressed="false" disabled class="btn-segment">
+                <span>🎙️ 直播模式</span>
+              </button>
+            </div>
+            <span id="resource-mode-feedback" class="hint" role="status"></span>
           </div>
-          <span id="resource-mode-feedback" class="hint" role="status"></span>
         </div>
-        <a href="#automation" id="discovery-top-state" class="status-link">自动刷视频 · 读取中</a>
-        <a href="#issues" id="workspace-issues" class="status-link">告警与错误</a>
+
+        <div class="command-bar-right">
+          <!-- 刷视频状态 -->
+          <a href="#automation" id="discovery-top-state" class="win-quick-status" title="自动刷视频当前状态">
+            <span class="status-indicator"></span> 自动刷视频 · 读取中
+          </a>
+
+          <!-- 告警与错误 -->
+          <a href="#issues" id="workspace-issues" class="win-quick-alert" title="查看告警日志">
+            <span>⚠️</span> 告警与错误
+          </a>
+        </div>
       </header>
-      <div id="notice" class="notice" role="status" hidden></div>
-      <main class="content">
+
+      <!-- 顶部系统通知消息条 -->
+      <div id="notice" class="notice win-notice" role="status" hidden></div>
+
+      <!-- 主视图容器 -->
+      <main class="content win-content">
+        <!-- 保持原有二级导航兼容 (可通过CSS融入属性页Tabs) -->
         <nav class="workspace-subnav" data-workspace="live" aria-label="直播工作台" hidden>
           <a href="#live" data-page="live">控制与输出</a>
           <a href="#live-scene" data-page="live-scene">场景</a>
@@ -67,216 +234,665 @@
           <a href="#overview" data-page="overview">存储与维护</a>
           <a href="#automation-settings" data-page="automation-settings">刷视频</a>
         </nav>
-        <section data-section="automation" hidden>
-          <div class="page-heading discovery-heading">
-            <div><h1>自动刷视频</h1><span id="discovery-state" class="badge" role="status">正在读取运行状态…</span></div>
-            <button id="discovery-toggle" type="button" class="primary" disabled>开始自动刷视频</button>
+
+        <!-- 1. 自动刷视频 (Automation) -->
+        <section data-section="automation" class="win-page-view" hidden>
+          <!-- 逻辑同域 Tab 栏 -->
+          <div class="win-property-tabs">
+            <a href="#automation" class="prop-tab active">⚡ 自动刷视频控制台</a>
+            <a href="#automation-records" class="prop-tab">📋 运行与发布记录</a>
+            <a href="#automation-settings" class="prop-tab">⚙️ 策略与停止控制</a>
           </div>
-          <section class="panel discovery-status" aria-label="自动刷视频运行状态">
-            <form id="discovery-source-form" class="discovery-source-form" data-workspace-anchor>
-              <label>发现来源<select id="discovery-source" disabled>
-                <option value="recommend">首页推荐</option><option value="search">关键词搜索</option>
-                <option value="popular">热门榜单</option><option value="autonomous">由大肥鱼选题</option>
-                <option value="specified">指定视频</option>
-              </select></label>
-              <label id="discovery-keywords-field" hidden>关键词<input id="discovery-keywords" placeholder="多个关键词用逗号分开"></label>
-              <label id="discovery-videos-field" hidden>视频 BV 号<input id="discovery-videos" placeholder="多个 BV 号用逗号分开"></label>
-              <button id="discovery-save-source" type="submit" disabled>保存来源</button>
-              <a href="#automation-settings">刷视频设置</a>
+
+          <div class="page-heading win-heading">
+            <div class="heading-title-box">
+              <h1>自动刷视频 · 社区发现工作台</h1>
+              <span id="discovery-state" class="badge" role="status">正在读取运行状态…</span>
+            </div>
+            <button id="discovery-toggle" type="button" class="primary win-btn-lg" disabled>开始自动刷视频</button>
+          </div>
+
+          <!-- 同一逻辑集成面板：来源、策略与状态一体化 -->
+          <div class="win-group-box">
+            <div class="win-group-title">发现来源与任务参数</div>
+            <form id="discovery-source-form" class="discovery-source-form win-form-grid" data-workspace-anchor>
+              <div class="form-row-unified">
+                <label>发现来源
+                  <select id="discovery-source" disabled>
+                    <option value="recommend">首页推荐</option>
+                    <option value="search">关键词搜索</option>
+                    <option value="popular">热门榜单</option>
+                    <option value="autonomous">由大肥鱼自主选题</option>
+                    <option value="specified">指定特定视频 BV</option>
+                  </select>
+                </label>
+                <div id="discovery-keywords-field" hidden style="flex:1;">
+                  <label>关键词<input id="discovery-keywords" placeholder="多个关键词用逗号隔开"></label>
+                </div>
+                <div id="discovery-videos-field" hidden style="flex:1;">
+                  <label>视频 BV 号<input id="discovery-videos" placeholder="多个 BV 号用逗号隔开"></label>
+                </div>
+                <div class="form-actions-inline">
+                  <button id="discovery-save-source" type="submit" class="win-btn" disabled>保存来源配置</button>
+                  <a href="#automation-settings" class="button quiet">高级运营策略 →</a>
+                </div>
+              </div>
               <p id="discovery-source-note" class="hint" role="status"></p>
             </form>
-            <div id="discovery-attention" aria-live="polite" hidden><h2>需要你处理</h2><ul id="discovery-actions"></ul></div>
-            <div class="discovery-round">
-              <div class="panel-heading"><h2 id="discovery-round-heading">当前一轮</h2><a id="discovery-round-link" hidden>查看轮次</a></div>
-              <p id="discovery-result" role="status">正在读取轮次…</p>
+
+            <div id="discovery-attention" class="win-attention-banner" aria-live="polite" hidden>
+              <div class="attention-header">⚠️ 需要操作者介入处理</div>
+              <ul id="discovery-actions"></ul>
+            </div>
+
+            <!-- 当前轮次进度与状态条 -->
+            <div class="win-subgroup-box discovery-round" style="margin-top: 14px;">
+              <div class="panel-heading">
+                <h2 id="discovery-round-heading">当前轮次进度</h2>
+                <a id="discovery-round-link" class="win-link-btn" hidden>查看轮次详情</a>
+              </div>
+              <p id="discovery-result" class="speech-text" style="font-size:14px; min-height:auto;" role="status">正在读取轮次…</p>
               <p id="discovery-counts" class="hint"></p>
             </div>
-          </section>
-          <section class="panel discovery-activity" aria-label="最近活动">
-            <div class="panel-heading"><h2>最近活动</h2><a href="#automation-records">全部运行记录</a></div>
-            <div id="discovery-activity-list"><p class="hint">正在读取最近活动…</p></div>
-          </section>
-        </section>
-        <section data-section="automation-records" hidden>
-          <div class="page-heading"><h1>运行记录</h1><a href="#automation">返回自动刷视频</a></div>
-          <details class="panel"><summary>最近已发送</summary><div id="discovery-published"></div></details>
-          <div id="automation-panel"></div>
-        </section>
-        <section data-section="automation-settings" hidden>
-          <div class="page-heading"><h1>刷视频设置</h1><a href="#automation">返回自动刷视频</a></div>
-          <details class="panel automation-settings"><summary>轮次设置</summary>
-            <form id="op-round-settings" class="discovery-source-form">
-              <label>单视频回复上限<input id="op-max-replies" type="number" min="0" max="20" required></label>
-              <label>轮次间隔（秒）<input type="number" id="op-interval" min="60" max="86400" step="1" required></label>
-              <button id="op-save-quick-config" type="submit" disabled>保存设置</button>
-            </form>
-          </details>
-          <details class="panel automation-settings" id="operations-controls" data-workspace-anchor><summary>全渠道运营与停止控制</summary>
-            <p class="hint">全渠道运营覆盖评论、通知和私信。紧急停止同时阻止各渠道自动收发，重启后仍有效。</p>
-            <div class="actions">
-              <button id="op-preview-round" type="button">只读单轮预览</button>
-              <button id="op-toggle-auto" type="button">开启全渠道自主运营</button>
-              <button id="op-stop-round" type="button">仅停止本轮</button>
-              <button id="op-emergency" type="button" class="danger">紧急停止所有自动收发</button>
-              <button id="op-reset-stop" type="button" hidden>解除紧急停止</button>
-              <button id="refresh-operations" type="button">刷新</button>
-            </div>
-          </details>
-          <p id="automatic-sending-state" class="feature-note" role="status" hidden></p>
-          <details class="panel"><summary>其它运营任务的恢复策略</summary><div id="operations-recovery-settings"></div></details>
-        </section>
-        <section data-section="issues" hidden>
-          <div class="page-heading"><h1>告警与错误</h1><a href="#automation">自动刷视频</a></div>
-          <div id="workspace-issue-list" class="panel" aria-live="polite"></div>
-        </section>
-        <section data-section="comments" hidden>
-          <div class="page-heading"><h1>评论与草稿</h1><button type="button" id="open-manual-comments">评论来源与手动取材</button></div>
-          <section id="comment-queue">
-            <div class="queue-toolbar"><label for="queue-view">状态筛选</label><select id="queue-view">
-              <option value="review">待审核</option><option value="verify">待核对</option>
-              <option value="processing">处理中</option><option value="history">历史</option>
-            </select></div>
-            <p id="queue-feedback" class="hint" role="status"></p>
-            <div class="review-layout">
-              <article class="panel"><h2>公开评论待办</h2><div id="queue-list"></div>
-                <div class="actions queue-pagination"><button id="queue-prev" type="button" disabled>上一页</button><button id="queue-next" type="button" disabled>下一页</button><span id="queue-count-label" class="hint"></span></div>
-              </article>
-              <article class="panel review-detail" id="queue-detail" aria-label="记录详情"></article>
-            </div>
-          </section>
-          <div id="comment-sources" hidden>
-          <details class="panel" id="comment-acquisition" data-workspace-anchor><summary>手动取材</summary>
-            <div class="panel-heading"><h2>读取视频评论</h2><span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span></div>
-            <form id="fetch-comments-form" class="fetch-row"><label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label><label>最多页数<select id="comment-pages"><option value="1">1 页</option><option value="2">2 页</option><option value="3">3 页</option><option value="5">5 页</option></select></label><button class="primary" type="submit">读取评论</button></form>
-            <p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p>
-            <button id="refresh-videos" type="button">浏览热门视频</button>
-            <div id="popular-videos" class="video-list" hidden></div>
-            <details class="subsection" id="comment-import" data-workspace-anchor><summary>导入已有 JSON / CSV 评论</summary>
-              <form id="import-comments-form"><label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label><label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="6" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"这期会有续集吗？"}]' required></textarea></label><p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。内容保留在输入框，导入失败后可以修正重试。</p><details><summary>高级字段映射（标准字段可留空）</summary><label>字段映射 JSON<textarea id="import-mapping" class="code-editor compact-editor" rows="3" placeholder='{"comment_id":"id","platform_user_id":"uid","display_name":"name","content":"message"}' spellcheck="false"></textarea></label><p class="hint">按「目标字段: 来源字段」填写。目标支持 comment_id、platform_user_id、display_name、content、like_count、created_at、thread_id、parent_comment_id；未填写的字段使用同名来源。楼ID缺省取评论ID，父评论ID可空。</p></details><div class="actions import-actions"><button id="preview-import" type="button">预览导入</button><button id="submit-import" class="primary" type="submit" disabled>导入评论</button><span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span></div><div id="import-preview" class="table-scroll import-preview" hidden><table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table></div></form>
-            </details>
-          </details>
-          <div class="comment-toolbar"><label>视频筛选<input id="filter-video" placeholder="全部视频"></label><label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label><label>类别<select id="filter-category"><option value="">全部类别</option><option value="question">问题</option><option value="suggestion">建议 / 反馈</option><option value="interaction">适合互动</option><option value="spam">垃圾</option><option value="general">一般评论</option></select></label><label>草稿状态<select id="filter-status"><option value="">全部状态</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label><button id="filter-comments">筛选</button><button id="analyze-comments">归类评论</button><button id="generate-drafts" class="primary">为选中评论生成草稿</button></div>
-          <div class="comment-layout" id="comment-review" data-workspace-anchor><article class="panel"><div class="panel-heading"><h2>评论列表 <span id="comment-count" class="muted"></span></h2><span id="selected-comment-count" class="hint">已选 0 条</span></div><div class="table-scroll"><table><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table></div></article><article class="panel draft-panel">
-            <div class="panel-heading"><h2>评论详情</h2><span id="draft-status" class="badge">选择评论</span></div>
-            <p id="draft-source" class="quoted-text">选择一条评论，查看原文和所在楼。</p>
-            <dl id="draft-meta" class="description-list"></dl>
-            <a id="open-comment-draft" href="#comments" hidden>到待办处理草稿</a>
-            <section id="comment-continuation" hidden></section>
-            <details class="subsection"><summary>当前楼上下文</summary>
-              <p id="comment-context-state" class="hint">上下文能力待验证。</p>
-              <p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文。</p>
-              <div class="actions"><button id="compact-comments" type="button">压缩当前楼</button><button id="rebuild-comments" type="button" aria-describedby="thread-rebuild-state">重建上下文</button></div>
-              <p id="thread-rebuild-state" class="hint" role="status">从本地现存原文重建，保留已有非空上下文。</p>
-            </details></article></div>
-          <article class="panel"><div class="panel-heading"><h2>评论任务</h2><span class="hint">生成任务在后台执行，错误可见</span></div><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></div></article>
           </div>
-        </section>
-        <section data-section="messages" hidden><div id="messages-panel"></div></section>
-        <section data-section="dynamics" hidden>
-          <div class="page-heading"><div><p class="eyebrow">以当前角色决定何时表达</p><h1>动态运营</h1></div><div class="actions"><button id="refresh-dynamics" type="button">刷新</button><button id="stop-dynamics" type="button" class="danger" disabled>停止动态运营</button></div></div>
-          <article class="panel"><div class="panel-heading"><h2>运营策略</h2><span id="dynamic-mode" class="badge">正在读取</span></div>
-            <form id="dynamic-policy-form"><fieldset id="dynamic-policy-fields" class="provider-fields" disabled>
-              <div class="policy-checks"><label><input id="dynamic-enabled" type="checkbox">开启动态运营</label><label><input id="dynamic-auto-publish" type="checkbox" checked>自动发布（关闭则人工审核）</label><label><input id="dynamic-use-memes" type="checkbox">允许模型为正文附加一张表情包</label></div>
-              <p class="hint">默认关闭运营。开启运营且勾选自动发布后，后台会以当前角色直接发布动态；至少间隔 6 小时，滚动 24 小时最多尝试 2 次（含失败），也可决定等待。</p>
-              <div class="form-grid"><label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="300" max="86400" step="1" value="1800" required></label><label>最短发布间隔（秒）<input id="dynamic-min-post-interval" type="number" min="21600" max="604800" step="1" value="21600" required></label><label>24 小时最多尝试（含失败）<input id="dynamic-max-posts" type="number" min="1" max="2" step="1" value="2" required></label><label>运营记忆摘要（tokens）<input id="dynamic-memory-summary-max" type="number" min="256" max="4096" step="1" value="2048" required></label></div>
-            </fieldset><div class="actions"><button id="save-dynamic-policy" type="submit" disabled>保存运营策略</button><button id="evaluate-dynamics" type="button" disabled>评估并生成草稿</button><a href="#account-settings" class="inline-link">配置共用的 B站账号</a></div></form>
-            <p id="dynamic-policy-state" class="hint" role="status">手动评估始终生成待审核草稿，不直接发布。账号凭证在设置页统一管理。</p>
-            <dl id="dynamic-policy-status" class="description-list"></dl>
-          </article>
-          <article class="panel"><div class="panel-heading"><h2>运营记忆摘要</h2><span id="dynamic-summary-valid" class="badge">正在读取</span></div><p class="hint">运营模型使用这份有界摘要，原文用于来源核对。摘要覆盖更新，长度独立于模型上下文窗口。</p><dl id="dynamic-summary-meta" class="description-list"></dl><p id="dynamic-summary-state" class="hint" role="status">正在读取当前角色的运营记忆摘要。</p><div class="table-scroll"><table><thead><tr><th>来源 ID</th><th>摘要摘录</th><th>类型</th></tr></thead><tbody id="dynamic-summary-entries"></tbody></table></div></article>
-          <div class="comment-layout"><article class="panel"><div class="panel-heading"><h2>动态草稿与发布记录</h2><span id="dynamic-count" class="hint"></span></div><div class="table-scroll"><table><thead><tr><th>当地时间 / 角色</th><th>内容</th><th>状态</th></tr></thead><tbody id="dynamic-posts"></tbody></table></div></article>
-            <article class="panel draft-panel"><div class="panel-heading"><h2>动态详情</h2><span id="dynamic-post-status" class="badge">选择动态</span></div><dl id="dynamic-post-meta" class="description-list"></dl><div class="actions dm-meme-actions"><button id="dynamic-pick-meme" type="button" disabled>选择配图</button><button id="dynamic-clear-meme" type="button" disabled>移除配图</button><a href="#assets">管理表情包图库 →</a></div><div id="dynamic-meme-preview" class="meme-attachment-preview" hidden><strong id="dynamic-meme-name"></strong><div id="dynamic-meme-image"></div><p id="dynamic-meme-availability" class="hint"></p><p class="hint">正文与这1张图片将作为同一条动态发布。</p></div><label>编辑动态<textarea id="dynamic-post-text" rows="7" disabled></textarea></label><div class="actions"><button id="approve-dynamic" class="primary" disabled>审核通过</button><button id="reject-dynamic" disabled>拒绝</button><button id="publish-dynamic" disabled>发布已审核动态</button></div><p id="dynamic-post-note" class="hint" role="status">从列表选择动态，查看来源、决策与平台回执。</p><section id="dynamic-continuation" hidden></section><h3 class="subsection">来源原文</h3><div id="dynamic-post-sources" class="quoted-text">暂无来源。</div><details class="subsection"><summary>平台回执 / 错误</summary><pre id="dynamic-post-receipt" class="code-small">暂无回执。</pre></details></article>
-          </div>
-          <details class="panel"><summary>允许用于公开动态的来源记忆</summary><p class="hint">已发布的本角色回复自动可用。下列记忆仅在勾选后进入动态运营来源；角色故事标为虚构，勾选即允许将其用于公开动态。</p><div class="table-scroll"><table><thead><tr><th>公开使用</th><th>来源记忆</th><th>类型 / 当地时间</th></tr></thead><tbody id="dynamic-memories"></tbody></table></div><p id="dynamic-memory-state" class="hint" role="status">仅列出当前角色版本可选择的来源记忆。</p></details>
-          <article class="panel"><div class="panel-heading"><h2>评估决策</h2><span class="hint">保留发布、等待与失败原因</span></div><div class="table-scroll"><table><thead><tr><th>当地时间</th><th>决定</th><th>原因</th><th>来源 / 错误</th></tr></thead><tbody id="dynamic-decisions"></tbody></table></div><div id="dynamic-decision-continuation" hidden></div></article>
-        </section>
-        <section data-section="overview" hidden>
-          <div class="page-heading"><h1>存储与维护</h1></div>
-          <section class="panel" id="cache-panel" data-workspace-anchor></section>
-          <details class="panel">
-            <summary>运行诊断</summary>
-            <dl class="workspace-overview">
-              <div><dt>直播会话</dt><dd id="overview-live-state">待确认</dd></div>
-              <div><dt>待播队列</dt><dd id="overview-queue">—</dd></div>
-              <div><dt>OBS 播放器</dt><dd id="overview-player">待确认</dd></div>
-              <div><dt>语音来源</dt><dd id="overview-speech">待确认</dd></div>
-            </dl>
-            <div class="actions"><a class="button" href="#live">控制与队列</a><a class="button" href="#live-player">OBS 播放器</a><a class="button" href="#voices">语音设置</a></div>
-          </details>
-          <article class="panel"><div class="panel-heading"><h2>上下文管理</h2></div><details><summary>容量与压缩诊断</summary><dl id="context-details" class="description-list"></dl><p id="context-profile-note" class="hint">显示模型声明、服务实际容量与当前占用。</p></details><div class="actions"><button id="compact-live">压缩直播上下文</button><label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV… 或 import-批次"></label><label class="inline-field">楼ID<input id="compact-thread-id" placeholder="要压缩的楼ID"></label><button id="compact-comments-settings">压缩评论上下文</button></div><p id="compaction-result" class="hint" role="status">压缩由当前文本模型执行，沿用 Codex 本地压缩流程；直播与评论上下文分别维护。没有历史时不生成虚构摘要。压缩后占用≥40%会自动再压一轮，最多两轮，任一轮失败保留原历史。摘要默认2048 tokens，按需要保留的信息调整；更短不代表质量更好。</p></article>
-          <article class="panel" id="retention-panel"><div class="panel-heading"><h2>对话数据留存</h2><span class="hint">按服务已保存策略自动执行</span></div>
-            <form id="retention-form"><div class="retention-policy"><label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled></label><label class="check-field"><input id="retention-never" type="checkbox" disabled>永不自动清理</label><button id="retention-save" type="submit" disabled>保存留存策略</button></div><p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p></form>
-            <dl id="retention-status" class="description-list"></dl><pre id="retention-last-result" class="code-small" hidden></pre>
-            <div class="subsection"><h3>手动清理</h3><p class="hint">清理会永久删除到期的对话上下文、来源检索索引与直播记录，范围以预览为准。保留原始评论／私信、回复草稿、发送回执、角色、用户与关系。此操作不会切换资源模式。</p><div class="actions"><label class="inline-field">截至日期（可选）<input id="retention-before" type="date" aria-describedby="retention-date-help" disabled></label><button id="retention-preview" type="button" disabled>预览清理范围</button></div><p id="retention-date-help" class="hint">留空时按已保存策略计算；永不自动清理时需指定日期。所选日期按 UTC 整日计入，提交次日 00:00 UTC 作为不包含的截止边界。</p>
-              <div id="retention-preview-panel" class="retention-preview" hidden><p id="retention-preview-cutoff" class="hint"></p><dl id="retention-preview-counts" class="description-list"></dl><details><summary>完整预览结果</summary><pre id="retention-preview-detail" class="code-small"></pre></details><label class="check-field"><input id="retention-confirm" type="checkbox" disabled>我已核对以上范围与数量，确认永久清理这些记录</label><button id="retention-cleanup" class="danger" type="button" disabled>确认清理预览范围</button></div><p id="retention-cleanup-state" class="hint" role="status">请先预览待清理范围，再明确确认。</p>
-            </div>
-          </article>
-        </section>
-        <section data-section="live-scene" hidden>
-          <div class="page-heading"><h1>场景编排</h1><a href="/live" class="button">独立直播工作台</a></div>
-          <iframe class="live-workspace-frame" data-src="/live?view=scene" title="场景编排"></iframe>
-        </section>
-        <section data-section="live-music" hidden>
-          <div class="page-heading"><h1>曲库与点歌</h1><a href="#live">查看直播控制</a></div>
-          <iframe class="live-workspace-frame" data-src="/live?view=music" title="曲库与点歌"></iframe>
 
+          <!-- 最近活动日志 -->
+          <div class="win-group-box discovery-activity" style="margin-top: 16px;">
+            <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">实时活动流水</div>
+              <a href="#automation-records" class="win-link-btn">进入完整运行记录 →</a>
+            </div>
+            <div id="discovery-activity-list" class="win-activity-scroll"><p class="hint">正在读取最近活动…</p></div>
+          </div>
         </section>
-        <section data-section="live" hidden>
-          <p id="live-feature-notice" class="feature-note" role="status">当前推理配置未启用直播。请到推理设置连接支持直播的 Jetson。</p>
-          <div class="page-heading"><div><p class="eyebrow">本地调试会话</p><h1>直播控制</h1></div><div class="actions"><span id="live-state" class="badge">已停止</span><button data-action="start" class="primary">启动调试会话</button><button data-action="pause">暂停</button><button data-action="resume">恢复</button><button data-action="stop" class="danger">停止直播</button></div></div>
-          <div class="actions control-strip"><button data-action="mute" class="danger">紧急静音</button><button data-action="unmute">解除静音</button><button data-action="skip">跳过当前任务</button><button data-action="clear">清空待播队列</button><span class="hint">暂停保留队列；停止会取消当前及待播任务。</span></div>
-          <article class="panel"><div class="panel-heading"><h2>歌曲播放</h2><a href="#live-music">管理曲库与待播</a></div><p id="live-song-state" role="status">正在读取播放状态…</p><div class="actions"><button id="live-song-toggle" type="button" disabled>暂停歌曲</button><span id="live-song-queue" class="hint"></span></div></article>
-          <details class="panel" id="live-player" data-workspace-anchor><summary id="overlay-heading">OBS 浏览器源</summary><p id="overlay-help" class="muted">仅一个播放器页面可播放语音，后打开的页面会进入待机。</p><label>播放器链接<input id="overlay-url" readonly type="text"></label><div class="actions"><button id="copy-overlay">复制播放器链接</button><a id="open-overlay" class="button" href="/overlay" target="_blank" rel="noopener">打开播放器</a></div><p class="hint">此链接含独立播放器凭证，只授予播放权限。后台不会自动打开播放器。</p></details>
-          <div class="live-grid"><article class="panel"><div class="panel-heading"><h2>离线事件调试台</h2><span class="badge">不连接真实平台</span></div><form id="event-form"><div class="form-grid"><label>事件类型<select id="event-type"><option value="chat">弹幕</option><option value="gift">礼物</option><option value="sfx">预录音效</option><option value="song">点歌</option><option value="disconnect">模拟断线</option></select></label><label>观众 ID<input id="event-user" value="debug-001" maxlength="100"></label><label>显示昵称<input id="event-name" value="调试观众" maxlength="100"></label><label>事件 ID<input id="event-id" placeholder="留空自动生成；重复 ID 用于去重测试" maxlength="180"></label></div><label>弹幕 / 事件内容<textarea id="event-text" rows="3" maxlength="1000" placeholder="例如：大肥鱼，今天在忙什么？" required></textarea></label><label id="sfx-label" hidden>预录素材 ID<input id="event-asset" placeholder="从素材页复制音频素材 ID"></label><div class="actions"><button type="submit" class="primary">注入事件</button><button type="button" id="fill-greeting">填入问候</button><span id="event-result" class="hint" role="status"></span></div></form></article><article class="panel"><div class="panel-heading"><h2>当前任务</h2><span id="live-current-status" class="badge">空闲</span></div><p id="live-current-text" class="speech-text">等待事件。</p><p id="live-current-detail" class="hint"></p><div class="subsection"><h3>最近播报</h3><p id="last-played" class="muted">暂无已确认播放记录。</p></div></article></div>
-          <article class="panel"><div class="panel-heading"><h2>回复队列与记录</h2><button id="refresh-live">刷新</button></div><div class="table-scroll"><table><thead><tr><th>任务 / 时间</th><th>角色</th><th>台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="live-jobs"></tbody></table></div></article>
-          <article class="panel"><div class="panel-heading"><h2>收到的事件</h2><span class="hint">重复、过期与过滤原因保留在记录中</span></div><div class="table-scroll"><table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table></div></article>
+
+        <!-- 2. 自动刷视频记录 (Automation Records) -->
+        <section data-section="automation-records" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#automation" class="prop-tab">⚡ 自动刷视频控制台</a>
+            <a href="#automation-records" class="prop-tab active">📋 运行与发布记录</a>
+            <a href="#automation-settings" class="prop-tab">⚙️ 策略与停止控制</a>
+          </div>
+          <div class="page-heading win-heading">
+            <h1>运行记录与审查明细</h1>
+            <a href="#automation" class="button quiet">← 返回控制台</a>
+          </div>
+          <div class="win-group-box">
+            <div class="win-group-title">最近已发布记录</div>
+            <div id="discovery-published"></div>
+          </div>
+          <div id="automation-panel" style="margin-top:16px;"></div>
         </section>
-        <section data-section="live-interaction" hidden>
-          <div class="page-heading"><h1>互动与游戏</h1><div class="actions">
-            <a class="button" href="#interactive-rules-card">点歌与礼物规则</a>
-            <a class="button" href="#daily-memory-card">每日记忆</a>
-          </div></div>
-          <div class="live-grid" style="margin-top: 16px;">
-            <article class="panel" id="live-game-panel" data-workspace-anchor>
+
+        <!-- 3. 自动刷视频设置 (Automation Settings) -->
+        <section data-section="automation-settings" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#automation" class="prop-tab">⚡ 自动刷视频控制台</a>
+            <a href="#automation-records" class="prop-tab">📋 运行与发布记录</a>
+            <a href="#automation-settings" class="prop-tab active">⚙️ 策略与停止控制</a>
+          </div>
+          <div class="page-heading win-heading">
+            <h1>刷视频运营策略与应急控制</h1>
+            <a href="#automation" class="button quiet">← 返回控制台</a>
+          </div>
+
+          <div class="win-group-box automation-settings">
+            <div class="win-group-title">轮次节拍配置</div>
+            <form id="op-round-settings" class="discovery-source-form win-form-row">
+              <div class="form-grid">
+                <label>单视频回复上限
+                  <input id="op-max-replies" type="number" min="0" max="20" required>
+                  <small class="hint">单视频最多互动条数</small>
+                </label>
+                <label>轮次间隔（秒）
+                  <input type="number" id="op-interval" min="60" max="86400" step="1" required>
+                  <small class="hint">完成一轮到启动下一轮的等待时间</small>
+                </label>
+              </div>
+              <div class="actions" style="margin-top:12px;">
+                <button id="op-save-quick-config" type="submit" class="primary" disabled>保存轮次参数</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="win-group-box automation-settings" id="operations-controls" data-workspace-anchor style="margin-top:16px;">
+            <div class="win-group-title">全渠道自主运营与紧急停止熔断</div>
+            <p class="hint">全渠道运营覆盖视频评论、消息通知和私信。紧急停止同时阻止各渠道自动收发，重启后仍保持生效。</p>
+            <div class="actions" style="margin-top:10px;">
+              <button id="op-preview-round" type="button" class="win-btn">只读单轮预览</button>
+              <button id="op-toggle-auto" type="button" class="primary">开启全渠道自主运营</button>
+              <button id="op-stop-round" type="button" class="win-btn">仅停止当前轮</button>
+              <button id="op-emergency" type="button" class="danger">🛑 紧急停止所有自动收发</button>
+              <button id="op-reset-stop" type="button" class="win-btn" hidden>解除紧急停止</button>
+              <button id="refresh-operations" type="button" class="win-btn">刷新状态</button>
+            </div>
+          </div>
+          <p id="automatic-sending-state" class="feature-note" role="status" hidden></p>
+
+          <div class="win-group-box" style="margin-top:16px;">
+            <div class="win-group-title">异常运营任务的恢复与重试策略</div>
+            <div id="operations-recovery-settings"></div>
+          </div>
+        </section>
+
+        <!-- 4. 告警与诊断 (Issues) -->
+        <section data-section="issues" class="win-page-view" hidden>
+          <div class="page-heading win-heading">
+            <h1>系统告警与诊断错误</h1>
+            <a href="#automation" class="button quiet">返回主控制台</a>
+          </div>
+          <div id="workspace-issue-list" class="win-group-box" aria-live="polite"></div>
+        </section>
+
+        <!-- 5. 评论与草稿 (Comments) -->
+        <section data-section="comments" class="win-page-view" hidden>
+          <div class="page-heading win-heading">
+            <div class="heading-title-box">
+              <h1>评论处理与草稿审核</h1>
+              <span class="hint">实时跟帖、楼中楼对话审查与人机回执核验</span>
+            </div>
+            <button type="button" id="open-manual-comments" class="win-btn">📥 评论来源与手动取材</button>
+          </div>
+
+          <section id="comment-queue">
+            <div class="queue-toolbar win-filter-bar">
+              <label for="queue-view" style="margin:0; font-weight:600;">待办状态筛选：</label>
+              <select id="queue-view" style="width:auto; min-width:140px;">
+                <option value="review">待审核 (Review)</option>
+                <option value="verify">待核对 (Verify)</option>
+                <option value="processing">处理中 (Processing)</option>
+                <option value="history">已归档历史 (History)</option>
+              </select>
+            </div>
+            <p id="queue-feedback" class="hint" role="status"></p>
+            <div class="review-layout win-split-pane" style="margin-top:12px;">
+              <article class="win-group-box">
+                <div class="win-group-title">公开评论待办列表</div>
+                <div id="queue-list" class="win-table-container"></div>
+                <div class="actions queue-pagination" style="margin-top:12px;">
+                  <button id="queue-prev" type="button" class="win-btn" disabled>上一页</button>
+                  <button id="queue-next" type="button" class="win-btn" disabled>下一页</button>
+                  <span id="queue-count-label" class="hint"></span>
+                </div>
+              </article>
+              <article class="win-group-box review-detail draft-panel" id="queue-detail" aria-label="记录详情"></article>
+            </div>
+          </section>
+
+          <!-- 手动取材与高级楼层控制 -->
+          <div id="comment-sources" hidden style="margin-top:16px;">
+            <div class="win-group-box" id="comment-acquisition" data-workspace-anchor>
               <div class="panel-heading">
-                <h2>游戏联动 · 离线模拟</h2>
+                <div class="win-group-title" style="margin:0;">视频评论手动取材</div>
+                <span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span>
+              </div>
+              <form id="fetch-comments-form" class="fetch-row" style="margin-top:10px;">
+                <label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label>
+                <label>最多读取页数
+                  <select id="comment-pages">
+                    <option value="1">1 页</option>
+                    <option value="2">2 页</option>
+                    <option value="3">3 页</option>
+                    <option value="5">5 页</option>
+                  </select>
+                </label>
+                <button class="primary win-btn" type="submit">读取评论</button>
+              </form>
+              <p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p>
+              <button id="refresh-videos" type="button" class="win-btn" style="margin-top:8px;">浏览热门视频列表</button>
+              <div id="popular-videos" class="video-list" hidden></div>
+
+              <div class="win-subgroup-box" id="comment-import" data-workspace-anchor style="margin-top:16px;">
+                <div class="win-subgroup-title">导入已有 JSON / CSV 评论批次</div>
+                <form id="import-comments-form">
+                  <label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label>
+                  <label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="5" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"大肥鱼今天什么时候开播？"}]' required></textarea></label>
+                  <p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。</p>
+                  
+                  <div class="actions import-actions">
+                    <button id="preview-import" type="button" class="win-btn">预览导入</button>
+                    <button id="submit-import" class="primary win-btn" type="submit" disabled>导入评论</button>
+                    <span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span>
+                  </div>
+                  <div id="import-preview" class="table-scroll import-preview" hidden>
+                    <table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- 评论筛选与生成工具条 -->
+            <div class="comment-toolbar win-filter-bar" style="margin-top:16px;">
+              <label>视频筛选<input id="filter-video" placeholder="全部视频"></label>
+              <label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label>
+              <label>类别
+                <select id="filter-category">
+                  <option value="">全部类别</option>
+                  <option value="question">问题</option>
+                  <option value="suggestion">建议 / 反馈</option>
+                  <option value="interaction">适合互动</option>
+                  <option value="spam">垃圾</option>
+                  <option value="general">一般评论</option>
+                </select>
+              </label>
+              <label>草稿状态
+                <select id="filter-status">
+                  <option value="">全部状态</option>
+                  <option value="pending_review">待审核</option>
+                  <option value="approved">已审核</option>
+                  <option value="rejected">已拒绝</option>
+                  <option value="copied">已复制</option>
+                  <option value="published">已发布</option>
+                </select>
+              </label>
+              <button id="filter-comments" class="win-btn">执行筛选</button>
+              <button id="analyze-comments" class="win-btn">智能归类</button>
+              <button id="generate-drafts" class="primary win-btn">为选中评论生成草稿</button>
+            </div>
+
+            <div class="comment-layout win-split-pane" id="comment-review" data-workspace-anchor style="margin-top:12px;">
+              <article class="win-group-box">
+                <div class="panel-heading">
+                  <div class="win-group-title" style="margin:0;">评论列表 <span id="comment-count" class="muted"></span></div>
+                  <span id="selected-comment-count" class="hint">已选 0 条</span>
+                </div>
+                <div class="table-scroll">
+                  <table>
+                    <thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿状态</th></tr></thead>
+                    <tbody id="comments"></tbody>
+                  </table>
+                </div>
+              </article>
+              <article class="win-group-box draft-panel">
+                <div class="panel-heading">
+                  <div class="win-group-title" style="margin:0;">评论详情</div>
+                  <span id="draft-status" class="badge">选择评论</span>
+                </div>
+                <p id="draft-source" class="quoted-text">选择一条评论，查看原文和所在楼。</p>
+                <dl id="draft-meta" class="description-list"></dl>
+                <a id="open-comment-draft" href="#comments" hidden class="win-link-btn">到待办处理草稿</a>
+                <section id="comment-continuation" hidden></section>
+                <div class="win-subgroup-box" style="margin-top:12px;">
+                  <div class="win-subgroup-title">当前楼上下文与压缩</div>
+                  <p id="comment-context-state" class="hint">上下文能力待验证。</p>
+                  <p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文。</p>
+                  <div class="actions" style="margin-top:8px;">
+                    <button id="compact-comments" type="button" class="win-btn">压缩当前楼</button>
+                    <button id="rebuild-comments" type="button" class="win-btn" aria-describedby="thread-rebuild-state">重建上下文</button>
+                  </div>
+                  <p id="thread-rebuild-state" class="hint" role="status">从本地现存原文重建，保留已有非空上下文。</p>
+                </div>
+              </article>
+            </div>
+            
+            <article class="win-group-box" style="margin-top:16px;">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">后台生成任务队列</div>
+                <span class="hint">任务在后台执行，错误状态实时反馈</span>
+              </div>
+              <div class="table-scroll">
+                <table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 6. 私信 (Messages) -->
+        <section data-section="messages" class="win-page-view" hidden>
+          <div class="page-heading win-heading">
+            <h1>私信沟通与会话工作台</h1>
+          </div>
+          <div id="messages-panel"></div>
+        </section>
+
+        <!-- 7. 动态 (Dynamics) -->
+        <section data-section="dynamics" class="win-page-view" hidden>
+          <div class="page-heading win-heading">
+            <div class="heading-title-box">
+              <p class="eyebrow">以大肥鱼第一人称视角分享日常与趣事</p>
+              <h1>动态运营工作台</h1>
+            </div>
+            <div class="actions">
+              <button id="refresh-dynamics" type="button" class="win-btn">刷新数据</button>
+              <button id="stop-dynamics" type="button" class="danger" disabled>停止动态运营</button>
+            </div>
+          </div>
+
+          <!-- 运营策略 GroupBox -->
+          <div class="win-group-box">
+            <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">动态生成策略与发布频次</div>
+              <span id="dynamic-mode" class="badge">正在读取</span>
+            </div>
+            <form id="dynamic-policy-form">
+              <fieldset id="dynamic-policy-fields" class="provider-fields" disabled>
+                <div class="policy-checks win-checks-bar">
+                  <label><input id="dynamic-enabled" type="checkbox"> 开启动态运营</label>
+                  <label><input id="dynamic-auto-publish" type="checkbox" checked> 自动发布（关闭则存为草稿待人工审核）</label>
+                  <label><input id="dynamic-use-memes" type="checkbox"> 允许模型为动态附加 1 张专属表情包</label>
+                </div>
+                <div class="form-grid" style="margin-top:12px;">
+                  <label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="300" max="86400" step="1" value="1800" required></label>
+                  <label>最短发布间隔（秒）<input id="dynamic-min-post-interval" type="number" min="21600" max="604800" step="1" value="21600" required></label>
+                  <label>24 小时最大尝试次数<input id="dynamic-max-posts" type="number" min="1" max="2" step="1" value="2" required></label>
+                  <label>运营记忆摘要预算 (tokens)<input id="dynamic-memory-summary-max" type="number" min="256" max="4096" step="1" value="2048" required></label>
+                </div>
+              </fieldset>
+              <div class="actions" style="margin-top:14px;">
+                <button id="save-dynamic-policy" type="submit" class="primary win-btn" disabled>保存运营策略</button>
+                <button id="evaluate-dynamics" type="button" class="win-btn" disabled>立即评估并生成草稿</button>
+                <a href="#accounts" class="inline-link">配置 B站共用账号 →</a>
+              </div>
+            </form>
+            <p id="dynamic-policy-state" class="hint" role="status"></p>
+            <dl id="dynamic-policy-status" class="description-list"></dl>
+          </div>
+
+          <!-- 双栏布局：动态记录与编辑器 -->
+          <div class="comment-layout win-split-pane" style="margin-top:16px;">
+            <article class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">动态草稿与发布履历</div>
+                <span id="dynamic-count" class="hint"></span>
+              </div>
+              <div class="table-scroll">
+                <table><thead><tr><th>时间 / 角色</th><th>正文预览</th><th>状态</th></tr></thead><tbody id="dynamic-posts"></tbody></table>
+              </div>
+            </article>
+
+            <article class="win-group-box draft-panel">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">动态审核与编辑</div>
+                <span id="dynamic-post-status" class="badge">选择动态</span>
+              </div>
+              <dl id="dynamic-post-meta" class="description-list"></dl>
+              <div class="actions dm-meme-actions" style="margin-bottom:10px;">
+                <button id="dynamic-pick-meme" type="button" class="win-btn" disabled>选择配图表情包</button>
+                <button id="dynamic-clear-meme" type="button" class="win-btn" disabled>移除配图</button>
+                <a href="#assets" class="win-link-btn">管理表情包图库 →</a>
+              </div>
+              <div id="dynamic-meme-preview" class="meme-attachment-preview" hidden>
+                <strong id="dynamic-meme-name"></strong>
+                <div id="dynamic-meme-image"></div>
+                <p id="dynamic-meme-availability" class="hint"></p>
+              </div>
+              <label>编辑动态正文
+                <textarea id="dynamic-post-text" rows="7" disabled placeholder="选择左侧动态进行审核与编辑..."></textarea>
+              </label>
+              <div class="actions" style="margin-top:12px;">
+                <button id="approve-dynamic" class="primary win-btn" disabled>审核通过</button>
+                <button id="reject-dynamic" class="win-btn danger" disabled>拒绝</button>
+                <button id="publish-dynamic" class="win-btn" disabled>发布已审核动态</button>
+              </div>
+              <p id="dynamic-post-note" class="hint" role="status"></p>
+              <section id="dynamic-continuation" hidden></section>
+              <div class="win-subgroup-box" style="margin-top:14px;">
+                <div class="win-subgroup-title">素材来源原文</div>
+                <div id="dynamic-post-sources" class="quoted-text">暂无来源。</div>
+              </div>
+              <div class="win-subgroup-box" style="margin-top:10px;">
+                <div class="win-subgroup-title">平台发布回执 / 报错记录</div>
+                <pre id="dynamic-post-receipt" class="code-small">暂无回执。</pre>
+              </div>
+            </article>
+          </div>
+
+          <!-- 运营记忆摘要 & 决策记录并列展示 -->
+          <div class="form-grid" style="margin-top:16px;">
+            <div class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">运营记忆摘要 (有界上下文)</div>
+                <span id="dynamic-summary-valid" class="badge">正在读取</span>
+              </div>
+              <dl id="dynamic-summary-meta" class="description-list"></dl>
+              <p id="dynamic-summary-state" class="hint" role="status"></p>
+              <div class="table-scroll">
+                <table><thead><tr><th>来源 ID</th><th>摘要摘录</th><th>类型</th></tr></thead><tbody id="dynamic-summary-entries"></tbody></table>
+              </div>
+            </div>
+
+            <div class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">模型自主决策记录</div>
+                <span class="hint">记录发布、等待与决策理由</span>
+              </div>
+              <div class="table-scroll">
+                <table><thead><tr><th>时间</th><th>决定</th><th>原因</th><th>来源 / 错误</th></tr></thead><tbody id="dynamic-decisions"></tbody></table>
+              </div>
+              <div id="dynamic-decision-continuation" hidden></div>
+            </div>
+          </div>
+
+          <!-- 允许公开记忆 -->
+          <div class="win-group-box" style="margin-top:16px;">
+            <div class="win-group-title">允许用于公开动态的角色记忆素材</div>
+            <div class="table-scroll">
+              <table><thead><tr><th>公开使用</th><th>来源记忆描述</th><th>类型 / 当地时间</th></tr></thead><tbody id="dynamic-memories"></tbody></table>
+            </div>
+            <p id="dynamic-memory-state" class="hint" role="status"></p>
+          </div>
+        </section>
+
+        <!-- 8. 直播控制 (Live) -->
+        <section data-section="live" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#live" class="prop-tab active">🎛️ 直播控制台</a>
+            <a href="#live-scene" class="prop-tab">🎬 场景编排</a>
+            <a href="#live-music" class="prop-tab">🎵 曲库与点歌</a>
+            <a href="#live-interaction" class="prop-tab">🎮 互动玩法与游戏</a>
+          </div>
+
+          <p id="live-feature-notice" class="feature-note" role="status">当前推理配置未启用直播。请到推理设置连接支持直播的端点。</p>
+
+          <div class="page-heading win-heading">
+            <div class="heading-title-box">
+              <p class="eyebrow">本地演播室调度与调试会话</p>
+              <h1>直播演播控制台</h1>
+            </div>
+            <div class="actions">
+              <span id="live-state" class="badge">已停止</span>
+              <button data-action="start" class="primary win-btn">▶ 启动调试会话</button>
+              <button data-action="pause" class="win-btn">⏸ 暂停</button>
+              <button data-action="resume" class="win-btn">⏯ 恢复</button>
+              <button data-action="stop" class="danger win-btn">⏹ 停止直播</button>
+            </div>
+          </div>
+
+          <div class="win-control-strip">
+            <div class="actions">
+              <button data-action="mute" class="danger win-btn">🔇 紧急静音</button>
+              <button data-action="unmute" class="win-btn">🔊 解除静音</button>
+              <button data-action="skip" class="win-btn">⏭ 跳过当前任务</button>
+              <button data-action="clear" class="win-btn">🗑 清空待播队列</button>
+            </div>
+            <span class="hint" style="margin-left:auto;">暂停保留队列；停止会取消当前及待播任务。</span>
+          </div>
+
+          <!-- OBS 播放器与歌曲播放条 -->
+          <div class="form-grid" style="margin-top:16px;">
+            <div class="win-group-box" id="live-player" data-workspace-anchor>
+              <div class="panel-heading">
+                <div class="win-group-title" id="overlay-heading" style="margin:0;">OBS 浏览器源配置</div>
+                <a id="open-overlay" class="win-link-btn" href="/overlay" target="_blank" rel="noopener">打开播放器 ↗</a>
+              </div>
+              <p id="overlay-help" class="hint">仅一个播放器页面可播放语音，后打开的页面会自动进入待机。</p>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input id="overlay-url" readonly type="text" style="font-family:monospace; font-size:12px;">
+                <button id="copy-overlay" class="win-btn" style="white-space:nowrap;">复制链接</button>
+              </div>
+            </div>
+
+            <div class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">当前点歌与歌曲播放</div>
+                <a href="#live-music" class="win-link-btn">管理曲库与歌单 →</a>
+              </div>
+              <p id="live-song-state" role="status">正在读取播放状态…</p>
+              <div class="actions" style="margin-top:8px;">
+                <button id="live-song-toggle" type="button" class="win-btn" disabled>暂停歌曲</button>
+                <span id="live-song-queue" class="hint"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 调试注入与当前任务 -->
+          <div class="live-grid win-split-pane" style="margin-top:16px;">
+            <article class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">离线事件调试注入台</div>
+                <span class="badge">模拟平台弹幕/礼物</span>
+              </div>
+              <form id="event-form" style="margin-top:10px;">
+                <div class="form-grid">
+                  <label>事件类型
+                    <select id="event-type">
+                      <option value="chat">弹幕消息</option>
+                      <option value="gift">礼物打赏</option>
+                      <option value="sfx">预录音效</option>
+                      <option value="song">观众点歌</option>
+                      <option value="disconnect">模拟断线重连</option>
+                    </select>
+                  </label>
+                  <label>观众 ID<input id="event-user" value="debug-001" maxlength="100"></label>
+                  <label>观众显示昵称<input id="event-name" value="调试观众" maxlength="100"></label>
+                  <label>事件 ID<input id="event-id" placeholder="留空自动生成" maxlength="180"></label>
+                </div>
+                <label style="margin-top:10px;">弹幕 / 交互内容
+                  <textarea id="event-text" rows="3" maxlength="1000" placeholder="例如：大肥鱼，今天吃了白饭吗？" required></textarea>
+                </label>
+                <label id="sfx-label" hidden>预录素材 ID<input id="event-asset" placeholder="从素材页复制音频素材 ID"></label>
+                <div class="actions" style="margin-top:12px;">
+                  <button type="submit" class="primary win-btn">🚀 注入此事件</button>
+                  <button type="button" id="fill-greeting" class="win-btn">填入问候</button>
+                  <span id="event-result" class="hint" role="status"></span>
+                </div>
+              </form>
+            </article>
+
+            <article class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">当前播报任务</div>
+                <span id="live-current-status" class="badge">空闲</span>
+              </div>
+              <p id="live-current-text" class="speech-text">等待事件。</p>
+              <p id="live-current-detail" class="hint"></p>
+              <div class="win-subgroup-box" style="margin-top:14px;">
+                <div class="win-subgroup-title">最近播报台词</div>
+                <p id="last-played" class="muted" style="margin:0; font-size:13px;">暂无已确认播放记录。</p>
+              </div>
+            </article>
+          </div>
+
+          <!-- 回复队列与收到事件历史表格 -->
+          <article class="win-group-box" style="margin-top:16px;">
+            <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">台词生成与回复队列</div>
+              <button id="refresh-live" class="win-btn">刷新队列</button>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>任务 / 时间</th><th>角色</th><th>生成台词</th><th>状态</th><th>耗时 / 原因</th></tr></thead><tbody id="live-jobs"></tbody></table>
+            </div>
+          </article>
+
+          <article class="win-group-box" style="margin-top:16px;">
+            <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">已收到的事件流水</div>
+              <span class="hint">保留事件去重、过滤与执行原因</span>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>时间 / ID</th><th>观众</th><th>类型</th><th>事件内容</th><th>状态 / 原因</th></tr></thead><tbody id="events"></tbody></table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 9. 场景编排 (Live Scene) -->
+        <section data-section="live-scene" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#live" class="prop-tab">🎛️ 直播控制台</a>
+            <a href="#live-scene" class="prop-tab active">🎬 场景编排</a>
+            <a href="#live-music" class="prop-tab">🎵 曲库与点歌</a>
+            <a href="#live-interaction" class="prop-tab">🎮 互动玩法与游戏</a>
+          </div>
+          <div class="page-heading win-heading">
+            <h1>演播场景编排</h1>
+            <a href="/live" class="win-link-btn" target="_blank">打开独立演播窗口 ↗</a>
+          </div>
+          <div class="win-frame-container">
+            <iframe class="live-workspace-frame" data-src="/live?view=scene" title="场景编排"></iframe>
+          </div>
+        </section>
+
+        <!-- 10. 曲库与点歌 (Live Music) -->
+        <section data-section="live-music" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#live" class="prop-tab">🎛️ 直播控制台</a>
+            <a href="#live-scene" class="prop-tab">🎬 场景编排</a>
+            <a href="#live-music" class="prop-tab active">🎵 曲库与点歌</a>
+            <a href="#live-interaction" class="prop-tab">🎮 互动玩法与游戏</a>
+          </div>
+          <div class="page-heading win-heading">
+            <h1>在线点歌与曲库配置</h1>
+            <a href="#live" class="win-link-btn">返回直播控制台</a>
+          </div>
+          <div class="win-frame-container">
+            <iframe class="live-workspace-frame" data-src="/live?view=music" title="曲库与点歌"></iframe>
+          </div>
+        </section>
+
+        <!-- 11. 互动与游戏 (Live Interaction) -->
+        <section data-section="live-interaction" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#live" class="prop-tab">🎛️ 直播控制台</a>
+            <a href="#live-scene" class="prop-tab">🎬 场景编排</a>
+            <a href="#live-music" class="prop-tab">🎵 曲库与点歌</a>
+            <a href="#live-interaction" class="prop-tab active">🎮 互动玩法与游戏</a>
+          </div>
+          <div class="page-heading win-heading">
+            <h1>直播小游戏与礼物互动规则</h1>
+          </div>
+
+          <div class="live-grid win-split-pane">
+            <article class="win-group-box" id="live-game-panel" data-workspace-anchor>
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">🎮 游戏联动 · 离线模拟</div>
                 <span id="live-game-name" class="badge">星露谷物语</span>
               </div>
               <p id="live-game-summary" class="speech-text" style="font-size: 14px;">正在读取模拟状态…</p>
-              <p class="hint">星露谷与植物大战僵尸目前提供离线模拟，实机接入单独验收。</p>
+              <p class="hint">星露谷物语与植物大战僵尸目前提供离线高仿模拟，实机无缝联动。</p>
               <p id="live-game-activity" class="hint"></p>
               <div class="actions" style="margin-top: 10px;">
-                <button type="button" class="button primary small" data-game-switch="stardew_valley">切到《星露谷》</button>
-                <button type="button" class="button primary small" data-game-switch="pvz">切到《植物大战僵尸》</button>
+                <button type="button" class="win-btn primary" data-game-switch="stardew_valley">切到《星露谷》</button>
+                <button type="button" class="win-btn" data-game-switch="pvz">切到《植物大战僵尸》</button>
               </div>
-              <div class="subsection" style="margin-top: 12px;">
-                <h3>快捷游戏动作注入</h3>
+              <div class="win-subgroup-box" style="margin-top: 14px;">
+                <div class="win-subgroup-title">快捷游戏事件注入</div>
                 <div id="live-game-actions" class="actions"></div>
               </div>
             </article>
 
-            <article class="panel" id="live-draw-guess-panel">
+            <article class="win-group-box" id="live-draw-guess-panel">
               <div class="panel-heading">
-                <h2>🎨 你画我猜互动</h2>
+                <div class="win-group-title" style="margin:0;">🎨 你画我猜互动玩法</div>
                 <span id="dg-live-status" class="badge">空闲中</span>
               </div>
               <p id="dg-live-word" class="speech-text" style="font-size: 14px;">等待送礼触发或手动开启</p>
               <div class="actions" style="margin-top: 10px;">
-                <button type="button" id="dg-start-btn" class="button primary small">开启一轮</button>
-                <button type="button" id="dg-stop-btn" class="button danger small" disabled>提前结束</button>
-                <a href="/overlay/draw-guess" target="_blank" class="button quiet small">打开 OBS 透明画板 ↗</a>
+                <button type="button" id="dg-start-btn" class="primary win-btn">开启一轮竞猜</button>
+                <button type="button" id="dg-stop-btn" class="win-btn danger" disabled>提前结束</button>
+                <a href="/overlay/draw-guess" target="_blank" class="win-link-btn">打开 OBS 透明画板 ↗</a>
               </div>
-              <p class="hint" style="margin-top: 10px;">
-                送出指定礼物（如画笔/小心心）或弹幕抢答即可自动参与；观众猜对后大肥鱼会自动祝贺并沉淀至每日趣事记忆。
+              <p class="hint" style="margin-top: 12px;">
+                观众送出指定礼物（如画笔/小心心）或弹幕抢答即可自动参与；观众猜对后大肥鱼会自动祝贺并沉淀至每日趣事记忆。
               </p>
             </article>
           </div>
-          <article class="panel" id="interactive-rules-card" data-workspace-anchor>
+
+          <article class="win-group-box" id="interactive-rules-card" data-workspace-anchor style="margin-top: 16px;">
             <div class="panel-heading">
-              <h2>🎁 互动玩法与礼物门槛配置</h2>
-              <span class="hint">自定义点歌、你画我猜与游戏直播的触发规则</span>
+              <div class="win-group-title" style="margin:0;">🎁 互动玩法与礼物门槛配置</div>
+              <span class="hint">自定义点歌、你画我猜与游戏直播的触发门槛</span>
             </div>
-            <form id="interactive-rules-form">
+            <form id="interactive-rules-form" style="margin-top:10px;">
               <fieldset class="matrix-group">
                 <legend>一、点歌门槛规则</legend>
                 <div class="form-grid">
@@ -289,7 +905,7 @@
                   <label>最低礼物价值（电池）
                     <input id="rule-song-coin" type="number" min="0" max="10000" value="0">
                   </label>
-                  <label>指定礼物名称（逗号分隔，留空则不限礼物类型）
+                  <label>指定礼物名称（逗号分隔，留空则不限）
                     <input id="rule-song-gifts" type="text" placeholder="例如：小心心, 辣条">
                   </label>
                 </div>
@@ -299,7 +915,7 @@
                 <legend>二、“你画我猜”互动规则</legend>
                 <div class="form-grid">
                   <label class="check-field" style="grid-column: 1 / -1;">
-                    <input id="rule-dg-enabled" type="checkbox" checked> 启用直播间“你画我猜”小游戏
+                    <input id="rule-dg-enabled" type="checkbox" checked> 启用直播间“你画我猜”互动游戏
                   </label>
                   <label>启动触发方式
                     <select id="rule-dg-mode">
@@ -321,73 +937,96 @@
               </fieldset>
 
               <div class="actions" style="margin-top: 14px;">
-                <button type="submit" class="button primary">保存互动与礼物规则</button>
+                <button type="submit" class="primary win-btn">保存互动与礼物规则</button>
               </div>
             </form>
           </article>
         </section>
-        <section data-section="characters" hidden>
-          <div class="page-heading"><div><h1>角色工作室</h1><p class="hint">当前角色来源 · <strong id="persona-current">待读取</strong></p></div><a href="#daily-memory-card">角色记忆</a></div>
-          <div class="persona-views" role="group" aria-label="角色来源">
-            <button type="button" id="show-persona-model" aria-controls="persona-model-view" aria-pressed="false">模型内建</button>
-            <button type="button" id="show-persona-cards" aria-controls="persona-card-view" aria-pressed="false">角色卡</button>
+
+        <!-- 12. 角色工作室 (Characters) -->
+        <section data-section="characters" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#characters" class="prop-tab active">🐋 大肥鱼 OC 角色卡</a>
+            <a href="#voices" class="prop-tab">🎙️ 语音音色</a>
+            <a href="#assets" class="prop-tab">🖼️ 素材与表情包</a>
           </div>
-          <article class="panel narrow" id="persona-model-view" hidden>
-            <div class="panel-heading"><h2>大肥鱼 · 模型内建</h2><span id="persona-model-state" class="badge">待确认</span></div>
-            <p id="persona-model-detail" class="hint"></p>
-            <div class="actions"><button type="button" id="persona-mode-action" class="primary" hidden>切回运营模式</button><a href="#settings">查看推理设置</a></div>
+
+          <div class="page-heading win-heading">
+            <div class="heading-title-box">
+              <h1>角色卡工坊 (OC Studio)</h1>
+              <p class="hint">当前激活角色 · <strong id="persona-current">待读取</strong></p>
+            </div>
+            <div class="persona-views" role="group" aria-label="角色来源">
+              <button type="button" id="show-persona-model" class="win-btn" aria-controls="persona-model-view" aria-pressed="false">模型内建大肥鱼</button>
+              <button type="button" id="show-persona-cards" class="win-btn" aria-controls="persona-card-view" aria-pressed="false">角色卡编辑器</button>
+            </div>
+          </div>
+
+          <!-- 模型内建展示面板 -->
+          <article class="win-group-box narrow" id="persona-model-view" hidden>
+            <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">大肥鱼 · 模型原生内建权重</div>
+              <span id="persona-model-state" class="badge">待确认</span>
+            </div>
+            <p id="persona-model-detail" class="hint" style="line-height:1.6;"></p>
+            <div class="actions" style="margin-top:12px;">
+              <button type="button" id="persona-mode-action" class="primary win-btn" hidden>切回运营模式</button>
+              <a href="#settings" class="win-link-btn">查看推理设置 →</a>
+            </div>
           </article>
-          <div class="character-layout" id="persona-card-view" hidden>
-            <article class="panel">
-              <div class="panel-heading">
-                <h2>角色列表 (OCs)</h2>
+
+          <!-- 角色卡编辑器双栏 -->
+          <div class="character-layout win-split-pane" id="persona-card-view" hidden>
+            <article class="win-group-box">
+              <div class="win-group-title">角色列表 (OCs)</div>
+              <div id="character-list" class="object-list" style="margin-top:10px;"></div>
+              
+              <div class="win-subgroup-box" style="margin-top:16px;">
+                <div class="win-subgroup-title">新建 / 克隆 OC</div>
+                <form id="clone-form">
+                  <label>角色 ID<input id="clone-id" pattern="[a-z0-9_\-]+" maxlength="50" placeholder="whale_variant" required></label>
+                  <label>角色显示名称<input id="clone-name" placeholder="例如：电台大肥鱼" required></label>
+                  <button type="submit" class="win-btn" style="margin-top:8px;">创建此 OC</button>
+                </form>
               </div>
-              <div id="character-list" class="object-list"></div>
-              <form id="clone-form" class="subsection" style="margin-top:16px;">
-                <h3>新建 / 克隆 OC</h3>
-                <label>新 OC 标识 (ID)<input id="clone-id" pattern="[a-z0-9_\-]+" maxlength="50" placeholder="my_oc" required></label>
-                <label>角色名称<input id="clone-name" placeholder="新角色名称" required></label>
-                <button type="submit">创建新 OC</button>
-              </form>
             </article>
-            <article class="panel">
+
+            <article class="win-group-box">
               <div class="panel-heading">
-                <div style="display:flex;align-items:center;gap:10px;">
-                  <h2 id="editor-title" style="margin:0;">选择角色</h2>
-                </div>
-                <button id="activate-character" class="primary" disabled>激活此角色版本</button>
+                <div class="win-group-title" id="editor-title" style="margin:0;">选择角色</div>
+                <button id="activate-character" class="primary win-btn" disabled>激活此角色版本</button>
               </div>
 
-              <div class="form-grid" style="margin-bottom:12px;">
-                <label>配置版本
+              <div class="form-grid" style="margin: 10px 0 12px;">
+                <label>配置历史版本
                   <select id="character-version" disabled></select>
                 </label>
                 <div class="hint align-bottom">切换角色或回滚版本时自动平滑重置会话任务。</div>
               </div>
 
-              <!-- OC Tabs Navigation -->
-              <div class="oc-tab-nav">
-                <button type="button" class="oc-tab-btn active" data-tab="tab-oc-persona">核心人设与性格</button>
-                <button type="button" class="oc-tab-btn" data-tab="tab-oc-style">说话风格与示范</button>
-                <button type="button" class="oc-tab-btn" data-tab="tab-oc-assets">音色与形象</button>
-                <button type="button" class="oc-tab-btn" data-tab="tab-oc-json">高级 JSON 源码</button>
+              <!-- OC Tabs 选项卡 -->
+              <div class="oc-tab-nav win-property-tabs">
+                <button type="button" class="oc-tab-btn active prop-tab" data-tab="tab-oc-persona">核心人设与性格</button>
+                <button type="button" class="oc-tab-btn prop-tab" data-tab="tab-oc-style">说话风格与短句示范</button>
+                <button type="button" class="oc-tab-btn prop-tab" data-tab="tab-oc-assets">音色与形象绑定</button>
+                <button type="button" class="oc-tab-btn prop-tab" data-tab="tab-oc-json">高级 JSON 源码</button>
               </div>
 
-              <!-- Tab 2: Persona & Lore -->
-              <div class="oc-tab-content active" id="tab-oc-persona">
+              <!-- Tab 1: 核心设定 -->
+              <div class="oc-tab-content active" id="tab-oc-persona" style="margin-top:12px;">
                 <label>核心身份与世界观 (Identity)
                   <textarea id="oc-identity" class="code-editor" rows="4"></textarea>
                 </label>
-                <label style="margin-top:10px;">背景设定 (Background)
+                <label style="margin-top:10px;">背景与生活细节 (Background)
                   <textarea id="oc-background" class="code-editor" rows="3"></textarea>
                 </label>
-                <label style="margin-top:10px;">性格特质 (Traits，每行一条)
+                <label style="margin-top:10px;">性格与动作反应特质 (Traits，每行一条)
                   <textarea id="oc-traits" class="code-editor" rows="5"></textarea>
                 </label>
               </div>
 
-              <!-- Tab 3: Style & Examples -->
-              <div class="oc-tab-content" id="tab-oc-style">
+              <!-- Tab 2: 风格与台词规范 -->
+              <div class="oc-tab-content" id="tab-oc-style" style="margin-top:12px;">
                 <div class="form-grid">
                   <label>单句台词最短字数 (min_chars)
                     <input id="oc-min-chars" type="number" min="1" max="120" value="1">
@@ -399,113 +1038,206 @@
                 <label style="margin-top:10px;">口头禅 (Catchphrases，逗号分隔)
                   <input id="oc-catchphrases" placeholder="什么嘛, 再来一碗白饭, 本鱼, 鱼鱼">
                 </label>
-                <label style="margin-top:10px;">表达规范与指导语 (Instructions)
+                <label style="margin-top:10px;">表达规范与去AI味指导语 (Instructions)
                   <textarea id="oc-instructions" class="code-editor" rows="4"></textarea>
                 </label>
-                <p class="hint">角色卡用于通用模型。</p>
               </div>
 
-              <!-- Tab 4: Assets & Voice -->
-              <div class="oc-tab-content" id="tab-oc-assets">
+              <!-- Tab 3: 音色与素材 -->
+              <div class="oc-tab-content" id="tab-oc-assets" style="margin-top:12px;">
                 <div class="form-grid">
                   <label>绑定默认音色 (Voice Profile)
                     <input id="oc-voice-profile" placeholder="whale_sovits_v2">
                   </label>
-                  <label>形象模型描述文件 (Avatar Manifest)
+                  <label>形象描述清单 (Avatar Manifest)
                     <input id="oc-avatar-manifest" value="assets/whale/manifest.json">
                   </label>
                 </div>
               </div>
 
-              <!-- Tab 5: Raw JSON -->
-              <div class="oc-tab-content" id="tab-oc-json">
+              <!-- Tab 4: JSON 源码 -->
+              <div class="oc-tab-content" id="tab-oc-json" style="margin-top:12px;">
                 <form id="character-form">
-                  <label>角色配置完整 JSON
+                  <label>角色卡完整底层 JSON
                     <textarea id="character-editor" class="code-editor" rows="18" spellcheck="false" disabled aria-describedby="character-help"></textarea>
                   </label>
-                  <p id="character-help" class="hint">可直接编辑底层 JSON 源码。保存创建新版本；旧版本不会被覆盖。</p>
+                  <p id="character-help" class="hint">可直接编辑底层 JSON 源码。保存后将自动升级版本号，旧版本完整保留。</p>
                 </form>
               </div>
 
               <div class="actions" style="margin-top:14px;">
-                <button id="save-character" class="primary" disabled>保存角色为新版本</button>
-                <button id="reset-character" type="button" disabled>放弃未保存修改</button>
+                <button id="save-character" class="primary win-btn" disabled>保存角色为新版本</button>
+                <button id="reset-character" type="button" class="win-btn" disabled>放弃未保存修改</button>
                 <span id="character-dirty" class="hint"></span>
               </div>
             </article>
           </div>
-          <details class="panel daily-memory-card" id="daily-memory-card" data-workspace-anchor>
-            <summary>角色记忆与社群趣事</summary>
+
+          <!-- 角色记忆与社群趣事 GroupBox -->
+          <div class="win-group-box daily-memory-card" id="daily-memory-card" data-workspace-anchor style="margin-top:18px;">
             <div class="panel-heading">
               <div>
-                <h2>跨渠道每日记忆与社群趣事</h2>
+                <div class="win-group-title" style="margin:0;">📝 跨渠道每日记忆与社群趣事</div>
                 <span class="hint">打通直播高光与评论热梗，为直播闲聊、视频回帖与动态提供鲜活谈资</span>
               </div>
               <div class="actions">
-                <button type="button" id="extract-daily-memory" class="primary">✨ 提炼今日趣事</button>
-                <button type="button" id="refresh-daily-memory">刷新</button>
+                <button type="button" id="extract-daily-memory" class="primary win-btn">✨ 提炼今日趣事</button>
+                <button type="button" id="refresh-daily-memory" class="win-btn">刷新</button>
               </div>
             </div>
             <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
-            <div id="daily-memory-list" class="daily-memory-list"></div>
-          </details>
+            <div id="daily-memory-list" class="daily-memory-list" style="margin-top:10px;"></div>
+          </div>
         </section>
-        <section data-section="voices" hidden>
-          <div class="page-heading"><h1>语音</h1><a class="button" href="#cache-panel">语音缓存</a></div>
-          <article class="panel narrow">
-            <div class="panel-heading"><h2>直播语音</h2><span id="tts-source-state" class="badge">读取中</span></div>
-            <form id="tts-form">
-              <label>语音来源<select id="tts-kind">
-                <option value="gpt_sovits">本地 Jetson</option>
-                <option value="openai_compatible">兼容 API</option>
-                <option value="prerecorded" hidden>预录配置</option>
-              </select></label>
-              <fieldset id="tts-api-fields" class="provider-fields" hidden disabled>
-                <label>服务地址<input id="tts-base-url" type="url" placeholder="https://服务地址/v1" required></label>
-                <div class="form-grid">
-                  <label>模型<input id="tts-model" required></label>
-                  <label>Voice ID<input id="tts-voice" required></label>
+
+        <!-- 13. 语音设置 (Voices) -->
+        <section data-section="voices" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#characters" class="prop-tab">🐋 大肥鱼 OC 角色卡</a>
+            <a href="#voices" class="prop-tab active">🎙️ 语音音色</a>
+            <a href="#assets" class="prop-tab">🖼️ 素材与表情包</a>
+          </div>
+
+          <div class="page-heading win-heading">
+            <h1>语音合成与音色配置</h1>
+            <a class="button quiet" href="#overview">查看语音缓存</a>
+          </div>
+
+          <div class="form-grid">
+            <article class="win-group-box">
+              <div class="panel-heading">
+                <div class="win-group-title" style="margin:0;">TTS 语音来源与模型</div>
+                <span id="tts-source-state" class="badge">读取中</span>
+              </div>
+              <form id="tts-form" style="margin-top:10px;">
+                <label>语音引擎来源
+                  <select id="tts-kind">
+                    <option value="gpt_sovits">本地 Jetson / GPT-SoVITS</option>
+                    <option value="openai_compatible">兼容远程 API</option>
+                    <option value="prerecorded" hidden>预录音频配置</option>
+                  </select>
+                </label>
+                <fieldset id="tts-api-fields" class="provider-fields" hidden disabled style="margin-top:10px;">
+                  <label>服务 Base URL<input id="tts-base-url" type="url" placeholder="https://服务地址/v1" required></label>
+                  <div class="form-grid">
+                    <label>模型名称<input id="tts-model" required></label>
+                    <label>Voice ID<input id="tts-voice" required></label>
+                  </div>
+                  <label>API Key（可选）<input id="tts-key" type="password" autocomplete="new-password" spellcheck="false"></label>
+                  <p id="tts-key-state" class="hint"></p>
+                  <label class="check-field"><input id="tts-clear-key" type="checkbox"> 清除已保存的语音密钥</label>
+                </fieldset>
+                <p id="tts-source-help" class="hint" style="margin-top:8px;"></p>
+                <div class="actions" style="margin-top:12px;">
+                  <button class="primary win-btn" type="submit">保存语音配置</button>
+                  <span id="tts-save-state" class="hint" role="status"></span>
                 </div>
-                <label>API 密钥（可选）<input id="tts-key" type="password" autocomplete="new-password" spellcheck="false"></label>
-                <p id="tts-key-state" class="hint"></p>
-                <label class="check-field"><input id="tts-clear-key" type="checkbox">清除已保存的语音密钥</label>
-              </fieldset>
-              <p id="tts-source-help" class="hint"></p>
-              <div class="actions"><button class="primary" type="submit">保存语音来源</button><span id="tts-save-state" class="hint" role="status"></span></div>
-            </form>
-          </article>
-          <article class="panel narrow"><h2>短句试听</h2><form id="preview-form"><label>音色<select id="preview-voice" required></select></label><label>试听文字<textarea id="preview-text" rows="3" maxlength="120" required>你好呀，我是大肥鱼。今天也想和你说说话。</textarea></label><div class="actions"><button id="preview-submit" type="submit" class="primary">生成试听</button><span id="preview-state" class="hint" role="status"></span></div><audio id="preview-audio" controls preload="none" hidden></audio></form><p id="voice-preview-help" class="hint">请选择音色后试听。</p></article>
-          <details class="panel narrow"><summary>音色与许可</summary>
-            <div class="table-scroll"><table><thead><tr><th>音色</th><th>许可</th></tr></thead><tbody id="voices"></tbody></table></div>
-          </details>
+              </form>
+            </article>
+
+            <article class="win-group-box">
+              <div class="win-group-title">短句试听与音质核对</div>
+              <form id="preview-form" style="margin-top:10px;">
+                <label>音色选择<select id="preview-voice" required></select></label>
+                <label style="margin-top:8px;">试听文本
+                  <textarea id="preview-text" rows="3" maxlength="120" required>你好呀，我是大肥鱼。今天也想和你说说话。</textarea>
+                </label>
+                <div class="actions" style="margin-top:10px;">
+                  <button id="preview-submit" type="submit" class="primary win-btn">生成试听音频</button>
+                  <span id="preview-state" class="hint" role="status"></span>
+                </div>
+                <audio id="preview-audio" controls preload="none" hidden style="margin-top:10px; width:100%;"></audio>
+              </form>
+              <p id="voice-preview-help" class="hint" style="margin-top:8px;">选择音色后点击生成试听。</p>
+            </article>
+          </div>
+
+          <div class="win-group-box" style="margin-top:16px;">
+            <div class="win-group-title">可用音色与授权协议列表</div>
+            <div class="table-scroll">
+              <table><thead><tr><th>音色名称</th><th>许可状态 / 来源</th></tr></thead><tbody id="voices"></tbody></table>
+            </div>
+          </div>
         </section>
-        <section data-section="assets" hidden><div class="page-heading"><div><p class="eyebrow">角色表情与预录素材</p><h1>素材与表情包</h1></div></div><div id="meme-gallery"></div><h2>角色与预录素材</h2><div id="asset-grid" class="asset-grid"></div></section>
-        <section data-section="accounts" hidden>
-          <div class="page-heading"><h1>账号与权限</h1><button id="logout" type="button">退出工作台</button></div>
+
+        <!-- 14. 素材与表情包 (Assets) -->
+        <section data-section="assets" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#characters" class="prop-tab">🐋 大肥鱼 OC 角色卡</a>
+            <a href="#voices" class="prop-tab">🎙️ 语音音色</a>
+            <a href="#assets" class="prop-tab active">🖼️ 素材与表情包</a>
+          </div>
+          <div class="page-heading win-heading">
+            <div class="heading-title-box">
+              <p class="eyebrow">角色动态表情与预录音效库</p>
+              <h1>素材与表情包图库</h1>
+            </div>
+          </div>
+          <div class="win-group-box">
+            <div class="win-group-title">动态配图与表情包资产库</div>
+            <div id="meme-gallery"></div>
+          </div>
+          <div class="win-group-box" style="margin-top:16px;">
+            <div class="win-group-title">角色多媒体素材清单</div>
+            <div id="asset-grid" class="asset-grid" style="margin-top:10px;"></div>
+          </div>
+        </section>
+
+        <!-- 15. 账号与权限 (Accounts) -->
+        <section data-section="accounts" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#settings" class="prop-tab">🤖 推理与模型</a>
+            <a href="#accounts" class="prop-tab active">👤 账号与权限矩阵</a>
+            <a href="#overview" class="prop-tab">💾 存储与维护</a>
+            <a href="#issues" class="prop-tab">⚠️ 告警与诊断</a>
+          </div>
+
+          <div class="page-heading win-heading">
+            <h1>Bilibili 账号与三维权限矩阵</h1>
+            <button id="logout" type="button" class="win-btn danger">退出登录工作台</button>
+          </div>
+
           <div id="global-bilibili-account" class="global-bilibili-account"></div>
-          <div id="account-settings" data-workspace-anchor></div>
-          <details class="panel" id="comment-base-settings" data-workspace-anchor>
-            <summary>指定视频评论的基础策略</summary>
-            <p class="hint">为已有指定视频保留的运营策略。自动选视频请到<a href="#automation">自动刷视频</a>。</p>
-            <form id="comment-policy-form">
+          <div id="account-settings" data-workspace-anchor style="margin-top:14px;"></div>
+
+          <!-- 指定视频基础策略 -->
+          <div class="win-group-box" id="comment-base-settings" data-workspace-anchor style="margin-top:16px;">
+            <div class="win-group-title">指定视频评论监控基础策略</div>
+            <p class="hint">为已有指定视频保留的基础运营策略。全自动视频选题请前往<a href="#automation">自动刷视频</a>。</p>
+            <form id="comment-policy-form" style="margin-top:10px;">
               <p id="comment-policy-overlay" class="feature-note" hidden><span id="comment-policy-overlay-text"></span></p>
-              <div class="actions"><label class="check-field"><input id="auto-browse" type="checkbox">定期读取指定视频评论</label><label class="check-field"><input id="auto-reply" type="checkbox">授权自动提交回复</label><span id="reply-mode" class="badge"></span></div>
-              <label>指定 BV 号<textarea id="watch-videos" rows="2" placeholder="每行一个 BV 号"></textarea></label>
-              <div class="form-grid"><label>读取间隔（秒）<input id="browse-interval" type="number" required></label><label>每小时上限<input id="replies-hour" type="number" required></label><label>每天上限<input id="replies-day" type="number" required></label></div>
-              <div class="actions"><button type="submit">保存基础策略</button><button id="stop-auto-reply" type="button">停止基础自动回复</button></div>
+              <div class="actions win-checks-bar">
+                <label class="check-field"><input id="auto-browse" type="checkbox"> 定期读取指定视频评论</label>
+                <label class="check-field"><input id="auto-reply" type="checkbox"> 授权自动提交回复</label>
+                <span id="reply-mode" class="badge"></span>
+              </div>
+              <label style="margin-top:10px;">监控指定 BV 号（每行一个）
+                <textarea id="watch-videos" rows="2" placeholder="BV1..."></textarea>
+              </label>
+              <div class="form-grid" style="margin-top:10px;">
+                <label>读取轮询间隔（秒）<input id="browse-interval" type="number" required></label>
+                <label>每小时发布上限<input id="replies-hour" type="number" required></label>
+                <label>每天发布上限<input id="replies-day" type="number" required></label>
+              </div>
+              <div class="actions" style="margin-top:12px;">
+                <button type="submit" class="win-btn primary">保存基础策略</button>
+                <button id="stop-auto-reply" type="button" class="win-btn">停止自动回复</button>
+              </div>
               <p id="comment-policy-base-note" class="hint" role="status"></p>
             </form>
-          </details>
-          <article class="panel" id="operations-permission-matrix" data-workspace-anchor>
+          </div>
+
+          <!-- 三维权限矩阵 -->
+          <article class="win-group-box" id="operations-permission-matrix" data-workspace-anchor style="margin-top:16px;">
             <div class="panel-heading">
-              <h2>运营权限与自动化控制</h2>
+              <div class="win-group-title" style="margin:0;">全渠道自动化控制与动作放行矩阵</div>
               <span id="matrix-capsule-badge" class="badge">草稿审核态</span>
             </div>
             <p class="hint">集中管理社区运营、私信与动态的行为授权、放行级别与安全熔断阈值。修改后即时联动各工作台。</p>
-            <div id="matrix-visual-status" class="hint" style="margin: 8px 0; padding: 6px 12px; border-radius: 6px; background: var(--bg-hover, #f3f4f6); font-size: 12px;" hidden></div>
+            <div id="matrix-visual-status" class="hint" style="margin: 8px 0; padding: 6px 12px; border-radius: 6px; background: #f1f5f9; font-size: 12px;" hidden></div>
             
             <fieldset class="matrix-group">
-              <legend>一、平台凭证与写入权</legend>
+              <legend>一、平台凭证与写入权有效性</legend>
               <div class="matrix-credentials-status">
                 <div class="matrix-status-item">
                   <span>B站登录凭证 (SESSDATA)：</span>
@@ -522,14 +1254,14 @@
             </fieldset>
 
             <fieldset class="matrix-group">
-              <legend>二、动作放行级别</legend>
+              <legend>二、行为动作放行级别 (三级阶梯控制)</legend>
               <div class="matrix-action-grid">
                 <div class="matrix-action-card">
                   <h3>视频看完自发主评</h3>
                   <p class="hint">视频理解完成后，以角色第一人称发布置顶主评</p>
                   <div class="matrix-radio-group">
                     <label><input type="radio" name="matrix_top_level" value="0"> 禁止</label>
-                    <label><input type="radio" name="matrix_top_level" value="1" checked> 存为草稿 (需审核)</label>
+                    <label><input type="radio" name="matrix_top_level" value="1" checked> 存为草稿 (需人工审核)</label>
                     <label><input type="radio" name="matrix_top_level" value="2"> 自动发布</label>
                   </div>
                 </div>
@@ -538,7 +1270,7 @@
                   <p class="hint">进入评论区筛选有价值评论，自主决定是否跟帖</p>
                   <div class="matrix-radio-group">
                     <label><input type="radio" name="matrix_reply" value="0"> 禁止</label>
-                    <label><input type="radio" name="matrix_reply" value="1" checked> 存为草稿 (需审核)</label>
+                    <label><input type="radio" name="matrix_reply" value="1" checked> 存为草稿 (需人工审核)</label>
                     <label><input type="radio" name="matrix_reply" value="2"> 自动发布</label>
                   </div>
                 </div>
@@ -547,7 +1279,7 @@
                   <p class="hint">观众主动私信或评论区深聊转私信</p>
                   <div class="matrix-radio-group">
                     <label><input type="radio" name="matrix_dm" value="0"> 禁止</label>
-                    <label><input type="radio" name="matrix_dm" value="1" checked> 存为草稿 (需审核)</label>
+                    <label><input type="radio" name="matrix_dm" value="1" checked> 存为草稿 (需人工审核)</label>
                     <label><input type="radio" name="matrix_dm" value="2"> 自动发布</label>
                   </div>
                 </div>
@@ -569,7 +1301,6 @@
                     <label><input type="radio" name="matrix_video_fav" value="2"> 自动收藏</label>
                   </div>
                 </div>
-
               </div>
             </fieldset>
 
@@ -578,150 +1309,258 @@
               <div class="form-grid">
                 <label>单视频每日最大回复数上限
                   <input id="matrix-max-replies-video" type="number" min="0" max="20" value="2">
-                  <small class="hint">每日 00:00 刷新；0 为不回帖；主评一视频仅留一次，达到上限当日跳过</small>
+                  <small class="hint">每日 00:00 刷新；0 为不回帖；达到上限当日跳过</small>
                 </label>
                 <label>全天互动总量上限 (安全熔断)
                   <input id="matrix-max-per-day" type="number" min="1" max="200" value="20">
-                  <small class="hint">24小时内所有发布总上限（含主评、主动跟帖与被艾特/回复互动），超限自动熔断</small>
+                  <small class="hint">24小时内所有发布总上限，超限系统自动熔断停止</small>
                 </label>
                 <label class="check-field" style="margin-top: 1.5rem; grid-column: 1 / -1;">
                   <input id="matrix-auto-downgrade" type="checkbox" checked>
-                  遇到连续平台报错自动降级为“仅草稿”
+                  遇到连续平台报错自动降级为“仅草稿待核对”
                 </label>
               </div>
             </fieldset>
 
-            <details class="subsection experimental-settings-hub" style="margin-top: 18px;">
-              <summary style="font-weight:600;font-size:13px;color:var(--ink);cursor:pointer;">🔬 隐藏实验性与深度调优参数 (Advanced Experimental Settings)</summary>
-              <div class="form-grid" style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line);">
+            <div class="win-subgroup-box experimental-settings-hub" style="margin-top: 14px;">
+              <div class="win-subgroup-title">🔬 实验性调优参数 (Advanced Experimental Settings)</div>
+              <div class="form-grid" style="margin-top: 10px;">
                 <label>单视频候选检索上限 (Candidate Limit)
                   <input id="exp-candidate-limit" type="number" min="1" max="50" value="20">
-                  <small class="hint">每轮从发现来源抓取的最大视频数（默认 20）</small>
                 </label>
                 <label>单视频深度细看上限 (Inspect Limit)
                   <input id="exp-inspect-limit" type="number" min="1" max="20" value="4">
-                  <small class="hint">单轮内深入准备字幕与视觉材料的视频数（默认 4）</small>
                 </label>
-                <label>单视频决策最大输出 Token (Decision Max Tokens)
+                <label>单视频决策最大输出 Token
                   <input id="exp-decision-max-tokens" type="number" min="512" max="65536" value="8192">
-                  <small class="hint">单次模型决策思考与台词的最大 Token 配额（默认 8192）</small>
                 </label>
-                <label>单轮运行超时时间 (Round Deadline Seconds)
+                <label>单轮运行超时时间 (秒)
                   <input id="exp-deadline-seconds" type="number" min="60" max="3600" value="1800">
-                  <small class="hint">单轮后台任务的最长生命周期（默认 1800 秒）</small>
                 </label>
                 <label class="check-field" style="grid-column: 1 / -1;">
                   <input id="exp-visual-enabled" type="checkbox" checked>
                   启用实验性视觉多帧分析 (Visual Analysis)
                 </label>
-                <small class="hint" style="grid-column: 1 / -1; margin-top:-6px;">若当前端点或基座无视觉多模态能力，系统将在后台自动安全回退至字幕与文本决策模式。</small>
               </div>
-            </details>
+            </div>
 
-            <div class="actions">
-              <button id="matrix-save" type="button" class="primary">保存权限矩阵配置</button>
+            <div class="actions" style="margin-top:14px;">
+              <button id="matrix-save" type="button" class="primary win-btn">保存权限矩阵配置</button>
               <span id="matrix-save-feedback" class="hint" role="status"></span>
             </div>
-          </article><article class="panel"><div class="panel-heading"><h2>表情包</h2><a href="#assets">管理表情包图库 →</a></div><p class="hint">按角色管理可用于私信与图文动态的图片、来源和许可；分别沿用对应工作台的审核与额度。</p></article>
+          </article>
         </section>
-        <section data-section="settings" hidden>
-          <div class="page-heading"><h1>推理与模型</h1><a href="#voices">配置语音</a></div>
-          <section class="panel" id="inference-node-panel"></section>
-          <details class="panel" id="providers-panel" data-workspace-anchor>
-            <summary>自定义模型与 API</summary>
+
+        <!-- 16. 推理与模型设置 (Settings) -->
+        <section data-section="settings" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#settings" class="prop-tab active">🤖 推理与模型</a>
+            <a href="#accounts" class="prop-tab">👤 账号与权限矩阵</a>
+            <a href="#overview" class="prop-tab">💾 存储与维护</a>
+            <a href="#issues" class="prop-tab">⚠️ 告警与诊断</a>
+          </div>
+
+          <div class="page-heading win-heading">
+            <h1>推理引擎端点与模型设置</h1>
+            <a href="#voices" class="win-link-btn">前往配置语音 →</a>
+          </div>
+
+          <section class="win-group-box" id="inference-node-panel"></section>
+
+          <div class="win-group-box" id="providers-panel" data-workspace-anchor style="margin-top:16px;">
             <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">LLM 文本与视觉端点配置</div>
               <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
             </div>
 
-            <div class="subsection">
-              <div class="subsection" id="dafeiyu-model-card" hidden>
-                <strong>本机大肥鱼模型</strong>
+            <div class="subsection" style="border:0; padding-top:0; margin-top:8px;">
+              <div class="win-subgroup-box" id="dafeiyu-model-card" hidden style="margin-bottom:12px;">
+                <strong>本机大肥鱼专属微调权重</strong>
                 <span id="dafeiyu-model-badge" class="badge" role="status">待读取</span>
                 <p id="dafeiyu-missing-hint" class="hint"></p>
                 <progress id="dafeiyu-progress" max="100" hidden aria-label="下载进度"></progress>
                 <div id="dafeiyu-download" class="actions" hidden>
-                  <button type="button" id="btn-download-dafeiyu-model">下载到本机</button>
+                  <button type="button" id="btn-download-dafeiyu-model" class="win-btn">下载到本机</button>
                 </div>
-                <button type="button" id="btn-cancel-dafeiyu-download" hidden>取消下载</button>
+                <button type="button" id="btn-cancel-dafeiyu-download" class="win-btn danger" hidden>取消下载</button>
               </div>
-              <div class="actions">
-                <button type="button" id="btn-ping-providers">检查表单地址</button>
+
+              <div class="actions" style="margin-bottom:12px;">
+                <button type="button" id="btn-ping-providers" class="win-btn">⚡ 快速检查表单端点连通性</button>
                 <span id="ping-provider-result" class="hint" role="status"></span>
               </div>
 
-            <form id="providers-form">
-              <fieldset id="provider-fields" class="provider-fields">
-                <fieldset class="provider-group">
-                  <legend>文本模型与推理地址</legend>
-                  <div class="form-grid">
-                    <label>推理引擎协议
-                      <select id="llm-kind">
-                        <option value="llama_cpp">本地 llama.cpp 推理</option>
-                        <option value="openai_compatible">远程 / 自定义 OpenAI 兼容端点</option>
-                        <option value="demo">离线演示模式 (无真实推理)</option>
-                      </select>
-                    </label>
-                    <div>
-                      <label style="display:flex;align-items:center;justify-content:space-between;">
-                        <span>模型 ID</span>
-                      </label>
-                      <div style="display:flex;gap:6px;margin-top:4px;">
-                        <select id="llm-model-select" style="flex:1;">
-                          <optgroup label="内建角色模型" id="fine-tuned-models-group">
-                            <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
-                          </optgroup>
-                          <optgroup label="本地通用模型" id="base-models-group">
-                            <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
-                          </optgroup>
-                          <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
-                          <option value="__custom__">自定义输入模型 ID…</option>
+              <form id="providers-form">
+                <fieldset id="provider-fields" class="provider-fields">
+                  <fieldset class="provider-group">
+                    <legend>推理引擎协议与端点地址</legend>
+                    <div class="form-grid">
+                      <label>推理引擎协议
+                        <select id="llm-kind">
+                          <option value="llama_cpp">本地 llama.cpp 推理服务</option>
+                          <option value="openai_compatible">远程 / 自定义 OpenAI 兼容端点</option>
+                          <option value="demo">离线演示模式 (无真实推理)</option>
                         </select>
-                        <button type="button" id="btn-fetch-models" class="quiet" title="向 Base URL 请求 /v1/models 动态拉取模型列表">读取模型列表</button>
-                      </div>
-                      <div style="margin-top:6px;">
-                        <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
+                      </label>
+                      <div>
+                        <label>模型标识 (Model ID)</label>
+                        <div style="display:flex; gap:6px; margin-top:5px;">
+                          <select id="llm-model-select" style="flex:1;">
+                            <optgroup label="内建角色模型" id="fine-tuned-models-group">
+                              <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
+                            </optgroup>
+                            <optgroup label="本地通用模型" id="base-models-group">
+                              <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
+                            </optgroup>
+                            <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
+                            <option value="__custom__">自定义输入模型 ID…</option>
+                          </select>
+                          <button type="button" id="btn-fetch-models" class="win-btn" title="向 Base URL 请求 /v1/models 动态拉取模型列表">拉取列表</button>
+                        </div>
+                        <div style="margin-top:6px;">
+                          <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <label style="margin-top:10px;">服务 Base URL
-                    <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm 或 http://<ip>:9012/llm 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
-                  </label>
-                  <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；外部 API 的 Base URL 通常以 /v1 结尾。</p>
+                    <label style="margin-top:10px;">服务 Base URL
+                      <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
+                    </label>
+                    <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；Base URL 通常以 /v1 结尾。</p>
 
-                  <div class="form-grid">
-                    <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required aria-describedby="llm-capacity-help"></label>
-                    <label id="llm-native-label">模型原生 / 服务声明上限（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
-                  </div>
-                  <p id="llm-capacity-help" class="hint"></p>
-                  <label>运营输出额度（tokens，含思考）<input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help"></label>
-                  <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考与正文；实际可用额度受上下文剩余空间约束。<span id="llm-live-output-budget"></span></p>
+                    <div class="form-grid" style="margin-top:10px;">
+                      <label>上下文窗口上限（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required aria-describedby="llm-capacity-help"></label>
+                      <label id="llm-native-label">服务声明容量（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
+                    </div>
+                    <p id="llm-capacity-help" class="hint"></p>
 
-                  <div class="provider-credential">
-                    <label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
-                    <span id="llm-key-state" class="hint">密钥状态待读取</span>
-                    <label class="check-field"><input id="llm-clear-key" type="checkbox">清除已保存密钥</label>
-                  </div>
-                  <p id="llm-probe-help" class="hint" hidden>生成、摘要或重建进行准确 token 计数时，兼容 API 可能额外发送一次 1-token 用量探针并计费；相同输入会缓存计数。</p>
+                    <label style="margin-top:10px;">单次运营输出配额（tokens，含思考）
+                      <input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help">
+                    </label>
+                    <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考过程与正文。<span id="llm-live-output-budget"></span></p>
+
+                    <div class="provider-credential" style="margin-top:10px;">
+                      <label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
+                      <span id="llm-key-state" class="hint">密钥状态待读取</span>
+                      <label class="check-field"><input id="llm-clear-key" type="checkbox"> 清除已保存密钥</label>
+                    </div>
+                  </fieldset>
                 </fieldset>
 
-              </fieldset>
-
-              <div class="actions">
-                <button id="save-providers" class="primary" type="submit">保存并应用</button>
-                <button id="reset-providers" type="button">恢复已保存配置</button>
-                <button id="check-providers-settings" type="button">检查已保存配置连接</button>
-              </div>
-              <p id="providers-save-state" class="hint" role="status">保存成功后立即应用；正在生成或发布时，请先暂停任务再修改。检查连接针对当前已保存配置。</p>
-              <p id="providers-check-result" class="hint" role="status" hidden></p>
-            </form>
+                <div class="actions" style="margin-top:16px;">
+                  <button id="save-providers" class="primary win-btn" type="submit">保存并应用设置</button>
+                  <button id="reset-providers" type="button" class="win-btn">恢复已保存配置</button>
+                  <button id="check-providers-settings" type="button" class="win-btn">检查已保存配置连接</button>
+                </div>
+                <p id="providers-save-state" class="hint" role="status"></p>
+                <p id="providers-check-result" class="hint" role="status" hidden></p>
+              </form>
             </div>
-          </details>
+          </div>
+        </section>
+
+        <!-- 17. 存储与维护 (Overview) -->
+        <section data-section="overview" class="win-page-view" hidden>
+          <div class="win-property-tabs">
+            <a href="#settings" class="prop-tab">🤖 推理与模型</a>
+            <a href="#accounts" class="prop-tab">👤 账号与权限矩阵</a>
+            <a href="#overview" class="prop-tab active">💾 存储与维护</a>
+            <a href="#issues" class="prop-tab">⚠️ 告警与诊断</a>
+          </div>
+
+          <div class="page-heading win-heading">
+            <h1>存储、上下文与数据维护</h1>
+          </div>
+
+          <!-- 诊断概览 -->
+          <div class="win-group-box">
+            <div class="win-group-title">运行时状态与组件健康度</div>
+            <dl class="workspace-overview win-metrics-grid">
+              <div class="metric-card"><dt>直播会话</dt><dd id="overview-live-state">待确认</dd></div>
+              <div class="metric-card"><dt>待播队列</dt><dd id="overview-queue">—</dd></div>
+              <div class="metric-card"><dt>OBS 播放器</dt><dd id="overview-player">待确认</dd></div>
+              <div class="metric-card"><dt>语音来源</dt><dd id="overview-speech">待确认</dd></div>
+            </dl>
+          </div>
+
+          <section class="win-group-box" id="cache-panel" data-workspace-anchor style="margin-top:16px;"></section>
+
+          <!-- 上下文管理 GroupBox -->
+          <article class="win-group-box" style="margin-top:16px;">
+            <div class="win-group-title">对话上下文管理与压缩诊断</div>
+            <dl id="context-details" class="description-list win-desc-grid" style="margin-top:10px;"></dl>
+            <p id="context-profile-note" class="hint"></p>
+            <div class="actions" style="margin-top:12px;">
+              <button id="compact-live" class="win-btn">压缩直播上下文</button>
+              <label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV…"></label>
+              <label class="inline-field">楼ID<input id="compact-thread-id" placeholder="楼ID"></label>
+              <button id="compact-comments-settings" class="win-btn">压缩评论上下文</button>
+            </div>
+            <p id="compaction-result" class="hint" role="status"></p>
+          </article>
+
+          <!-- 数据留存 GroupBox -->
+          <article class="win-group-box" id="retention-panel" style="margin-top:16px;">
+            <div class="panel-heading">
+              <div class="win-group-title" style="margin:0;">对话与流水数据留存策略</div>
+              <span class="hint">按已配置策略自动在后台执行</span>
+            </div>
+            <form id="retention-form" style="margin-top:10px;">
+              <div class="retention-policy win-checks-bar">
+                <label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled style="width:100px;"></label>
+                <label class="check-field"><input id="retention-never" type="checkbox" disabled> 永不自动清理历史数据</label>
+                <button id="retention-save" type="submit" class="win-btn" disabled>保存留存策略</button>
+              </div>
+              <p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p>
+            </form>
+            <dl id="retention-status" class="description-list" style="margin-top:10px;"></dl>
+            <pre id="retention-last-result" class="code-small" hidden></pre>
+
+            <div class="win-subgroup-box" style="margin-top:16px;">
+              <div class="win-subgroup-title">手动预览与安全清理</div>
+              <p class="hint">清理会永久删除到期的对话上下文、检索索引与直播记录。原始评论、私信与审核草稿予以保留。</p>
+              <div class="actions" style="margin-top:8px;">
+                <label class="inline-field">截止日期（可选）<input id="retention-before" type="date" aria-describedby="retention-date-help" disabled></label>
+                <button id="retention-preview" type="button" class="win-btn" disabled>预览待清理范围</button>
+              </div>
+              <p id="retention-date-help" class="hint"></p>
+              <div id="retention-preview-panel" class="retention-preview" hidden>
+                <p id="retention-preview-cutoff" class="hint"></p>
+                <dl id="retention-preview-counts" class="description-list"></dl>
+                <label class="check-field" style="margin-top:8px;"><input id="retention-confirm" type="checkbox" disabled> 我已核对以上清理范围与数量，确认永久执行清理</label>
+                <button id="retention-cleanup" class="danger win-btn" type="button" disabled style="margin-top:8px;">确认清理预览记录</button>
+              </div>
+              <p id="retention-cleanup-state" class="hint" role="status"></p>
+            </div>
+          </article>
         </section>
       </main>
-      <footer>AI 生成内容 · 原型素材的来源与使用约束见「语音」和「素材」</footer>
+
+      <!-- 经典 Windows 状态栏 (Status Bar) -->
+      <footer class="win-statusbar">
+        <div class="statusbar-panel panel-brand">
+          <span class="sb-icon">🐋</span>
+          <span class="sb-text">Tuber Studio</span>
+        </div>
+        <div class="statusbar-panel panel-mode">
+          <span class="sb-label">模式:</span>
+          <span id="sb-status-mode" class="sb-val">运营模式</span>
+        </div>
+        <div class="statusbar-panel panel-character">
+          <span class="sb-label">角色:</span>
+          <span id="sb-status-char" class="sb-val">大肥鱼 v1</span>
+        </div>
+        <div class="statusbar-panel panel-engine" style="flex:1;">
+          <span class="sb-label">推理端点:</span>
+          <span id="sb-status-engine" class="sb-val">就绪</span>
+        </div>
+        <div class="statusbar-panel panel-time">
+          <span id="sb-status-time" class="sb-val">00:00:00</span>
+        </div>
+      </footer>
     </div>
   </div>
+
   <script src="/static/modules/formatters.js?v=20261105.32" defer></script>
   <script src="/static/modules/pagination.js?v=20261105.30" defer></script>
   <script src="/static/modules/operations-workbench.js?v=20261105.32" defer></script>
@@ -732,6 +1571,6 @@
   <script src="/static/account.js" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261105.33"></script>
+  <script type="module" src="/static/app.js?v=20261106.01"></script>
 </body>
 </html>
