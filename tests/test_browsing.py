@@ -259,6 +259,20 @@ async def test_discovery_defers_round_budget_without_spending_a_retry(browsing):
     assert len(browsing.adapter.sent) == 1
 
 
+async def test_video_preview_leaves_authorized_inbox_to_its_own_round(browsing, monkeypatch):
+    await browsing.preflight()
+    browsing.operations.configure(
+        {"enabled": True}, account_id=browsing.account, character=browsing.runtime.character
+    )
+
+    async def unexpectedly_processed(*args, **kwargs):
+        pytest.fail("a preview must not consume the authorized inbox")
+
+    monkeypatch.setattr(browsing, "_process_events", unexpectedly_processed)
+    assert (await finished(browsing, preview=True, video=BV))["status"] == "completed"
+    assert not browsing.adapter.sent
+
+
 async def test_interaction_round_replies_to_own_upload_while_discovery_reads(browsing, monkeypatch):
     own_video = "BV1xx411c7mD"
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
@@ -336,8 +350,8 @@ async def test_interaction_round_replies_to_own_upload_while_discovery_reads(bro
         row = await finished(browsing, automatic=True, interaction_only=True)
         assert row["status"] == "completed" and row["id"] != reading, row
         assert browsing.repo.round(reading)["status"] == "running"
-        assert [target["parent"] for target, _ in browsing.adapter.sent] == ["801", "802"], browsing.store.all(
-            "SELECT id,status,error FROM browsing_events"
+        assert [target["parent"] for target, _ in browsing.adapter.sent] == ["801", "802"], (
+            browsing.store.all("SELECT id,status,error FROM browsing_events")
         )
         await browsing.set_enabled(False)
         assert browsing.discovery.enabled and browsing.repo.round(reading)["status"] == "running"

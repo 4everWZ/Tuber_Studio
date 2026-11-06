@@ -537,7 +537,9 @@ class BrowsingService:
                     status = "partial" if metrics["failures"] else "completed"
                     return
                 discovery_only = bool(row["config"].get("discovery_id"))
-                poll_interactions = not (discovery_only or row["config"].get("video_only"))
+                poll_interactions = not (discovery_only or row["config"].get("video_only")) and (
+                    not row["preview"] or notifications_only or not self.operations.policy()["enabled"]
+                )
                 if poll_interactions:
                     await self.sync_notifications(row)
                     await self._process_events(row, metrics)
