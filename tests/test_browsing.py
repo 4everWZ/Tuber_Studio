@@ -515,6 +515,14 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
 
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     texts = []
+    published, allow_bookkeeping = asyncio.Event(), asyncio.Event()
+    evaluate = browsing.decisions._evaluate_task
+
+    async def evaluate_with_pause(result, row, metrics):
+        await evaluate(result, row, metrics)
+        if any(item["status"] == "published" for item in browsing.intents()):
+            published.set()
+            await allow_bookkeeping.wait()
 
     async def publish(target, text, *, before_send):
         before_send()
@@ -531,18 +539,20 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
         return "原来盐水的密度会影响鸡蛋浮沉，鱼鱼记住啦。"
 
     monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
+    monkeypatch.setattr(browsing.decisions, "_evaluate_task", evaluate_with_pause)
     monkeypatch.setattr(FeedbackModel, "decide", decide)
     monkeypatch.setattr(FeedbackModel, "revise", revise)
     await browsing.open()
     browsing.discovery.start()
     async with asyncio.timeout(5):
-        while not any(item["status"] == "published" for item in browsing.intents()):
-            await asyncio.sleep(0.01)
-    await browsing.discovery.stop()
+        await published.wait()
+        allow_bookkeeping.set()
+        await browsing.discovery.stop()
     assert len(texts) == 2 and texts[0] != texts[1]
     records = browsing.discovery.records()
     assert records["sent"][0]["receipt_id"] == "901"
     assert records["issues"][0]["status"] == "retry_wait"
+    assert browsing.rounds()[0]["status"] == "cancelled"
 
 
 async def test_emergency_during_discovery_preflight_cancels_start(browsing, monkeypatch):

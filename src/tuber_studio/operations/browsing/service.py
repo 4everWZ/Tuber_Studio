@@ -529,21 +529,20 @@ class BrowsingService:
                             await self.decisions._evaluate_task(result, row, metrics)
                     await self._process_events(row, metrics)
                 status = "partial" if metrics["failures"] else "completed"
-        except asyncio.CancelledError:
-            status = "cancelled"
-            self.store.execute(
-                "UPDATE browsing_tasks SET status='cancelled',error='父轮取消' WHERE round_id=? AND status IN ('discovered','claimed','preparing','evidence_ready')",
-                (identity,),
-            )
-            await self.evidence.cancel_pending()
-        except Exception as error:
-            status = "partial" if metrics["viewed"] or metrics["prepared"] else "failed"
-            self.last_error = public_error(error)
-            round_error = self.last_error
+        except (asyncio.CancelledError, Exception) as error:
+            stopping_discovery = self.discovery.state == "stopping" and self.discovery.round_id == identity
+            if isinstance(error, asyncio.CancelledError) or stopping_discovery:
+                # A candidate may see revoked authorization before TaskGroup delivers cancellation.
+                status, task_error = "cancelled", "父轮取消"
+            else:
+                status = "partial" if metrics["viewed"] or metrics["prepared"] else "failed"
+                self.last_error = round_error = task_error = public_error(error)
             self.store.execute(
                 "UPDATE browsing_tasks SET status='cancelled',error=? WHERE round_id=? AND status IN ('discovered','claimed','preparing','evidence_ready')",
-                (self.last_error, identity),
+                (task_error, identity),
             )
+            if status == "cancelled":
+                await self.evidence.cancel_pending()
         finally:
             sampler.cancel()
             await asyncio.gather(sampler, return_exceptions=True)
