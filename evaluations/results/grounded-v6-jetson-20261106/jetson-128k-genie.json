@@ -1,0 +1,109 @@
+{
+  "context_requested": 131072,
+  "model_alias": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+  "projector_offload": "gpu",
+  "managed_cuda": false,
+  "gpu_layers": 99,
+  "kv_offload": "gpu",
+  "ubatch": 64,
+  "bundle": {
+    "model_alias": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+    "base_revision": "ad9bf379feb71204c888b22923d63322452407f9",
+    "engine_revision": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "adapter": "sft-v6-all/adapter",
+    "adapter_scale": 1,
+    "artifacts": {
+      "MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf": {
+        "bytes": 672003744,
+        "sha256": "02822e8d239b898ef33b28e372eb7f86f01e4c4716b1da9966149a45415b726a"
+      },
+      "mmproj-4x-f16.gguf": {
+        "bytes": 899679136,
+        "sha256": "d973687e3508400c66afc45fdade99565f29318abf7c468aff6bb6556acecfde"
+      }
+    }
+  },
+  "llm": {
+    "context_observed": 131072,
+    "vision": true,
+    "load_seconds": 3.024,
+    "vision_turn": {
+      "text": "他手里拿着一袋红白条纹的纸袋，袋子里装着炸鸡和两个黄色的小蛋。",
+      "finish": "stop",
+      "usage": {
+        "completion_tokens": 23,
+        "prompt_tokens": 308,
+        "total_tokens": 331,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 1.455
+    },
+    "long_measured_tokens": 130914,
+    "long_output_reserve": 128,
+    "long_turn": {
+      "text": "珊瑚-7319",
+      "finish": "stop",
+      "usage": {
+        "completion_tokens": 7,
+        "prompt_tokens": 130914,
+        "total_tokens": 130921,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 183.661,
+      "admitted_full_input": true,
+      "anchor_recalled": true,
+      "anchor": "珊瑚-7319"
+    }
+  },
+  "speech": {
+    "backend": "genie_onnx_int8",
+    "load_seconds": 17.062,
+    "vision_turn": {
+      "rate": 32000,
+      "frames": 177920,
+      "duration_seconds": 5.56,
+      "pcm_peak": 29633,
+      "elapsed_seconds": 5.309,
+      "text": "他手里拿着一袋红白条纹的纸袋，袋子里装着炸鸡和两个黄色的小蛋。"
+    },
+    "during_long_prefill": {
+      "rate": 32000,
+      "frames": 119040,
+      "duration_seconds": 3.72,
+      "pcm_peak": 29257,
+      "elapsed_seconds": 3.696,
+      "text": "海水流过石桥，小鱼也来报一声平安。"
+    },
+    "finished_while_llm_pending": true
+  },
+  "both_live_at_end": true,
+  "resource_guard": {},
+  "memory": {
+    "llm_start": {
+      "min_available_mib": 3463.2,
+      "max_swap_growth_mib": 0.0
+    },
+    "genie_start": {
+      "min_available_mib": 2442.9,
+      "max_swap_growth_mib": 0.0
+    },
+    "vision_with_genie": {
+      "min_available_mib": 2317.0,
+      "max_swap_growth_mib": 0.0
+    },
+    "long_tokenize_with_genie": {
+      "min_available_mib": 2263.3,
+      "max_swap_growth_mib": 0.0
+    },
+    "long_generation_with_genie": {
+      "min_available_mib": 2243.4,
+      "max_swap_growth_mib": 0.0
+    }
+  },
+  "processes_reaped": 2,
+  "production_configuration_equal": true
+}

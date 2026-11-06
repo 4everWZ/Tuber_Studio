@@ -6,7 +6,7 @@
 
 先处理[推理配置与凭证边界](#推理配置与凭证边界)，再核验真实账号读取、渠道判断与获准写入。模型语义未通过时，对应用例保持人工审核。
 
-运营采用 V6 和共享的 88 字角色卡。独立视频回放仍有图文漏答和复读，刷视频继续核对事实、时码与引用，并在同批素材上测热态 p95。V2 曾在 Jetson 与 Genie 共驻并接收 130,914 token，统一视觉直播档须独立复验 V6 的真实长输入、共驻与浏览器首音。正式直播沿用 MiniCPM5-2B＋Genie。[V6 逐例对照](../../evaluations/results/grounded-persona-v6-20261105/README.md) · [刷视频回归](../../evaluations/results/grounded-repair-20261105/README.md) · [V2 共驻证据](../../evaluations/results/grounded-sft-v2-20261105/README.md)
+运营采用 V6 和共享的 88 字角色卡。Jetson 已通过三帧视觉资源检查，隔离共驻实测完整接收 130,914 tokens。实机简答出现 DNS 事实错误，独立视频回放仍有图文漏答和复读。继续核对刷视频的事实、时码、引用和热态 p95。正式直播沿用 MiniCPM5-2B＋Genie，统一视觉直播档待测浏览器首音和混合负载。[Jetson 实测](../../evaluations/results/grounded-v6-jetson-20261106/README.md) · [V6 逐例对照](../../evaluations/results/grounded-persona-v6-20261105/README.md) · [刷视频回归](../../evaluations/results/grounded-repair-20261105/README.md)
 
 | 工作 | 已有证据 | 通过条件 |
 | --- | --- | --- |

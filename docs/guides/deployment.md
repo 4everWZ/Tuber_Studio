@@ -64,7 +64,7 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
 节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。固定Gemma引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及Q8 vision-only投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体安装与恢复证据见[双机实测](../../evaluations/results/distributed-operations-20261102.md)。
 
-部署大肥鱼 V6 时，把 Q4_K_M 主权重与 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/grounded-v6-20261106/`，沿用固定引擎的完整 `build/bin`。现有节点启动沿用 `operations_model`。新代码就绪后，在运营模式向节点的 `POST /model` 提交 `{"model":"MiniCPM-V-4.7-1B-Dafeiyu-Grounded"}`，再到电脑工作台对同一节点重新配对。配对采用节点实开的模型与窗口，V6 的视频视觉仍须执行设置中的资源验证。视频理解质量以原视频任务核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。释放推理缓存会卸载模型及 KV，电脑业务数据独立保存。
+部署大肥鱼 V6 时，把 Q4_K_M 主权重与 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/grounded-v6-20261106/`，沿用固定引擎的完整 `build/bin`。现有节点启动沿用 `operations_model`。新代码就绪后，在运营模式向节点的 `POST /model` 提交 `{"model":"MiniCPM-V-4.7-1B-Dafeiyu-Grounded"}`，再到电脑工作台对同一节点重新配对。配对采用节点实开的模型与窗口，V6 的视频视觉仍须执行设置中的资源验证。视频理解质量以原视频任务核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。释放推理缓存会卸载模型及 KV，电脑业务数据独立保存。[V6 权重与版本清单](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/dc0d3e1f5b61d86969957192b2b9b55f08a721fd/v6)
 
 维护前保存节点配置和旧容器。回退权重时，在运营模式用同一模型切换接口选回原别名，再重新配对；旧版大肥鱼的别名为 `MiniCPM-V-4.7-1B`。回退程序时先恢复旧节点配置，再启动保留的旧容器，核对 `/llm/props` 返回的别名与窗口。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。切换后用浏览器试听。
 

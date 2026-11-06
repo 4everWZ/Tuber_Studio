@@ -69,7 +69,7 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 通用模型路线可用 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出）。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。长输入实验分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型) · [双机实测](../../evaluations/results/distributed-operations-20261102.md)
 
-源码模板和当前固定broker默认采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式缩小或放大配置窗口，最小 4096，实际不得超过所选本地模型的真实 native；MiniCPM5-2B的 native 为 131072，不能靠填写更大的声明突破它。本地从真实 GGUF／运行时核对 native 和实际 n_ctx，API 则区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切 Provider 或窗口后重新计数；较小窗口不冒称已接收 128K。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成 1B。
+源码模板的通用文本配置及节点直播基线采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式调整窗口，最小 4096，实际不得超过所选本地模型的原生窗口。MiniCPM5-2B 的原生窗口为 131072。本地从真实 GGUF／运行时核对原生窗口和实际 n_ctx，API 区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切换 Provider 或窗口后重新计数。角色、摘要与长输入质量分别验收。
 
 [MiniCPM5-2B 官方配置](https://huggingface.co/openbmb/MiniCPM5-2B/blob/f97400052a43d642bbc6e9975e2397e3ae6a6b52/config.json)声明 LlamaForCausalLM 和 max_position_embeddings=131072，是文本 CausalLM；多模态接入遵守独立视觉 Provider 契约。
 

@@ -1,0 +1,71 @@
+{
+  "profile": {
+    "context_tokens": 131072,
+    "model_sha256": "02822e8d239b898ef33b28e372eb7f86f01e4c4716b1da9966149a45415b726a",
+    "projector_sha256": "d973687e3508400c66afc45fdade99565f29318abf7c468aff6bb6556acecfde",
+    "runtime_sha256": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e",
+    "vision": true,
+    "loaded": true
+  },
+  "cases": {
+    "text": {
+      "reply": "它把网页地址像密码一样锁进服务器，你猜对就能进海底的网页。",
+      "seconds": 0.61,
+      "usage": {
+        "completion_tokens": 21,
+        "prompt_tokens": 100,
+        "total_tokens": 121,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish": "stop",
+      "prompt": "大肥鱼，DNS 是干嘛的？一句话讲清楚就好。",
+      "reviewed": false,
+      "review": "DNS 负责域名解析，回答将它误解为密码校验。"
+    },
+    "vision": {
+      "reply": "红白条纹。那袋纸袋挺亮眼的，拿得稳。",
+      "seconds": 1.28,
+      "usage": {
+        "completion_tokens": 17,
+        "prompt_tokens": 368,
+        "total_tokens": 385,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish": "stop",
+      "prompt": "看画面，绿色上衣的人拿着的纸袋是什么颜色的条纹？",
+      "reviewed": true,
+      "review": "纸袋条纹确为红白色。"
+    }
+  },
+  "program_commit": "08c8597",
+  "desktop_vision_resource_probe": {
+    "passed": true,
+    "context_tokens": 131072,
+    "max_frames": 3,
+    "max_pixels": 1048576,
+    "max_bytes": 1048576,
+    "source_kind": "bundled_asset",
+    "input_boundaries": {
+      "frames": 3,
+      "max_pixels": 1048576,
+      "total_bytes": 1048576,
+      "upscale": "nearest",
+      "byte_padding": "valid_PNG_ancillary_text",
+      "quality_acceptance": false
+    },
+    "measurement": {
+      "sample_count": 33,
+      "min_available_bytes": 3437162496,
+      "max_swap_growth_bytes": 0,
+      "max_sample_interval_seconds": 2.2189999999973224
+    }
+  },
+  "hugging_face": {
+    "repo": "4everImmortality/dafeiyu-minicpmv",
+    "revision": "dc0d3e1f5b61d86969957192b2b9b55f08a721fd"
+  }
+}
