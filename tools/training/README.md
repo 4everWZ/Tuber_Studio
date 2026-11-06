@@ -94,6 +94,32 @@ python tools/training/export_grounded_sft.py --base "$BASE" --adapter "$ADAPTER"
 
 导出包含 Q4_K_M、4x `mmproj` 和带版本及 SHA256 的 `bundle.json`。只在独立路径启动候选，候选使用专有别名 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`。切换前记录正在使用的运营模型、视觉证据配置和直播模型。回滚时恢复这三项及原来的准入证明，停止候选进程即可。候选隔离验收使用独立业务数据库和预览入口。
 
+## 大肥鱼第一人称重训
+
+本节两套语料用于工作站实验。线上运营权重继续使用 V6。
+
+用已部署 V6 的语料做对照基准。新版去掉 240 条早期机审草稿，加入 118 条大肥鱼第一人称样本，含 38 组两轮对话的普通和原生格式，以及 4 条动态。另用 12 条多角色二次元对白替换等量旧 OC 记录。六个原创角色各有独立短卡，用来练习切换角色时保留各自的偏好和处境。原视频、通用、运营协议样本及验证集沿用 V6，训练共 944 条。等量对照保留随机抽取的旧草稿。两组使用同一个固定底模、LoRA 和一轮预算。[大肥鱼对白与动态](grounded_dafeiyu_first_person.txt) · [多角色对白](grounded_anime_transfer_dialogues.txt)
+
+人设以项目的大肥鱼角色卡和操作者补充的外观、鲸尾行为为准。社区二创提供白饭、嘴硬和认真时肯帮忙的参考。六个 ChatAnime 改写沿用原场景分组，QQ 版 `gj-persona-03-e196985e` 提供说话节奏和尾巴互动的参考，台词重新写。QQ 的消息长度限制、工具和权限配置仍归 QQ Bot。训练用短身份，按场景写第一人称的决定、反应或改口。[社区角色设定](https://github.com/YunYueSama/codex-deepseek-pet/blob/main/docs/%E8%A7%92%E8%89%B2%E8%AE%BE%E5%AE%9A.md) · [ChatAnime](https://github.com/LanlanQiu/ChatAnime/tree/2169710041b1130b79530be610c0adef886f96fb)
+
+```bash
+python tools/training/build_dafeiyu_first_person.py --original runtime/grounded-corpus-oc-v6 --output runtime/grounded-first-person --characters config/characters.json
+CUDA_VISIBLE_DEVICES=0 python tools/training/grounded_sft.py --base "$BASE" --data runtime/grounded-first-person --output runtime/sft-first-person --strategy vision --curriculum dafeiyu-first-person --learning-rate 5e-5 --epochs 1
+```
+
+语料构建加 `--control` 生成等量旧稿对照。回放重点是她是否记得自己的偏好、有没有听见上一句、能否自然接梗以及有没有乱揽别人的事。用 `replay_anime_plain.py` 直接回台词，检查同一权重在短身份、精简卡和其他角色短卡下的实际输出。通用问答与视觉单独回归。[直播题](../../evaluations/cases/grounded-first-person-live.jsonl) · [鲸尾题](../../evaluations/cases/grounded-first-person-tail.jsonl) · [运营题](../../evaluations/cases/grounded-first-person-operations.jsonl) · [多角色留出题](../../evaluations/cases/grounded-anime-transfer.jsonl)
+
+### 经典角色与大肥鱼变体混合
+
+从固定 ChatAnime 人写子集选 16 个经典角色，每个 14 组两轮对白，共 224 组。每条明确给角色短卡。按来源场景分组，先选训练组，再筛掉篇幅过长和明显模板化的对白。四个完全不参与微调的角色各留四组，取自训练阶段未见过的来源场景。[固定人写数据](https://github.com/LanlanQiu/ChatAnime/blob/2169710041b1130b79530be610c0adef886f96fb/data/human.json)
+
+大肥鱼保留 118 条核心样本，另用 18 组两轮对白生成 54 条变体记录。电台、开黑和日常三张短卡只提供情境与节奏，样本中的身份、偏好、鲸尾行为与相处边界保持一致。另留 12 条原创角色样本。能力保留使用原 60 条通用题、60 条运营协议及分层抽取的 240 条视频记录，其中 120 条含实帧。合计 768 条，从同一原始底模训练一轮，48 步。[变体对白](grounded_dafeiyu_variants.txt) · [同题短卡回放](../../evaluations/cases/grounded-dafeiyu-variants.jsonl) · [基础能力回放](../../evaluations/cases/grounded-anime-mix-retention.jsonl)
+
+```bash
+python tools/training/build_anime_dafeiyu_mix.py --original runtime/grounded-first-person --output runtime/anime-dafeiyu-mix --characters config/characters.json --chatanime-human "$CHATANIME_HUMAN_JSON" --holdout runtime/classic-holdout.jsonl
+CUDA_VISIBLE_DEVICES=0 python tools/training/grounded_sft.py --base "$BASE" --data runtime/anime-dafeiyu-mix --output runtime/sft-anime-dafeiyu-mix --strategy vision --curriculum anime-dafeiyu-mix --learning-rate 3e-5 --epochs 1
+```
+
 ## 有上限的偏好实验
 
 `train_grounded_preference.py` 使用冻结的 V6 合并 BF16 作为参考，每步读三条正文偏好记录和一条保留记录，共 32 步。偏好只比较正文，保留条目沿用原协议和真实帧。用 `--reference-model` 将训练出的增量合回相同参考模型。运营回放保留正常请求预算和完整原文，单独看回复是否完成及是否符合来源与角色。[实验记录](../../evaluations/results/grounded-preference-20261105/README.md)

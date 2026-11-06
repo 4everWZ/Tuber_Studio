@@ -1,0 +1,16 @@
+{"id":"retention-dns","card":"直接用自然的中文回答。能一句说清就一句。","turns":["手机输入域名后，DNS 在做什么？"],"criterion":"将域名解析成 IP 地址。"}
+{"id":"retention-stack","card":"直接用自然的中文回答。能一句说清就一句。","turns":["依次把 A、B、C 压入栈，第一个弹出的是哪个？"],"criterion":"C，后进先出。"}
+{"id":"retention-process","card":"直接用自然的中文回答。能一句说清就一句。","turns":["磁盘里是一个可执行程序，双击后正在跑的那份叫啥？"],"criterion":"进程。"}
+{"id":"retention-wifi","card":"直接用自然的中文回答。能一句说清就一句。","turns":["电脑连上了家里的 Wi-Fi，但运营商断网了。我能访问家里同一个局域网的打印机吗？"],"criterion":"通常可以，只要打印机仍在同一可达局域网。"}
+{"id":"retention-overfit","card":"直接用自然的中文回答。能一句说清就一句。","turns":["训练集表现越来越好，没见过的数据表现变差，这种现象叫什么？"],"criterion":"过拟合。"}
+{"id":"retention-csv","card":"直接用自然的中文回答。能一句说清就一句。","turns":["CSV 里一个字段本身含逗号，通常怎样避免它被拆成两个字段？"],"criterion":"用双引号把整个字段括起来。"}
+{"id":"retention-shadow","card":"直接用自然的中文回答。能一句说清就一句。","turns":["同一地点，太阳比之前更高，竖杆的影子一般变长还是变短？"],"criterion":"变短。"}
+{"id":"retention-eclipse","card":"直接用自然的中文回答。能一句说清就一句。","turns":["日食时，是什么天体挡在地球和太阳之间？"],"criterion":"月球。"}
+{"id":"retention-towel","card":"直接用自然的中文回答。能一句说清就一句。","turns":["把同样湿的毛巾摊开，和卷成一卷放着，哪条一般先干？"],"criterion":"摊开的。"}
+{"id":"retention-book","card":"直接用自然的中文回答。能一句说清就一句。","turns":["小说用「我」叙述，这个「我」一定是作者本人吗？"],"criterion":"不一定，叙述者可为虚构角色。"}
+{"id":"retention-greedy","card":"直接用自然的中文回答。能一句说清就一句。","turns":["贪心解码每一步如何挑选下一个 token？"],"criterion":"挑当前条件下概率最大的 token。"}
+{"id":"retention-duplicate","card":"直接用自然的中文回答。能一句说清就一句。","turns":["把同一份文件在同一个磁盘复制一份，原文件会消失吗？"],"criterion":"不会，复制保留原文件。"}
+{"id":"retention-branch","card":"直接用自然的中文回答。能一句说清就一句。","turns":["Git 切到另一条分支后，那条分支独有的提交会自动进原分支吗？"],"criterion":"不会，需合并、拣选等显式操作。"}
+{"id":"retention-speaker","card":"直接用自然的中文回答。能一句说清就一句。","turns":["麦克风靠嘴近一点和把扬声器音量调大，分别改了哪一边？"],"criterion":"麦克风改善输入／拾音，扬声器调整输出音量。"}
+{"id":"retention-salt","card":"直接用自然的中文回答。能一句说清就一句。","turns":["水里的盐溶解后，把水蒸发掉，盐通常会跟着一起蒸发吗？"],"criterion":"通常不会，留下盐。"}
+{"id":"retention-meter","card":"直接用自然的中文回答。能一句说清就一句。","turns":["一米等于多少厘米？"],"criterion":"100 厘米。"}

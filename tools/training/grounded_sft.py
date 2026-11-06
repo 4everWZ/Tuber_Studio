@@ -48,11 +48,19 @@ PAIRED_TEACHER_EXPECTED = {
     split: PAIRED_CURATED_EXPECTED[split] | {"oc": PAIRED_CURATED_EXPECTED[split]["oc"] + added}
     for split, added in {"train": 24, "validation": 2}.items()
 }
+FIRST_PERSON_EXPECTED = PAIRED_CURATED_EXPECTED | {
+    "train": PAIRED_CURATED_EXPECTED["train"] | {"oc": PAIRED_CURATED_EXPECTED["train"]["oc"] + 118},
+}
+ANIME_DAFEIYU_EXPECTED = FIRST_PERSON_EXPECTED | {
+    "train": {"oc": 408, "video": 240, "operations": 60, "general": 60},
+}
 CURRICULA = {
     "original": EXPECTED, "mixed-evidence": FOCUSED_EXPECTED, "roleplay": PERSONA_EXPECTED,
     "roleplay-anime": ANIME_EXPECTED, "roleplay-deepthink": DEEPTHINK_EXPECTED,
     "roleplay-paired": PAIRED_EXPECTED, "roleplay-paired-curated": PAIRED_CURATED_EXPECTED,
     "roleplay-paired-teacher": PAIRED_TEACHER_EXPECTED,
+    "dafeiyu-first-person": FIRST_PERSON_EXPECTED,
+    "anime-dafeiyu-mix": ANIME_DAFEIYU_EXPECTED,
 }
 BOUNDARIES = ("<|im_start|>", "<|im_end|>", "<think>", "</think>", "<image>", "</image>")
 
