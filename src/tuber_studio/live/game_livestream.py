@@ -332,8 +332,8 @@ class PvZAdapter(BaseGameAdapter):
                         if self.grid[r][c] is None:
                             self.grid[r][c] = "向日葵"
                             self.sun -= 50
-                            self.current_activity = f"在第{r+1}行种下了一棵萌萌的向日葵"
-                            return {"success": True, "action": action, "message": f"种下向日葵 (第{r+1}行)"}
+                            self.current_activity = f"在第{r + 1}行种下了一棵萌萌的向日葵"
+                            return {"success": True, "action": action, "message": f"种下向日葵 (第{r + 1}行)"}
                 return {"success": False, "action": action, "message": "后排已经种满啦"}
             else:
                 return {"success": False, "action": action, "message": "阳光不足 (需50阳光)"}
@@ -350,8 +350,12 @@ class PvZAdapter(BaseGameAdapter):
                     if self.grid[target_row][c] is None:
                         self.grid[target_row][c] = "豌豆射手"
                         self.sun -= 100
-                        self.current_activity = f"在第{target_row+1}行种植了豌豆射手，开始射击！"
-                        return {"success": True, "action": action, "message": f"种下豌豆射手 (第{target_row+1}行)"}
+                        self.current_activity = f"在第{target_row + 1}行种植了豌豆射手，开始射击！"
+                        return {
+                            "success": True,
+                            "action": action,
+                            "message": f"种下豌豆射手 (第{target_row + 1}行)",
+                        }
                 return {"success": False, "action": action, "message": "该行没有空余防御位置"}
             else:
                 return {"success": False, "action": action, "message": "阳光不足 (需100阳光)"}
@@ -367,8 +371,12 @@ class PvZAdapter(BaseGameAdapter):
                     if self.grid[target_row][c] is None:
                         self.grid[target_row][c] = "坚果墙"
                         self.sun -= 50
-                        self.current_activity = f"在第{target_row+1}行坚毅地立起了一堵坚果墙！"
-                        return {"success": True, "action": action, "message": f"种下坚果墙 (第{target_row+1}行)"}
+                        self.current_activity = f"在第{target_row + 1}行坚毅地立起了一堵坚果墙！"
+                        return {
+                            "success": True,
+                            "action": action,
+                            "message": f"种下坚果墙 (第{target_row + 1}行)",
+                        }
                 return {"success": False, "action": action, "message": "该位置已存在植物"}
             else:
                 return {"success": False, "action": action, "message": "阳光不足 (需50阳光)"}
@@ -415,7 +423,7 @@ class PvZAdapter(BaseGameAdapter):
             z["hp"] -= peashooters * 3
             if z["hp"] <= 0:
                 self.zombies.remove(z)
-                self.current_activity = f"豌豆射手击溃了第{row+1}行的僵尸"
+                self.current_activity = f"豌豆射手击溃了第{row + 1}行的僵尸"
 
         # Spawn new zombie occasionally
         if len(self.zombies) < 3 and random.random() < 0.4:
@@ -484,10 +492,7 @@ class GameLivestreamService:
         self.active_game_id = target_game_id
         new_game = self.get_active_adapter().display_name
 
-        spoken_text = (
-            f"收到！大肥鱼这就切换游戏画面！"
-            f"暂别《{old_game}》，马上进入《{new_game}》！"
-        )
+        spoken_text = f"收到！大肥鱼这就切换游戏画面！暂别《{old_game}》，马上进入《{new_game}》！"
         return {
             "status": "switched",
             "previous_game": old_game,
@@ -505,10 +510,7 @@ class GameLivestreamService:
             requested_by=user_name,
             gift_name=gift_name,
         )
-        spoken_text = (
-            f"感谢【{user_name}】送的【{gift_name}】！"
-            f"大肥鱼这就去安排【{label}】！看本鱼秀操作！"
-        )
+        spoken_text = f"感谢【{user_name}】送的【{gift_name}】！大肥鱼这就去安排【{label}】！看本鱼秀操作！"
         return {
             "status": "enqueued",
             "action": action,

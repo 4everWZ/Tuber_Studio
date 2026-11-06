@@ -460,7 +460,11 @@ class ApiVideoEvidenceProvider:
             "items": {"type": "string", "minLength": 1, "maxLength": 4000},
         }
         value, props, stage = await self._stage(
-            task, deadline, identity, expected, repository,
+            task,
+            deadline,
+            identity,
+            expected,
+            repository,
             lambda: self.api.generate_json(messages, schema, max_tokens=self.config.max_output_tokens),
         )
         texts = value.get("captions") if isinstance(value, dict) else None
@@ -472,9 +476,12 @@ class ApiVideoEvidenceProvider:
             raise ValueError("联合视觉观察须按输入顺序交付每一帧的非空描述")
         captions = [{"frame": frame, "text": text} for frame, text in zip(frames, texts, strict=True)]
         assessment = {key: value[key] for key in value if key != "captions"}
-        return captions, assessment, props, [
-            stage | {"stage": "joint_assessment", "preprocessing": preprocessing}
-        ]
+        return (
+            captions,
+            assessment,
+            props,
+            [stage | {"stage": "joint_assessment", "preprocessing": preprocessing}],
+        )
 
     async def _generate(self, task, metadata, frames, question, *, deadline, probe=False):
         self._check_task(task, deadline)

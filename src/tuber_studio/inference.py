@@ -68,7 +68,9 @@ RESOURCES = {
     "llm1b": Resource("http://127.0.0.1:9010", "/health", LLM_MODELS["llm1b"], "MiniCPM5-1B-Q4_K_M.gguf"),
     DAFEIYU_KEY: Resource("http://127.0.0.1:9016", "/health", LLM_MODELS[DAFEIYU_KEY], DAFEIYU_WEIGHTS),
     GROUNDED_DAFEIYU_KEY: Resource(
-        "http://127.0.0.1:9031", "/health", LLM_MODELS[GROUNDED_DAFEIYU_KEY],
+        "http://127.0.0.1:9031",
+        "/health",
+        LLM_MODELS[GROUNDED_DAFEIYU_KEY],
         f"{GROUNDED_DAFEIYU_BUNDLE}/{GROUNDED_DAFEIYU_WEIGHTS}",
     ),
     "llm1bq8": Resource("http://127.0.0.1:9014", "/health", LLM_MODELS["llm1bq8"], "MiniCPM5-1B-Q8_0.gguf"),
@@ -314,9 +316,17 @@ class ProcessRunner:
             ]
             if grounded:
                 return command + [
-                    "--mmproj", str(grounded["projector"]), "--mmproj-offload",
-                    "--load-mode", "dio", "--ctx-checkpoints", "0", "--no-context-shift",
-                    "--threads", "4", "--no-webui",
+                    "--mmproj",
+                    str(grounded["projector"]),
+                    "--mmproj-offload",
+                    "--load-mode",
+                    "dio",
+                    "--ctx-checkpoints",
+                    "0",
+                    "--no-context-shift",
+                    "--threads",
+                    "4",
+                    "--no-webui",
                 ]
             command.extend(["--no-mmap", "--direct-io"])
             if (self.node_settings or {}).get("speculative_ngram", False):
@@ -491,7 +501,10 @@ class ProcessRunner:
         if key == GROUNDED_DAFEIYU_KEY:
             for role, path in self.vision_assets(key).items():
                 await asyncio.to_thread(
-                    verify_artifact, path, GROUNDED_DAFEIYU_ARTIFACTS[role], self.verified_artifacts,
+                    verify_artifact,
+                    path,
+                    GROUNDED_DAFEIYU_ARTIFACTS[role],
+                    self.verified_artifacts,
                 )
         elif key == GEMMA_KEY:
             assets = self.gemma_assets()

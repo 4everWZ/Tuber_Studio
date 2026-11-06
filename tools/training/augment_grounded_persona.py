@@ -36,9 +36,7 @@ def authored(path):
 
 def authored_dialogues(chatanime):
     path = HERE / ("grounded_chatanime_dialogues.txt" if chatanime else "grounded_oc_dialogues.txt")
-    for key, first, first_reply, second, second_reply, first_emotion, second_emotion in authored(
-        path
-    ):
+    for key, first, first_reply, second, second_reply, first_emotion, second_emotion in authored(path):
         if chatanime:
             split = "validation" if int(key) % 7 == 0 else "train"
             identity = f"chatanime-{int(key):02d}"
@@ -47,7 +45,12 @@ def authored_dialogues(chatanime):
             split = "validation" if key.startswith("val-") else "train"
             identity = f"original-oc-{key}"
             provenance = source(identity)
-        yield identity, split, provenance, (first, first_reply, second, second_reply, first_emotion, second_emotion)
+        yield (
+            identity,
+            split,
+            provenance,
+            (first, first_reply, second, second_reply, first_emotion, second_emotion),
+        )
 
 
 def deepthink_dialogues():
@@ -90,18 +93,31 @@ def live_rows(character, identity, split, provenance, turns):
         event = {"event_id": f"m{index}", "type": "chat", "text": question}
         wire = single_system_messages(build_messages(character, event, {}, settings=settings))
         target = Reply(
-            spoken_text=answer, emotion=emotion, animation_id=ANIMATIONS[emotion], reply_to=[event["event_id"]],
+            spoken_text=answer,
+            emotion=emotion,
+            animation_id=ANIMATIONS[emotion],
+            reply_to=[event["event_id"]],
         ).model_dump_json()
         yield sample(
-            f"{identity}-live-{index}", "oc", split,
-            [wire[0], *history, *wire[1:], {"role": "assistant", "content": target}], provenance,
+            f"{identity}-live-{index}",
+            "oc",
+            split,
+            [wire[0], *history, *wire[1:], {"role": "assistant", "content": target}],
+            provenance,
             format="live_reply",
         )
         history.extend([wire[-1], {"role": "assistant", "content": answer}])
 
 
 def conversation_rows(character, dialogues, *, live_only=False):
-    for identity, split, provenance, (first, first_reply, second, second_reply, first_emotion, second_emotion) in dialogues:
+    for identity, split, provenance, (
+        first,
+        first_reply,
+        second,
+        second_reply,
+        first_emotion,
+        second_emotion,
+    ) in dialogues:
         if not live_only:
             dialogue = exchange(first, first_reply) + exchange(second, second_reply)[1:]
             yield sample(identity, "oc", split, dialogue, provenance)
@@ -114,11 +130,19 @@ def teacher_rows(character):
         identity = f"teacher-oc-{key}"
         for row in conversation_rows(character, [(identity, "train", source(identity), turns)]):
             yield row | {"teacher_mode": mode}
-    history = {identity: (split, provenance, turns) for identity, split, provenance, turns in deepthink_dialogues()}
+    history = {
+        identity: (split, provenance, turns) for identity, split, provenance, turns in deepthink_dialogues()
+    }
     for mode, key, user, answer, emotion in authored(HERE / "grounded_chatanime_continuations.txt"):
         identity = f"chatanime-{int(key):02d}"
-        split, provenance, (first, first_reply, second, second_reply, first_emotion, second_emotion) = history[identity]
-        turns = ((first, first_reply, first_emotion), (second, second_reply, second_emotion), (user, answer, emotion))
+        split, provenance, (first, first_reply, second, second_reply, first_emotion, second_emotion) = (
+            history[identity]
+        )
+        turns = (
+            (first, first_reply, first_emotion),
+            (second, second_reply, second_emotion),
+            (user, answer, emotion),
+        )
         *_, final = live_rows(character, identity, split, provenance, turns)
         yield final | {"teacher_mode": mode}
 
@@ -130,8 +154,14 @@ def reaction_rows(splits):
         captions = json.loads(indexed[f"{key}-joint"]["messages"][-1]["content"])["captions"]
         frames = original["frames"]
         observed = [
-            {"id": f"shot-{i}", "text": caption, "cid": "1", "start": frame["seconds"],
-             "end": frame["seconds"], "kind": "visual"}
+            {
+                "id": f"shot-{i}",
+                "text": caption,
+                "cid": "1",
+                "start": frame["seconds"],
+                "end": frame["seconds"],
+                "kind": "visual",
+            }
             for i, (frame, caption) in enumerate(zip(frames, captions, strict=True), 1)
         ]
         visible = [item | {"text": f"随附画面 {i}"} for i, item in enumerate(observed, 1)]
@@ -139,28 +169,47 @@ def reaction_rows(splits):
         identity = key + "-oc-reaction"
         observation = "\n".join(f"画面 {i}：{text}" for i, text in enumerate(captions, 1))
         yield sample(
-            identity, "video", original["split"], exchange(question, reaction), origin,
-            frames=frames, text_messages=exchange(observation + "\n" + question, reaction),
+            identity,
+            "video",
+            original["split"],
+            exchange(question, reaction),
+            origin,
+            frames=frames,
+            text_messages=exchange(observation + "\n" + question, reaction),
         )
 
         def packet(segments):
-            return ResponseDecisionInput({
-                "kind": "reply", "thread": {"question": question}, "evidence": segments,
-                "coverage": "sampled_visual",
-            })
+            return ResponseDecisionInput(
+                {
+                    "kind": "reply",
+                    "thread": {"question": question},
+                    "evidence": segments,
+                    "coverage": "sampled_visual",
+                }
+            )
 
         def structured(value):
-            target = {"action": "reply_public", "reason": "specific_detail", "text": reaction,
-                      "evidence_ids": [ref.alias for ref in value.references]}
+            target = {
+                "action": "reply_public",
+                "reason": "specific_detail",
+                "text": reaction,
+                "evidence_ids": [ref.alias for ref in value.references],
+            }
             value.validate_wire(target)
             return exchange(
-                value.format(), dump(target), ANCHOR + "\n\n" + RESPONSE_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION,
+                value.format(),
+                dump(target),
+                ANCHOR + "\n\n" + RESPONSE_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION,
             )
 
         value = packet(visible)
         aliases = {ref.canonical_id: ref.alias for ref in value.references}
         yield sample(
-            identity + "-wire", "video", original["split"], structured(value), origin,
+            identity + "-wire",
+            "video",
+            original["split"],
+            structured(value),
+            origin,
             frames=[frame | {"alias": aliases[f"shot-{i}"]} for i, frame in enumerate(frames, 1)],
             text_messages=structured(packet(observed)),
         )
@@ -172,9 +221,16 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--characters", type=Path, required=True)
     parser.add_argument("--chatanime", action="store_true", help="include the authored ChatAnime rewrites")
-    parser.add_argument("--deepthink", action="store_true", help="include both sets of curated ChatAnime rewrites and OC dialogues")
     parser.add_argument(
-        "--paired-context", nargs="?", const="all", choices=("all", "curated", "teacher"),
+        "--deepthink",
+        action="store_true",
+        help="include both sets of curated ChatAnime rewrites and OC dialogues",
+    )
+    parser.add_argument(
+        "--paired-context",
+        nargs="?",
+        const="all",
+        choices=("all", "curated", "teacher"),
         help="add context pairs, retain V2 video, and select the roleplay source mix",
     )
     args = parser.parse_args()
@@ -206,7 +262,9 @@ def main():
     shutil.copytree(args.original / "frames", args.output / "frames")
     for split, rows in splits.items():
         rows.extend(row for row in additions if row["split"] == split)
-        (args.output / f"{split}.jsonl").write_text("".join(dump(row) + "\n" for row in rows), encoding="utf-8")
+        (args.output / f"{split}.jsonl").write_text(
+            "".join(dump(row) + "\n" for row in rows), encoding="utf-8"
+        )
     read_corpus(args.output, pilot=False, expected=expected)
 
 

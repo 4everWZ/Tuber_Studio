@@ -31,6 +31,7 @@ _turn_token_counts = ContextVar("turn_token_counts", default=None)
 
 def reuse_turn_token_counts(function):
     """Share exact local tokenizer results only within one reply or evidence pass."""
+
     @wraps(function)
     async def run(*args, **kwargs):
         scope = _turn_token_counts.set({})

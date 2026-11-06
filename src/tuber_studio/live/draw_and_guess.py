@@ -13,12 +13,42 @@ WORD_BANK = [
         "aliases": ["大肥鱼", "肥鱼", "大鲸鱼", "鲸鱼", "鱼鱼", "whale"],
         "hint": "圆滚滚的大尾巴，海洋里最可爱的蓝胖子，主播本尊！",
         "strokes": [
-            {"type": "path", "d": "M 50 140 C 50 60, 230 50, 270 120 C 310 100, 350 70, 360 110 C 340 135, 330 155, 360 180 C 330 180, 280 155, 250 160 C 180 210, 70 200, 50 140 Z", "fill": "#38bdf8", "stroke": "#0284c7", "width": 5},
+            {
+                "type": "path",
+                "d": "M 50 140 C 50 60, 230 50, 270 120 C 310 100, 350 70, 360 110 C 340 135, 330 155, 360 180 C 330 180, 280 155, 250 160 C 180 210, 70 200, 50 140 Z",
+                "fill": "#38bdf8",
+                "stroke": "#0284c7",
+                "width": 5,
+            },
             {"type": "circle", "cx": 100, "cy": 120, "r": 8, "fill": "#0f172a"},
-            {"type": "path", "d": "M 80 150 Q 110 170, 140 150", "fill": "none", "stroke": "#0f172a", "width": 4},
-            {"type": "path", "d": "M 180 80 Q 200 40, 220 70", "fill": "#0284c7", "stroke": "#0284c7", "width": 3},
-            {"type": "path", "d": "M 150 170 Q 180 200, 190 170", "fill": "#38bdf8", "stroke": "#0284c7", "width": 4},
-            {"type": "path", "d": "M 200 40 Q 190 10, 170 20 M 200 40 Q 210 10, 230 20 M 200 40 L 200 15", "fill": "none", "stroke": "#bae6fd", "width": 4},
+            {
+                "type": "path",
+                "d": "M 80 150 Q 110 170, 140 150",
+                "fill": "none",
+                "stroke": "#0f172a",
+                "width": 4,
+            },
+            {
+                "type": "path",
+                "d": "M 180 80 Q 200 40, 220 70",
+                "fill": "#0284c7",
+                "stroke": "#0284c7",
+                "width": 3,
+            },
+            {
+                "type": "path",
+                "d": "M 150 170 Q 180 200, 190 170",
+                "fill": "#38bdf8",
+                "stroke": "#0284c7",
+                "width": 4,
+            },
+            {
+                "type": "path",
+                "d": "M 200 40 Q 190 10, 170 20 M 200 40 Q 210 10, 230 20 M 200 40 L 200 15",
+                "fill": "none",
+                "stroke": "#bae6fd",
+                "width": 4,
+            },
         ],
     },
     {
@@ -28,13 +58,45 @@ WORD_BANK = [
         "aliases": ["猫", "小猫", "猫咪", "咪咪", "猫猫", "cat"],
         "hint": "三角形的耳朵，长长的胡须，喜欢喵喵叫",
         "strokes": [
-            {"type": "circle", "cx": 200, "cy": 180, "r": 70, "fill": "#fef08a", "stroke": "#ca8a04", "width": 5},
-            {"type": "path", "d": "M 140 140 L 130 80 L 175 120 Z", "fill": "#fde047", "stroke": "#ca8a04", "width": 5},
-            {"type": "path", "d": "M 260 140 L 270 80 L 225 120 Z", "fill": "#fde047", "stroke": "#ca8a04", "width": 5},
+            {
+                "type": "circle",
+                "cx": 200,
+                "cy": 180,
+                "r": 70,
+                "fill": "#fef08a",
+                "stroke": "#ca8a04",
+                "width": 5,
+            },
+            {
+                "type": "path",
+                "d": "M 140 140 L 130 80 L 175 120 Z",
+                "fill": "#fde047",
+                "stroke": "#ca8a04",
+                "width": 5,
+            },
+            {
+                "type": "path",
+                "d": "M 260 140 L 270 80 L 225 120 Z",
+                "fill": "#fde047",
+                "stroke": "#ca8a04",
+                "width": 5,
+            },
             {"type": "circle", "cx": 175, "cy": 170, "r": 8, "fill": "#0f172a"},
             {"type": "circle", "cx": 225, "cy": 170, "r": 8, "fill": "#0f172a"},
-            {"type": "path", "d": "M 195 188 L 205 188 L 200 195 Z", "fill": "#f43f5e", "stroke": "#f43f5e", "width": 2},
-            {"type": "path", "d": "M 140 180 L 90 175 M 140 190 L 85 195 M 260 180 L 310 175 M 260 190 L 315 195", "fill": "none", "stroke": "#0f172a", "width": 3},
+            {
+                "type": "path",
+                "d": "M 195 188 L 205 188 L 200 195 Z",
+                "fill": "#f43f5e",
+                "stroke": "#f43f5e",
+                "width": 2,
+            },
+            {
+                "type": "path",
+                "d": "M 140 180 L 90 175 M 140 190 L 85 195 M 260 180 L 310 175 M 260 190 L 315 195",
+                "fill": "none",
+                "stroke": "#0f172a",
+                "width": 3,
+            },
         ],
     },
     {
@@ -44,8 +106,20 @@ WORD_BANK = [
         "aliases": ["西瓜", "大西瓜", "watermelon"],
         "hint": "夏天必备消暑神器，绿色的外皮，红色的果肉，带黑色小籽",
         "strokes": [
-            {"type": "path", "d": "M 80 150 A 120 120 0 0 0 320 150 Z", "fill": "#22c55e", "stroke": "#15803d", "width": 6},
-            {"type": "path", "d": "M 95 150 A 105 105 0 0 0 305 150 Z", "fill": "#ef4444", "stroke": "#b91c1c", "width": 3},
+            {
+                "type": "path",
+                "d": "M 80 150 A 120 120 0 0 0 320 150 Z",
+                "fill": "#22c55e",
+                "stroke": "#15803d",
+                "width": 6,
+            },
+            {
+                "type": "path",
+                "d": "M 95 150 A 105 105 0 0 0 305 150 Z",
+                "fill": "#ef4444",
+                "stroke": "#b91c1c",
+                "width": 3,
+            },
             {"type": "ellipse", "cx": 150, "cy": 175, "rx": 4, "ry": 6, "fill": "#0f172a"},
             {"type": "ellipse", "cx": 200, "cy": 195, "rx": 4, "ry": 6, "fill": "#0f172a"},
             {"type": "ellipse", "cx": 250, "cy": 175, "rx": 4, "ry": 6, "fill": "#0f172a"},
@@ -60,13 +134,47 @@ WORD_BANK = [
         "aliases": ["向日葵", "太阳花", "葵花", "sunflower"],
         "hint": "总是面朝着太阳微笑，金黄色的花瓣，中间是大圆花盘",
         "strokes": [
-            {"type": "path", "d": "M 200 240 Q 200 320 200 350", "fill": "none", "stroke": "#16a34a", "width": 8},
-            {"type": "path", "d": "M 200 290 Q 240 270 260 290 Q 230 310 200 300", "fill": "#22c55e", "stroke": "#16a34a", "width": 3},
-            {"type": "circle", "cx": 200, "cy": 180, "r": 80, "fill": "#facc15", "stroke": "#ca8a04", "width": 4},
-            {"type": "circle", "cx": 200, "cy": 180, "r": 50, "fill": "#78350f", "stroke": "#451a03", "width": 4},
+            {
+                "type": "path",
+                "d": "M 200 240 Q 200 320 200 350",
+                "fill": "none",
+                "stroke": "#16a34a",
+                "width": 8,
+            },
+            {
+                "type": "path",
+                "d": "M 200 290 Q 240 270 260 290 Q 230 310 200 300",
+                "fill": "#22c55e",
+                "stroke": "#16a34a",
+                "width": 3,
+            },
+            {
+                "type": "circle",
+                "cx": 200,
+                "cy": 180,
+                "r": 80,
+                "fill": "#facc15",
+                "stroke": "#ca8a04",
+                "width": 4,
+            },
+            {
+                "type": "circle",
+                "cx": 200,
+                "cy": 180,
+                "r": 50,
+                "fill": "#78350f",
+                "stroke": "#451a03",
+                "width": 4,
+            },
             {"type": "circle", "cx": 185, "cy": 170, "r": 5, "fill": "#fde047"},
             {"type": "circle", "cx": 215, "cy": 170, "r": 5, "fill": "#fde047"},
-            {"type": "path", "d": "M 185 195 Q 200 210 215 195", "fill": "none", "stroke": "#fde047", "width": 3},
+            {
+                "type": "path",
+                "d": "M 185 195 Q 200 210 215 195",
+                "fill": "none",
+                "stroke": "#fde047",
+                "width": 3,
+            },
         ],
     },
     {
@@ -76,14 +184,42 @@ WORD_BANK = [
         "aliases": ["雪人", "雪宝", "snowman"],
         "hint": "冬天用两个大雪球堆起来的，胡萝卜当鼻子",
         "strokes": [
-            {"type": "circle", "cx": 200, "cy": 250, "r": 75, "fill": "#f8fafc", "stroke": "#94a3b8", "width": 5},
-            {"type": "circle", "cx": 200, "cy": 140, "r": 50, "fill": "#f8fafc", "stroke": "#94a3b8", "width": 5},
+            {
+                "type": "circle",
+                "cx": 200,
+                "cy": 250,
+                "r": 75,
+                "fill": "#f8fafc",
+                "stroke": "#94a3b8",
+                "width": 5,
+            },
+            {
+                "type": "circle",
+                "cx": 200,
+                "cy": 140,
+                "r": 50,
+                "fill": "#f8fafc",
+                "stroke": "#94a3b8",
+                "width": 5,
+            },
             {"type": "circle", "cx": 185, "cy": 130, "r": 6, "fill": "#0f172a"},
             {"type": "circle", "cx": 215, "cy": 130, "r": 6, "fill": "#0f172a"},
-            {"type": "path", "d": "M 200 142 L 235 146 L 200 152 Z", "fill": "#f97316", "stroke": "#ea580c", "width": 2},
+            {
+                "type": "path",
+                "d": "M 200 142 L 235 146 L 200 152 Z",
+                "fill": "#f97316",
+                "stroke": "#ea580c",
+                "width": 2,
+            },
             {"type": "circle", "cx": 200, "cy": 220, "r": 6, "fill": "#0f172a"},
             {"type": "circle", "cx": 200, "cy": 250, "r": 6, "fill": "#0f172a"},
-            {"type": "path", "d": "M 150 220 L 100 180 M 250 220 L 300 180", "fill": "none", "stroke": "#78350f", "width": 5},
+            {
+                "type": "path",
+                "d": "M 150 220 L 100 180 M 250 220 L 300 180",
+                "fill": "none",
+                "stroke": "#78350f",
+                "width": 5,
+            },
         ],
     },
     {
@@ -93,10 +229,38 @@ WORD_BANK = [
         "aliases": ["小汽车", "汽车", "车车", "轿车", "car"],
         "hint": "有四个轮子和车窗，能在公路上飞驰",
         "strokes": [
-            {"type": "path", "d": "M 80 220 L 90 170 L 150 170 L 180 120 L 260 120 L 290 170 L 320 180 L 320 220 Z", "fill": "#3b82f6", "stroke": "#1d4ed8", "width": 5},
-            {"type": "path", "d": "M 185 130 L 255 130 L 280 165 L 185 165 Z", "fill": "#bae6fd", "stroke": "#0284c7", "width": 3},
-            {"type": "circle", "cx": 130, "cy": 220, "r": 25, "fill": "#334155", "stroke": "#0f172a", "width": 4},
-            {"type": "circle", "cx": 270, "cy": 220, "r": 25, "fill": "#334155", "stroke": "#0f172a", "width": 4},
+            {
+                "type": "path",
+                "d": "M 80 220 L 90 170 L 150 170 L 180 120 L 260 120 L 290 170 L 320 180 L 320 220 Z",
+                "fill": "#3b82f6",
+                "stroke": "#1d4ed8",
+                "width": 5,
+            },
+            {
+                "type": "path",
+                "d": "M 185 130 L 255 130 L 280 165 L 185 165 Z",
+                "fill": "#bae6fd",
+                "stroke": "#0284c7",
+                "width": 3,
+            },
+            {
+                "type": "circle",
+                "cx": 130,
+                "cy": 220,
+                "r": 25,
+                "fill": "#334155",
+                "stroke": "#0f172a",
+                "width": 4,
+            },
+            {
+                "type": "circle",
+                "cx": 270,
+                "cy": 220,
+                "r": 25,
+                "fill": "#334155",
+                "stroke": "#0f172a",
+                "width": 4,
+            },
             {"type": "circle", "cx": 130, "cy": 220, "r": 10, "fill": "#cbd5e1"},
             {"type": "circle", "cx": 270, "cy": 220, "r": 10, "fill": "#cbd5e1"},
         ],
@@ -130,10 +294,13 @@ class DrawAndGuessService:
     def is_active(self) -> bool:
         return self.state == "drawing" and (time.time() - self.started_at < self.duration_sec)
 
-    def start_round(self, trigger_user: str = "观众", gift_name: str | None = None, duration_sec: int = 60) -> dict:
+    def start_round(
+        self, trigger_user: str = "观众", gift_name: str | None = None, duration_sec: int = 60
+    ) -> dict:
         """Starts a new round of Draw & Guess."""
         candidates = [w for w in WORD_BANK if w["id"] not in self.recent_words[-3:]] or WORD_BANK
         import random
+
         chosen = random.choice(candidates)
         self.recent_words.append(chosen["id"])
 
@@ -212,6 +379,7 @@ class DrawAndGuessService:
         if self.daily_memory and hasattr(self.daily_memory, "record_highlight"):
             try:
                 from datetime import UTC, datetime
+
                 today_str = datetime.now(UTC).strftime("%Y-%m-%d")
                 self.daily_memory.record_highlight(
                     character_id=character_id,
@@ -227,6 +395,7 @@ class DrawAndGuessService:
                 )
             except Exception:
                 import traceback
+
                 traceback.print_exc()
 
         return {
@@ -296,11 +465,17 @@ class DrawAndGuessService:
         total_strokes = len(strokes)
 
         progress = min(1.0, elapsed / max(1.0, total_duration * 0.85))
-        revealed_count = max(1, min(total_strokes, int(progress * total_strokes))) if self.state == "drawing" else total_strokes
+        revealed_count = (
+            max(1, min(total_strokes, int(progress * total_strokes)))
+            if self.state == "drawing"
+            else total_strokes
+        )
         revealed_strokes = strokes[:revealed_count]
 
         category = self.current_word["category"]
-        hint = self.current_word["hint"] if (elapsed > total_duration * 0.45 or self.state == "finished") else ""
+        hint = (
+            self.current_word["hint"] if (elapsed > total_duration * 0.45 or self.state == "finished") else ""
+        )
 
         return {
             "state": self.state,

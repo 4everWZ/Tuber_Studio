@@ -78,9 +78,8 @@ class RecentAnecdotesTool(BaseAgentTool):
     def render_context(self, data: list[dict[str, Any]]) -> str | None:
         if not data:
             return None
-        return (
-            "近期生活与社群新鲜事（闲聊或被问及时自然随口提及，不要死板背诵）："
-            + json.dumps(data, ensure_ascii=False)
+        return "近期生活与社群新鲜事（闲聊或被问及时自然随口提及，不要死板背诵）：" + json.dumps(
+            data, ensure_ascii=False
         )
 
 
@@ -118,9 +117,7 @@ class HistoricalRecallTool(BaseAgentTool):
     def render_context(self, data: dict[str, Any] | None) -> str | None:
         if not data or not data.get("formatted_clue"):
             return None
-        return (
-            f"被动唤醒的历史回忆线索（观众主动询问过去时可随口提及，勿主动长篇大论）：{data['formatted_clue']}"
-        )
+        return f"被动唤醒的历史回忆线索（观众主动询问过去时可随口提及，勿主动长篇大论）：{data['formatted_clue']}"
 
 
 class GameStatusTool(BaseAgentTool):
@@ -209,13 +206,13 @@ class ToolRegistry:
 
                 if tool.can_handle(event, ctx_info):
                     res = tool.execute(event, ctx_info)
-                    
+
                     # If this was RecentAnecdotesTool, collect its IDs
                     if tool.name == "recent_anecdotes" and isinstance(res, list):
                         for item in res:
                             if "id" in item:
                                 active_ids.add(item["id"])
-                    
+
                     rendered = tool.render_context(res)
                     if rendered:
                         context_blocks.append(

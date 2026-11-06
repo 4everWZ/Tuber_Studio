@@ -75,17 +75,19 @@ def dynamic_decision_messages(character, settings, recent_posts, public_sources,
         },
         {
             "role": "user",
-            "content": _json({
-                "character": built_in_anchor(character, settings)
-                or {
-                    key: value
-                    for key, value in operation_character(character).items()
-                    if key in ("id", "version", "name", "core", "style", "rules")
-                },
-                "current_time": current_time,
-                "recent_public_posts": recent_posts,
-                "public_sources": public_sources,
-            }),
+            "content": _json(
+                {
+                    "character": built_in_anchor(character, settings)
+                    or {
+                        key: value
+                        for key, value in operation_character(character).items()
+                        if key in ("id", "version", "name", "core", "style", "rules")
+                    },
+                    "current_time": current_time,
+                    "recent_public_posts": recent_posts,
+                    "public_sources": public_sources,
+                }
+            ),
         },
     ]
 
@@ -1041,7 +1043,11 @@ class Dynamics:
                 if p["character_id"] == char["id"] and p["character_version"] == char["version"]
             ]
             messages = dynamic_decision_messages(
-                char, self.settings.data, recent_posts, [], current_time=current_time,
+                char,
+                self.settings.data,
+                recent_posts,
+                [],
+                current_time=current_time,
             )
             selected, selection_failed = None, False
             try:

@@ -36,15 +36,20 @@ def evaluate_oc(model, processor, cases, prompt):
     for turn in range(max(len(case["turns"]) for case in cases)):
         active = [index for index, case in enumerate(cases) if turn < len(case["turns"])]
         for offset in range(0, len(active), 8):
-            batch = active[offset:offset + 8]
+            batch = active[offset : offset + 8]
             prompts = []
             for index in batch:
                 histories[index].append({"role": "user", "content": cases[index]["turns"][turn]})
-                prompts.append(processor.apply_chat_template(
-                    histories[index], tokenize=False, add_generation_prompt=True, enable_thinking=False
-                ))
+                prompts.append(
+                    processor.apply_chat_template(
+                        histories[index], tokenize=False, add_generation_prompt=True, enable_thinking=False
+                    )
+                )
             results = generate(
-                model, processor, tokenizer(prompts, padding=True, return_tensors="pt", add_special_tokens=False), 150,
+                model,
+                processor,
+                tokenizer(prompts, padding=True, return_tensors="pt", add_special_tokens=False),
+                150,
             )
             for index, reply in zip(batch, results, strict=True):
                 output[index]["replies"].append(reply)
@@ -59,11 +64,18 @@ def replay_schema(aliases):
             "reason": {"type": "string", "enum": [reason]},
             "text": {"type": "string", "minLength": minimum, "maxLength": 120 if minimum else 0},
             "evidence_ids": {
-                "type": "array", "minItems": minimum, "maxItems": maximum,
+                "type": "array",
+                "minItems": minimum,
+                "maxItems": maximum,
                 "items": {"type": "string", "enum": aliases} if aliases else {"type": "string"},
             },
         }
-        return {"type": "object", "properties": fields, "required": list(fields), "additionalProperties": False}
+        return {
+            "type": "object",
+            "properties": fields,
+            "required": list(fields),
+            "additionalProperties": False,
+        }
 
     options = [branch("wait", "insufficient_evidence", 0, 0)]
     if aliases:
@@ -84,7 +96,9 @@ def main():
     scope = parser.add_mutually_exclusive_group()
     scope.add_argument("--replay", type=Path, help="use the frozen public video replay instead of validation")
     scope.add_argument("--oc-only", action="store_true", help="run only the fixed OC and general QA cases")
-    parser.add_argument("--instruction", help="additional system instruction for a separately labelled condition")
+    parser.add_argument(
+        "--instruction", help="additional system instruction for a separately labelled condition"
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -95,9 +109,14 @@ def main():
 
     model_type = json.loads((args.base / "config.json").read_text(encoding="utf-8"))["model_type"]
     mini = model_type == "minicpmv4_7"
-    processor = load_processor(args.base) if mini else AutoProcessor.from_pretrained(args.base, local_files_only=True)
+    processor = (
+        load_processor(args.base) if mini else AutoProcessor.from_pretrained(args.base, local_files_only=True)
+    )
     model = AutoModelForImageTextToText.from_pretrained(
-        args.weights or args.base, dtype=torch.bfloat16, local_files_only=True, device_map={"": "cuda:0"},
+        args.weights or args.base,
+        dtype=torch.bfloat16,
+        local_files_only=True,
+        device_map={"": "cuda:0"},
     )
     if mini:
         model.config.downsample_mode = "4x"
@@ -122,29 +141,44 @@ def main():
         for row in rows:
             row["messages"][0]["content"] = prompt + "\n" + row["messages"][0]["content"]
             inputs = model_inputs(processor, args.replay.resolve(), row, generation=True)
-            evidence.append({
-                "id": row["id"], "kind": row["kind"], "question": row["question"],
-                "criterion": row["criterion"], "allowed": row["allowed"], "references": row["references"],
-                **generate(model, processor, inputs, 220)[0],
-            })
+            evidence.append(
+                {
+                    "id": row["id"],
+                    "kind": row["kind"],
+                    "question": row["question"],
+                    "criterion": row["criterion"],
+                    "allowed": row["allowed"],
+                    "references": row["references"],
+                    **generate(model, processor, inputs, 220)[0],
+                }
+            )
         args.output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
         return
     oc = evaluate_oc(model, processor, read_jsonl(args.cases), prompt)
     video = []
-    for row in ([] if args.oc_only else read_jsonl(args.data / "validation.jsonl")):
+    for row in [] if args.oc_only else read_jsonl(args.data / "validation.jsonl"):
         if row["category"] != "video":
             continue
         for condition in ("actual_frames", "human_observations") if row.get("frames") else ("text",):
             inputs = model_inputs(
-                processor, args.data.resolve(), row,
-                text_only=condition == "human_observations", generation=True,
+                processor,
+                args.data.resolve(),
+                row,
+                text_only=condition == "human_observations",
+                generation=True,
             )
-            video.append({
-                "id": row["id"], "condition": condition, "reference": row["messages"][-1]["content"],
-                "prompt": row["messages"][-2]["content"],
-                **generate(model, processor, inputs, 256)[0],
-            })
-    args.output.write_text(json.dumps({"oc": oc, "video": video}, ensure_ascii=False, indent=2), encoding="utf-8")
+            video.append(
+                {
+                    "id": row["id"],
+                    "condition": condition,
+                    "reference": row["messages"][-1]["content"],
+                    "prompt": row["messages"][-2]["content"],
+                    **generate(model, processor, inputs, 256)[0],
+                }
+            )
+    args.output.write_text(
+        json.dumps({"oc": oc, "video": video}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":

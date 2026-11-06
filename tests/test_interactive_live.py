@@ -29,7 +29,9 @@ async def test_live_reply_uses_only_current_trusted_scene(settings, monkeypatch)
 
     def snapshot(session_id, event):
         return LiveScene(
-            session_id if current else "old-session", time.monotonic(), "角色已经找到钥匙",
+            session_id if current else "old-session",
+            time.monotonic(),
+            "角色已经找到钥匙",
         )
 
     app = create_app(settings, ReadOnlyPlatform(), live_scene=snapshot)

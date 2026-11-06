@@ -39,8 +39,7 @@ def operation_output_diagnostics(text):
     paragraphs = Counter(line.strip() for line in text.splitlines() if len(line.strip()) >= 40)
     repeated = sum(len(line) * count for line, count in paragraphs.items() if count >= 8)
     clauses = Counter(
-        clause.strip() for clause in re.split(r"[。！？!?；;\n]+", text)
-        if len(clause.strip()) >= 18
+        clause.strip() for clause in re.split(r"[。！？!?；;\n]+", text) if len(clause.strip()) >= 18
     )
     repeated_clauses = sum(len(clause) * count for clause, count in clauses.items() if count >= 6)
     return {
@@ -49,7 +48,9 @@ def operation_output_diagnostics(text):
         "repeated_paragraph_characters": repeated,
         "repeated_clause_characters": repeated_clauses,
         "needs_review": (
-            len(text) >= 4096 and repeated > len(text) * 0.8
-            or repeated_clauses >= 480 and repeated_clauses > len(text) * 0.6
+            len(text) >= 4096
+            and repeated > len(text) * 0.8
+            or repeated_clauses >= 480
+            and repeated_clauses > len(text) * 0.6
         ),
     }

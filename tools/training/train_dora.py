@@ -68,17 +68,28 @@ def parse_args():
         default="sft",
         help="This legacy trainer implements the SFT stage",
     )
-    parser.add_argument("--use_dora", action="store_true", default=True, help="Enable Weight-Decomposed LoRA (DoRA)")
+    parser.add_argument(
+        "--use_dora", action="store_true", default=True, help="Enable Weight-Decomposed LoRA (DoRA)"
+    )
     parser.add_argument("--r", type=int, default=16, help="LoRA rank")
     parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA alpha scaling factor")
     parser.add_argument("--lora_dropout", type=float, default=0.05, help="LoRA dropout rate")
     parser.add_argument("--batch_size", type=int, default=4, help="Per-device train batch size")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=4, help="Gradient accumulation steps")
+    parser.add_argument(
+        "--gradient_accumulation_steps", type=int, default=4, help="Gradient accumulation steps"
+    )
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Peak learning rate")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
     parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
-    parser.add_argument("--gradient_checkpointing", action="store_true", default=True, help="Enable gradient checkpointing to reduce VRAM")
-    parser.add_argument("--bf16", action="store_true", default=True, help="Use BF16 mixed precision (Ampere native)")
+    parser.add_argument(
+        "--gradient_checkpointing",
+        action="store_true",
+        default=True,
+        help="Enable gradient checkpointing to reduce VRAM",
+    )
+    parser.add_argument(
+        "--bf16", action="store_true", default=True, help="Use BF16 mixed precision (Ampere native)"
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     return parser.parse_args()
 
@@ -105,7 +116,9 @@ def setup_dora_config(args):
     try:
         from peft import LoraConfig, TaskType
     except ImportError:
-        logger.error("peft is required. Please install it on the workstation: pip install peft trl transformers")
+        logger.error(
+            "peft is required. Please install it on the workstation: pip install peft trl transformers"
+        )
         sys.exit(1)
 
     if "gemma" in args.model_name_or_path.lower():
@@ -122,7 +135,13 @@ def setup_dora_config(args):
         task_type=TaskType.CAUSAL_LM,
         use_dora=args.use_dora,
     )
-    logger.info("DoRA configuration created: rank=%d, alpha=%d, use_dora=%s, targets=%s", args.r, args.lora_alpha, args.use_dora, target_modules)
+    logger.info(
+        "DoRA configuration created: rank=%d, alpha=%d, use_dora=%s, targets=%s",
+        args.r,
+        args.lora_alpha,
+        args.use_dora,
+        target_modules,
+    )
     return peft_config
 
 
@@ -151,7 +170,12 @@ def main():
     logger.info("CUDA Available: %s (Device count: %d)", torch.cuda.is_available(), torch.cuda.device_count())
     if torch.cuda.is_available():
         for i in range(torch.cuda.device_count()):
-            logger.info("GPU %d: %s (%d GB VRAM)", i, torch.cuda.get_device_name(i), torch.cuda.get_device_properties(i).total_memory // (1024**3))
+            logger.info(
+                "GPU %d: %s (%d GB VRAM)",
+                i,
+                torch.cuda.get_device_name(i),
+                torch.cuda.get_device_properties(i).total_memory // (1024**3),
+            )
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
@@ -164,6 +188,7 @@ def main():
 
     try:
         from transformers import AutoModelForImageTextToText
+
         model = AutoModelForImageTextToText.from_pretrained(
             args.model_name_or_path,
             dtype=torch_dtype,
@@ -222,6 +247,7 @@ def main():
     tokenized_val = val_ds.map(tokenize_function, batched=True, remove_columns=["text"])
 
     from transformers import DataCollatorForSeq2Seq, Trainer
+
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, pad_to_multiple_of=8, return_tensors="pt")
 
     # Training arguments
@@ -242,7 +268,10 @@ def main():
         report_to="none",
     )
 
-    logger.info("Workstation training configuration finalized (output_dir=%s). Launching Trainer...", training_args.output_dir)
+    logger.info(
+        "Workstation training configuration finalized (output_dir=%s). Launching Trainer...",
+        training_args.output_dir,
+    )
 
     trainer = Trainer(
         model=model,
