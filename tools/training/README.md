@@ -1,6 +1,12 @@
 # 大肥鱼视觉微调
 
-`grounded_sft.py` 是 MiniCPM‑V‑4.7 新实验的入口。旧版 DoRA 及四组报告保留作为历史对照。
+## 当前大肥鱼 DoRA
+
+当前运营权重来自 workstation 上 `~/code/Tuber_Studio/output_dafeiyu_dora`。训练目标是大肥鱼 OC 的表达和互动，平台工具由业务程序提供。当前权重使用已有 612 条 SFT 样本、assistant-only loss、DoRA rank 16／alpha 32，在两张 RTX 3090 上训练五轮。沿用已有数据。
+
+以同一底模快照运行 `export_grounded_sft.py`，将最终 adapter 合并后导出 Q4_K_M 和配套 4× F16 投影器。本次适配器也含视觉塔增量，部署时两个文件按同一发布配对。[当前发布](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/68f9542e3c7dee1b41a1be12fe97f3095819b952)
+
+下文记录此前由 `grounded_sft.py` 等工具运行的视觉实验。
 
 ## 数据与工作站
 
@@ -96,7 +102,7 @@ python tools/training/export_grounded_sft.py --base "$BASE" --adapter "$ADAPTER"
 
 ## 大肥鱼第一人称重训
 
-本节两套语料用于工作站实验。线上运营权重继续使用 V6。
+本节两套语料用于当时的工作站实验，以当时部署的 V6 为基准。
 
 用已部署 V6 的语料做对照基准。新版去掉 240 条早期机审草稿，加入 118 条大肥鱼第一人称样本，含 38 组两轮对话的普通和原生格式，以及 4 条动态。另用 12 条多角色二次元对白替换等量旧 OC 记录。六个原创角色各有独立短卡，用来练习切换角色时保留各自的偏好和处境。原视频、通用、运营协议样本及验证集沿用 V6，训练共 944 条。等量对照保留随机抽取的旧草稿。两组使用同一个固定底模、LoRA 和一轮预算。[大肥鱼对白与动态](grounded_dafeiyu_first_person.txt) · [多角色对白](grounded_anime_transfer_dialogues.txt)
 

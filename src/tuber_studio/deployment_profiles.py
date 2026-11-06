@@ -135,7 +135,7 @@ def business_configuration(
             model_revision=GROUNDED_DAFEIYU_ARTIFACTS["model"],
             projector_revision=GROUNDED_DAFEIYU_ARTIFACTS["projector"],
             runtime_revision=GROUNDED_DAFEIYU_ARTIFACTS["engine"],
-            runtime_profile="dafeiyu-v6-q4km-4x-f16",
+            runtime_profile="dafeiyu-dora-q4km-4x-f16",
             context_tokens=context_tokens,
             native_context_tokens=native_context_tokens,
             properties_path="/vlm/dafeiyu/props",

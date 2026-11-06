@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_NAME = f"{DAFEIYU_MODEL} (大肥鱼专属微调)"
 DEFAULT_MODEL_FILENAME = DAFEIYU_WEIGHTS
 DEFAULT_REPO_ID = "4everImmortality/dafeiyu-minicpmv"
-MIRROR_HF_URL = f"https://hf-mirror.com/{DEFAULT_REPO_ID}/resolve/main/{DEFAULT_MODEL_FILENAME}"
-OFFICIAL_HF_URL = f"https://huggingface.co/{DEFAULT_REPO_ID}/resolve/main/{DEFAULT_MODEL_FILENAME}"
+LEGACY_TEXT_REVISION = "9a0af22b60f794fd885cf4f87bb78f920dd5370b"
+_LEGACY_DOWNLOAD = f"{DEFAULT_REPO_ID}/resolve/{LEGACY_TEXT_REVISION}/{DEFAULT_MODEL_FILENAME}"
+MIRROR_HF_URL = f"https://hf-mirror.com/{_LEGACY_DOWNLOAD}"
+OFFICIAL_HF_URL = f"https://huggingface.co/{_LEGACY_DOWNLOAD}"
 EXPECTED_MODEL_SIZE = 672003776  # ~640.9 MB
 
 _lock = threading.Lock()

@@ -51,6 +51,18 @@ CONFIG = {
 }
 
 
+@pytest.mark.parametrize("joint", [False, True])
+def test_assessment_schema_requires_frame_and_summary_when_sufficient(joint):
+    schema = ApiVideoEvidenceProvider._schema(3, joint=joint)
+    branches = {
+        branch["properties"]["sufficient"]["const"]: branch["properties"] for branch in schema["oneOf"]
+    }
+    assert branches[True]["used_frames"]["minItems"] == 1
+    assert branches[True]["summary"]["minLength"] == 1
+    assert branches[False]["used_frames"]["minItems"] == 0
+    assert all(("captions" in branch["required"]) == joint for branch in schema["oneOf"])
+
+
 @pytest.fixture
 async def provider(runtime, request):
     value = ApiVideoEvidenceProvider(runtime, CONFIG | getattr(request, "param", {}))

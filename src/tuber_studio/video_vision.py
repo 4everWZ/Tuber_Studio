@@ -208,26 +208,45 @@ class ApiVideoEvidenceProvider:
         return identities
 
     @staticmethod
-    def _schema(frame_count):
+    def _schema(frame_count, *, joint=False):
+        properties = {
+            "sufficient": {"type": "boolean"},
+            "used_frames": {
+                "type": "array",
+                "uniqueItems": True,
+                "maxItems": frame_count,
+                "items": {"type": "integer", "minimum": 1, "maximum": frame_count},
+            },
+            "summary": {"type": "string", "maxLength": 12000},
+            "limitations": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {"type": "string", "maxLength": 1000},
+            },
+        }
+        if joint:
+            properties["captions"] = {
+                "type": "array",
+                "minItems": frame_count,
+                "maxItems": frame_count,
+                "items": {"type": "string", "minLength": 1, "maxLength": 4000},
+            }
         return {
             "type": "object",
-            "additionalProperties": False,
-            "required": ["sufficient", "used_frames", "summary", "limitations"],
-            "properties": {
-                "sufficient": {"type": "boolean"},
-                "used_frames": {
-                    "type": "array",
-                    "uniqueItems": True,
-                    "maxItems": frame_count,
-                    "items": {"type": "integer", "minimum": 1, "maximum": frame_count},
-                },
-                "summary": {"type": "string", "maxLength": 12000},
-                "limitations": {
-                    "type": "array",
-                    "maxItems": 20,
-                    "items": {"type": "string", "maxLength": 1000},
-                },
-            },
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": list(properties),
+                    "properties": properties
+                    | {
+                        "sufficient": {"const": sufficient},
+                        "used_frames": properties["used_frames"] | {"minItems": int(sufficient)},
+                        "summary": properties["summary"] | {"minLength": int(sufficient)},
+                    },
+                }
+                for sufficient in (True, False)
+            ],
         }
 
     @staticmethod
@@ -451,14 +470,7 @@ class ApiVideoEvidenceProvider:
             {"role": "user", "content": content},
         ]
         count = len(frames)
-        schema = self._schema(count)
-        schema["required"].append("captions")
-        schema["properties"]["captions"] = {
-            "type": "array",
-            "minItems": count,
-            "maxItems": count,
-            "items": {"type": "string", "minLength": 1, "maxLength": 4000},
-        }
+        schema = self._schema(count, joint=True)
         value, props, stage = await self._stage(
             task,
             deadline,
