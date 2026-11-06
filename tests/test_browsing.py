@@ -239,6 +239,56 @@ async def finished(service, **args):
     return service.repo.round(result["id"])
 
 
+@pytest.mark.parametrize(("workers", "cancel"), [(1, False), (2, False), (2, True)])
+async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypatch, workers, cancel):
+    videos = [BV, "BV1xx411c7mD", "BV17x411w7KC"]
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure(
+        {
+            "workers": workers,
+            "sources": ["specified"],
+            "watch_videos": videos,
+            "recent_sample_limit": 0,
+            "decision_max_tokens": 512,
+        }
+    )
+    reading = set()
+    peak = 0
+    full, release = asyncio.Event(), asyncio.Event()
+    metadata = browsing.adapter.video_metadata
+
+    async def track_metadata(video):
+        nonlocal peak
+        reading.add(video)
+        peak = max(peak, len(reading))
+        if peak == workers:
+            full.set()
+        try:
+            await release.wait()
+            return await metadata(video)
+        finally:
+            reading.remove(video)
+
+    monkeypatch.setattr(browsing.adapter, "video_metadata", track_metadata)
+    browsing.discovery.start()
+    async with asyncio.timeout(3):
+        await full.wait()
+        assert len(reading) == workers
+        if cancel:
+            await browsing.discovery.stop()
+            assert not reading and not browsing.active and not browsing.heartbeats
+            assert browsing.rounds()[0]["status"] == "cancelled"
+            assert not browsing.adapter.sent
+            return
+        active = next(iter(browsing.active.values()))
+        release.set()
+        await active
+    await browsing.discovery.stop()
+    assert peak == workers
+    assert browsing.runtime.llm.peak == 1
+    assert {task["bvid"] for task in browsing.tasks() if task["status"] == "selected"} == set(videos)
+
+
 async def test_background_discovery_publishes_top_level_and_thread_replies(browsing, monkeypatch):
     second_video = "BV1xx411c7mD"
     policy = browsing.policy
@@ -368,6 +418,7 @@ async def test_discovery_retries_once_then_continues_other_videos(browsing, monk
             | {
                 "interval_seconds": 0.03,
                 "recent_sample_limit": 0,
+                "workers": 1,
             }
         ),
     )
@@ -422,6 +473,7 @@ async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishin
             | {
                 "interval_seconds": 0.03,
                 "recent_sample_limit": 0,
+                "workers": 1,
             }
         ),
     )

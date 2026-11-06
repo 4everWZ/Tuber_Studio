@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+from contextlib import nullcontext
 from uuid import uuid4
 
 import psutil
@@ -505,13 +506,16 @@ class BrowsingService:
                 ):
                     self.store.set("browsing_discovery_pending:" + row["account_id"], False)
                     candidates = await self._discover(row)
+                    semaphore = asyncio.Semaphore(row["config"]["workers"])
                     if discovery_only:
-                        for candidate in candidates:
-                            await self._process_discovery_video(row, candidate, metrics)
+                        async with asyncio.TaskGroup() as group:
+                            for candidate in candidates:
+                                group.create_task(
+                                    self._process_discovery_video(row, candidate, metrics, semaphore)
+                                )
                         status = "partial" if metrics["failures"] else "completed"
                         return
                     tasks = [self.repo.task(identity, c) for c in candidates]
-                    semaphore = asyncio.Semaphore(row["config"]["workers"])
                     preparation_start = time.monotonic()
                     async with asyncio.TaskGroup() as group:
                         children = [
@@ -520,12 +524,10 @@ class BrowsingService:
                     prepared = [child.result() for child in children]
                     metrics["preparation_seconds"] = time.monotonic() - preparation_start
                     for result in prepared:
-                        if not discovery_only:
-                            await self._process_events(row, metrics)
+                        await self._process_events(row, metrics)
                         if result:
                             await self.decisions._evaluate_task(result, row, metrics)
-                    if not discovery_only:
-                        await self._process_events(row, metrics)
+                    await self._process_events(row, metrics)
                 status = "partial" if metrics["failures"] else "completed"
         except asyncio.CancelledError:
             status = "cancelled"
@@ -691,11 +693,8 @@ class BrowsingService:
 
     async def _send_discovery_intent(self, identity, row):
         self.discovery.verify(row["config"]["discovery_id"])
-        self.discovery.action = "publishing"
-        try:
+        with self.discovery.performing("publishing"):
             result = await self.publish(identity, automatic=True)
-        finally:
-            self.discovery.action = None
         state = self.store.one("SELECT status FROM browsing_intents WHERE id=?", (identity,))["status"]
         if state == "automatic_pending":
             raise ValueError("平台拒绝，已准备修订" if result["status"] == "revised" else "回应修订尚未完成")
@@ -711,17 +710,18 @@ class BrowsingService:
         ):
             if item["status"] == "publish_uncertain":
                 self.discovery.verify(row["config"]["discovery_id"])
-                self.discovery.action = "reconciling"
-                try:
+                with self.discovery.performing("reconciling"):
                     result = await self.publication._reconcile(item["id"])
-                finally:
-                    self.discovery.action = None
                 if result is None:
                     raise ValueError("原提交回执尚待确认")
             else:
                 await self._send_discovery_intent(item["id"], row)
 
-    async def _process_discovery_video(self, row, candidate, metrics):
+    async def _process_discovery_video(self, row, candidate, metrics, semaphore):
+        async with semaphore:
+            await self._run_discovery_video(row, candidate, metrics)
+
+    async def _run_discovery_video(self, row, candidate, metrics):
         bvid = candidate["bvid"]
         saved = self.repo.video_retry(row, bvid)
         failures = saved["failures"] if saved else 0
@@ -741,7 +741,7 @@ class BrowsingService:
                         (public_error(failure), identity),
                     )
                 else:
-                    prepared = await self._prepare_task(identity, row, asyncio.Semaphore(1), metrics)
+                    prepared = await self._prepare_task(identity, row, nullcontext(), metrics)
                     if prepared:
                         await self.decisions._evaluate_task(prepared, row, metrics)
             finally:

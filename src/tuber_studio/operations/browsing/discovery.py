@@ -3,6 +3,7 @@
 import asyncio
 import re
 import time
+from contextlib import contextmanager
 from uuid import uuid4
 
 from ...bilibili_account import PROFILE_CACHE_KEY, signature
@@ -31,7 +32,7 @@ class BackgroundDiscovery:
         self.identity = None
         self.binding = None
         self.round_id = None
-        self.action = None
+        self.actions = {}
         self.next_at = None
         self.state = "off"
         self.error = None
@@ -41,6 +42,15 @@ class BackgroundDiscovery:
     @property
     def enabled(self):
         return self.worker is not None and not self.worker.done()
+
+    @contextmanager
+    def performing(self, action):
+        task = asyncio.current_task()
+        self.actions[task] = action
+        try:
+            yield
+        finally:
+            self.actions.pop(task, None)
 
     def history_scope(self):
         service = self.browsing
@@ -166,7 +176,7 @@ class BackgroundDiscovery:
             )
         phase = self.state
         if phase == "running":
-            phase = self.action or (
+            phase = next(iter(self.actions.values()), None) or (
                 ("judging" if current["status"] == "evidence_ready" else "reading")
                 if current
                 else "discovering"
@@ -430,7 +440,7 @@ class BackgroundDiscovery:
             if child and not child.done():
                 child.cancel()
                 await asyncio.gather(child, return_exceptions=True)
-            self.round_id = self.action = None
+            self.round_id = None
             self.binding, self.next_at = None, None
             service.store.execute(
                 """UPDATE browsing_intents SET status='automatic_skipped',error='运行已结束'

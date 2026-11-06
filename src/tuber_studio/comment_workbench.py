@@ -21,7 +21,7 @@ def list_queue(store, view, limit, offset):
         """
         WITH queue AS (
             SELECT 'comments' AS channel, CAST(d.id AS TEXT) AS id, d.status,
-                   'manual' AS source, CASE WHEN d.status='private_handoff' THEN NULL ELSE c.video_id END,
+                   'manual' AS source, CASE WHEN d.status='private_handoff' THEN NULL ELSE c.video_id END AS video_id,
                    CASE WHEN d.status='private_handoff' THEN '' ELSE substr(c.content,1,180) END AS excerpt,
                    d.updated_at
               FROM drafts d JOIN comments c ON c.id=d.comment_id

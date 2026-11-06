@@ -255,7 +255,16 @@ def test_independent_discovery_requires_restart_activation(settings, legacy):
             if any(row["status"] == "published" for row in first.get("/api/automation/intents").json()):
                 break
             time.sleep(0.01)
-        assert first.get("/api/automation/intents").json()[0]["status"] == "published"
+        intent = first.get("/api/automation/intents").json()[0]
+        assert intent["status"] == "published"
+        queue = "/api/comments/workbench"
+        assert first.get(f"{queue}?view=review").raise_for_status().json()["total"] == 0
+        assert any(
+            item["id"] == intent["id"]
+            and item["status"] == "published"
+            and item["video_id"] == intent["target"]["bvid"]
+            for item in first.get(f"{queue}?view=history").raise_for_status().json()["items"]
+        )
         if legacy:
             first.app.state.browsing.store.set("browsing_discovery_account", None)
     with TestClient(make_app(settings)) as second:
