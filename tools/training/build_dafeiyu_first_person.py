@@ -39,7 +39,10 @@ REVISIONS = {
     "chatanime-16": ("剪辑那位还没看群", "剪辑那位还没看到通知"),
     "chatanime-17": ("跟群里说轴要等片源", "跟剪片的人说轴要等片源"),
     "chatanime-19": ("被群友拿去发", "被另一个摊主拿去发了"),
-    "deepthink-oc-wrong-channel": ("我把同人曲传错群了，现在游戏群里的人把跑调那句当战歌。", "我在游戏语音房放错歌了，队友现在把跑调那句当战歌。"),
+    "deepthink-oc-wrong-channel": (
+        "我把同人曲传错群了，现在游戏群里的人把跑调那句当战歌。",
+        "我在游戏语音房放错歌了，队友现在把跑调那句当战歌。",
+    ),
 }
 TRANSFER_REPLACES = {"chatanime-22", "chatanime-29", "chatanime-52", "chatanime-17-followup"}
 
@@ -47,23 +50,33 @@ TRANSFER_REPLACES = {"chatanime-22", "chatanime-29", "chatanime-52", "chatanime-
 def dialogue_rows(character, channel, identity, provenance, fields):
     question, reply, followup, answer, first_mood, second_mood = fields
     yield sample(
-        identity, "oc", "train",
+        identity,
+        "oc",
+        "train",
         exchange(question, reply, character["compact_system_prompt"]) + exchange(followup, answer)[1:],
         provenance,
     )
     mode, event_type, schema, format_name = CHANNELS[channel]
     history = []
-    for index, (text, spoken, mood) in enumerate(((question, reply, first_mood), (followup, answer, second_mood)), 1):
+    for index, (text, spoken, mood) in enumerate(
+        ((question, reply, first_mood), (followup, answer, second_mood)), 1
+    ):
         event = {"event_id": f"m{index}", "type": event_type, "text": text}
         prefix, initial, pending, suffix = ContextManager.parts(character, event, {}, mode, settings=SETTINGS)
         messages = single_system_messages(ContextManager.render(prefix, initial, history, pending, suffix))
         target = schema(
-            spoken_text=spoken, emotion=mood, animation_id=ANIMATIONS[mood], reply_to=[event["event_id"]],
+            spoken_text=spoken,
+            emotion=mood,
+            animation_id=ANIMATIONS[mood],
+            reply_to=[event["event_id"]],
         )
         yield sample(
-            f"{identity}-{index}", "oc", "train",
+            f"{identity}-{index}",
+            "oc",
+            "train",
             messages + [{"role": "assistant", "content": target.model_dump_json()}],
-            provenance, format=format_name,
+            provenance,
+            format=format_name,
         )
         history.extend([pending, {"role": "assistant", "content": spoken}])
 
@@ -76,14 +89,26 @@ def dynamic_row(character, identity, fields):
         {"id": f"public{index}", "text": text, "fictional": kind == "fiction"}
         for index, text in enumerate(filter(None, (first, second)), 1)
     ]
-    messages = dynamic_decision_messages(character, SETTINGS, [], sources, current_time="2026-11-06T20:00:00+08:00")
-    target = Dynamics._parse({
-        "action": "post", "reason": "有可分享的公开素材", "content": body,
-        "source_ids": [item["id"] for item in sources], "next_evaluation_seconds": 1800,
-    }, sources)
+    messages = dynamic_decision_messages(
+        character, SETTINGS, [], sources, current_time="2026-11-06T20:00:00+08:00"
+    )
+    target = Dynamics._parse(
+        {
+            "action": "post",
+            "reason": "有可分享的公开素材",
+            "content": body,
+            "source_ids": [item["id"] for item in sources],
+            "next_evaluation_seconds": 1800,
+        },
+        sources,
+    )
     return sample(
-        identity, "oc", "train", messages + [{"role": "assistant", "content": dump(target)}],
-        source(identity), format="dynamic_decision",
+        identity,
+        "oc",
+        "train",
+        messages + [{"role": "assistant", "content": dump(target)}],
+        source(identity),
+        format="dynamic_decision",
     )
 
 
@@ -98,7 +123,9 @@ def revise_dialogues(rows):
                     message["content"] = message["content"].replace(old, new)
                     touched += 1
         if touched < 2:
-            raise ValueError(f"{identity}: expected the source and native reply to match the recorded V6 text")
+            raise ValueError(
+                f"{identity}: expected the source and native reply to match the recorded V6 text"
+            )
 
 
 def anime_transfer_rows():
@@ -106,7 +133,10 @@ def anime_transfer_rows():
         Path(__file__).with_name("grounded_anime_transfer_dialogues.txt")
     ):
         yield sample(
-            f"anime-transfer-{name}", "oc", "train", exchange(first, reply, card) + exchange(second, answer)[1:],
+            f"anime-transfer-{name}",
+            "oc",
+            "train",
+            exchange(first, reply, card) + exchange(second, answer)[1:],
             source(f"chatanime-{number}", CHATANIME_SOURCE, "Apache-2.0"),
         )
 
@@ -136,7 +166,9 @@ def build(original, output, characters, *, control):
         raise ValueError("expected the 240 legacy V6 drafts")
     if control:
         selected = {row["id"] for row in random.Random(42).sample(old, len(added))}
-        splits["train"] = [row for row in splits["train"] if not row["id"].startswith("rp-") or row["id"] in selected]
+        splits["train"] = [
+            row for row in splits["train"] if not row["id"].startswith("rp-") or row["id"] in selected
+        ]
     else:
         transfer = list(anime_transfer_rows())
         removed_ids = TRANSFER_REPLACES | {
@@ -153,9 +185,18 @@ def build(original, output, characters, *, control):
     for split, rows in splits.items():
         (output / f"{split}.jsonl").write_text("".join(dump(row) + "\n" for row in rows), encoding="utf-8")
     read_corpus(output, pilot=False, expected=FIRST_PERSON_EXPECTED)
-    print(json.dumps({"control": control, "legacy_drafts": len(added) if control else 0,
-                      "new_oc_rows": 0 if control else len(added), "training": len(splits["train"]),
-                      "validation": len(splits["validation"])}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "control": control,
+                "legacy_drafts": len(added) if control else 0,
+                "new_oc_rows": 0 if control else len(added),
+                "training": len(splits["train"]),
+                "validation": len(splits["validation"]),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def main():
@@ -163,7 +204,9 @@ def main():
     parser.add_argument("--original", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--characters", type=Path, required=True)
-    parser.add_argument("--control", action="store_true", help="keep an equal number of randomly sampled old drafts")
+    parser.add_argument(
+        "--control", action="store_true", help="keep an equal number of randomly sampled old drafts"
+    )
     args = parser.parse_args()
     build(args.original, args.output, args.characters, control=args.control)
 

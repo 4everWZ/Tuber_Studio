@@ -15,10 +15,21 @@ def replay(client, row, system, temperature):
     replies = []
     for user_text in row["turns"]:
         messages.append({"role": "user", "content": user_text})
-        response = client.post("chat/completions", json={
-            "model": GROUNDED_DAFEIYU_MODEL, "messages": messages, "temperature": temperature,
-            "seed": 42, "max_tokens": 180, "chat_template_kwargs": {"enable_thinking": False},
-        }).raise_for_status().json()
+        response = (
+            client.post(
+                "chat/completions",
+                json={
+                    "model": GROUNDED_DAFEIYU_MODEL,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "seed": 42,
+                    "max_tokens": 180,
+                    "chat_template_kwargs": {"enable_thinking": False},
+                },
+            )
+            .raise_for_status()
+            .json()
+        )
         choice = response["choices"][0]
         answer = choice["message"]["content"]
         replies.append({"text": answer, "finish": choice["finish_reason"], "usage": response.get("usage")})

@@ -69,24 +69,37 @@ def select_classic(human, seen_groups):
         if len(candidates) < CLASSIC_PER_ROLE:
             raise ValueError(f"{title}: only {len(candidates)} screened scenes")
         for _ in range(CLASSIC_PER_ROLE):
-            group, row = min(candidates, key=lambda pair: (
-                usage[pair[0]], len(pair[1]["answer_r1"]) + len(pair[1]["answer_r2"]), pair[0],
-            ))
+            group, row = min(
+                candidates,
+                key=lambda pair: (
+                    usage[pair[0]],
+                    len(pair[1]["answer_r1"]) + len(pair[1]["answer_r2"]),
+                    pair[0],
+                ),
+            )
             candidates.remove((group, row))
             usage[group] += 1
             card = f"你是{title}。{style}"
             dialogue = exchange(row["question_r1"].strip(), row["answer_r1"].strip(), card)
             dialogue += exchange(row["question_r2"].strip(), row["answer_r2"].strip())[1:]
             yield sample(
-                f"classic-{list(CLASSIC_STYLES).index(role) + 1:02d}-{group}", "oc", "train", dialogue,
-                source(group, CHATANIME_SOURCE, "Apache-2.0"), character=role,
+                f"classic-{list(CLASSIC_STYLES).index(role) + 1:02d}-{group}",
+                "oc",
+                "train",
+                dialogue,
+                source(group, CHATANIME_SOURCE, "Apache-2.0"),
+                character=role,
             )
 
 
 def classic_holdout(human, heldout_groups):
     for role, style in NOVEL_STYLES.items():
         title, rows = next((title, rows) for title, rows in human.items() if title.endswith("的" + role))
-        chosen = [row for row in rows if f"chatanime-{int(row['dialog_id']):02d}" in heldout_groups and eligible(row)]
+        chosen = [
+            row
+            for row in rows
+            if f"chatanime-{int(row['dialog_id']):02d}" in heldout_groups and eligible(row)
+        ]
         if len(chosen) < 4:
             raise ValueError(f"{title}: too few held-out scenes")
         for row in chosen[:4]:
@@ -127,13 +140,15 @@ def main():
     args = parser.parse_args()
     data = read_corpus(args.original, pilot=False, expected=FIRST_PERSON_EXPECTED)
     groups = {
-        split: {item["group"] for row in rows for item in row["sources"] if item["group"].startswith("chatanime-")}
+        split: {
+            item["group"] for row in rows for item in row["sources"] if item["group"].startswith("chatanime-")
+        }
         for split, rows in data.items()
     }
     human = json.loads(args.chatanime_human.read_text(encoding="utf-8"))
-    character = historical_grounded_character(next(
-        row for row in json.loads(args.characters.read_text(encoding="utf-8")) if row["id"] == "whale"
-    ))
+    character = historical_grounded_character(
+        next(row for row in json.loads(args.characters.read_text(encoding="utf-8")) if row["id"] == "whale")
+    )
     rows = data["train"]
     retained = [row for row in rows if row["category"] in {"operations", "general"}]
     authored_oc = [row for row in rows if row["id"].startswith(("first-person-", "anime-transfer-"))]
@@ -146,14 +161,20 @@ def main():
     shutil.copy2(args.original / "validation.jsonl", args.output / "validation.jsonl")
     read_corpus(args.output, pilot=False, expected=ANIME_DAFEIYU_EXPECTED)
     write_rows(args.holdout, classic_holdout(human, groups["validation"]))
-    print(json.dumps({
-        "training": len(train), "classic": len(classics), "classic_characters": len(CLASSIC_STYLES),
-        "dafeiyu_core": sum(row["id"].startswith("first-person-") for row in authored_oc),
-        "dafeiyu_variants": len(variants), "other_authored_anime": sum(
-            row["id"].startswith("anime-transfer-") for row in authored_oc
-        ),
-        "retention": dict(Counter(row["category"] for row in train if row["category"] != "oc")),
-    }, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "training": len(train),
+                "classic": len(classics),
+                "classic_characters": len(CLASSIC_STYLES),
+                "dafeiyu_core": sum(row["id"].startswith("first-person-") for row in authored_oc),
+                "dafeiyu_variants": len(variants),
+                "other_authored_anime": sum(row["id"].startswith("anime-transfer-") for row in authored_oc),
+                "retention": dict(Counter(row["category"] for row in train if row["category"] != "oc")),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":
