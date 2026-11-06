@@ -12,6 +12,7 @@ from .operation_continuations import (
     continuation_messages,
 )
 from .operation_feedback import FeedbackModel, coordinator_for, episode_limits
+from .web_fetch import OperationWebFetch
 
 
 def reply_generation_binding(scope, character, event, mode):
@@ -82,6 +83,8 @@ async def generate_with_recovery(
     context_data=None,
     reuse_completed=False,
     max_recoveries=None,
+    allow_web_fetch=False,
+    web_fetch_urls=None,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     coordinator = coordinator_for(runtime, runtime.store, runtime.operations)
@@ -138,8 +141,18 @@ async def generate_with_recovery(
         reads=(readers or {}).keys(),
         generation_context=generation_context,
     )
+    web_fetch = (
+        OperationWebFetch(guard, web_fetch_urls)
+        if allow_web_fetch
+        and character["id"] == "whale"
+        and getattr(runtime.llm, "supports_operation_web_fetch", False)
+        and (web_fetch_urls is None or web_fetch_urls)
+        else None
+    )
+    recorded_fetch = False
 
     async def produce(packet, current):
+        nonlocal recorded_fetch
         started = time.perf_counter()
         value = None
         # Preparation may fail before the provider starts a new generation.
@@ -148,10 +161,17 @@ async def generate_with_recovery(
             for name, empty in (("last_content", None), ("last_usage", {}), ("last_finish_reason", None)):
                 setattr(runtime.llm, name, empty)
         try:
-            value = checked(await generate(packet))
+            value = checked(
+                await generate(packet, web_fetch=web_fetch) if web_fetch else await generate(packet)
+            )
         except ValueError as error:
             raise recoverable_feedback(error, runtime.llm) from None
         finally:
+            if web_fetch and web_fetch.receipt is not None and not recorded_fetch:
+                coordinator._step(
+                    current, "web_fetch", web_fetch.receipt["status"], context=web_fetch.receipt
+                )
+                recorded_fetch = True
             coordinator._step(
                 current,
                 "generation_model",

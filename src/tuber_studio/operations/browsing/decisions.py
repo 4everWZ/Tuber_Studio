@@ -146,7 +146,7 @@ class BrowsingDecisions:
             ):
                 raise ValueError("等待模型期间同源评论已有候选，合并处理")
 
-        async def invoke(packet):
+        async def invoke_model(packet, wire_schema):
             wait = time.monotonic()
             async with self.browsing.runtime.offline_generation():
                 if metrics is not None:
@@ -157,11 +157,11 @@ class BrowsingDecisions:
                     if video_response and getattr(self.browsing.runtime.llm, "generation_metered", False):
                         generate_video = getattr(self.browsing.runtime.llm, "generate_video_response", None)
                         if generate_video is not None:
-                            return await generate_video(packet, model_schema, max_tokens=output)
+                            return await generate_video(packet, wire_schema, max_tokens=output)
                     if not getattr(self.browsing.runtime.llm, "generation_metered", False):
                         counted = (
                             self.browsing.runtime.llm.prepare_json_messages(
-                                packet, model_schema, max_tokens=output
+                                packet, wire_schema, max_tokens=output
                             )
                             if hasattr(self.browsing.runtime.llm, "prepare_json_messages")
                             else packet
@@ -172,10 +172,15 @@ class BrowsingDecisions:
                     return await budgeted_json(
                         self.browsing.runtime.llm,
                         packet,
-                        model_schema,
+                        wire_schema,
                         max_tokens=output,
                         input_tokens=tokens,
                     )
+
+        async def invoke(packet, *, web_fetch=None):
+            if web_fetch is not None:
+                return await web_fetch.complete(packet, model_schema, invoke_model)
+            return await invoke_model(packet, model_schema)
 
         def validate(result):
             value = (
@@ -262,6 +267,7 @@ class BrowsingDecisions:
             reuse_completed=generation_resume.get() or bool(independent and retry and retry["failures"]),
             max_recoveries=(1 if retry and retry["failures"] else 0) if independent else None,
             diagnose=diagnose,
+            allow_web_fetch=response_input is not None,
         )
         return response_input.resolve(value) if response_input is not None else value
 

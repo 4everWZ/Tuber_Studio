@@ -7,6 +7,7 @@ from contextlib import nullcontext
 import httpx
 import pytest
 
+from tuber_studio import web_fetch
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.models import OperationReply
@@ -29,7 +30,7 @@ async def model_for(
         probe, finish = body["max_tokens"] == 1, "stop"
         if probe:
             text = ""
-        elif "read" in body["response_format"]["schema"]["properties"]:
+        elif "read" in body["response_format"].get("schema", {}).get("properties", {}):
             text = json.dumps(
                 {"action": decision, "reason": "继续当前这次交流", "read": ""}, ensure_ascii=False
             )
@@ -63,6 +64,40 @@ async def model_for(
     await runtime.llm.close()
     runtime.llm = provider
     return requests, generated, corrected
+
+
+@pytest.mark.parametrize("mode", ["comment_draft", "direct_message", "live"])
+async def test_runtime_operation_web_fetch_is_model_selected(runtime, settings, monkeypatch, mode):
+    url = "https://example.org/penguin"
+    first = {"web_fetch": url} if mode != "live" else {"spoken_text": "本鲸在呢。"}
+    requests, generated, _ = await model_for(runtime, settings, first=first)
+    fetched = []
+
+    async def fetch(target):
+        fetched.append(target)
+        return {"url": target, "title": "企鹅资料", "excerpt": "企鹅生活在南半球。", "truncated": False}
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
+    event = {"event_id": "source-event", "text": f"我看到 {url}，你怎么看？"}
+    reply, _ = await runtime.generate_reply(mode, runtime.character, event, mode=mode)
+    if mode == "live":
+        assert reply.spoken_text == "本鲸在呢。"
+        assert not fetched and len(generated) == 1
+        assert not any("web_fetch" in json.dumps(item, ensure_ascii=False) for item in requests)
+        return
+    assert reply.reply_to == ["source-event"]
+    assert fetched == [url] and len(generated) == 2
+    responses = [body for body in requests if body["max_tokens"] != 1]
+    assert responses[0]["response_format"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
+    assert "oneOf" not in responses[1]["response_format"]["schema"]
+    assert any("企鹅生活在南半球。" in message["content"] for message in responses[1]["messages"])
+    episode = runtime.store.one(
+        "SELECT id FROM operation_continuations WHERE channel=?", (f"generation.{mode}",)
+    )
+    step = next(
+        step for step in runtime.continuations.get(episode["id"])["revisions"] if step["phase"] == "web_fetch"
+    )
+    assert step["context"]["url"] == url and "excerpt" not in step["context"]
 
 
 async def generate(runtime, *, diagnose=None, parent=None):

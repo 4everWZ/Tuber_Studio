@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from tuber_studio import dynamics as module
+from tuber_studio import web_fetch
 from tuber_studio.dynamics import Dynamics
 from tuber_studio.memory import GroundedMemory
 from tuber_studio.platforms.bilibili import PublishUncertain
@@ -109,6 +110,31 @@ def due(service):
     service.store.set(
         "dynamic_schedule", {"next_evaluation_at": 0, "backoff_until": None, "last_error": None}
     )
+
+
+async def test_dynamic_can_read_one_page_without_changing_public_source(service, monkeypatch):
+    public_memory(service)
+    model = service.runtime.llm
+    model.supports_operation_web_fetch = True
+    original = model.generate_json
+    fetched = []
+    url = "https://example.org/ocean"
+
+    async def fetch(target):
+        fetched.append(target)
+        return {"url": target, "title": "海水", "excerpt": "海水含盐。", "truncated": False}
+
+    async def generate(messages, schema, *, max_tokens):
+        if schema.get("oneOf", [{}])[-1].get("required") == ["web_fetch"]:
+            return {"web_fetch": url}
+        return await original(messages, schema, max_tokens=max_tokens)
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
+    monkeypatch.setattr(model, "generate_json", generate)
+    result = await service.evaluate(manual=True)
+    assert result["action"] == "post" and len(result["sources"]) == 1
+    assert fetched == [url] and not service.sent
+    assert any("海水含盐。" in message["content"] for message in model.calls[-1])
 
 
 async def test_disabled_default_and_manual_never_auto_sends(service):

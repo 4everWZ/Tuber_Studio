@@ -120,6 +120,7 @@ class LLMProvider(Protocol):
 
 class LlamaCppProvider:
     generation_metered = True
+    supports_operation_web_fetch = True
 
     def __init__(self, config, inference_token=None, *, broker_model_routing=False):
         self.config = config
@@ -354,8 +355,8 @@ class LlamaCppProvider:
         settle_generation(reservation, data.get("usage", {}))
         return reply
 
-    async def generate_operation(self, messages, character, event_id, source_text=None):
-        return await generate_operation_reply(self, messages, event_id)
+    async def generate_operation(self, messages, character, event_id, source_text=None, *, web_fetch=None):
+        return await generate_operation_reply(self, messages, event_id, web_fetch=web_fetch)
 
     def prepare_json_messages(self, messages, schema, *, max_tokens):
         json_schema_text(schema, max_tokens)
@@ -462,15 +463,22 @@ def validate_reply(content, character, event_id, source_text=None):
     return reply
 
 
-async def generate_operation_reply(provider, messages, event_id):
+async def generate_operation_reply(provider, messages, event_id, *, web_fetch=None):
     schema = OperationReply.model_json_schema()
     schema["properties"]["reply_to"]["items"] = {"type": "string", "enum": [event_id]}
     schema["properties"]["reply_to"]["maxItems"] = 1
     provider.last_finish_reason = None
     provider.last_content_characters = None
+    maximum = provider.config.get("operations_max_tokens", 8192)
+
+    async def invoke(packet, wire_schema):
+        return await provider.generate_json(packet, wire_schema, max_tokens=maximum)
+
     try:
-        value = await provider.generate_json(
-            messages, schema, max_tokens=provider.config.get("operations_max_tokens", 8192)
+        value = (
+            await invoke(messages, schema)
+            if web_fetch is None
+            else await web_fetch.complete(messages, schema, invoke)
         )
     except ValueError:
         finish = getattr(provider, "last_finish_reason", None)

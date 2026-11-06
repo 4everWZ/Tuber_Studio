@@ -529,8 +529,20 @@ def test_chunk_local_aliases_bind_to_different_originals_and_reject_other_chunk_
         bind_content_decision(decision([]), second_refs)
 
 
-async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_real_ids(browsing):
+@pytest.mark.parametrize("use_web_fetch", [False, True])
+async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_real_ids(
+    browsing, monkeypatch, use_web_fetch
+):
+    from tuber_studio import web_fetch
+
     bodies = []
+    fetched = []
+
+    async def fetch(url):
+        fetched.append(url)
+        return {"url": url, "title": "盐水浮力", "excerpt": "盐水密度较高。", "truncated": False}
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
 
     def handle(request):
         if request.url.path == "/health":
@@ -544,9 +556,13 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
         assert request.url.path == "/v1/chat/completions"
         body = json.loads(request.content)
         bodies.append(body)
-        data = model_packet(body["messages"][-1]["content"])
+        data = model_packet(
+            next(item["content"] for item in body["messages"] if item["content"].startswith("公开来源材料："))
+        )
         if body["response_format"]["schema"]["title"] == "ContentDecision":
             result = decision(["e1"]).model_dump()
+        elif use_web_fetch and not fetched:
+            result = {"web_fetch": "https://example.org/float"}
         else:
             result = {
                 "action": "reply_public",
@@ -591,12 +607,23 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
         assert all(
             branch["properties"]["evidence_ids"]["items"]["enum"] == ["r1"]
             for branch in response_body["response_format"]["schema"]["oneOf"]
+            if "evidence_ids" in branch["properties"]
         )
+        assert response_body["response_format"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
         response_user = response_body["messages"][-1]["content"]
         assert "[r1|" in response_user and "11:0" not in response_user
         assert browsing.tasks()[0]["decisions"][0]["evidence_ids"] == ["11:0"]
         assert browsing.intents()[0]["evidence"] == ["11:0"]
         assert browsing.intents()[0]["status"] == "pending_review" and not browsing.adapter.sent
+        assert fetched == (["https://example.org/float"] if use_web_fetch else [])
+        responses = [b for b in bodies if b["response_format"]["schema"]["title"] == "ResponseDecision"]
+        assert len(responses) == (2 if use_web_fetch else 1)
+        if use_web_fetch:
+            assert any("盐水密度较高。" in message["content"] for message in responses[-1]["messages"])
+            assert all(
+                "web_fetch" not in branch["properties"]
+                for branch in responses[-1]["response_format"]["schema"]["oneOf"]
+            )
     finally:
         browsing.runtime.llm = controlled
         await native.close()

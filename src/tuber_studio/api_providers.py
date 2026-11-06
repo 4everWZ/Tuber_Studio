@@ -38,6 +38,7 @@ def create_llm(settings):
 
 class APIProvider:
     generation_metered = True
+    supports_operation_web_fetch = True
     capacity_verified = False
     capacity_source = "operator_declared"
     token_accounting = "api_usage_probe"
@@ -222,8 +223,8 @@ class APIProvider:
             raise ValueError("API未返回可见文本")
         return content
 
-    async def generate_operation(self, messages, character, event_id, source_text=None):
-        return await generate_operation_reply(self, messages, event_id)
+    async def generate_operation(self, messages, character, event_id, source_text=None, *, web_fetch=None):
+        return await generate_operation_reply(self, messages, event_id, web_fetch=web_fetch)
 
     async def complete_admitted_live_image(self, messages, schema, budget):
         """Direct call for an already admitted device with context shifting disabled."""
@@ -240,9 +241,7 @@ class APIProvider:
             *messages,
             {
                 "role": "system",
-                "content": (
-                    "仅返回一个符合以下JSON Schema的JSON对象，不使用代码围栏，不调用工具：" + schema_text
-                ),
+                "content": "仅返回一个符合以下JSON Schema的JSON对象，省略代码围栏：" + schema_text,
             },
         ]
         return single_system_messages(messages)

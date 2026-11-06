@@ -1107,10 +1107,14 @@ class Dynamics:
                         "source_sha256": content_hash(public_sources),
                     }
 
-                    async def invoke(packet):
-                        return await budgeted_json(
-                            self.runtime.llm, packet, self.decision_schema(public_sources), max_tokens=maximum
-                        )
+                    async def invoke_model(packet, schema):
+                        return await budgeted_json(self.runtime.llm, packet, schema, max_tokens=maximum)
+
+                    async def invoke(packet, *, web_fetch=None):
+                        schema = self.decision_schema(public_sources)
+                        if web_fetch is not None:
+                            return await web_fetch.complete(packet, schema, invoke_model)
+                        return await invoke_model(packet, schema)
 
                     def guard():
                         if not authorized(include_enabled=False):
@@ -1138,6 +1142,7 @@ class Dynamics:
                         diagnose=diagnose,
                         generation_context=nullcontext,
                         context_data={"public_sources": public_sources},
+                        allow_web_fetch=True,
                     )
                     if data["action"] == "post" and self.policy()["use_memes"] and self.memes:
                         try:

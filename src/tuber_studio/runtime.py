@@ -32,6 +32,7 @@ from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 from .runtime_modes import apply_mode_profile, profile_alignment_error
 from .video_vision_service import restore_admission
+from .web_fetch import supplied_https_urls
 
 
 class Runtime:
@@ -247,10 +248,11 @@ class Runtime:
             binding = reply_generation_binding(scope, character, event, mode)
             identity = event["event_id"] + ":" + content_hash(binding)
 
-            async def invoke(packet):
+            async def invoke(packet, *, web_fetch=None):
+                options = {"web_fetch": web_fetch} if web_fetch is not None else {}
                 return await budgeted_call(
                     self.llm,
-                    lambda: generate(packet, character, event["event_id"], event["text"]),
+                    lambda: generate(packet, character, event["event_id"], event["text"], **options),
                     packet,
                     max_tokens=maximum,
                 )
@@ -299,6 +301,8 @@ class Runtime:
                     if context.existing(scope, character)
                     else [],
                 },
+                allow_web_fetch=True,
+                web_fetch_urls=supplied_https_urls(event["text"]) if mode == "direct_message" else None,
             )
         else:
             scene = (
