@@ -4,8 +4,8 @@ from pathlib import Path
 
 from .config import uses_broker_llm
 from .inference_profiles import DAFEIYU_ALIASES, DAFEIYU_MODEL
+from .inference_profiles import GROUNDED_DAFEIYU_MODEL as GROUNDED_DAFEIYU_MODEL
 
-GROUNDED_DAFEIYU_MODEL = "MiniCPM-V-4.7-1B-Dafeiyu-Grounded"
 DAFEIYU_IDENTITY = "你是大肥鱼。"
 GROUNDED_DAFEIYU_CARD = (Path(__file__).parent / "prompts/dafeiyu-grounded.md").read_text(encoding="utf-8").strip()
 

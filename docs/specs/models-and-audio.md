@@ -65,9 +65,9 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 默认运营路线是 Jetson 上的自有微调模型，按[内建 OC 方式](runtime-and-characters.md#角色生成方式)组装角色输入。实际权重、投影器、窗口、KV、采样和能力须按该模型在目标设备上核验，沿用同一运营、来源与资源验收要求。通用本地模型／VLM 和兼容 API 由操作者显式选择。运营不要求 TTS 共驻；直播继续以已准入的 MiniCPM5＋Genie 为基线。
 
-大肥鱼视觉候选独立打包主权重与匹配的投影器，训练、选择和复现入口见[视觉微调实验](../../tools/training/README.md)。新权重通过实际 GGUF 的语义验收后才进入 Jetson，统一视觉直播档另验真实 131072 窗口、Genie 共驻和浏览器可听音频延迟。模型别名与权重、投影器、引擎版本一同核对。
+大肥鱼 V6 的运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`。节点核对 Q4_K_M 主权重、4× F16 投影器及固定 llama.cpp 引擎，默认窗口为 131072，KV 使用 q4_0。文本请求走 `/llm/v1/chat/completions`，图像请求走 `/vlm/dafeiyu/v1/chat/completions`，两个端点共享运营资源与认证。业务配对使用实开的窗口，视频取材按同一组权重、投影器、引擎和图片配置独立测量资源。旧版 `MiniCPM-V-4.7-1B` 仍提供文本。统一视觉直播档另验真实长输入、Genie 共驻和浏览器可听音频延迟。[视觉微调实验](../../tools/training/README.md) · [装配与回退](../guides/deployment.md#电脑业务主机与独立推理节点)
 
-既有双机部署使用的通用模型 Profile 为 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出），其参数、文件身份、实测结果和未通过项由[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型)及[双机实测](../../evaluations/results/distributed-operations-20261102.md)维护。该 Profile 属于通用模型路线。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。新节点优先使用已安装的大肥鱼微调模型，业务端根据节点实际配置配对，保留已有显式安装配置。微调 Profile 的视觉取材须独立配置与准入，目标设备验收见[当前计划](../plans/current.md#推理配置与凭证边界)。实验先释放既有推理资源，分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。
+通用模型路线可用 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出）。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。长输入实验分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型) · [双机实测](../../evaluations/results/distributed-operations-20261102.md)
 
 源码模板和当前固定broker默认采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式缩小或放大配置窗口，最小 4096，实际不得超过所选本地模型的真实 native；MiniCPM5-2B的 native 为 131072，不能靠填写更大的声明突破它。本地从真实 GGUF／运行时核对 native 和实际 n_ctx，API 则区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切 Provider 或窗口后重新计数；较小窗口不冒称已接收 128K。能输出合法 JSON 不等于角色／摘要质量合格，不能未经语义比较自动退成 1B。
 

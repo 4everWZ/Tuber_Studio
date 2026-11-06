@@ -3,7 +3,13 @@
 from copy import deepcopy
 
 from .http_api import endpoint
-from .inference_profiles import DAFEIYU_MODEL, GEMMA_ARTIFACTS, GEMMA_ENGINE_SHA256
+from .inference_profiles import (
+    DAFEIYU_MODEL,
+    GEMMA_ARTIFACTS,
+    GEMMA_ENGINE_SHA256,
+    GROUNDED_DAFEIYU_ARTIFACTS,
+    GROUNDED_DAFEIYU_MODEL,
+)
 
 
 def select_local_voice(tts, broker):
@@ -109,6 +115,31 @@ def business_configuration(
         operations["temperature"] = operations["summary_temperature"] = 0.7
         data["work_mode_profiles"]["text"]["vision"] = data["work_mode_profiles"]["live"]["vision"].copy()
         data["video_vision"] = {"enabled": False}
+    elif operations_model == GROUNDED_DAFEIYU_MODEL:
+        operations.update(
+            native_context_tokens=native_context_tokens,
+            enable_thinking=False,
+            temperature=0.7,
+            summary_temperature=0.7,
+        )
+        grounded_vision = {
+            "base_url": base + "/vlm/dafeiyu/v1",
+            "model": operations_model,
+            "enable_thinking": False,
+            "image_profile": "server_native",
+            "image_order": "text_first",
+        }
+        vision.update(grounded_vision)
+        data["video_vision"].update(
+            grounded_vision,
+            model_revision=GROUNDED_DAFEIYU_ARTIFACTS["model"],
+            projector_revision=GROUNDED_DAFEIYU_ARTIFACTS["projector"],
+            runtime_revision=GROUNDED_DAFEIYU_ARTIFACTS["engine"],
+            runtime_profile="dafeiyu-v6-q4km-4x-f16",
+            context_tokens=context_tokens,
+            native_context_tokens=native_context_tokens,
+            properties_path="/vlm/dafeiyu/props",
+        )
     data.setdefault("features", {})["live_enabled"] = True
     data.setdefault("inference_broker", {}).update(
         enabled=True,

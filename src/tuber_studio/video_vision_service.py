@@ -14,7 +14,7 @@ import httpx
 from .browsing_models import DisabledVideoEvidence
 from .config import atomic_json
 from .http_api import response_json
-from .inference_profiles import GEMMA_KEY
+from .inference_profiles import GEMMA_KEY, GROUNDED_DAFEIYU_KEY, llm_resource_key
 from .runtime_modes import ObservationOwner
 from .video_vision import ApiVideoEvidenceProvider
 
@@ -55,6 +55,9 @@ class ProbeSampler:
 
     def __init__(self, client, provider):
         self.client = client
+        self.profile_key = (
+            GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
+        )
         self.expected = {
             "model_sha256": provider.config.model_revision,
             "projector_sha256": provider.config.projector_revision,
@@ -105,7 +108,7 @@ class ProbeSampler:
     async def sample(self):
         async with self.lock:
             value = await self._capabilities()
-            profile = value.get("profiles", {}).get(GEMMA_KEY, {})
+            profile = value.get("profiles", {}).get(self.profile_key, {})
             if (
                 value.get("mode") != "text"
                 or not profile.get("loaded")
@@ -187,7 +190,8 @@ async def restore_admission(runtime):
     if proof.get("passed") is not True:
         return
     capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=15)
-    profile = capabilities.get("profiles", {}).get(GEMMA_KEY, {})
+    key = GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
+    profile = capabilities.get("profiles", {}).get(key, {})
     if not profile.get("loaded") and capabilities.get("state") != "active":
         return
     current = await provider._runtime_properties()

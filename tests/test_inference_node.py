@@ -16,6 +16,8 @@ from tuber_studio.inference_profiles import (
     DAFEIYU_MODEL,
     GEMMA_ENGINE,
     GEMMA_KEY,
+    GROUNDED_DAFEIYU_KEY,
+    GROUNDED_DAFEIYU_MODEL,
     project_asset,
     verify_artifact,
 )
@@ -49,11 +51,11 @@ def vision_body(url=None):
     }
 
 
-async def mode_broker(root):
-    broker, control = setup_broker(root, selected=GEMMA_KEY)
-    broker.operations_selected, broker.live_selected = GEMMA_KEY, "llm2b"
+async def mode_broker(root, key=GEMMA_KEY, alias="Gemma4-E2B"):
+    broker, control = setup_broker(root, selected=key)
+    broker.operations_selected, broker.live_selected = key, "llm2b"
     configuration = root / "runtime/inference-node.json"
-    configuration.write_text(json.dumps({"mode": "text", "operations_model": "Gemma4-E2B", "keep": "node"}))
+    configuration.write_text(json.dumps({"mode": "text", "operations_model": alias, "keep": "node"}))
     broker.configuration_path = configuration
     await broker.initialize()
     control.events.clear()
@@ -169,25 +171,27 @@ async def test_node_accepts_persistent_bearer_pairing_and_exposes_actual_capabil
     await broker.close()
 
 
-async def test_node_vision_route_is_explicit_and_shares_the_same_mode_lease(tmp_path):
-    broker, _, _ = await mode_broker(tmp_path)
+@pytest.mark.parametrize("profile,key,alias", [
+    ("gemma4e2b", GEMMA_KEY, "Gemma4-E2B"),
+    ("dafeiyu", GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL),
+])
+async def test_node_vision_route_is_explicit_and_shares_the_same_mode_lease(tmp_path, profile, key, alias):
+    broker, _, _ = await mode_broker(tmp_path, key, alias)
     application = create_app(tmp_path, broker=broker, warm_start=False)
     token = (tmp_path / "runtime/inference-token").read_text()
+    body = {**vision_body(), "model": alias}
+    route = f"/vlm/{profile}/v1/chat/completions"
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=application), base_url="http://node", headers={HEADER: token}
     ) as client:
         assert (
-            await client.post("/llm/gemma4e2b/v1/chat/completions", json=vision_body())
+            await client.post(f"/llm/{profile}/v1/chat/completions", json=body)
         ).status_code == 404
-        assert (await client.post("/llm/v1/chat/completions", json=vision_body())).status_code == 422
-        assert (
-            await client.post("/vlm/gemma4e2b/v1/chat/completions", json=vision_body())
-        ).status_code == 200
+        assert (await client.post("/llm/v1/chat/completions", json=body)).status_code == 422
+        assert (await client.post(route, json=body)).status_code == 200
         await broker.switch_mode("live")
-        assert (
-            await client.post("/vlm/gemma4e2b/v1/chat/completions", json=vision_body())
-        ).status_code == 409
-        assert (await client.post("/vlm/gemma4e2b/command", json={})).status_code == 404
+        assert (await client.post(route, json=body)).status_code == 409
+        assert (await client.post(f"/vlm/{profile}/command", json={})).status_code == 404
     await broker.close()
 
 

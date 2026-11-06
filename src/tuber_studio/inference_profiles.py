@@ -17,10 +17,16 @@ DAFEIYU_ALIASES = {
     "minicpm-v-4.7-1b (大肥鱼专属微调)",
 }
 GEMMA_KEY = "llmgemma4e2b"
+GROUNDED_DAFEIYU_KEY = "llmdafeiyu_v6"
+GROUNDED_DAFEIYU_MODEL = "MiniCPM-V-4.7-1B-Dafeiyu-Grounded"
+GROUNDED_DAFEIYU_BUNDLE = "grounded-v6-20261106"
+GROUNDED_DAFEIYU_WEIGHTS = GROUNDED_DAFEIYU_MODEL + "-Q4_K_M.gguf"
+VISION_ROUTES = {"gemma4e2b": GEMMA_KEY, "dafeiyu": GROUNDED_DAFEIYU_KEY}
 LLM_MODELS = {
     "llm2b": "MiniCPM5-2B",
     "llm1b": "MiniCPM5-1B",
     DAFEIYU_KEY: DAFEIYU_MODEL,
+    GROUNDED_DAFEIYU_KEY: GROUNDED_DAFEIYU_MODEL,
     "llm1bq8": "MiniCPM5-1B-Q8_0",
     "llmqwen35": "Qwen3.5-2B",
     GEMMA_KEY: "Gemma4-E2B",
@@ -41,6 +47,11 @@ LLM_ALIASES = (
 )
 GEMMA_ENGINE = "runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server"
 GEMMA_ENGINE_SHA256 = "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e"
+GROUNDED_DAFEIYU_ARTIFACTS = {
+    "model": "02822e8d239b898ef33b28e372eb7f86f01e4c4716b1da9966149a45415b726a",
+    "projector": "d973687e3508400c66afc45fdade99565f29318abf7c468aff6bb6556acecfde",
+    "engine": GEMMA_ENGINE_SHA256,
+}
 GEMMA_ARTIFACTS = {
     "model": {
         "filename": "gemma-4-E2B-it-Q4_0.gguf",

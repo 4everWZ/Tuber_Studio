@@ -30,7 +30,12 @@ from .inference_profiles import (
     GEMMA_ENGINE,
     GEMMA_ENGINE_SHA256,
     GEMMA_KEY,
+    GROUNDED_DAFEIYU_ARTIFACTS,
+    GROUNDED_DAFEIYU_BUNDLE,
+    GROUNDED_DAFEIYU_KEY,
+    GROUNDED_DAFEIYU_WEIGHTS,
     LLM_MODELS,
+    VISION_ROUTES,
     artifact_identity,
     llm_resource_key,
     project_asset,
@@ -62,6 +67,10 @@ RESOURCES = {
     "llm2b": Resource("http://127.0.0.1:9013", "/health", LLM_MODELS["llm2b"], "MiniCPM5-2B-Q4_K_M.gguf"),
     "llm1b": Resource("http://127.0.0.1:9010", "/health", LLM_MODELS["llm1b"], "MiniCPM5-1B-Q4_K_M.gguf"),
     DAFEIYU_KEY: Resource("http://127.0.0.1:9016", "/health", LLM_MODELS[DAFEIYU_KEY], DAFEIYU_WEIGHTS),
+    GROUNDED_DAFEIYU_KEY: Resource(
+        "http://127.0.0.1:9031", "/health", LLM_MODELS[GROUNDED_DAFEIYU_KEY],
+        f"{GROUNDED_DAFEIYU_BUNDLE}/{GROUNDED_DAFEIYU_WEIGHTS}",
+    ),
     "llm1bq8": Resource("http://127.0.0.1:9014", "/health", LLM_MODELS["llm1bq8"], "MiniCPM5-1B-Q8_0.gguf"),
     "llmqwen35": Resource(
         "http://127.0.0.1:9015", "/health", LLM_MODELS["llmqwen35"], "Qwen_Qwen3.5-2B-Q4_K_M.gguf"
@@ -84,7 +93,7 @@ def resolve_llm_resource_key(model_name):
 def resource_cache_type(key: str, configured: str) -> str | None:
     if not RESOURCES[key].model:
         return None
-    return configured if key in {"llm1b", "llm2b", DAFEIYU_KEY, GEMMA_KEY} else "q8_0"
+    return configured if key in {"llm1b", "llm2b", DAFEIYU_KEY, *VISION_ROUTES.values()} else "q8_0"
 
 
 def native_context(path: Path, *, expected_architecture: str | None = None) -> int:
@@ -181,14 +190,24 @@ class ProcessRunner:
 
     def artifact_identifiers(self, key):
         result = {"model_sha256": None, "projector_sha256": None, "runtime_sha256": None}
-        if key == GEMMA_KEY:
-            for role, path in self.gemma_assets().items():
+        if key in VISION_ROUTES.values():
+            for role, path in self.vision_assets(key).items():
                 try:
                     digest = self.verified_artifacts.get(artifact_identity(path))
                 except OSError:
                     digest = None
                 result[("runtime" if role == "engine" else role) + "_sha256"] = digest
         return result
+
+    def vision_assets(self, key):
+        if key == GEMMA_KEY:
+            return self.gemma_assets()
+        model = project_asset(self.root, "runtime/models/" + RESOURCES[GROUNDED_DAFEIYU_KEY].model)
+        return {
+            "model": model,
+            "projector": project_asset(self.root, str(model.with_name("mmproj-4x-f16.gguf"))),
+            "engine": project_asset(self.root, GEMMA_ENGINE),
+        }
 
     def command(self, key):
         resource = RESOURCES[key]
@@ -251,9 +270,10 @@ class ProcessRunner:
                 "--mmproj-offload",
             ]
         if resource.model:
+            grounded = self.vision_assets(key) if key == GROUNDED_DAFEIYU_KEY else None
             cache = resource_cache_type(key, self.kv_cache_type)
             command = [
-                str(self.llama_binary),
+                str(grounded["engine"] if grounded else self.llama_binary),
                 "-m",
                 str(self.model_path(key)),
                 "--alias",
@@ -291,9 +311,14 @@ class ProcessRunner:
                 "64",
                 "--cache-ram",
                 "0",
-                "--no-mmap",
-                "--direct-io",
             ]
+            if grounded:
+                return command + [
+                    "--mmproj", str(grounded["projector"]), "--mmproj-offload",
+                    "--load-mode", "dio", "--ctx-checkpoints", "0", "--no-context-shift",
+                    "--threads", "4", "--no-webui",
+                ]
+            command.extend(["--no-mmap", "--direct-io"])
             if (self.node_settings or {}).get("speculative_ngram", False):
                 command.extend(["--spec-type", "ngram-mod"])
             if key == "llmqwen35":
@@ -342,8 +367,8 @@ class ProcessRunner:
             # rejects an absent fixed profile before changing any processes.
             if model is not None and not model.is_file():
                 continue
-            if key == GEMMA_KEY:
-                if all(path.is_file() for path in self.gemma_assets().values()):
+            if key in VISION_ROUTES.values():
+                if all(path.is_file() for path in self.vision_assets(key).values()):
                     profiles[key] = {"command": self.command(key)}
                 continue
             required = (
@@ -463,7 +488,12 @@ class ProcessRunner:
             and await asyncio.to_thread(lambda: native_context(self.model_path(key))) < self.context_tokens
         ):
             raise RuntimeError("Selected model does not natively support the requested context")
-        if key == GEMMA_KEY:
+        if key == GROUNDED_DAFEIYU_KEY:
+            for role, path in self.vision_assets(key).items():
+                await asyncio.to_thread(
+                    verify_artifact, path, GROUNDED_DAFEIYU_ARTIFACTS[role], self.verified_artifacts,
+                )
+        elif key == GEMMA_KEY:
             assets = self.gemma_assets()
             await asyncio.to_thread(
                 verify_artifact, assets["engine"], GEMMA_ENGINE_SHA256, self.verified_artifacts
@@ -580,9 +610,10 @@ class InferenceBroker:
     async def _observe_asset_metadata(self):
         epoch = self._asset_epoch
         if hasattr(self.runner, "artifact_identifiers"):
-            identities = await asyncio.to_thread(self.runner.artifact_identifiers, GEMMA_KEY)
-            if epoch == self._asset_epoch:
-                self._artifact_identifiers[GEMMA_KEY] = identities
+            for key in VISION_ROUTES.values():
+                identities = await asyncio.to_thread(self.runner.artifact_identifiers, key)
+                if epoch == self._asset_epoch:
+                    self._artifact_identifiers[key] = identities
         profiles = await self._profiles()
         return {"profiles": sorted(profiles)}
 
@@ -714,10 +745,10 @@ class InferenceBroker:
                 if loaded
                 else None,
                 "vision": bool(loaded and properties.get("modalities", {}).get("vision") is True),
-                "supports_vision": key == GEMMA_KEY,
+                "supports_vision": key in VISION_ROUTES.values(),
                 "tts": key == "tts",
-                "quantization": "Q4_0" if key == GEMMA_KEY else None,
-                "projector_quantization": "Q8_0" if key == GEMMA_KEY else None,
+                "quantization": {GEMMA_KEY: "Q4_0", GROUNDED_DAFEIYU_KEY: "Q4_K_M"}.get(key),
+                "projector_quantization": {GEMMA_KEY: "Q8_0", GROUNDED_DAFEIYU_KEY: "F16"}.get(key),
                 **(
                     self._artifact_identifiers.get(key)
                     or {"model_sha256": None, "projector_sha256": None, "runtime_sha256": None}
@@ -1580,16 +1611,19 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
         target = resolve_llm_resource_key(body.get("model", body.get("key")))
         return await cancellable(request, manager.switch_model(target))
 
-    @app.api_route("/vlm/gemma4e2b/{path:path}", methods=["GET", "POST"])
-    async def vision(path: str, request: Request):
+    @app.api_route("/vlm/{profile}/{path:path}", methods=["GET", "POST"])
+    async def vision(profile: str, path: str, request: Request):
+        key = VISION_ROUTES.get(profile)
+        if key is None:
+            raise HTTPException(404)
         if request.method == "GET":
             if path in {"props", "v1/props", "health"}:
-                return await manager.read(GEMMA_KEY, "props" if path.endswith("props") else "health")
+                return await manager.read(key, "props" if path.endswith("props") else "health")
             if path == "v1/models":
-                properties = await manager.read(GEMMA_KEY, "props")
+                properties = await manager.read(key, "props")
                 if properties.get("is_sleeping"):
                     raise HTTPException(503, "The vision model is not resident")
-                return {"object": "list", "data": [{"id": RESOURCES[GEMMA_KEY].alias, "object": "model"}]}
+                return {"object": "list", "data": [{"id": RESOURCES[key].alias, "object": "model"}]}
             raise HTTPException(404)
         if path != "v1/chat/completions":
             raise HTTPException(404)
@@ -1600,9 +1634,9 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             raise HTTPException(422, str(error)) from None
         if body.get("stream", False) is not False:
             raise HTTPException(422, "Only buffered inference is supported")
-        if body.get("model", RESOURCES[GEMMA_KEY].alias) != RESOURCES[GEMMA_KEY].alias:
+        if body.get("model", RESOURCES[key].alias) != RESOURCES[key].alias:
             raise HTTPException(422, "Model does not match typed resource")
-        return await cancellable(request, manager.forward(GEMMA_KEY, path, data))
+        return await cancellable(request, manager.forward(key, path, data))
 
     return app
 

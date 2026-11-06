@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from .http_api import endpoint
-from .inference_profiles import LLM_MODELS
+from .inference_profiles import LLM_MODELS, VISION_ROUTES
 from .inference_validation import project_wav
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -150,7 +150,7 @@ class Settings:
     def broker_key_for(self, base_url):
         broker = self.data.get("inference_broker", {})
         base = broker.get("base_url", "").rstrip("/")
-        allowed = {base, base + "/tts", base + "/llm", base + "/vlm/gemma4e2b/v1"}
+        allowed = {base, base + "/tts", base + "/llm", *(f"{base}/vlm/{route}/v1" for route in VISION_ROUTES)}
         return (
             self.inference_token
             if base and broker.get("enabled") and base_url.rstrip("/") in allowed

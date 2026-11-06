@@ -21,7 +21,7 @@ from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService
 from .generation_meter import budgeted_call
 from .inference_node_client import refresh_capabilities
-from .inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL
+from .inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL, GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
 from .interactive_rules import InteractiveRulesService
 from .live_media import LiveMedia
 from .live_scene import LiveScene
@@ -261,26 +261,29 @@ class Runtime:
         node_model_state = "unknown"
         health = self.inference_status
         capabilities = self.node_capabilities or {}
+        data = self.settings.data
+        operations = data.get("work_mode_profiles", {}).get("text", {}).get("llm", data["llm"])
+        grounded = operations["model"] == GROUNDED_DAFEIYU_MODEL
+        model_key = GROUNDED_DAFEIYU_KEY if grounded else DAFEIYU_KEY
         if self.inference_client and health.get("state") != "error":
-            running = health.get("providers", {}).get(DAFEIYU_KEY, {}).get("running")
+            running = health.get("providers", {}).get(model_key, {}).get("running")
             if (
                 health.get("state") == "active"
-                and health.get("selected_provider") == DAFEIYU_KEY
+                and health.get("selected_provider") == model_key
                 and running is True
             ):
                 node_model_state = "active"
             elif not capabilities.get("monitoring_error"):
-                profile = capabilities.get("profiles", {}).get(DAFEIYU_KEY, {})
+                profile = capabilities.get("profiles", {}).get(model_key, {})
                 installed = profile.get("installed")
                 if installed is True:
                     node_model_state = "installed"
                 elif installed is False:
                     node_model_state = "not_installed"
-        data = self.settings.data
         return {
             "source": "fine_tuned" if uses_built_in_persona(data) else "character_card",
             "configured_model": data["llm"]["model"],
-            "fine_tuned_model": DAFEIYU_MODEL,
+            "fine_tuned_model": GROUNDED_DAFEIYU_MODEL if grounded else DAFEIYU_MODEL,
             "node_model_state": node_model_state,
             "local_model_installed": is_model_installed(self.settings.models),
         }

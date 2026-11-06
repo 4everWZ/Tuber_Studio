@@ -64,9 +64,9 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
 节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。固定Gemma引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及Q8 vision-only投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体安装与恢复证据见[双机实测](../../evaluations/results/distributed-operations-20261102.md)。
 
-首次装配时，模型目录已有大肥鱼微调 GGUF 就优先将它用于运营，现有节点继续使用 `operations_model` 的设置。配对采用节点实际模型及窗口。微调配置先提供文本，视觉能力须另行接入和验证。直播模式先加载 Genie 再加载 MiniCPM5。电脑切换 Provider 前核对实际别名与窗口；直播期间运营模型任务等待回到运营模式。视频视觉先在设置中做资源验证，再按同一模型／投影器／引擎和图像配置恢复准入。视频理解质量以原视频任务核对。释放推理缓存会卸载模型及 KV，电脑业务数据独立保存。
+部署大肥鱼 V6 时，把 Q4_K_M 主权重与 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/grounded-v6-20261106/`，沿用固定引擎的完整 `build/bin`。现有节点启动沿用 `operations_model`。新代码就绪后，在运营模式向节点的 `POST /model` 提交 `{"model":"MiniCPM-V-4.7-1B-Dafeiyu-Grounded"}`，再到电脑工作台对同一节点重新配对。配对采用节点实开的模型与窗口，V6 的视频视觉仍须执行设置中的资源验证。视频理解质量以原视频任务核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。释放推理缓存会卸载模型及 KV，电脑业务数据独立保存。
 
-升级仍用旧别名的大肥鱼节点时，在节点配置里将运营模型设为 `MiniCPM-V-4.7-1B`、直播模型设为 `MiniCPM5-2B`。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。先在维护窗口备份原配置，切换后用浏览器试听确认。
+维护前保存节点配置和旧容器。回退权重时，在运营模式用同一模型切换接口选回原别名，再重新配对；旧版大肥鱼的别名为 `MiniCPM-V-4.7-1B`。回退程序时先恢复旧节点配置，再启动保留的旧容器，核对 `/llm/props` 返回的别名与窗口。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。切换后用浏览器试听。
 
 旧分模型路径已退役。仓外脚本将 `/llm/2b/props` 换为 `GET /llm/props`，读取前先用 `GET /health` 确认已选模型。将 `POST /llm/2b/warmup` 换为 `POST /llm/warmup`，请求体填入 `{"model":"MiniCPM5-2B"}`。生成同样在请求体指定模型，继续用 `/tts` 合成语音。工作台读取与已配置节点匹配的旧 LLM 地址时会归一化，下次保存设置时写回。双机升级时先更新 Jetson，再更新业务主机。
 
