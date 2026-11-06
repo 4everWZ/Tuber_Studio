@@ -238,9 +238,47 @@ def main():
     train_ds = train_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
     val_ds = val_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
 
+    header_think = tokenizer.encode(
+        "<|im_start|>assistant\n<think>\n\n</think>\n\n", add_special_tokens=False
+    )
+    header_plain = tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False)
+    end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+
     def tokenize_function(examples):
         tokenized = tokenizer(examples["text"], truncation=True, max_length=args.max_seq_length)
-        tokenized["labels"] = [ids.copy() for ids in tokenized["input_ids"]]
+        all_labels = []
+        for ids in tokenized["input_ids"]:
+            labels = [-100] * len(ids)
+            idx = 0
+            found_any = False
+            while idx < len(ids):
+                # Try matching assistant header
+                match_len = 0
+                if idx + len(header_think) <= len(ids) and ids[idx : idx + len(header_think)] == header_think:
+                    match_len = len(header_think)
+                elif (
+                    idx + len(header_plain) <= len(ids) and ids[idx : idx + len(header_plain)] == header_plain
+                ):
+                    match_len = len(header_plain)
+
+                if match_len > 0:
+                    start = idx + match_len
+                    # Find matching <|im_end|>
+                    stop = len(ids)
+                    for j in range(start, len(ids)):
+                        if ids[j] == end_id:
+                            stop = j
+                            break
+                    for k in range(start, min(stop + 1, len(ids))):
+                        labels[k] = ids[k]
+                    found_any = True
+                    idx = stop + 1
+                else:
+                    idx += 1
+            if not found_any:
+                labels = ids.copy()
+            all_labels.append(labels)
+        tokenized["labels"] = all_labels
         return tokenized
 
     tokenized_train = train_ds.map(tokenize_function, batched=True, remove_columns=["text"])
@@ -285,7 +323,7 @@ def main():
     logger.info("Training complete! Train loss: %.4f", train_result.training_loss)
 
     logger.info("Saving DoRA adapter weights to %s...", args.output_dir)
-    model.save_pretrained(args.output_dir)
+    trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
 
     # Save metrics

@@ -35,7 +35,7 @@ COMPILED_CLICHES = [re.compile(p) for p in AI_CLICHE_PATTERNS]
 
 # 经典大肥鱼特质词库
 CORE_PERSONA_KEYWORDS = {
-    "self_names": ["大肥鱼", "小鲸鱼", "本鱼", "鱼鱼"],
+    "self_names": ["大肥鱼", "小鲸鱼", "本鱼", "本鲸", "鱼鱼", "鲸鲸"],
     "rice": ["白饭", "白米饭", "饭团", "饭勺", "热腾腾", "锅巴", "焖饭"],
     "tail_somatics": ["尾巴", "尾鳍", "拍地", "啪啪", "怕痒", "僵直", "抱住", "卷起", "炸毛"],
     "antenna_fins": ["呆毛", "头鳍", "缩脖子"],
