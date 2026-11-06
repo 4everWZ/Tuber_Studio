@@ -17,13 +17,13 @@ from test_dynamics import public_memory
 from test_dynamics import service as service
 from test_structured_providers import providers as providers
 
-from tuber_studio.browsing_models import BrowsingPolicy
 from tuber_studio.models import OperationReply, Reply
 from tuber_studio.operation_text import (
     MAX_OPERATION_TEXT_BYTES,
     operation_output_diagnostics,
     validate_operation_text,
 )
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.provider_settings import proposal
 from tuber_studio.providers import build_messages
 from tuber_studio.video_vision import VideoVisionConfig

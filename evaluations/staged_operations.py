@@ -15,10 +15,10 @@ from typing import Literal
 
 from pydantic import Field, create_model
 
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, ResponseDecision, response_schema
 from tuber_studio.generation_meter import GenerationMeter, reserve_generation, settle_generation
 from tuber_studio.http_api import response_json
 from tuber_studio.models import StrictModel
+from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision, response_schema
 from tuber_studio.providers import SYSTEM_RULES, LlamaCppProvider, parse_json_object, single_system_messages
 
 DecisionOnly = create_model(

@@ -1,4 +1,4 @@
-"""The existing authenticated administration boundary owns all browsing controls."""
+"""Authenticated status, control, and records for video browsing."""
 
 from fastapi import Body, Depends, Query
 

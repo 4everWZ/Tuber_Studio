@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from .api_providers import validate_image
-from .browsing_models import DisabledVideoEvidence, browsing_filter_reason
-from .media_cache import linked
-from .platforms.bilibili_browsing import CREDIT
+from ...api_providers import validate_image
+from ...media_cache import linked
+from ...platforms.bilibili_browsing import CREDIT
+from .models import DisabledVideoEvidence, browsing_filter_reason
 
 
 class EvidenceUnavailable(ValueError):
@@ -157,7 +157,15 @@ class BrowsingEvidence:
         return result
 
     async def prepare(
-        self, video, config, *, force=False, task=None, deadline=None, require_visual=False, visual_source_ids=()
+        self,
+        video,
+        config,
+        *,
+        force=False,
+        task=None,
+        deadline=None,
+        require_visual=False,
+        visual_source_ids=(),
     ):
         # Sharing is only for public raw material. OC decisions never enter here.
         if self.closed:
@@ -179,7 +187,10 @@ class BrowsingEvidence:
                             raise EvidenceUnavailable("filtered", reason)
                         has_visual = any(part.get("visual") for part in material["parts"])
                         usable_visual = config["visual_enabled"] and self._current_visual(material)
-                        usable_visual = usable_visual and tuple(material.get("visual_source_ids", ())) == visual_source_ids
+                        usable_visual = (
+                            usable_visual
+                            and tuple(material.get("visual_source_ids", ())) == visual_source_ids
+                        )
                         if usable_visual or not has_visual and not require_visual:
                             self.hits += 1
                             return row["id"], material
@@ -208,7 +219,11 @@ class BrowsingEvidence:
             async with self._flight(
                 key,
                 lambda: self._with_visual(
-                    base, task=task, deadline=deadline, expires_at=expires_at, visual_source_ids=visual_source_ids
+                    base,
+                    task=task,
+                    deadline=deadline,
+                    expires_at=expires_at,
+                    visual_source_ids=visual_source_ids,
                 ),
             ) as result:
                 return result[0], copy.deepcopy(result[1])
@@ -233,8 +248,12 @@ class BrowsingEvidence:
             async with self._flight(
                 key,
                 lambda: self._prepare(
-                    metadata, config, task=task, deadline=deadline,
-                    require_visual=require_visual, visual_source_ids=visual_source_ids,
+                    metadata,
+                    config,
+                    task=task,
+                    deadline=deadline,
+                    require_visual=require_visual,
+                    visual_source_ids=visual_source_ids,
                 ),
             ) as result:
                 return result[0], copy.deepcopy(result[1])
@@ -313,7 +332,8 @@ class BrowsingEvidence:
         selected = set(source_ids)
         for part in parts:
             segments = [
-                segment for segment in part["segments"]
+                segment
+                for segment in part["segments"]
                 if self._valid_time(segment.get("start"))
                 and self._valid_time(segment.get("end"))
                 and segment["end"] >= segment["start"]
@@ -333,7 +353,9 @@ class BrowsingEvidence:
         # belong to the current provider and preserve the original CC tracks.
         material = self._cc_only(material)
         cid, timestamps = self._visual_targets(material["parts"], visual_source_ids)
-        parts, frames = await self._visual_parts(material["metadata"], task, deadline, cid=cid, timestamps=timestamps)
+        parts, frames = await self._visual_parts(
+            material["metadata"], task, deadline, cid=cid, timestamps=timestamps
+        )
         material["parts"].extend(parts)
         self._bind_visual_sampling(material, frames, visual_source_ids)
         material["coverage"] = "sampled_visual"
@@ -442,7 +464,8 @@ class BrowsingEvidence:
                         or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,100}", identity)
                         or identity in frame_map
                         or frame_cid not in durations
-                        or cid is not None and frame_cid != cid
+                        or cid is not None
+                        and frame_cid != cid
                         or not self._valid_time(actual_time)
                         or actual_time > durations[frame_cid]
                         or not isinstance(image, bytes)

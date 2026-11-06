@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.api_providers import APIProvider, VisionService, create_llm
 from tuber_studio.app import create_app
-from tuber_studio.browsing_models import BrowsingPolicy
 from tuber_studio.compaction import ContextWindowExceeded, IncompleteCompaction
 from tuber_studio.generation_meter import GenerationMeter
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.providers import VoiceService
 
 

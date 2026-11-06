@@ -8,8 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from .browsing_models import ContentDecision, ResponseDecision
-from .subtitle_presentation import (
+from ...subtitle_presentation import (
     CitationBlock,
     SourcePart,
     SourceSegment,
@@ -17,6 +16,7 @@ from .subtitle_presentation import (
     render_blocks,
     validate_time,
 )
+from .models import ContentDecision, ResponseDecision
 
 
 def format_content_input(data):
@@ -306,7 +306,9 @@ class ResponseDecisionInput:
                     times.append(str(segment[key]) if segment[key] is not None else "?")
             time_label = "|" + "–".join(times) + "s" if times else ""
             source_label = segment.get("source_label")
-            lines.append(f"[{ref.alias}{time_label}]" + (f"{source_label} " if source_label else "") + segment["text"])
+            lines.append(
+                f"[{ref.alias}{time_label}]" + (f"{source_label} " if source_label else "") + segment["text"]
+            )
             extra = {
                 key: value
                 for key, value in segment.items()

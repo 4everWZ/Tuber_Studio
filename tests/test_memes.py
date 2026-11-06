@@ -10,11 +10,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.browsing_models import BrowsingPolicy
-from tuber_studio.browsing_store import BrowsingRepository
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.meme_selection import select_meme
 from tuber_studio.memes import MAX_BYTES, ImageInspector, MemeCatalog
+from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.providers import LlamaCppProvider
 
 SOURCE = {

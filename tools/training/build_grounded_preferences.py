@@ -6,10 +6,10 @@ from pathlib import Path
 from build_grounded_corpus import historical_grounded_character
 from grounded_sft import read_jsonl
 
-from tuber_studio.browsing_inputs import ResponseDecisionInput
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.context import ContextManager
 from tuber_studio.dynamics import dynamic_decision_messages
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.providers import single_system_messages
 

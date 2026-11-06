@@ -9,7 +9,9 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
-from tuber_studio.browsing_inputs import (
+from tuber_studio.dynamics import dynamic_decision_messages
+from tuber_studio.operation_text import operation_character
+from tuber_studio.operations.browsing.inputs import (
     CLASSIFICATION_INSTRUCTION,
     ContentDecisionInput,
     ResponseDecisionInput,
@@ -22,7 +24,7 @@ from tuber_studio.browsing_inputs import (
     join_content_sources,
     persona_fingerprint,
 )
-from tuber_studio.browsing_models import (
+from tuber_studio.operations.browsing.models import (
     RESPONSE_INSTRUCTION,
     BrowsingPolicy,
     ContentDecision,
@@ -30,8 +32,6 @@ from tuber_studio.browsing_models import (
     VideoEngagementDecision,
     content_decision_schema,
 )
-from tuber_studio.dynamics import dynamic_decision_messages
-from tuber_studio.operation_text import operation_character
 from tuber_studio.persona import (
     DAFEIYU_IDENTITY,
     GROUNDED_DAFEIYU_CARD,
@@ -429,8 +429,8 @@ def test_registered_classification_view_is_opt_in_and_follows_complete_persona_c
 
 
 def test_content_view_does_not_replace_full_persona_for_response_generation(browsing, monkeypatch):
-    import tuber_studio.browsing_inputs as inputs
-    from tuber_studio.browsing_models import ResponseDecision
+    import tuber_studio.operations.browsing.inputs as inputs
+    from tuber_studio.operations.browsing.models import ResponseDecision
     from tuber_studio.providers import SYSTEM_RULES
 
     character = operation_character(browsing.runtime.character)
@@ -444,18 +444,18 @@ def test_content_view_does_not_replace_full_persona_for_response_generation(brow
     )
     row = {"character_id": character["id"], "character_version": character["version"]}
     value = material()
-    data, _ = browsing._content_presentation(value, row).present(segments(value))
-    _, messages, schema = browsing._model_input(row, ContentDecision, data, browsing._content_instruction())
+    data, _ = browsing.decisions._content_presentation(value, row).present(segments(value))
+    _, messages, schema = browsing.decisions._model_input(row, ContentDecision, data, browsing.decisions._content_instruction())
     assert messages[0]["content"] == "角色：" + view["brief"]
     assert messages[1]["content"] == CLASSIFICATION_INSTRUCTION
     assert messages[-1]["content"] == "公开来源材料：" + compact_content_input(data)
-    assert schema == browsing._model_input(row, ContentDecision, data, "same invocation")[2]
+    assert schema == browsing.decisions._model_input(row, ContentDecision, data, "same invocation")[2]
     response = {
         "kind": "top_level",
         "evidence": [{"id": "source", "text": "原始素材", "start": 0, "end": 2}],
         "allowed_evidence_ids": ["source"],
     }
-    _, body_messages, _ = browsing._model_input(row, ResponseDecision, response, "写角色回应")
+    _, body_messages, _ = browsing.decisions._model_input(row, ResponseDecision, response, "写角色回应")
     assert body_messages[0]["content"].startswith(SYSTEM_RULES)
     assert character["core"]["identity"] in body_messages[0]["content"]
     assert character["core"]["examples"][0]["reply"] in body_messages[0]["content"]
@@ -476,9 +476,9 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
     assert json.loads(dynamic[-1]["content"])["character"] == GROUNDED_DAFEIYU_CARD
 
     value = material()
-    data, _ = browsing._content_presentation(value, row).present(segments(value))
-    _, classify, _ = browsing._model_input(row, ContentDecision, data, browsing._content_instruction())
-    _, engagement, _ = browsing._model_input(row, VideoEngagementDecision, {"title": "盐水实验"}, "判断是否点赞")
+    data, _ = browsing.decisions._content_presentation(value, row).present(segments(value))
+    _, classify, _ = browsing.decisions._model_input(row, ContentDecision, data, browsing.decisions._content_instruction())
+    _, engagement, _ = browsing.decisions._model_input(row, VideoEngagementDecision, {"title": "盐水实验"}, "判断是否点赞")
     assert classify[0]["content"] == engagement[0]["content"] == DAFEIYU_IDENTITY
 
     for kind in ("top_level", "thread_reply"):
@@ -486,7 +486,7 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
             "kind": kind, "coverage": "sampled_visual",
             "evidence": [{"id": "source", "text": "原始素材", "start": 0, "end": 2}],
         }
-        _, reply, schema = browsing._model_input(row, ResponseDecision, response, RESPONSE_INSTRUCTION)
+        _, reply, schema = browsing.decisions._model_input(row, ResponseDecision, response, RESPONSE_INSTRUCTION)
         assert reply[0]["content"] == GROUNDED_DAFEIYU_CARD
         assert "evidence_ids选择本次短编号" in reply[1]["content"]
         assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
@@ -622,10 +622,10 @@ async def test_two_real_model_invocations_reuse_alias_but_keep_chunk_ownership(b
     async def split(material, row):
         return chunks
 
-    browsing._chunks = split
+    browsing.decisions._chunks = split
     await browsing.preflight(for_automation=False)
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
-    decisions = await browsing._content_decisions(value, row, {"lock_wait_seconds": 0})
+    decisions = await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
     assert [d.evidence_ids for d in decisions] == [["101:human:0", "101:human:1"], ["202:ai:0"]]
     calls = [data for kind, data in browsing.runtime.llm.calls if kind == "ContentDecision"]
     assert [data["segments"][0]["id"] for data in calls] == ["e1", "e1"]
@@ -698,7 +698,7 @@ async def test_inconsistent_intent_reaches_generation_feedback_and_can_change_ch
     browsing.runtime.llm.generate_json = generate
     await browsing.preflight(for_automation=False)
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
-    results = await browsing._content_decisions(material(), row, {"lock_wait_seconds": 0})
+    results = await browsing.decisions._content_decisions(material(), row, {"lock_wait_seconds": 0})
     assert [kind for kind, _ in calls] == ["ContentDecision", "ContinuationDecision", "ContentDecision"]
     identity = browsing.store.one(
         "SELECT id FROM operation_continuations WHERE channel='generation.browsing'"

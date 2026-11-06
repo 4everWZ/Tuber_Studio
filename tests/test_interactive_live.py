@@ -35,7 +35,7 @@ async def test_live_reply_uses_only_current_trusted_scene(settings, monkeypatch)
     app = create_app(settings, ReadOnlyPlatform(), live_scene=snapshot)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
-        runtime.session_id = "session-1"
+        runtime.live.session_id = "session-1"
         generator = AsyncMock(return_value=Reply(spoken_text="让我看看。"))
         monkeypatch.setattr(runtime.llm, "generate", generator)
         event = Event(type="chat", display_name="观众", text="进度怎么样？").model_dump(mode="json")
@@ -119,7 +119,7 @@ def test_api_draw_and_guess(client):
 async def test_live_mock_event_draw_guess_flow(settings):
     app = create_app(settings, ReadOnlyPlatform())
     runtime = app.state.runtime
-    runtime.state = "live"
+    runtime.live.state = "live"
 
     # 1. Start Draw & Guess via Gift event
     gift_start = Event(
@@ -129,10 +129,10 @@ async def test_live_mock_event_draw_guess_flow(settings):
     )
     res_start = await runtime.submit(gift_start)
     assert res_start["status"] == "queued"
-    assert runtime.draw_and_guess.is_active() is True
+    assert runtime.live.draw_and_guess.is_active() is True
 
     # Force a known word for testing
-    runtime.draw_and_guess.current_word = {
+    runtime.live.draw_and_guess.current_word = {
         "id": "watermelon",
         "word": "西瓜",
         "category": "水果",
@@ -149,8 +149,8 @@ async def test_live_mock_event_draw_guess_flow(settings):
     )
     res_guess = await runtime.submit(chat_guess)
     assert res_guess["status"] == "queued"
-    assert runtime.draw_and_guess.winner == "猜谜高手"
-    assert runtime.draw_and_guess.state == "finished"
+    assert runtime.live.draw_and_guess.winner == "猜谜高手"
+    assert runtime.live.draw_and_guess.state == "finished"
 
     # Verify highlight was recorded to daily_memory
     highlights = runtime.daily_memory.list_highlights(runtime.character["id"], runtime.character["version"])
@@ -161,7 +161,7 @@ async def test_live_mock_event_draw_guess_flow(settings):
 async def test_live_mock_event_game_switch_and_action(settings):
     app = create_app(settings, ReadOnlyPlatform())
     runtime = app.state.runtime
-    runtime.state = "live"
+    runtime.live.state = "live"
 
     # Switch game via gift
     gift_switch = Event(
@@ -172,7 +172,7 @@ async def test_live_mock_event_game_switch_and_action(settings):
     )
     res_switch = await runtime.submit(gift_switch)
     assert res_switch["status"] == "queued"
-    assert runtime.game_livestream.active_game_id == "pvz"
+    assert runtime.live.game_livestream.active_game_id == "pvz"
 
     # In-game bounty action via gift
     gift_action = Event(
@@ -183,6 +183,6 @@ async def test_live_mock_event_game_switch_and_action(settings):
     )
     res_action = await runtime.submit(gift_action)
     assert res_action["status"] == "queued"
-    pvz_adapter = runtime.game_livestream.get_active_adapter()
+    pvz_adapter = runtime.live.game_livestream.get_active_adapter()
     assert len(pvz_adapter.priority_tasks) == 1
     assert pvz_adapter.priority_tasks[0]["action"] == "use_cherry_bomb"

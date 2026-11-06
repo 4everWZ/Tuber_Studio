@@ -4,8 +4,8 @@ import json
 import time
 from uuid import uuid4
 
-from .generation_meter import reserve_counters, settle_counters
-from .store import dump
+from ...generation_meter import reserve_counters, settle_counters
+from ...store import dump
 
 
 class BrowsingRepository:

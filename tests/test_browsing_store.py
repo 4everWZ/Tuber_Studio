@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from tuber_studio.browsing_models import BrowsingPolicy
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 
 
 def test_input_and_output_budget_refunds_use_immediate_transactions(runtime):

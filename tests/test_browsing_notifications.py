@@ -6,8 +6,8 @@ import sqlite3
 
 import pytest
 
-from tuber_studio.browsing_models import BrowsingPolicy
-from tuber_studio.browsing_notifications import NotificationInbox
+from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.browsing.notifications import NotificationInbox
 from tuber_studio.platforms.bilibili_browsing import PlatformReadError
 
 
@@ -59,7 +59,7 @@ async def reader(method, *args):
 
 @pytest.fixture
 def inbox(runtime, monkeypatch):
-    monkeypatch.setattr("tuber_studio.browsing_notifications.time.time", lambda: 1000.9)
+    monkeypatch.setattr("tuber_studio.operations.browsing.notifications.time.time", lambda: 1000.9)
     return NotificationInbox(runtime.store, reader, Feed())
 
 

@@ -1,6 +1,5 @@
 import asyncio
 import json
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -8,7 +7,6 @@ from test_distributed_modes import NODE_URL
 from test_distributed_modes import distributed as distributed
 
 from tuber_studio import inference_node_client
-from tuber_studio.browsing_models import DisabledVideoEvidence
 from tuber_studio.config import atomic_bytes
 from tuber_studio.inference_profiles import (
     DAFEIYU_KEY,
@@ -17,7 +15,18 @@ from tuber_studio.inference_profiles import (
     GROUNDED_DAFEIYU_KEY,
     GROUNDED_DAFEIYU_MODEL,
 )
+from tuber_studio.operations.browsing.models import DisabledVideoEvidence
 from tuber_studio.video_vision import ApiVideoEvidenceProvider
+
+
+class StubBrowsing:
+    def __init__(self, visual):
+        self.visual_provider = visual
+
+    def replace_visual_provider(self, provider):
+        previous, self.visual_provider = self.visual_provider, provider
+        return previous
+
 
 OTHER_NODE = "http://second-jetson.local:9012"
 OTHER_TOKEN = "second-node-test-token-0123456789abcdef"
@@ -29,7 +38,7 @@ OTHER_TOKEN = "second-node-test-token-0123456789abcdef"
 ])
 async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distributed, key, model):
     runtime, state = distributed
-    runtime.browsing = SimpleNamespace(evidence=SimpleNamespace(visual=DisabledVideoEvidence()))
+    runtime.browsing = StubBrowsing(DisabledVideoEvidence())
     grounded = key == GROUNDED_DAFEIYU_KEY
 
     async def own_node(request):
@@ -78,7 +87,7 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
     assert runtime.settings.data["work_mode_profiles"]["live"]["llm"]["model"] == "MiniCPM5-2B"
     if grounded:
         assert runtime.settings.data["vision"]["base_url"] == OTHER_NODE + "/vlm/dafeiyu/v1"
-        visual = runtime.browsing.evidence.visual
+        visual = runtime.browsing.visual_provider
         assert visual.config.model == model and visual.config.context_tokens == 65536
         assert visual.capabilities()["admitted"] is False
     else:
@@ -92,8 +101,8 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
         "node_model_state": "active",
         "local_model_installed": False,
     }
-    await asyncio.gather(*runtime.client_cleanup)
-    await runtime.browsing.evidence.visual.close()
+    await asyncio.gather(*runtime.inference.cleanup_tasks)
+    await runtime.browsing.visual_provider.close()
 
 
 async def test_persona_status_distinguishes_local_install_node_inventory_and_offline(
@@ -107,20 +116,20 @@ async def test_persona_status_distinguishes_local_install_node_inventory_and_off
     assert initial["local_model_installed"] and initial["node_model_state"] == "unknown"
 
     profile = {"installed": True}
-    runtime.node_capabilities = {"profiles": {DAFEIYU_KEY: profile}}
+    runtime.inference.capabilities = {"profiles": {DAFEIYU_KEY: profile}}
     assert runtime.status()["persona"]["node_model_state"] == "installed"
     profile["installed"] = False
     assert runtime.status()["persona"]["node_model_state"] == "not_installed"
 
     profile["installed"] = True
-    runtime.inference_status["state"] = "error"
+    runtime.inference.status["state"] = "error"
     assert runtime.status()["persona"]["node_model_state"] == "unknown"
     assert state["requests"] == []
 
 
 async def test_pair_rebinds_text_vision_and_tts_clients_to_the_new_endpoint_and_token(distributed):
     runtime, state = distributed
-    old_llm, old_voices, old_client = runtime.llm, runtime.voices, runtime.inference_client
+    old_llm, old_voices, old_client = runtime.llm, runtime.voices, runtime.inference.client
     result = await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
     assert result["paired"] and result["base_url"] == OTHER_NODE and result["model"] == "Gemma4-E2B"
     assert runtime.voices is not old_voices and runtime.voices.settings is runtime.settings
@@ -136,7 +145,7 @@ async def test_pair_rebinds_text_vision_and_tts_clients_to_the_new_endpoint_and_
     voice_requests = [request for request in state["requests"] if request.url.path.endswith("/tts/docs")]
     assert voice_requests and voice_requests[-1].url.host == "second-jetson.local"
     assert voice_requests[-1].headers["X-Tuber-Inference-Key"] == OTHER_TOKEN
-    await asyncio.gather(*runtime.client_cleanup, return_exceptions=True)
+    await asyncio.gather(*runtime.inference.cleanup_tasks, return_exceptions=True)
     assert old_llm.client.is_closed and old_voices.client.is_closed and old_client.is_closed
 
 
@@ -228,7 +237,7 @@ async def test_pair_file_failure_restores_both_files_old_clients_and_candidate_n
 ):
     runtime, state = distributed
     state["mode"] = "live"
-    old = runtime.llm, runtime.vision, runtime.voices, runtime.inference_client
+    old = runtime.llm, runtime.vision, runtime.voices, runtime.inference.client
     snapshots = (
         runtime.settings.path.read_bytes(),
         (runtime.settings.runtime / "inference-token").read_bytes(),
@@ -252,7 +261,7 @@ async def test_pair_file_failure_restores_both_files_old_clients_and_candidate_n
         monkeypatch.setattr(inference_node_client, "atomic_bytes", fail_first)
     with pytest.raises(OSError):
         await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
-    assert (runtime.llm, runtime.vision, runtime.voices, runtime.inference_client) == old
+    assert (runtime.llm, runtime.vision, runtime.voices, runtime.inference.client) == old
     assert runtime.settings.inference_token == original_key
     assert runtime.settings.data["inference_broker"]["base_url"] == NODE_URL
     assert (
@@ -261,7 +270,7 @@ async def test_pair_file_failure_restores_both_files_old_clients_and_candidate_n
     ) == snapshots
     assert state["mode"] == "live"
     assert all(client.is_closed for client in state["clients"][count:])
-    assert not runtime.generation_lock.locked() and not runtime.mode_lock.locked()
+    assert not runtime.generation_lock.locked() and not runtime.inference.mode_lock.locked()
 
 
 async def test_pair_second_cancellation_keeps_transition_locks_until_candidate_is_restored(distributed):
@@ -291,13 +300,13 @@ async def test_pair_second_cancellation_keeps_transition_locks_until_candidate_i
         await asyncio.wait_for(rollback_entered.wait(), 2)
         pairing.cancel()
         await asyncio.sleep(0)
-        assert runtime.mode_lock.locked() and runtime.generation_lock.locked() and not pairing.done()
+        assert runtime.inference.mode_lock.locked() and runtime.generation_lock.locked() and not pairing.done()
         assert runtime.llm is old and not old.client.is_closed
         rollback_release.set()
         with pytest.raises(asyncio.CancelledError):
             await pairing
         assert state["mode"] == "live" and runtime.llm is old
-        assert not runtime.mode_lock.locked() and not runtime.generation_lock.locked()
+        assert not runtime.inference.mode_lock.locked() and not runtime.generation_lock.locked()
         assert (
             runtime.settings.path.read_bytes(),
             (runtime.settings.runtime / "inference-token").read_bytes(),
@@ -324,7 +333,7 @@ async def test_pair_rechecks_live_state_after_readonly_capability_lookup(distrib
     )
     try:
         await asyncio.wait_for(entered.wait(), 2)
-        runtime.state = "live"
+        runtime.live.state = "live"
         release.set()
         with pytest.raises(ValueError, match="停止直播"):
             await pairing
@@ -363,7 +372,7 @@ async def test_observation_of_old_node_cannot_replace_a_new_pair_or_mark_it_fail
     try:
         await asyncio.wait_for(entered.wait(), 2)
         await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
-        committed = runtime.node_capabilities
+        committed = runtime.inference.capabilities
         if outcome == "cancel":
             refreshing.cancel()
             with pytest.raises(asyncio.CancelledError):
@@ -371,9 +380,9 @@ async def test_observation_of_old_node_cannot_replace_a_new_pair_or_mark_it_fail
         else:
             release.set()
             assert await refreshing is committed
-        assert runtime.node_capabilities is committed and "obsolete_node" not in committed
+        assert runtime.inference.capabilities is committed and "obsolete_node" not in committed
         assert runtime.settings.data["inference_broker"]["base_url"] == OTHER_NODE
-        assert runtime.inference_status["state"] == "active" and not runtime.error
+        assert runtime.inference.status["state"] == "active" and not runtime.error
     finally:
         release.set()
         refreshing.cancel()
@@ -383,7 +392,7 @@ async def test_observation_of_old_node_cannot_replace_a_new_pair_or_mark_it_fail
 async def test_closed_old_visual_observation_cannot_mark_a_new_pair_failed(distributed, monkeypatch):
     runtime, _ = distributed
     provider = ApiVideoEvidenceProvider(runtime, runtime.settings.data["video_vision"])
-    runtime.browsing = SimpleNamespace(evidence=SimpleNamespace(visual=provider))
+    runtime.browsing = StubBrowsing(provider)
     entered, release, completed = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
     async def delayed_old_restore(runtime):
@@ -392,18 +401,18 @@ async def test_closed_old_visual_observation_cannot_mark_a_new_pair_failed(distr
         completed.set()
         raise httpx.ReadError("old visual connection closed")
 
-    monkeypatch.setattr("tuber_studio.runtime.restore_admission", delayed_old_restore)
-    observer = asyncio.create_task(runtime._observe_inference())
+    monkeypatch.setattr("tuber_studio.model_runtime.session.restore_admission", delayed_old_restore)
+    observer = asyncio.create_task(runtime.inference.observe())
     try:
         await asyncio.wait_for(entered.wait(), 2)
         await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
-        committed = runtime.node_capabilities
+        committed = runtime.inference.capabilities
         release.set()
         await asyncio.wait_for(completed.wait(), 2)
-        assert runtime.node_capabilities is committed and "monitoring_error" not in committed
-        assert runtime.inference_status["state"] == "active"
+        assert runtime.inference.capabilities is committed and "monitoring_error" not in committed
+        assert runtime.inference.status["state"] == "active"
     finally:
         release.set()
         observer.cancel()
         await asyncio.gather(observer, return_exceptions=True)
-        await runtime.browsing.evidence.visual.close()
+        await runtime.browsing.visual_provider.close()

@@ -430,17 +430,15 @@ async def test_final_guard_after_signing_await_cancels_without_write(service, mo
 async def test_live_priority_checked_before_and_inside_generation_lock(service, after_lock):
     public_memory(service)
     await service.set_policy({"enabled": True})
-    service.runtime.state = "live"
-    service.runtime.queue = []
-    service.runtime.current_id = None
+    live = service.runtime.live = SimpleNamespace(state="live", busy=False)
     if after_lock:
         async with service.runtime.generation_lock:
             task = asyncio.create_task(service.evaluate())
             await asyncio.sleep(0)
-            service.runtime.current_id = "speech-job"
+            live.busy = True
         result = await task
     else:
-        service.runtime.queue = ["speech-job"]
+        live.busy = True
         result = await service.evaluate()
     assert result["action"] == "wait" and "直播" in result["reason"]
     assert not service.runtime.llm.calls and not service.sent

@@ -12,8 +12,8 @@ import math
 import time
 from uuid import uuid4
 
-from .providers import public_error
-from .store import dump
+from ...providers import public_error
+from ...store import dump
 
 
 class NotificationInbox:

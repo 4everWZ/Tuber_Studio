@@ -30,8 +30,8 @@ def pcm(seconds=0.4, silence=False):
 async def add_song(runtime, **changes):
     data = pcm()
     identity = hashlib.sha256(data).hexdigest()
-    (runtime.media.directory / (identity + ".wav")).write_bytes(data)
-    return await runtime.media.save_song(
+    (runtime.live.media.directory / (identity + ".wav")).write_bytes(data)
+    return await runtime.live.media.save_song(
         {
             "id": "test-song",
             "title": "测试曲目",
@@ -84,7 +84,7 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
     monkeypatch.setattr(runtime, "generate_reply", reply)
     monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
     player = Player()
-    owner = await runtime.attach_overlay(player)
+    owner = await runtime.live.attach_overlay(player)
     await runtime.control("start")
     result = await runtime.submit(Event(type="chat", text="下一轮怎么打？"))
     job_id = result["job_id"]
@@ -95,17 +95,17 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
     await wait_for(lambda: plays() and second_started.is_set())
     assert [message["text"] for message in plays()] == ["鱼鱼刚看完这一段，"]
     first = {"job_id": job_id, "playback_token": plays()[0]["playback_token"]}
-    assert not await runtime.acknowledge(owner, first | {"type": "ended"})
-    assert await runtime.acknowledge(owner, first | {"type": "started"})
-    first_audio_ms = runtime.timings["first_audio_ms"]
+    assert not await runtime.live.acknowledge(owner, first | {"type": "ended"})
+    assert await runtime.live.acknowledge(owner, first | {"type": "started"})
+    first_audio_ms = runtime.live.timings["first_audio_ms"]
     assert first_audio_ms is not None
-    assert await runtime.acknowledge(owner, first | {"type": "ended"})
-    assert not await runtime.acknowledge(owner, first | {"type": "ended"})
+    assert await runtime.live.acknowledge(owner, first | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, first | {"type": "ended"})
     assert store.job(job_id)["status"] == "synthesizing"
     assert not store.all("SELECT * FROM conversations")
 
     if cancel:
-        await runtime.cancel_current()
+        await runtime.live.cancel_current()
         assert second_cancelled.is_set()
         assert store.job(job_id)["status"] == "cancelled"
         assert len(plays()) == 1
@@ -117,10 +117,10 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
     second = {"job_id": job_id, "playback_token": plays()[1]["playback_token"]}
     assert plays()[1]["text"] == "下一轮我们慢一点试试。"
     assert second != first
-    assert not await runtime.acknowledge(owner, first | {"type": "ended"})
-    assert await runtime.acknowledge(owner, second | {"type": "started"})
-    assert runtime.timings["first_audio_ms"] == first_audio_ms
-    assert await runtime.acknowledge(owner, second | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, first | {"type": "ended"})
+    assert await runtime.live.acknowledge(owner, second | {"type": "started"})
+    assert runtime.live.timings["first_audio_ms"] == first_audio_ms
+    assert await runtime.live.acknowledge(owner, second | {"type": "ended"})
     assert store.job(job_id)["status"] == "completed"
     assert [row["reply_text"] for row in store.all("SELECT * FROM conversations")] == [text]
 
@@ -128,7 +128,7 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
 async def test_song_is_real_playback_and_never_enters_dialogue_memory(runtime, store):
     song = await add_song(runtime)
     player = Player()
-    owner = await runtime.attach_overlay(player)
+    owner = await runtime.live.attach_overlay(player)
     await runtime.control("start")
     result = await runtime.submit(Event(type="song", text=song["title"]))
     await wait_for(lambda: any(m["type"] == "play" for m in player.messages))
@@ -136,19 +136,19 @@ async def test_song_is_real_playback_and_never_enters_dialogue_memory(runtime, s
     assert message["audio_ref"] == "/media/music/" + song["audio"]
     assert message["media"]["mode"] == "direct"
     ack = {"job_id": result["job_id"], "playback_token": message["playback_token"]}
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
-    assert await runtime.acknowledge(owner, ack | {"type": "started"})
-    assert await runtime.acknowledge(
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
+    assert await runtime.live.acknowledge(owner, ack | {"type": "started"})
+    assert await runtime.live.acknowledge(
         owner, ack | {"type": "progress", "position": 0.1, "paused": False, "mouth": 0.05}
     )
-    assert runtime.playback["position"] == 0.1
+    assert runtime.live.playback["position"] == 0.1
     await runtime.control("media-pause")
     assert player.messages[-1]["type"] == "media-control"
     assert player.messages[-1]["paused"] is True
-    assert await runtime.acknowledge(
+    assert await runtime.live.acknowledge(
         owner, ack | {"type": "progress", "position": 0.1, "paused": True, "mouth": 0}
     )
-    assert await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert store.job(result["job_id"])["status"] == "completed"
     assert not store.all("SELECT * FROM conversations")
     assert not store.all("SELECT * FROM context_windows")
@@ -162,7 +162,7 @@ async def test_song_snapshot_dedup_permissions_and_unsupported_singing(runtime):
     assert first["status"] == "queued"
     duplicate = await runtime.submit(Event(type="song", text="测试曲目"))
     assert duplicate["status"] == "filtered" and "排队" in duplicate["reason"]
-    runtime.media.store.set("music_settings", {"default_mode": "sing"})
+    runtime.live.media.store.set("music_settings", {"default_mode": "sing"})
     snapshot = runtime.store.job(first["job_id"])["media"]
     assert '"mode": "direct"' in snapshot
     await runtime.control("clear")
@@ -175,12 +175,12 @@ async def test_song_snapshot_dedup_permissions_and_unsupported_singing(runtime):
 
 async def test_vocal_activity_has_silence_and_media_integrity_is_checked(runtime):
     song = await add_song(runtime)
-    path = runtime.media.blob(song["audio"])
+    path = runtime.live.media.blob(song["audio"])
     activity = inspect_wav(path, envelope=True)
     assert len(activity["envelope"]) == 8 and max(activity["envelope"]) > 0.01
     path.write_bytes(pcm(silence=True))
     with pytest.raises(ValueError, match="内容已改变"):
-        runtime.media.prepare({"song": song})
+        runtime.live.media.prepare({"song": song})
     with pytest.raises(ValueError, match="静音"):
         inspect_wav(path)
 
@@ -197,15 +197,15 @@ async def test_untrusted_song_mode_is_filtered_without_crashing_worker(runtime, 
 def test_scene_roundtrip_and_bounds(runtime):
     scene = default_scene()
     scene["items"][0]["x"] += 5
-    assert runtime.media.save_scene(scene) == scene
-    assert runtime.media.scene() == scene
+    assert runtime.live.media.save_scene(scene) == scene
+    assert runtime.live.media.scene() == scene
     scene["items"].append(scene["items"][0])
     with pytest.raises(ValueError, match="重复"):
-        runtime.media.save_scene(scene)
+        runtime.live.media.save_scene(scene)
     scene = default_scene()
     scene["items"][0]["x"] = 1800
     with pytest.raises(ValueError, match="画布"):
-        runtime.media.save_scene(scene)
+        runtime.live.media.save_scene(scene)
 
 
 def test_live_api_scopes_streaming_upload_and_scene_persistence(settings):
@@ -223,7 +223,7 @@ def test_live_api_scopes_streaming_upload_and_scene_persistence(settings):
         assert uploaded["id"] == hashlib.sha256(pcm()).hexdigest()
         assert client.get("/media/music/" + uploaded["id"]).content == pcm()
         assert client.post("/api/live/uploads", content=b"not a wave").status_code == 400
-        assert not list(app.state.runtime.media.directory.glob(".upload-*"))
+        assert not list(app.state.runtime.live.media.directory.glob(".upload-*"))
         scene = default_scene()
         scene["title"] = "保存后的标题"
         assert client.put("/api/live/scene", json=scene).status_code == 200
@@ -239,15 +239,15 @@ def test_live_api_scopes_streaming_upload_and_scene_persistence(settings):
 async def test_song_cancellation_stops_player_and_rejects_late_completion(runtime, action):
     await add_song(runtime)
     player = Player()
-    owner = await runtime.attach_overlay(player)
+    owner = await runtime.live.attach_overlay(player)
     await runtime.control("start")
     result = await runtime.submit(Event(type="song", text="测试曲目"))
     await wait_for(lambda: any(m["type"] == "play" for m in player.messages))
     message = next(m for m in player.messages if m["type"] == "play")
     ack = {"job_id": result["job_id"], "playback_token": message["playback_token"]}
-    assert await runtime.acknowledge(owner, ack | {"type": "started"})
+    assert await runtime.live.acknowledge(owner, ack | {"type": "started"})
     await runtime.control(action)
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert runtime.store.job(result["job_id"])["status"] == "cancelled"
-    assert runtime.playback is None
+    assert runtime.live.playback is None
     assert player.messages[-1]["type"] == "stop"

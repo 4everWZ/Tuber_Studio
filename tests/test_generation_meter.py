@@ -8,12 +8,12 @@ import httpx
 import pytest
 
 from tuber_studio.api_providers import APIProvider
-from tuber_studio.browsing_models import BrowsingPolicy
-from tuber_studio.browsing_store import BrowsingRepository
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.generation_meter import GenerationMeter, current_meter
 from tuber_studio.models import Reply
+from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.providers import LlamaCppProvider
 
 

@@ -8,11 +8,11 @@ from urllib.parse import urlsplit
 import httpx
 
 from .api_providers import VisionService, create_llm
-from .browsing_models import DisabledVideoEvidence
 from .config import atomic_bytes, validate_api_key
 from .deployment_profiles import business_configuration
 from .http_api import endpoint, response_json
 from .inference_profiles import DAFEIYU_MODEL, GEMMA_KEY, GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
+from .operations.browsing.models import DisabledVideoEvidence
 from .providers import VoiceService
 from .runtime_modes import ObservationOwner, close_clients, inference_transition
 from .video_vision import ApiVideoEvidenceProvider
@@ -47,14 +47,14 @@ async def refresh_capabilities(runtime):
         value = await _read_capabilities(owner.client, timeout=15)
     except Exception as error:
         if not owner.current(runtime):
-            return runtime.node_capabilities
+            return runtime.inference.capabilities
         if isinstance(error, (httpx.RequestError, httpx.HTTPStatusError)):
             raise _connection_error(error) from None
         raise
     if not owner.current(runtime):
-        return runtime.node_capabilities
-    runtime.node_capabilities = value | {"checked_at": time.time()}
-    return runtime.node_capabilities
+        return runtime.inference.capabilities
+    runtime.inference.capabilities = value | {"checked_at": time.time()}
+    return runtime.inference.capabilities
 
 
 def status(runtime):
@@ -63,16 +63,16 @@ def status(runtime):
         "base_url": broker.get("base_url", ""),
         "deployment": broker.get("deployment", "local"),
         "paired": bool(runtime.settings.inference_token),
-        "mode": runtime.inference_status.get("mode"),
+        "mode": runtime.inference.status.get("mode"),
         "model": runtime.settings.data["llm"]["model"],
         "business_data": str(runtime.settings.runtime),
-        "capabilities": runtime.node_capabilities,
-        "error": runtime.inference_status.get("error"),
+        "capabilities": runtime.inference.capabilities,
+        "error": runtime.inference.status.get("error"),
     }
 
 
 def _require_stopped(runtime):
-    if runtime.state != "stopped":
+    if runtime.live.state != "stopped":
         raise ValueError("请先停止直播再更换推理节点")
     if runtime.store.get("comment_policy", {}).get("auto_reply") or runtime.store.get(
         "dynamic_policy", {}
@@ -118,7 +118,7 @@ async def pair_node(runtime, body):
     except ValueError:
         raise ValueError("推理节点配对凭据格式无效") from None
     _require_stopped(runtime)
-    if runtime.generation_lock.locked() or runtime.mode_lock.locked():
+    if runtime.generation_lock.locked() or runtime.inference.mode_lock.locked():
         raise ValueError("请等待当前模型任务结束")
     client = httpx.AsyncClient(
         base_url=base,
@@ -129,7 +129,7 @@ async def pair_node(runtime, body):
     created, adopted = [], False
     try:
         await _read_capabilities(client, timeout=10)
-        async with runtime.mode_lock, runtime.generation_lock:
+        async with runtime.inference.mode_lock, runtime.generation_lock:
             with inference_transition(runtime):
                 _require_stopped(runtime)
                 # Re-read under the business transition lock; capability lookup was read-only.
@@ -147,7 +147,9 @@ async def pair_node(runtime, body):
                     )
                     model = observed.get("model")
                     if observed.get("mode") != "text" or model not in {
-                        "Gemma4-E2B", DAFEIYU_MODEL, GROUNDED_DAFEIYU_MODEL,
+                        "Gemma4-E2B",
+                        DAFEIYU_MODEL,
+                        GROUNDED_DAFEIYU_MODEL,
                     }:
                         raise ValueError("节点未提供可用的运营模型，请检查 Jetson 版本及运营模型设置")
                     if model in {DAFEIYU_MODEL, GROUNDED_DAFEIYU_MODEL}:
@@ -227,30 +229,29 @@ async def pair_node(runtime, body):
                     confirmed = await _settle(rollback())
                     if not confirmed:
                         runtime.error = "推理节点切换恢复结果待确认，请检查原节点与配置"
-                        runtime.inference_status = runtime.inference_status | {
+                        runtime.inference.status = runtime.inference.status | {
                             "state": "error",
                             "error": runtime.error,
                         }
                     raise
                 old = [runtime.llm, runtime.vision, runtime.voices]
                 if visual is not None:
-                    old.append(runtime.browsing.evidence.visual)
-                    runtime.browsing.evidence.visual = visual
-                if runtime.inference_client is not None:
-                    old.append(runtime.inference_client)
+                    old.append(runtime.browsing.replace_visual_provider(visual))
+                if runtime.inference.client is not None:
+                    old.append(runtime.inference.client)
                 settings.data, settings.inference_token = proposed, token
-                runtime.inference_client = client
+                runtime.inference.client = client
                 voices.settings = settings
                 runtime.llm, runtime.vision, runtime.voices = llm, vision, voices
                 runtime.context.provider, runtime.context.last_key = llm, None
-                runtime.inference_status = observed | {"active": observed.get("active_provider")}
-                runtime.node_capabilities = capabilities | {"checked_at": time.time()}
+                runtime.inference.status = observed | {"active": observed.get("active_provider")}
+                runtime.inference.capabilities = capabilities | {"checked_at": time.time()}
                 runtime.error = None
-                runtime.profile_alignment_failed = False
+                runtime.inference.profile_alignment_failed = False
                 adopted = True
                 cleanup = asyncio.create_task(close_clients(old))
-                runtime.client_cleanup.add(cleanup)
-                cleanup.add_done_callback(runtime.client_cleanup.discard)
+                runtime.inference.cleanup_tasks.add(cleanup)
+                cleanup.add_done_callback(runtime.inference.cleanup_tasks.discard)
         return status(runtime)
     except (httpx.RequestError, httpx.HTTPStatusError) as error:
         raise _connection_error(error) from None

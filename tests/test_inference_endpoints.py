@@ -207,7 +207,7 @@ def test_provider_settings_auto_download_on_confirm(settings, monkeypatch):
         async def fake_apply(runtime, data):
             return {"status": "ok", "context_recount_required": True}
 
-        monkeypatch.setattr("tuber_studio.app.apply_settings", fake_apply)
+        monkeypatch.setattr("tuber_studio.model_runtime.api.apply_settings", fake_apply)
 
         # 1. Full local + Dafeiyu model + Not installed -> triggers auto-download
         with (

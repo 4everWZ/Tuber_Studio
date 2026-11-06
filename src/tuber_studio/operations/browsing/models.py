@@ -4,8 +4,8 @@ from typing import Literal, Protocol
 
 from pydantic import Field, field_validator, model_validator
 
-from .models import StrictModel
-from .operation_text import validate_operation_text
+from ...models import StrictModel
+from ...operation_text import validate_operation_text
 
 
 def browsing_filter_reason(item, config, *, complete=False):

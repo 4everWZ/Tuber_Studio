@@ -6,9 +6,9 @@ import json
 import pytest
 from test_browsing import browsing as browsing
 
-from tuber_studio.browsing import generation_resume
-from tuber_studio.browsing_inputs import ResponseDecisionInput
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, ResponseDecision
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+from tuber_studio.operations.browsing.round_context import generation_resume
 
 
 def packet(count=2):
@@ -142,7 +142,7 @@ async def test_wire_error_is_recoverable_and_normalization_happens_only_at_final
         return bad if sum(title == "ResponseDecision" for title, _, _ in calls) == 1 else wire
 
     browsing.runtime.llm.generate_json = generate
-    result = await browsing._model(
+    result = await browsing.decisions._model(
         row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
     )
     assert result.evidence_ids == [data["evidence"][0]["id"]]
@@ -165,7 +165,7 @@ async def test_wire_error_is_recoverable_and_normalization_happens_only_at_final
     before = len(calls)
     token = generation_resume.set(True)
     try:
-        again = await browsing._model(
+        again = await browsing.decisions._model(
             row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
         )
     finally:
@@ -184,13 +184,15 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         return reply(["r1"]).model_dump()
 
     browsing.runtime.llm.generate_json = generate
-    first = await browsing._model(row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0})
-    first_capacity = browsing._capacity_signature(row["config"])
+    first = await browsing.decisions._model(
+        row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
+    )
+    first_capacity = browsing.decisions._capacity_signature(row["config"])
     monkeypatch.setattr(ResponseDecisionInput, "FORMAT_VERSION", "test-response-v2")
-    assert browsing._capacity_signature(row["config"]) != first_capacity
+    assert browsing.decisions._capacity_signature(row["config"]) != first_capacity
     token = generation_resume.set(True)
     try:
-        second = await browsing._model(
+        second = await browsing.decisions._model(
             row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
         )
     finally:

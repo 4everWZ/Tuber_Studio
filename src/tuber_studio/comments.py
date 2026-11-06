@@ -496,7 +496,9 @@ class Comments:
                 self._task_progress(task_id, message)
 
     def _live_pending(self):
-        return self.runtime.state in {"live", "paused"} and (self.runtime.queue or self.runtime.current_id)
+        return self.runtime.live.state in {"live", "paused"} and (
+            self.runtime.live.queue or self.runtime.live.current_id
+        )
 
     @staticmethod
     def _comment_event(row):

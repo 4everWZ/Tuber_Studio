@@ -5,9 +5,9 @@ import json
 import httpx
 import pytest
 
-from tuber_studio.browsing_models import BrowsingPolicy
-from tuber_studio.browsing_store import BrowsingRepository
 from tuber_studio.generation_meter import GenerationMeter
+from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.providers import LlamaCppProvider
 
 MESSAGES = [{"role": "user", "content": "根据来源回答。"}]

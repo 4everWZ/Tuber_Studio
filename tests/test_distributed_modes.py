@@ -131,7 +131,7 @@ async def test_switch_rebinds_real_clients_and_context_without_changing_business
     assert runtime.llm.config["model"] == "MiniCPM5-2B"
     assert runtime.context.provider is runtime.llm and runtime.context.last_key is None
     assert runtime.settings.data["vision"]["kind"] == "disabled"
-    await asyncio.gather(*runtime.client_cleanup, return_exceptions=True)
+    await asyncio.gather(*runtime.inference.cleanup_tasks, return_exceptions=True)
     assert old.client.is_closed
     await runtime.set_work_mode("text")
     assert runtime.llm.config["model"] == "Gemma4-E2B" and runtime.llm.server_tokens == 131072
@@ -172,7 +172,7 @@ async def test_failed_switch_preserves_original_provider_settings_and_restores_n
         json.loads(request.content)["mode"] for request in state["requests"] if request.url.path == "/mode"
     ]
     assert mode_requests == ["live", "text"]
-    assert not runtime.generation_lock.locked() and not runtime.mode_lock.locked()
+    assert not runtime.generation_lock.locked() and not runtime.inference.mode_lock.locked()
 
 
 async def test_cancel_after_node_commit_waits_for_rollback_and_keeps_original_client(distributed):
@@ -187,7 +187,7 @@ async def test_cancel_after_node_commit_waits_for_rollback_and_keeps_original_cl
         await switching
     assert state["mode"] == "text" and runtime.llm is old and not old.client.is_closed
     assert runtime.context.provider is old and runtime.settings.path.read_bytes() == old_bytes
-    assert not runtime.mode_lock.locked() and not runtime.generation_lock.locked()
+    assert not runtime.inference.mode_lock.locked() and not runtime.generation_lock.locked()
 
 
 async def test_committed_switch_returns_without_waiting_for_old_client_cleanup(distributed):
@@ -207,18 +207,18 @@ async def test_committed_switch_returns_without_waiting_for_old_client_cleanup(d
         await asyncio.wait_for(entered.wait(), 2)
         assert result["mode"] == state["mode"] == "live"
         assert runtime.llm is not old and not old.client.is_closed
-        assert not runtime.generation_lock.locked() and not runtime.mode_lock.locked()
+        assert not runtime.generation_lock.locked() and not runtime.inference.mode_lock.locked()
         assert json.loads(runtime.settings.path.read_text())["llm"]["model"] == "MiniCPM5-2B"
     finally:
         release.set()
-        await asyncio.gather(*runtime.client_cleanup, return_exceptions=True)
+        await asyncio.gather(*runtime.inference.cleanup_tasks, return_exceptions=True)
     assert old.client.is_closed
 
 
 async def test_idle_live_mode_keeps_operations_waiting_until_gemma_is_restored(distributed):
     runtime, _ = distributed
     await runtime.control("start")
-    assert runtime.state == "live" and runtime.current_id is None and runtime.queue == []
+    assert runtime.live.state == "live" and runtime.live.current_id is None and runtime.live.queue == []
     assert runtime.llm.config["model"] == "MiniCPM5-2B"
     entered, selected = asyncio.Event(), []
 
@@ -235,7 +235,7 @@ async def test_idle_live_mode_keeps_operations_waiting_until_gemma_is_restored(d
         await runtime.set_work_mode("text")
         await asyncio.wait_for(pending, 2)
         assert entered.is_set() and selected == ["Gemma4-E2B"]
-        assert runtime.state == "stopped" and not runtime.generation_lock.locked()
+        assert runtime.live.state == "stopped" and not runtime.generation_lock.locked()
     finally:
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)
@@ -243,7 +243,7 @@ async def test_idle_live_mode_keeps_operations_waiting_until_gemma_is_restored(d
 
 async def test_restored_active_node_allows_operations_despite_a_previous_transition_error(distributed):
     runtime, _ = distributed
-    runtime.inference_status = {
+    runtime.inference.status = {
         "mode": "text",
         "state": "active",
         "model": "Gemma4-E2B",
@@ -288,7 +288,7 @@ async def test_late_health_observation_cannot_overwrite_a_committed_live_mode(
         return None
 
     state["http_handler"] = delayed_old_health
-    observer = asyncio.create_task(runtime._observe_inference())
+    observer = asyncio.create_task(runtime.inference.observe())
     try:
         await asyncio.wait_for(entered.wait(), 2)
         await runtime.set_work_mode("live")
@@ -297,11 +297,11 @@ async def test_late_health_observation_cannot_overwrite_a_committed_live_mode(
         else:
             assert runtime.llm.config["model"] == "MiniCPM5-2B"
             assert runtime.settings.data is not original_data
-        committed = runtime.inference_status
+        committed = runtime.inference.status
         release.set()
         await asyncio.wait_for(completed.wait(), 2)
-        assert runtime.inference_status is committed
-        assert runtime.inference_status["mode"] == "live" and runtime.inference_status["state"] == "active"
+        assert runtime.inference.status is committed
+        assert runtime.inference.status["mode"] == "live" and runtime.inference.status["state"] == "active"
         assert runtime.settings.data["inference_broker"]["mode"] == "live"
         if not legacy:
             assert runtime.operations_waiting() is True
@@ -370,10 +370,10 @@ async def test_unconfirmed_mode_rollback_blocks_mismatched_business_provider(dis
     with pytest.raises(ValueError, match="工作模式切换失败"):
         await runtime.set_work_mode("text")
     assert runtime.llm is original and original.config["model"] == "MiniCPM5-2B"
-    assert state["mode"] == runtime.inference_status["mode"] == "text"
+    assert state["mode"] == runtime.inference.status["mode"] == "text"
     assert runtime.operations_waiting() is True
     await runtime.refresh_inference()
-    assert runtime.inference_status["state"] == "error" and runtime.operations_waiting()
+    assert runtime.inference.status["state"] == "error" and runtime.operations_waiting()
     monkeypatch.setattr(runtime.settings, "save_public", save_public)
     await runtime.set_work_mode("text")
     assert runtime.llm.config["model"] == "Gemma4-E2B" and not runtime.operations_waiting()
@@ -389,19 +389,19 @@ async def test_wrong_node_alias_requires_explicit_retry_even_after_health_looks_
 
     state["http_handler"] = wrong_alias
     await runtime.refresh_inference()
-    assert runtime.operations_waiting() and runtime.inference_status["provider_alignment_error"]
+    assert runtime.operations_waiting() and runtime.inference.status["provider_alignment_error"]
     state.pop("http_handler")
     await runtime.refresh_inference()
-    assert runtime.inference_status["state"] == "error" and runtime.operations_waiting()
+    assert runtime.inference.status["state"] == "error" and runtime.operations_waiting()
     await runtime.set_work_mode("text")
-    assert not runtime.operations_waiting() and not runtime.profile_alignment_failed
+    assert not runtime.operations_waiting() and not runtime.inference.profile_alignment_failed
 
 
 async def test_different_vision_profile_also_blocks_operations_until_a_successful_retry(distributed):
     runtime, _ = distributed
     runtime.settings.data["vision"] = dict(runtime.settings.data["work_mode_profiles"]["live"]["vision"])
     await runtime.refresh_inference()
-    assert runtime.inference_status["state"] == "error" and runtime.operations_waiting()
+    assert runtime.inference.status["state"] == "error" and runtime.operations_waiting()
     await runtime.set_work_mode("text")
     assert runtime.settings.data["vision"] == runtime.settings.data["work_mode_profiles"]["text"]["vision"]
     assert not runtime.operations_waiting()
@@ -415,5 +415,5 @@ async def test_external_api_profile_is_not_rejected_for_a_different_node_local_m
     await runtime.set_work_mode("text")
     await runtime.refresh_inference()
     assert runtime.llm.config["model"] == "External-Model"
-    assert runtime.inference_status["model"] == "Gemma4-E2B" and not runtime.operations_waiting()
+    assert runtime.inference.status["model"] == "Gemma4-E2B" and not runtime.operations_waiting()
     assert all(request.url.host != "cloud.invalid" for request in state["requests"])

@@ -16,7 +16,7 @@ def profile_alignment_error(runtime, observed):
     if not profiles:
         return None
     profile = profiles.get(observed.get("mode"), {})
-    if getattr(runtime, "profile_alignment_failed", False) or any(
+    if runtime.inference.profile_alignment_failed or any(
         runtime.settings.data.get(key) != profile.get(key) for key in ("llm", "vision")
     ):
         return PROFILE_ALIGNMENT_ERROR
@@ -35,24 +35,24 @@ class ObservationOwner:
 
     @classmethod
     def capture(cls, runtime):
-        return cls(runtime.inference_client, runtime.settings.data, getattr(runtime, "inference_revision", 0))
+        return cls(runtime.inference.client, runtime.settings.data, runtime.inference.revision)
 
     def current(self, runtime):
         return (
-            runtime.inference_client is self.client
+            runtime.inference.client is self.client
             and runtime.settings.data is self.configuration
-            and getattr(runtime, "inference_revision", 0) == self.revision
+            and runtime.inference.revision == self.revision
         )
 
 
 @contextmanager
 def inference_transition(runtime):
     """Invalidate observations from before and during a mode or node transition."""
-    runtime.inference_revision = getattr(runtime, "inference_revision", 0) + 1
+    runtime.inference.revision = runtime.inference.revision + 1
     try:
         yield
     finally:
-        runtime.inference_revision += 1
+        runtime.inference.revision += 1
 
 
 def operation_generation_context(runtime, settings):
@@ -92,11 +92,11 @@ async def apply_mode_profile(runtime, mode):
     runtime.llm, runtime.vision = llm, vision
     runtime.context.provider = llm
     runtime.context.last_key = None
-    runtime.profile_alignment_failed = False
+    runtime.inference.profile_alignment_failed = False
     runtime.error = None
     cleanup = asyncio.create_task(close_clients(old))
-    runtime.client_cleanup.add(cleanup)
-    cleanup.add_done_callback(runtime.client_cleanup.discard)
+    runtime.inference.cleanup_tasks.add(cleanup)
+    cleanup.add_done_callback(runtime.inference.cleanup_tasks.discard)
 
 
 async def close_clients(clients):

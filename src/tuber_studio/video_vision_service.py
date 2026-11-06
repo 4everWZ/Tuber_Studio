@@ -11,10 +11,10 @@ from contextlib import asynccontextmanager
 
 import httpx
 
-from .browsing_models import DisabledVideoEvidence
 from .config import atomic_json
 from .http_api import response_json
 from .inference_profiles import GEMMA_KEY, GROUNDED_DAFEIYU_KEY, llm_resource_key
+from .operations.browsing.models import DisabledVideoEvidence
 from .runtime_modes import ObservationOwner
 from .video_vision import ApiVideoEvidenceProvider
 
@@ -34,10 +34,10 @@ async def _settle(operation):
 @asynccontextmanager
 async def _probe_client(runtime, factory):
     # The observer owns its pool. It never borrows the control/long-task pool.
-    headers = runtime.inference_client.headers.copy()
+    headers = runtime.inference.client.headers.copy()
     headers["Connection"] = "close"
     client = factory(
-        base_url=str(runtime.inference_client.base_url),
+        base_url=str(runtime.inference.client.base_url),
         headers=headers,
         timeout=httpx.Timeout(5, connect=5),
         trust_env=False,
@@ -56,7 +56,9 @@ class ProbeSampler:
     def __init__(self, client, provider):
         self.client = client
         self.profile_key = (
-            GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
+            GROUNDED_DAFEIYU_KEY
+            if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY
+            else GEMMA_KEY
         )
         self.expected = {
             "model_sha256": provider.config.model_revision,
@@ -174,10 +176,10 @@ def configured_video_provider(runtime):
 
 
 async def restore_admission(runtime):
-    if runtime.mode_lock.locked():
+    if runtime.inference.mode_lock.locked():
         return
     owner = ObservationOwner.capture(runtime)
-    provider = runtime.browsing.evidence.visual
+    provider = runtime.browsing.visual_provider
     path = runtime.settings.runtime / "video-vision-admission.json"
     if not isinstance(provider, ApiVideoEvidenceProvider) or not path.is_file() or path.is_symlink():
         return
@@ -190,7 +192,9 @@ async def restore_admission(runtime):
     if proof.get("passed") is not True:
         return
     capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=15)
-    key = GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
+    key = (
+        GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
+    )
     profile = capabilities.get("profiles", {}).get(key, {})
     if not profile.get("loaded") and capabilities.get("state") != "active":
         return
@@ -199,8 +203,8 @@ async def restore_admission(runtime):
         return
     if (
         not owner.current(runtime)
-        or runtime.mode_lock.locked()
-        or runtime.browsing.evidence.visual is not provider
+        or runtime.inference.mode_lock.locked()
+        or runtime.browsing.visual_provider is not provider
         or provider.identity() != configuration
     ):
         return
@@ -258,14 +262,14 @@ def boundary_frames(settings, config):
 
 
 async def probe_visual(runtime, *, client_factory=None):
-    provider = runtime.browsing.evidence.visual
-    if not isinstance(provider, ApiVideoEvidenceProvider) or not runtime.inference_client:
+    provider = runtime.browsing.visual_provider
+    if not isinstance(provider, ApiVideoEvidenceProvider) or not runtime.inference.client:
         raise ValueError("请先配置运营视觉端点")
-    if runtime.inference_status.get("mode") != "text" or runtime.mode_lock.locked():
+    if runtime.inference.status.get("mode") != "text" or runtime.inference.mode_lock.locked():
         raise ValueError("请先切到运营模式")
     if runtime.generation_lock.locked():
         raise ValueError("请等待当前生成结束后验证视觉")
-    async with runtime.mode_lock:
+    async with runtime.inference.mode_lock:
         async with _probe_client(runtime, client_factory or httpx.AsyncClient) as client:
             return await _run_probe(runtime, provider, ProbeSampler(client, provider))
 

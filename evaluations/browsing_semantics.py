@@ -19,14 +19,14 @@ from copy import deepcopy
 from functools import partial
 from pathlib import Path
 
-from tuber_studio.browsing import SYSTEM_RULES, BrowsingService
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, BrowsingPolicy, ResponseDecision
 from tuber_studio.comments import Comments
 from tuber_studio.config import Settings
 from tuber_studio.config import atomic_json as write_report
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
-from tuber_studio.providers import LlamaCppProvider
+from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, BrowsingPolicy, ResponseDecision
+from tuber_studio.operations.browsing.service import BrowsingService
+from tuber_studio.providers import SYSTEM_RULES, LlamaCppProvider
 from tuber_studio.runtime import Runtime
 from tuber_studio.store import Store
 
@@ -417,7 +417,7 @@ async def evaluate(args):
                     result["requires_human_fact_review"] = True
                     actual = result.get("actual")
                 else:
-                    decision = await service._model(
+                    decision = await service.decisions._model(
                         row,
                         ResponseDecision,
                         case["data"],

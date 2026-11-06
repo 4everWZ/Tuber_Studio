@@ -21,7 +21,7 @@ async def visual_runtime(distributed):
     provider = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing = SimpleNamespace(evidence=SimpleNamespace(visual=provider))
+    runtime.browsing = SimpleNamespace(visual_provider=provider)
     state.update(capability_calls=0, memory_bytes=1024 * 2**20, runtime_sha=provider.config.runtime_revision)
 
     async def http(request):
@@ -78,8 +78,8 @@ async def visual_runtime(distributed):
     try:
         yield runtime, provider, state
     finally:
-        await runtime.browsing.evidence.visual.close()
-        if runtime.browsing.evidence.visual is not provider:
+        await runtime.browsing.visual_provider.close()
+        if runtime.browsing.visual_provider is not provider:
             await provider.close()
 
 
@@ -127,7 +127,7 @@ async def test_probe_owns_short_connections_and_records_a_recovered_disconnect(v
     assert options["headers"]["Connection"] == "close"
     assert options["headers"]["X-Tuber-Inference-Key"] == runtime.settings.inference_token
     assert state["observer_clients"][0].is_closed
-    assert not runtime.inference_client.is_closed and not provider.api.client.is_closed
+    assert not runtime.inference.client.is_closed and not provider.api.client.is_closed
     generations = [
         json.loads(request.content)
         for request in state["requests"]
@@ -245,7 +245,7 @@ async def test_cancelling_generation_closes_only_the_owned_probe_client(visual_r
         with pytest.raises(asyncio.CancelledError):
             await task
         assert state["observer_clients"][0].is_closed
-        assert not runtime.inference_client.is_closed and not runtime.mode_lock.locked()
+        assert not runtime.inference.client.is_closed and not runtime.inference.mode_lock.locked()
         proof = json.loads((runtime.settings.runtime / "video-vision-admission.json").read_text())["proof"]
         assert proof["passed"] is False and proof["failure_type"] == "CancelledError"
     finally:
@@ -287,7 +287,7 @@ async def test_successful_admission_can_be_restored_with_matching_actual_node_id
     fresh = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing.evidence.visual = fresh
+    runtime.browsing.visual_provider = fresh
     await video_vision_service.restore_admission(runtime)
     assert fresh.capabilities()["admitted"] and fresh._admission["configuration"] == provider.identity()
 
@@ -320,7 +320,7 @@ async def test_inflight_restore_cannot_revive_proof_invalidated_by_a_new_failed_
         monkeypatch.setattr(video_vision_service, "boundary_frames", fail_preparation)
         with pytest.raises(ValueError, match="new probe preparation"):
             await video_vision_service.probe_visual(runtime)
-        assert not runtime.mode_lock.locked() and not provider.capabilities()["admitted"]
+        assert not runtime.inference.mode_lock.locked() and not provider.capabilities()["admitted"]
         release.set()
         await restoring
         assert provider._probe is None and not provider.capabilities()["admitted"]
@@ -336,7 +336,7 @@ async def test_admission_restore_skips_busy_probe_without_waiting_or_calling_the
     runtime, _, state = visual_runtime
     await video_vision_service.probe_visual(runtime)
     request_count = len(state["requests"])
-    async with runtime.mode_lock:
+    async with runtime.inference.mode_lock:
         await asyncio.wait_for(video_vision_service.restore_admission(runtime), 0.5)
     assert len(state["requests"]) == request_count
 
@@ -362,7 +362,7 @@ async def test_inflight_restore_cannot_apply_after_a_complete_mode_roundtrip(vis
         await asyncio.wait_for(entered.wait(), 2)
         await runtime.set_work_mode("live")
         await runtime.set_work_mode("text")
-        assert runtime.browsing.evidence.visual is provider and not runtime.mode_lock.locked()
+        assert runtime.browsing.visual_provider is provider and not runtime.inference.mode_lock.locked()
         release.set()
         await restoring
         assert provider._probe is None and not provider.capabilities()["admitted"]
@@ -383,7 +383,7 @@ async def test_restore_accepts_changed_reported_digest_when_alias_and_properties
     fresh = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing.evidence.visual = fresh
+    runtime.browsing.visual_provider = fresh
     request_count = len(state["requests"])
     await video_vision_service.restore_admission(runtime)
     # Restore checks actual capabilities; reported byte digests are no longer a gate.
@@ -415,7 +415,7 @@ async def test_restore_still_requires_a_loaded_capable_visual_model(visual_runti
     fresh = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing.evidence.visual = fresh
+    runtime.browsing.visual_provider = fresh
     if failure == "unloaded":
         await video_vision_service.restore_admission(runtime)
     else:
@@ -459,7 +459,7 @@ async def test_preparation_failure_invalidates_old_proof_and_cannot_reappear_on_
     fresh = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing.evidence.visual = fresh
+    runtime.browsing.visual_provider = fresh
     await video_vision_service.restore_admission(runtime)
     assert not fresh.capabilities()["admitted"]
     assert (
@@ -481,7 +481,7 @@ async def test_initial_node_failure_invalidates_previous_admission_before_readin
     fresh = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing.evidence.visual = fresh
+    runtime.browsing.visual_provider = fresh
     await video_vision_service.restore_admission(runtime)
     assert not fresh.capabilities()["admitted"]
 
@@ -496,7 +496,7 @@ async def test_insufficient_measured_memory_cannot_revive_a_previous_pass(visual
     fresh = ApiVideoEvidenceProvider(
         runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
     )
-    runtime.browsing.evidence.visual = fresh
+    runtime.browsing.visual_provider = fresh
     await video_vision_service.restore_admission(runtime)
     assert not fresh.capabilities()["admitted"]
 

@@ -105,10 +105,10 @@ async def test_voice_settings_save_without_touching_model_or_node(runtime, monke
     def unexpected_rpc(request):
         pytest.fail(f"Voice settings sent an unexpected node request: {request.method} {request.url.path}")
 
-    runtime.inference_client = httpx.AsyncClient(
+    runtime.inference.client = httpx.AsyncClient(
         base_url="http://jetson.local:9012", transport=httpx.MockTransport(unexpected_rpc)
     )
-    before = runtime.llm, runtime.vision, runtime.inference_client, runtime.context.provider
+    before = runtime.llm, runtime.vision, runtime.inference.client, runtime.context.provider
     profiles = settings.data["work_mode_profiles"]
     settings.provider_keys["llm"] = "existing-model-key"
     runtime.store.set("comment_policy", {"auto_browse": True})
@@ -125,7 +125,7 @@ async def test_voice_settings_save_without_touching_model_or_node(runtime, monke
     assert runtime.voices.client.headers["authorization"] == "Bearer speech-test-key"
     assert "x-tuber-inference-key" not in runtime.voices.client.headers
     assert settings.data["work_mode_profiles"] == profiles
-    assert (runtime.llm, runtime.vision, runtime.inference_client, runtime.context.provider) == before
+    assert (runtime.llm, runtime.vision, runtime.inference.client, runtime.context.provider) == before
     assert (
         business_configuration(settings.data, "http://replacement.local:9012")["tts"] == settings.data["tts"]
     )
@@ -149,7 +149,7 @@ async def test_voice_settings_save_without_touching_model_or_node(runtime, monke
     assert "authorization" not in runtime.voices.client.headers
     assert api_voices.client.is_closed
     assert settings.provider_keys == {"llm": "existing-model-key"}
-    assert (runtime.llm, runtime.vision, runtime.inference_client, runtime.context.provider) == before
+    assert (runtime.llm, runtime.vision, runtime.inference.client, runtime.context.provider) == before
 
 
 @pytest.mark.asyncio
@@ -245,7 +245,7 @@ async def managed_settings(runtime, monkeypatch):
             state["selected"], state["resident"] = payload["key"], True
         return httpx.Response(200, json={})
 
-    runtime.inference_client = httpx.AsyncClient(
+    runtime.inference.client = httpx.AsyncClient(
         base_url="http://broker", transport=httpx.MockTransport(handle)
     )
     created = []
@@ -293,7 +293,7 @@ def assert_rollback(runtime, previous, created):
     assert runtime.context.provider is previous[5] and runtime.settings.data is previous[6]
     assert runtime.settings.provider_keys == previous[7]
     assert len(created) == 3 and all(client.closed == 1 for client in created)
-    assert not runtime.mode_lock.locked() and not runtime.generation_lock.locked()
+    assert not runtime.inference.mode_lock.locked() and not runtime.generation_lock.locked()
 
 
 @pytest.mark.parametrize("fail_capacity", [False, True])
@@ -355,7 +355,7 @@ async def test_cancel_after_commit_and_repeated_cancel_wait_for_confirmed_rollba
     await asyncio.sleep(0)
     work.cancel()
     await asyncio.sleep(0)
-    assert not work.done() and runtime.mode_lock.locked() and runtime.generation_lock.locked()
+    assert not work.done() and runtime.inference.mode_lock.locked() and runtime.generation_lock.locked()
     state["restore_release"].set()
     with pytest.raises(asyncio.CancelledError):
         await work
@@ -447,14 +447,14 @@ async def test_unconfirmed_broker_rollback_is_explicit_but_restores_secret_and_r
     previous = originals(runtime)
     state["capacity_error"] = True
     # The restoration RPC can fail independently after the initial commit.
-    post = runtime.inference_client.post
+    post = runtime.inference.client.post
 
     async def fail_restore(path, **kwargs):
         if path == "/context" and kwargs["json"]["context_tokens"] == 65536:
             raise httpx.ConnectError("restoration connection failed")
         return await post(path, **kwargs)
 
-    runtime.inference_client.post = fail_restore
+    runtime.inference.client.post = fail_restore
     with pytest.raises(ProviderConfigurationError, match="恢复结果未确认"):
         await apply_settings(runtime, {"llm": {"context_tokens": 8192}})
     assert state["window"] == 8192

@@ -140,9 +140,9 @@ class OnlineSongs:
                 self.store.set("song_requests", {**config, "enabled": False})
                 self.choices.clear()
                 await self.cancel_preparation()
-                self.runtime.clear_online_queue()
-                if self.runtime.current_is_online():
-                    await self.runtime.cancel_current("关闭／重新配置在线点歌组件")
+                self.runtime.live.clear_online_queue()
+                if self.runtime.live.current_is_online():
+                    await self.runtime.live.cancel_current("关闭／重新配置在线点歌组件")
                 await self.component.stop()
             if config["enabled"]:
                 try:
@@ -212,7 +212,7 @@ class OnlineSongs:
             "duration": song["duration"],
             "requester": event.display_name,
             "voice_id": self.runtime.character["voice_profile"],
-            "ttl": self.runtime.media.config()["request_ttl_seconds"],
+            "ttl": self.runtime.live.media.config()["request_ttl_seconds"],
         }
 
     async def selection(self, identity, event):
@@ -220,9 +220,9 @@ class OnlineSongs:
         if event.metadata.get("mode", "direct") != "direct":
             raise ValueError("在线点歌当前只支持直接播放，演唱模型另行挂载")
         epoch = self.epoch
-        session = self.runtime.session_id
+        session = self.runtime.live.session_id
         row = await self.component.call("detail", {"id": identity})
-        if epoch != self.epoch or session != self.runtime.session_id:
+        if epoch != self.epoch or session != self.runtime.live.session_id:
             raise ValueError("选歌期间在线点歌设置已改变，请重试")
         return self.snapshot(row, event)
 
@@ -243,8 +243,8 @@ class OnlineSongs:
             if pending:
                 return self.confirm(pending["token"], int(number[1]), event=event)
         query = command.group(1) if command else None
-        if hasattr(self.runtime, "interactive_rules") and self.runtime.interactive_rules:
-            is_req, custom_query, rej = self.runtime.interactive_rules.match_song_request(event)
+        if self.runtime.live.interactive_rules:
+            is_req, custom_query, rej = self.runtime.live.interactive_rules.match_song_request(event)
             if is_req:
                 if rej:
                     raise ValueError(rej)
@@ -255,7 +255,7 @@ class OnlineSongs:
         self.require_enabled()
         key = tuple(owner) if event.platform_user_id else (event.platform, event.room_id, "anonymous")
         previous = self.search_times.get(key, -10000)
-        if time.monotonic() - previous < max(2, self.runtime.media.config()["cooldown_seconds"]):
+        if time.monotonic() - previous < max(2, self.runtime.live.media.config()["cooldown_seconds"]):
             raise ValueError("同用户点歌搜索短时限流")
         self.search_times[key] = time.monotonic()
         if len(self.search_times) > 2000:
@@ -264,9 +264,9 @@ class OnlineSongs:
             }
             while len(self.search_times) > 2000:
                 self.search_times.pop(next(iter(self.search_times)))
-        session = self.runtime.session_id
+        session = self.runtime.live.session_id
         songs = await self.search(query)
-        if session != self.runtime.session_id or self.runtime.state == "stopped":
+        if session != self.runtime.live.session_id or self.runtime.live.state == "stopped":
             raise ValueError("搜索期间直播会话已改变，请重新点歌")
         if time.time() - event.timestamp.timestamp() > self.runtime.settings.data["event_ttl_seconds"]:
             raise ValueError("点歌事件已过期，请重新发送")
@@ -318,7 +318,9 @@ class OnlineSongs:
         return event, result
 
     def sync(self):
-        active = ([self.runtime.current_id] if self.runtime.current_id else []) + list(self.runtime.queue)
+        active = ([self.runtime.live.current_id] if self.runtime.live.current_id else []) + list(
+            self.runtime.live.queue
+        )
         songs = [(identity, self.store.job(identity)) for identity in active]
         songs = [
             (identity, job)
@@ -332,7 +334,7 @@ class OnlineSongs:
             for identity, job in songs
             if json.loads(job["media"]).get("online")
         }
-        if not self.config()["enabled"] or self.runtime.state == "stopped":
+        if not self.config()["enabled"] or self.runtime.live.state == "stopped":
             desired = {}
         for identity in list(self.tasks):
             if identity not in desired:
@@ -376,8 +378,10 @@ class OnlineSongs:
         return hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
 
     def protected(self):
-        result = {song["audio"] for song in self.runtime.media.songs()}
-        active = ([self.runtime.current_id] if self.runtime.current_id else []) + self.runtime.queue
+        result = {song["audio"] for song in self.runtime.live.media.songs()}
+        active = (
+            [self.runtime.live.current_id] if self.runtime.live.current_id else []
+        ) + self.runtime.live.queue
         for identity in active:
             job = self.store.job(identity)
             if job and job.get("media"):
@@ -403,7 +407,7 @@ class OnlineSongs:
             cached = index.get(key)
             if cached:
                 try:
-                    path = self.runtime.media.blob(cached["audio"])
+                    path = self.runtime.live.media.blob(cached["audio"])
                     if (
                         await asyncio.to_thread(lambda: hashlib.sha256(path.read_bytes()).hexdigest())
                         != cached["audio"]

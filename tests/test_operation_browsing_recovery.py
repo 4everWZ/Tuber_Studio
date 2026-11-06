@@ -7,7 +7,7 @@ from copy import deepcopy
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
-from tuber_studio.browsing_models import BrowsingPolicy
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 
 
 async def test_generation_wait_checkpoint_resumes_original_material_and_stays_preview(browsing):
@@ -120,7 +120,7 @@ async def test_full_prepared_input_chunks_preserve_text_with_65536_output_reserv
     }
     original = deepcopy(material)
     counts, reservations = full_input_counter(browsing.runtime.llm, 57000)
-    chunks = await browsing._chunks(material, row)
+    chunks = await browsing.decisions._chunks(material, row)
     assert [source["id"] for chunk in chunks for source in chunk] == [str(index) for index in range(10)]
     assert [len(chunk) for chunk in chunks] == [3, 3, 3, 1]
     assert all(57000 + 500 * len(chunk) + 65536 <= 131072 * 95 // 100 for chunk in chunks)
@@ -148,7 +148,7 @@ async def test_fixed_role_and_output_capacity_checkpoint_does_not_retry_same_set
     assert len(counts) == count and len(browsing.tasks()) == 1
     # An explicit reread remains available after changing the actual capacity settings.
     config["decision_max_tokens"] = 8192
-    assert browsing._capacity_signature(config) != task["capacity_signature"]
+    assert browsing.decisions._capacity_signature(config) != task["capacity_signature"]
     browsing.store.set("browsing_policy", config)
     await finished(browsing, preview=True)
     assert len(counts) > count and 8192 in reservations

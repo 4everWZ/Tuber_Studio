@@ -7,8 +7,8 @@ import time
 import httpx
 import pytest
 
-from tuber_studio.browsing_models import BrowsingPolicy
 from tuber_studio.live.scene import LiveScene
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.video_vision import ApiVideoEvidenceProvider, VideoVisionConfig
 
 PNG = base64.b64decode(

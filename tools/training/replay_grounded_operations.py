@@ -5,14 +5,18 @@ import json
 from pathlib import Path
 
 import httpx
-
 from grounded_sft import read_jsonl
 from replay_grounded_endpoint import image_part
-from tuber_studio.browsing_inputs import ResponseDecisionInput
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION, response_schema
+
 from tuber_studio.context import ContextManager
 from tuber_studio.dynamics import Dynamics, dynamic_decision_messages
 from tuber_studio.operation_text import operation_output_diagnostics
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.models import (
+    RESPONSE_INSTRUCTION,
+    RESPONSE_REFERENCE_INSTRUCTION,
+    response_schema,
+)
 from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL, built_in_anchor
 from tuber_studio.providers import LlamaCppProvider
 

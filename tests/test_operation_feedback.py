@@ -8,9 +8,9 @@ import httpx
 import pytest
 
 from tuber_studio.api_providers import APIProvider
-from tuber_studio.browsing_models import BrowsingPolicy
 from tuber_studio.comments import Comments
 from tuber_studio.generation_meter import GenerationMeter
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 
 BV = "BV1d8pU6xEZX"

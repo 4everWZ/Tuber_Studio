@@ -18,9 +18,9 @@ from grounded_sft import (
     read_corpus,
 )
 
-from tuber_studio.browsing_inputs import ResponseDecisionInput
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.models import Reply
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.providers import build_messages, single_system_messages
 

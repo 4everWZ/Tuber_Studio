@@ -903,9 +903,8 @@ class Dynamics:
                 raise ValueError("此来源已尝试用于动态，请等待新的公开来源")
 
     def _live_busy(self):
-        return getattr(self.runtime, "state", None) in {"live", "paused"} and bool(
-            getattr(self.runtime, "queue", None) or getattr(self.runtime, "current_id", None)
-        )
+        live = getattr(self.runtime, "live", None)
+        return live is not None and live.state in {"live", "paused"} and live.busy
 
     @staticmethod
     def decision_schema(sources):

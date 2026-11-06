@@ -28,15 +28,16 @@ from pathlib import Path
 import httpx
 import psutil
 
-from tuber_studio.browsing import BrowsingService, read_round
-from tuber_studio.browsing_evidence import BrowsingEvidence
-from tuber_studio.browsing_models import BrowsingPolicy
-from tuber_studio.browsing_store import BrowsingRepository
 from tuber_studio.comments import Comments
 from tuber_studio.config import Settings
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
 from tuber_studio.media_cache import MediaCache
+from tuber_studio.operations.browsing.evidence import BrowsingEvidence
+from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.browsing.repository import BrowsingRepository
+from tuber_studio.operations.browsing.round_context import read_round
+from tuber_studio.operations.browsing.service import BrowsingService
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 from tuber_studio.runtime import Runtime
 from tuber_studio.store import Store
@@ -340,7 +341,7 @@ async def auxiliary(fixture, case):
             await asyncio.gather(*children, return_exceptions=True)
     if case == "live_priority":
         entered = asyncio.Event()
-        fixture.runtime.state, fixture.runtime.queue = "live", ["controlled-pending-live-event"]
+        fixture.runtime.live.state, fixture.runtime.live.queue = "live", ["controlled-pending-live-event"]
 
         async def offline():
             async with fixture.runtime.offline_generation():
@@ -353,8 +354,8 @@ async def auxiliary(fixture, case):
             await asyncio.wait_for(fixture.source.entered.wait(), 2)
             await asyncio.sleep(0.05)
             blocked = not entered.is_set()
-            fixture.runtime.queue.clear()
-            fixture.runtime.state = "stopped"
+            fixture.runtime.live.queue.clear()
+            fixture.runtime.live.state = "stopped"
             await asyncio.wait_for(entered.wait(), 2)
             elapsed = time.perf_counter() - started
             await preparation
@@ -368,8 +369,8 @@ async def auxiliary(fixture, case):
                 "lock_released": not fixture.runtime.generation_lock.locked(),
             }
         finally:
-            fixture.runtime.queue.clear()
-            fixture.runtime.state = "stopped"
+            fixture.runtime.live.queue.clear()
+            fixture.runtime.live.state = "stopped"
             offline_task.cancel()
             preparation.cancel()
             await asyncio.gather(offline_task, preparation, return_exceptions=True)

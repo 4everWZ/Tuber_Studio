@@ -8,12 +8,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastapi import Body, Depends, HTTPException, Request
+from fastapi import Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import Field
 
 from ..media_cache import CachePolicy
-from ..models import StrictModel
+from ..models import Event, StrictModel
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from .online_songs import SongRequestSettings
 
@@ -23,8 +23,8 @@ class ConfirmSong(StrictModel):
     number: int = Field(ge=1, le=20, strict=True)
 
 
-def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok):
-    media, store = runtime.media, runtime.store
+def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin):
+    media, store = runtime.live.media, runtime.store
 
     async def require_view(request: Request):
         if not (admin_ok(request) or overlay_ok(request)):
@@ -32,7 +32,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     def view():
         queued = []
-        for identity in runtime.queue:
+        for identity in runtime.live.queue:
             job = store.job(identity)
             event = store.event(job["event_id"])["payload"]
             snapshot = json.loads(job["media"]) if job.get("media") else None
@@ -49,14 +49,16 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
                     "text": event["text"],
                     "requester": event["display_name"],
                     "media": snapshot,
-                    "preparation": runtime.online_songs.preparation_status(identity) if is_online else None,
+                    "preparation": runtime.live.online_songs.preparation_status(identity)
+                    if is_online
+                    else None,
                 }
             )
         events = [
             json.loads(row["payload"])
             for row in store.all(
                 "SELECT payload FROM events WHERE session_id=? ORDER BY id DESC LIMIT 20",
-                (runtime.session_id,),
+                (runtime.live.session_id,),
             )
         ]
         character = runtime.character
@@ -66,11 +68,11 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
             "events": list(reversed(events)),
             "character": {key: character[key] for key in ("id", "name", "version")},
             "assets": settings.assets(character),
-            "playback": runtime.playback,
-            "state": runtime.state,
-            "muted": runtime.muted,
+            "playback": runtime.live.playback,
+            "state": runtime.live.state,
+            "muted": runtime.live.muted,
             "server_time": time.time(),
-            "overlay_connected": runtime.overlay is not None,
+            "overlay_connected": runtime.live.overlay is not None,
         }
 
     @app.get("/live")
@@ -172,46 +174,150 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.get("/api/live/online", dependencies=[Depends(require_admin)])
     async def online_status():
-        return runtime.online_songs.status()
+        return runtime.live.online_songs.status()
 
     @app.put("/api/live/online", dependencies=[Depends(require_admin)])
     async def configure_online(data: SongRequestSettings):
-        return await runtime.online_songs.configure(data.model_dump())
+        return await runtime.live.online_songs.configure(data.model_dump())
 
     @app.post("/api/live/online/restart", dependencies=[Depends(require_admin)])
     async def restart_online():
-        if not runtime.online_songs.config()["enabled"]:
+        if not runtime.live.online_songs.config()["enabled"]:
             raise ValueError("请先启用在线点歌")
-        return await runtime.online_songs.configure(runtime.online_songs.config(), restart=True)
+        return await runtime.live.online_songs.configure(runtime.live.online_songs.config(), restart=True)
 
     @app.get("/api/live/online/search", dependencies=[Depends(require_admin)])
     async def online_search(q: str):
         if not q.strip() or len(q) > 100:
             raise ValueError("请输入100字以内的歌名／歌手")
-        return {"songs": await runtime.online_songs.search(q)}
+        return {"songs": await runtime.live.online_songs.search(q)}
 
     @app.post("/api/live/online/confirm", dependencies=[Depends(require_admin)])
     async def confirm_online(data: ConfirmSong):
-        event, snapshot = runtime.online_songs.confirm(data.token, data.number)
+        event, snapshot = runtime.live.online_songs.confirm(data.token, data.number)
         return await runtime.submit(event, online_snapshot=snapshot)
 
     @app.put("/api/live/queue", dependencies=[Depends(require_admin)])
     async def reorder(data: list[str] = Body(...)):
-        if len(data) != len(set(data)) or set(data) != set(runtime.queue):
+        if len(data) != len(set(data)) or set(data) != set(runtime.live.queue):
             raise ValueError("队列已改变，请刷新后重排完整待播队列")
-        runtime.queue[:] = data
-        runtime.online_songs.sync()
+        runtime.live.queue[:] = data
+        runtime.live.online_songs.sync()
         return {"queue": data}
 
     @app.delete("/api/live/queue/{identity}", dependencies=[Depends(require_admin)])
     async def remove_queued(identity: str):
-        if identity not in runtime.queue:
+        if identity not in runtime.live.queue:
             raise ValueError("该任务已开始或不在队列中")
-        runtime.queue.remove(identity)
+        runtime.live.queue.remove(identity)
         job = store.job(identity)
         store.update_job(identity, status="cancelled", error="人工移除待播任务")
         store.execute(
             "UPDATE events SET status='cancelled',reason=? WHERE id=?", ("人工移除", job["event_id"])
         )
-        runtime.online_songs.sync()
+        runtime.live.online_songs.sync()
         return {"removed": identity}
+
+    @app.post("/api/live/mock-event", dependencies=[Depends(require_admin)])
+    async def mock_event(event: Event):
+        return await runtime.submit(event)
+
+    @app.post("/api/live/{action}", dependencies=[Depends(require_admin)])
+    async def control(action: str):
+        return await runtime.control(action)
+
+    @app.get("/api/events", dependencies=[Depends(require_admin)])
+    async def events(limit: int = Query(50, ge=1, le=200)):
+        rows = store.all("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))
+        for row in rows:
+            row["payload"] = json.loads(row["payload"])
+        return rows
+
+    @app.get("/api/jobs", dependencies=[Depends(require_admin)])
+    async def jobs(limit: int = Query(50, ge=1, le=200)):
+        rows = store.all("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,))
+        for row in rows:
+            row.pop("playback_token", None)
+        return rows
+
+    @app.get("/api/interactive-rules", dependencies=[Depends(require_admin)])
+    async def get_interactive_rules():
+        return runtime.live.interactive_rules.get_rules().model_dump()
+
+    @app.put("/api/interactive-rules", dependencies=[Depends(require_admin)])
+    async def put_interactive_rules(data: dict = Body(...)):
+        return runtime.live.interactive_rules.save_rules(data)
+
+    @app.get("/api/games/status", dependencies=[Depends(require_admin)])
+    async def get_games_status():
+        adapter = runtime.live.game_livestream.get_active_adapter()
+        return {
+            "active_game_id": runtime.live.game_livestream.active_game_id,
+            "is_active": runtime.live.game_livestream.is_active(),
+            "active_status": adapter.get_status(),
+            "available_games": [
+                {"id": k, "display_name": a.display_name}
+                for k, a in runtime.live.game_livestream.adapters.items()
+            ],
+        }
+
+    @app.post("/api/games/switch", dependencies=[Depends(require_admin)])
+    async def switch_game(data: dict = Body(...)):
+        target = data.get("game_id")
+        if not target:
+            raise ValueError("缺少 game_id")
+        return runtime.live.game_livestream.switch_game(target, reason="主播后台手动切换")
+
+    @app.post("/api/games/action", dependencies=[Depends(require_admin)])
+    async def execute_game_action(data: dict = Body(...)):
+        action = data.get("action")
+        if not action:
+            raise ValueError("缺少 action")
+        adapter = runtime.live.game_livestream.get_active_adapter()
+        return adapter.execute_action(action, data.get("params"))
+
+    @app.post("/api/games/step", dependencies=[Depends(require_admin)])
+    async def step_game():
+        return runtime.live.game_livestream.step_game()
+
+    @app.get("/api/draw-and-guess/status", dependencies=[Depends(require_admin)])
+    async def get_draw_and_guess_status():
+        return runtime.live.draw_and_guess.get_overlay_state()
+
+    @app.post("/api/draw-and-guess/start", dependencies=[Depends(require_admin)])
+    async def start_draw_and_guess(data: dict = Body(...)):
+        user = data.get("trigger_user", "主播")
+        duration = int(data.get("duration_sec", 60))
+        return runtime.live.draw_and_guess.start_round(trigger_user=user, duration_sec=duration)
+
+    @app.post("/api/draw-and-guess/stop", dependencies=[Depends(require_admin)])
+    async def stop_draw_and_guess():
+        return runtime.live.draw_and_guess.stop_round()
+
+    @app.get("/api/draw-and-guess/overlay")
+    async def draw_and_guess_overlay_data():
+        return runtime.live.draw_and_guess.get_overlay_state()
+
+    @app.websocket("/ws/overlay")
+    async def overlay_ws(websocket: WebSocket):
+        if not same_origin(websocket) or not overlay_ok(websocket):
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+        owner = await runtime.live.attach_overlay(websocket)
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                if len(raw) > 4096:
+                    await websocket.close(code=1009)
+                    break
+                try:
+                    data = json.loads(raw)
+                    if isinstance(data, dict):
+                        await runtime.live.acknowledge(owner, data)
+                except json.JSONDecodeError:
+                    pass
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            await runtime.live.detach_overlay(owner)

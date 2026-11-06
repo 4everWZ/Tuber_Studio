@@ -8,11 +8,11 @@ import httpx
 import pytest
 
 from tuber_studio.api_providers import APIProvider
-from tuber_studio.browsing_models import BrowsingPolicy, ResponseDecision
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.models import OperationReply
 from tuber_studio.operation_generation import generate_with_recovery
 from tuber_studio.operation_text import operation_output_diagnostics
+from tuber_studio.operations.browsing.models import BrowsingPolicy, ResponseDecision
 
 
 async def model_for(

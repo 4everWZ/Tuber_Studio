@@ -6,13 +6,13 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 
-from tuber_studio.browsing_inputs import (
+from tuber_studio.operations.browsing.inputs import (
     ContentDecisionInput,
     ResolvedContentDecision,
     bind_content_decision,
     format_content_input,
 )
-from tuber_studio.browsing_models import ContentDecision, content_decision_schema
+from tuber_studio.operations.browsing.models import ContentDecision, content_decision_schema
 from tuber_studio.subtitle_presentation import clean_stutter, deduplicate_subtitles, timestamp
 
 

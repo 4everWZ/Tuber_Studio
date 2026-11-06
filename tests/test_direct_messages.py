@@ -296,13 +296,13 @@ async def test_generation_waits_for_pending_live_work(messages):
     await runtime.generation_lock.acquire()
     identity = messages.enqueue("message", incoming(messages))
     await asyncio.sleep(0.02)
-    runtime.state = "paused"
-    runtime.queue.append("synthetic-pending-live")
+    runtime.live.state = "paused"
+    runtime.live.queue.append("synthetic-pending-live")
     runtime.generation_lock.release()
     await asyncio.sleep(0.04)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "queued"
-    runtime.queue.clear()
-    runtime.state = "stopped"
+    runtime.live.queue.clear()
+    runtime.live.state = "stopped"
     assert (await finished(messages, identity))["status"] == "pending_review"
 
 

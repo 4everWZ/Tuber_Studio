@@ -48,13 +48,14 @@ class MediaCache:
         ).model_dump()
 
     def music_ids(self):
+        live = self.runtime.live
         identities = {
             song[field]
-            for song in self.runtime.media.songs()
+            for song in live.media.songs()
             for field in ("audio", "vocal", "accompaniment")
             if song.get(field)
         }
-        active = ([self.runtime.current_id] if self.runtime.current_id else []) + self.runtime.queue
+        active = ([live.current_id] if live.current_id else []) + live.queue
         for identity in active:
             job = self.store.job(identity)
             if job and job.get("media"):
@@ -62,8 +63,7 @@ class MediaCache:
                 identities.update(
                     song[field] for field in ("audio", "vocal", "accompaniment") if song.get(field)
                 )
-        online = getattr(self.runtime, "online_songs", None)
-        for task in online.tasks.values() if online else ():
+        for task in live.online_songs.tasks.values():
             if task.done() and not task.cancelled() and task.exception() is None:
                 identities.add(task.result()["song"]["audio"])
         return identities
@@ -97,7 +97,9 @@ class MediaCache:
         if category == "browsing":
             pinned = self.runtime.browsing_repository.protected_materials()
         speech = set()
-        for identity in ([self.runtime.current_id] if self.runtime.current_id else []) + self.runtime.queue:
+        for identity in (
+            [self.runtime.live.current_id] if self.runtime.live.current_id else []
+        ) + self.runtime.live.queue:
             job = self.store.job(identity)
             if job and job.get("audio_ref"):
                 speech.add(job["audio_ref"].rsplit("/", 1)[-1])
@@ -190,7 +192,7 @@ class MediaCache:
     def release_uploads(self, song):
         for field in ("audio", "vocal", "accompaniment"):
             if song.get(field):
-                self.leases.pop(str(self.runtime.media.blob(song[field])), None)
+                self.leases.pop(str(self.runtime.live.media.blob(song[field])), None)
 
     def _prune_indexes(self, removed):
         identities = {path.stem for path in removed}

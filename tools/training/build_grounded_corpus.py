@@ -12,9 +12,9 @@ from pathlib import Path
 
 from grounded_sft import EXPECTED, read_corpus, read_jsonl
 
-from tuber_studio.browsing import BrowsingService
-from tuber_studio.browsing_inputs import ResponseDecisionInput, format_content_input
-from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
+from tuber_studio.operations.browsing.decisions import BrowsingDecisions
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput, format_content_input
+from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.persona import DAFEIYU_IDENTITY, GROUNDED_DAFEIYU_MODEL
 
 HERE = Path(__file__).parent
@@ -157,7 +157,7 @@ def video_rows(media, output):
             ]
             verdict = {"interest": "like", "worth_commenting": True, "reason": "specific_detail",
                        "coverage_required": "provided", "evidence_ids": ["e1", "e2"]}
-            instruction = ANCHOR + "\n\n" + BrowsingService._content_instruction()
+            instruction = ANCHOR + "\n\n" + BrowsingDecisions._content_instruction()
             yield sample(f"{identity}-classify", "video", split,
                          exchange(content_packet(question, material, "visual"), dump(verdict), instruction),
                          provenance)
@@ -191,7 +191,7 @@ def general_rows():
 
 
 def operations_rows():
-    decide = ANCHOR + "\n\n" + BrowsingService._content_instruction()
+    decide = ANCHOR + "\n\n" + BrowsingDecisions._content_instruction()
     respond = ANCHOR + "\n\n" + RESPONSE_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION
     for index, (title, caption, reply) in enumerate(OPERATIONS_SCENES):
         group = f"operation-{index:02d}"

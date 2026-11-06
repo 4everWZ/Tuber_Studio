@@ -27,12 +27,12 @@ async def test_music_import_and_online_share_one_budget_and_catalog_is_protected
     cache = runtime.cache
     data = FIXTURE.read_bytes()
     identity = hashlib.sha256(data).hexdigest()
-    path = runtime.media.directory / (identity + ".flac")
+    path = runtime.live.media.directory / (identity + ".flac")
     path.write_bytes(data)
-    song = await runtime.media.save_song(
+    song = await runtime.live.media.save_song(
         {"id": "own", "title": "自有素材", "audio": identity, "license_note": "generated"}
     )
-    spare = put(runtime.online_songs.directory, "f" * 64 + ".mp3", 1000)
+    spare = put(runtime.live.online_songs.directory, "f" * 64 + ".mp3", 1000)
     assert cache.status()["categories"]["music"]["bytes"] == len(data) + 1000
     result = await cache.clear("music")
     assert path.exists() and not spare.exists() and result["freed_bytes"] == 1000
@@ -54,7 +54,7 @@ async def test_speech_lru_budget_is_enforced_before_writing(runtime):
 
 
 async def test_cleanup_skips_uploads_active_audio_and_never_touches_models(runtime):
-    upload = put(runtime.media.directory, "a" * 64 + ".mp3", 100)
+    upload = put(runtime.live.media.directory, "a" * 64 + ".mp3", 100)
     runtime.cache.touch(upload, seconds=300)
     model = put(runtime.settings.runtime / "models", "a" * 64 + ".mp3", 200)
     temporary = put(runtime.settings.runtime / "singing/output/job", "work.wav", 300)
@@ -103,7 +103,7 @@ def test_music_lru_access_preserves_etag_and_conditional_ranges(settings):
 
 
 def test_status_streams_current_protection_without_reading_lru(runtime):
-    music = put(runtime.online_songs.directory, "c" * 64 + ".flac", 17)
+    music = put(runtime.live.online_songs.directory, "c" * 64 + ".flac", 17)
     put(runtime.settings.audio, "a" * 64 + ".wav", 11)
     put(runtime.settings.runtime / "singing/output/job/nested", "arbitrary.work", 31)
     runtime.cache.leases[str(music)] = time.monotonic() + 60
@@ -137,8 +137,8 @@ async def test_lru_uses_touch_after_status_not_just_modification_time(runtime):
 
 def test_only_temporary_pool_recurses_and_arbitrary_source_names_are_ignored(runtime):
     root = runtime.settings.runtime
-    put(runtime.online_songs.directory / "nested", "a" * 64 + ".wav", 13)
-    put(runtime.online_songs.directory, "source-original.wav", 19)
+    put(runtime.live.online_songs.directory / "nested", "a" * 64 + ".wav", 13)
+    put(runtime.live.online_songs.directory, "source-original.wav", 19)
     put(root / "singing/output/a/b/c", "source-original.wav", 23)
     assert runtime.cache.usage("music")["files"] == 0
     assert runtime.cache.usage("temporary")["bytes"] == 23
@@ -179,11 +179,11 @@ def test_directory_links_are_rejected_before_following_or_filtering(runtime, dir
     root = runtime.settings.runtime
     sentinel = put(root / "unmanaged", "a" * 64 + ".wav", 29)
     if placement == "root":
-        link = runtime.online_songs.directory
+        link = runtime.live.online_songs.directory
         link.rmdir()
         category = "music"
     elif placement == "unrecognized_entry":
-        link, category = runtime.online_songs.directory / "not-a-cache-file", "music"
+        link, category = runtime.live.online_songs.directory / "not-a-cache-file", "music"
     else:
         link, category = root / "singing/output/job/deep/alias", "temporary"
     directory_link(link, sentinel.parent)

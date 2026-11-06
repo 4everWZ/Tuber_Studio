@@ -116,7 +116,7 @@ async def child(count):
                 output.writeframes(struct.pack("<h", number))
             data = content.getvalue()
             filename = hashlib.sha256(data).hexdigest() + ".wav"
-            path = runtime.online_songs.directory / filename
+            path = runtime.live.online_songs.directory / filename
             path.write_bytes(data)
             rows.append((str(path.relative_to(directory)), float(number)))
         with store.db:
@@ -124,12 +124,12 @@ async def child(count):
         del rows
 
         def poll_pair():
-            return runtime.cache.status(), runtime.online_songs.status()
+            return runtime.cache.status(), runtime.live.online_songs.status()
 
         methods = {
             "MediaCache._files(music)": lambda: runtime.cache._files("music"),
             "MediaCache.status": runtime.cache.status,
-            "OnlineSongs.status": runtime.online_songs.status,
+            "OnlineSongs.status": runtime.live.online_songs.status,
             "cache+online_back_to_back": poll_pair,
         }
         measurements = {}
@@ -171,7 +171,7 @@ async def child(count):
             "access_rows": count,
             "file_bytes_each": 46,
             "measurements": measurements,
-            "component_status": runtime.online_songs.component.status(),
+            "component_status": runtime.live.online_songs.component.status(),
             "source_root": str(ROOT),
             "process_peak_rss_bytes": getattr(psutil.Process().memory_info(), "peak_wset", None),
             "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty",

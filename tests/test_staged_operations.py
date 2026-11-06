@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from tuber_studio.browsing import BrowsingService
-from tuber_studio.browsing_models import BrowsingPolicy
+from tuber_studio.operations.browsing.decisions import BrowsingDecisions
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.providers import LlamaCppProvider
 
 SPEC = importlib.util.spec_from_file_location(
@@ -104,7 +104,7 @@ async def experiment(runtime):
         store=runtime.store,
         repo=runtime.browsing_repository,
         _check_round=lambda row: None,
-        repetition_reason=BrowsingService.repetition_reason,
+        repetition_reason=BrowsingDecisions.repetition_reason,
     )
     row, _ = service.repo.create_round(
         "evaluation-only", runtime.character, BrowsingPolicy().model_dump(), 0, True

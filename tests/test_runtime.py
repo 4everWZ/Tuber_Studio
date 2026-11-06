@@ -28,7 +28,7 @@ class Overlay:
 async def prepare_play(runtime, store):
     await runtime.control("start")
     overlay = Overlay()
-    owner = await runtime.attach_overlay(overlay)
+    owner = await runtime.live.attach_overlay(overlay)
     submitted = await runtime.submit(Event(text="鲸鱼娘你好", platform_user_id="user-1"))
     await until(lambda: any(m["type"] == "play" for m in overlay.messages))
     message = next(m for m in overlay.messages if m["type"] == "play")
@@ -81,13 +81,13 @@ async def test_saved_speech_api_supplies_preview_and_live_then_restores_local(ru
         "response_format": "wav",
     }
     await runtime.control("stop")
-    await runtime.detach_overlay(owner)
+    await runtime.live.detach_overlay(owner)
 
     await apply_settings(runtime, {"tts": {"kind": "gpt_sovits"}, "clear_credentials": ["tts"]})
     await replace_transport()
     await runtime.control("start")
     overlay = Overlay()
-    await runtime.attach_overlay(overlay)
+    await runtime.live.attach_overlay(overlay)
     submitted = await runtime.submit(Event(text="欢迎回到本地语音", platform_user_id="user-2"))
     await until(
         lambda: (
@@ -110,37 +110,37 @@ async def test_text_work_mode_cancels_playback_before_releasing_tts(runtime, sto
 
     async def broker(request):
         assert request.url.path == "/mode"
-        assert runtime.state == "stopped"
+        assert runtime.live.state == "stopped"
         assert store.job(submitted["job_id"])["status"] == "cancelled"
         assert runtime.generation_lock.locked()
         return httpx.Response(200, json={"mode": "text", "active_provider": "llm2b"})
 
-    runtime.inference_client = httpx.AsyncClient(
+    runtime.inference.client = httpx.AsyncClient(
         transport=httpx.MockTransport(broker), base_url="http://broker"
     )
     state = await runtime.set_work_mode("text")
     assert state["mode"] == "text"
     assert runtime.settings.data["inference_broker"]["mode"] == "text"
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert not store.all("SELECT * FROM conversations")
 
 
 async def test_failed_live_residency_never_starts_the_live_worker(runtime):
-    runtime.inference_status = {"mode": "text", "active": "llm2b"}
+    runtime.inference.status = {"mode": "text", "active": "llm2b"}
 
     async def broker(request):
         if request.method == "POST":
             return httpx.Response(503, json={"detail": "resource unavailable"})
         return httpx.Response(200, json={"mode": "text", "active_provider": "llm2b", "state": "active"})
 
-    runtime.inference_client = httpx.AsyncClient(
+    runtime.inference.client = httpx.AsyncClient(
         transport=httpx.MockTransport(broker), base_url="http://broker"
     )
     with pytest.raises(ValueError, match="工作模式切换失败"):
         await runtime.control("start")
-    assert runtime.state == "stopped"
-    assert runtime.session_id is None
-    assert runtime.inference_status["mode"] == "text"
+    assert runtime.live.state == "stopped"
+    assert runtime.live.session_id is None
+    assert runtime.inference.status["mode"] == "text"
 
 
 async def test_live_start_waits_for_resident_pair_confirmation(runtime):
@@ -151,56 +151,56 @@ async def test_live_start_waits_for_resident_pair_confirmation(runtime):
         await release.wait()
         return httpx.Response(200, json={"mode": "live", "active_provider": "tts"})
 
-    runtime.inference_client = httpx.AsyncClient(
+    runtime.inference.client = httpx.AsyncClient(
         transport=httpx.MockTransport(broker), base_url="http://broker"
     )
     task = asyncio.create_task(runtime.control("start"))
     try:
         await entered.wait()
-        assert runtime.state == "stopped" and runtime.session_id is None
+        assert runtime.live.state == "stopped" and runtime.live.session_id is None
         release.set()
         await task
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-    assert runtime.state == "live"
-    assert runtime.inference_status["mode"] == "live"
+    assert runtime.live.state == "live"
+    assert runtime.inference.status["mode"] == "live"
 
 
 async def test_only_owner_started_then_ended_counts_as_delivered(runtime, store):
     owner, submitted, ack, overlay = await prepare_play(runtime, store)
     assert store.job(submitted["job_id"])["status"] == "ready_to_play"
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
-    assert not await runtime.acknowledge("other-owner", ack | {"type": "started"})
-    assert not await runtime.acknowledge(owner, ack | {"type": "started", "playback_token": "stale"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
+    assert not await runtime.live.acknowledge("other-owner", ack | {"type": "started"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "started", "playback_token": "stale"})
     assert store.all("SELECT * FROM conversations") == []
-    assert await runtime.acknowledge(owner, ack | {"type": "started"})
-    assert await runtime.acknowledge(owner, ack | {"type": "ended"})
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert await runtime.live.acknowledge(owner, ack | {"type": "started"})
+    assert await runtime.live.acknowledge(owner, ack | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert len(store.all("SELECT * FROM conversations")) == 1
     assert store.job(submitted["job_id"])["text"] == "你好呀，我是大肥鱼。今天也想和你说说话。"
     standby = Overlay()
-    assert await runtime.attach_overlay(standby) is None
+    assert await runtime.live.attach_overlay(standby) is None
     assert standby.messages[0]["type"] == "standby"
 
 
 @pytest.mark.parametrize("action", ["mute", "skip", "stop"])
 async def test_operator_interrupt_rejects_late_audio_completion(runtime, store, action):
     owner, submitted, ack, overlay = await prepare_play(runtime, store)
-    await runtime.acknowledge(owner, ack | {"type": "started"})
+    await runtime.live.acknowledge(owner, ack | {"type": "started"})
     await runtime.control(action)
     assert store.job(submitted["job_id"])["status"] == "cancelled"
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert store.all("SELECT * FROM conversations") == []
     assert any(m["type"] == "stop" for m in overlay.messages)
 
 
 async def test_overlay_disconnect_does_not_replay_or_remember(runtime, store):
     owner, submitted, ack, overlay = await prepare_play(runtime, store)
-    await runtime.detach_overlay(owner)
+    await runtime.live.detach_overlay(owner)
     assert store.job(submitted["job_id"])["status"] == "cancelled"
     new_overlay = Overlay()
-    await runtime.attach_overlay(new_overlay)
+    await runtime.live.attach_overlay(new_overlay)
     assert [m["type"] for m in new_overlay.messages] == ["hello"]
     assert store.all("SELECT * FROM conversations") == []
 
@@ -221,7 +221,7 @@ async def test_queue_dedup_expiry_and_identity_are_persistent(runtime, store):
     b = await runtime.submit(Event(platform_user_id="u2", display_name="same", text="第二位观众"))
     await runtime.submit(Event(text="第三位匿名观众"))
     assert (await runtime.submit(Event(text="队列满了")))["status"] == "dropped"
-    assert len(runtime.queue) == 3
+    assert len(runtime.live.queue) == 3
     expired = Event(text="已经过期", timestamp=datetime.now(UTC) - timedelta(seconds=120))
     assert (await runtime.submit(expired))["status"] == "expired"
     assert store.event(a["id"])["user_id"] != store.event(b["id"])["user_id"]
@@ -240,7 +240,7 @@ async def test_character_clone_versions_and_switch_cancel_old_audio(runtime, sto
     await runtime.activate("my_oc", 1)
     assert runtime.character["name"] == "新OC"
     assert store.job(submitted["job_id"])["status"] == "cancelled"
-    assert not await runtime.acknowledge(owner, ack | {"type": "ended"})
+    assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})
     assert runtime.settings.assets(runtime.character)[0]["character_id"] == "my_oc"
     assert store.character(original["id"])["core"] == original["core"]
 

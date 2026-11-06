@@ -5,8 +5,8 @@ import re
 import time
 from uuid import uuid4
 
-from .bilibili_account import PROFILE_CACHE_KEY, signature
-from .providers import public_error
+from ...bilibili_account import PROFILE_CACHE_KEY, signature
+from ...providers import public_error
 
 ACTIVE_TASKS = ("discovered", "claimed", "preparing", "evidence_ready")
 

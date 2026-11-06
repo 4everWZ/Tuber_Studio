@@ -21,7 +21,7 @@ SPEC.loader.exec_module(semantics)
 
 @pytest.mark.asyncio
 async def test_reason_label_variant_changes_only_enum_literal_and_keeps_private_model_choice(monkeypatch):
-    from tuber_studio.browsing_models import response_schema
+    from tuber_studio.operations.browsing.models import response_schema
 
     provider = semantics.LlamaCppProvider({"base_url": "http://127.0.0.1:19030"})
     original = response_schema(["11:0"], maximum=60)

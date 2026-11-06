@@ -7,8 +7,8 @@ from pathlib import Path
 
 from grounded_sft import read_jsonl
 
-from tuber_studio.browsing_inputs import ResponseDecisionInput
-from tuber_studio.browsing_models import RESPONSE_REFERENCE_INSTRUCTION
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.models import RESPONSE_REFERENCE_INSTRUCTION
 
 
 def main():

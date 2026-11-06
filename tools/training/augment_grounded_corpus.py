@@ -8,8 +8,8 @@ from pathlib import Path
 from build_grounded_corpus import ANCHOR, dump, exchange, sample, source
 from grounded_sft import EXPECTED, FOCUSED_EXPECTED, read_corpus
 
-from tuber_studio.browsing_inputs import ResponseDecisionInput
-from tuber_studio.browsing_models import RESPONSE_REFERENCE_INSTRUCTION
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.models import RESPONSE_REFERENCE_INSTRUCTION
 
 # Original subtitles authored for these exercises. These state facts about the
 # exercise or edit that cannot be read off the two licensed storyboard frames.

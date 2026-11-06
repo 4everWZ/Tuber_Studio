@@ -199,7 +199,11 @@ def _update_model_profiles(data, previous_llm):
 
 async def apply_settings(runtime, body):
     settings = runtime.settings
-    if runtime.state != "stopped" or runtime.generation_lock.locked() or runtime.mode_lock.locked():
+    if (
+        runtime.live.state != "stopped"
+        or runtime.generation_lock.locked()
+        or runtime.inference.mode_lock.locked()
+    ):
         raise ProviderConfigurationError("请先停止直播并等待当前生成完成，再修改Provider")
     data, keys = proposal(settings, body)
     model_update = not _voice_only(body)
@@ -235,15 +239,15 @@ async def apply_settings(runtime, body):
     previous_file = previous_private = snapshot = None
     broker_attempted = model_attempted = files_attempted = False
     attempted_window = None
-    async with runtime.mode_lock, runtime.generation_lock:
+    async with runtime.inference.mode_lock, runtime.generation_lock:
         try:
             previous_file = settings.path.read_bytes() if settings.path.exists() else None
             previous_private = (
                 settings.credentials_path.read_bytes() if settings.credentials_path.exists() else None
             )
-            if model_update and runtime.inference_client:
+            if model_update and runtime.inference.client:
                 try:
-                    snapshot = await _broker_snapshot(runtime.inference_client, old_window)
+                    snapshot = await _broker_snapshot(runtime.inference.client, old_window)
                 except (httpx.ConnectError, httpx.ConnectTimeout):
                     snapshot = None
                 if snapshot is not None:
@@ -259,10 +263,10 @@ async def apply_settings(runtime, body):
                                 model_attempted = True
                             else:
                                 attempted_window = window
-                            response = await runtime.inference_client.post(path, json=payload)
+                            response = await runtime.inference.client.post(path, json=payload)
                             response.raise_for_status()
                     else:
-                        response = await runtime.inference_client.post("/idle", json={})
+                        response = await runtime.inference.client.post("/idle", json={})
                         response.raise_for_status()
             if model_update and data["llm"]["kind"] == "llama_cpp":
                 try:
@@ -286,7 +290,7 @@ async def apply_settings(runtime, body):
                 confirmed = True
                 if broker_attempted:
                     confirmed = await _restore_broker(
-                        runtime.inference_client,
+                        runtime.inference.client,
                         snapshot,
                         attempted_window=attempted_window,
                         model_attempted=model_attempted,
@@ -324,8 +328,8 @@ async def apply_settings(runtime, body):
             runtime.error = None
             broker_conf = data.get("inference_broker", {})
             if broker_conf.get("enabled"):
-                old_inference = runtime.inference_client
-                runtime.inference_client = httpx.AsyncClient(
+                old_inference = runtime.inference.client
+                runtime.inference.client = httpx.AsyncClient(
                     base_url=broker_conf.get("base_url", "http://127.0.0.1:9012"),
                     headers={"X-Tuber-Inference-Key": settings.inference_token},
                     timeout=httpx.Timeout(400, connect=5),
@@ -333,9 +337,9 @@ async def apply_settings(runtime, body):
                 )
                 if old_inference is not None:
                     old_clients.append(old_inference)
-            elif runtime.inference_client is not None:
-                old_clients.append(runtime.inference_client)
-                runtime.inference_client = None
+            elif runtime.inference.client is not None:
+                old_clients.append(runtime.inference.client)
+                runtime.inference.client = None
         await asyncio.gather(
             *(client.close() if hasattr(client, "close") else client.aclose() for client in old_clients),
             return_exceptions=True,

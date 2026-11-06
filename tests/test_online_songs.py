@@ -53,7 +53,7 @@ class Component:
 
 
 async def enabled(runtime, monkeypatch, *, fmt="flac"):
-    online = runtime.online_songs
+    online = runtime.live.online_songs
     online.component = Component()
 
     async def download(url, path, maximum):
@@ -109,16 +109,16 @@ async def test_online_loop_uses_actual_player_and_cache_without_tts(runtime, mon
         async def send_json(self, message):
             messages.append(message)
 
-    owner = await runtime.attach_overlay(Player())
+    owner = await runtime.live.attach_overlay(Player())
     await runtime.control("resume")
     await wait_for(lambda: any(message["type"] == "play" for message in messages))
     play = next(message for message in messages if message["type"] == "play")
     assert play["audio_ref"].startswith("/media/music/")
     assert play["media"]["song"]["source"] == "bodian"
     ack = {"job_id": result["job_id"], "playback_token": play["playback_token"]}
-    assert await runtime.acknowledge(owner, {**ack, "type": "started"})
-    assert await runtime.acknowledge(owner, {**ack, "type": "ended"})
-    await wait_for(lambda: runtime.current_id is None)
+    assert await runtime.live.acknowledge(owner, {**ack, "type": "started"})
+    assert await runtime.live.acknowledge(owner, {**ack, "type": "ended"})
+    await wait_for(lambda: runtime.live.current_id is None)
     assert runtime.store.job(result["job_id"])["status"] == "completed"
     assert not runtime.store.all("SELECT * FROM conversations")
     count = len(online.component.calls)
@@ -147,7 +147,7 @@ async def test_disable_cancels_online_preparation_and_queue_preserves_chat(runti
     await online.configure({**online.config(), "enabled": False})
     assert cancelled.is_set() and not list(online.directory.glob(".download-*"))
     assert not online.tasks and not online.component.running
-    assert runtime.queue == [chat["job_id"]] and runtime.state == "paused"
+    assert runtime.live.queue == [chat["job_id"]] and runtime.live.state == "paused"
     assert runtime.store.job(first["job_id"])["status"] == "cancelled"
     assert online.config()["license_note"] == "自有生成测试波形"
     messages = []
@@ -156,15 +156,15 @@ async def test_disable_cancels_online_preparation_and_queue_preserves_chat(runti
         async def send_json(self, message):
             messages.append(message)
 
-    owner = await runtime.attach_overlay(Player())
+    owner = await runtime.live.attach_overlay(Player())
     await runtime.control("resume")
     await wait_for(lambda: any(message["type"] == "play" for message in messages))
     play = next(message for message in messages if message["type"] == "play")
     assert play["job_id"] == chat["job_id"] and play["media"] is None
     assert play["audio_ref"].endswith(".wav")
     ack = {"job_id": chat["job_id"], "playback_token": play["playback_token"]}
-    assert await runtime.acknowledge(owner, {**ack, "type": "started"})
-    assert await runtime.acknowledge(owner, {**ack, "type": "ended"})
+    assert await runtime.live.acknowledge(owner, {**ack, "type": "started"})
+    assert await runtime.live.acknowledge(owner, {**ack, "type": "ended"})
     assert runtime.store.job(chat["job_id"])["status"] == "completed"
 
 
@@ -177,12 +177,12 @@ async def test_disable_stops_current_online_playback_without_stopping_session(ru
         async def send_json(self, message):
             messages.append(message)
 
-    await runtime.attach_overlay(Player())
+    await runtime.live.attach_overlay(Player())
     await runtime.control("resume")
-    await wait_for(lambda: runtime.playback is not None)
+    await wait_for(lambda: runtime.live.playback is not None)
     await online.configure({**online.config(), "enabled": False})
     assert runtime.store.job(result["job_id"])["status"] == "cancelled"
-    assert runtime.playback is None and runtime.state == "live"
+    assert runtime.live.playback is None and runtime.live.state == "live"
     assert any(message["type"] == "stop" and message["job_id"] == result["job_id"] for message in messages)
     assert not online.tasks and not online.component.running
 
@@ -195,7 +195,7 @@ async def test_only_current_and_next_song_prepare_and_reorder_cancels_old_work(r
         result = await runtime.submit(Event(type="song", metadata={"online_id": identity}))
         jobs.append(result["job_id"])
     assert set(online.tasks) == set(jobs[:2])
-    runtime.queue[:] = list(reversed(jobs))
+    runtime.live.queue[:] = list(reversed(jobs))
     online.sync()
     assert set(online.tasks) == {jobs[2], jobs[1]}
 
@@ -205,10 +205,10 @@ async def test_ambiguous_chat_confirmation_is_scoped_to_viewer_and_room(runtime,
     online.component.rows = [SONG, {**SONG, "id": "456", "artist": "另一歌手", "artists": ["另一歌手"]}]
     request = Event(type="chat", text="点歌 测试歌", platform_user_id="viewer", room_id="a")
     result = await runtime.submit(request)
-    assert result["status"] == "needs_confirmation" and not runtime.queue
+    assert result["status"] == "needs_confirmation" and not runtime.live.queue
     assert len(online.status()["candidates"]) == 1
     outsider = await runtime.submit(Event(type="chat", text="1", platform_user_id="viewer", room_id="b"))
-    assert outsider["status"] == "filtered" and not runtime.queue
+    assert outsider["status"] == "filtered" and not runtime.live.queue
     selected = await runtime.submit(Event(type="chat", text="1", platform_user_id="viewer", room_id="a"))
     assert selected["status"] == "queued"
     assert json.loads(runtime.store.job(selected["job_id"])["media"])["song"]["id"] == "online_123"
@@ -231,7 +231,7 @@ async def test_disable_during_search_cannot_enqueue_late_result(runtime, monkeyp
     await entered.wait()
     await online.configure({**online.config(), "enabled": False})
     release.set()
-    assert (await task)["status"] == "filtered" and not runtime.queue
+    assert (await task)["status"] == "filtered" and not runtime.live.queue
 
 
 @pytest.mark.parametrize("change", ["session", "duplicate"])
@@ -256,16 +256,16 @@ async def test_search_admission_survives_session_changes_and_concurrent_duplicat
         await runtime.control("stop")
         await runtime.control("start")
         release.set()
-        assert (await first)["status"] == "filtered" and not runtime.queue
+        assert (await first)["status"] == "filtered" and not runtime.live.queue
         assert not online.choices
     else:
         second = asyncio.create_task(runtime.submit(event))
         await asyncio.sleep(0)
         release.set()
         assert [result["status"] for result in await asyncio.gather(first, second)] == ["queued", "duplicate"]
-        assert len(runtime.queue) == 1
+        assert len(runtime.live.queue) == 1
         assert [method for method, _ in online.component.calls].count("search") == 1
-    assert not runtime.submissions
+    assert not runtime.live.submissions
 
 
 def test_quality_validation_rejects_wrong_version_duration_and_lower_bitrate():

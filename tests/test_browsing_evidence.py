@@ -10,8 +10,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from tuber_studio.browsing_evidence import BrowsingEvidence, EvidenceUnavailable
-from tuber_studio.browsing_models import BrowsingPolicy
+from tuber_studio.operations.browsing.evidence import BrowsingEvidence, EvidenceUnavailable
+from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter, PlatformReadError
 
 BV = "BV1d8pU6xEZX"
