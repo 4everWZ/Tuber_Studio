@@ -15,9 +15,10 @@ from grounded_sft import EXPECTED, read_corpus, read_jsonl
 from tuber_studio.browsing import BrowsingService
 from tuber_studio.browsing_inputs import ResponseDecisionInput, format_content_input
 from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
+from tuber_studio.persona import DAFEIYU_IDENTITY, GROUNDED_DAFEIYU_MODEL
 
 HERE = Path(__file__).parent
-ANCHOR = "你是大肥鱼。"
+ANCHOR = DAFEIYU_IDENTITY
 OPERATIONS_SCENES = (
     ("烤面包", "吐司先回温，随后烤到边缘微脆。", "边缘那一圈最容易先脆，切开听一声就知道值不值啦。"),
     ("租棚拍照", "摄影师在背光的一侧用白布补光。", "白布一抬，脸上的阴影就软了。这个办法我也想在小屋里试试。"),
@@ -35,6 +36,20 @@ OPERATIONS_SCENES = (
 
 def dump(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def historical_grounded_character(character):
+    """Pin the historical short input unless the experiment supplied a bound prompt."""
+    bound = (character.get("fine_tuned_model") or "").strip().lower()
+    if (
+        character.get("persona_type") == "fine_tuned"
+        and bound == GROUNDED_DAFEIYU_MODEL.lower()
+        and (character.get("compact_system_prompt") or "").strip()
+    ):
+        return character
+    return character | {
+        "persona_type": "fine_tuned", "fine_tuned_model": GROUNDED_DAFEIYU_MODEL, "compact_system_prompt": ANCHOR,
+    }
 
 
 def exchange(question, answer, instruction=ANCHOR):

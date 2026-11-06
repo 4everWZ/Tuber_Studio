@@ -900,7 +900,7 @@ class BrowsingService:
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = self.store.character(row["character_id"], row["character_version"])
-        anchor = built_in_anchor(character, self.settings.data)
+        anchor = built_in_anchor(character, self.settings.data, for_response=schema is ResponseDecision)
         if not anchor:
             character = operation_character(character)
         view = (
@@ -1356,7 +1356,7 @@ class BrowsingService:
         character = self.store.character(row["character_id"], row["character_version"])
         view = (
             None
-            if built_in_anchor(character, self.settings.data)
+            if built_in_anchor(character, self.settings.data, for_response=False)
             else classification_view(self.settings.root, operation_character(character))
         )
         return ContentDecisionInput(

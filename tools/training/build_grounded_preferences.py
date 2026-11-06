@@ -3,7 +3,9 @@ import argparse
 import json
 from pathlib import Path
 
+from build_grounded_corpus import historical_grounded_character
 from grounded_sft import read_jsonl
+
 from tuber_studio.browsing_inputs import ResponseDecisionInput
 from tuber_studio.browsing_models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.context import ContextManager
@@ -114,6 +116,7 @@ def main():
     args = parser.parse_args()
     rows = {r["id"]: r for r in read_jsonl(args.corpus / "train.jsonl")}
     character = next(r for r in json.loads(args.characters.read_text(encoding="utf-8")) if r["id"] == "whale")
+    character = historical_grounded_character(character)
     prefs = [*authored(character), *video_preferences(rows)]
     retention = [rows[key] for key in RETENTION]
     if len(prefs) != 96 or len(retention) != 32 or len({r["id"] for r in prefs}) != len(prefs):

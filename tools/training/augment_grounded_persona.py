@@ -5,11 +5,17 @@ import json
 import shutil
 from pathlib import Path
 
-from build_grounded_corpus import ANCHOR, dump, exchange, sample, source
+from build_grounded_corpus import ANCHOR, dump, exchange, historical_grounded_character, sample, source
 from draft_oc_dialogues import CHATANIME_SOURCE
 from grounded_sft import (
-    ANIME_EXPECTED, DEEPTHINK_EXPECTED, FOCUSED_EXPECTED, PAIRED_CURATED_EXPECTED, PAIRED_EXPECTED,
-    PAIRED_TEACHER_EXPECTED, PERSONA_EXPECTED, read_corpus,
+    ANIME_EXPECTED,
+    DEEPTHINK_EXPECTED,
+    FOCUSED_EXPECTED,
+    PAIRED_CURATED_EXPECTED,
+    PAIRED_EXPECTED,
+    PAIRED_TEACHER_EXPECTED,
+    PERSONA_EXPECTED,
+    read_corpus,
 )
 
 from tuber_studio.browsing_inputs import ResponseDecisionInput
@@ -77,6 +83,7 @@ def expanded_chatanime_dialogues():
 
 
 def live_rows(character, identity, split, provenance, turns):
+    character = historical_grounded_character(character)
     settings = {"llm": {"kind": "llama_cpp", "model": GROUNDED_DAFEIYU_MODEL}}
     history = []
     for index, (question, answer, emotion) in enumerate(turns, 1):

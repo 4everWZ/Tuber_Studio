@@ -50,7 +50,7 @@ def single_system_messages(messages):
 
 
 def build_messages(character, event, relationship, mode="live", *, settings=None):
-    anchor = built_in_anchor(character, settings)
+    anchor = built_in_anchor(character, settings, for_response=mode != "comment_channel_decision")
     if not anchor and mode != "live":
         character = operation_character(character)
 

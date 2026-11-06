@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 
 import httpx
-
+from build_grounded_corpus import historical_grounded_character
 from grounded_sft import read_jsonl
+
 from tuber_studio.context import ContextManager
 from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.providers import LlamaCppProvider, single_system_messages
@@ -66,6 +67,7 @@ async def replay(args):
     specs = {row["pair"]: row for row in read_jsonl(args.interventions)}
     baseline = {row["id"]: row["replies"][0]["spoken_text"] for row in read_jsonl(args.history)}
     character = next(row for row in json.loads(args.characters.read_text(encoding="utf-8")) if row["id"] == "whale")
+    character = historical_grounded_character(character)
     config = {
         "base_url": args.endpoint, "model": GROUNDED_DAFEIYU_MODEL, "kind": "llama_cpp", "context_tokens": 4096,
         "temperature": 0.0, "max_tokens": 180, "seed": 42, "enable_thinking": False,
