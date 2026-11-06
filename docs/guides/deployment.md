@@ -17,12 +17,14 @@ B站凭证在“设置 → B站账号”保存SESSDATA和CSRF／bili_jct，留�
 
 ## 提交前检查
 
-在准备提交的开发工作树中，用锁定的开发环境运行与 CI 相同的代码检查入口：
+在准备提交的开发工作树中，用锁定的开发环境运行代码检查入口：
 
     uv sync --locked --group dev --python 3.12
     uv run --locked python tools/ci/check_style.py
 
 该命令只检查，不改文件；每次都会分别报告 lint 和 format 的结果，任一失败就返回非零退出码。仅看到 `ruff check` 成功不代表格式检查通过。格式问题可运行 `uv run --locked ruff format src tests tools` 修复，检查差异后重新运行上述入口；修改之后再提交，不要把修改前的检查结果当作当前提交已通过。
+
+CI 使用同一入口的 `--format-advisory` 模式：格式差异保留日志和警告，但不阻塞后续测试、打包；lint 错误、检查工具执行错误及测试失败仍然阻塞。上面的本地默认命令保留严格检查，不会自动修改代码。
 
 代码检查不替代功能测试。运行受改动影响的 pytest 测试，并以对应 PR 提交的 Linux CPU CI 结果确认完整套件与打包结果。若本地因 NumPy、ONNX 或 PyYAML 等可选依赖缺失而跳过测试，应如实报告；不要因此修改 Jetson 的生产依赖。
 
