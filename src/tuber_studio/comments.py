@@ -135,8 +135,8 @@ class Comments:
             raise ValueError("开关必须为布尔值")
         for field, minimum, maximum in (
             ("browse_interval_seconds", 60, 86400),
-            ("max_replies_per_hour", 1, 30),
-            ("max_replies_per_day", 1, 200),
+            ("max_replies_per_hour", 0, 30),
+            ("max_replies_per_day", 0, 200),
         ):
             if not isinstance(data[field], int) or not minimum <= data[field] <= maximum:
                 raise ValueError(f"{field} 必须在 {minimum} 到 {maximum} 之间")
@@ -594,7 +594,7 @@ class Comments:
         while True:
             while self._live_pending():
                 await asyncio.sleep(0.2)
-            async with operation_generation_context(self.runtime, self.settings):
+            async with operation_generation_context(self.runtime, self.settings, lane="reply"):
                 if self._live_pending():
                     continue
                 # Recheck after waiting for the GPU: another request may already
@@ -979,6 +979,8 @@ class Comments:
                 (3600, policy["max_replies_per_hour"]),
                 (86400, policy["max_replies_per_day"]),
             ):
+                if not cap:
+                    continue
                 count = self.store.one(
                     "SELECT COUNT(*) AS n FROM publish_attempts WHERE started_at>?", (time.time() - seconds,)
                 )["n"]
@@ -1176,6 +1178,8 @@ class Comments:
         browsing = getattr(self.runtime, "browsing", None)
         if browsing is None:
             raise ValueError("字幕证据浏览服务未初始化，不能自动回复视频")
+        if browsing.discovery.enabled or self.operations.policy()["enabled"]:
+            return {"status": "managed_by_operations"}
         result = await browsing.run(automatic=True)
         self.last_browse_at = time.time()
         return result

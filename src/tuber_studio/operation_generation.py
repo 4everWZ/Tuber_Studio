@@ -110,6 +110,13 @@ async def generate_with_recovery(
             raise GenerationFeedback(str(error), original_output=raw if raw is not None else value) from None
 
     run_initial = row is None or row["state"] in {"completed", "abandoned"}
+    resume_initial = bool(
+        row
+        and row["state"] == "checkpoint"
+        and row["feedback"].get("kind") == "round_budget"
+        and row["feedback"].get("initial")
+        and parent_round_id != row["parent_round_id"]
+    )
     if row is None:
         row = coordinator.begin(
             channel,
@@ -213,7 +220,7 @@ async def generate_with_recovery(
             revise=revise,
             guard=guard,
             read_more=readers,
-            initial=initial if run_initial else None,
+            initial=initial if run_initial or resume_initial else None,
         )
     except Exception as error:
         error.continuation = coordinator.dto(channel, identity)

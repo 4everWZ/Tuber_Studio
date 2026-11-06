@@ -37,6 +37,15 @@ class BrowsingPublication:
         else:
             source = str(target.get("parent", "0"))
         source_key = canonical_intent("bilibili", resource, source, row["character_id"])
+        if kind == "reply_public" and (
+            target.get("bvid")
+            and self.browsing.repo.video_reply_limit_reached(row, target["bvid"])
+            or self.browsing.store.one(
+                "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                (row["account_id"], row["character_id"], source_key),
+            )
+        ):
+            return None
         identity, now = str(uuid4()), time.time()
         independent = bool(row["config"].get("discovery_publish"))
         if independent:

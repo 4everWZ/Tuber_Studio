@@ -39,8 +39,8 @@ class MessagePolicy(StrictModel):
     allow_comment_handoff: bool = True
     channel_max_tokens: int = Field(default=2048, ge=256, le=65536)
     poll_interval_seconds: int = Field(default=60, ge=20, le=86400)
-    max_per_hour: int = Field(default=5, ge=1, le=30)
-    max_per_day: int = Field(default=20, ge=1, le=200)
+    max_per_hour: int = Field(default=5, ge=0, le=30)
+    max_per_day: int = Field(default=20, ge=0, le=200)
     recipient_cooldown_seconds: int = Field(default=120, ge=10, le=86400)
 
 
@@ -251,7 +251,7 @@ class DirectMessages:
             own_uid, users = await adapter.sessions()
             require_current_account()
             self.active_account_id, self.active_credential = str(own_uid), credential
-            count, latest, errors = 0, {}, []
+            count, errors = 0, []
             for uid in users[:20]:
                 require_current_account()
                 if not self.policy()["enabled"] or (automatic and not self.policy()["auto_poll"]):
@@ -278,7 +278,7 @@ class DirectMessages:
                         content = json.loads(content) if isinstance(content, str) else content
                         if not re.fullmatch(r"[1-9][0-9]{0,19}", str(row.get("msg_key", ""))):
                             raise ValueError("平台私信缺少有效消息ID")
-                        identity, fresh = self.ingest(
+                        _, fresh = self.ingest(
                             {
                                 "message_id": str(row["msg_key"]),
                                 "platform_user_id": str(uid),
@@ -289,26 +289,46 @@ class DirectMessages:
                             }
                         )
                         count += int(fresh)
-                        if (
-                            fresh
-                            and row["timestamp"]
-                            >= max(
-                                int(self.enabled_at),
-                                self.started_at,
-                                int(self.operations.policy()["enabled_at"] or 0),
-                            )
-                            and row["timestamp"] >= time.time() - 86400
-                        ):
-                            latest[uid] = identity
                 except (ValueError, KeyError, TypeError) as error:
                     errors.append(f"UID {uid}：{public_error(error)}")
             require_current_account()
             if automatic and self.policy()["auto_poll"]:
-                for identity in latest.values():
-                    self.enqueue("message", identity, automatic=True)
+                self._queue_newest_messages(str(own_uid))
             self.last_sync = time.time()
             self.error = "；".join(errors)[:500] or None
             return {"imported": count, "errors": errors}
+
+    def _queue_newest_messages(self, account_id):
+        cutoff = max(
+            int(self.enabled_at),
+            self.started_at,
+            int(self.operations.policy()["enabled_at"] or 0),
+            time.time() - 86400,
+        )
+        slots = self.queue.maxsize - self.queue.qsize()
+        if not slots:
+            return
+        candidates = self.store.all(
+            """WITH newest AS (
+                   SELECT id,platform,platform_user_id,sent_at,
+                          ROW_NUMBER() OVER (PARTITION BY platform,platform_user_id ORDER BY sent_at DESC,id DESC) AS rank
+                   FROM dm_inbox WHERE account_id=? AND character_id=? AND sent_at>=?
+               ) SELECT id FROM newest n WHERE rank=1 AND NOT EXISTS (
+                   SELECT 1 FROM dm_drafts d WHERE d.account_id=? AND d.character_id=?
+                   AND d.platform=n.platform AND d.platform_user_id=n.platform_user_id
+                   AND ((d.source_kind='message' AND d.source_id=n.id) OR d.status IN ('queued','generating'))
+               ) ORDER BY sent_at DESC,id DESC LIMIT ?""",
+            (
+                account_id,
+                self.runtime.character["id"],
+                cutoff,
+                account_id,
+                self.runtime.character["id"],
+                slots,
+            ),
+        )
+        for candidate in candidates:
+            self.enqueue("message", candidate["id"], automatic=True)
 
     def _source(self, kind, identity, character):
         table = "dm_inbox" if kind == "message" else "comments" if kind == "comment" else None
@@ -587,7 +607,7 @@ class DirectMessages:
                 )
         if draft.get("video_evidence") and browsing and hasattr(browsing, "validate_private_source"):
             await browsing.validate_private_source(draft)
-        async with self.runtime.offline_generation():
+        async with self.runtime.offline_generation("dm"):
             if not self.injected and (
                 self.adapter is not identity_adapter or self.comments.credentials != credential
             ):
@@ -1026,7 +1046,8 @@ class DirectMessages:
                 raise ValueError("历史来信不自动追发，保留草稿")
             for seconds, maximum in ((3600, policy["max_per_hour"]), (86400, policy["max_per_day"])):
                 if (
-                    self.store.one(
+                    maximum
+                    and self.store.one(
                         "SELECT COUNT(*) AS n FROM dm_attempts WHERE started_at>?", (time.time() - seconds,)
                     )["n"]
                     >= maximum

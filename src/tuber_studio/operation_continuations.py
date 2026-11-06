@@ -20,6 +20,7 @@ from pydantic import Field, ValidationError
 
 from .compaction import ContextWindowExceeded
 from .generation_meter import (
+    BrowsingBudgetDeferred,
     GenerationBudgetExceeded,
     GenerationMeter,
     current_meter,
@@ -518,7 +519,13 @@ class ContinuationCoordinator:
                     self._state(
                         identity,
                         "checkpoint",
-                        feedback={"kind": "capacity", "message": str(error)},
+                        feedback={
+                            "kind": "round_budget",
+                            "initial": True,
+                            "message": str(error),
+                        }
+                        if isinstance(error, BrowsingBudgetDeferred)
+                        else {"kind": "capacity", "message": str(error)},
                         owner=owner,
                     )
                     return ContinuationResult("checkpoint", continuation_id=identity)
@@ -618,7 +625,12 @@ class ContinuationCoordinator:
                     self._state(
                         identity,
                         "checkpoint",
-                        feedback={"kind": "capacity", "message": str(error)},
+                        feedback={
+                            "kind": "round_budget"
+                            if isinstance(error, BrowsingBudgetDeferred)
+                            else "capacity",
+                            "message": str(error),
+                        },
                         owner=owner,
                     )
                     return ContinuationResult("checkpoint", continuation_id=identity)

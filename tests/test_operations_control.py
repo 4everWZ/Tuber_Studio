@@ -82,6 +82,23 @@ def test_quota_is_atomic_across_real_sqlite_connections(store, settings):
         second_store.close()
 
 
+def test_zero_account_and_channel_caps_do_not_block_writes(store):
+    control, character = OperationsControl(store), store.character()
+    control.configure({"max_per_hour": 0, "max_per_day": 0, "recipient_cooldown_seconds": 0})
+    for number in range(22):
+        token = control.reserve(
+            "900",
+            character,
+            intent(character, number),
+            "comments",
+            recipient="same-recipient",
+            limits={"max_per_hour": 0, "max_per_day": 0},
+        )
+        control.finish(token, "published")
+    with pytest.raises(ValueError, match="禁止重复发送"):
+        control.reserve("900", character, intent(character, 1), "comments")
+
+
 @pytest.mark.parametrize("outcome", ["rejected", "uncertain", "published", "cancelled"])
 def test_same_source_cannot_be_resent_through_private_channel_or_new_oc_version(store, outcome):
     control, character = OperationsControl(store), store.character()

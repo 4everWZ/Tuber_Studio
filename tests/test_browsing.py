@@ -77,6 +77,7 @@ class ControlledPlatform:
             "description": self.description,
             "tags": ["科普"],
             "owner_uid": "200",
+            "owner": "盐水实验室",
             "duration": 30,
             "parts": [{"cid": "11", "title": "第一P", "duration": 30}],
         }
@@ -239,6 +240,111 @@ async def finished(service, **args):
     return service.repo.round(result["id"])
 
 
+async def test_discovery_defers_round_budget_without_spending_a_retry(browsing):
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure({"max_model_calls": 1, "decision_max_tokens": 512})
+    await browsing._current_account()
+    browsing.discovery.identity = "budget-test"
+    browsing.discovery.binding = browsing.discovery._binding()
+
+    first = await finished(browsing, discovery_id="budget-test")
+    saved = browsing.repo.video_retry(first, BV)
+    assert saved and saved["failures"] == 0
+    assert [task["status"] for task in browsing.tasks(round_id=first["id"])] == ["checkpoint"]
+    assert [name for name, _ in browsing.runtime.llm.calls] == ["ContentDecision"]
+
+    second = await finished(browsing, discovery_id="budget-test")
+    assert not browsing.repo.video_retry(second, BV)
+    assert [name for name, _ in browsing.runtime.llm.calls] == ["ContentDecision", "ResponseDecision"]
+    assert len(browsing.adapter.sent) == 1
+
+
+async def test_interaction_round_replies_to_own_upload_while_discovery_reads(browsing, monkeypatch):
+    own_video = "BV1xx411c7mD"
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure({"reply_auto_publish": True, "recent_sample_limit": 0})
+    browsing.store.set(
+        "browsing_semantic_validation", {"passed": True, "signature": browsing.model_signature()}
+    )
+    await browsing._current_account()
+    browsing.ready_signature = browsing.credential_signature()
+    browsing.operations.configure({"enabled": True}, account_id="100", character=browsing.runtime.character)
+    await browsing.sync_notifications()
+    other = {"event_id": "other", "kind": "reply", "sender_uid": "301", "sender_name": "邻居"}
+    browsing.store.execute(
+        "INSERT INTO browsing_events VALUES('other','100','reply','802',?,'received',?,NULL,?)",
+        (time.time(), json.dumps(other), time.time()),
+    )
+    entered, release = asyncio.Event(), asyncio.Event()
+    metadata = browsing.adapter.video_metadata
+
+    async def hold_video(video):
+        entered.set()
+        await release.wait()
+        return await metadata(video)
+
+    async def own_uploads(account):
+        assert account == "100"
+        return [{"bvid": own_video, "aid": "43"}]
+
+    async def fetch(video, max_pages=1, *, newest=False):
+        if video != own_video:
+            return {"items": []}
+        assert newest
+        return {
+            "items": [
+                {
+                    "comment_id": "801",
+                    "thread_id": "801",
+                    "platform_user_id": "300",
+                    "display_name": "观众",
+                    "content": "想知道这期视频怎么拍的？",
+                    "created_at": str(int(time.time())),
+                }
+            ]
+        }
+
+    async def read_public_thread(event):
+        if event["kind"] == "reply":
+            return {
+                "account_id": "100",
+                "resource_type": "dynamic",
+                "public_text": "另一条公开动态",
+                "target": {"type": 17, "oid": "44", "root": "701", "parent": "802"},
+                "source": {"comment_id": "802", "author_uid": "301", "text": "来聊下盐水实验吧"},
+                "items": [],
+            }
+        assert event["kind"] == "own_comment"
+        return {
+            "account_id": "100",
+            "resource_type": "video",
+            "public_text": "自己发布的新视频",
+            "target": {"type": 1, "oid": "43", "bvid": own_video, "root": "801", "parent": "801"},
+            "source": {"comment_id": "801", "author_uid": "300", "text": event["source_text"]},
+            "items": [],
+        }
+
+    monkeypatch.setattr(browsing.adapter, "video_metadata", hold_video)
+    monkeypatch.setattr(browsing.adapter, "own_uploads", own_uploads, raising=False)
+    monkeypatch.setattr(browsing.adapter, "fetch", fetch)
+    monkeypatch.setattr(browsing.adapter, "read_public_thread", read_public_thread)
+    browsing.discovery.start()
+    async with asyncio.timeout(3):
+        await entered.wait()
+        reading = browsing.discovery.round_id
+        assert reading is not None
+        row = await finished(browsing, automatic=True, interaction_only=True)
+        assert row["status"] == "completed" and row["id"] != reading, row
+        assert browsing.repo.round(reading)["status"] == "running"
+        assert [target["parent"] for target, _ in browsing.adapter.sent] == ["801", "802"], browsing.store.all(
+            "SELECT id,status,error FROM browsing_events"
+        )
+        await browsing.set_enabled(False)
+        assert browsing.discovery.enabled and browsing.repo.round(reading)["status"] == "running"
+    release.set()
+    await browsing.discovery.stop()
+
+
 @pytest.mark.parametrize(("workers", "cancel"), [(1, False), (2, False), (2, True)])
 async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypatch, workers, cancel):
     videos = [BV, "BV1xx411c7mD", "BV17x411w7KC"]
@@ -303,6 +409,7 @@ async def test_background_discovery_publishes_top_level_and_thread_replies(brows
                 "top_level_enabled": False,
                 "top_level_auto_publish": True,
                 "recent_sample_limit": 0,
+                "max_replies_per_video": 0,
             }
         ),
     )

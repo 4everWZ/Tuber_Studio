@@ -11,10 +11,12 @@ import psutil
 
 from ...comments import DEFAULT_POLICY, category
 from ...direct_messages import MessagePolicy
+from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_feedback import (
     continuation_view,
     generation_view,
 )
+from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
 from ...providers import public_error
 from ...store import dump
@@ -47,6 +49,7 @@ class BrowsingService:
         self.active = {}
         self.loop = self.poller = None
         self.changed = asyncio.Event()
+        self.interactions_changed = asyncio.Event()
         self.closed = False
         self.started_at = time.time()
         self.heartbeats = set()
@@ -147,6 +150,7 @@ class BrowsingService:
             "last_error": self.last_error,
             "vision": self.evidence.visual.capabilities(),
             "active_round": rounds[0] if rounds else None,
+            "active_rounds": rounds,
             "discovery": self.discovery.status(),
             "metrics": {
                 "cache_hits": self.evidence.hits,
@@ -173,6 +177,7 @@ class BrowsingService:
             {k: config[k] for k in ("max_per_hour", "max_per_day", "recipient_cooldown_seconds")}
         )
         self.changed.set()
+        self.interactions_changed.set()
         return self.status()
 
     async def _current_account(self, expected=None):
@@ -288,8 +293,6 @@ class BrowsingService:
         if type(enabled) is not bool:
             raise ValueError("enabled须为布尔值")
         if enabled:
-            if self.discovery.enabled:
-                raise ValueError("请先停止单独的自动刷视频，再开启全渠道自主运营")
             if self.overlay_starting:
                 raise ValueError("全渠道自主运营正在启动")
             self.overlay_starting = True
@@ -310,25 +313,28 @@ class BrowsingService:
             b_policy = self.store.get("browsing_policy", {})
             b_policy["discovery_enabled"] = False
             self.store.set("browsing_policy", b_policy)
-            await self.stop()
+            await self.stop(keep_discovery=True)
         self.comments.policy_changed.set()
         self.messages.changed.set()
         self.changed.set()
+        self.interactions_changed.set()
         return self.status()
 
-    async def stop(self, *, emergency=False):
+    async def stop(self, *, emergency=False, keep_discovery=False):
         if emergency:
             self.operations.configure({"emergency": True})
             self.comments.policy_changed.set()
             self.messages.changed.set()
             self.dynamics.changed.set()
             await self.discovery.stop()
-        children = list(self.active.values())
+        children = [
+            task
+            for identity, task in self.active.items()
+            if not (keep_discovery and self.repo.round(identity)["config"].get("discovery_id"))
+        ]
         for child in children:
             child.cancel()
         await asyncio.gather(*children, return_exceptions=True)
-        self.active.clear()
-        await self.evidence.cancel_pending()
         self.notifications.discard_pending(self.account)
         if self.account:
             self.store.set("browsing_discovery_pending:" + self.account, False)
@@ -389,7 +395,15 @@ class BrowsingService:
         )
 
     async def run(
-        self, *, automatic=False, preview=None, notifications_only=False, video=None, discovery_id=None
+        self,
+        *,
+        automatic=False,
+        preview=None,
+        notifications_only=False,
+        video=None,
+        discovery_id=None,
+        interaction_only=False,
+        video_only=False,
     ):
         if self.closed:
             raise ValueError("浏览服务已停止")
@@ -412,6 +426,10 @@ class BrowsingService:
                 "max_takeovers": 0,
             }
             config["top_level_limit"] = config["inspect_limit"]
+        elif interaction_only:
+            if not automatic or not self.operations.policy()["enabled"] or not self.account:
+                raise ValueError("互动轮次尚未授权")
+            config = self.effective() | {"interaction_only": True}
         else:
             if self.discovery.round_id:
                 raise ValueError("自动刷视频本轮进行中，请稍后再预览")
@@ -426,6 +444,8 @@ class BrowsingService:
             if self.blockers:
                 raise ValueError("；".join(self.blockers))
             config = self.effective()
+        if video_only:
+            config = config | {"video_only": True}
         if video:
             config = config | {"sources": ["specified"], "watch_videos": [video], "force_read": True}
         elif automatic and "sources" not in self.store.get("browsing_policy", {}):
@@ -435,6 +455,7 @@ class BrowsingService:
         if (
             automatic
             and not notifications_only
+            and not interaction_only
             and time.time()
             < self.store.get("browsing_next:" + self.account + ":" + self.runtime.character["id"], 0)
         ):
@@ -442,7 +463,7 @@ class BrowsingService:
         row, created = self.repo.create_round(
             self.account, self.runtime.character, config, self.operations.policy()["epoch"], preview
         )
-        if automatic and not notifications_only:
+        if automatic and not notifications_only and not interaction_only:
             self.store.set("browsing_discovery_pending:" + self.account, True)
         if created:
             task = asyncio.create_task(self._execute(row, notifications_only))
@@ -472,12 +493,26 @@ class BrowsingService:
                 channel="comments",
                 account_id=row["account_id"],
                 character=current,
-                epoch=row["epoch"] if self.operations.policy()["enabled"] else None,
+                epoch=row["epoch"]
+                if (
+                    row["config"].get("interaction_only")
+                    or row["config"].get("video_only")
+                    or self.operations.policy()["enabled"]
+                )
+                else None,
             )
+
+    def discovery_tasks(self):
+        return tuple(
+            task
+            for identity, task in self.active.items()
+            if not self.repo.round(identity)["config"].get("interaction_only")
+        )
 
     async def _execute(self, row, notifications_only):
         identity, started = row["id"], time.monotonic()
         token = read_round.set(identity)
+        lane = operation_lane.set("video")
         metrics = {
             "workers": row["config"]["workers"],
             "prepared": 0,
@@ -497,8 +532,13 @@ class BrowsingService:
                 asyncio.get_running_loop().time() + max(0, row["deadline"] - time.time())
             ):
                 self._check_round(row)
+                if row["config"].get("interaction_only"):
+                    await self._run_interactions(row, metrics)
+                    status = "partial" if metrics["failures"] else "completed"
+                    return
                 discovery_only = bool(row["config"].get("discovery_id"))
-                if not discovery_only:
+                poll_interactions = not (discovery_only or row["config"].get("video_only"))
+                if poll_interactions:
                     await self.sync_notifications(row)
                     await self._process_events(row, metrics)
                 if not notifications_only or self.store.get(
@@ -524,10 +564,12 @@ class BrowsingService:
                     prepared = [child.result() for child in children]
                     metrics["preparation_seconds"] = time.monotonic() - preparation_start
                     for result in prepared:
-                        await self._process_events(row, metrics)
+                        if poll_interactions:
+                            await self._process_events(row, metrics)
                         if result:
                             await self.decisions._evaluate_task(result, row, metrics)
-                    await self._process_events(row, metrics)
+                    if poll_interactions:
+                        await self._process_events(row, metrics)
                 status = "partial" if metrics["failures"] else "completed"
         except (asyncio.CancelledError, Exception) as error:
             stopping_discovery = self.discovery.state == "stopping" and self.discovery.round_id == identity
@@ -541,12 +583,10 @@ class BrowsingService:
                 "UPDATE browsing_tasks SET status='cancelled',error=? WHERE round_id=? AND status IN ('discovered','claimed','preparing','evidence_ready')",
                 (task_error, identity),
             )
-            if status == "cancelled":
-                await self.evidence.cancel_pending()
         finally:
             sampler.cancel()
             await asyncio.gather(sampler, return_exceptions=True)
-            heartbeats = list(self.heartbeats)
+            heartbeats = [task for task in self.heartbeats if task.get_name() == identity]
             for heartbeat in heartbeats:
                 heartbeat.cancel()
             await asyncio.gather(*heartbeats, return_exceptions=True)
@@ -557,6 +597,7 @@ class BrowsingService:
             metrics["peak_rss_bytes"] = max(metrics["peak_rss_bytes"], psutil.Process().memory_info().rss)
             metrics.update(self.repo.round(identity)["metrics"])
             self.repo.finish_round(identity, status, metrics, round_error)
+            operation_lane.reset(lane)
             read_round.reset(token)
 
     async def _sample_resources(self, metrics):
@@ -728,11 +769,20 @@ class BrowsingService:
         while failures < 3:
             self._check_round(row)
             identity = self.repo.task(row["id"], candidate)
-            token = discovery_retry.set({"bvid": bvid, "failures": failures, "error": error})
+            token = discovery_retry.set(
+                {"bvid": bvid, "failures": failures, "error": error, "resume": bool(saved or failures)}
+            )
             try:
                 try:
                     if failures:
                         await self._resume_discovery_writes(row, bvid)
+                except BrowsingBudgetDeferred as failure:
+                    self.store.execute(
+                        "UPDATE browsing_tasks SET status='checkpoint',error=? WHERE id=?",
+                        (public_error(failure), identity),
+                    )
+                    self.repo.defer_video(row, bvid, identity, failures)
+                    return
                 except Exception as failure:
                     metrics["failures"] += 1
                     self.store.execute(
@@ -747,7 +797,14 @@ class BrowsingService:
                 discovery_retry.reset(token)
             self._check_round(row)
             task = self.store.one("SELECT status,error,payload FROM browsing_tasks WHERE id=?", (identity,))
-            reason = json.loads(task["payload"]).get("reason")
+            payload = json.loads(task["payload"])
+            reason = payload.get("reason")
+            if payload.get("retry_kind") == "round_budget":
+                self.repo.defer_video(row, bvid, identity, failures)
+                return
+            if task["status"] == "checkpoint":
+                self.repo.finish_video_attempt(row, candidate, identity, 0)
+                return
             if task["status"] in {"selected", "viewed_without_comment"} or (
                 task["status"] == "skipped"
                 and reason in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
@@ -814,7 +871,7 @@ class BrowsingService:
     async def _prepare_attempt(self, identity, row, semaphore, metrics, owner):
         async with semaphore:
             generation = self.repo.claim(identity, owner)
-            heartbeat = asyncio.create_task(self._heartbeat(identity, owner, generation))
+            heartbeat = asyncio.create_task(self._heartbeat(identity, owner, generation), name=row["id"])
             self.heartbeats.add(heartbeat)
             heartbeat.add_done_callback(self.heartbeats.discard)
             ready = False
@@ -865,6 +922,7 @@ class BrowsingService:
                 }
             except ValueError as error:
                 kind = getattr(error, "kind", "")
+                deferred = isinstance(error, BrowsingBudgetDeferred)
                 metrics["failures"] += int(
                     kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
                 )
@@ -872,8 +930,10 @@ class BrowsingService:
                     identity,
                     owner,
                     generation,
-                    "skipped" if hasattr(error, "kind") else "failed",
-                    item | {"reason": getattr(error, "kind", "preparation_failed")},
+                    "checkpoint" if deferred else "skipped" if kind else "failed",
+                    item
+                    | {"reason": kind or "preparation_failed"}
+                    | ({"retry_kind": "round_budget"} if deferred else {}),
                     error=public_error(error),
                 )
                 return None
@@ -1028,10 +1088,74 @@ class BrowsingService:
             self.started_at,
         )
 
-    async def _process_events(self, row, metrics):
+    async def _run_interactions(self, row, metrics):
+        if hasattr(self.adapter, "own_uploads") and row["config"]["reply_enabled"]:
+            try:
+                await self._collect_own_comments(row)
+            except (ValueError, TimeoutError) as error:
+                metrics["own_upload_error"] = public_error(error)
+                metrics["failures"] += 1
+        await self._process_events(row, metrics, own_only=True)
+        try:
+            await self.sync_notifications(row)
+        except (ValueError, TimeoutError) as error:
+            metrics["notification_error"] = public_error(error)
+            metrics["failures"] += 1
+        await self._process_events(row, metrics)
+
+    async def _collect_own_comments(self, row):
+        account = row["account_id"]
+        cutoff = max(int(self.started_at), int(self.operations.policy()["enabled_at"] or 0))
+        for video in await self._read(self.adapter.own_uploads, account):
+            result = await self._read(lambda bvid: self.adapter.fetch(bvid, newest=True), video["bvid"])
+            self._check_round(row)
+            for comment in result["items"]:
+                timestamp = int(comment["created_at"])
+                author = str(comment["platform_user_id"])
+                if timestamp < cutoff or author == account or category(comment["content"]) == "spam":
+                    continue
+                identity = f"own:{account}:{video['aid']}:{comment['comment_id']}"
+                event = {
+                    "event_id": identity,
+                    "kind": "own_comment",
+                    "account_id": account,
+                    "sender_uid": author,
+                    "sender_name": comment["display_name"],
+                    "resource_type": "video",
+                    "oid": video["aid"],
+                    "bvid": video["bvid"],
+                    "root": comment["thread_id"],
+                    "parent": comment["comment_id"],
+                    "comment_id": comment["comment_id"],
+                    "timestamp": timestamp,
+                    "source_text": comment["content"],
+                }
+                self.store.execute(
+                    "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,'received',?,NULL,?)",
+                    (
+                        identity,
+                        account,
+                        "own_comment",
+                        str(comment["comment_id"]),
+                        timestamp,
+                        dump(event),
+                        time.time(),
+                    ),
+                )
+
+    async def _process_events(self, row, metrics, *, own_only=False):
+        async with self.sync_lock:
+            lane = operation_lane.set("reply")
+            try:
+                await self._process_event_batch(row, metrics, own_only)
+            finally:
+                operation_lane.reset(lane)
+
+    async def _process_event_batch(self, row, metrics, own_only):
         events = self.store.all(
-            "SELECT * FROM browsing_events WHERE account_id=? AND status='received' ORDER BY timestamp,id LIMIT 2",
-            (row["account_id"],),
+            "SELECT * FROM browsing_events WHERE account_id=? AND status='received' "
+            "AND (?=0 OR kind='own_comment') ORDER BY (kind='own_comment') DESC,timestamp DESC,id LIMIT 2",
+            (row["account_id"], own_only),
         )
         for event_row in events:
             try:
@@ -1102,7 +1226,9 @@ class BrowsingService:
         ):
             raise ValueError("同一公开来源已有评论或私信移交草稿")
         material, keys = None, []
-        if thread["resource_type"] == "video":
+        if event_row["kind"] == "own_comment":
+            allowed = {"public:" + str(source["comment_id"])}
+        elif thread["resource_type"] == "video":
             key, material = await self._prepare_evidence(target["bvid"], config)
             keys = [key]
             allowed = {s["id"] for s in self._segments(material)}
@@ -1203,6 +1329,12 @@ class BrowsingService:
             await self.messages._generate(dm_id, automatic=bool(intent["auto_authorized"]))
         else:
             intent = self.publication._intent(row, "reply_public", target, reply, keys, reply.evidence_ids)
+            if not intent:
+                self.store.execute(
+                    "UPDATE browsing_events SET status='skipped',error='已达到单视频回复上限或同源候选已存在' WHERE id=?",
+                    (event_row["id"],),
+                )
+                return
             if intent["auto_authorized"]:
                 await self.publish(intent["id"], automatic=True)
         self.store.execute("UPDATE browsing_events SET status='drafted' WHERE id=?", (event_row["id"],))
@@ -1343,12 +1475,16 @@ class BrowsingService:
 
     async def _loop(self):
         while True:
+            self.changed.clear()
             try:
-                if self.operations.policy()["enabled"] and self.effective()["discovery_enabled"]:
-                    await self.run(automatic=True)
+                if (
+                    self.operations.policy()["enabled"]
+                    and self.effective()["discovery_enabled"]
+                    and not self.discovery.enabled
+                ):
+                    await self.run(automatic=True, video_only=True)
             except Exception as error:
                 self.last_error = public_error(error)
-            self.changed.clear()
             try:
                 await asyncio.wait_for(self.changed.wait(), self.policy()["interval_seconds"])
             except TimeoutError:
@@ -1356,19 +1492,15 @@ class BrowsingService:
 
     async def _notifications_loop(self):
         while True:
+            self.interactions_changed.clear()
             try:
-                if self.operations.policy()["enabled"] and (
-                    self.effective()["mentions_enabled"] or self.effective()["replies_enabled"]
-                ):
-                    if self.active:
-                        row = self.repo.round(next(iter(self.active)))
-                        token = read_round.set(row["id"])
-                        try:
-                            await self.sync_notifications(row)
-                        finally:
-                            read_round.reset(token)
-                    else:
-                        await self.run(automatic=True, notifications_only=True)
+                if self.operations.policy()["enabled"]:
+                    await self.run(automatic=True, interaction_only=True)
             except Exception as error:
                 self.last_error = public_error(error)
-            await asyncio.sleep(self.policy()["notification_interval_seconds"])
+            try:
+                await asyncio.wait_for(
+                    self.interactions_changed.wait(), self.policy()["notification_interval_seconds"]
+                )
+            except TimeoutError:
+                pass

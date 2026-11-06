@@ -183,6 +183,19 @@ class BrowsingAdapter(BilibiliAdapter):
             )
         }
 
+    async def own_uploads(self, account, limit=3):
+        account = _identifier(account)
+        signed = await self.wbi_params({"mid": account, "pn": 1, "ps": limit, "order": "pubdate"})
+        data = await self._get("/x/space/wbi/arc/search", signed)
+        rows = (data.get("list") or {}).get("vlist")
+        if not isinstance(rows, list):
+            raise PlatformReadError("invalid", "个人投稿列表结构无效")
+        return [
+            {"bvid": _video_params(row["bvid"])["bvid"], "aid": _identifier(row["aid"])}
+            for row in rows[:limit]
+            if isinstance(row, dict) and row.get("bvid") and row.get("aid")
+        ]
+
     async def discover(self, source, keyword="", page=1, limit=20):
         _integer(page, minimum=1, maximum=10)
         _integer(limit, minimum=1, maximum=20)
@@ -540,9 +553,12 @@ class BrowsingAdapter(BilibiliAdapter):
 
     async def read_public_thread(self, event):
         account = await self.self_uid()
-        if event.get("account_id") != account or event.get("kind") not in {"mention", "reply"}:
+        own_comment = event.get("kind") == "own_comment"
+        if event.get("account_id") != account or event.get("kind") not in {"mention", "reply", "own_comment"}:
             raise PlatformReadError("permission", "通知不属于当前账号或来源类型不受支持")
         target = self._target(event)
+        if own_comment and target["resource_type"] != "video":
+            raise PlatformReadError("invalid", "投稿评论来源须为视频")
         data = await self._get(
             "/x/v2/reply/reply",
             {
@@ -581,6 +597,10 @@ class BrowsingAdapter(BilibiliAdapter):
             info = await self._video("av" + target["oid"])
             if str(info["aid"]) != target["oid"]:
                 raise PlatformReadError("invalid", "通知视频对象不一致")
+            if own_comment:
+                if str((info.get("owner") or {}).get("mid")) != account:
+                    raise PlatformReadError("permission", "该视频不属于当前账号")
+                public_text = _text(info.get("title") or "", 1000)
             target["bvid"] = info["bvid"]
         else:
             signed = await self.wbi_params({"id": target["oid"], "timezone_offset": -480})

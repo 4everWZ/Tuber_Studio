@@ -55,10 +55,12 @@ def inference_transition(runtime):
         runtime.inference.revision += 1
 
 
-def operation_generation_context(runtime, settings):
+def operation_generation_context(runtime, settings, *, lane=None):
     """Separate-model deployments wait for operations; legacy shared models keep their lock."""
     return (
-        runtime.offline_generation() if settings.data.get("work_mode_profiles") else runtime.generation_lock
+        runtime.offline_generation(lane)
+        if lane or settings.data.get("work_mode_profiles")
+        else runtime.generation_lock
     )
 
 

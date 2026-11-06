@@ -237,7 +237,8 @@ async def test_exhausted_parent_budget_never_generates_followup(browsing):
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
     assert row["budget"]["model_calls"] == 1 and visual.generated == 0
-    assert row["status"] == "partial" and task["status"] == "failed"
+    assert row["status"] == "partial" and task["status"] == "checkpoint"
+    assert task["payload"]["retry_kind"] == "round_budget"
     assert task["visual_followup"]["status"] == "failed" and len(inputs) == 1
     assert task["decisions"][0]["coverage_required"] == "visual"
     assert not browsing.intents() and not browsing.adapter.sent

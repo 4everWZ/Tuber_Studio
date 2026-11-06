@@ -191,12 +191,6 @@ class BackgroundDiscovery:
                 "label": "打开刷视频设置",
                 "href": "#operations-controls",
             }
-        elif control["enabled"]:
-            attention = {
-                "message": "全渠道运营正在运行",
-                "label": "管理全渠道运营",
-                "href": "#operations-controls",
-            }
         elif (
             self.enabled
             and self.binding
@@ -321,8 +315,6 @@ class BackgroundDiscovery:
         service = self.browsing
         if service.closed or service.operations.policy()["emergency"]:
             raise ValueError("浏览已停止或紧急停止仍有效")
-        if service.operations.policy()["enabled"] or service.overlay_starting:
-            raise ValueError("请先关闭全渠道自主运营，再单独开启自动刷视频")
         if not self.enabled:
             self.identity = str(uuid4())
             self.state, self.error, self.binding = "starting", None, None
@@ -365,8 +357,8 @@ class BackgroundDiscovery:
         issue_target = ("更新 B 站账号", "#accounts")
         try:
             # A preflight must not replace the adapter of an in-flight manual round.
-            while service.active:
-                await asyncio.wait(tuple(service.active.values()), return_when=asyncio.FIRST_COMPLETED)
+            while tasks := service.discovery_tasks():
+                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             if not service.comments.policy()["credentials_configured"]:
                 raise ValueError("自动发布需要 B 站登录与写入凭据")
             await service._current_account()
@@ -391,16 +383,16 @@ class BackgroundDiscovery:
                     await asyncio.sleep(max(0, deferred - time.time()))
                     self.next_at = None
                     continue
-                if service.active:
+                if tasks := service.discovery_tasks():
                     self.state = "waiting"
-                    await asyncio.wait(tuple(service.active.values()), return_when=asyncio.FIRST_COMPLETED)
+                    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                     continue
                 try:
                     issue_target = ("更新 B 站账号", "#accounts")
                     await service._current_account(expected=self.binding[0])
                     self.verify(self.identity)
                     self.attention = None
-                    if service.active:
+                    if service.discovery_tasks():
                         continue
                     issue_target = ("返回自动刷视频", "#automation")
                     result = await service.run(discovery_id=self.identity)

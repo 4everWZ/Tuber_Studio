@@ -295,7 +295,7 @@ class BilibiliAdapter:
             "created_at": str(int(reply.get("ctime", 0))),
         }
 
-    async def fetch(self, video: str, max_pages: int = 1) -> dict:
+    async def fetch(self, video: str, max_pages: int = 1, *, newest=False) -> dict:
         if type(max_pages) is not int or not 1 <= max_pages <= 10:
             raise ValueError("每次读取页数须为 1 到 10")
         info = await self._video(video)
@@ -310,7 +310,7 @@ class BilibiliAdapter:
                     "type": 1,
                     "pn": page,
                     "ps": 20,
-                    "sort": 2,
+                    "sort": 0 if newest else 2,
                 },
             )
             replies = data.get("replies") or []

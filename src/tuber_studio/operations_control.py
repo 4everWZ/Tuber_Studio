@@ -13,8 +13,8 @@ from .operations_revisions import OperationRevisions
 class OperationsPolicy(StrictModel):
     enabled: bool = False
     emergency: bool = False
-    max_per_hour: int = Field(default=5, ge=1, le=30)
-    max_per_day: int = Field(default=20, ge=1, le=200)
+    max_per_hour: int = Field(default=5, ge=0, le=30)
+    max_per_day: int = Field(default=20, ge=0, le=200)
     recipient_cooldown_seconds: int = Field(default=120, ge=0, le=86400)
     max_recoveries: int = Field(default=8, ge=0, le=64)
 
@@ -259,6 +259,8 @@ class OperationsControl:
             ).fetchone():
                 raise ValueError("此回应意图已尝试提交，禁止重复发送")
             for seconds, maximum in ((3600, policy["max_per_hour"]), (86400, policy["max_per_day"])):
+                if not maximum:
+                    continue
                 count = db.execute(
                     "SELECT COUNT(*) FROM operation_write_attempts WHERE account_id=? AND started_at>?",
                     (str(account_id), now - seconds),
@@ -267,7 +269,7 @@ class OperationsControl:
                     raise ValueError("达到账号全渠道发送上限，保留草稿")
             for seconds, name in ((3600, "max_per_hour"), (86400, "max_per_day")):
                 if (
-                    name in limits
+                    limits.get(name, 0) > 0
                     and db.execute(
                         "SELECT COUNT(*) FROM operation_write_attempts WHERE account_id=? AND channel=? AND started_at>?",
                         (str(account_id), channel, now - seconds),
@@ -278,6 +280,7 @@ class OperationsControl:
             cooldown = max(policy["recipient_cooldown_seconds"], limits.get("recipient_cooldown_seconds", 0))
             if (
                 recipient
+                and cooldown
                 and db.execute(
                     "SELECT 1 FROM operation_write_attempts WHERE account_id=? AND recipient=? AND started_at>? "
                     "AND NOT(root_token=? AND resolved_status='rejected')",

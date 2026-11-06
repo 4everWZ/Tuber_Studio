@@ -1,10 +1,16 @@
 """Transactional round ownership, bounded budgets and fenced task leases."""
 
+import datetime
 import json
 import time
 from uuid import uuid4
 
-from ...generation_meter import reserve_counters, settle_counters
+from ...generation_meter import (
+    BrowsingBudgetDeferred,
+    GenerationBudgetExceeded,
+    reserve_counters,
+    settle_counters,
+)
 from ...store import dump
 
 
@@ -16,7 +22,8 @@ class BrowsingRepository:
                 id TEXT PRIMARY KEY,account_id TEXT,character_id TEXT,character_version INTEGER,
                 status TEXT,preview INTEGER,epoch INTEGER,owner TEXT,deadline REAL,
                 config TEXT,budget TEXT,metrics TEXT,error TEXT,created_at REAL,updated_at REAL);
-            CREATE UNIQUE INDEX IF NOT EXISTS browsing_round_owner ON browsing_rounds(account_id)
+            CREATE UNIQUE INDEX IF NOT EXISTS browsing_round_lane ON browsing_rounds(
+                account_id, COALESCE(json_extract(config,'$.interaction_only'),0))
                 WHERE status IN ('queued','running');
             CREATE TABLE IF NOT EXISTS browsing_tasks(
                 id TEXT PRIMARY KEY,round_id TEXT,bvid TEXT,status TEXT,owner TEXT,generation INTEGER DEFAULT 0,
@@ -44,6 +51,7 @@ class BrowsingRepository:
                 account_id TEXT,kind TEXT,watermark REAL,cursor TEXT,initialized INTEGER,
                 PRIMARY KEY(account_id,kind));
         """)
+        store.execute("DROP INDEX IF EXISTS browsing_round_owner")
 
     def recover(self):
         now = time.time()
@@ -93,8 +101,9 @@ class BrowsingRepository:
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
             previous = self.store.one(
-                "SELECT * FROM browsing_rounds WHERE account_id=? AND status IN ('queued','running')",
-                (account,),
+                "SELECT * FROM browsing_rounds WHERE account_id=? AND status IN ('queued','running') "
+                "AND COALESCE(json_extract(config,'$.interaction_only'),0)=?",
+                (account, int(bool(config.get("interaction_only")))),
             )
             if previous:
                 return self.decode(previous), False
@@ -135,7 +144,12 @@ class BrowsingRepository:
                 "output_tokens": config["max_output_tokens"],
                 "top_levels": config["top_level_limit"],
             }
-            budget = reserve_counters(budget, caps, amounts)
+            try:
+                budget = reserve_counters(budget, caps, amounts)
+            except GenerationBudgetExceeded as error:
+                if all(value <= caps[key] for key, value in amounts.items()):
+                    raise BrowsingBudgetDeferred(str(error)) from None
+                raise
             self.store.db.execute(
                 "UPDATE browsing_rounds SET budget=?,updated_at=? WHERE id=?",
                 (dump(budget), time.time(), identity),
@@ -190,8 +204,9 @@ class BrowsingRepository:
     def video_retry(self, row, bvid):
         return self.store.one(
             "SELECT r.failures,t.error FROM browsing_video_retries r JOIN browsing_tasks t ON t.id=r.task_id "
-            "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.bvid=?",
-            (*self.retry_scope(row), bvid),
+            "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.bvid=? "
+            "AND (r.failures<3 OR t.updated_at>?)",
+            (*self.retry_scope(row), bvid, time.time() - 21600),
         )
 
     def retry_candidates(self, row):
@@ -204,6 +219,19 @@ class BrowsingRepository:
                 (*self.retry_scope(row), row["config"]["inspect_limit"]),
             )
         ]
+
+    def video_reply_limit_reached(self, row, bvid):
+        limit = row["config"].get("max_replies_per_video", 2)
+        if not limit:
+            return False
+        midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        count = self.store.one(
+            "SELECT COUNT(*) AS n FROM browsing_intents WHERE account_id=? AND character_id=? "
+            "AND kind='reply_public' AND json_extract(target,'$.bvid')=? "
+            "AND status NOT IN ('rejected','automatic_skipped') AND created_at>=?",
+            (row["account_id"], row["character_id"], bvid, midnight),
+        )["n"]
+        return count >= limit
 
     def finish_video_attempt(self, row, candidate, task_id, failures):
         key = (*self.retry_scope(row), candidate["bvid"])
@@ -224,6 +252,12 @@ class BrowsingRepository:
                     "DELETE FROM browsing_video_retries WHERE account_id=? AND character_id=? AND character_version=? AND bvid=?",
                     key,
                 )
+
+    def defer_video(self, row, bvid, task_id, failures):
+        self.store.execute(
+            "INSERT OR REPLACE INTO browsing_video_retries VALUES(?,?,?,?,?,?)",
+            (*self.retry_scope(row), bvid, failures, task_id),
+        )
 
     def claim(self, task_id, owner, *, seconds=30):
         now = time.time()

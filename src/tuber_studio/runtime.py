@@ -24,6 +24,7 @@ from .models import OperationReply
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, reply_generation_binding
 from .operation_text import operation_output_diagnostics
+from .operation_turns import OperationTurns, operation_lane
 from .operations.browsing.repository import BrowsingRepository
 from .operations_control import OperationsControl
 from .persona import uses_built_in_persona
@@ -69,6 +70,7 @@ class Runtime:
         self.retention_worker = None
         self.retention_error = None
         self.generation_lock = asyncio.Lock()
+        self.operation_turns = OperationTurns(self.generation_lock, self.operations_waiting)
         self.error = None
         self.cache = MediaCache(self)
         self.live.media.cache = self.cache
@@ -80,7 +82,15 @@ class Runtime:
         return self.store.character()
 
     @asynccontextmanager
-    async def offline_generation(self):
+    async def offline_generation(self, lane=None):
+        lane = lane or operation_lane.get()
+        if lane:
+            await self.operation_turns.acquire(lane)
+            try:
+                yield
+            finally:
+                self.generation_lock.release()
+            return
         while True:
             while self.operations_waiting():
                 await asyncio.sleep(0.2)

@@ -15,6 +15,10 @@ class GenerationBudgetExceeded(ValueError):
     """The current parent cannot admit another request; retained work can resume."""
 
 
+class BrowsingBudgetDeferred(GenerationBudgetExceeded):
+    """A call fits a fresh browsing round, but cannot run in this one."""
+
+
 def reserve_counters(budget, caps, amounts):
     if any(key not in caps or type(value) is not int or value < 0 for key, value in amounts.items()):
         raise ValueError("无效子任务预算")

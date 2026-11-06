@@ -16,6 +16,7 @@ from ...api_providers import validate_image
 from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
 from .models import DisabledVideoEvidence, browsing_filter_reason
+from .round_context import read_round
 
 
 class EvidenceUnavailable(ValueError):
@@ -108,6 +109,7 @@ class BrowsingEvidence:
     async def _flight(self, key, factory):
         if self.closed:
             raise EvidenceUnavailable("cancelled", "浏览证据服务正在停止")
+        key = (read_round.get(), key)
         if key in self.pending:
             self.merged += 1
             future = self.pending[key]

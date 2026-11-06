@@ -1,7 +1,6 @@
 """Evidence-bound browsing decisions and response generation."""
 
 import asyncio
-import datetime
 import json
 import time
 import unicodedata
@@ -9,7 +8,7 @@ from difflib import SequenceMatcher
 
 from ...comments import category
 from ...compaction import ContextWindowExceeded
-from ...generation_meter import GenerationMeter, budgeted_json
+from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
 from ...operation_continuations import content_hash
 from ...operation_generation import generate_with_recovery
 from ...operation_text import (
@@ -286,7 +285,7 @@ class BrowsingDecisions:
                 "instruction": messages[1]["content"],
                 "source": response_input.format() if response_input is not None else data,
             },
-            reuse_completed=generation_resume.get() or bool(independent and retry and retry["failures"]),
+            reuse_completed=generation_resume.get() or bool(independent and retry and retry["resume"]),
             max_recoveries=(1 if retry and retry["failures"] else 0) if independent else None,
             diagnose=diagnose,
             allow_web_fetch=response_input is not None,
@@ -509,6 +508,8 @@ class BrowsingDecisions:
                     )
                 except Exception as error:
                     followup.update(status="failed", error=public_error(error))
+                    if getattr(error, "kind", None) == "visual_unavailable":
+                        return material, decisions
                     raise
         return material, decisions
 
@@ -675,8 +676,7 @@ class BrowsingDecisions:
                         if fav_intent["auto_authorized"]:
                             await self.browsing.publish(fav_intent["id"], automatic=True)
 
-            max_replies = row["config"].get("max_replies_per_video", 2)
-            if row["config"].get("reply_enabled", False) and max_replies > 0 and chosen:
+            if row["config"].get("reply_enabled", False) and chosen:
                 if context is None:
                     context = await self.browsing._read(
                         self.browsing.adapter.fetch,
@@ -691,20 +691,8 @@ class BrowsingDecisions:
                     rid = str(it.get("thread_id") or cid)
                     threads_by_root.setdefault(rid, []).append(it)
 
-                today_midnight = (
-                    datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-                )
-                # Single video reply limit refreshed daily (since midnight today)
-                count_row = self.browsing.store.one(
-                    "SELECT COUNT(*) AS n FROM browsing_intents WHERE account_id=? AND character_id=? AND kind='reply_public' AND json_extract(target,'$.bvid')=? AND status NOT IN ('rejected','automatic_skipped') AND created_at >= ?",
-                    (row["account_id"], row["character_id"], material["metadata"]["bvid"], today_midnight),
-                )
-                daily_replies_count = count_row["n"] if count_row else 0
-                remaining_replies = max(0, max_replies - daily_replies_count)
-
-                replies_created = 0
                 for item in items:
-                    if replies_created >= remaining_replies:
+                    if self.browsing.repo.video_reply_limit_reached(row, bvid):
                         break
                     author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
                     if not author_uid or author_uid == str(row["account_id"]):
@@ -800,11 +788,12 @@ class BrowsingDecisions:
                             [result["material_key"]],
                             thread_response.evidence_ids,
                         )
+                        if not thread_intent:
+                            continue
                         if "reply_intent_ids" not in payload:
                             payload["reply_intent_ids"] = []
                         payload["reply_intent_ids"].append(thread_intent["id"])
                         status = "selected"
-                        replies_created += 1
                         if thread_intent["auto_authorized"]:
                             if row["config"].get("discovery_publish"):
                                 await self.browsing._send_discovery_intent(thread_intent["id"], row)
@@ -818,6 +807,9 @@ class BrowsingDecisions:
         except Exception as error:
             metrics["failures"] += 1
             continuation = getattr(error, "continuation", None)
+            round_budget = isinstance(error, BrowsingBudgetDeferred) or (
+                continuation and continuation["feedback"].get("kind") == "round_budget"
+            )
             if continuation:
                 self.browsing.runtime.continuations.bind_source_view(
                     error.continuation["id"],
@@ -829,7 +821,9 @@ class BrowsingDecisions:
                 identity,
                 result["owner"],
                 result["generation"],
-                "checkpoint" if continuation or isinstance(error, ContextWindowExceeded) else "failed",
+                "checkpoint"
+                if continuation or round_budget or isinstance(error, ContextWindowExceeded)
+                else "failed",
                 json.loads(
                     self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
                         "payload"
@@ -838,6 +832,7 @@ class BrowsingDecisions:
                 | payload
                 | {
                     "reason": "生成进度已保存，可继续" if continuation else public_error(error),
+                    **({"retry_kind": "round_budget"} if round_budget else {}),
                     **({"generation_continuation_id": error.continuation["id"]} if continuation else {}),
                     **(
                         {"capacity_signature": self._capacity_signature(row["config"])}
@@ -927,8 +922,10 @@ class BrowsingDecisions:
 
         metadata = material.get("metadata", {})
         title = metadata.get("title", "")
-        desc = metadata.get("desc", "")
-        owner = metadata.get("owner", {}).get("name", "")
+        desc = metadata.get("description") or metadata.get("desc", "")
+        owner = metadata.get("owner") or ""
+        if isinstance(owner, dict):
+            owner = owner.get("name", "")
         summary_evidence = [d.model_dump() for d in actionable] if actionable else []
 
         data = {

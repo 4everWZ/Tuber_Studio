@@ -220,6 +220,33 @@ async def test_historical_inbox_does_not_trigger_auto_send(messages):
     assert not messages.store.all("SELECT * FROM dm_drafts") and not messages.adapter.sent
 
 
+async def test_automatic_poll_resumes_saved_messages_when_queue_has_space(messages):
+    for task in (messages.worker, messages.poller):
+        task.cancel()
+    await asyncio.gather(messages.worker, messages.poller, return_exceptions=True)
+    messages.queue = asyncio.Queue(maxsize=1)
+    messages.queue.put_nowait((0, False))
+    await messages.configure({"enabled": True, "auto_poll": True})
+    messages.adapter.rows = [
+        {
+            "sender_uid": 123,
+            "receiver_id": 900,
+            "msg_type": 1,
+            "msg_key": str(key),
+            "timestamp": int(time.time()) + key,
+            "content": '{"content":"新收到的私信"}',
+        }
+        for key in (1, 2)
+    ]
+    assert (await messages.sync(automatic=True))["imported"] == 2
+    assert not messages.store.all("SELECT id FROM dm_drafts")
+    messages.queue.get_nowait()
+    messages.queue.task_done()
+    assert (await messages.sync(automatic=True))["imported"] == 0
+    saved = messages.store.all("SELECT i.message_id FROM dm_drafts d JOIN dm_inbox i ON i.id=d.source_id")
+    assert saved == [{"message_id": "2"}]
+
+
 async def test_private_stories_cannot_enter_dynamic_source_pool(messages):
     from tuber_studio.dynamics import Dynamics
 

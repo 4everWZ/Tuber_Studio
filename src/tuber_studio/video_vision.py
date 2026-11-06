@@ -29,6 +29,10 @@ from .providers import validate_reply
 VIDEO_EVIDENCE_PROTOCOL = "sequential_captions_indexed_assessment_v2"
 
 
+class VideoVisionAdmissionRequired(ValueError):
+    kind = "visual_unavailable"
+
+
 class VideoVisionConfig(StrictModel):
     enabled: bool = False
     base_url: str = "http://127.0.0.1:8080/v1"
@@ -283,7 +287,7 @@ class ApiVideoEvidenceProvider:
     def _check_properties(self, props, expected, identity):
         if self.identity() != identity or expected is not None and props != expected:
             self._probe = self._admission = None
-            raise ValueError("视觉服务实际模型／窗口或配置已变化，须重新探测和准入")
+            raise VideoVisionAdmissionRequired("视觉服务实际模型／窗口或配置已变化，须重新探测和准入")
 
     async def _stage(self, task, deadline, identity, expected, repository, operation):
         started = time.monotonic()

@@ -108,6 +108,35 @@ async def adapter_factory():
         await adapter.close()
 
 
+async def test_own_upload_comments_are_read_newest_and_owner_is_rechecked(adapter_factory):
+    owner = 9
+    top_level = comment(identity=100, author=7, text="你好鱼鱼")
+
+    def handler(request):
+        path = request.url.path
+        if path == "/x/web-interface/nav":
+            return nav()
+        if path == "/x/space/wbi/arc/search":
+            assert request.url.params["mid"] == "9" and request.url.params["order"] == "pubdate"
+            return result({"list": {"vlist": [{"bvid": BV, "aid": 123}]}})
+        if path == "/x/web-interface/view":
+            return result(metadata() | {"owner": {"mid": owner}})
+        if path == "/x/v2/reply":
+            assert request.url.params["sort"] == "0"
+            return result({"replies": [top_level], "page": {"count": 1}})
+        assert path == "/x/v2/reply/reply"
+        return result({"root": top_level, "replies": []})
+
+    adapter = await adapter_factory(handler)
+    assert await adapter.own_uploads("9") == [{"bvid": BV, "aid": "123"}]
+    assert (await adapter.fetch(BV, newest=True))["items"][0]["comment_id"] == "100"
+    source = event(kind="own_comment") | {"comment_id": "100", "parent": "100"}
+    assert (await adapter.read_public_thread(source))["source"]["author_uid"] == "7"
+    owner = 77
+    with pytest.raises(PlatformReadError, match="不属于当前账号"):
+        await adapter.read_public_thread(source)
+
+
 async def test_empty_search_never_falls_back_and_anonymous_recommend_never_claims_login(adapter_factory):
     requests = []
     adapter = await adapter_factory(lambda request: requests.append(request), credentials=False)
