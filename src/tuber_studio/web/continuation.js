@@ -40,7 +40,7 @@ class OperationContinuationView {
   feedback(value) {
     if (typeof value === "string") return value;
     if (!value || typeof value !== "object") return "";
-    const kind = {platform_error:"平台反馈", style_diagnostic:"表达建议", resource_limit:"额度反馈", model_error:"模型反馈", platform_uncertain:"平台结果待核对"}[value.kind] || value.kind;
+    const kind = {platform_error:"平台反馈", style_diagnostic:"表达建议", resource_limit:"额度反馈", round_budget:"轮次额度", model_error:"模型反馈", platform_uncertain:"平台结果待核对"}[value.kind] || value.kind;
     return [kind, value.code == null ? null : `错误码 ${value.code}`, value.message].filter(item => item != null && item !== "").map(String).join(" · ");
   }
   render(value, {channel, localId, dirty = false, entityStatus, privateContext = false, displayChannel = channel} = {}) {
@@ -61,7 +61,8 @@ class OperationContinuationView {
       this.$("[data-continuation-history]").open = false;
       return;
     }
-    this.$("[data-continuation-state]").textContent = this.label(value.state);
+    const awaitingRound = value.state === "checkpoint" && value.feedback?.kind === "round_budget";
+    this.$("[data-continuation-state]").textContent = awaitingRound ? "等待下一轮" : this.label(value.state);
     const publicHandoff = privateOutput && displayChannel !== "messages";
     this.$("[data-continuation-private]").hidden = !publicHandoff;
     this.$("[data-continuation-history]").hidden = publicHandoff;
@@ -87,6 +88,7 @@ class OperationContinuationView {
     this.$("[data-continuation-budget]").textContent = budgetText.join(" · ");
     const reconciling = value.state === "needs_reconciliation" || entityStatus === "publish_uncertain";
     this.$("[data-continuation-note]").textContent = dirty ? reconciling ? "核对将读取平台结果，保留本地编辑。" : "有未保存修改，保存后再继续处理。" : reconciling ? "平台结果尚待确认。" : value.state === "pending" ? "等待 Agent 处理，后续反馈会保留在下方。" : value.state === "deciding" ? "Agent 正在处理，修订与平台反馈会保留在下方。" : value.state === "checkpoint" ? "进度已保存，可在后续授权轮继续。" : "";
+    if (awaitingRound && !dirty) this.$("[data-continuation-note]").textContent = "本轮剩余额度不足，已保存进度。";
     if (this.resumeError?.key === this.key && this.resumeError.state === value.state) this.$("[data-continuation-note]").textContent = this.resumeError.message;
     if (generation && !validTarget) this.$("[data-continuation-note]").textContent = value.can_resume ? "生成恢复入口尚未返回，请刷新后继续。" : "此记录保留供查看。";
     const resume = this.$("[data-continuation-resume]");

@@ -216,8 +216,8 @@ export function renderCommentPolicy(policy, model, commentContinuation, setBadge
     if ($("auto-reply")) $("auto-reply").checked = !!base.auto_reply;
     if ($("watch-videos")) $("watch-videos").value = (base.watch_videos || []).join("\n");
     if ($("browse-interval")) $("browse-interval").value = base.browse_interval_seconds || 300;
-    if ($("replies-hour")) $("replies-hour").value = base.max_replies_per_hour || 5;
-    if ($("replies-day")) $("replies-day").value = base.max_replies_per_day || 20;
+    if ($("replies-hour")) $("replies-hour").value = base.max_replies_per_hour ?? 5;
+    if ($("replies-day")) $("replies-day").value = base.max_replies_per_day ?? 20;
   }
   if ($("reply-mode")) {
     $("reply-mode").textContent = policy.auto_reply ? "已配置自动回复" : "人工审核";

@@ -1,0 +1,102 @@
+<section data-section="live-interaction" class="win-page-view" hidden>
+  <div class="win-property-tabs">
+    <a href="#live" class="prop-tab">直播控制台</a>
+    <a href="#live-scene" class="prop-tab">场景编排</a>
+    <a href="#live-music" class="prop-tab">曲库与点歌</a>
+    <a href="#live-interaction" class="prop-tab active" aria-current="page">互动玩法与游戏</a>
+  </div>
+  <div class="page-heading win-heading">
+    <h1>直播小游戏与礼物互动规则</h1>
+  </div>
+
+  <div class="live-grid win-split-pane">
+    <article class="win-group-box" id="live-game-panel" data-workspace-anchor>
+      <div class="panel-heading">
+        <div class="win-group-title" style="margin:0;">🎮 游戏联动 · 离线模拟</div>
+        <span id="live-game-name" class="badge">星露谷物语</span>
+      </div>
+      <p id="live-game-summary" class="speech-text" style="font-size: 14px;">正在读取模拟状态…</p>
+      <p class="hint">星露谷物语与植物大战僵尸目前提供离线高仿模拟，实机无缝联动。</p>
+      <p id="live-game-activity" class="hint"></p>
+      <div class="actions" style="margin-top: 10px;">
+        <button type="button" class="win-btn primary" data-game-switch="stardew_valley">切到《星露谷》</button>
+        <button type="button" class="win-btn" data-game-switch="pvz">切到《植物大战僵尸》</button>
+      </div>
+      <div class="win-subgroup-box" style="margin-top: 14px;">
+        <div class="win-subgroup-title">快捷游戏事件注入</div>
+        <div id="live-game-actions" class="actions"></div>
+      </div>
+    </article>
+
+    <article class="win-group-box" id="live-draw-guess-panel">
+      <div class="panel-heading">
+        <div class="win-group-title" style="margin:0;">🎨 你画我猜互动玩法</div>
+        <span id="dg-live-status" class="badge">空闲中</span>
+      </div>
+      <p id="dg-live-word" class="speech-text" style="font-size: 14px;">等待送礼触发或手动开启</p>
+      <div class="actions" style="margin-top: 10px;">
+        <button type="button" id="dg-start-btn" class="primary win-btn">开启一轮竞猜</button>
+        <button type="button" id="dg-stop-btn" class="win-btn danger" disabled>提前结束</button>
+        <a href="/overlay/draw-guess" target="_blank" class="win-link-btn">打开 OBS 透明画板 ↗</a>
+      </div>
+      <p class="hint" style="margin-top: 12px;">
+        观众送出指定礼物（如画笔/小心心）或弹幕抢答即可自动参与；观众猜对后大肥鱼会自动祝贺并沉淀至每日趣事记忆。
+      </p>
+    </article>
+  </div>
+
+  <article class="win-group-box" id="interactive-rules-card" data-workspace-anchor style="margin-top: 16px;">
+    <div class="panel-heading">
+      <div class="win-group-title" style="margin:0;">🎁 互动玩法与礼物门槛配置</div>
+      <span class="hint">自定义点歌、你画我猜与游戏直播的触发门槛</span>
+    </div>
+    <form id="interactive-rules-form" style="margin-top:10px;">
+      <fieldset class="matrix-group">
+        <legend>一、点歌门槛规则</legend>
+        <div class="form-grid">
+          <label>点歌触发方式
+            <select id="rule-song-mode">
+              <option value="free">免费（弹幕输入“点歌 歌名”即可）</option>
+              <option value="gift_only">仅送礼（必须送出指定礼物/达标电池）</option>
+            </select>
+          </label>
+          <label>最低礼物价值（电池）
+            <input id="rule-song-coin" type="number" min="0" max="10000" value="0">
+          </label>
+          <label>指定礼物名称（逗号分隔，留空则不限）
+            <input id="rule-song-gifts" type="text" placeholder="例如：小心心, 辣条">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="matrix-group" style="margin-top: 14px;">
+        <legend>二、“你画我猜”互动规则</legend>
+        <div class="form-grid">
+          <label class="check-field" style="grid-column: 1 / -1;">
+            <input id="rule-dg-enabled" type="checkbox" checked> 启用直播间“你画我猜”互动游戏
+          </label>
+          <label>启动触发方式
+            <select id="rule-dg-mode">
+              <option value="gift_only">仅送礼触发</option>
+              <option value="danmaku_or_gift">弹幕指令（#你画我猜）或送礼</option>
+              <option value="host_only">仅主播/后台手动启动</option>
+            </select>
+          </label>
+          <label>启动最低礼物电池
+            <input id="rule-dg-coin" type="number" min="0" max="10000" value="10">
+          </label>
+          <label>指定触发礼物名称
+            <input id="rule-dg-gifts" type="text" value="画笔, 小心心, 辣条">
+          </label>
+          <label>每轮竞猜时长（秒）
+            <input id="rule-dg-duration" type="number" min="15" max="300" value="60">
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="actions" style="margin-top: 14px;">
+        <button type="submit" class="primary win-btn">保存互动与礼物规则</button>
+      </div>
+    </form>
+  </article>
+</section>

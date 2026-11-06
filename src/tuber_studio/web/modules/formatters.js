@@ -127,6 +127,7 @@
       "short_comment": "评论内容过短，缺少展开互动的价值",
       "duplicate_intent": "同源互动已有草稿或已发表，绝不重复发言",
       "already_commented": "大肥鱼已在此视频留过言，避免频繁刷屏",
+      "round_budget": "本轮剩余额度不足，等待下一轮",
     };
     return map[reason] || reason;
   }
@@ -155,7 +156,8 @@
     const inputTokens = budget.input_tokens ?? 0;
     const outputTokens = budget.output_tokens ?? 0;
     const totalTokens = inputTokens + outputTokens;
-    const kind = config.discovery_id ? "自动刷视频" : round.preview ? "只读预览" : "全渠道运营";
+    const interactionOnly = config.interaction_only === true;
+    const kind = interactionOnly ? "互动收件箱" : config.discovery_id ? "自动刷视频" : round.preview ? "只读预览" : "全渠道运营";
     const viewed = round.metrics?.viewed;
     const drafts = round.public_drafts;
     const narrative = [kind, viewed == null ? "" : `已读并判断 ${viewed} 条`,
@@ -169,6 +171,7 @@
       dateStr,
       status: round.status,
       statusInfo,
+      interactionOnly,
       narrative,
       metrics: {
         reads,

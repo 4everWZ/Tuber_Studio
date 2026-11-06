@@ -1,0 +1,106 @@
+<section data-section="settings" class="win-page-view" hidden>
+  <div class="win-property-tabs">
+    <a href="#settings" class="prop-tab active" aria-current="page">推理与模型</a>
+    <a href="#accounts" class="prop-tab">账号与权限矩阵</a>
+    <a href="#overview" class="prop-tab">存储与维护</a>
+    <a href="#issues" class="prop-tab">告警与诊断</a>
+  </div>
+
+  <div class="page-heading win-heading">
+    <h1>推理引擎端点与模型设置</h1>
+    <a href="#voices" class="win-link-btn">前往配置语音 →</a>
+  </div>
+
+  <section class="win-group-box" id="inference-node-panel"></section>
+
+  <div class="win-group-box" id="providers-panel" data-workspace-anchor style="margin-top:16px;">
+    <div class="panel-heading">
+      <div class="win-group-title" style="margin:0;">LLM 文本与视觉端点配置</div>
+      <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
+    </div>
+
+    <div class="subsection" style="border:0; padding-top:0; margin-top:8px;">
+      <div class="win-subgroup-box" id="dafeiyu-model-card" hidden style="margin-bottom:12px;">
+        <strong>本机大肥鱼专属微调权重</strong>
+        <span id="dafeiyu-model-badge" class="badge" role="status">待读取</span>
+        <p id="dafeiyu-missing-hint" class="hint"></p>
+        <progress id="dafeiyu-progress" max="100" hidden aria-label="下载进度"></progress>
+        <div id="dafeiyu-download" class="actions" hidden>
+          <button type="button" id="btn-download-dafeiyu-model" class="win-btn">下载到本机</button>
+        </div>
+        <button type="button" id="btn-cancel-dafeiyu-download" class="win-btn danger" hidden>取消下载</button>
+      </div>
+
+      <div class="actions" style="margin-bottom:12px;">
+        <button type="button" id="btn-ping-providers" class="win-btn">⚡ 快速检查表单端点连通性</button>
+        <span id="ping-provider-result" class="hint" role="status"></span>
+      </div>
+
+      <form id="providers-form">
+        <fieldset id="provider-fields" class="provider-fields">
+          <fieldset class="provider-group">
+            <legend>推理引擎协议与端点地址</legend>
+            <div class="form-grid">
+              <label>推理引擎协议
+                <select id="llm-kind">
+                  <option value="llama_cpp">本地 llama.cpp 推理服务</option>
+                  <option value="openai_compatible">远程 / 自定义 OpenAI 兼容端点</option>
+                  <option value="demo">离线演示模式 (无真实推理)</option>
+                </select>
+              </label>
+              <div>
+                <label>模型标识 (Model ID)</label>
+                <div style="display:flex; gap:6px; margin-top:5px;">
+                  <select id="llm-model-select" style="flex:1;">
+                    <optgroup label="内建角色模型" id="fine-tuned-models-group">
+                      <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
+                    </optgroup>
+                    <optgroup label="本地通用模型" id="base-models-group">
+                      <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
+                    </optgroup>
+                    <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
+                    <option value="__custom__">自定义输入模型 ID…</option>
+                  </select>
+                  <button type="button" id="btn-fetch-models" class="win-btn" title="向 Base URL 请求 /v1/models 动态拉取模型列表">拉取列表</button>
+                </div>
+                <div style="margin-top:6px;">
+                  <input id="llm-model" placeholder="服务实际提供的模型 ID" autocomplete="off" style="width:100%;">
+                </div>
+              </div>
+            </div>
+
+            <label style="margin-top:10px;">服务 Base URL
+              <input id="llm-base-url" type="url" placeholder="http://127.0.0.1:9012/llm 或 http://127.0.0.1:8000/v1" autocomplete="off" aria-describedby="llm-endpoint-help">
+            </label>
+            <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；Base URL 通常以 /v1 结尾。</p>
+
+            <div class="form-grid" style="margin-top:10px;">
+              <label>上下文窗口上限（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required aria-describedby="llm-capacity-help"></label>
+              <label id="llm-native-label">服务声明容量（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
+            </div>
+            <p id="llm-capacity-help" class="hint"></p>
+
+            <label style="margin-top:10px;">单次运营输出配额（tokens，含思考）
+              <input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help">
+            </label>
+            <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考过程与正文。<span id="llm-live-output-budget"></span></p>
+
+            <div class="provider-credential" style="margin-top:10px;">
+              <label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>
+              <span id="llm-key-state" class="hint">密钥状态待读取</span>
+              <label class="check-field"><input id="llm-clear-key" type="checkbox"> 清除已保存密钥</label>
+            </div>
+          </fieldset>
+        </fieldset>
+
+        <div class="actions" style="margin-top:16px;">
+          <button id="save-providers" class="primary win-btn" type="submit">保存并应用设置</button>
+          <button id="reset-providers" type="button" class="win-btn">恢复已保存配置</button>
+          <button id="check-providers-settings" type="button" class="win-btn">检查已保存配置连接</button>
+        </div>
+        <p id="providers-save-state" class="hint" role="status"></p>
+        <p id="providers-check-result" class="hint" role="status" hidden></p>
+      </form>
+    </div>
+  </div>
+</section>

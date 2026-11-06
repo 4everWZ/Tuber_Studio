@@ -5,6 +5,23 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+
+from tuber_studio.app import create_app
+
+
+def test_workbench_serves_page_fragments_in_the_shell(settings):
+    with TestClient(create_app(settings)) as client:
+        page = client.get("/").raise_for_status().text
+    assert "<!-- page:" not in page
+    for identity in (
+        "workspace-sidebar",
+        "op-round-settings",
+        "matrix-max-per-day",
+        "messages-panel",
+        "queue-view",
+    ):
+        assert page.count(f'id="{identity}"') == 1
 
 
 @pytest.mark.parametrize("script", ["account_ui.test.cjs", "web_api.test.cjs", "web_operations.test.cjs"])

@@ -1,44 +1,29 @@
-/* ==========================================================================
-   Tuber Studio · Windows 经典现代左右布局风格工作台样式 (XP/Win7/Aero Pro)
-   设计原则：
-   1. 现代左右布局：左侧资源管理器树形导航 (Explorer Tree)，右侧工作区 (Master-Detail / Property Sheets)
-   2. 信息密度适中：严谨紧凑，拒绝大面积空洞留白，也拒绝拥挤杂乱
-   3. 同一逻辑面板聚合：杜绝散落折叠，采用清晰属性页标签 (Property Tabs) 与分组框 (GroupBox)
-   4. 经典原生质感：精美边框、微立体渐变按钮、清晰数据表格、Windows 经典状态栏
-   ========================================================================== */
-
+/* Workbench foundation and shared controls. */
 :root {
   color-scheme: light;
-  --win-bg: #eef2f7;
+  --win-bg: #f8f8f8;
   --win-surface: #ffffff;
-  --win-panel-header: #f8fafc;
-  --win-border: #cbd5e1;
-  --win-border-light: #e2e8f0;
-  --win-border-focus: #2563eb;
-  
-  --win-ink: #0f172a;
-  --win-ink-secondary: #475569;
-  --win-muted: #64748b;
-  --win-subtle: #94a3b8;
-  
-  --win-accent: #1e5bb8;
-  --win-accent-hover: #174a96;
-  --win-accent-active: #0f3670;
-  --win-accent-soft: #edf4fc;
-  
-  --win-green: #15803d;
-  --win-green-bg: #f0fdf4;
-  --win-green-border: #bbf7d0;
-  
-  --win-danger: #b91c1c;
-  --win-danger-bg: #fef2f2;
-  --win-danger-border: #fecaca;
-  
-  --win-warning: #b45309;
-  --win-warning-bg: #fffbeb;
-  --win-warning-border: #fde68a;
-
-  /* 兼容旧变量 */
+  --win-panel-header: #fafafa;
+  --win-border: #d9d9d9;
+  --win-border-light: #e9e9e9;
+  --win-border-focus: #1760bb;
+  --win-ink: #171717;
+  --win-ink-secondary: #363636;
+  --win-muted: #595959;
+  --win-subtle: #676767;
+  --win-accent: #195fac;
+  --win-accent-hover: #134d8d;
+  --win-accent-active: #113e71;
+  --win-accent-soft: #eef5fc;
+  --win-green: #1d6b4c;
+  --win-green-bg: #eef8f2;
+  --win-green-border: #b4d9c4;
+  --win-danger: #a92323;
+  --win-danger-bg: #fff1f0;
+  --win-danger-border: #e9b4b1;
+  --win-warning: #884709;
+  --win-warning-bg: #fff7e8;
+  --win-warning-border: #e9ce95;
   --bg: var(--win-bg);
   --panel: var(--win-surface);
   --line: var(--win-border);
@@ -49,688 +34,192 @@
   --danger: var(--win-danger);
   --danger-bg: var(--win-danger-bg);
   --green: var(--win-green);
-
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", PingFang SC, Roboto, sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
+  --ok: var(--win-green);
+  font-family: system-ui, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  font-size: 15px;
+  line-height: 1.62;
 }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-}
-
-body.win-desktop {
-  margin: 0;
-  background: var(--win-bg);
-  color: var(--win-ink);
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-[hidden] {
-  display: none !important;
-}
-
-/* ==========================================================================
-   通用控件：Windows 经典微立体按钮、输入框、下拉框
-   ========================================================================== */
-
-button, input, select, textarea {
-  font: inherit;
-  color: inherit;
-}
+*, *::before, *::after { box-sizing: border-box; }
+body.win-desktop { margin: 0; background: var(--panel); color: var(--ink); }
+[hidden] { display: none !important; }
+a { color: var(--accent); text-underline-offset: .18em; }
+a:hover { color: var(--win-accent-hover); }
+:focus-visible { outline: 2px solid var(--win-border-focus); outline-offset: 3px; }
+button, input, select, textarea { font: inherit; color: inherit; }
 
 button, .button, .win-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 4px 12px;
-  border: 1px solid #b8c7d8;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
-  color: var(--win-ink);
-  cursor: pointer;
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 550;
+  text-align: center;
   text-decoration: none;
-  font-weight: 500;
-  font-size: 12px;
-  white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: all 0.12s ease;
+  cursor: pointer;
 }
+button:hover:not(:disabled), .button:hover, .win-btn:hover:not(:disabled) { background: #f2f2f2; color: var(--ink); }
+button.primary, .button.primary, .win-btn.primary { background: #242424; border-color: #242424; color: #fff; }
+button.primary:hover:not(:disabled), .button.primary:hover { background: #3c3c3c; border-color: #3c3c3c; color: #fff; }
+button.danger, .win-btn.danger { border-color: var(--win-danger-border); color: var(--danger); }
+button.danger:hover:not(:disabled), .win-btn.danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); }
+button.quiet, .button.quiet { background: transparent; border-color: transparent; }
+button:disabled { background: #f3f3f3; border-color: #e5e5e5; color: #686868; cursor: not-allowed; }
+button.primary:disabled { background: #eeeeee; border-color: #e5e5e5; color: #686868; }
+.win-btn-lg { min-height: 42px; padding-inline: 17px; }
 
-button:hover, .button:hover, .win-btn:hover {
-  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
-  border-color: #94a3b8;
-  color: var(--win-accent);
-}
-
-button:active, .button:active, .win-btn:active {
-  background: #e2e8f0;
-  border-color: #64748b;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-button.primary, .win-btn.primary {
-  background: linear-gradient(180deg, #2b6cb0 0%, #1e5bb8 100%);
-  border-color: #174a96;
-  color: #ffffff;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(27, 94, 178, 0.25);
-}
-
-button.primary:hover, .win-btn.primary:hover {
-  background: linear-gradient(180deg, #3182ce 0%, #1a56ad 100%);
-  border-color: #123e7e;
-  color: #ffffff;
-}
-
-button.danger, .win-btn.danger {
-  color: var(--win-danger);
-  border-color: #fca5a5;
-  background: linear-gradient(180deg, #ffffff 0%, #fee2e2 100%);
-}
-
-button.danger:hover, .win-btn.danger:hover {
-  background: #fecaca;
-  border-color: #ef4444;
-}
-
-button.quiet, .button.quiet {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-button.quiet:hover, .button.quiet:hover {
-  background: rgba(0, 0, 0, 0.05);
-  border-color: transparent;
-}
-
-button:disabled, .win-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  filter: grayscale(40%);
-  box-shadow: none;
-}
-
-.win-btn-lg {
-  min-height: 34px;
-  padding: 6px 18px;
-  font-size: 13px;
-}
-
-/* 输入框规范 */
 input, select, textarea {
   width: 100%;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  border-radius: 4px;
-  padding: 5px 8px;
-  font-size: 12px;
-  color: var(--win-ink);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid #cfcfcf;
+  border-radius: 9px;
+  background: var(--panel);
 }
-
-input:focus, select:focus, textarea:focus {
-  outline: none;
-  border-color: #2b6cb0;
-  box-shadow: 0 0 0 2px rgba(43, 108, 176, 0.18);
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--win-border-focus); outline-offset: 1px; }
+input:disabled, select:disabled, textarea:disabled, input[readonly] { background: #f4f4f4; color: var(--muted); }
+input[type="checkbox"], input[type="radio"] { width: 1rem; height: 1rem; accent-color: var(--accent); flex: none; }
+textarea { resize: vertical; }
+label { display: block; margin-top: 10px; font-weight: 600; }
+label > input, label > select, label > textarea { margin-top: 5px; font-weight: 400; }
+label > small { display: block; margin-top: 4px; font-weight: 400; }
+.check-field, .checks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
 }
+.check-field input, .checks input { margin: 0; }
+fieldset { min-inline-size: 0; }
+h1, h2, h3 { line-height: 1.35; color: var(--ink); }
+h1 { margin: 0; font-size: clamp(1.5rem, 2.4vw, 2rem); font-weight: 680; }
+h2 { margin: 0 0 10px; font-size: 1.12rem; }
+h3 { margin: 0 0 7px; font-size: 1rem; }
+p { margin-block: .55em 1em; }
+.hint, .muted { color: var(--muted); font-size: .9rem; }
+.error-text { color: var(--danger); overflow-wrap: anywhere; }
+.actions, .panel-heading, .checks { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.panel-heading { justify-content: space-between; }
+.feature-note { padding: 11px 14px; border-inline-start: 3px solid #8eafcc; background: #f3f7fb; color: var(--win-ink-secondary); }
 
-input[readonly] {
-  background: #f8fafc;
-  color: var(--win-muted);
-}
-
-textarea {
-  resize: vertical;
-}
-
-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--win-ink);
-  margin-top: 10px;
-}
-
-label > input, label > select, label > textarea {
-  margin-top: 4px;
-  font-weight: 400;
-}
-
-/* ==========================================================================
-   页面框架布局 (Explorer Layout)
-   ========================================================================== */
-
-.win-layout {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-  background: var(--win-bg);
-}
-
-/* --------------------------------------------------------------------------
-   左侧：Windows 资源管理器树形导航栏 (Explorer Tree Pane)
-   -------------------------------------------------------------------------- */
+/* Workspace shell. Keep the document as the page's scroll container. */
+.win-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100dvh; }
 .win-explorer-tree {
-  background: #1e293b;
-  color: #e2e8f0;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  border-right: 1px solid #0f172a;
-  user-select: none;
-  overflow: hidden;
-  z-index: 100;
+  min-width: 0;
+  background: #f6f6f6;
+  border-inline-end: 1px solid var(--win-border-light);
 }
-
-.explorer-brand-box {
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #0f172a;
-}
-
-.explorer-brand-box .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  color: #ffffff;
-}
-
+.explorer-brand-box { display: flex; align-items: center; justify-content: space-between; padding: 18px 14px 11px; gap: 8px; }
+.explorer-brand-box .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  color: #ffffff;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 14px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: #242424;
+  color: #fff;
+  font-size: .83rem;
+  font-weight: 720;
+  letter-spacing: .025em;
+  flex: none;
 }
-
-.brand-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.brand-name {
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: -0.3px;
-}
-
-.brand-version {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.btn-close-pane {
-  display: none;
-  background: transparent;
-  border: 0;
-  color: #94a3b8;
-  font-size: 16px;
-  cursor: pointer;
-}
-
-.explorer-nav {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.explorer-nav::-webkit-scrollbar {
-  width: 5px;
-}
-.explorer-nav::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-/* 树形分组 */
-.tree-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tree-group-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #94a3b8;
-}
-
-.tree-arrow {
-  font-size: 9px;
-  color: #64748b;
-  width: 10px;
-}
-
-.tree-folder-icon {
-  font-size: 12px;
-}
-
-.tree-title {
-  flex: 1;
-}
-
-.tree-group-items {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-left: 8px;
-  position: relative;
-}
-
-.tree-group-items::before {
-  content: "";
-  position: absolute;
-  left: 12px;
-  top: 0;
-  bottom: 6px;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
+.brand-info { display: grid; line-height: 1.32; }
+.brand-name { font-size: 1rem; font-weight: 700; }
+.brand-version { color: var(--muted); font-size: .83rem; }
+.explorer-nav { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 10px 20px; display: grid; align-content: start; gap: 16px; }
+.tree-group-header { padding: 0 9px 5px; color: var(--muted); font-size: .84rem; font-weight: 650; }
+.tree-group-items { display: grid; gap: 2px; }
 .tree-node {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  color: #cbd5e1;
+  min-height: 36px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  color: var(--ink);
   text-decoration: none;
-  font-size: 12px;
-  border-radius: 4px;
-  transition: all 0.12s ease;
-  position: relative;
 }
-
-.tree-node:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
-}
-
-.tree-node.selected {
-  background: linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%);
-  color: #ffffff;
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.node-icon {
-  font-size: 13px;
-  width: 16px;
-  text-align: center;
-}
-
-.node-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.explorer-tree-footer {
-  padding: 10px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: #0f172a;
-}
-
-.btn-win-action {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
-  border-radius: 4px;
-  padding: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-win-action:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-}
-
-/* --------------------------------------------------------------------------
-   右侧主视口 (Main Shell)
-   -------------------------------------------------------------------------- */
-.win-main-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-  background: var(--win-bg);
-  min-width: 0;
-}
-
-/* --------------------------------------------------------------------------
-   顶部工具栏 (Command Bar / Ribbon / Toolbar)
-   -------------------------------------------------------------------------- */
+.tree-node:hover { background: #ededed; color: var(--ink); }
+.tree-node.selected { background: #e8e8e8; color: #101010; font-weight: 650; }
+.node-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explorer-tree-footer { padding: 0 10px 12px; }
+.btn-win-action { width: 100%; background: transparent; }
+#workspace-menu, #close-workspace-menu, #workspace-backdrop { display: none; }
+.win-main-shell { display: flex; flex-direction: column; min-width: 0; min-height: 100dvh; }
 .win-command-bar {
-  height: 48px;
-  min-height: 48px;
-  background: #ffffff;
-  border-bottom: 1px solid #cbd5e1;
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
-  padding: 0 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  z-index: 10;
-}
-
-.command-bar-left, .command-bar-right {
-  display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px 14px;
+  padding: 12px clamp(16px, 3vw, 34px);
+  border-bottom: 1px solid var(--win-border-light);
+  background: var(--panel);
 }
-
-.btn-command-toggle {
-  display: none;
-  background: transparent;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.command-separator {
-  width: 1px;
-  height: 20px;
-  background: #e2e8f0;
-  margin: 0 2px;
-}
-
-.win-badge-pill {
+.command-bar-left, .command-bar-right { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; gap: 6px 10px; }
+.win-badge-pill, .win-quick-status, .win-quick-alert {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  border-radius: 14px;
-  font-size: 12px;
-  color: var(--win-ink);
+  gap: 7px;
+  min-height: 32px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  color: var(--ink);
   text-decoration: none;
-  transition: all 0.12s ease;
+  overflow-wrap: anywhere;
 }
+.win-badge-pill:hover, .win-quick-status:hover, .win-quick-alert:hover { background: #f1f1f1; color: var(--ink); }
+#workspace-character { font-weight: 680; }
+.status-dot, .status-indicator { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #707070; }
+.status-dot.good, .status-indicator.good { background: var(--green); }
+.status-dot.bad { background: var(--danger); }
+.win-segmented-bar .mode-buttons { padding: 3px; background: #f1f1f1; border-radius: 9px; }
+.win-segmented-bar .btn-segment { min-height: 31px; padding: 3px 8px; border-radius: 7px; font-size: .88rem; }
+.win-segmented-bar .btn-segment[aria-pressed="true"] { background: var(--panel); color: var(--ink); }
+.win-notice { padding: 9px 16px; background: var(--soft); color: #184e82; }
+.win-notice.error { background: var(--danger-bg); color: var(--danger); }
 
-.win-badge-pill:hover {
-  background: #e2e8f0;
-  border-color: #94a3b8;
-}
-
-.win-segmented-bar {
-  display: inline-flex;
-  align-items: center;
-}
-
-.win-segmented-bar .mode-buttons {
-  display: inline-flex;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  padding: 2px;
-  gap: 2px;
-}
-
-.win-segmented-bar .btn-segment {
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  padding: 3px 10px;
-  font-size: 12px;
-  color: var(--win-muted);
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: none;
-  min-height: 24px;
-}
-
-.win-segmented-bar .btn-segment[aria-pressed="true"] {
-  background: #ffffff;
-  color: var(--win-accent);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.win-quick-status, .win-quick-alert {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  text-decoration: none;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  color: var(--win-muted);
-}
-
-.win-quick-status:hover, .win-quick-alert:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: var(--win-ink);
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-  display: inline-block;
-}
-
-.status-dot.good, .status-indicator.good {
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
-}
-.status-dot.bad {
-  background: #ef4444;
-}
-
-/* 通知条 */
-.win-notice {
-  background: #eff6ff;
-  border-bottom: 1px solid #bfdbfe;
-  color: #1e40af;
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.win-notice.error {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #991b1b;
-}
-
-/* --------------------------------------------------------------------------
-   主内容区 (Main Content Viewport)
-   -------------------------------------------------------------------------- */
 .win-content {
   flex: 1;
-  overflow-y: auto;
-  padding: 16px 20px;
-  max-width: 1680px;
-  margin: 0 auto;
   width: 100%;
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: clamp(18px, 3.2vw, 44px) clamp(16px, 4vw, 56px);
+  min-width: 0;
 }
+.page-heading, .win-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 24px; }
+.heading-title-box { display: grid; justify-items: start; gap: 6px; }
+.eyebrow { margin: 0 0 3px; color: var(--muted); font-size: .8rem; font-weight: 650; }
+.win-property-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--win-border-light); }
+.prop-tab { display: inline-flex; min-height: 39px; align-items: center; padding: 7px 11px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.prop-tab:hover { color: var(--ink); background: #f7f7f7; }
+.prop-tab.active { color: var(--ink); font-weight: 680; border-color: var(--ink); }
 
-.win-content::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.win-content::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-.win-content::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* 标题区规范 */
-.win-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--win-border);
-}
-
-.heading-title-box h1 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--win-ink);
-  margin: 0;
-  letter-spacing: -0.3px;
-}
-
-.eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--win-muted);
-  margin-bottom: 2px;
-}
-
-/* ==========================================================================
-   Windows 属性页标签栏 (Property Sheet Tabs)
-   同一业务域内一键直达，杜绝散落折叠！
-   ========================================================================== */
-.win-property-tabs {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  border-bottom: 1px solid #cbd5e1;
-  margin-bottom: 16px;
-  padding-left: 2px;
-}
-
-.prop-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 16px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--win-muted);
-  text-decoration: none;
-  background: #e2e8f0;
-  border: 1px solid #cbd5e1;
-  border-bottom: 0;
-  border-radius: 5px 5px 0 0;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  margin-bottom: -1px;
-}
-
-.prop-tab:hover {
-  background: #f1f5f9;
-  color: var(--win-ink);
-}
-
-.prop-tab.active {
-  background: #ffffff;
-  color: var(--win-accent);
-  border-color: #cbd5e1;
-  border-bottom: 1px solid #ffffff;
-  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.03);
-  padding-top: 8px;
-}
-
-/* ==========================================================================
-   Windows 分组框 (GroupBox / Fieldset Panel)
-   用于聚合同一业务逻辑的表单与操作，清晰明确
-   ========================================================================== */
-.win-group-box {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  position: relative;
-}
-
-.win-group-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--win-ink);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.win-subgroup-box {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 5px;
-  padding: 12px 14px;
-}
-
-.win-subgroup-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--win-ink-secondary);
-  margin-bottom: 8px;
-}
-
-.win-split-pane {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
-  gap: 16px;
-}
-
-.win-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 5px;
-  margin-bottom: 14px;
-}
-
-.win-filter-bar label {
-  margin: 0;
-  font-weight: 500;
-  font-size: 12px;
-}
+.win-group-box, .panel { min-width: 0; background: var(--panel); border: 1px solid var(--win-border-light); border-radius: 14px; padding: clamp(14px, 2.2vw, 24px); }
+.win-page-view > .panel + .panel, .win-page-view > .win-group-box + .win-group-box, .automation-settings + .automation-settings { margin-top: 16px; }
+.panel > summary { cursor: pointer; font-weight: 650; }
+.win-group-title { display: block; margin: 0 0 12px; font-size: 1.08rem; font-weight: 670; color: var(--ink); }
+.panel-heading > .win-group-title, .panel-heading > h2 { margin-bottom: 0; }
+.win-subgroup-box { min-width: 0; padding: 14px; border: 1px solid var(--win-border-light); border-radius: 10px; background: #fafafa; }
+.win-subgroup-title { margin: 0 0 8px; font-size: .97rem; color: var(--win-ink-secondary); font-weight: 650; }
+.win-split-pane { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(270px, 1fr); gap: 18px; align-items: start; }
+.win-filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px 14px; padding: 12px 14px; background: #f7f7f7; border-radius: 9px; margin-bottom: 14px; }
+.win-filter-bar label { margin: 0; font-weight: 550; }
 
 .win-checks-bar {
   display: flex;
@@ -1066,99 +555,56 @@ tr:hover td {
   cursor: pointer;
 }
 
-/* --------------------------------------------------------------------------
-   经典 Windows 状态栏 (Status Bar)
-   -------------------------------------------------------------------------- */
+/* Session state and responsive navigation. */
 .win-statusbar {
-  height: 26px;
-  min-height: 26px;
-  background: #f1f5f9;
-  border-top: 1px solid #cbd5e1;
   display: flex;
-  align-items: center;
-  padding: 0 6px;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--win-ink-secondary);
-  user-select: none;
+  flex-wrap: wrap;
+  gap: 5px 18px;
+  padding: 8px clamp(16px, 3vw, 34px);
+  border-top: 1px solid var(--win-border-light);
+  color: var(--muted);
+  font-size: .85rem;
 }
+.statusbar-panel { min-width: 0; overflow-wrap: anywhere; }
+.sb-val { color: var(--ink); font-weight: 570; }
+.login-shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+.login-panel { width: min(100%, 410px); padding: clamp(20px, 4vw, 32px); border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }
+.login-panel .brand-mark { margin-bottom: 15px; }
+.login-panel button { width: 100%; margin-top: 8px; }
+.login-panel .error-text:empty { display: none; }
+[data-workspace-anchor] { scroll-margin-top: 120px; }
+.win-activity-scroll { max-height: 34rem; overflow: auto; }
+.fetch-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(6rem, auto) auto; gap: 10px; align-items: end; }
+.fetch-row > label { margin-top: 0; }
+.video-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 8px; margin-top: 12px; }
+.video-list button { text-align: start; display: block; }
+.video-list small { display: block; color: var(--muted); }
+.comment-link { display: block; min-height: 0; padding: 0; border: 0; background: transparent; text-align: start; font-weight: 500; }
+.compact-editor { min-height: 130px; }
+code, pre { overflow-wrap: anywhere; }
+table { font-size: .93rem; }
+th { background: #f6f6f6; }
+.badge { border-radius: 999px; background: #f5f5f5; font-size: .85rem; white-space: normal; }
+.matrix-action-card h3 { font-size: .95rem; }
+.matrix-action-card p, .matrix-radio-group label { font-size: .88rem; }
 
-.statusbar-panel {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 3px;
-  height: 20px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+@media (max-width: 950px) {
+  .win-split-pane { grid-template-columns: minmax(0, 1fr); }
 }
-
-.statusbar-panel.panel-brand {
-  font-weight: 700;
-  color: var(--win-accent);
+@media (max-width: 760px) {
+  .win-layout { grid-template-columns: minmax(0, 1fr); }
+  #workspace-menu, #close-workspace-menu { display: inline-flex; min-height: 44px; }
+  .win-explorer-tree { display: none; position: fixed; inset: 0 auto 0 0; width: min(82vw, 270px); z-index: 12; }
+  .workspace.nav-open .win-explorer-tree { display: flex; }
+  .workspace.nav-open #workspace-backdrop { display: block; position: fixed; inset: 0; z-index: 11; width: 100%; border: 0; border-radius: 0; background: #17171765; }
+  .tree-node { min-height: 42px; }
+  .win-command-bar { position: static; padding: 9px 12px; }
+  .win-content { padding: 18px 13px 28px; }
+  .win-statusbar .panel-engine { flex-basis: 100% !important; }
+  [data-workspace-anchor] { scroll-margin-top: 14px; }
 }
-
-.sb-label {
-  color: var(--win-muted);
-}
-
-.sb-val {
-  font-weight: 600;
-  color: var(--win-ink);
-}
-
-/* 登录面板 */
-.login-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-}
-
-.login-panel {
-  width: min(100%, 380px);
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 28px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-}
-
-.login-panel h1 {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 10px 0 4px;
-}
-
-/* 响应式断点适配 */
-@media (max-width: 900px) {
-  .win-layout {
-    grid-template-columns: 1fr;
-  }
-  .win-explorer-tree {
-    position: fixed;
-    top: 0;
-    left: -260px;
-    width: 250px;
-    transition: left 0.2s ease;
-    box-shadow: 2px 0 12px rgba(0,0,0,0.3);
-  }
-  .win-explorer-tree.open,
-  .workspace.nav-open .win-explorer-tree {
-    left: 0;
-  }
-  .btn-command-toggle, .btn-close-pane {
-    display: inline-flex;
-  }
-  .win-split-pane, .form-grid {
-    grid-template-columns: 1fr;
-  }
-  .win-metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+@media (max-width: 520px) {
+  .form-grid, .fetch-row { grid-template-columns: minmax(0, 1fr); }
+  .win-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .win-control-strip { flex-wrap: wrap; }
 }

@@ -1,0 +1,68 @@
+<section data-section="voices" class="win-page-view" hidden>
+  <div class="win-property-tabs">
+    <a href="#characters" class="prop-tab">大肥鱼 OC 角色卡</a>
+    <a href="#voices" class="prop-tab active" aria-current="page">语音音色</a>
+    <a href="#assets" class="prop-tab">素材与表情包</a>
+  </div>
+
+  <div class="page-heading win-heading">
+    <h1>语音合成与音色配置</h1>
+    <a class="button quiet" href="#overview">查看语音缓存</a>
+  </div>
+
+  <div class="form-grid">
+    <article class="win-group-box">
+      <div class="panel-heading">
+        <div class="win-group-title" style="margin:0;">TTS 语音来源与模型</div>
+        <span id="tts-source-state" class="badge">读取中</span>
+      </div>
+      <form id="tts-form" style="margin-top:10px;">
+        <label>语音引擎来源
+          <select id="tts-kind">
+            <option value="gpt_sovits">本地 Jetson / GPT-SoVITS</option>
+            <option value="openai_compatible">兼容远程 API</option>
+            <option value="prerecorded" hidden>预录音频配置</option>
+          </select>
+        </label>
+        <fieldset id="tts-api-fields" class="provider-fields" hidden disabled style="margin-top:10px;">
+          <label>服务 Base URL<input id="tts-base-url" type="url" placeholder="https://服务地址/v1" required></label>
+          <div class="form-grid">
+            <label>模型名称<input id="tts-model" required></label>
+            <label>Voice ID<input id="tts-voice" required></label>
+          </div>
+          <label>API Key（可选）<input id="tts-key" type="password" autocomplete="new-password" spellcheck="false"></label>
+          <p id="tts-key-state" class="hint"></p>
+          <label class="check-field"><input id="tts-clear-key" type="checkbox"> 清除已保存的语音密钥</label>
+        </fieldset>
+        <p id="tts-source-help" class="hint" style="margin-top:8px;"></p>
+        <div class="actions" style="margin-top:12px;">
+          <button class="primary win-btn" type="submit">保存语音配置</button>
+          <span id="tts-save-state" class="hint" role="status"></span>
+        </div>
+      </form>
+    </article>
+
+    <article class="win-group-box">
+      <div class="win-group-title">短句试听与音质核对</div>
+      <form id="preview-form" style="margin-top:10px;">
+        <label>音色选择<select id="preview-voice" required></select></label>
+        <label style="margin-top:8px;">试听文本
+          <textarea id="preview-text" rows="3" maxlength="120" required>你好呀，我是大肥鱼。今天也想和你说说话。</textarea>
+        </label>
+        <div class="actions" style="margin-top:10px;">
+          <button id="preview-submit" type="submit" class="primary win-btn">生成试听音频</button>
+          <span id="preview-state" class="hint" role="status"></span>
+        </div>
+        <audio id="preview-audio" controls preload="none" hidden style="margin-top:10px; width:100%;"></audio>
+      </form>
+      <p id="voice-preview-help" class="hint" style="margin-top:8px;">选择音色后点击生成试听。</p>
+    </article>
+  </div>
+
+  <div class="win-group-box" style="margin-top:16px;">
+    <div class="win-group-title">可用音色与授权协议列表</div>
+    <div class="table-scroll">
+      <table><thead><tr><th>音色名称</th><th>许可状态 / 来源</th></tr></thead><tbody id="voices"></tbody></table>
+    </div>
+  </div>
+</section>

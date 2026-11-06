@@ -1,0 +1,135 @@
+<section data-section="automation-settings" class="win-page-view" hidden>
+  <div class="win-property-tabs">
+    <a href="#automation" class="prop-tab">自动刷视频</a>
+    <a href="#automation-records" class="prop-tab">运行与发布记录</a>
+    <a href="#automation-settings" class="prop-tab active" aria-current="page">运营设置</a>
+  </div>
+  <div class="page-heading win-heading">
+    <h1>刷视频与运营设置</h1>
+    <a href="#automation" class="button quiet">← 返回控制台</a>
+  </div>
+
+  <section class="win-group-box automation-settings" id="operations-controls" data-workspace-anchor>
+    <h2 class="win-group-title">运营控制</h2>
+    <div class="operation-mode-grid">
+      <div class="win-subgroup-box">
+        <h3 class="win-subgroup-title">自动刷视频</h3>
+        <p class="hint">按所选来源发现视频并处理互动。</p>
+        <div class="actions">
+          <button id="discovery-toggle-settings" type="button" class="win-btn" disabled>开始自动刷视频</button>
+          <span id="discovery-settings-state" class="badge" role="status">读取中</span>
+        </div>
+      </div>
+      <div class="win-subgroup-box">
+        <h3 class="win-subgroup-title">全渠道自主运营</h3>
+        <p class="hint">处理评论、通知、私信和视频任务。</p>
+        <button id="op-toggle-auto" type="button" class="win-btn" disabled>开启全渠道自主运营</button>
+      </div>
+    </div>
+    <p id="op-active-rounds" class="hint" role="status"></p>
+    <div class="actions operation-round-actions">
+      <button id="op-preview-round" type="button" class="win-btn" disabled>只读单轮预览</button>
+      <button id="op-stop-round" type="button" class="win-btn" disabled>停止当前轮次</button>
+      <button id="refresh-operations" type="button" class="win-btn">刷新状态</button>
+    </div>
+    <p id="automatic-sending-state" class="feature-note" role="status" hidden></p>
+    <div class="operation-stop-controls">
+      <div class="actions">
+        <button id="op-emergency" type="button" class="danger">紧急停止所有自动收发</button>
+        <button id="op-reset-stop" type="button" class="win-btn" hidden>解除紧急停止</button>
+      </div>
+      <p class="hint">紧急停止会阻止各渠道自动收发，重启后仍有效。</p>
+    </div>
+  </section>
+
+  <div class="win-group-box automation-settings">
+    <h2 class="win-group-title">自动刷视频来源</h2>
+    <form id="discovery-source-form" class="discovery-source-form win-form-grid" data-workspace-anchor>
+      <div class="form-row-unified">
+        <label>发现来源
+          <select id="discovery-source" disabled>
+            <option value="recommend">首页推荐</option>
+            <option value="search">关键词搜索</option>
+            <option value="popular">热门榜单</option>
+            <option value="autonomous">由大肥鱼自主选题</option>
+            <option value="specified">指定特定视频 BV</option>
+          </select>
+        </label>
+        <div id="discovery-keywords-field" hidden style="flex:1;">
+          <label>关键词<input id="discovery-keywords" placeholder="多个关键词用逗号隔开"></label>
+        </div>
+        <div id="discovery-videos-field" hidden style="flex:1;">
+          <label>视频 BV 号<input id="discovery-videos" placeholder="多个 BV 号用逗号隔开"></label>
+        </div>
+        <button id="discovery-save-source" type="submit" class="win-btn" disabled>保存来源配置</button>
+      </div>
+      <p id="discovery-source-note" class="hint" role="status"></p>
+    </form>
+  </div>
+
+  <div class="win-group-box automation-settings" id="operation-round-settings" data-workspace-anchor style="margin-top:16px;">
+    <h2 class="win-group-title">共享轮次参数</h2>
+    <p class="hint">自动刷视频、只读预览和全渠道运营共用这些设置。</p>
+    <form id="op-round-settings" class="operation-settings-form">
+      <fieldset class="settings-form-group">
+        <legend>发布配额</legend>
+        <p class="hint">各项填 0 表示该项不限额。是否发出由各渠道的权限设置决定。</p>
+        <div class="form-grid settings-grid-3">
+          <label>单视频回复上限
+            <input id="op-max-replies" type="number" min="0" max="20" required>
+            <small class="hint">每日按视频计数</small>
+          </label>
+          <label>每小时发布上限
+            <input id="op-max-per-hour" type="number" min="0" max="30" required>
+          </label>
+          <label>每日发布上限
+            <input id="matrix-max-per-day" type="number" min="0" max="200" required>
+          </label>
+        </div>
+      </fieldset>
+      <fieldset class="settings-form-group">
+        <legend>轮次调度</legend>
+        <p class="hint">待处理任务积压时，公开回复、私信、视频任务按 2∶2∶1 调度。公开回复优先处理自己视频下的评论。</p>
+        <div class="form-grid">
+          <label>轮次间隔（秒）
+            <input type="number" id="op-interval" min="60" max="86400" step="1" required>
+            <small class="hint">一轮结束到下一轮开始的等待时间</small>
+          </label>
+          <label>视频 Agent 并发数
+            <input type="number" id="op-workers" min="1" max="8" step="1" required>
+            <small class="hint">单轮最多同时处理的视频数</small>
+          </label>
+        </div>
+      </fieldset>
+      <fieldset class="settings-form-group">
+        <legend>取材与模型</legend>
+        <div class="form-grid">
+          <label>每轮候选视频上限
+            <input id="exp-candidate-limit" type="number" min="1" max="20" required>
+          </label>
+          <label>每轮细看视频上限
+            <input id="exp-inspect-limit" type="number" min="1" max="20" required>
+          </label>
+          <label>单次决策最大输出 Token
+            <input id="exp-decision-max-tokens" type="number" min="512" max="65536" required>
+          </label>
+          <label>单轮运行超时（秒）
+            <input id="exp-deadline-seconds" type="number" min="10" max="1800" required>
+          </label>
+          <label class="check-field" style="grid-column:1 / -1;">
+            <input id="exp-visual-enabled" type="checkbox"> 启用视频画面分析
+          </label>
+        </div>
+      </fieldset>
+      <div class="actions" style="margin-top:12px;">
+        <button id="op-save-quick-config" type="submit" class="primary" disabled>保存轮次参数</button>
+        <p id="op-round-settings-note" class="hint" role="status"></p>
+      </div>
+    </form>
+  </div>
+
+  <div class="win-group-box" style="margin-top:16px;">
+    <div class="win-group-title">异常运营任务的恢复与重试策略</div>
+    <div id="operations-recovery-settings"></div>
+  </div>
+</section>

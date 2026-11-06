@@ -95,8 +95,9 @@ export function initIssueLog(api, page) {
 
 export function initDiscoveryPanel(api) {
   let value, request = 0, changing = false, saving = false, dirty = false, actionError = false;
-  const button = $("discovery-toggle");
+  const buttons = [$("discovery-toggle"), $("discovery-toggle-settings")].filter(Boolean);
   const status = $("discovery-state"), top = $("discovery-top-state");
+  const settingsStatus = $("discovery-settings-state");
   const attention = $("discovery-attention"), actions = $("discovery-actions");
   const result = $("discovery-result");
   const form = $("discovery-source-form"), source = $("discovery-source"), save = $("discovery-save-source");
@@ -106,8 +107,9 @@ export function initDiscoveryPanel(api) {
 
   function syncControls() {
     const unavailable = !value || status.textContent === "状态不可用";
-    button.disabled = unavailable || changing || saving || value.state === "emergency" || value.overlay_enabled ||
+    const toggleDisabled = unavailable || changing || saving || value.state === "emergency" ||
       (!value.enabled && dirty);
+    for (const button of buttons) button.disabled = toggleDisabled;
     source.disabled = keywords.disabled = videos.disabled = unavailable || changing || saving;
     save.disabled = unavailable || changing || saving || !dirty;
     $("discovery-keywords-field").hidden = !(keywords.required = source.value === "search");
@@ -149,7 +151,8 @@ export function initDiscoveryPanel(api) {
     $("workspace-character").textContent = data.character?.name || data.character?.id || "角色待确认";
     top.textContent = `自动刷视频 · ${label}`;
     status.textContent = label;
-    button.textContent = data.enabled ? "停止自动刷视频" : "开始自动刷视频";
+    if (settingsStatus) settingsStatus.textContent = label;
+    for (const button of buttons) button.textContent = data.enabled ? "停止自动刷视频" : "开始自动刷视频";
     if (!dirty) {
       source.value = data.source.mode;
       keywords.value = data.source.keywords.join("，");
@@ -201,12 +204,13 @@ export function initDiscoveryPanel(api) {
       if (current !== request) return;
       top.textContent = "自动刷视频 · 状态不可用";
       status.textContent = "状态不可用";
+      if (settingsStatus) settingsStatus.textContent = status.textContent;
       syncControls();
     }
   }
 
-  button.onclick = async () => {
-    if (button.disabled || !value || changing) return;
+  async function toggle(event) {
+    if (event.currentTarget.disabled || !value || changing) return;
     changing = true;
     actionError = false;
     ++request;
@@ -219,7 +223,8 @@ export function initDiscoveryPanel(api) {
       changing = false;
       render(value);
     }
-  };
+  }
+  for (const button of buttons) button.onclick = toggle;
   return { refresh, status: () => value };
 }
 

@@ -1,0 +1,74 @@
+<section data-section="overview" class="win-page-view" hidden>
+  <div class="win-property-tabs">
+    <a href="#settings" class="prop-tab">推理与模型</a>
+    <a href="#accounts" class="prop-tab">账号与权限矩阵</a>
+    <a href="#overview" class="prop-tab active" aria-current="page">存储与维护</a>
+    <a href="#issues" class="prop-tab">告警与诊断</a>
+  </div>
+
+  <div class="page-heading win-heading">
+    <h1>存储、上下文与数据维护</h1>
+  </div>
+
+  <!-- 诊断概览 -->
+  <div class="win-group-box">
+    <div class="win-group-title">运行时状态与组件健康度</div>
+    <dl class="workspace-overview win-metrics-grid">
+      <div class="metric-card"><dt>直播会话</dt><dd id="overview-live-state">待确认</dd></div>
+      <div class="metric-card"><dt>待播队列</dt><dd id="overview-queue">—</dd></div>
+      <div class="metric-card"><dt>OBS 播放器</dt><dd id="overview-player">待确认</dd></div>
+      <div class="metric-card"><dt>语音来源</dt><dd id="overview-speech">待确认</dd></div>
+    </dl>
+  </div>
+
+  <section class="win-group-box" id="cache-panel" data-workspace-anchor style="margin-top:16px;"></section>
+
+  <!-- 上下文管理 GroupBox -->
+  <article class="win-group-box" style="margin-top:16px;">
+    <div class="win-group-title">对话上下文管理与压缩诊断</div>
+    <dl id="context-details" class="description-list win-desc-grid" style="margin-top:10px;"></dl>
+    <p id="context-profile-note" class="hint"></p>
+    <div class="actions" style="margin-top:12px;">
+      <button id="compact-live" class="win-btn">压缩直播上下文</button>
+      <label class="inline-field">评论视频 ID<input id="compact-video-id" placeholder="BV…"></label>
+      <label class="inline-field">楼ID<input id="compact-thread-id" placeholder="楼ID"></label>
+      <button id="compact-comments-settings" class="win-btn">压缩评论上下文</button>
+    </div>
+    <p id="compaction-result" class="hint" role="status"></p>
+  </article>
+
+  <!-- 数据留存 GroupBox -->
+  <article class="win-group-box" id="retention-panel" style="margin-top:16px;">
+    <div class="panel-heading">
+      <div class="win-group-title" style="margin:0;">对话与流水数据留存策略</div>
+      <span class="hint">按已配置策略自动在后台执行</span>
+    </div>
+    <form id="retention-form" style="margin-top:10px;">
+      <div class="retention-policy win-checks-bar">
+        <label>保留天数<input id="retention-days" type="number" min="1" max="36500" step="1" value="30" required disabled style="width:100px;"></label>
+        <label class="check-field"><input id="retention-never" type="checkbox" disabled> 永不自动清理历史数据</label>
+        <button id="retention-save" type="submit" class="win-btn" disabled>保存留存策略</button>
+      </div>
+      <p id="retention-policy-state" class="hint" role="status">正在读取服务留存策略…</p>
+    </form>
+    <dl id="retention-status" class="description-list" style="margin-top:10px;"></dl>
+    <pre id="retention-last-result" class="code-small" hidden></pre>
+
+    <div class="win-subgroup-box" style="margin-top:16px;">
+      <div class="win-subgroup-title">手动预览与安全清理</div>
+      <p class="hint">清理会永久删除到期的对话上下文、检索索引与直播记录。原始评论、私信与审核草稿予以保留。</p>
+      <div class="actions" style="margin-top:8px;">
+        <label class="inline-field">截止日期（可选）<input id="retention-before" type="date" aria-describedby="retention-date-help" disabled></label>
+        <button id="retention-preview" type="button" class="win-btn" disabled>预览待清理范围</button>
+      </div>
+      <p id="retention-date-help" class="hint"></p>
+      <div id="retention-preview-panel" class="retention-preview" hidden>
+        <p id="retention-preview-cutoff" class="hint"></p>
+        <dl id="retention-preview-counts" class="description-list"></dl>
+        <label class="check-field" style="margin-top:8px;"><input id="retention-confirm" type="checkbox" disabled> 我已核对以上清理范围与数量，确认永久执行清理</label>
+        <button id="retention-cleanup" class="danger win-btn" type="button" disabled style="margin-top:8px;">确认清理预览记录</button>
+      </div>
+      <p id="retention-cleanup-state" class="hint" role="status"></p>
+    </div>
+  </article>
+</section>

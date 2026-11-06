@@ -1,0 +1,47 @@
+<section data-section="automation" class="win-page-view" hidden>
+  <!-- 逻辑同域 Tab 栏 -->
+  <div class="win-property-tabs">
+    <a href="#automation" class="prop-tab active" aria-current="page">自动刷视频</a>
+    <a href="#automation-records" class="prop-tab">运行与发布记录</a>
+    <a href="#automation-settings" class="prop-tab">运营设置</a>
+  </div>
+
+  <div class="page-heading win-heading">
+    <div class="heading-title-box">
+      <h1>自动刷视频</h1>
+      <span id="discovery-state" class="badge" role="status">正在读取运行状态…</span>
+    </div>
+    <button id="discovery-toggle" type="button" class="primary win-btn-lg" disabled>开始自动刷视频</button>
+  </div>
+
+  <div class="win-group-box">
+    <div class="panel-heading">
+      <div class="win-group-title">刷视频状态</div>
+      <a href="#automation-settings" class="button quiet">运营设置 →</a>
+    </div>
+
+    <div id="discovery-attention" class="win-attention-banner" aria-live="polite" hidden>
+      <div class="attention-header">⚠️ 需要操作者介入处理</div>
+      <ul id="discovery-actions"></ul>
+    </div>
+
+    <!-- 当前轮次进度与状态条 -->
+    <div class="win-subgroup-box discovery-round" style="margin-top: 14px;">
+      <div class="panel-heading">
+        <h2 id="discovery-round-heading">当前轮次进度</h2>
+        <a id="discovery-round-link" class="win-link-btn" hidden>查看轮次详情</a>
+      </div>
+      <p id="discovery-result" class="speech-text" style="font-size:14px; min-height:auto;" role="status">正在读取轮次…</p>
+      <p id="discovery-counts" class="hint"></p>
+    </div>
+  </div>
+
+  <!-- 最近活动日志 -->
+  <div class="win-group-box discovery-activity" style="margin-top: 16px;">
+    <div class="panel-heading">
+      <div class="win-group-title" style="margin:0;">实时活动流水</div>
+      <a href="#automation-records" class="win-link-btn">进入完整运行记录 →</a>
+    </div>
+    <div id="discovery-activity-list" class="win-activity-scroll"><p class="hint">正在读取最近活动…</p></div>
+  </div>
+</section>

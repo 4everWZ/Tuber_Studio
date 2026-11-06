@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 import secrets
 import time
 import weakref
@@ -11,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agent.api import register_agent_api
@@ -225,7 +226,13 @@ def create_app(
 
     @app.get("/")
     async def index():
-        return FileResponse(web / "index.html", headers={"Cache-Control": "no-cache, must-revalidate"})
+        shell = (web / "index.html").read_text(encoding="utf-8")
+        content = re.sub(
+            r"<!-- page: ([a-z-]+) -->",
+            lambda match: (web / "pages" / f"{match[1]}.html").read_text(encoding="utf-8"),
+            shell,
+        )
+        return HTMLResponse(content, headers={"Cache-Control": "no-cache, must-revalidate"})
 
     @app.get("/overlay")
     async def overlay():

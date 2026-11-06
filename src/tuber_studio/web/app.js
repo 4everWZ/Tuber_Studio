@@ -3,18 +3,17 @@
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.01";
-import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.01";
+import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.03";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.01";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261107.02";
+import { MessagesPanel } from "./messages.js?v=20261107.03";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
-  savePermissionMatrix as saveMatrixModule,
-} from "./modules/operations.js?v=20261107.01";
+} from "./modules/operations.js?v=20261107.03";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -22,9 +21,8 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261107.02";
+} from "./modules/comments.js?v=20261107.03";
 import {
-  localDateTime,
   initDynamicsModule,
 } from "./modules/dynamics.js?v=20261105.29";
 import {
@@ -33,9 +31,14 @@ import {
 import {
   renderLiveFeatures,
   renderControls,
-  renderServiceStatusCapsule,
   initLiveModule,
 } from "./modules/live.js?v=20261105.30";
+
+import {
+  badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
+} from "./modules/workspace-display.js";
+import { initWorkspaceNavigation } from "./modules/workspace-navigation.js";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#automation";
@@ -47,7 +50,6 @@ const api = async (path, options = {}) => {
   }
 };
 const updatePermissionCapsule = options => updateCapsuleModule(api, accountPanel, options);
-const savePermissionMatrix = options => saveMatrixModule(api, accountPanel, options);
 
 const model = {
   authenticated: false, status: null, page: "automation", characters: [], versions: [],
@@ -109,7 +111,6 @@ document.addEventListener("workspace-issue", event => {
 const discoveryPanel = initDiscoveryPanel(api);
 const refreshDiscoveryActivity = initDiscoveryActivity(api);
 const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status);
-const scrollPositions = new Map();
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
 $("daily-memory-card").addEventListener("toggle", event => {
   if (model.authenticated && event.currentTarget.open) void dailyMemoryUI.refresh();
@@ -150,63 +151,6 @@ const dynamicMemePicker = new MemePicker(api, (id, asset) => dynamicsModule?.sel
   title: "选择动态配图",
   description: "只显示此动态所属角色已启用且可用的图片。最多附加1张，保留原正文；修改配图后需要重新审核。"
 });
-
-const names = {
-  stopped: "已停止", live: "运行中", paused: "已暂停", degraded: "降级运行", ready: "就绪",
-  connecting: "连接中", error: "错误", queued: "排队中", generating: "生成台词", synthesizing: "合成语音",
-  ready_to_play: "等待播放器", playing: "播放中", completed: "已完成", failed: "失败", cancelled: "已取消",
-  expired: "已过期", filtered: "已过滤", duplicate: "重复事件", dropped: "已丢弃", selected: "已选中",
-  private_handoff: "已转私信", received: "已收到", skipped: "已跳过", pending: "等待中", running: "处理中", pending_review: "待审核",
-  approved: "已审核", rejected: "已拒绝", copied: "已复制", published: "已发布", publishing: "发布中",
-  publish_uncertain: "发布结果待核对", publish_failed: "发布失败", question: "问题",
-  suggestion: "建议 / 反馈", interaction: "适合互动", spam: "垃圾", general: "一般评论", chat: "弹幕",
-  gift: "礼物", song: "点歌", sfx: "预录音效", disconnect: "断线", mock: "离线演示", llama_cpp: "llama.cpp",
-  invalidated: "已失效", post: "生成动态", wait: "等待", role_story: "虚构角色故事",
-  checkpoint: "进度已保存", needs_material: "等待补充材料", deciding: "Agent 处理中", awaiting_review: "待审核", needs_reconciliation: "发送结果待核对", waiting: "等待下一步", abandoned: "已暂缓",
-};
-
-function label(value) { return names[value] || value || "—"; }
-function display(value) { return value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value); }
-function list(data) { return Array.isArray(data) ? data : data?.items || data?.results || []; }
-function time(value) {
-  if (!value) return "—";
-  const date = new Date(typeof value === "number" ? value * 1000 : value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleTimeString("zh-CN", { hour12: false });
-}
-function badge(value) {
-  const good = ["completed", "approved", "published", "live", "ready", "copied"];
-  const bad = ["failed", "error", "cancelled", "rejected", "degraded", "publish_uncertain", "publish_failed"];
-  return node("span", label(value), `badge ${good.includes(value) ? "good" : bad.includes(value) ? "bad" : ""}`);
-}
-function setBadge(element, value) {
-  const valueNode = badge(value);
-  element.className = valueNode.className;
-  element.textContent = valueNode.textContent;
-}
-
-function describe(element, entries) {
-  if (!element) return;
-  element.replaceChildren();
-  entries.forEach(([key, value]) => element.append(node("dt", key), node("dd", display(value))));
-}
-
-function empty(tbody, colspan, text) {
-  if (!tbody) return;
-  tbody.replaceChildren();
-  const row = node("tr");
-  const cell = node("td", text, "empty-cell");
-  cell.colSpan = colspan;
-  row.append(cell);
-  tbody.append(row);
-}
-
-function cell(row, value, small) {
-  const element = node("td");
-  element.append(value instanceof Node ? value : node("span", display(value)));
-  if (small) element.append(node("small", small, "cell-sub"));
-  row.append(element);
-  return element;
-}
 
 async function busy(button, action) {
   if (!button) return action();
@@ -296,73 +240,9 @@ function connectAdmin() {
 }
 
 function renderStatus(status) {
-  model.status = status;
-  renderServiceStatusCapsule(status, model.settings);
-  renderControls(model);
-  renderPersona(model);
-  setBadge($("live-state"), status.state);
-  $("overview-live-state").textContent = label(status.state);
-  $("overview-queue").textContent = status.queue_length ?? "—";
-  $("overview-player").textContent = status.overlay_connected ? "已连接" : "未连接";
-  $("overview-speech").textContent = {
-    gpt_sovits: "本地语音", openai_compatible: "兼容 API", prerecorded: "预录音频",
-  }[status.providers?.tts] || "待确认";
-  const job = status.current_job;
-  setBadge($("live-current-status"), job?.status || "ready");
-  $("live-current-text").textContent = job?.text || (job ? "正在处理当前事件…" : "等待事件。");
-  $("live-current-detail").textContent = job?.error || status.error || "";
-  $("last-played").textContent = status.last_played?.text || "暂无已确认播放记录。";
-  if (status.context) renderContext(status.context);
-  renderVoicePreview(model);
-  if ($("character-version")) {
-    $("character-version").title = `当前运行角色：${status.character?.name || "—"} v${status.character?.version ?? "—"}`;
-  }
-  // 更新 Windows 经典底部状态栏
-  if ($("sb-status-mode")) $("sb-status-mode").textContent = status.mode === "live" ? "直播模式" : "运营模式";
-  if ($("sb-status-char")) $("sb-status-char").textContent = `${status.character?.name || "大肥鱼"} v${status.character?.version ?? 1}`;
-  if ($("sb-status-engine")) $("sb-status-engine").textContent = status.providers?.llm ? `${status.providers.llm} (${label(status.state)})` : "就绪";
+  renderWorkspaceStatus(model, status);
 }
-
-setInterval(() => {
-  const clock = $("sb-status-time");
-  if (clock) clock.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-}, 1000);
-
-function tokenCount(value) {
-  return typeof value === "number" ? `${value.toLocaleString("en-US")} tokens` : "—";
-}
-function occupancyText(context) {
-  if (!context?.configured_tokens || context.active_tokens == null) return "—";
-  return `${Math.round((context.active_tokens / context.configured_tokens) * 100)}%`;
-}
-function renderContext(context) {
-  const usable = context.usable !== false;
-  const external = context.source === "external_declared";
-  const error = context.error || "";
-  describe($("context-details"), [
-    ["活动范围", context.scope || "暂无活动历史"],
-    ["配置目标", tokenCount(context.configured_tokens)],
-    [external ? "API 服务容量声明" : "实际服务容量", tokenCount(context.server_tokens)],
-    [external ? "API 上限声明" : "模型原生容量", tokenCount(context.native_tokens)],
-    ["完整输入占用", `${tokenCount(context.active_tokens ?? 0)}（${occupancyText(context)}）`],
-    ["累计已安装压缩轮数", context.compact_count ?? 0],
-    ["最近操作尝试轮数", context.compaction_passes_last ?? 0],
-    ["最近摘要预算", (context.summary_budgets_last || []).map(value => `${value} tokens`).join(" / ") || "尚未压缩"],
-    ["二轮触发占用", `${context.secondary_threshold_percent ?? 40}%`],
-    ["最近压缩提示", context.last_compaction_warning || "无"],
-    ["最近压缩错误", context.last_compaction_error || "无"]
-  ]);
-  if ($("context-profile-note")) {
-    $("context-profile-note").textContent = error || (external ?
-      "外部 API 的容量来自操作者声明；可用连接、实际 token 用量与容量上限是不同证据，不能标为本机已验证 128K。" :
-      "模型原生能力、运行服务实际容量及配置目标分别显示。上方设置保存成功后立即应用，并重新校验服务容量。");
-  }
-  const generate = $("generate-drafts");
-  if (generate) {
-    if (generate.getAttribute("aria-busy") !== "true") generate.disabled = !usable;
-    generate.title = usable ? "" : error || "等待实际上下文能力验证";
-  }
-}
+setInterval(refreshWorkspaceClock, 1000);
 
 async function loadAssets() {
   model.assets = list(await api("/api/assets"));
@@ -444,12 +324,6 @@ async function loadVoices() {
   renderVoicePreview(model, !previous);
 }
 
-function dateTime(value) {
-  if (value == null) return "—";
-  const date = new Date(typeof value === "number" ? value * 1000 : value);
-  return Number.isNaN(date.getTime()) ? display(value) : date.toISOString().replace("T", " ").slice(0, 19);
-}
-
 async function compactContext(scope, videoId, threadId) {
   if (scope === "comments" && (!videoId || !threadId)) throw new Error("请先选择要压缩的视频与单个楼ID；不同楼上下文不会合并。");
   const payload = { scope, ...(scope === "comments" ? { video_id: videoId, thread_id: threadId } : {}) };
@@ -468,98 +342,47 @@ async function compactContext(scope, videoId, threadId) {
   }
 }
 
-async function changePage() {
-  const requested = location.hash.slice(1) || "automation";
-  const [root, routeKind, routeId, taskId] = requested.split("/");
-  const legacyAnchors = {
-    "voice-cache-card": "cache-panel", storage: "cache-panel", providers: "providers-panel",
-    memory: "daily-memory-card",
-  };
-  const target = $(Object.hasOwn(legacyAnchors, root) ? legacyAnchors[root] : root);
-  const anchor = target?.hasAttribute("data-workspace-anchor") ? target : null;
-  const page = anchor?.closest("[data-section]")?.dataset.section ||
-    (root === "automation" && routeKind === "round" ? "automation-records" : root);
-  const pages = {
-    comments: "评论与草稿", automation: "自动刷视频", messages: "私信", dynamics: "动态",
-    "automation-records": "运行记录", "automation-settings": "刷视频与运营设置", issues: "告警与错误",
-    live: "直播控制", "live-scene": "场景编排", "live-music": "曲库与点歌",
-    "live-interaction": "互动与游戏",
-    characters: "角色工作室", voices: "语音", assets: "素材与表情包",
-    settings: "推理与模型", accounts: "账号与权限", overview: "存储与维护",
-  };
-  const previous = model.page;
-  scrollPositions.set(previous, window.scrollY);
-  model.page = Object.hasOwn(pages, page) ? page : "automation";
+async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   if (model.page !== "comments") commentQueue.leave();
-  document.querySelectorAll("[data-section]").forEach(section => {
-    section.hidden = section.dataset.section !== model.page;
-  });
-  let group;
-  document.querySelectorAll(".workspace-subnav").forEach(nav => {
-    nav.hidden = !nav.querySelector(`[data-page="${model.page}"]`);
-    if (!nav.hidden) group = nav.dataset.workspace;
-  });
-  document.querySelectorAll("[data-page]").forEach(link => {
-    const exact = link.dataset.page === model.page;
-    const active = exact || Boolean(group && link.dataset.workspaceHome === group) ||
-      (model.page === "automation-records" && link.dataset.page === "automation");
-    link.classList.toggle("selected", active);
-    if (active) link.setAttribute("aria-current", link.dataset.workspaceHome ? "location" : "page");
-    else link.removeAttribute("aria-current");
-  });
-  document.title = `${pages[model.page]} · Tuber Studio`;
-  closeWorkspaceMenu();
-  if (!anchor && previous !== model.page) window.scrollTo(0, scrollPositions.get(model.page) || 0);
-
   if (!model.authenticated) return;
-  try {
-    if (model.page === "comments") {
-      const queueView = commentQueueViews.includes(routeKind) ? routeKind : null;
-      const [channel, identity] = queueView ? [routeId, taskId] : [routeKind, routeId];
-      const validKey = ["comments", "browsing", "jobs"].includes(channel) && /^[\w-]+$/.test(identity || "");
-      await commentQueue.open(anchor ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
-    } else if (model.page === "automation") {
-      await discoveryPanel.refresh();
-      if (model.page === "automation") await refreshDiscoveryActivity();
-    } else if (model.page === "automation-records") {
-      const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
-      await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
-    } else if (model.page === "automation-settings") {
-      await Promise.allSettled([discoveryPanel.refresh(), updatePermissionCapsule(), automationPanel.loadRecovery()]);
-    } else if (model.page === "issues") {
-      issueLog.render();
-      await issueLog.refresh();
-    } else if (model.page === "messages") {
-      await messagesPanel.refresh();
-    } else if (model.page === "dynamics") {
-      await refreshDynamics();
-    } else if (model.page === "assets") {
-      await memeGallery.refresh();
-    } else if (model.page === "live") {
-      await refreshLive();
-    } else if (model.page === "live-scene" || model.page === "live-music") {
-      const frame = document.querySelector(`[data-section="${model.page}"] iframe`);
-      if (!frame.hasAttribute("src")) frame.src = frame.dataset.src;
-    } else if (model.page === "live-interaction") {
-      await interactiveGamesUI.refresh();
-    } else if (model.page === "characters") {
-      renderPersona(model);
-      if ($("daily-memory-card").open) await dailyMemoryUI.refresh();
-    } else if (model.page === "overview") {
-      await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
-    } else if (model.page === "accounts") {
-      await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
-    } else if (model.page === "settings") {
-      await Promise.allSettled([inferenceNodePanel.refresh(), inferenceProviders.refresh()]);
-    }
-    if (anchor && model.page === page) {
-      for (let element = anchor; element; element = element.parentElement) {
-        if (element instanceof HTMLDetailsElement) element.open = true;
-      }
-      anchor.scrollIntoView();
-    }
-  } catch (error) {
-    notice(error.message, true);
+  if (model.page === "comments") {
+    const queueView = commentQueueViews.includes(routeKind) ? routeKind : null;
+    const [channel, identity] = queueView ? [routeId, taskId] : [routeKind, routeId];
+    const validKey = ["comments", "browsing", "jobs"].includes(channel) && /^[\w-]+$/.test(identity || "");
+    await commentQueue.open(anchor ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
+  } else if (model.page === "automation") {
+    await discoveryPanel.refresh();
+    if (model.page === "automation") await refreshDiscoveryActivity();
+  } else if (model.page === "automation-records") {
+    const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
+    await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
+  } else if (model.page === "automation-settings") {
+    await Promise.allSettled([discoveryPanel.refresh(), updatePermissionCapsule(), automationPanel.loadRecovery()]);
+  } else if (model.page === "issues") {
+    issueLog.render();
+    await issueLog.refresh();
+  } else if (model.page === "messages") {
+    await messagesPanel.refresh();
+  } else if (model.page === "dynamics") {
+    await refreshDynamics();
+  } else if (model.page === "assets") {
+    await memeGallery.refresh();
+  } else if (model.page === "live") {
+    await refreshLive();
+  } else if (model.page === "live-scene" || model.page === "live-music") {
+    const frame = document.querySelector(`[data-section="${model.page}"] iframe`);
+    if (!frame.hasAttribute("src")) frame.src = frame.dataset.src;
+  } else if (model.page === "live-interaction") {
+    await interactiveGamesUI.refresh();
+  } else if (model.page === "characters") {
+    renderPersona(model);
+    if ($("daily-memory-card").open) await dailyMemoryUI.refresh();
+  } else if (model.page === "overview") {
+    await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
+  } else if (model.page === "accounts") {
+    await Promise.allSettled([accountPanel.settingsOpened(), updatePermissionCapsule(), commentsModule?.loadPolicy()]);
+  } else if (model.page === "settings") {
+    await Promise.allSettled([inferenceNodePanel.refresh(), inferenceProviders.refresh()]);
   }
 }
 
@@ -783,29 +606,7 @@ if ($("refresh-operations")) {
   };
 }
 
-const workspaceMenu = $("workspace-menu");
-const workspaceMain = document.querySelector(".main-shell");
-function closeWorkspaceMenu(restoreFocus = false) {
-  const wasOpen = workspaceMenu.getAttribute("aria-expanded") === "true";
-  $("workspace").classList.remove("nav-open");
-  workspaceMenu.setAttribute("aria-expanded", "false");
-  workspaceMain.inert = false;
-  if (wasOpen && restoreFocus) workspaceMenu.focus();
-}
-workspaceMenu.onclick = () => {
-  const open = $("workspace").classList.toggle("nav-open");
-  workspaceMenu.setAttribute("aria-expanded", String(open));
-  workspaceMain.inert = open;
-  if (open) ($("workspace-sidebar").querySelector("[aria-current]") || $("workspace-sidebar").querySelector("a")).focus();
-};
-$("close-workspace-menu").onclick = () => closeWorkspaceMenu(true);
-$("workspace-backdrop").onclick = () => closeWorkspaceMenu(true);
-matchMedia("(max-width: 760px)").addEventListener("change", () => closeWorkspaceMenu());
-$("workspace-sidebar").onclick = event => {
-  if (event.target.closest("a")) closeWorkspaceMenu(true);
-};
-document.addEventListener("keydown", event => { if (event.key === "Escape") closeWorkspaceMenu(true); });
-window.addEventListener("hashchange", changePage);
+const changePage = initWorkspaceNavigation(model, loadWorkspacePage);
 window.addEventListener("beforeunload", event => {
   if (commentQueue.hasUnsaved() || model.characterDirty || model.commentPolicyDirty || inferenceProviders.dirty || voiceSettings.dirty || model.dynamicPolicyDirty || model.dynamicPostDirty || messagesPanel.hasUnsaved()) {
     event.preventDefault();

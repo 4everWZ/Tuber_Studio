@@ -20,6 +20,10 @@
     return String(value ?? "").replace(/[&<>"]/g, char => chars[char]);
   }
 
+  function taskReason(task) {
+    return task.retry_kind || task.payload?.retry_kind || task.reason || task.error_kind || task.error || task.payload?.reason;
+  }
+
   class OperationsWorkbench {
     constructor(container, api, notify, refresh) {
       this.container = container;
@@ -181,7 +185,7 @@
           return [this.activeTab, this.rounds.map(r => [r.id, r.status, r.budget, r.error])];
         case "tasks":
           return [this.activeTab, this.taskFilter, this.selectedTaskId, this.tasks.map(t => [
-            t.id, t.status, t.title || t.metadata?.title, t.reason || t.error_kind || t.error || t.payload?.reason,
+            t.id, t.status, t.title || t.metadata?.title, taskReason(t),
           ])];
         default:
           return [this.activeTab, this.inbox];
@@ -470,7 +474,7 @@
             <span class="op-tag-status ${report.statusInfo.className}">${report.statusInfo.label}</span>
           </div>
           <p class="op-round-narrative">${escapeHtml(report.narrative)}</p>
-          <a href="#automation/round/${encodeURIComponent(round.id)}">查看本轮视频</a>
+          ${report.interactionOnly ? '<button type="button" data-open-inbox>查看互动收件箱</button>' : `<a href="#automation/round/${encodeURIComponent(round.id)}">查看本轮视频</a>`}
           <div class="op-round-metrics-grid">
             <div class="op-metric-chip">
               <span class="op-metric-k">读取请求</span>
@@ -490,6 +494,9 @@
             </div>
           </div>
         `;
+
+        const inboxButton = card.querySelector("[data-open-inbox]");
+        if (inboxButton) inboxButton.onclick = () => this.switchTab("inbox");
 
         listContainer.append(card);
       });
@@ -527,7 +534,7 @@
 
         const title = task.title || task.metadata?.title || task.bvid || `任务 ${task.id?.slice(0, 8)}`;
         const statusInfo = humanizeStatus(task.status);
-        const reasonText = humanizeReason(task.reason || task.error_kind || task.error || task.payload?.reason);
+        const reasonText = humanizeReason(taskReason(task));
 
         tr.innerHTML = `
           <td>
@@ -712,7 +719,7 @@
           </div>
           <div class="op-ai-reason-card">
             <h4>💡 视频理解与决策</h4>
-            <p class="op-reason-text">${escapeHtml(humanizeReason(task.reason || task.error || task.decisions?.map(value => humanizeReason(value.reason)).join(" · ")))}</p>
+            <p class="op-reason-text">${escapeHtml(humanizeReason(taskReason(task) || task.decisions?.map(value => humanizeReason(value.reason)).join(" · ")))}</p>
           </div>
           ${task.consecutive_failures ? `<p class="hint">连续失败 ${escapeHtml(task.consecutive_failures)} 次${task.consecutive_failures === 3 ? " · 已跳过" : ""}</p>` : ""}
           <details class="subsection"><summary>分 P 覆盖与引用材料</summary>
