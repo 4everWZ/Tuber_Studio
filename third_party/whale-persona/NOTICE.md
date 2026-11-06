@@ -1,11 +1,12 @@
 # 大肥鱼默认人格文字来源
 
-`config/characters.json` 中 `whale` 的人格表达参考并改写了以下三份 MIT 项目的文字。名称仍为“大肥鱼”，ID仍为`whale`。这里只说明人格文字来源，图像、表情、声线和其他素材继续沿各自许可；角色原有`license_status`保持不变。
+`config/characters.json` 中 `whale` 的人格以 YunYueSama 的桌面鲸鱼娘设定为主要参考，融合 QQ 熟人对话的口吻，并保留此前参考的社区角色性格。图像、表情、声线和其他素材沿各自许可。
 
 ## 来源与许可
 
 | 项目／作者署名 | 固定版本与实际文件 | 保留的许可原文 |
 | --- | --- | --- |
+| YunYueSama / codex-deepseek-pet | [角色设定](https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/docs/角色设定.md) | [角色设定与素材署名条款](https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/ASSET_LICENSE.md) |
 | whyever77 / dafeiyu-astrbot contributors，Copyright (c) 2026 | [`7ee692a7479aa2774fa41ff54390ad8bef46d8d3`：persona/大肥鱼-人格.md](https://github.com/whyever77/dafeiyu-astrbot/blob/7ee692a7479aa2774fa41ff54390ad8bef46d8d3/persona/大肥鱼-人格.md) | [MIT](LICENSE-dafeiyu-astrbot.txt) |
 | SAKURAfan1023 / Dafeiyu Contributors，Copyright (c) 2026 | [`ff2bb2f0baf99e449b529f897e7db0d6561321de`：QQPersonality.swift](https://github.com/SAKURAfan1023/dafeiyu-bot/blob/ff2bb2f0baf99e449b529f897e7db0d6561321de/Sources/BotCore/QQPersonality.swift)、[QQPersona.swift](https://github.com/SAKURAfan1023/dafeiyu-bot/blob/ff2bb2f0baf99e449b529f897e7db0d6561321de/Sources/BotCore/QQPersona.swift) | [MIT](LICENSE-dafeiyu-bot.txt) |
 | Kaalia0912 / dsh-whale-musume-persona contributors，Copyright (c) 2026 | [`0fbdcf217e3bf94e35fef36f7ac56134b704529b`：agent.cordis.yml，persona段落](https://github.com/Kaalia0912/dsh-whale-musume-persona/blob/0fbdcf217e3bf94e35fef36f7ac56134b704529b/agent-presets/whale/agent.cordis.yml#L30-L53) | [MIT](LICENSE-dsh-whale-musume-persona.txt) |
@@ -14,6 +15,7 @@
 
 | 来源中的主题 | 本项目采用的表达与位置 |
 | --- | --- |
+| 桌面大肥鱼的昵称、鼓腮嘴硬、白饭与做事时的反差 | `core.identity/traits` 与默认短卡。平常称对方为你，自称随熟悉程度和语气变化。 |
 | AstrBot“形象与性格”：聪明、爱面子、嘴硬心软，有自己的偏好与看法 | `core.identity/traits/interaction`：机灵又有小脾气，坦率分享偏好，熟悉后更亲近；关心落在回应与行动里。 |
 | AstrBot“聊天节奏”“分寸与情绪”：一到三句、可追问也可不问，按当下情绪接话 | `style.instructions`与`rules`：自然短句、按话题展开；难过时倾听，认真托付时给出下一步。 |
 | QQPersonality的teasing、gentle、tsundere、energetic描述，以及QQPersona的轻松互动与夸奖反差 | `core.traits`与夸奖／调侃示例：会得意、会不好意思、能认栽；好奇与有来有回的小玩笑。未整体引入其他独立性格模式。 |

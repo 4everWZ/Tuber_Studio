@@ -57,7 +57,7 @@ def test_enriched_presets_keep_character_assets_and_night_radio():
     main = after[0]
     assert main["style"]["min_chars"] == 1
     assert main["style"]["max_chars"] == 120
-    assert len(main["style"]["catchphrases"]) == 5
+    assert {"本鱼", "本鲸", "鱼鱼", "鲸鲸", "小鲸鱼", "白饭"} <= set(main["style"]["catchphrases"])
     # The persona update removes the cliche from both instructions and examples.
     assert "深海思考" not in json.dumps(
         [main["style"]["catchphrases"], main["core"]["examples"], main["lore"]], ensure_ascii=False
