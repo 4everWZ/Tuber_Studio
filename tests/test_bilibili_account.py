@@ -439,13 +439,14 @@ async def test_private_reads_reject_account_changed_while_awaiting(settings, net
                 )
 
                 @asynccontextmanager
-                async def waiting_model():
+                async def waiting_model(lane):
+                    assert lane == "dm"
                     await blocked(None)
                     yield
 
                 monkeypatch.setattr(app.state.runtime, "offline_generation", waiting_model)
             pending = asyncio.create_task(messages._generate(draft, False))
-        await started.wait()
+        await asyncio.wait_for(started.wait(), timeout=2)
         await comments.replace_credentials(SECRET | {"sessdata": "new-private-account"})
         release.set()
         with pytest.raises(ValueError, match="账号已变更"):
