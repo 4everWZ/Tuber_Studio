@@ -146,8 +146,19 @@ class BrowsingDecisions:
             )
         )
 
+        thread = data.get("thread") or {}
+        profile_uid = (thread.get("source") or {}).get("author_uid")
+        relations = self.browsing.runtime.relationships
+        profile_revision = relations.profile_revision(
+            row["account_id"], row["character_id"], "bilibili", profile_uid
+        )
+
         def guard():
             self.browsing._check_round(row)
+            if profile_revision != relations.profile_revision(
+                row["account_id"], row["character_id"], "bilibili", profile_uid
+            ):
+                raise ValueError("等待模型期间用户档案已更新")
             source = data.get("source_identity")
             if source and self.browsing.store.one(
                 "SELECT d.id FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE c.platform='bilibili' AND c.video_id=? AND c.comment_id=? AND d.character_id=?",
@@ -244,6 +255,8 @@ class BrowsingDecisions:
         }
         if response_input is not None:
             binding["input_format"] = response_input.FORMAT_VERSION
+        if profile_revision is not None:
+            binding["profile_revision"] = profile_revision
         if video_response:
             binding["video_response"] = "aligned-source-dry-v1"
         independent = row["config"].get("discovery_publish")
@@ -842,6 +855,12 @@ class BrowsingDecisions:
             await asyncio.gather(heartbeat, return_exceptions=True)
 
     async def _response(self, row, material, context, allowed, kind, metrics):
+        if uid := (context.get("source") or {}).get("author_uid"):
+            context = context | {
+                "confirmed_relationship": self.browsing.runtime.relationships.view(
+                    row["character_id"], "bilibili", str(uid), account_id=row["account_id"]
+                )
+            }
         if material and kind == "top_level" and material["coverage"] == "sampled_visual":
             segments = self._video_response_segments(material, allowed)
         else:

@@ -5,7 +5,9 @@ import sqlite3
 import time
 
 import pytest
+from fastapi.testclient import TestClient
 
+from tuber_studio.app import create_app
 from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.dynamics import Dynamics
@@ -70,6 +72,45 @@ def test_relationship_preserves_legacy_range_and_isolates_accounts_and_ocs(store
     assert relations.view(character["id"], "bilibili", "456", "鱼宝", account_id="900")["affinity"] == 20
     assert relations.view(*args) == old
     assert store.one("SELECT COUNT(*) AS n FROM account_relation_events")["n"] == 1
+
+
+def test_confirm_edit_opt_out_and_clear_user_memory(settings):
+    app = create_app(settings, Delivery())
+    with TestClient(app) as client:
+        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        comments = app.state.comments
+        comments.verified_account_id, comments.verified_credential = "900", dict(comments.credentials)
+        relations, character = app.state.runtime.relationships, app.state.runtime.character["id"]
+        url = "/api/user-memory/bilibili/123"
+        scope = {"account_id": "900", "character_id": character}
+        args = (character, "bilibili", "123", "鱼宝")
+        values = {
+            "personalization_enabled": True,
+            "nickname": "饭友",
+            "preferences": ["吃白饭"],
+            "important_events": ["一起做盐水实验"],
+        }
+        assert client.put(url, params=scope | {"account_id": "901"}, json=values).status_code == 409
+        assert client.put(url, params=scope | {"character_id": "other"}, json=values).status_code == 409
+        first = relations.observe(*args, "comment:1", "今天要加饭", account_id="900")
+        assert first["affinity"] == 21
+        saved = client.put(url, params=scope, json=values).raise_for_status().json()
+        assert saved["source"] == "operator_confirmed" and saved["last_interaction_at"]
+        assert relations.view(*args, account_id="900")["preferences"] == ["吃白饭"]
+        assert "preferences" not in relations.view(*args, account_id="901")
+        assert "preferences" not in relations.view(character, "bilibili", "456", account_id="900")
+
+        opted_out = values | {"personalization_enabled": False, "nickname": "新称呼"}
+        client.put(url, params=scope, json=opted_out).raise_for_status()
+        assert not relations.view(*args, account_id="900")
+        assert not relations.observe(*args, "dm:2", "一条新的来信", account_id="900")
+        assert client.get(url, params=scope).json()["nickname"] == "新称呼"
+        cleared = client.delete(url, params=scope).raise_for_status().json()
+        assert cleared["personalization_enabled"] is False and cleared["affinity"] == 20
+        assert not cleared["nickname"] and not cleared["preferences"] and not cleared["important_events"]
+        assert cleared["confirmed_at"] is None and cleared["last_interaction_at"] is None
+        client.put(url, params=scope, json=values | {"preferences": []}).raise_for_status()
+        assert relations.observe(*args, "comment:1", "今天要加饭", account_id="900")["affinity"] == 20
 
 
 async def test_same_platform_message_id_is_distinct_per_account(service):

@@ -1,13 +1,58 @@
 """Character, memory, and conversation context routes."""
 
 import json
+from typing import Annotated, Literal
 
-from fastapi import Body, Depends, HTTPException, Query
+from fastapi import Body, Depends, HTTPException, Path, Query
 
 from ..models import Character
+from ..relationships import UserProfile
 
 
 def register_agent_api(app, settings, runtime, store, comments, require_admin):
+    def user_memory_scope(platform, user_id, account_id, character_id):
+        messages = comments.direct_messages
+        current_account = messages.display_account_id() if messages else comments.display_account_id()
+        if (
+            not current_account
+            or str(current_account) != account_id
+            or runtime.character["id"] != character_id
+        ):
+            raise HTTPException(409, "当前账号或角色已变化，请重新打开用户档案")
+        return account_id, character_id, platform, user_id
+
+    @app.get("/api/user-memory/{platform}/{user_id}", dependencies=[Depends(require_admin)])
+    async def user_memory(
+        platform: Literal["bilibili"],
+        user_id: Annotated[str, Path(min_length=1, max_length=100)],
+        account_id: str,
+        character_id: str,
+    ):
+        return runtime.relationships.profile(*user_memory_scope(platform, user_id, account_id, character_id))
+
+    @app.put("/api/user-memory/{platform}/{user_id}", dependencies=[Depends(require_admin)])
+    async def save_user_memory(
+        platform: Literal["bilibili"],
+        user_id: Annotated[str, Path(min_length=1, max_length=100)],
+        account_id: str,
+        character_id: str,
+        data: UserProfile,
+    ):
+        async with runtime.generation_lock:
+            scope = user_memory_scope(platform, user_id, account_id, character_id)
+            return runtime.relationships.set_profile(*scope, profile=data)
+
+    @app.delete("/api/user-memory/{platform}/{user_id}", dependencies=[Depends(require_admin)])
+    async def clear_user_memory(
+        platform: Literal["bilibili"],
+        user_id: Annotated[str, Path(min_length=1, max_length=100)],
+        account_id: str,
+        character_id: str,
+    ):
+        async with runtime.generation_lock:
+            scope = user_memory_scope(platform, user_id, account_id, character_id)
+            return runtime.relationships.set_profile(*scope)
+
     @app.get("/api/characters", dependencies=[Depends(require_admin)])
     async def characters():
         return store.characters()

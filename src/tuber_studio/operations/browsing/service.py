@@ -1117,7 +1117,7 @@ class BrowsingService:
             "UPDATE browsing_events SET status='context_ready',source_key=? WHERE id=?",
             (canonical, event_row["id"]),
         )
-        relationship = self.runtime.relationships.observe(
+        self.runtime.relationships.observe(
             row["character_id"],
             "bilibili",
             str(source["author_uid"]),
@@ -1126,7 +1126,6 @@ class BrowsingService:
             source["text"],
             account_id=row["account_id"],
         )
-        thread["confirmed_relationship"] = relationship
         items_list = thread.get("items", [])
         root_id = str(target.get("root") or "")
         parent_id = str(target.get("parent") or "")

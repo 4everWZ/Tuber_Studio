@@ -245,7 +245,11 @@ class Runtime:
         continuation = None
         if operation:
             maximum = self.settings.data["llm"].get("operations_max_tokens", 8192)
-            binding = reply_generation_binding(scope, character, event, mode)
+            source_binding = reply_generation_binding(scope, character, event, mode)
+            binding = dict(source_binding)
+            profile_revision = self.relationships.event_profile_revision(character["id"], event)
+            if profile_revision is not None:
+                binding["profile_revision"] = profile_revision
             identity = event["event_id"] + ":" + content_hash(binding)
 
             async def invoke(packet, *, web_fetch=None):
@@ -267,10 +271,11 @@ class Runtime:
 
             def guard():
                 current = self.store.character()
-                if (current["id"], current["version"]) != (
-                    character["id"],
-                    character["version"],
-                ) or reply_generation_binding(scope, character, event, mode) != binding:
+                if (
+                    (current["id"], current["version"]) != (character["id"], character["version"])
+                    or reply_generation_binding(scope, character, event, mode) != source_binding
+                    or self.relationships.event_profile_revision(character["id"], event) != profile_revision
+                ):
                     raise ValueError("生成期间角色或原始事件已变化")
 
             def diagnose(value):

@@ -357,6 +357,7 @@ class Comments:
             + " ORDER BY c.id DESC LIMIT ?",
             (*args, min(limit, 1000)),
         )
+        account_id = self.display_account_id()
         for row in rows:
             row["continuation"] = generation_view(
                 self.runtime, row.get("generation_continuation_id"), "comments", row["id"]
@@ -365,8 +366,9 @@ class Comments:
                 self.runtime.character["id"],
                 row["platform"],
                 row["platform_user_id"],
-                account_id=self.display_account_id(),
+                account_id=account_id,
             )
+            row["relationship_account_id"] = account_id
             row["draft"] = self.store.one("SELECT * FROM drafts WHERE comment_id=?", (row["id"],))
             if row["draft"] and row["draft"].get("answer_check"):
                 row["draft"]["answer_check"] = json.loads(row["draft"]["answer_check"])

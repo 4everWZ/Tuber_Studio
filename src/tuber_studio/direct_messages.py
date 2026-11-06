@@ -381,6 +381,8 @@ class DirectMessages:
         if not (policy["enabled"] and policy["allow_comment_handoff"] and row.get("platform_user_id")):
             return None
         binding = reply_generation_binding(scope, character, event, "comment_channel_decision")
+        if profile_revision := self.runtime.relationships.event_profile_revision(character["id"], event):
+            binding["profile_revision"] = profile_revision
         binding.update(
             account_id=str(event.get("account_id", "") or ""),
             schema="ChannelDecision",

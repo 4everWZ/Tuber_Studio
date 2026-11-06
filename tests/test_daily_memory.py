@@ -154,6 +154,34 @@ async def test_distillation_with_grounded_validation(store):
     assert "热白米饭" in item["anecdote"]
 
 
+async def test_distillation_only_saves_a_grounded_source(store):
+    service = DailyMemoryService(store)
+    character = store.character()
+    date = datetime.date.today().isoformat()
+    candidates = [
+        {"source_ref": "a", "source_user": "小鱼", "content": "白饭很好吃，一起加饭。"},
+        {"source_ref": "b", "source_user": "海豹", "content": "白饭很好吃，再来一碗。"},
+    ]
+    base = {"headline": "今天的饭", "anecdote": "我已经吃饱啦", "source_user": "编造的昵称"}
+    provider = DummyProvider(
+        {
+            "highlights": [
+                base | {"source_ref": "missing", "quote": "再来一碗"},
+                base | {"source_ref": "a", "quote": "再来一碗"},
+                base | {"source_ref": "missing", "quote": "白饭很好吃"},
+                base | {"source_ref": "missing", "quote": "一份甜点"},
+            ]
+        }
+    )
+    result = await service.distill(character, date, provider, candidates=candidates, auto_approve=True)
+    assert [(item["source_ref"], item["source_user"], item["quote"]) for item in result] == [
+        ("b", "海豹", "再来一碗")
+    ]
+    assert store.all("SELECT source_ref,source_user,status FROM daily_highlights") == [
+        {"source_ref": "b", "source_user": "海豹", "status": "active"}
+    ]
+
+
 @pytest.mark.asyncio
 async def test_context_manager_injects_daily_memory(settings, store):
     service = DailyMemoryService(store)

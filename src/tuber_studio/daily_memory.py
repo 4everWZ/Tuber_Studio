@@ -115,7 +115,7 @@ SCAFFOLDING_WORDS = {
 }
 
 DISTILLATION_PROMPT = """你叫{name}，是一只活泼机灵、爱吐槽又有点傲娇的深海鲸鱼娘虚拟主播。
-请审阅今天在社群评论区与直播间发生的真实互动素材，从中提炼出 2 到 3 个最生动、最值得当作日常谈资的【每日趣事与社群高光】。
+请审阅今天在社群评论区与直播间发生的真实互动素材，从中提炼出最多 3 个值得当作日常谈资的【每日趣事与社群高光】。素材不足可以留空。
 
 【输入素材列表】
 {candidates_json}
@@ -310,11 +310,11 @@ class DailyMemoryService:
                     "maxItems": 4,
                     "items": {
                         "type": "object",
-                        "required": ["category", "headline", "quote", "anecdote"],
+                        "required": ["category", "headline", "source_ref", "quote", "anecdote"],
                         "properties": {
                             "category": {"type": "string", "enum": list(HIGHLIGHT_CATEGORIES)},
                             "headline": {"type": "string", "maxLength": 30},
-                            "source_ref": {"type": "string"},
+                            "source_ref": {"type": "string", "enum": list(candidates_map)},
                             "source_user": {"type": "string"},
                             "quote": {"type": "string"},
                             "anecdote": {"type": "string", "maxLength": 150},
@@ -350,24 +350,18 @@ class DailyMemoryService:
             if category not in HIGHLIGHT_CATEGORIES:
                 category = "comment_anecdote"
             source_ref = item.get("source_ref", "")
-            source_user = item.get("source_user", "")
-
-            # Relaxed progressive attribution: link to candidate if available
             candidate = candidates_map.get(source_ref)
-            if not candidate and quote:
-                candidate = next(
-                    (c for c in candidates if quote in c["content"] or c["content"] in quote), None
-                )
-            if not candidate and candidates:
-                candidate = candidates[0]
-
-            source_ref_val = candidate["source_ref"] if candidate else ""
-            source_user_val = desensitize_user(
-                source_user or (candidate.get("source_user") if candidate else "观众")
-            )
-            quote_val = quote or (candidate["content"][:60] if candidate else "")
-            if not anecdote:
+            if not quote or not anecdote:
                 continue
+            if candidate is None:
+                matches = [source for source in candidates if quote in source["content"]]
+                if len(matches) != 1:
+                    continue
+                candidate = matches[0]
+            elif quote not in candidate["content"]:
+                continue
+            source_ref = candidate["source_ref"]
+            source_user = desensitize_user(candidate.get("source_user") or "观众")
 
             item_id = self.record_highlight(
                 character_id=character_id,
@@ -375,14 +369,24 @@ class DailyMemoryService:
                 highlight_date=date_str,
                 category=category,
                 headline=headline or "社群趣事",
-                quote=quote_val,
+                quote=quote,
                 anecdote=anecdote,
-                source_ref=source_ref_val,
-                source_user=source_user_val,
+                source_ref=source_ref,
+                source_user=source_user,
                 tags=item.get("tags", []),
                 status=status,
             )
-            saved.append({**item, "id": item_id, "status": status, "highlight_date": date_str})
+            saved.append(
+                {
+                    **item,
+                    "quote": quote,
+                    "source_ref": source_ref,
+                    "source_user": source_user,
+                    "id": item_id,
+                    "status": status,
+                    "highlight_date": date_str,
+                }
+            )
 
         return saved
 
