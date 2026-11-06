@@ -118,7 +118,7 @@ async def test_text_work_mode_cancels_playback_before_releasing_tts(runtime, sto
     runtime.inference.client = httpx.AsyncClient(
         transport=httpx.MockTransport(broker), base_url="http://broker"
     )
-    state = await runtime.set_work_mode("text")
+    state = await runtime.inference.set_mode("text")
     assert state["mode"] == "text"
     assert runtime.settings.data["inference_broker"]["mode"] == "text"
     assert not await runtime.live.acknowledge(owner, ack | {"type": "ended"})

@@ -41,7 +41,6 @@ class BrowsingService:
         self.read_interval = read_interval
         self.read_lock = asyncio.Lock()
         self.last_read = 0
-        self.visual = visual
         self.evidence = BrowsingEvidence(runtime, self.adapter, self._read, visual)
         self.notifications = NotificationInbox(store, self._read, self.adapter)
         self.active = {}
@@ -177,7 +176,7 @@ class BrowsingService:
 
     async def _current_account(self, expected=None):
         if self.adapter is not self.comments.adapter:
-            visual = getattr(self.evidence, "visual", None) or self.visual
+            visual = self.visual_provider
             await self.evidence.close()
             self.adapter = self.comments.adapter
             self.notifications.adapter = self.adapter

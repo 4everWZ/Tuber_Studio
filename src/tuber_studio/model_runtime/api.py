@@ -20,7 +20,7 @@ from ..video_vision_service import probe_visual
 def register_model_api(app, settings, runtime, require_admin):
     @app.post("/api/inference/mode", dependencies=[Depends(require_admin)])
     async def work_mode(mode: Literal["text", "live"] = Body(embed=True)):
-        return await runtime.set_work_mode(mode)
+        return await runtime.inference.set_mode(mode)
 
     @app.get("/api/inference/node", dependencies=[Depends(require_admin)])
     async def inference_node():

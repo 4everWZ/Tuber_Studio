@@ -85,7 +85,7 @@ class InferenceRuntime:
         while True:
             owner = ObservationOwner.capture(self.runtime)
             try:
-                await self.runtime.refresh_inference()
+                await self.refresh()
                 consecutive_failures = 0
                 if self.runtime.error and ("超时" in self.runtime.error or "连接" in self.runtime.error):
                     self.runtime.error = None
@@ -165,7 +165,7 @@ class InferenceRuntime:
                             except BaseException:
                                 self.runtime.error = "模式切换结果待核对，请恢复推理节点连接"
                         try:
-                            await self.runtime.refresh_inference()
+                            await self.refresh()
                         except Exception:
                             self.status = self.status | {
                                 "state": "error",

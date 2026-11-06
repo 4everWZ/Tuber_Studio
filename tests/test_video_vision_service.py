@@ -360,8 +360,8 @@ async def test_inflight_restore_cannot_apply_after_a_complete_mode_roundtrip(vis
     restoring = asyncio.create_task(video_vision_service.restore_admission(runtime))
     try:
         await asyncio.wait_for(entered.wait(), 2)
-        await runtime.set_work_mode("live")
-        await runtime.set_work_mode("text")
+        await runtime.inference.set_mode("live")
+        await runtime.inference.set_mode("text")
         assert runtime.browsing.visual_provider is provider and not runtime.inference.mode_lock.locked()
         release.set()
         await restoring

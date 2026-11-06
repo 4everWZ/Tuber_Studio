@@ -107,11 +107,11 @@ class Runtime:
         await self.live.online_songs.open()
         try:
             if self.settings.data.get("work_mode_profiles") and self.inference.client:
-                observed = await self.refresh_inference()
+                observed = await self.inference.refresh()
                 async with self.generation_lock:
                     await apply_mode_profile(self, observed["mode"])
                 if observed.get("provider_alignment_error"):
-                    await self.refresh_inference()
+                    await self.inference.refresh()
             await self.llm.health()
             self.error = None
         except Exception as error:
@@ -230,12 +230,6 @@ class Runtime:
             "node_model_state": node_model_state,
             "local_model_installed": is_model_installed(self.settings.models),
         }
-
-    async def refresh_inference(self):
-        return await self.inference.refresh()
-
-    async def set_work_mode(self, mode):
-        return await self.inference.set_mode(mode)
 
     @reuse_turn_token_counts
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):

@@ -39,7 +39,7 @@
 
 当前没有默认演唱模型，WebUI显示「模型待接入」并禁用该模式；不能将它设为默认，也不会自动下载模型、转换音色或修改现有说话TTS。
 
-开发者从 `tuber_studio.singing` 导入 `SingingProvider`、`SingingRequest` 和 `SingingResult`，在应用构造时通过 `create_app(..., singing_provider=provider)` 挂载。Provider 声明 `id`、`version`、有界 `timeout_seconds`，实现异步 `prepare(request)` 和 `close()`。框架提供已验证的歌曲／可选人声／伴奏路径、歌词、当前音色配置／可选参考及受控输出目录。模型返回 `SingingResult`，声明声音 ID、Provider 身份、音频和可选人声轨。接口定义见[歌声实现](../../src/tuber_studio/live/singing.py)。
+开发者从 `tuber_studio.live.singing` 导入 `SingingProvider`、`SingingRequest` 和 `SingingResult`，在应用构造时通过 `create_app(..., singing_provider=provider)` 挂载。Provider 声明 `id`、`version`、有界 `timeout_seconds`，实现异步 `prepare(request)` 和 `close()`。框架提供已验证的歌曲／可选人声／伴奏路径、歌词、当前音色配置／可选参考及受控输出目录。模型返回 `SingingResult`，声明声音 ID、Provider 身份、音频和可选人声轨。接口定义见[歌声实现](../../src/tuber_studio/live/singing.py)。
 
 模型只负责生成音频，不自行播放。服务统一校验输出路径、格式、非静音、声音／模型身份并隔离缓存，沿用原播放者与ACK；取消／超时会传播到Provider，具体实现须释放自身推理／子进程资源。接口测试不证明音质通过，未来模型须另做人工试听与设备资源验收；详细契约见[声音规范](../specs/models-and-audio.md#说话与演唱能力)。
 

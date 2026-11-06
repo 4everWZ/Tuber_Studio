@@ -112,7 +112,7 @@ async def distributed(settings, store, monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", client)
     runtime = Runtime(settings, store)
     await apply_mode_profile(runtime, "text")
-    await runtime.refresh_inference()
+    await runtime.inference.refresh()
     state["requests"].clear()
     try:
         yield runtime, state
@@ -125,7 +125,7 @@ async def test_switch_rebinds_real_clients_and_context_without_changing_business
     runtime.store.set("mode-persistence", {"user_id": "platform-user", "affinity": 77})
     old = runtime.llm
     runtime.context.last_key = "old-model-context"
-    result = await runtime.set_work_mode("live")
+    result = await runtime.inference.set_mode("live")
     assert result["mode"] == "live" and state["mode"] == "live"
     assert isinstance(runtime.llm, LlamaCppProvider) and runtime.llm is not old
     assert runtime.llm.config["model"] == "MiniCPM5-2B"
@@ -133,7 +133,7 @@ async def test_switch_rebinds_real_clients_and_context_without_changing_business
     assert runtime.settings.data["vision"]["kind"] == "disabled"
     await asyncio.gather(*runtime.inference.cleanup_tasks, return_exceptions=True)
     assert old.client.is_closed
-    await runtime.set_work_mode("text")
+    await runtime.inference.set_mode("text")
     assert runtime.llm.config["model"] == "Gemma4-E2B" and runtime.llm.server_tokens == 131072
     assert runtime.settings.data["llm"]["operations_max_tokens"] == 8192
     assert runtime.settings.data["llm"]["enable_thinking"] is True
@@ -163,7 +163,7 @@ async def test_failed_switch_preserves_original_provider_settings_and_restores_n
         )
     clients_before = len(state["clients"])
     with pytest.raises(ValueError, match="工作模式切换失败"):
-        await runtime.set_work_mode("live")
+        await runtime.inference.set_mode("live")
     assert state["mode"] == "text" and runtime.settings.data["inference_broker"]["mode"] == "text"
     assert runtime.llm is old_llm and runtime.vision is old_vision and runtime.context.provider is old_llm
     assert not old_llm.client.is_closed and runtime.settings.path.read_bytes() == old_bytes
@@ -179,7 +179,7 @@ async def test_cancel_after_node_commit_waits_for_rollback_and_keeps_original_cl
     runtime, state = distributed
     old, old_bytes = runtime.llm, runtime.settings.path.read_bytes()
     state["block_props"] = True
-    switching = asyncio.create_task(runtime.set_work_mode("live"))
+    switching = asyncio.create_task(runtime.inference.set_mode("live"))
     await state["props_entered"].wait()
     assert state["mode"] == "live"
     switching.cancel()
@@ -203,7 +203,7 @@ async def test_committed_switch_returns_without_waiting_for_old_client_cleanup(d
 
     old.close = closing
     try:
-        result = await asyncio.wait_for(runtime.set_work_mode("live"), 2)
+        result = await asyncio.wait_for(runtime.inference.set_mode("live"), 2)
         await asyncio.wait_for(entered.wait(), 2)
         assert result["mode"] == state["mode"] == "live"
         assert runtime.llm is not old and not old.client.is_closed
@@ -232,7 +232,7 @@ async def test_idle_live_mode_keeps_operations_waiting_until_gemma_is_restored(d
         await asyncio.sleep(0)
         assert not entered.is_set() and not pending.done()
         assert not runtime.generation_lock.locked()
-        await runtime.set_work_mode("text")
+        await runtime.inference.set_mode("text")
         await asyncio.wait_for(pending, 2)
         assert entered.is_set() and selected == ["Gemma4-E2B"]
         assert runtime.live.state == "stopped" and not runtime.generation_lock.locked()
@@ -291,7 +291,7 @@ async def test_late_health_observation_cannot_overwrite_a_committed_live_mode(
     observer = asyncio.create_task(runtime.inference.observe())
     try:
         await asyncio.wait_for(entered.wait(), 2)
-        await runtime.set_work_mode("live")
+        await runtime.inference.set_mode("live")
         if legacy:
             assert runtime.settings.data is original_data
         else:
@@ -313,7 +313,7 @@ async def test_late_health_observation_cannot_overwrite_a_committed_live_mode(
 
 async def test_restart_synchronizes_business_profile_to_actual_node_mode(distributed):
     runtime, state = distributed
-    await runtime.set_work_mode("live")
+    await runtime.inference.set_mode("live")
     state["mode"] = "text"
     restored = Settings(runtime=runtime.settings.runtime)
     assert restored.data["llm"]["model"] == "MiniCPM5-2B"
@@ -335,7 +335,7 @@ async def test_unpaired_url_never_receives_the_node_credential(distributed):
     for url in ("https://outside.invalid/v1", NODE_URL + "/llm/gemma4e2b-extra", NODE_URL + "/unregistered"):
         assert settings.broker_key_for(url) is None
     settings.data["work_mode_profiles"]["live"]["llm"]["base_url"] = "https://outside.invalid/v1"
-    await runtime.set_work_mode("live")
+    await runtime.inference.set_mode("live")
     outside = [request for request in state["requests"] if request.url.host == "outside.invalid"]
     assert outside
     assert all(settings.inference_token not in str(request.headers) for request in outside)
@@ -353,7 +353,7 @@ def test_business_voice_reference_resolves_with_independent_runtime(settings):
 
 async def test_unconfirmed_mode_rollback_blocks_mismatched_business_provider(distributed, monkeypatch):
     runtime, state = distributed
-    await runtime.set_work_mode("live")
+    await runtime.inference.set_mode("live")
     original = runtime.llm
 
     def disk_failed(data):
@@ -368,14 +368,14 @@ async def test_unconfirmed_mode_rollback_blocks_mismatched_business_provider(dis
     monkeypatch.setattr(runtime.settings, "save_public", disk_failed)
     state["http_handler"] = failed_live_rollback
     with pytest.raises(ValueError, match="工作模式切换失败"):
-        await runtime.set_work_mode("text")
+        await runtime.inference.set_mode("text")
     assert runtime.llm is original and original.config["model"] == "MiniCPM5-2B"
     assert state["mode"] == runtime.inference.status["mode"] == "text"
     assert runtime.operations_waiting() is True
-    await runtime.refresh_inference()
+    await runtime.inference.refresh()
     assert runtime.inference.status["state"] == "error" and runtime.operations_waiting()
     monkeypatch.setattr(runtime.settings, "save_public", save_public)
-    await runtime.set_work_mode("text")
+    await runtime.inference.set_mode("text")
     assert runtime.llm.config["model"] == "Gemma4-E2B" and not runtime.operations_waiting()
 
 
@@ -388,21 +388,21 @@ async def test_wrong_node_alias_requires_explicit_retry_even_after_health_looks_
         return None
 
     state["http_handler"] = wrong_alias
-    await runtime.refresh_inference()
+    await runtime.inference.refresh()
     assert runtime.operations_waiting() and runtime.inference.status["provider_alignment_error"]
     state.pop("http_handler")
-    await runtime.refresh_inference()
+    await runtime.inference.refresh()
     assert runtime.inference.status["state"] == "error" and runtime.operations_waiting()
-    await runtime.set_work_mode("text")
+    await runtime.inference.set_mode("text")
     assert not runtime.operations_waiting() and not runtime.inference.profile_alignment_failed
 
 
 async def test_different_vision_profile_also_blocks_operations_until_a_successful_retry(distributed):
     runtime, _ = distributed
     runtime.settings.data["vision"] = dict(runtime.settings.data["work_mode_profiles"]["live"]["vision"])
-    await runtime.refresh_inference()
+    await runtime.inference.refresh()
     assert runtime.inference.status["state"] == "error" and runtime.operations_waiting()
-    await runtime.set_work_mode("text")
+    await runtime.inference.set_mode("text")
     assert runtime.settings.data["vision"] == runtime.settings.data["work_mode_profiles"]["text"]["vision"]
     assert not runtime.operations_waiting()
 
@@ -412,8 +412,8 @@ async def test_external_api_profile_is_not_rejected_for_a_different_node_local_m
     runtime.settings.data["work_mode_profiles"]["text"]["llm"].update(
         kind="openai_compatible", base_url="https://cloud.invalid/v1", model="External-Model"
     )
-    await runtime.set_work_mode("text")
-    await runtime.refresh_inference()
+    await runtime.inference.set_mode("text")
+    await runtime.inference.refresh()
     assert runtime.llm.config["model"] == "External-Model"
     assert runtime.inference.status["model"] == "Gemma4-E2B" and not runtime.operations_waiting()
     assert all(request.url.host != "cloud.invalid" for request in state["requests"])

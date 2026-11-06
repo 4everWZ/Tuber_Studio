@@ -140,7 +140,7 @@ class LiveSession:
         if action == "resume" and self.state == "stopped":
             raise ValueError("请先启动Mock会话")
         if action in {"start", "resume"} and self.runtime.inference.client is not None:
-            await self.runtime.set_work_mode("live")
+            await self.runtime.inference.set_mode("live")
         if action == "start":
             if self.state == "stopped":
                 self.new_session()
