@@ -449,7 +449,8 @@ def test_content_view_does_not_replace_full_persona_for_response_generation(brow
         row, ContentDecision, data, browsing.decisions._content_instruction()
     )
     assert messages[0]["content"] == "角色：" + view["brief"]
-    assert messages[1]["content"] == CLASSIFICATION_INSTRUCTION
+    assert messages[1]["content"].startswith(CLASSIFICATION_INSTRUCTION)
+    assert "本次取样画面已到齐" in messages[1]["content"]
     assert messages[-1]["content"] == "公开来源材料：" + compact_content_input(data)
     assert schema == browsing.decisions._model_input(row, ContentDecision, data, "same invocation")[2]
     response = {

@@ -85,6 +85,13 @@ class BrowsingDecisions:
             content = compact_content_input(data)
             role = "角色：" + view["brief"]
             instruction = CLASSIFICATION_INSTRUCTION
+        allow_visual = data.get("coverage") != "sampled_visual" and not data.get("has_visual")
+        if schema is ContentDecision:
+            instruction += (
+                "需要补看画面时选visual。"
+                if allow_visual
+                else "本次取样画面已到齐。请用现有材料判断，材料仍不足时可以暂不发言。"
+            )
         messages = [
             {
                 "role": "system",
@@ -101,7 +108,9 @@ class BrowsingDecisions:
         ]
         model_schema = schema.model_json_schema()
         if schema is ContentDecision:
-            model_schema = content_decision_schema({segment["id"] for segment in data["segments"]})
+            model_schema = content_decision_schema(
+                {segment["id"] for segment in data["segments"]}, allow_visual=allow_visual
+            )
         elif schema is ResponseDecision:
             allowed = response_input.allowed_aliases
             model_schema = response_schema(allowed, allow_handoff=data.get("kind") != "top_level")
@@ -324,8 +333,7 @@ class BrowsingDecisions:
             "字幕/画面按分P和材料类型列出，[id|起始时码]标记可选择的内容块；evidence_ids选择这些短id。"
             "source_kinds和has_visual描述本次提供的材料，已有视觉观察和字幕都能作为依据。"
             "coverage_required表示还要补充的内容：当前材料够用选provided，"
-            "需新的画面选visual，需其它分P选unread_part；也可以不感兴趣或暂不发言。"
-            + CONTENT_DECISION_INTENT_GLOSS
+            "需其它分P选unread_part；也可以不感兴趣或暂不发言。" + CONTENT_DECISION_INTENT_GLOSS
         )
 
     def _capacity_signature(self, config):

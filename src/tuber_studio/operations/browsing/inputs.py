@@ -32,7 +32,7 @@ CLASSIFICATION_INSTRUCTION = (
     "按角色兴趣决定是否准备回应，本阶段不选公私信。interest=like表示想参与，worth_commenting表示有具体想说的话；吐槽、共情、轻互动与分享都算。"
     "reason：specific_detail有回应点；no_interest无兴趣；nothing_to_add读懂无补充；insufficient_evidence想回应的内容缺材料；visual_required想回应的内容需新画面；unsafe_interaction涉及骚扰、伤害他人或公开隐私而略过。"
     "各字段表达同一意图。准备回应：interest=like,worth_commenting=true,reason=specific_detail；想补读：interest=need_more,worth_commenting=false；不发言worth_commenting=false。"
-    "source_kinds与has_visual描述已有材料，字幕和画面观察均可作为依据。coverage_required表示还需补充什么：provided当前够用，visual需新画面，unread_part需其它分P。"
+    "source_kinds与has_visual描述已有材料，字幕和画面观察均可作为依据。coverage_required表示还需补充什么：provided当前够用，unread_part需其它分P。"
     "evidence_ids选相关[eN|起始时码]块，准备回应选1–8项；字幕/画面按分P与类型区分。"
 )
 

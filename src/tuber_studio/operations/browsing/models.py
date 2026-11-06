@@ -209,9 +209,12 @@ class VideoEngagementDecision(StrictModel):
     favorite_reason: str = ""
 
 
-def content_decision_schema(evidence_ids):
+def content_decision_schema(evidence_ids, *, allow_visual=True):
     """Require source selection for a comment, with no requirement to comment."""
     properties = ContentDecision.model_json_schema()["properties"]
+    if not allow_visual:
+        for name, unavailable in (("coverage_required", "visual"), ("reason", "visual_required")):
+            properties[name]["enum"].remove(unavailable)
     branches = []
     for worth in (False, True):
         if worth and not evidence_ids:

@@ -94,6 +94,11 @@ def install_visual(service, *, ask=True, ask_again=False):
             "\n".join(message["content"] for message in messages if message["role"] == "system")
         )
         inputs.append(data)
+        for branch in schema["oneOf"]:
+            fields = branch["properties"]
+            if data["coverage"] == "sampled_visual":
+                assert "visual" not in fields["coverage_required"]["enum"]
+                assert "visual_required" not in fields["reason"]["enum"]
         visual_text = data["content"].partition("画面观察\n")[2]
         visual_ids = re.findall(r"(?m)^\[(e\d+)\|", visual_text)
         if ask and (not visual_ids or ask_again):
@@ -138,15 +143,10 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     assert inputs[1]["has_visual"] is True
     assert inputs[1]["source_kinds"] == ["subtitle", "visual_observation"]
     assert inputs[1]["coverage"] == "sampled_visual"
-    assert "source_kinds和has_visual描述本次提供的材料" in visual.prompts[1]
-    assert "已有视觉观察和字幕都能作为依据" in visual.prompts[1]
-    assert "coverage_required表示还要补充的内容" in visual.prompts[1]
-    assert "interest=like表示想参与" in visual.prompts[1]
-    assert "吐槽、共情和分享也属于参与" in visual.prompts[1]
-    assert "worth_commenting表示有具体想说的话" in visual.prompts[1]
-    assert "当前材料够用选provided" in visual.prompts[1]
-    assert "需新的画面选visual" in visual.prompts[1]
-    assert "需其它分P选unread_part" in visual.prompts[1]
+    assert all(field in visual.prompts[1] for field in ("source_kinds", "has_visual", "coverage_required"))
+    assert "需要补看画面时选visual" in visual.prompts[0]
+    assert "需要补看画面时选visual" not in visual.prompts[1]
+    assert "本次取样画面已到齐" in visual.prompts[1]
     assert visual.task["round_id"] == row["id"] and visual.task["id"] == task["id"]
     assert visual.deadline <= row["deadline"]
     assert task["input_version"] == task["material_key"]
