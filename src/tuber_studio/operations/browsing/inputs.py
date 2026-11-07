@@ -18,6 +18,138 @@ from ...subtitle_presentation import (
 )
 from .models import ContentDecision, ResponseDecision
 
+RESPONSE_ACTOR_INSTRUCTION = (
+    "self_actor是你当前发言的平台账号，character_id/character_name是你扮演的OC，账号显示名和OC名分开理解。"
+    "thread里的source是当前评论作者，root/parent/timeline/comments按text_ref引用各自作者的原话，并非你的自述。"
+    "addressing按真实UID列出当前评论提及和回复的对象；relation_to_self区分self/other/unknown，未知不按昵称认领。"
+    "别人对第三方账号或其OC说的话仍属于他们的对话；你可以自主决定是否加入，以自己的身份接话。"
+    "reply_target是本次正在回应的原评论，先理解它和楼内对话；后附视频材料用于相关背景，不用无关字幕替代回复对象。"
+)
+
+
+def bind_response_actors(data, self_actor):
+    """Describe actors without changing original source/citation identities."""
+    result = deepcopy(data)
+    result["self_actor"] = deepcopy(self_actor)
+    own_uid = str(self_actor.get("account_uid") or "")
+
+    def relation(uid):
+        uid = str(uid or "")
+        return "unknown" if not uid or not own_uid else "self" if uid == own_uid else "other"
+
+    thread = result.get("thread")
+    if not isinstance(thread, dict):
+        return result
+    source = thread.get("source") or {}
+    addressing = thread.setdefault("addressing", {})
+    addressing["source_relation_to_self"] = relation(source.get("author_uid"))
+    addressed = {}
+
+    def add(uid, name, basis):
+        uid = str(uid or "")
+        if not uid:
+            return
+        actor = addressed.setdefault(
+            uid, {"uid": uid, "name": name or None, "relation_to_self": relation(uid), "basis": []}
+        )
+        if not actor["name"] and name:
+            actor["name"] = name
+        if basis not in actor["basis"]:
+            actor["basis"].append(basis)
+
+    for mention in addressing.get("source_mentions", []):
+        if isinstance(mention, dict):
+            add(mention.get("uid"), mention.get("name"), "mention")
+    parent = thread.get("parent") or {}
+    if parent and str(parent.get("comment_id") or "") != str(source.get("comment_id") or ""):
+        add(parent.get("author_uid"), parent.get("author_name") or parent.get("display_name"), "reply_parent")
+    addressing["addressed_to"] = list(addressed.values())
+    if source:
+        result["reply_target"] = deepcopy(source) | {
+            "relation_to_self": relation(source.get("author_uid")),
+            "addressed_to": deepcopy(addressing["addressed_to"]),
+        }
+    for key in ("root", "parent"):
+        if isinstance(thread.get(key), dict):
+            thread[key]["relation_to_self"] = relation(thread[key].get("author_uid"))
+    for key in ("timeline", "items"):
+        for item in thread.get(key, []):
+            if isinstance(item, dict):
+                item["relation_to_self"] = relation(
+                    item.get("author_uid") or item.get("platform_user_id") or item.get("user_id")
+                )
+    return result
+
+
+def compact_actor_context(bound, current_reference=None, *, current_text_ref=None):
+    """Present each comment once; retain actor/reply metadata as text references."""
+    result = deepcopy(bound)
+    thread = result.get("thread")
+    current = result.get("reply_target")
+    if not isinstance(thread, dict) or not isinstance(current, dict) or not isinstance(current.get("text"), str):
+        return result
+    if current_reference:
+        current["evidence_ref"] = current_reference
+    current_text = current["text"]
+    definitions, comments = {}, []
+
+    def body(row):
+        return row.get("text") if isinstance(row.get("text"), str) else row.get("content")
+
+    def key(row, text):
+        identity = row.get("comment_id") or row.get("id")
+        return (str(identity), text) if identity is not None else (
+            None, row.get("author_uid") or row.get("platform_user_id") or row.get("user_id"), text
+        )
+
+    definitions[key(current, current_text)] = current_text_ref or "reply_target.text"
+    if current_text_ref:
+        current.pop("text")
+        current["text_ref"] = current_text_ref
+
+    def reference(row):
+        if not isinstance(row, dict):
+            return row
+        text = body(row)
+        if not isinstance(text, str) or not text:
+            return deepcopy(row)
+        identity = key(row, text)
+        if identity not in definitions:
+            definitions[identity] = f"thread.comments[{len(comments)}].text"
+            definition = {name: deepcopy(value) for name, value in row.items() if name not in {"text", "content"}}
+            definition["text"] = text
+            comments.append(definition)
+        return {name: deepcopy(value) for name, value in row.items() if name not in {"text", "content"}} | {
+            "text_ref": definitions[identity]
+        }
+
+    for name in ("source", "root", "parent"):
+        if name in thread:
+            thread[name] = reference(thread[name])
+    if "timeline" in thread:
+        thread["timeline"] = [reference(row) for row in thread["timeline"]]
+    # Raw rows stay in backend data for diagnostics/hash bindings. Include all
+    # their unique bodies here even when the compact timeline shows only eight.
+    for row in thread.pop("items", []):
+        reference(row)
+    if comments:
+        thread["comments"] = comments
+    public_text = thread.get("public_text")
+    if isinstance(public_text, str) and public_text:
+        match = next((ref for identity, ref in definitions.items() if identity[-1] == public_text), None)
+        if match:
+            thread.pop("public_text")
+            thread["public_text_ref"] = match
+    for experience in result.get("own_public_experiences", []):
+        for source in experience.get("public_sources", []):
+            if (
+                str(source.get("comment_id")) == str(current.get("comment_id"))
+                and source.get("quote") == current_text
+            ):
+                source.pop("quote")
+                source["quote_ref"] = current_text_ref or "reply_target.text"
+    return result
+
 
 def format_content_input(data):
     """A small JSON context header followed by actual readable text lines."""
@@ -245,7 +377,7 @@ class ResponseReference:
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
-    FORMAT_VERSION = "response-reference-lines-v2"
+    FORMAT_VERSION = "response-reference-lines-v4-actors-compact"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))
@@ -289,7 +421,13 @@ class ResponseDecisionInput:
         header = deepcopy(
             {key: value for key, value in data.items() if key not in {"evidence", "allowed_evidence_ids"}}
         )
-        lines, source_numbers = [], {}
+        header = compact_actor_context(header)
+        if "self_actor" in header:
+            header = {
+                **{key: header[key] for key in ("self_actor", "reply_target") if key in header},
+                **header,
+            }
+        lines, comment_lines, source_numbers = [], [], {}
         previous_source = object()
         for ref in refs:
             segment = ref.source()
@@ -298,9 +436,13 @@ class ResponseDecisionInput:
                 if ref.canonical_id == "public:" + str(source.get("comment_id")) and isinstance(
                     source.get("text"), str
                 ):
-                    lines.append(f"[{ref.alias}] 当前评论原文：\n{source['text']}")
+                    if header.get("reply_target"):
+                        header["reply_target"]["evidence_ref"] = ref.alias
+                        comment_lines.append(f"[{ref.alias}] 当前评论原文：见reply_target.text")
+                    else:
+                        comment_lines.append(f"[{ref.alias}] 当前评论原文：\n{source['text']}")
                 else:
-                    lines.append(f"[{ref.alias}] 当前公开来源（原文见thread）")
+                    comment_lines.append(f"[{ref.alias}] 当前公开来源（原文见thread）")
                 continue
             cid = segment.get("cid")
             if cid is not None and cid != previous_source:
@@ -326,7 +468,7 @@ class ResponseDecisionInput:
         self._presentation = (
             json.dumps(header, ensure_ascii=False, separators=(",", ":"))
             + "\n\n所选材料：\n"
-            + "\n".join(lines)
+            + "\n".join(comment_lines + lines)
         )
 
     def format(self):

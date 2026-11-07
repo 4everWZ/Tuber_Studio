@@ -1,0 +1,156 @@
+{
+  "origin": "Read-only public Bilibili thread snapshots, 2026-11-07 Asia/Taipei; source only, no generated replies.",
+  "cases": [
+    {
+      "case_id": "b88a6054-738f-4c40-8ace-337a8d47c28e",
+      "actor": {
+        "uid": "3706944382568764",
+        "name": "大肥鱼只想过平静生活"
+      },
+      "target": {
+        "type": 1,
+        "oid": "117498812894686",
+        "bvid": "BV1RLH367EQN",
+        "root": "323225083008",
+        "parent": "323225083008",
+        "recipient": "562115830"
+      },
+      "platform_response": {
+        "root": {
+          "rpid_str": "323225083008",
+          "root_str": "0",
+          "parent_str": "0",
+          "member": {
+            "mid": "562115830",
+            "uname": "凉宫春日の随波逐流"
+          },
+          "content": {
+            "message": "@荡漾のDarling 可以看看这条鱼的视频",
+            "members": [
+              {
+                "mid": "1657031863",
+                "uname": "荡漾のDarling"
+              }
+            ]
+          }
+        },
+        "replies": []
+      },
+      "expected_source": {
+        "comment_id": "323225083008",
+        "author_uid": "562115830",
+        "author_name": "凉宫春日の随波逐流",
+        "text": "@荡漾のDarling 可以看看这条鱼的视频"
+      },
+      "source_hash": "db79b871c6c7d7718883623bb4fb2947f22f4c063f62621c747103da40a99d4c",
+      "expected_mentions": [
+        {
+          "uid": "1657031863",
+          "name": "荡漾のDarling"
+        }
+      ]
+    },
+    {
+      "case_id": "02b7504a-e29a-4b06-9c3d-d186e37c8ceb",
+      "actor": {
+        "uid": "3706944382568764",
+        "name": "大肥鱼只想过平静生活"
+      },
+      "target": {
+        "type": 1,
+        "oid": "117510674385346",
+        "bvid": "BV1UexK6eEjB",
+        "root": "323230417440",
+        "parent": "323230417440",
+        "recipient": "651766039"
+      },
+      "platform_response": {
+        "root": {
+          "rpid_str": "323230417440",
+          "root_str": "0",
+          "parent_str": "0",
+          "member": {
+            "mid": "651766039",
+            "uname": "神射手夜空"
+          },
+          "content": {
+            "message": "@神射手空夜 我能追求你吗",
+            "members": [
+              {
+                "mid": "3546884939451239",
+                "uname": "神射手空夜"
+              }
+            ]
+          }
+        },
+        "replies": []
+      },
+      "expected_source": {
+        "comment_id": "323230417440",
+        "author_uid": "651766039",
+        "author_name": "神射手夜空",
+        "text": "@神射手空夜 我能追求你吗"
+      },
+      "source_hash": "e19994dbafe18f0c195c8e94dafedcba07e6f95b90af005fa6fd3825a93f6673",
+      "expected_mentions": [
+        {
+          "uid": "3546884939451239",
+          "name": "神射手空夜"
+        }
+      ]
+    },
+    {
+      "case_id": "10fcf8fa-fb1b-4675-b003-fc862be09ee4",
+      "actor": {
+        "uid": "3706944382568764",
+        "name": "大肥鱼只想过平静生活"
+      },
+      "target": {
+        "type": 1,
+        "oid": "117567414865096",
+        "bvid": "BV13S4i6fE82",
+        "root": "323202459488",
+        "parent": "323215835392",
+        "recipient": "605861940"
+      },
+      "platform_response": {
+        "root": {
+          "rpid_str": "323202459488",
+          "root_str": "0",
+          "parent_str": "0",
+          "member": {
+            "mid": "30123529",
+            "uname": "标题未命名"
+          },
+          "content": {
+            "message": "这个是编的，不要太入脑",
+            "members": []
+          }
+        },
+        "replies": [
+          {
+            "rpid_str": "323215835392",
+            "root_str": "323202459488",
+            "parent_str": "323202459488",
+            "member": {
+              "mid": "605861940",
+              "uname": "梓沫骐大大"
+            },
+            "content": {
+              "message": "等着吧，马上有人要来说“最清醒的人来了”马上有人来撕咬你了",
+              "members": []
+            }
+          }
+        ]
+      },
+      "expected_source": {
+        "comment_id": "323215835392",
+        "author_uid": "605861940",
+        "author_name": "梓沫骐大大",
+        "text": "等着吧，马上有人要来说“最清醒的人来了”马上有人来撕咬你了"
+      },
+      "source_hash": "bcdd2ce57a18d6e861702ca7ac4cd1eec7953b8b70198cf6c4e26b606c7eae31",
+      "expected_mentions": []
+    }
+  ]
+}

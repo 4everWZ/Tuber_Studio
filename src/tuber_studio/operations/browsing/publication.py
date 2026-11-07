@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from contextlib import nullcontext
 from uuid import uuid4
 
 from ...operation_continuations import content_hash
@@ -11,6 +12,8 @@ from ...operation_feedback import (
     PublicationContext,
     publication_binding,
 )
+from ...operation_generation import generate_with_recovery
+from ...operation_identity import runtime_identity
 from ...operation_text import (
     validate_operation_text,
 )
@@ -19,6 +22,8 @@ from ...platforms.bilibili import PublishUncertain
 from ...providers import public_error
 from ...publication_errors import PlatformRejected, UnknownPublication
 from ...store import dump
+from .inputs import ResponseDecisionInput
+from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import generation_resume, read_round
 
 
@@ -42,6 +47,9 @@ class BrowsingPublication:
         )
 
     def _intent(self, row, kind, target, response, material_keys, evidence_ids):
+        character = self.browsing.store.character(row["character_id"], row["character_version"])
+        target = target | {"generation_identity": getattr(response, "_generation_identity", None)
+                           or runtime_identity(self.browsing.runtime, character, row["account_id"])}
         resource = target.get("bvid") or "dynamic:" + str(target["oid"])
         if kind == "top_level":
             source = "top-level"
@@ -202,6 +210,7 @@ class BrowsingPublication:
         return [self.browsing.evidence.load(key, allow_expired=True) for key in row["material_keys"]]
 
     async def _publication_context(self, identity, automatic):
+        await self._refresh_intent_identity(identity, automatic)
         row = self.browsing.repo.decode(
             self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
         )
@@ -277,6 +286,83 @@ class BrowsingPublication:
             on_defer=lambda prepared, state: self._defer_revision(identity, prepared, state),
             manual_approved=row["status"] == "approved",
         )
+
+    async def _refresh_intent_identity(self, identity, automatic):
+        browsing = self.browsing
+        refresh = getattr(browsing.runtime, "refresh_identity", None)
+        if refresh is None or not hasattr(browsing.adapter, "account_profile"):
+            return
+        row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+        if not row or row["kind"] not in {"top_level", "reply_public"} or row["status"] not in {"approved", "pending_review"}:
+            return
+        character = browsing.store.character(row["character_id"], row["character_version"])
+        account = await browsing._current_account(row["account_id"])
+        current = await refresh(character, account)
+        previous = row["target"].get("generation_identity")
+        if previous and previous.get("identity_version") == current["identity_version"]:
+            return
+        materials = self._intent_materials(row)
+        segments = [segment for material in materials for segment in browsing._segments(material)]
+        target = row["target"]
+        if row["kind"] == "reply_public":
+            if target.get("source_event"):
+                thread = await browsing._read(browsing.adapter.read_public_thread, target["source_event"])
+            elif hasattr(browsing.adapter, "read_video_thread"):
+                thread = await browsing._read(browsing.adapter.read_video_thread, target)
+            else:
+                thread = {"source": await browsing._read(browsing.adapter.read_video_reply, target)}
+            source = thread["source"]
+            if source["text"] != target["source_text"] or str(source["author_uid"]) != str(target["recipient"]):
+                raise ValueError("原始互动已删除或变化，保留草稿")
+            thread = thread | {"target": {key: value for key, value in target.items() if key != "generation_identity"}}
+        else:
+            thread = {"target": {key: value for key, value in target.items() if key != "generation_identity"},
+                      "video": [material["metadata"] for material in materials]}
+        allowed = [segment["id"] for segment in segments]
+        if row["kind"] == "reply_public":
+            allowed.append("public:" + str(thread["source"]["comment_id"]))
+        request = row | {"config": browsing.policy() | {"comment_handoff_enabled": False}}
+        data = browsing.decisions._response_actor_data(request, {
+            "kind": row["kind"], "thread": thread, "evidence": segments,
+            "coverage": "public_text" if not materials else materials[0]["coverage"],
+            "allowed_evidence_ids": allowed,
+        })
+        response_input = ResponseDecisionInput(data)
+        _, messages, schema = browsing.decisions._model_input(
+            request, ResponseDecision, data, RESPONSE_INSTRUCTION, response_input=response_input,
+        )
+
+        def guard():
+            fresh = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+            if not fresh or any(fresh[key] != row[key] for key in ("text", "status", "target")):
+                raise ValueError("身份更新期间候选已变化，未覆盖")
+            if runtime_identity(browsing.runtime, character, account)["identity_version"] != current["identity_version"]:
+                raise ValueError("生成期间账号身份再次变化")
+            browsing.operations.assert_allowed(automatic=automatic, channel="comments", account_id=account,
+                                               character=character, epoch=row["epoch"] if automatic else None)
+
+        async def invoke(packet):
+            return await browsing.runtime.llm.generate_json(packet, schema, max_tokens=request["config"]["decision_max_tokens"])
+
+        async with browsing.runtime.offline_generation("reply"):
+            wire, _ = await generate_with_recovery(
+                browsing.runtime, channel="generation.browsing_identity", identity=identity + ":" + current["identity_version"],
+                binding={"task": "generation", "account_id": account,
+                         "character": {key: character[key] for key in ("id", "version")},
+                         "source_sha256": content_hash(thread), "self_identity": current},
+                character=character, messages=messages, generate=invoke, validate=response_input.validate_wire,
+                max_tokens=request["config"]["decision_max_tokens"], guard=guard, generation_context=nullcontext,
+            )
+            response = response_input.resolve(wire)
+            guard()
+            if response.action != "reply_public":
+                raise ValueError("身份更新后选择暂不发送：" + (response.explanation or response.reason))
+            target = target | {"generation_identity": current}
+            browsing.store.execute(
+                "UPDATE browsing_intents SET text=?,target=?,evidence=?,reason=?,error=NULL,updated_at=? WHERE id=?",
+                (response.text, dump(target), dump(response.evidence_ids), response.explanation or response.reason,
+                 time.time(), identity),
+            )
 
     def _apply_revision(self, identity, prepared, text):
         prepared.guard()
@@ -433,6 +519,7 @@ class BrowsingPublication:
     async def _publish_once(
         self, identity, *, automatic=False, revision_ticket=None, binding=None, body_hash=None
     ):
+        await self._refresh_intent_identity(identity, automatic)
         async with self.browsing.comments.publish_lock:
             row = self.browsing.repo.decode(
                 self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
@@ -486,6 +573,11 @@ class BrowsingPublication:
                     raise ValueError("同一意图不能二次进入提交边界")
                 if signature != self.browsing.credential_signature() or self.browsing.closed:
                     raise ValueError("账号／服务已变化，取消提交")
+                captured = row["target"].get("generation_identity")
+                if captured and captured.get("identity_version") != runtime_identity(
+                    self.browsing.runtime, character, account
+                )["identity_version"]:
+                    raise ValueError("发送前身份资料已更新，保留草稿重新生成")
                 fresh = self.browsing.repo.decode(
                     self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
                 )

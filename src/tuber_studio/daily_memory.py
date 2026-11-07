@@ -15,7 +15,8 @@ from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 
-HIGHLIGHT_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
+DISTILLED_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
+HIGHLIGHT_CATEGORIES = (*DISTILLED_CATEGORIES, "public_incident")
 HIGHLIGHT_STATUSES = ("active", "pending_review", "archived")
 
 RETROSPECTIVE_CUES = (
@@ -158,6 +159,159 @@ def desensitize_user(display_name: str | None) -> str:
 class DailyMemoryService:
     def __init__(self, store):
         self.store = store
+        if store is None:
+            return
+        columns = {row[1] for row in store.db.execute("PRAGMA table_info(daily_highlights)")}
+        for name, definition in (("incident_key", "TEXT"), ("public_sources", "TEXT NOT NULL DEFAULT '[]'")):
+            if name not in columns:
+                store.execute(f"ALTER TABLE daily_highlights ADD COLUMN {name} {definition}")
+        store.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS daily_incident_identity "
+            "ON daily_highlights(character_id,character_version,incident_key) WHERE incident_key IS NOT NULL"
+        )
+
+    def record_public_incident(
+        self,
+        character_id,
+        character_version,
+        *,
+        incident_key,
+        highlight_date,
+        headline,
+        anecdote,
+        public_sources,
+        tags=None,
+    ):
+        """Record an operator-confirmed event, never a model-generated personality rule."""
+        if not isinstance(incident_key, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}", incident_key
+        ):
+            raise ValueError("公开经历需要稳定事件编号")
+        datetime.date.fromisoformat(highlight_date)
+        if not isinstance(headline, str) or not 1 <= len(headline.strip()) <= 40:
+            raise ValueError("公开经历标题须为1至40字")
+        if not isinstance(anecdote, str) or not 1 <= len(anecdote.strip()) <= 150:
+            raise ValueError("公开经历事实须为1至150字")
+        if not isinstance(public_sources, list) or not 1 <= len(public_sources) <= 8:
+            raise ValueError("公开经历须绑定1至8条公开来源")
+        if tags is not None and (
+            not isinstance(tags, list)
+            or len(tags) > 12
+            or any(not isinstance(tag, str) or not 1 <= len(tag.strip()) <= 40 for tag in tags)
+        ):
+            raise ValueError("经历关键词须为至多12个短词")
+        sources, seen = [], set()
+        for source in public_sources:
+            if not isinstance(source, dict) or set(source) != {"bvid", "thread_id", "comment_id", "quote"}:
+                raise ValueError("公开经历只接受公开视频、评论编号和原话")
+            bvid, comment_id, quote = (source[key] for key in ("bvid", "comment_id", "quote"))
+            thread_id = source["thread_id"]
+            if (
+                not isinstance(bvid, str)
+                or not re.fullmatch(r"BV[0-9A-Za-z]{10}", bvid)
+                or not isinstance(comment_id, str)
+                or not re.fullmatch(r"[1-9][0-9]{0,19}", comment_id)
+                or not isinstance(thread_id, str)
+                or not re.fullmatch(r"[1-9][0-9]{0,19}", thread_id)
+                or not isinstance(quote, str)
+                or not 1 <= len(quote.strip()) <= 2000
+            ):
+                raise ValueError("公开经历来源格式无效")
+            identity = (bvid, comment_id)
+            if identity in seen:
+                raise ValueError("公开经历来源不能重复")
+            seen.add(identity)
+            sources.append(
+                {
+                    "bvid": bvid,
+                    "thread_id": thread_id,
+                    "comment_id": comment_id,
+                    "quote": quote.strip(),
+                    "url": f"https://www.bilibili.com/video/{bvid}#reply{comment_id}",
+                }
+            )
+        existing = self.store.one(
+            "SELECT id FROM daily_highlights WHERE character_id=? AND character_version=? AND incident_key=?",
+            (character_id, character_version, incident_key),
+        )
+        if existing:
+            return existing["id"]
+        now = time.time()
+        cursor = self.store.execute(
+            "INSERT OR IGNORE INTO daily_highlights(character_id,character_version,highlight_date,category,headline,"
+            "source_ref,source_user,quote,anecdote,tags,status,created_at,updated_at,incident_key,public_sources) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                character_id,
+                character_version,
+                highlight_date,
+                "public_incident",
+                headline.strip(),
+                "incident:" + incident_key,
+                "公开评论区",
+                sources[0]["quote"],
+                anecdote.strip(),
+                json.dumps(tags or [], ensure_ascii=False),
+                "active",
+                now,
+                now,
+                incident_key,
+                json.dumps(sources, ensure_ascii=False),
+            ),
+        )
+        return (
+            cursor.lastrowid
+            if cursor.rowcount
+            else self.store.one(
+                "SELECT id FROM daily_highlights WHERE character_id=? AND character_version=? AND incident_key=?",
+                (character_id, character_version, incident_key),
+            )["id"]
+        )
+
+    def context(self, character, query_text="", *, video_id=None, thread_id=None, comment_id=None):
+        """Recall factual experiences by their public floor, or relevant conversation text."""
+        result = []
+        query_words = self._extract_recall_keywords(query_text)
+        for source in self.public_incident_sources(character["id"], character["version"]):
+            linked = any(
+                ref["bvid"] == str(video_id or "")
+                and (
+                    thread_id is not None
+                    and ref.get("thread_id") == str(thread_id)
+                    or comment_id is not None
+                    and ref["comment_id"] == str(comment_id)
+                )
+                for ref in source["public_sources"]
+            )
+            row = self.store.one(
+                "SELECT tags FROM daily_highlights WHERE id=?", (int(source["id"].split(":")[1]),)
+            )
+            tags = json.loads(row["tags"])
+            relevant = any(tag and tag in query_text for tag in tags) or any(
+                len(word) >= 2 and word in source["text"] for word in query_words
+            )
+            if linked or relevant:
+                result.append(source)
+        return result[:2]
+
+    def public_incident_sources(self, character_id, character_version):
+        rows = self.store.all(
+            "SELECT id,incident_key,headline,anecdote,public_sources FROM daily_highlights "
+            "WHERE character_id=? AND character_version=? AND category='public_incident' AND status='active' "
+            "ORDER BY highlight_date DESC,id DESC LIMIT 20",
+            (character_id, character_version),
+        )
+        return [
+            {
+                "id": f"incident:{row['id']}",
+                "type": "public_incident",
+                "fictional": False,
+                "text": row["headline"] + "：" + row["anecdote"],
+                "incident_key": row["incident_key"],
+                "public_sources": json.loads(row["public_sources"]),
+            }
+            for row in rows
+        ]
 
     def candidate_sources(self, date_str: str, character_id: str, limit: int = 15) -> list[dict[str, Any]]:
         """Collect potential highlight candidates from comments and conversations for a date."""
@@ -236,7 +390,7 @@ class DailyMemoryService:
         status: str = "active",
     ) -> int:
         """Insert or record a verified daily highlight."""
-        if category not in HIGHLIGHT_CATEGORIES:
+        if category not in DISTILLED_CATEGORIES:
             raise ValueError(f"Unsupported category: {category}")
         if status not in HIGHLIGHT_STATUSES:
             raise ValueError(f"Unsupported status: {status}")
@@ -312,7 +466,7 @@ class DailyMemoryService:
                         "type": "object",
                         "required": ["category", "headline", "source_ref", "quote", "anecdote"],
                         "properties": {
-                            "category": {"type": "string", "enum": list(HIGHLIGHT_CATEGORIES)},
+                            "category": {"type": "string", "enum": list(DISTILLED_CATEGORIES)},
                             "headline": {"type": "string", "maxLength": 30},
                             "source_ref": {"type": "string", "enum": list(candidates_map)},
                             "source_user": {"type": "string"},
@@ -347,7 +501,7 @@ class DailyMemoryService:
             headline = item.get("headline", "").strip()
             anecdote = item.get("anecdote", "").strip()
             category = item.get("category", "comment_anecdote")
-            if category not in HIGHLIGHT_CATEGORIES:
+            if category not in DISTILLED_CATEGORIES:
                 category = "comment_anecdote"
             source_ref = item.get("source_ref", "")
             candidate = candidates_map.get(source_ref)
@@ -399,6 +553,7 @@ class DailyMemoryService:
         days: int = 3,
         limit: int = 2,
         max_tokens: int = 160,
+        include_incidents: bool = True,
     ) -> list[dict[str, Any]]:
         """Retrieve bounded, active anecdotes for prompt injection.
 
@@ -424,6 +579,8 @@ class DailyMemoryService:
         # Score and rank relevance if query_text is given
         scored = []
         for row in rows:
+            if row["category"] == "public_incident" and not include_incidents:
+                continue
             score = 0
             if query_text:
                 q = query_text.lower()
@@ -436,6 +593,8 @@ class DailyMemoryService:
                 for word in ("昨天", "评论", "上次", "视频", "尾巴", "饭", "连跪"):
                     if word in q and (word in row["anecdote"] or word in row["headline"]):
                         score += 2
+            if row["category"] == "public_incident" and query_text and score == 0:
+                continue
             scored.append((score, row))
 
         # Sort by relevance score, then recent date
@@ -618,7 +777,7 @@ class DailyMemoryService:
         query = f"""
             SELECT id, character_id, character_version, highlight_date, category,
                    headline, source_ref, source_user, quote, anecdote, tags, status,
-                   created_at, updated_at
+                   created_at, updated_at, incident_key, public_sources
             FROM daily_highlights
             WHERE {" AND ".join(clauses)}
             ORDER BY highlight_date DESC, id DESC
@@ -630,6 +789,7 @@ class DailyMemoryService:
         for r in rows:
             item = dict(r)
             item["tags"] = json.loads(item["tags"] or "[]")
+            item["public_sources"] = json.loads(item["public_sources"] or "[]")
             result.append(item)
         return result
 
@@ -644,6 +804,14 @@ class DailyMemoryService:
             raise ValueError(f"Invalid status: {filtered['status']}")
         if "category" in filtered and filtered["category"] not in HIGHLIGHT_CATEGORIES:
             raise ValueError(f"Invalid category: {filtered['category']}")
+        existing = self.store.one("SELECT category FROM daily_highlights WHERE id=?", (highlight_id,))
+        if (
+            "category" in filtered
+            and existing
+            and filtered["category"] != existing["category"]
+            and ("public_incident" in (filtered["category"], existing["category"]))
+        ):
+            raise ValueError("公开经历分类与来源绑定，不可转换分类")
         if "tags" in filtered:
             filtered["tags"] = json.dumps(filtered["tags"], ensure_ascii=False)
 

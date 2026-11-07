@@ -69,6 +69,7 @@ def create_app(
     runtime = Runtime(settings, store, singing_provider=singing_provider, live_scene=live_scene)
     comments = Comments(settings, store, runtime, adapter)
     account = BilibiliAccount(comments)
+    runtime.account = account
     memes = MemeCatalog(settings, store)
     dynamics = Dynamics(settings, store, runtime, comments, memes=memes)
     messages = DirectMessages(settings, store, runtime, comments, message_adapter, memes=memes)

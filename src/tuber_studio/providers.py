@@ -18,6 +18,7 @@ from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, models_health, response_bytes
 from .llama_sampling import llama_cpp_sampling
 from .models import OperationReply, Reply
+from .operation_identity import provider_identity_messages
 from .operation_text import operation_character
 from .persona import built_in_anchor
 
@@ -64,6 +65,19 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
         {"role": "system", "content": system_content},
         {"role": "system", "content": f"当前交流场景：{mode}"},
     ]
+    actors = None
+    if mode in {"comment_draft", "comment_channel_decision"} and event.get("self_actor"):
+        from .operations.browsing.inputs import (
+            RESPONSE_ACTOR_INSTRUCTION,
+            bind_response_actors,
+            compact_actor_context,
+        )
+
+        actors = compact_actor_context(
+            bind_response_actors({"thread": event.get("comment_context", {})}, event["self_actor"]),
+            current_text_ref="当前观众消息.text",
+        )
+        messages[1]["content"] += "\n" + RESPONSE_ACTOR_INSTRUCTION
     lore = [
         entry["text"]
         for entry in (() if anchor else character.get("lore", []))
@@ -72,8 +86,12 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
     # Logical history and its compacted summary belong to ContextManager. Do not
     # inject a second, empty history snapshot after the actual conversation.
     optional = {"active_lore": lore, "confirmed_relationship": relationship}
+    if actors:
+        optional.update(self_actor=actors["self_actor"], reply_target=actors.get("reply_target"),
+                        comment_context=actors.get("thread"))
     messages.append({"role": "user", "content": "上下文数据：" + json.dumps(optional, ensure_ascii=False)})
-    messages.append({"role": "user", "content": "当前观众消息：" + json.dumps(event, ensure_ascii=False)})
+    wire_event = {key: value for key, value in event.items() if key not in {"self_actor", "comment_context"}} if actors else event
+    messages.append({"role": "user", "content": "当前观众消息：" + json.dumps(wire_event, ensure_ascii=False)})
     if mode == "comment_channel_decision":
         return messages
 
@@ -213,7 +231,7 @@ class LlamaCppProvider:
             "/apply-template",
             json={
                 **model,
-                "messages": single_system_messages(messages),
+                "messages": single_system_messages(provider_identity_messages(self, messages)),
                 "add_generation_prompt": True,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
             },
@@ -228,6 +246,7 @@ class LlamaCppProvider:
         counts = _turn_token_counts.get()
         if counts is None:
             return await self._token_count(messages)
+        messages = provider_identity_messages(self, messages)
         wire = json.dumps(single_system_messages(messages), sort_keys=True, ensure_ascii=False)
         key = (
             self,
@@ -243,7 +262,7 @@ class LlamaCppProvider:
         """Condition the real model on restored source text; discard its one token."""
         self._begin_generation_observation()
         await self.ensure_capacity()
-        messages = single_system_messages(messages)
+        messages = single_system_messages(provider_identity_messages(self, messages))
         tokens = await self.count_tokens(messages)
         self.last_tokens = tokens
         if tokens + 1 > self.config["context_tokens"] * 95 // 100:
@@ -290,7 +309,7 @@ class LlamaCppProvider:
             "/v1/chat/completions",
             json={
                 "model": self.config.get("model", "local"),
-                "messages": single_system_messages(messages),
+                "messages": single_system_messages(provider_identity_messages(self, messages)),
                 **self.sampling(summary=True),
                 "max_tokens": max_tokens,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
@@ -317,7 +336,7 @@ class LlamaCppProvider:
     async def generate(self, messages, character, event_id, source_text=None):
         self._begin_generation_observation()
         await self.ensure_capacity()
-        messages = single_system_messages(messages)
+        messages = single_system_messages(provider_identity_messages(self, messages))
         output_budget = self.config.get("max_tokens", 160)
         budget = self.config["context_tokens"] * 95 // 100 - output_budget
         self.last_tokens = await self.count_tokens(messages)
@@ -360,7 +379,7 @@ class LlamaCppProvider:
 
     def prepare_json_messages(self, messages, schema, *, max_tokens):
         json_schema_text(schema, max_tokens)
-        return single_system_messages(messages)
+        return single_system_messages(provider_identity_messages(self, messages))
 
     async def generate_json(self, messages, schema, *, max_tokens):
         """A bounded schema-constrained task, independent of compaction output."""
@@ -378,7 +397,7 @@ class LlamaCppProvider:
         self._begin_generation_observation()
         json_schema_text(schema, max_tokens)
         await self.ensure_capacity()
-        messages = single_system_messages(messages)
+        messages = single_system_messages(provider_identity_messages(self, messages))
         tokens = await self.count_tokens(messages)
         self.last_tokens = tokens
         if tokens + max_tokens > self.config["context_tokens"] * 95 // 100:
@@ -510,7 +529,7 @@ class DemoProvider:
         return {"available": True, "detail": "离线固定台词，不是模型推理"}
 
     async def count_tokens(self, messages):
-        return sum(approx_token_count(m["content"]) + 8 for m in messages)
+        return sum(approx_token_count(m["content"]) + 8 for m in provider_identity_messages(self, messages))
 
     async def prefill(self, messages):
         return False

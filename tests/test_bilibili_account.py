@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
-from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, avatar_url
+from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, avatar_url, cached_account_actor, signature
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
 
 PNG = base64.b64decode(
@@ -22,6 +22,23 @@ PNG = base64.b64decode(
 )
 FACE = "https://i0.hdslb.com/bfs/face/fixture.png"
 SECRET = {"sessdata": "fixture-sessdata-private", "csrf": "fixture-csrf-private"}
+
+
+@pytest.mark.parametrize(("uid", "credentials", "name"), [
+    ("123", SECRET, "大肥鱼只想过平静生活"),
+    ("456", SECRET, None),
+    ("123", {"sessdata": "another-account"}, None),
+])
+def test_speaking_account_uses_verified_uid_and_credentials_instead_of_oc_name(uid, credentials, name):
+    class Store:
+        def get(self, key, default):
+            assert key == PROFILE_CACHE_KEY
+            return {"format": 1, "credential_signature": signature(SECRET),
+                    "profile": {"uid": uid, "name": "大肥鱼只想过平静生活"}, "checked_at": time.time()}
+
+    actor = cached_account_actor(Store(), credentials, "123")
+    assert actor == {"platform": "bilibili", "account_uid": "123", "account_display_name": name, "account_bio": None}
+    assert "sessdata" not in json.dumps(actor) and "csrf" not in json.dumps(actor)
 
 
 @pytest.fixture
@@ -35,6 +52,8 @@ def network(monkeypatch):
         "image": PNG,
         "mime": "image/png",
         "network_error": False,
+        "bio": "住在海底小屋，喜欢白饭。",
+        "profile_uid": 123,
     }
 
     def handler(request):
@@ -65,6 +84,10 @@ def network(monkeypatch):
                     },
                 },
             )
+        if request.url.path == "/x/space/myinfo":
+            return httpx.Response(200, json={"code": 0, "data": {
+                "mid": state["profile_uid"], "name": "大肥鱼账号", "sign": state["bio"],
+            }})
         assert request.url.path == "/x/relation/stat"
         assert request.url.params["vmid"] == "123"
         return httpx.Response(200, json={"code": state["stats_code"], "data": {"follower": 42}})
@@ -154,13 +177,14 @@ def test_refresh_reads_actual_nav_stats_and_profile_cache_does_not_poll(account_
         "avatar_url": FACE,
         "coins": 3.5,
         "fans": 42,
+        "bio": "住在海底小屋，喜欢白饭。",
     }
     assert app.state.comments.display_account_id() == "123"
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "SESSDATA=" + SECRET["sessdata"] in calls[0].headers["cookie"]
     for _ in range(3):
         assert client.get("/api/account/bilibili").json()["state"] == "logged_in"
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert all(secret not in response.text for secret in SECRET.values())
 
 
@@ -172,6 +196,36 @@ def test_partial_stats_keep_verified_profile_with_explicit_missing_count(account
     assert data["state"] == "logged_in"
     assert data["profile"]["fans"] is None and data["warnings"]
     assert data["profile"]["coins"] == 3.5
+
+
+def test_remote_bio_updates_the_verified_system_identity_without_versioning_check_times(account_client):
+    from tuber_studio.operation_identity import identity_snapshot
+
+    client, app, _, state = account_client
+    configure(client)
+    client.post("/api/account/bilibili/refresh").raise_for_status()
+    first = cached_account_actor(app.state.store, SECRET, None)
+    assert first["account_uid"] == "123" and first["account_bio"] == state["bio"]
+    version = identity_snapshot(first, app.state.runtime.character)["identity_version"]
+    client.post("/api/account/bilibili/refresh").raise_for_status()
+    assert identity_snapshot(cached_account_actor(app.state.store, SECRET, "123"), app.state.runtime.character)["identity_version"] == version
+    state["bio"] = "今天把海底小屋的白饭锅修好了。"
+    result = client.post("/api/account/bilibili/refresh").json()
+    assert result["profile"]["bio"] == state["bio"]
+    updated = cached_account_actor(app.state.store, SECRET, "123")
+    assert updated["account_bio"] == state["bio"]
+    assert identity_snapshot(updated, app.state.runtime.character)["identity_version"] != version
+    assert cached_account_actor(app.state.store, {"sessdata": "other"}, None)["account_uid"] is None
+
+
+def test_homepage_of_a_different_uid_does_not_replace_the_verified_identity(account_client):
+    client, app, _, state = account_client
+    configure(client)
+    original = client.post("/api/account/bilibili/refresh").json()["profile"]
+    state["profile_uid"] = 456
+    failed = client.post("/api/account/bilibili/refresh").json()
+    assert failed["state"] == "error" and failed["profile"] == original
+    assert cached_account_actor(app.state.store, SECRET, "123")["account_bio"] == original["bio"]
 
 
 @pytest.mark.parametrize(
@@ -243,10 +297,10 @@ def test_avatar_proxy_has_no_platform_cookies_and_caches_only_current_identity(a
     assert response.headers["content-type"] == "image/png"
     assert len([call for call in calls if call.url.host.endswith("hdslb.com")]) == 1
     assert client.get("/api/account/bilibili/avatar").status_code == 200
-    assert len(calls) == 3
+    assert len(calls) == 4
     client.put("/api/account/bilibili", json={"sessdata": "new-account"}).raise_for_status()
     assert client.get("/api/account/bilibili/avatar").status_code == 404
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 @pytest.mark.parametrize("prefix", ["http:", ""])
@@ -281,7 +335,7 @@ def test_platform_avatar_cannot_be_an_arbitrary_url(account_client, url):
     state["face"] = url
     assert client.post("/api/account/bilibili/refresh").json()["profile"]["avatar_url"] is None
     assert client.get("/api/account/bilibili/avatar").status_code == 404
-    assert len(calls) == 2 and avatar_url(url) is None
+    assert len(calls) == 3 and avatar_url(url) is None
 
 
 @pytest.mark.parametrize("failure", ["redirect", "size", "mime"])
@@ -296,7 +350,7 @@ def test_avatar_redirect_size_and_mime_fail_without_external_follow(account_clie
     else:
         state["mime"] = "text/html"
     assert client.get("/api/account/bilibili/avatar").status_code == 404
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 async def close_unstarted(app):

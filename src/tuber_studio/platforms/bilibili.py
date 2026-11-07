@@ -163,6 +163,9 @@ class BilibiliAdapter:
         if nav.get("isLogin") is not True:
             raise BilibiliAccountExpired("B站登录已失效")
         uid = _positive_id(nav.get("mid"))
+        details = await self._get("/x/space/myinfo", {})
+        if _positive_id(details.get("mid")) != uid:
+            raise ValueError("账号主页与登录账号不一致")
         fans = None
         try:
             stats = await self._get("/x/relation/stat", {"vmid": uid})
@@ -173,7 +176,8 @@ class BilibiliAdapter:
             pass
         return {
             "uid": uid,
-            "name": nav.get("uname"),
+            "name": details.get("name") or nav.get("uname"),
+            "bio": details.get("sign"),
             "avatar_url": nav.get("face"),
             "coins": nav.get("money"),
             "fans": fans,
@@ -284,6 +288,15 @@ class BilibiliAdapter:
         if thread_id is not None and root != thread_id:
             raise ValueError("评论楼标识不一致")
         member, content = reply["member"], reply["content"]
+        mentioned = content.get("members") or []
+        if not isinstance(mentioned, list):
+            raise ValueError("评论提及列表格式无效")
+        mentions, seen = [], set()
+        for person in mentioned:
+            uid = _positive_id(person["mid"])
+            if uid not in seen:
+                mentions.append({"uid": uid, "name": str(person.get("uname") or "")})
+                seen.add(uid)
         return {
             "comment_id": cid,
             "thread_id": root,
@@ -293,6 +306,7 @@ class BilibiliAdapter:
             "content": str(content["message"]),
             "like_count": max(0, int(reply.get("like", 0))),
             "created_at": str(int(reply.get("ctime", 0))),
+            "mentions": mentions,
         }
 
     async def fetch(self, video: str, max_pages: int = 1, *, newest=False, start_page=1) -> dict:

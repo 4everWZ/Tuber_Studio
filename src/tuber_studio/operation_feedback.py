@@ -16,6 +16,7 @@ from .operation_continuations import (
     continuation_messages,
     continuation_schema,
 )
+from .operation_identity import identity_messages, runtime_identity
 from .operation_text import (
     operation_character,
     operation_output_diagnostics,
@@ -188,7 +189,7 @@ class FeedbackModel:
         if persona is None:
             card = operation_character(self.character)
             persona = SYSTEM_RULES + dump({key: card[key] for key in ("core", "style", "rules")})
-        return continuation_messages(
+        return identity_messages(continuation_messages(
             [
                 {
                     "role": "system",
@@ -196,6 +197,11 @@ class FeedbackModel:
                 },
                 {"role": "user", "content": "本次交流的已核验来源与上下文：" + dump(self.context)},
             ]
+        ), runtime_identity(self.runtime, self.character))
+
+    def _identity(self, row):
+        return row["binding"].get("self_identity") or runtime_identity(
+            self.runtime, self.character, row["binding"].get("account_id")
         )
 
     async def _compact_output(self, row):
@@ -227,6 +233,7 @@ class FeedbackModel:
             },
             {"role": "user", "content": dump(value)},
         ]
+        summary_messages = identity_messages(summary_messages, self._identity(row))
         maximum = min(self.max_tokens, self.runtime.settings.data["llm"].get("compaction_max_tokens", 4096))
         summary = await budgeted_call(
             self.runtime.llm,
@@ -269,7 +276,8 @@ class FeedbackModel:
                         try:
                             attempted = True
                             result = await budgeted_json(
-                                self.runtime.llm, make_messages(), schema, max_tokens=self.max_tokens
+                                self.runtime.llm, identity_messages(make_messages(), self._identity(current)),
+                                schema, max_tokens=self.max_tokens
                             )
                             break
                         except ContextWindowExceeded:

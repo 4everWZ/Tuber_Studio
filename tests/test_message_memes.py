@@ -72,6 +72,9 @@ async def image_http(settings):
                     | state["receipt_patch"],
                 },
             )
+        if request.url.path == "/svr_sync/v1/svr_sync/fetch_session_msgs":
+            assert request.method == "GET"
+            return httpx.Response(200, json={"code": 0, "data": {"messages": []}})
         assert request.url.host == "api.vc.bilibili.com" and request.url.path == "/web_im/v1/web_im/send_msg"
         if state["final"] == "timeout":
             raise httpx.ReadTimeout("controlled unknown final write")

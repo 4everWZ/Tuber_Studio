@@ -82,12 +82,15 @@ async def prepared_service(
     source = store.one("SELECT id FROM comments")
     character = runtime.character
     identity = store.execute(
-        "INSERT INTO drafts(comment_id,text,status,character_id,character_version,input_summary,created_at,updated_at) VALUES(?,?,'approved',?,?,?, ?,?)",
+        "INSERT INTO drafts(comment_id,text,status,character_id,character_version,answer_check,input_summary,created_at,updated_at) VALUES(?,?,'approved',?,?,?,?,?,?)",
         (
             source["id"],
             "原来这段米饭故事这么长。" * 100,
             character["id"],
             character["version"],
+            # This fixture represents a newly generated, approved body whose
+            # rejection is under test, rather than an unversioned legacy draft.
+            json.dumps({"generation_identity": runtime.identity_snapshot(character, "100")}),
             json.dumps({"event": {"text": "今天煮饭怎么做？"}}, ensure_ascii=False),
             time.time(),
             time.time(),
@@ -133,6 +136,35 @@ async def prepared_service(
     await runtime.llm.close()
     runtime.llm = provider
     return service, identity, posted, model_requests
+
+
+async def test_unversioned_legacy_draft_regenerates_before_the_feedback_write(settings, store, runtime, monkeypatch):
+    from tuber_studio.models import OperationReply
+
+    service, identity, posted, requests = await prepared_service(settings, store, runtime)
+    store.execute("UPDATE drafts SET answer_check=NULL WHERE id=?", (identity,))
+    regenerated = []
+    refreshed_body = "本鲸用当前账号重新接这锅饭的话题，火候放慢一点。"
+
+    async def regenerate(scope, character, event, relationship=None, mode="live", *, context=None):
+        regenerated.append(event)
+        assert mode == "comment_draft" and context is not None
+        assert event["account_id"] == "100" and event["text"] == "今天煮饭怎么做？"
+        return OperationReply(spoken_text=refreshed_body, emotion="cheerful", animation_id="talk_happy",
+                              reply_to=[event["event_id"]]), {
+            "generation_identity": runtime.identity_snapshot(character, "100")
+        }
+
+    monkeypatch.setattr(runtime, "generate_reply", regenerate)
+    try:
+        result = await service.publish(identity)
+        assert len(regenerated) == 1
+        assert posted[0]["message"] == [refreshed_body]
+        captured = json.loads(store.one("SELECT answer_check FROM drafts WHERE id=?", (identity,))["answer_check"])
+        assert captured["generation_identity"] == runtime.identity_snapshot(runtime.character, "100")
+        assert result["status"] == "pending_review" and len(requests) == 4
+    finally:
+        await service.close()
 
 
 async def test_definite_length_rejection_revises_then_manual_approval_reuses_same_intent(
@@ -516,7 +548,9 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
             }
         )
         identity = service.enqueue("message", source, schedule=False)
-        store.execute("UPDATE dm_drafts SET text='原来的正文',status='approved' WHERE id=?", (identity,))
+        store.execute("UPDATE dm_drafts SET text='原来的正文',status='approved',answer_check=? WHERE id=?", (
+            json.dumps({"generation_identity": runtime.identity_snapshot(runtime.character, "100")}), identity,
+        ))
         send = service.send
     else:
         await transport(comments.adapter).aclose()

@@ -248,7 +248,9 @@ class ContextManager:
                 }
             )
         if self.tool_registry:
-            augmentations = self.tool_registry.collect_context_augmentations(character, event, mode)
+            augmentations = self.tool_registry.collect_context_augmentations(
+                character, event, mode, extra_context={"scope": scope}
+            )
             initial.extend(augmentations)
         history = json.loads(row["history"])
         messages = self.render(prefix, initial, history, pending, suffix)

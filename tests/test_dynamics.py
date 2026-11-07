@@ -70,7 +70,9 @@ def service(settings, store, monkeypatch):
     runtime = SimpleNamespace(llm=Model(), generation_lock=asyncio.Lock())
     runtime.offline_generation = lambda lane: runtime.generation_lock
     service = Dynamics(settings, store, runtime, comments)
-    service.operations.configure({"enabled": True}, account_id="injected-test-account", character=store.character())
+    service.operations.configure(
+        {"enabled": True}, account_id="injected-test-account", character=store.character()
+    )
     service.sent = []
 
     async def send(adapter, text, *, before_send=None):
@@ -112,6 +114,133 @@ def due(service):
     service.store.set(
         "dynamic_schedule", {"next_evaluation_at": 0, "backoff_until": None, "last_error": None}
     )
+
+
+async def test_public_incident_is_factual_cited_and_removed_from_draft_sources(service):
+    from tuber_studio.daily_memory import DailyMemoryService
+
+    memory = DailyMemoryService(service.store)
+    char = service._character()
+    identifier = memory.record_public_incident(
+        char["id"],
+        char["version"],
+        incident_key="real-comment-mixup",
+        highlight_date="2026-11-07",
+        headline="评论接错话",
+        anecdote="我没认清对话对象，观众问我是不是回错了。",
+        public_sources=[
+            {
+                "bvid": "BV13S4i6fE82",
+                "thread_id": "323202459488",
+                "comment_id": "323231188736",
+                "quote": "你消息是不是回错了",
+            }
+        ],
+    )
+    decision = await service.evaluate(manual=True)
+    post = service._post(decision["post_id"])
+    assert post["status"] == "pending_review"
+    assert not service.sent
+    assert post["sources"][0]["id"] == f"incident:{identifier}"
+    assert post["sources"][0]["fictional"] is False
+    payload = json.loads(service.runtime.llm.calls[-1][1]["content"])
+    assert payload["public_sources"][0]["fictional"] is False
+    assert service._valid_sources(post)
+    memory.delete_highlight(identifier)
+    assert not service._valid_sources(post)
+
+
+async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approval(service):
+    from tuber_studio.operation_identity import identity_snapshot
+
+    public_memory(service)
+    char = service._character()
+    current = {"account_uid": "injected-test-account", "account_display_name": "旧名字"}
+    service.runtime.identity_snapshot = lambda character=None, account_id=None: identity_snapshot(
+        current, character or char
+    )
+    post_id = (await service.evaluate(manual=True))["post_id"]
+    previous = json.loads(service._post(post_id)["generation_identity"])
+    service.review(post_id, "approve")
+
+    async def refresh(character=None, account_id=None):
+        assert not service.comments.publish_lock.locked()
+        current["account_display_name"] = "新名字"
+        return service.runtime.identity_snapshot(character, account_id)
+
+    service.runtime.refresh_identity = refresh
+    service.runtime.llm.output = json.dumps(
+        {
+            "action": "post",
+            "reason": "按当前身份分享",
+            "content": "我是新名字，海底厨房今天照常开饭。",
+            "source_ids": service._post(post_id)["source_ids"],
+            "next_evaluation_seconds": 1800,
+        },
+        ensure_ascii=False,
+    )
+    result = await service.publish(post_id)
+    assert result["status"] == "published"
+    assert len(service.sent) == 1
+    assert service.sent[0][1] == "我是新名字，海底厨房今天照常开饭。"
+    identity = json.loads(service._post(post_id)["generation_identity"])
+    assert identity["account_display_name"] == "新名字"
+    assert identity["identity_version"] != previous["identity_version"]
+    assert "新名字" in service.runtime.llm.calls[-1][0]["content"]
+
+
+async def test_dynamic_identity_verification_failure_keeps_approved_draft_unsent(service):
+    public_memory(service)
+    post_id = (await service.evaluate(manual=True))["post_id"]
+    service.review(post_id, "approve")
+    original = service._post(post_id)["content"]
+
+    async def unavailable(*args):
+        raise ValueError("远端资料核验失败")
+
+    service.runtime.refresh_identity = unavailable
+    with pytest.raises(ValueError, match="远端资料核验失败"):
+        await service.publish(post_id)
+    assert service._post(post_id)["status"] == "approved"
+    assert service._post(post_id)["content"] == original
+    assert not service.sent
+
+
+async def test_automatic_dynamic_identity_refresh_preserves_automatic_authorization(service):
+    from tuber_studio.operation_identity import identity_snapshot
+
+    public_memory(service)
+    service.comments.display_account_id = lambda: "injected-test-account"
+    char = service._character()
+    current = {"account_uid": "injected-test-account", "account_display_name": "旧名字"}
+    service.runtime.identity_snapshot = lambda character=None, account_id=None: identity_snapshot(
+        current, character or char
+    )
+
+    async def refresh(character=None, account_id=None):
+        current["account_display_name"] = "新名字"
+        return service.runtime.identity_snapshot(character, account_id)
+
+    service.runtime.refresh_identity = refresh
+    await service.set_policy({"enabled": True})
+    result = await service.evaluate()
+    assert service.list_posts()[0]["error"] is None
+    assert result["status"] == "published", (result, service.list_posts())
+    assert len(service.sent) == 1
+    post = service.list_posts()[0]
+    assert json.loads(post["generation_identity"])["account_display_name"] == "新名字"
+    decisions = [
+        packet
+        for packet in service.runtime.llm.calls
+        if json.loads(packet[1]["content"]).get("task") != "operations_memory_summary"
+    ]
+    assert len(decisions) == 2  # Initial generation and the necessary identity-bound replacement.
+    assert "新名字" in decisions[-1][0]["content"]
+
+
+def test_incident_internal_source_id_cannot_become_public_body():
+    with pytest.raises(ValueError, match="内部来源编号"):
+        module.validate_text("今天想聊聊 incident:123 里的事。")
 
 
 async def test_dynamic_can_read_one_page_without_changing_public_source(service, monkeypatch):

@@ -176,6 +176,12 @@ class ControlledModel:
         self.peak = max(self.peak, self.active)
         try:
             await asyncio.sleep(0.001)
+            if schema["title"] == "OutreachAssessment":
+                data = json.loads(messages[-1]["content"])
+                self.calls.append((schema["title"], data))
+                return {"action": "send", "reason": "对方邀请我方就具体实验私下继续", "purpose": data["purpose"] or "讨论盐水鸡蛋实验",
+                    "invitation_kind": "invitation", "invitation_comment_id": data["public_thread"]["source"]["comment_id"],
+                    "invitation_quote": data["public_thread"]["source"]["text"], "invited_actor_uid": data["self_account_uid"], "body_addresses_purpose": True}
             data = model_packet(messages[-1]["content"])
             self.calls.append((schema["title"], data))
             if schema["title"] == "BrowsePlan":
@@ -221,6 +227,7 @@ class ControlledModel:
                 "reason": "specific_detail" if action in {"reply_public", "finish"} else "private_details",
                 "explanation": "想接着聊盐水如何把鸡蛋托起来",
                 "evidence_ids": [data["evidence"][0]["id"]],
+                **({"contact_purpose": "讨论盐水鸡蛋实验", "contact_trigger": "invitation"} if action == "handoff_private" else {}),
                 **(
                     {
                         "video_preference": self.interest,
@@ -1137,7 +1144,7 @@ async def test_restart_never_replays_or_restores_publishing(browsing):
     assert not browsing.adapter.sent
 
 
-async def test_notification_private_handoff_owned_by_round_and_never_public_body(browsing):
+async def test_notification_private_handoff_owned_by_round_and_never_public_body(browsing, monkeypatch):
     browsing.store.set(
         "browsing_policy",
         BrowsingPolicy(mentions_enabled=True, mention_reply_enabled=True, reply_enabled=True).model_dump(),
@@ -1157,6 +1164,18 @@ async def test_notification_private_handoff_owned_by_round_and_never_public_body
         }
     ]
     browsing.runtime.llm.response_action = "handoff_private"
+    original_thread = browsing.adapter.read_public_thread
+
+    async def invited_thread(event):
+        value = await original_thread(event)
+        value["source"]["text"] = "@大肥鱼 请私信告诉我盐水鸡蛋实验怎么准备"
+        value["items"] = [
+            {"comment_id": "501", "thread_id": "501", "platform_user_id": "100", "display_name": "大肥鱼", "content": "准备聊实验"},
+            {"comment_id": "502", "thread_id": "501", "parent_comment_id": "501", "platform_user_id": "300", "display_name": "邻居", "content": value["source"]["text"], "mentions": [{"uid": "100", "name": "大肥鱼"}]},
+        ]
+        return value
+
+    monkeypatch.setattr(browsing.adapter, "read_public_thread", invited_thread)
     row = await finished(browsing, preview=True, notifications_only=True)
     assert row["status"] == "completed", row
     intent = browsing.intents()[0]

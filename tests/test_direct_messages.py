@@ -116,6 +116,14 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
     await messages.configure({"enabled": True, "channel_max_tokens": budget})
     original_llm = dict(messages.settings.data["llm"])
     comments = messages.comments
+    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.verified_account_id = "injected-test-account"
+    comments.verified_credential = dict(comments.credentials)
+
+    async def account():
+        return "injected-test-account"
+
+    monkeypatch.setattr(comments, "account_id", account)
     comments.import_items(
         "import-private",
         [
@@ -129,8 +137,26 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
     )
     source = messages.store.one("SELECT * FROM comments")
     decisions = []
+    original_event = messages._event
+
+    def verified_event(draft, character):
+        value = original_event(draft, character)
+        if draft["source_kind"] == "comment":
+            value["public_source_thread"] = {
+                "source": {"comment_id": "c1", "author_uid": "123", "text": source["content"]},
+                "parent": {"comment_id": "original", "author_uid": draft["account_id"], "text": "原公开交流"},
+                "addressing": {"source_parent_comment_id": "original", "source_mentions": []},
+            }
+        return value
+
+    monkeypatch.setattr(messages, "_event", verified_event)
 
     async def decide(prompt, schema, *, max_tokens):
+        if schema["title"] == "OutreachAssessment":
+            data = json.loads(prompt[-1]["content"])
+            assert data["public_thread"]["source"]["comment_id"] == "c1"
+            return {"action": "send", "reason": "对方邀请我方继续私下讨论", "purpose": "讨论原先提到的个人事项",
+                "invitation_kind": "invitation", "invitation_comment_id": "c1", "invitation_quote": source["content"], "invited_actor_uid": data["self_account_uid"], "body_addresses_purpose": True}
         assert max_tokens == budget
         decisions.extend(prompt)
         return {"channel": "direct_message", "reason": "user_requested"}
@@ -142,6 +168,8 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
     assert bridge["status"] == "private_handoff"
     draft = messages.store.one("SELECT * FROM dm_drafts")
     await finished(messages, draft["id"])
+    actual = messages.store.one("SELECT status,error,account_id,outreach_check FROM dm_drafts WHERE id=?", (draft["id"],))
+    assert actual["status"] == "pending_review", actual
     assert any('"affinity": 21' in message["content"] for message in decisions)
     public = messages.runtime.context.existing(
         comments.context_scope(source["video_id"], source["thread_id"]), messages.runtime.character

@@ -2,11 +2,17 @@
 
 import copy
 import json
+import re
+from pathlib import Path
 
 import pytest
 from test_browsing import browsing as browsing
 
-from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
+from tuber_studio.operations.browsing.inputs import (
+    ResponseDecisionInput,
+    bind_response_actors,
+    compact_actor_context,
+)
 from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
 from tuber_studio.operations.browsing.round_context import generation_resume
 
@@ -40,6 +46,240 @@ def reply(refs):
         text="鱼鱼接住这个话题，顺着往下聊。" * 50,
         evidence_ids=refs,
     )
+
+
+@pytest.mark.parametrize(
+    ("mentioned_uid", "parent_uid", "expected"),
+    [("3706944382568764", "200", ["self", "other"]), ("300", "300", ["other"]), (None, None, [])],
+)
+def test_response_actors_keep_real_addressees_distinct_from_oc_and_source(
+    mentioned_uid, parent_uid, expected
+):
+    source = {"comment_id": "32", "author_uid": "200", "author_name": "观众", "text": "@汐 你今天也在吗？"}
+    data = packet(1)
+    data["thread"] = {
+        "source": source,
+        "root": {"comment_id": "30", "author_uid": "300", "author_name": "汐", "text": "别人的OC"},
+        "parent": {"comment_id": "31", "author_uid": parent_uid, "author_name": "汐", "text": "父评论"},
+        "timeline": [{"comment_id": "31", "author_uid": parent_uid, "text": "父评论"}],
+        "items": [{"comment_id": "32", "platform_user_id": "200", "content": source["text"]}],
+        "addressing": {"source_mentions": [{"uid": mentioned_uid, "name": "汐"}] if mentioned_uid else []},
+    }
+    original = copy.deepcopy(data)
+    actor = {
+        "platform": "bilibili", "account_uid": "3706944382568764", "account_display_name": "我方账号",
+        "character_id": "whale", "character_name": "大肥鱼",
+    }
+    bound = bind_response_actors(data, actor)
+    assert data == original and bound["thread"]["source"] == source
+    assert bound["self_actor"] == actor
+    addressing = bound["thread"]["addressing"]
+    assert addressing["source_relation_to_self"] == "other"
+    assert [item["relation_to_self"] for item in addressing["addressed_to"]] == expected
+    if mentioned_uid == parent_uid and mentioned_uid:
+        assert addressing["addressed_to"][0]["basis"] == ["mention", "reply_parent"]
+    assert bound["thread"]["root"]["relation_to_self"] == "other"
+    assert bound["thread"]["items"][0]["relation_to_self"] == "other"
+    assert bound["reply_target"]["text"] == source["text"]
+    header, body = ResponseDecisionInput(bound).format().split("\n\n所选材料：\n", 1)
+    assert list(json.loads(header))[:2] == ["self_actor", "reply_target"]
+    assert source["text"] in header and original["evidence"][0]["text"] in body
+    assert ResponseDecisionInput(bound).resolve(reply(["r1"])).evidence_ids == [original["evidence"][0]["id"]]
+
+
+def test_missing_account_or_parent_identity_stays_unknown_despite_matching_names():
+    data = {"thread": {"source": {"author_uid": "200", "author_name": "大肥鱼", "text": "@大肥鱼"}}}
+    value = bind_response_actors(data, {"account_uid": None, "character_name": "大肥鱼"})
+    assert value["thread"]["addressing"]["source_relation_to_self"] == "unknown"
+    assert value["thread"]["addressing"]["addressed_to"] == []
+    assert data == {"thread": {"source": {"author_uid": "200", "author_name": "大肥鱼", "text": "@大肥鱼"}}}
+
+
+async def test_live_response_packet_binds_current_account_before_reference_formatting(browsing):
+    from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, signature
+
+    row = await prepared_row(browsing)
+    browsing.store.set(PROFILE_CACHE_KEY, {
+        "format": 1, "credential_signature": signature(browsing.comments.credentials),
+        "profile": {"uid": "100", "name": "已核验账号名"}, "checked_at": 1,
+    })
+    data = packet(1)
+    data["thread"]["source"]["comment_id"] = "30"
+    data["thread"]["addressing"] = {"source_mentions": [{"uid": "300", "name": "汐"}]}
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens):
+        calls.append(copy.deepcopy(messages))
+        return reply(["r1"]).model_dump()
+
+    browsing.runtime.llm.generate_json = generate
+    result = await browsing.decisions._model(
+        row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
+    )
+    header = json.loads(calls[0][-1]["content"].removeprefix("公开来源材料：").split("\n\n所选材料：\n")[0])
+    assert {key: header["self_actor"][key] for key in (
+        "platform", "account_uid", "account_display_name", "character_id", "character_name",
+    )} == {
+        "platform": "bilibili", "account_uid": "100", "account_display_name": "已核验账号名",
+        "character_id": row["character_id"], "character_name": browsing.runtime.character["name"],
+    }
+    from tuber_studio.operation_identity import captured_identity
+
+    assert captured_identity(calls[0]) == header["self_actor"] == result._generation_identity
+    generation = browsing.runtime.continuations.get(result._generation_id)
+    assert generation["binding"]["self_identity"] == result._generation_identity
+    assert "_generation_id" not in result.model_dump() and "_generation_identity" not in result.model_dump()
+    assert header["self_actor"]["character_version"] == row["character_version"]
+    assert header["self_actor"]["account_bio"] is None
+    assert header["reply_target"]["addressed_to"][0]["relation_to_self"] == "other"
+    assert [message["role"] for message in calls[0]] == ["system", "system", "user"]
+    assert "以自己的身份接话" in calls[0][1]["content"]
+    assert result.evidence_ids == [data["evidence"][0]["id"]]
+    assert not browsing.adapter.sent
+
+
+@pytest.mark.parametrize("case", json.loads(
+    (Path(__file__).parent / "fixtures/browsing_reply_participants_20261107.json").read_text(encoding="utf-8")
+)["cases"], ids=lambda case: case["case_id"])
+def test_real_public_thread_mentions_remain_third_party_in_response_input(case):
+    from tuber_studio.operation_continuations import content_hash
+    from tuber_studio.operations.browsing.thread_context import comment_thread_context
+    from tuber_studio.platforms.bilibili import BilibiliAdapter
+
+    raw = case["platform_response"]
+    items = [BilibiliAdapter._comment(raw["root"])] + [
+        BilibiliAdapter._comment(item) for item in raw["replies"]
+    ]
+    source = next(item for item in items if item["comment_id"] == case["expected_source"]["comment_id"])
+    context = comment_thread_context(source, items, case["target"])
+    data = {"thread": context, "evidence": [], "allowed_evidence_ids": ["public:" + source["comment_id"]]}
+    bound = bind_response_actors(data, {
+        "platform": "bilibili", "account_uid": case["actor"]["uid"],
+        "account_display_name": case["actor"]["name"], "character_id": "whale", "character_name": "大肥鱼",
+    })
+    assert context["source"] == case["expected_source"]
+    assert content_hash(bound["thread"]["source"]) == case["source_hash"]
+    mentioned = [entry for entry in bound["reply_target"]["addressed_to"] if "mention" in entry["basis"]]
+    assert [entry["uid"] for entry in mentioned] == [entry["uid"] for entry in case["expected_mentions"]]
+    assert all(entry["relation_to_self"] == "other" for entry in mentioned)
+    wire = ResponseDecisionInput(bound).format()
+    assert wire.count(json.dumps(source["content"], ensure_ascii=False)[1:-1]) == 1
+    header = json.loads(wire.split("\n\n所选材料：\n")[0])
+    assert "items" not in header["thread"] and header["thread"]["source"]["text_ref"] == "reply_target.text"
+    assert header["reply_target"]["text"] == source["content"]
+    assert bound["thread"] == bind_response_actors(data, bound["self_actor"])["thread"]
+
+
+def test_compact_thread_preserves_each_other_comment_once_including_raw_rows_beyond_timeline():
+    source = {"comment_id": "2", "author_uid": "200", "text": "当前评论的原文"}
+    root = {"comment_id": "1", "author_uid": "300", "text": "根楼的完整原文"}
+    rows = [root, source] + [
+        {"comment_id": str(index), "platform_user_id": "400", "content": f"后续原文第{index}条"}
+        for index in range(3, 14)
+    ]
+    bound = bind_response_actors({
+        "thread": {"source": source, "root": root, "parent": root,
+                   "timeline": rows[:8], "items": rows, "public_text": source["text"]},
+    }, {"account_uid": "100"})
+    original = copy.deepcopy(bound)
+    compact = compact_actor_context(bound, "r1")
+    assert bound == original and compact["reply_target"]["evidence_ref"] == "r1"
+    assert compact["thread"]["root"]["text_ref"] == compact["thread"]["parent"]["text_ref"]
+    assert compact["thread"]["public_text_ref"] == "reply_target.text"
+    assert "items" not in compact["thread"] and "public_text" not in compact["thread"]
+    serialized = json.dumps(compact, ensure_ascii=False)
+    for row in rows:
+        assert serialized.count(row.get("text") or row["content"]) == 1
+    assert compact_actor_context(compact, "r1") == compact
+    external = compact_actor_context(bound, current_text_ref="当前观众消息.text")
+    assert "text" not in external["reply_target"]
+    assert external["reply_target"]["text_ref"] == external["thread"]["source"]["text_ref"] == "当前观众消息.text"
+    assert source["text"] not in json.dumps(external, ensure_ascii=False)
+
+
+def test_compact_public_experience_references_only_exact_same_source_quote():
+    source = {"comment_id": "2", "author_uid": "200", "text": "观众正在吐槽我刚才接错话"}
+    reference = {"bvid": "BV1RLH367EQN", "thread_id": "1", "comment_id": "2", "quote": source["text"]}
+    bound = bind_response_actors({
+        "thread": {"source": source, "root": source, "items": [source]},
+        "own_public_experiences": [{"public_sources": [reference]}],
+    }, {"account_uid": "100"})
+    original = copy.deepcopy(bound)
+    compact = compact_actor_context(bound)
+    citation = compact["own_public_experiences"][0]["public_sources"][0]
+    assert citation == {key: value for key, value in reference.items() if key != "quote"} | {
+        "quote_ref": "reply_target.text"
+    }
+    assert json.dumps(compact, ensure_ascii=False).count(source["text"]) == 1
+    assert bound == original
+    external = compact_actor_context(bound, current_text_ref="当前观众消息.text")
+    assert external["own_public_experiences"][0]["public_sources"][0]["quote_ref"] == "当前观众消息.text"
+    for changed in (reference | {"comment_id": "3"}, reference | {"quote": "同一楼另一段话"}):
+        unrelated = copy.deepcopy(bound)
+        unrelated["own_public_experiences"][0]["public_sources"] = [changed]
+        assert compact_actor_context(unrelated)["own_public_experiences"][0]["public_sources"] == [changed]
+
+
+async def test_video_comment_can_cite_original_comment_alongside_video_and_publish_locally(browsing, monkeypatch):
+    from test_browsing import BV
+
+    row = await prepared_row(browsing)
+    key, material = await browsing._prepare_evidence(BV, row["config"])
+    source = {
+        "comment_id": "501", "thread_id": "501", "parent_comment_id": None,
+        "platform_user_id": "200", "display_name": "观众", "content": "@汐 可以看看这条鱼的视频",
+        "mentions": [{"uid": "300", "name": "汐"}],
+    }
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens):
+        calls.append(copy.deepcopy(messages))
+        content = messages[-1]["content"]
+        alias = re.search(r"\[(r\d+)\] 当前评论原文", content)[1]
+        assert content.index("当前评论原文") < content.index("加盐之后")
+        return {
+            "action": "reply_public", "reason": "specific_detail", "explanation": "想顺着观众安利视频的话聊一句",
+            "text": "有人给朋友安利视频呢，我也来凑个热闹，这条鱼的出场方式还挺有意思。",
+            "evidence_ids": [alias],
+        }
+
+    async def read_reply(target):
+        assert target["parent"] == source["comment_id"]
+        return {"author_uid": "200", "text": source["content"]}
+
+    browsing.runtime.llm.generate_json = generate
+    monkeypatch.setattr(browsing.adapter, "read_video_reply", read_reply, raising=False)
+    result = await browsing.decisions._reply_to_video_comment(
+        row, material, key, {segment["id"] for segment in browsing._segments(material)},
+        source, [source], {"lock_wait_seconds": 0},
+    )
+    assert len(calls) == 1 and result["evidence"] == ["public:501"]
+    assert result["material_keys"] == [key] and not browsing.adapter.sent
+    browsing.review(result["id"], "approve")
+    sent = await browsing.publish(result["id"])
+    assert sent["status"] == "published" and sent["evidence"] == ["public:501"]
+    assert browsing.adapter.sent == [(result["target"], result["text"])]
+
+
+async def test_response_recalls_own_public_incident_from_this_floor_without_keyword_trigger(browsing):
+    from test_browsing import BV
+
+    row = await prepared_row(browsing)
+    char = browsing.runtime.character
+    memory = browsing.runtime.daily_memory
+    for root, incident in (("501", "this-floor"), ("601", "other-floor")):
+        memory.record_public_incident(char["id"], char["version"],
+            incident_key=incident, highlight_date="2026-11-07", headline="认错了说话对象",
+            anecdote="我把别人喊朋友的评论误接成在叫自己，后来核对了公开原楼。",
+            public_sources=[{"bvid": BV, "thread_id": root, "comment_id": root, "quote": "公开原话"}],
+            tags=["大肥鱼"])
+    data = {"kind": "reply_public", "evidence": [], "allowed_evidence_ids": ["public:502"],
+            "thread": {"source": {"comment_id": "502", "author_uid": "200", "text": "哈哈"},
+                       "target": {"bvid": BV, "root": "501", "parent": "502"}}}
+    _, messages, _ = browsing.decisions._model_input(row, ResponseDecision, data, RESPONSE_INSTRUCTION)
+    header = json.loads(messages[-1]["content"].removeprefix("公开来源材料：").split("\n\n所选材料：\n")[0])
+    assert [item["incident_key"] for item in header["own_public_experiences"]] == ["this-floor"]
+    assert header["own_public_experiences"][0]["fictional"] is False
 
 
 def test_response_presentation_keeps_all_text_thread_recent_and_exact_times():
@@ -211,7 +451,8 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         )
     finally:
         generation_resume.reset(token)
-    assert calls == ["ResponseDecision", "ResponseDecision"] and first == second
+    assert calls == ["ResponseDecision", "ResponseDecision"] and first.model_dump() == second.model_dump()
+    assert first._generation_id != second._generation_id
     episodes = [
         browsing.runtime.continuations.get(r["id"])
         for r in browsing.store.all(

@@ -9,6 +9,7 @@ import time
 from collections import deque
 from uuid import uuid4
 
+from .bilibili_account import cached_account_actor
 from .config import atomic_json
 from .media_cache import linked
 from .operation_continuations import content_hash
@@ -18,8 +19,10 @@ from .operation_feedback import (
     generation_view,
     publication_binding,
 )
+from .operation_identity import runtime_identity
 from .operation_text import validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
+from .operations.browsing.thread_context import comment_thread_context
 from .operations_control import OperationsControl, canonical_intent
 from .platforms.bilibili import BilibiliAdapter, PublishUncertain
 from .providers import public_error
@@ -82,6 +85,8 @@ class Comments:
             row[1] for row in store.db.execute("PRAGMA table_info(comments)")
         }:
             store.execute("ALTER TABLE comments ADD COLUMN generation_continuation_id TEXT")
+        if "mentions" not in {row[1] for row in store.db.execute("PRAGMA table_info(comments)")}:
+            store.execute("ALTER TABLE comments ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]'")
         if "generation_task_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(drafts)")}:
             store.execute("ALTER TABLE drafts ADD COLUMN generation_task_id TEXT")
         if "comment_ids" not in {row[1] for row in store.db.execute("PRAGMA table_info(comment_tasks)")}:
@@ -192,6 +197,7 @@ class Comments:
             "created_at",
             "thread_id",
             "parent_comment_id",
+            "mentions",
         }
         mapping = {} if field_mapping is None else field_mapping
         if (
@@ -216,6 +222,21 @@ class Comments:
             name = str(item.get("display_name") or "匿名观众")[:80]
             likes = max(0, int(item.get("like_count", 0) or 0))
             created = str(item.get("created_at") or "")[:80]
+            mentions = item.get("mentions") or []
+            if isinstance(mentions, str):
+                try:
+                    mentions = json.loads(mentions)
+                except ValueError:
+                    raise ValueError("mentions须为UID与名称组成的JSON数组") from None
+            if not isinstance(mentions, list) or any(
+                not isinstance(person, dict) or type(person.get("uid")) not in {str, int}
+                or not str(person["uid"]).strip() or len(str(person["uid"])) > 100
+                or not isinstance(person.get("name", ""), str) or len(person.get("name", "")) > 100
+                for person in mentions
+            ):
+                raise ValueError("mentions须为UID与名称组成的JSON数组")
+            mentions = list({str(person["uid"]): {"uid": str(person["uid"]), "name": person.get("name", "")}
+                             for person in mentions}.values())
             normalized.append(
                 {
                     "video_id": video_id,
@@ -228,6 +249,7 @@ class Comments:
                     "category": category(content),
                     "like_count": likes,
                     "created_at": created,
+                    "mentions": mentions,
                 }
             )
         return normalized
@@ -247,6 +269,7 @@ class Comments:
                 r["like_count"],
                 r["created_at"],
                 time.time(),
+                json.dumps(r["mentions"], ensure_ascii=False),
             )
             for r in prepared
         ]
@@ -254,9 +277,17 @@ class Comments:
         with self.store.db:
             self.store.db.executemany(
                 "INSERT OR IGNORE INTO comments(video_id,comment_id,thread_id,parent_comment_id,platform_user_id,"
-                "display_name,content,category,like_count,created_at,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "display_name,content,category,like_count,created_at,imported_at,mentions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 normalized,
             )
+            # Re-reading an existing comment enriches participant metadata;
+            # it does not replace its body, drafts, or processing state.
+            for item in prepared:
+                if item["mentions"]:
+                    self.store.db.execute(
+                        "UPDATE comments SET mentions=? WHERE platform='bilibili' AND video_id=? AND comment_id=?",
+                        (json.dumps(item["mentions"], ensure_ascii=False), video_id, item["comment_id"]),
+                    )
         after = self.store.one("SELECT COUNT(*) AS n FROM comments")["n"]
         return {
             "imported": after - before,
@@ -483,7 +514,19 @@ class Comments:
             "platform_comment_id": row["comment_id"],
             "source_created_at": row["created_at"],
             "source_imported_at": row["imported_at"],
+            "mentions": json.loads(row.get("mentions") or "[]"),
         }
+
+    def _comment_actors(self, row, character, account_id):
+        rows = self._thread_sources(row["video_id"], row["thread_id"], row["platform"])
+        items = [item | {"mentions": json.loads(item.get("mentions") or "[]")} for item in rows]
+        source = row | {"mentions": json.loads(row.get("mentions") or "[]")}
+        target = {"root": row["thread_id"] or row["comment_id"], "parent": row["comment_id"],
+                  "recipient": row["platform_user_id"]}
+        actor = cached_account_actor(self.store, self.credentials, account_id) | {
+            "character_id": character["id"], "character_name": character["name"],
+        }
+        return {"self_actor": actor, "comment_context": comment_thread_context(source, items, target)}
 
     def _thread_sources(self, video_id, thread_id, platform, exclude_id=None):
         self.context_scope(video_id, thread_id, platform)
@@ -584,6 +627,7 @@ class Comments:
                     if sources
                     else None
                 )
+                event.update(self._comment_actors(row, character, account_id))
                 try:
                     relationship = self.runtime.relationships.observe(
                         character["id"],
@@ -630,6 +674,7 @@ class Comments:
                             "UPDATE drafts SET account_id=? WHERE comment_id=?", (account_id, cid)
                         )
                         return
+                    generation_identity = runtime_identity(self.runtime, character, account_id or None)
                     reply, check = await self.runtime.generate_reply(
                         scope,
                         character,
@@ -638,6 +683,7 @@ class Comments:
                         mode="comment_draft",
                         **({"context": candidate} if candidate else {}),
                     )
+                    check.setdefault("generation_identity", generation_identity)
                     if candidate:
                         self._check_sources(sources, row["video_id"], row["thread_id"], row["platform"])
                         candidate.record(
@@ -764,6 +810,7 @@ class Comments:
         )
 
     async def _publication_context(self, draft_id, automatic, epoch):
+        await self._refresh_draft_identity(draft_id, automatic, epoch)
         row = self._draft_source(draft_id)
         if not row:
             raise ValueError("草稿不存在")
@@ -808,6 +855,54 @@ class Comments:
             on_defer=lambda prepared, state: self._defer_revision(draft_id, prepared, state),
             manual_approved=row["status"] in {"approved", "copied"},
         )
+
+    async def _refresh_draft_identity(self, draft_id, automatic, epoch):
+        """Regenerate an unsent reply under current account facts, keeping approval."""
+        refresh = getattr(self.runtime, "refresh_identity", None)
+        if refresh is None or not hasattr(self.adapter, "account_profile"):
+            return
+        row = self._draft_source(draft_id)
+        allowed = {"pending_review"} if automatic else {"approved", "copied"}
+        if not row or row["status"] not in allowed:
+            return
+        character = self.store.character(row["character_id"], row["character_version"])
+        account = self.display_account_id() or await self.account_id()
+        if row["account_id"] and row["account_id"] != account:
+            raise ValueError("该草稿属于其他账号，不能由当前账号发送")
+        current = await refresh(character, account)
+        previous = json.loads(row["answer_check"] or "{}").get("generation_identity")
+        if previous and previous.get("identity_version") == current["identity_version"]:
+            return
+        source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
+        event = self._comment_event(source) | {"account_id": account}
+        event.update(self._comment_actors(source, character, account))
+        scope = self.context_scope(row["video_id"], row["thread_id"], "bilibili")
+        async with self.runtime.offline_generation("reply"):
+            fresh = self._draft_source(draft_id)
+            if not fresh or any(fresh[key] != row[key] for key in ("text", "status", "content", "account_id")):
+                raise ValueError("更新身份期间草稿或来源已变化，保留当前内容")
+            self.operations.assert_allowed(automatic=automatic, channel="comments", account_id=account,
+                                           character=character, epoch=epoch)
+            sources = self._thread_sources(row["video_id"], row["thread_id"], "bilibili", source["id"])
+            candidate = self.runtime.context.source_candidate(scope, character, [self._comment_event(item) for item in sources])
+            try:
+                reply, check = await self.runtime.generate_reply(
+                    scope, character, event, mode="comment_draft", context=candidate,
+                )
+                self._check_sources(sources, row["video_id"], row["thread_id"], "bilibili")
+                if runtime_identity(self.runtime, character, account)["identity_version"] != current["identity_version"]:
+                    raise ValueError("生成期间账号身份再次变化，保留草稿")
+                check["generation_identity"] = current
+                changed = self.store.execute(
+                    "UPDATE drafts SET text=?,input_summary=?,answer_check=?,error=NULL,updated_at=? "
+                    "WHERE id=? AND status=? AND text=?",
+                    (reply.spoken_text, json.dumps(event, ensure_ascii=False), json.dumps(check, ensure_ascii=False),
+                     time.time(), draft_id, row["status"], row["text"]),
+                )
+                if changed.rowcount != 1:
+                    raise ValueError("生成期间草稿已更新，未覆盖")
+            finally:
+                candidate.store.close()
 
     def _apply_revision(self, draft_id, prepared, text):
         prepared.guard()
@@ -947,6 +1042,7 @@ class Comments:
         binding=None,
         body_hash=None,
     ):
+        await self._refresh_draft_identity(draft_id, automatic, authorization_epoch)
         async with self.publish_lock:
             policy = self.policy()
             if automatic and not policy["auto_reply"]:
@@ -1007,6 +1103,11 @@ class Comments:
 
             def before_send():
                 nonlocal token
+                captured = json.loads(row["answer_check"] or "{}").get("generation_identity")
+                if hasattr(self.adapter, "account_profile") and captured and captured.get("identity_version") != runtime_identity(
+                    self.runtime, character, account_id
+                )["identity_version"]:
+                    raise ValueError("发送前身份资料已更新，保留草稿重新生成")
                 fresh = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
                 if (
                     self.adapter is not adapter

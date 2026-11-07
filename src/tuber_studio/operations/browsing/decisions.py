@@ -11,6 +11,7 @@ from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
 from ...operation_continuations import ContinuationCheckpoint, content_hash, deferred_generation_decision
 from ...operation_generation import GenerationDeferred, generate_with_recovery
+from ...operation_identity import captured_identity
 from ...operation_text import (
     operation_character,
     operation_output_diagnostics,
@@ -25,9 +26,11 @@ from .comment_reader import CommentProgress, evaluate_comment_visit, handoff_com
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
+    RESPONSE_ACTOR_INSTRUCTION,
     ContentDecisionInput,
     ResponseDecisionInput,
     bind_content_decision,
+    bind_response_actors,
     classification_registry,
     classification_source_groups,
     classification_view,
@@ -48,6 +51,7 @@ from .models import (
 )
 from .quotas import DailyReplyLimitReached, day_window
 from .round_context import discovery_retry, generation_resume
+from .thread_context import comment_thread_context
 
 
 def normalized(text):
@@ -89,6 +93,19 @@ class BrowsingDecisions:
         self.browsing = browsing
         self.comment_progress = CommentProgress(browsing.store)
 
+    def _response_actor_data(self, row, data):
+        character = self.browsing.store.character(row["character_id"], row["character_version"])
+        actor = self.browsing.runtime.identity_snapshot(character, row.get("account_id"))
+        bound = bind_response_actors(data, actor)
+        thread = bound.get("thread") or {}
+        target, source = thread.get("target") or {}, thread.get("source") or {}
+        root_id = (thread.get("addressing") or {}).get("source_root_comment_id") or target.get("root")
+        if target.get("bvid") and (root_id or source.get("comment_id")):
+            bound["own_public_experiences"] = self.browsing.runtime.daily_memory.context(
+                character, video_id=target["bvid"], thread_id=root_id, comment_id=source.get("comment_id")
+            )
+        return bound
+
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
         anchor = built_in_anchor(
@@ -102,13 +119,14 @@ class BrowsingDecisions:
             else None
         )
         if schema is ResponseDecision:
+            data = self._response_actor_data(row, data)
             response_input = response_input or ResponseDecisionInput(data)
             if data.get("kind") == "top_level" and data.get("coverage") == "sampled_visual":
                 instruction += (
                     "按材料类型和时码区分字幕与画面。台词如果提到两者，就分别引用能支持它们的编号。"
                     "只看到了片段，可以就那个细节接话。"
                 )
-            instruction += RESPONSE_REFERENCE_INSTRUCTION
+            instruction += RESPONSE_ACTOR_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION
         content = (
             response_input.format()
             if response_input is not None
@@ -142,6 +160,7 @@ class BrowsingDecisions:
                 "content": "公开来源材料：" + content,
             },
         ]
+        messages = self.browsing.runtime.identity_messages(messages, character, row.get("account_id"))
         model_schema = schema.model_json_schema()
         if schema is ContentDecision:
             model_schema = content_decision_schema(
@@ -193,6 +212,8 @@ class BrowsingDecisions:
         max_tokens=None,
     ):
         self.browsing._check_round(row)
+        if schema is ResponseDecision:
+            data = self._response_actor_data(row, data)
         response_input = ResponseDecisionInput(data) if schema is ResponseDecision else None
         video_response = schema is ResponseDecision and data.get("kind") == "top_level"
         character, messages, model_schema = self._model_input(
@@ -325,6 +346,7 @@ class BrowsingDecisions:
             "account_id": row["account_id"],
             "character": {"id": row["character_id"], "version": row["character_version"]},
             "schema": schema.__name__,
+            "self_identity": captured_identity(messages),
             "source_sha256": content_hash(
                 {
                     "backend_source": source_binding,
@@ -397,7 +419,12 @@ class BrowsingDecisions:
             diagnose=diagnose,
             allow_web_fetch=response_input is not None,
         )
-        return response_input.resolve(value) if response_input is not None else value
+        result = response_input.resolve(value) if response_input is not None else value
+        if schema is ResponseDecision:
+            result._generation_identity = binding["self_identity"]
+            saved_generation = self.browsing.runtime.continuations.find("generation.browsing", identity)
+            result._generation_id = saved_generation["id"] if saved_generation else None
+        return result
 
     @staticmethod
     def _video_response_segments(material, allowed):
@@ -1199,43 +1226,7 @@ class BrowsingDecisions:
 
     @staticmethod
     def _video_comment_context(item, items, target):
-        comment_id, root_id = str(item["comment_id"]), target["root"]
-        comments_by_id = {str(it.get("comment_id")): it for it in items if it.get("comment_id")}
-        root_item = comments_by_id.get(root_id, item)
-        parent_id = str(item.get("parent_comment_id") or root_id)
-        parent_item = comments_by_id.get(parent_id, {}) if parent_id != root_id else root_item
-        timeline_items = [it for it in items if str(it.get("thread_id") or it.get("comment_id")) == root_id]
-        return {
-            "source": {
-                "comment_id": comment_id,
-                "author_uid": str(item.get("user_id") or item.get("platform_user_id") or ""),
-                "author_name": str(item.get("username") or item.get("display_name") or ""),
-                "text": str(item.get("text") or item.get("content") or ""),
-            },
-            "target": target,
-            "root": {
-                "comment_id": root_id,
-                "author_name": str(root_item.get("username") or root_item.get("display_name") or ""),
-                "text": str(root_item.get("text") or root_item.get("content") or ""),
-            },
-            "parent": {
-                "comment_id": parent_id,
-                "author_name": str(parent_item.get("username") or parent_item.get("display_name") or ""),
-                "text": str(parent_item.get("text") or parent_item.get("content") or ""),
-            }
-            if comment_id != root_id
-            else None,
-            "timeline": [
-                {
-                    "author_name": str(c.get("username") or c.get("display_name") or "观众"),
-                    "text": str(c.get("text") or c.get("content") or ""),
-                    "is_root": str(c.get("comment_id")) == root_id,
-                    "is_target": str(c.get("comment_id")) == comment_id,
-                }
-                for c in timeline_items[:8]
-            ],
-            "items": timeline_items,
-        }
+        return comment_thread_context(item, items, target)
 
     async def _response(self, row, material, context, allowed, kind, metrics, *, video_actions=False):
         context = {key: value for key, value in context.items() if key != "_scroll_progress"}
@@ -1279,6 +1270,12 @@ class BrowsingDecisions:
             data["allowed_evidence_ids"] = list(allowed)
         if context.get("source") and context.get("target"):
             target = context["target"]
+            # The current comment remains a real response source even when
+            # video subtitles/frames are available as additional background.
+            data["allowed_evidence_ids"] = sorted(
+                set(data.get("allowed_evidence_ids", []))
+                | {"public:" + str(context["source"]["comment_id"])}
+            )
             data["source_identity"] = {
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
                 "comment_id": str(context["source"]["comment_id"]),

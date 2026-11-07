@@ -19,6 +19,33 @@ def signature(credentials):
     return hashlib.sha256(json.dumps(credentials, sort_keys=True).encode()).hexdigest()
 
 
+def cached_account_actor(store, credentials, account_id):
+    """Identify the speaking account without a network read or persona-name guess."""
+    actor = {"platform": "bilibili", "account_uid": str(account_id) if account_id else None,
+             "account_display_name": None, "account_bio": None}
+    cached = store.get(PROFILE_CACHE_KEY, {})
+    if not isinstance(cached, dict):
+        return actor
+    profile = cached.get("profile")
+    checked_at = cached.get("checked_at")
+    if (
+        cached.get("format") == 1
+        and cached.get("credential_signature") == signature(credentials)
+        and isinstance(profile, dict)
+        and isinstance(profile.get("uid"), str) and profile["uid"]
+        and (actor["account_uid"] is None or profile["uid"] == actor["account_uid"])
+        and isinstance(profile.get("name"), str)
+        and 0 < len(profile["name"].strip()) <= 100
+        and type(checked_at) in {int, float}
+        and math.isfinite(checked_at)
+        and checked_at > 0
+    ):
+        actor["account_uid"] = profile["uid"]
+        actor["account_display_name"] = profile["name"].strip()
+        actor["account_bio"] = profile.get("bio") if isinstance(profile.get("bio"), str) else None
+    return actor
+
+
 def avatar_url(value):
     if not isinstance(value, str):
         return None
@@ -147,6 +174,9 @@ class BilibiliAccount:
                 ):
                     raise ValueError("平台账号资料无效")
                 coins, fans = profile.get("coins"), profile.get("fans")
+                bio = profile.get("bio")
+                if bio is not None and (not isinstance(bio, str) or len(bio) > 4000):
+                    raise ValueError("平台账号简介无效")
                 if coins is not None and (
                     type(coins) not in {int, float} or not math.isfinite(coins) or coins < 0
                 ):
@@ -162,6 +192,7 @@ class BilibiliAccount:
                         "avatar_url": avatar_url(profile.get("avatar_url")),
                         "coins": coins,
                         "fans": fans,
+                        "bio": bio,
                     },
                 )
                 if fans is None:

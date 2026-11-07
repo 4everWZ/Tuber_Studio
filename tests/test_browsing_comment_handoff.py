@@ -6,11 +6,23 @@ import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 from test_browsing_comment_only import (
-    attach_comment_source,
     comment,
     enable_comment_choices,
     forbid_video_content,
 )
+
+INVITATION = "@大肥鱼 请私信告诉我盐水鸡蛋实验要多少盐"
+
+
+def attach_invitation_source(browsing, monkeypatch):
+    async def fetch(video, max_pages=1):
+        return {"items": [comment() | {"content": INVITATION, "mentions": [{"uid": "100", "name": "大肥鱼"}]}]}
+
+    async def read(target):
+        return {"author_uid": "300", "text": INVITATION}
+
+    monkeypatch.setattr(browsing.adapter, "fetch", fetch)
+    monkeypatch.setattr(browsing.adapter, "read_video_reply", read, raising=False)
 
 
 class PrivateDelivery:
@@ -34,7 +46,7 @@ async def prepare_handoff(browsing, monkeypatch, *, automatic):
         "enabled": True, "allow_comment_handoff": True, "auto_send": automatic,
     })
     await enable_comment_choices(browsing, monkeypatch)
-    attach_comment_source(browsing, monkeypatch)
+    attach_invitation_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
     browsing.runtime.llm.response_action = "handoff_private"
     transport = PrivateDelivery()
@@ -57,12 +69,14 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     assert draft["account_id"] == "100" and draft["platform_user_id"] == "300"
     source = browsing.store.one("SELECT * FROM comments WHERE id=?", (draft["source_id"],))
     assert source["comment_id"] == source["thread_id"] == "601"
-    assert source["platform_user_id"] == "300" and source["content"] == comment()["content"]
+    assert source["platform_user_id"] == "300" and source["content"] == INVITATION
     evidence = json.loads(draft["video_evidence"])
     assert "source_event" not in evidence and evidence["material_keys"] == []
-    assert evidence["public_source_thread"]["source"]["text"] == comment()["content"]
+    assert evidence["public_source_thread"]["source"]["text"] == INVITATION
     assert evidence["public_source_thread"]["target"]["parent"] == "601"
     assert evidence["origin_round_id"] == first["id"]
+    assert intent["reason"] == "想接着聊盐水如何把鸡蛋托起来"
+    assert intent["target"]["private_draft_id"] == draft["id"]
     assert draft["text"] not in json.dumps(browsing.inbox(), ensure_ascii=False)
     assert not browsing.adapter.sent
     assert len(transport.sent) == int(automatic)
@@ -95,7 +109,7 @@ async def test_watched_video_handoff_reuses_caption_evidence_and_private_pipelin
     mode, _ = await enable_comment_choices(browsing, monkeypatch)
     mode["action"] = "watch"
     await browsing.configure({"top_level_enabled": False})
-    attach_comment_source(browsing, monkeypatch)
+    attach_invitation_source(browsing, monkeypatch)
     browsing.runtime.llm.response_action = "handoff_private"
     original = browsing.runtime.llm.generate_json
 
@@ -125,7 +139,7 @@ async def test_source_is_checked_again_at_private_send_after_generation(browsing
     async def changing(target):
         nonlocal checks
         checks += 1
-        return {"author_uid": "300", "text": comment()["content"] if checks == 1 else "评论已经编辑"}
+        return {"author_uid": "300", "text": INVITATION if checks == 1 else "评论已经编辑"}
 
     monkeypatch.setattr(browsing.adapter, "read_video_reply", changing)
     await finished(browsing, automatic=True, video_only=True)

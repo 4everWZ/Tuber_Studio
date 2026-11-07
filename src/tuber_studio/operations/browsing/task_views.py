@@ -2,6 +2,7 @@
 
 import json
 
+from ...message_outreach import contact_state as outreach_contact_state
 from ...operation_feedback import continuation_view, generation_view
 from .evidence import EvidenceUnavailable
 
@@ -153,21 +154,32 @@ def rounds(browsing):
 
 def intents(browsing):
     return [
-        continuation_view(browsing.runtime, "browsing", browsing.repo.decode(r))
+        continuation_view(browsing.runtime, "browsing", contact_state(browsing, browsing.repo.decode(r)))
         for r in browsing.store.all(
             "SELECT * FROM browsing_intents WHERE status<>'archived' ORDER BY created_at DESC LIMIT 100"
         )
     ]
 
 
+def contact_state(browsing, row):
+    if row and row["kind"] == "private_handoff" and row["target"].get("private_draft_id"):
+        private = browsing.store.one("SELECT status,outreach_check FROM dm_drafts WHERE id=? AND account_id=? AND character_id=?",
+            (row["target"]["private_draft_id"], row["account_id"], row["character_id"]))
+        if private:
+            row["target"] = row["target"] | {"contact_state": outreach_contact_state(private)}
+    return row
+
+
 def public_comment_intent(browsing, identity):
-    row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
+    row = contact_state(browsing, browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))))
     if not row:
         return None
     if row["kind"] not in {"top_level", "reply_public", "private_handoff"}:
         return None
     if row["kind"] == "private_handoff" or row["status"] == "private_handoff":
-        return {"id": row["id"], "status": "private_handoff"}
+        return {"id": row["id"], "status": "private_handoff",
+                "private_draft_id": row["target"].get("private_draft_id"),
+                "contact_state": row["target"].get("contact_state")}
     evidence, unavailable = [], 0
     references = set(row["evidence"] or [])
     for key in row["material_keys"] or []:

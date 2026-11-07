@@ -191,7 +191,7 @@ async def test_comment_visit_reuses_existing_material_without_changing_viewing_d
     assert calls == [("CandidateBatchPlan", "video"), ("ResponseDecision", "reply")]
     assert len([intent for intent in browsing.intents() if intent["kind"] == "top_level"]) == 1
     reply = next(intent for intent in browsing.intents() if intent["kind"] == "reply_public")
-    assert reply["material_keys"] and reply["evidence"] == ["11:0"]
+    assert reply["material_keys"] and reply["evidence"] == ["public:601"]
 
 
 async def test_comment_only_agent_can_wait_without_inventing_video_content_or_main_decision(browsing, monkeypatch):

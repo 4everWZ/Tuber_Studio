@@ -22,6 +22,7 @@ from .model_runtime.session import InferenceRuntime
 from .models import OperationReply
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, reply_generation_binding
+from .operation_identity import identity_messages, identity_snapshot
 from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane
 from .operations.browsing.repository import BrowsingRepository
@@ -80,6 +81,55 @@ class Runtime:
     @property
     def character(self):
         return self.store.character()
+
+    @property
+    def llm(self):
+        return self._llm
+
+    @llm.setter
+    def llm(self, provider):
+        self._llm = provider
+        provider.identity_resolver = self.identity_snapshot
+
+    def identity_snapshot(self, character=None, account_id=None):
+        from .bilibili_account import cached_account_actor
+
+        account = getattr(self, "account", None)
+        comments = account.comments if account else getattr(getattr(self, "browsing", None), "comments", None)
+        credentials = comments.credentials if comments else {}
+        if account_id is None and comments is not None:
+            account_id = comments.display_account_id() or None
+        return identity_snapshot(
+            cached_account_actor(self.store, credentials, account_id), character or self.character
+        )
+
+    def identity_messages(self, messages, character=None, account_id=None):
+        return identity_messages(messages, self.identity_snapshot(character, account_id))
+
+    async def refresh_identity(self, character=None, account_id=None):
+        """Share one remote profile read before sends, never certify stale cache."""
+        account = getattr(self, "account", None)
+        if account is None or not hasattr(getattr(account.comments, "adapter", None), "account_profile"):
+            return self.identity_snapshot(character, account_id)
+        from .bilibili_account import signature
+
+        credential = signature(account.comments.credentials)
+        pending = getattr(self, "_identity_refresh", None)
+        if pending is None or pending[0] != credential or pending[1].done():
+            pending = (credential, asyncio.create_task(account.refresh()))
+            self._identity_refresh = pending
+        observed = await asyncio.shield(pending[1])
+        if (
+            signature(account.comments.credentials) != credential
+            or observed.get("state") != "logged_in"
+            or observed.get("error")
+            or not observed.get("profile")
+        ):
+            raise ValueError("发出前无法核验当前账号资料，请稍后重试")
+        actual = str(observed["profile"]["uid"])
+        if account_id is not None and actual != str(account_id):
+            raise ValueError("发出前当前账号已变化，保留原账号的来源与草稿")
+        return self.identity_snapshot(character, actual)
 
     @asynccontextmanager
     async def conversation_turn(self, scope):
@@ -268,6 +318,8 @@ class Runtime:
         context = context or self.context
         evidence = context.memory.retrieve(scope, character, event["text"])
         messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence)
+        generation_identity = self.identity_snapshot(character, event.get("account_id"))
+        messages = identity_messages(messages, generation_identity)
         operation = mode in {"comment_draft", "direct_message"}
         generate = (
             getattr(self.llm, "generate_operation", self.llm.generate) if operation else self.llm.generate
@@ -277,6 +329,7 @@ class Runtime:
             maximum = self.settings.data["llm"].get("operations_max_tokens", 8192)
             source_binding = reply_generation_binding(scope, character, event, mode)
             binding = dict(source_binding)
+            binding["self_identity"] = generation_identity
             profile_revision = self.relationships.event_profile_revision(character["id"], event)
             if profile_revision is not None:
                 binding["profile_revision"] = profile_revision
@@ -363,6 +416,7 @@ class Runtime:
             )
         ]
         audit = {
+            "generation_identity": generation_identity,
             "sources": evidence["evidence"],
             "required_slots": evidence["required_slots"],
             "supported_slots": supported,

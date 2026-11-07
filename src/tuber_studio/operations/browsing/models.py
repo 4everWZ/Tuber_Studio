@@ -2,7 +2,7 @@
 
 from typing import Literal, Protocol
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 
 from ...models import StrictModel
 from ...operation_text import validate_operation_text
@@ -226,7 +226,11 @@ class ContentDecision(StrictModel):
 
 
 class ResponseDecision(StrictModel):
+    _generation_id: str | None = PrivateAttr(default=None)
+    _generation_identity: dict | None = PrivateAttr(default=None)
     explanation: str = ""
+    contact_purpose: str = ""
+    contact_trigger: Literal["invitation", "agreement"] | None = None
     video_preference: Literal["like", "not_interested", "neutral"] | None = None
     preference_reason: str = ""
     action: Literal[
@@ -328,8 +332,11 @@ RESPONSE_INSTRUCTION = (
     "台词必须紧密贴合视频或评论的具体内容与看点，像活生生的ACG同好网友一样自然表达，"
     "用自己的话接当前话题，口癖随着交流自然使用。"
     "每一条回应围绕当前被回复的内容与楼内话题，语言生活化自然，自称或常规词汇（如本鱼、小鱼、白饭、摸鱼）直接使用。"
-    "普通公开话题在楼里回复（reply_public）；对方希望私下继续、涉及个人细节，"
-    "或上下文更适合单独聊时，与当前作者私聊（handoff_private）。"
+    "普通公开话题在楼里回复（reply_public）；对方明确邀请我方私聊，"
+    "或有真实约定且已完成时，与当前作者私聊（handoff_private）。"
+    "主动私聊须有指向我方账号的真实邀请或约定，contact_purpose说明具体交流事项；"
+    "contact_trigger用invitation表示现在邀请私聊，agreement表示办完约定事项后联系。"
+    "有兴趣、长篇跟进、历史聊过或@别人不构成主动私聊依据，普通话题继续公开。"
     "根据当前问题、楼内上下文及提供的内容作答；需要更多信息时，可以自然追问。"
     "在楼中楼互动时，结合楼首话题与上下文，你可以自然@其他人或呼应楼内大家的讨论。"
     "想略过这次交流选skip，准备稍后接话选wait。"
@@ -394,6 +401,9 @@ def response_schema(
                     "reason": {"type": "string", "enum": allowed_reasons},
                     "explanation": {"type": "string", "minLength": 1},
                     "action": {"type": "string", "enum": [action]},
+                    **({"contact_purpose": {"type": "string", "minLength": 1},
+                        "contact_trigger": {"type": "string", "enum": ["invitation", "agreement"]}}
+                       if action == "handoff_private" else {}),
                     "evidence_ids": {
                         "type": "array",
                         "minItems": 1 if sending else 0,
@@ -410,6 +420,7 @@ def response_schema(
                     },
                 },
                 "required": ["reason", "explanation", "action", "evidence_ids", "text"]
+                + (["contact_purpose", "contact_trigger"] if action == "handoff_private" else [])
                 + (["video_preference", "preference_reason"] if video_actions else []),
             }
         )

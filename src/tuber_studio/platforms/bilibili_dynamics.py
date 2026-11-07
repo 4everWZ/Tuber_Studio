@@ -30,7 +30,7 @@ class PublishPreparationCancelled(asyncio.CancelledError):
 
 def validate_text(text):
     text = validate_operation_text(text, label="动态正文")
-    if re.search(r"\b(?:memory|reply):\d+\b|\b(?:source_ids|fictional)\s*[=:]", text, re.IGNORECASE):
+    if re.search(r"\b(?:memory|reply|incident):\d+\b|\b(?:source_ids|fictional)\s*[=:]", text, re.IGNORECASE):
         raise ValueError("动态正文不能包含内部来源编号或技术元数据")
     return text.strip()
 

@@ -126,16 +126,21 @@ async def test_small_decision_plain_body_and_backend_binding_share_native_parame
         "explanation": "",
         "video_preference": None,
         "preference_reason": "",
+        "contact_purpose": "",
+        "contact_trigger": None,
     }
     assert result["structural_complete"] and result["pipeline_acceptance"]
     assert result["model_calls"] == 2 and result["budget_delta"]["model_calls"] == 2
     assert result["output_tokens_charged"] == result["budget_delta"]["output_tokens"] == 200
     first, body = state["generations"]
     branches = first["response_format"]["schema"]["oneOf"]
-    assert all(
-        set(branch["properties"]) == {"action", "reason", "explanation", "evidence_ids"}
-        for branch in branches
-    )
+    for branch in branches:
+        handoff = branch["properties"]["action"]["enum"] == ["handoff_private"]
+        assert set(branch["properties"]) == {"action", "reason", "explanation", "evidence_ids"} | (
+            {"contact_purpose", "contact_trigger"} if handoff else set()
+        )
+        if handoff:
+            assert {"contact_purpose", "contact_trigger"} <= set(branch["required"])
     assert "response_format" not in body and all("tools" not in payload for payload in (first, body))
     assert [first["max_tokens"], body["max_tokens"]] == [1024, 3072]
     assert all(payload["chat_template_kwargs"] == {"enable_thinking": True} for payload in (first, body))
@@ -154,7 +159,8 @@ async def test_skip_needs_no_body_generation(experiment):
     result = await run(experiment, [{"decision": SKIP}])
     assert (
         result["actual"]
-        == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": ""}
+        == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": "",
+                   "contact_purpose": "", "contact_trigger": None}
         and result["model_calls"] == 1
     )
 
@@ -397,7 +403,8 @@ async def test_evidence_packet_can_be_empty_for_no_evidence_but_never_invents_re
     result = await run(experiment, [{"decision": value}, {"decision": SKIP}], case, strategy="evidence_first")
     assert (
         result["actual"]
-        == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": ""}
+        == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": "",
+                   "contact_purpose": "", "contact_trigger": None}
         and result["model_calls"] == 2
     )
     assert not result["evidence_packet"]["quote_mapping"]

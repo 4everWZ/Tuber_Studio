@@ -16,6 +16,7 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
+from .thread_context import comment_thread_context
 
 
 class CommentProgress:
@@ -161,7 +162,7 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
     browsing.store.execute(
         "INSERT OR IGNORE INTO comments(platform,video_id,comment_id,thread_id,parent_comment_id,platform_user_id,display_name,content,category,created_at,imported_at) VALUES('bilibili',?,?,?,?,?,?,?,'interaction',?,?)",
         (resource, str(source["comment_id"]), str(target["root"]), str(target["parent"]),
-         str(source["author_uid"]), source.get("author_name") or (event or {}).get("sender_name", ""),
+         str(source["author_uid"]), source.get("author_name") or source.get("display_name") or (event or {}).get("sender_name", ""),
          source["text"], str((event or {}).get("timestamp", created_at) or ""), time.time()),
     )
     comment = browsing.store.one(
@@ -178,17 +179,32 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
     evidence.update(public_source_thread=public_thread, origin_round_id=row["id"])
     if event is not None:
         evidence["source_event"] = event
+    if reply._generation_id:
+        evidence["completion_evidence"] = [
+            {"step_id": record["id"], "continuation_id": reply._generation_id, **json.loads(record["context"] or "{}")}
+            for record in browsing.store.all(
+                "SELECT id,context FROM operation_continuation_steps WHERE continuation_id=? AND phase='web_fetch' AND status='ok'",
+                (reply._generation_id,),
+            )
+        ]
     automatic = bool(intent["auto_authorized"] and policy["auto_send"])
     dm_id = browsing.messages.enqueue(
         "comment", comment["id"], automatic=automatic, reason=reply.reason,
         character=browsing.store.character(row["character_id"], row["character_version"]),
         account_id=row["account_id"], video_evidence=evidence, schedule=False,
+        purpose=reply.contact_purpose,
+        contact_trigger=reply.contact_trigger,
+        proposed_text=reply.text, proposal_identity=reply._generation_identity,
     )
+    private = browsing.store.one("SELECT status FROM dm_drafts WHERE id=?", (dm_id,))
+    target = target | {"private_draft_id": dm_id, "contact_state": private["status"]}
     browsing.store.execute(
-        "UPDATE browsing_intents SET reason=? WHERE id=?",
-        ("已移交私信草稿 #" + str(dm_id), intent["id"]),
+        "UPDATE browsing_intents SET target=? WHERE id=?",
+        (dump(target), intent["id"]),
     )
     await browsing.messages._generate(dm_id, automatic=automatic)
+    browsing.store.execute("UPDATE browsing_intents SET target=json_set(target,'$.contact_state',?) WHERE id=?",
+                           (browsing.store.one("SELECT status FROM dm_drafts WHERE id=?", (dm_id,))["status"], intent["id"]))
     return browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],)))
 
 
@@ -418,30 +434,19 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         account_id=row["account_id"],
     )
     items_list = thread.get("items", [])
-    root_id = str(target.get("root") or "")
-    parent_id = str(target.get("parent") or "")
-    root_row = next((r for r in items_list if str(r.get("comment_id")) == root_id), None)
-    parent_row = next((r for r in items_list if str(r.get("comment_id")) == parent_id), None)
-    thread["root"] = {
-        "comment_id": root_id,
-        "author_name": root_row.get("display_name", "") if root_row else "",
-        "text": root_row.get("content", "") if root_row else "",
-    }
-    if parent_id and parent_id != root_id:
-        thread["parent"] = {
-            "comment_id": parent_id,
-            "author_name": parent_row.get("display_name", "") if parent_row else "",
-            "text": parent_row.get("content", "") if parent_row else "",
+    source_row = next((r for r in items_list if str(r.get("comment_id")) == str(source["comment_id"])), None)
+    if source_row is None:
+        source_row = {
+            "comment_id": source["comment_id"], "thread_id": target["root"],
+            "platform_user_id": source["author_uid"],
+            "display_name": source.get("author_name") or source.get("display_name") or event.get("sender_name", ""),
+            "content": source["text"],
         }
-    thread["timeline"] = [
-        {
-            "author_name": r.get("display_name", "观众"),
-            "text": r.get("content", ""),
-            "is_root": str(r.get("comment_id")) == root_id,
-            "is_target": str(r.get("comment_id")) == str(source.get("comment_id")),
-        }
-        for r in items_list[:8]
-    ]
+    discussion = comment_thread_context(source_row, items_list, target)
+    # The original verified event source keeps its existing hash representation.
+    thread.update({key: value for key, value in discussion.items() if key != "source"})
+    if event_row["kind"] == "own_comment":
+        thread["resource_author_uid"] = str(row["account_id"])
     reply = browsing.decisions.comment_progress.get(row, resource, source)
     if reply is None:
         reply = await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)

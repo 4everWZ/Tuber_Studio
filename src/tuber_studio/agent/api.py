@@ -112,6 +112,18 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         )
         return {"highlights": highlights, "active_anecdotes": active}
 
+    @app.post("/api/daily-memory/incidents", dependencies=[Depends(require_admin)])
+    async def record_public_incident(data: dict = Body(...)):
+        allowed = {"incident_key", "highlight_date", "headline", "anecdote", "public_sources", "tags"}
+        if set(data) - allowed or not allowed - {"tags"} <= set(data):
+            raise ValueError("请提供公开经历事实、稳定编号、日期及公开来源")
+        char = runtime.character
+        identifier = runtime.daily_memory.record_public_incident(char["id"], char["version"], **data)
+        item = store.one("SELECT * FROM daily_highlights WHERE id=?", (identifier,))
+        item["tags"] = json.loads(item["tags"] or "[]")
+        item["public_sources"] = json.loads(item["public_sources"] or "[]")
+        return item
+
     @app.post("/api/daily-memory/extract", dependencies=[Depends(require_admin)])
     async def extract_daily_memory(data: dict = Body(default={})):
         import datetime

@@ -12,6 +12,7 @@ from .operation_continuations import (
     continuation_messages,
 )
 from .operation_feedback import FeedbackModel, coordinator_for, episode_limits
+from .operation_identity import captured_identity, identity_messages, runtime_identity
 from .web_fetch import OperationWebFetch
 
 
@@ -29,6 +30,7 @@ def reply_generation_binding(scope, character, event, mode):
             "parent_comment_id",
             "platform_comment_id",
             "source_created_at",
+            "agreement_id",
         )
         if key in event
     }
@@ -91,6 +93,9 @@ async def generate_with_recovery(
     restart_deferred=False,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
+    actor = captured_identity(messages) or runtime_identity(runtime, character, binding.get("account_id"))
+    messages = identity_messages(messages, actor)
+    binding = binding | {"self_identity": actor}
     coordinator = coordinator_for(runtime, runtime.store, runtime.operations)
     limits = episode_limits(max_tokens)
     if max_recoveries is not None:
@@ -194,6 +199,11 @@ async def generate_with_recovery(
                     current, "web_fetch", web_fetch.receipt["status"], context=web_fetch.receipt
                 )
                 recorded_fetch = True
+                event = (context_data or {}).get("event") or {}
+                messages = getattr(getattr(runtime, "browsing", None), "messages", None)
+                if messages and event.get("agreement_id") and web_fetch.receipt.get("status") == "ok":
+                    step = runtime.store.one("SELECT id FROM operation_continuation_steps WHERE continuation_id=? AND phase='web_fetch' ORDER BY id DESC LIMIT 1", (current["id"],))
+                    await messages.fulfill_agreement(event["agreement_id"], step["id"])
             coordinator._step(
                 current,
                 "generation_model",

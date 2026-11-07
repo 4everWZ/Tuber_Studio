@@ -306,7 +306,12 @@ async def test_invalid_evidence_is_repaired_then_bound_to_original_source(runtim
     )
     assert bound.evidence_ids == [original] and bound.text == corrected["text"]
     row = runtime.continuations.find("test-source-decision", "source-1")
-    assert row["binding"] == binding and row["state"] == "completed"
+    assert {key: value for key, value in row["binding"].items() if key != "self_identity"} == binding
+    assert row["binding"]["self_identity"] == runtime.identity_snapshot(runtime.character, "100")
+    assert row["state"] == "completed"
+    from tuber_studio.operation_identity import captured_identity
+
+    assert all(captured_identity(request["messages"]) == row["binding"]["self_identity"] for request in requests)
     assert len(generated) == 2 and len(requests) == 6
     assert any(
         "e99" in message["content"] and "e1" in message["content"]

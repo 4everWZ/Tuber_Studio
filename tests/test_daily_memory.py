@@ -41,6 +41,38 @@ class DummyPlatform:
         pass
 
 
+def test_operator_public_incident_api_is_deduplicated_and_clearable(settings):
+    app = create_app(settings, DummyPlatform())
+    payload = {
+        "incident_key": "operator-confirmed-20261107",
+        "highlight_date": "2026-11-07",
+        "headline": "公开评论接错话",
+        "anecdote": "我没认清对话对象，观众问我是不是回错了。",
+        "public_sources": [
+            {
+                "bvid": "BV13S4i6fE82",
+                "thread_id": "323202459488",
+                "comment_id": "323231188736",
+                "quote": "你消息是不是回错了",
+            }
+        ],
+        "tags": ["接错话"],
+    }
+    with TestClient(app) as client:
+        assert client.post("/api/daily-memory/incidents", json=payload).status_code == 401
+        client.post("/api/auth", json={"token": settings.admin_token})
+        response = client.post("/api/daily-memory/incidents", json=payload)
+        assert response.status_code == 200
+        item = response.json()
+        assert item["public_sources"][0]["thread_id"] == "323202459488"
+        assert client.post("/api/daily-memory/incidents", json=payload).json()["id"] == item["id"]
+        assert len(client.get("/api/daily-memory").json()["highlights"]) == 1
+        assert client.put(f"/api/daily-memory/{item['id']}", json={"status": "archived"}).status_code == 200
+        assert client.post("/api/daily-memory/incidents", json=payload).json()["status"] == "archived"
+        assert client.delete(f"/api/daily-memory/{item['id']}").status_code == 200
+        assert client.get("/api/daily-memory").json()["highlights"] == []
+
+
 def test_desensitize_user():
     assert desensitize_user(None) == "某位热心观众"
     assert desensitize_user("") == "某位热心观众"

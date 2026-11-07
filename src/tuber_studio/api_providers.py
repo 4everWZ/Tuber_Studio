@@ -13,6 +13,7 @@ from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, models_health, response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
+from .operation_identity import provider_identity_messages
 from .providers import (
     DemoProvider,
     LlamaCppProvider,
@@ -79,7 +80,7 @@ class APIProvider:
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None):
         payload = {
             "model": self.config["model"],
-            "messages": single_system_messages(messages),
+            "messages": single_system_messages(provider_identity_messages(self, messages)),
             "max_tokens": budget,
             "stream": False,
         }
@@ -152,7 +153,7 @@ class APIProvider:
 
     async def count_tokens(self, messages):
         await self.ensure_capacity()
-        normalized = single_system_messages(messages)
+        normalized = single_system_messages(provider_identity_messages(self, messages))
         digest = hashlib.sha256(
             json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode()
         ).hexdigest()
@@ -244,7 +245,7 @@ class APIProvider:
                 "content": "仅返回一个符合以下JSON Schema的JSON对象，省略代码围栏：" + schema_text,
             },
         ]
-        return single_system_messages(messages)
+        return single_system_messages(provider_identity_messages(self, messages))
 
     async def generate_json(self, messages, schema, *, max_tokens):
         self.last_content = None
