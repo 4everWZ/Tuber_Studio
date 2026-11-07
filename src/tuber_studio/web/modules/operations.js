@@ -23,6 +23,7 @@ export async function updatePermissionCapsule(api, accountPanel, { background = 
 }
 
 const roundNumberFields = [
+  ["daily_watch_limit", "op-daily-watch", 0],
   ["max_replies_per_video", "op-max-replies", 2],
   ["max_per_hour", "op-max-per-hour", 5],
   ["max_per_day", "matrix-max-per-day", 20],
@@ -41,6 +42,7 @@ export function renderOperationsQuickBar(status) {
   if (!roundSettingsDirty) {
     for (const [name, id, fallback] of roundNumberFields) $(id).value = settings[name] ?? fallback;
     $("exp-visual-enabled").checked = settings.visual_enabled !== false;
+    $("op-business-timezone").value = settings.business_timezone || "Asia/Taipei";
   }
   $("op-save-quick-config").disabled = roundSettingsSaving;
 
@@ -95,6 +97,7 @@ export function initOperationsModule(api, accountPanel) {
       const save = $("op-save-quick-config");
       if (save.disabled) return;
       const payload = Object.fromEntries(roundNumberFields.map(([name, id]) => [name, Number($(id).value)]));
+      payload.business_timezone = $("op-business-timezone").value.trim() || "Asia/Taipei";
       payload.visual_enabled = $("exp-visual-enabled").checked;
       const fields = [...roundForm.querySelectorAll("input")];
       roundSettingsSaving = true;
@@ -135,11 +138,6 @@ export function initOperationsModule(api, accountPanel) {
       try {
         const isEnabled = currentAutomationStatus?.policy?.enabled === true;
         const target = !isEnabled;
-        if (target) {
-          const account = accountPanel?.value?.profile?.uid || currentAutomationStatus?.account_id || "待核验";
-          const role = currentAutomationStatus?.character?.id || "当前角色";
-          if (!confirm(`开启全渠道运营？B 站 UID ${account}，角色 ${role}。评论、通知和私信会按现有授权与额度自动处理。`)) return;
-        }
         await api("/api/automation/enable", { method: "POST", body: { enabled: target } });
         notice(target ? "自主运营已开启。" : "自主运营已停止。");
         await updatePermissionCapsule(api, accountPanel);

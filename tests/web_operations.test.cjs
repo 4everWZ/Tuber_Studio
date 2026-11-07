@@ -39,6 +39,7 @@ function setupDOM(t) {
   }
   globalThis.document = { getElementById: byId, createElement: element, querySelector: () => null };
   globalThis.matchMedia = () => ({ matches: false });
+  globalThis.TuberFormatters = require("../src/tuber_studio/web/modules/formatters.js");
   globalThis.OperationContinuationView = class {
     constructor(root) { this.root = root; }
     render() {}
@@ -46,6 +47,7 @@ function setupDOM(t) {
   t.after(() => {
     delete globalThis.document;
     delete globalThis.matchMedia;
+    delete globalThis.TuberFormatters;
     delete globalThis.OperationContinuationView;
   });
   return byId;
@@ -147,6 +149,7 @@ test("activity shows the recipient, reply and outcome while scheduling stays col
     scope: ["account", "whale", 3],
     activity: [
       { id: "task", kind: "task", title: "取材中的视频", status: "retry_wait", updated_at: 100, reason: "round_budget" },
+      { id: "failure", kind: "failure", bvid: "BVexample", status: "recovered", occurrences: 3, updated_at: 100, reason: "上游服务超时" },
       { id: "reply", kind: "reply_public", title: "视频标题", recipient_name: "小明", status: "published", excerpt: "白饭记得趁热吃。", updated_at: 100 },
     ],
   }));
@@ -159,8 +162,24 @@ test("activity shows the recipient, reply and outcome while scheduling stays col
   assert.equal(excerpt.textContent, "白饭记得趁热吃。");
   assert.equal(badge.textContent, "已发送");
   assert.ok(!scheduling.open);
-  assert.equal(scheduling.children[0].textContent, "调度详情（1）");
-  assert.equal(scheduling.children[1].children.length, 1);
+  assert.equal(scheduling.children[0].textContent, "调度详情（2）");
+  assert.equal(scheduling.children[1].children.length, 2);
+  assert.equal(scheduling.children[1].children[1].children[0].children[0].textContent, "已恢复 ×3");
+});
+
+test("task reasons preserve specific model explanations and separate scheduler state", () => {
+  const { humanizeTaskReason } = require("../src/tuber_studio/web/modules/formatters.js");
+  assert.equal(humanizeTaskReason({ status: "selected", decisions: [{ explanation: "片尾的饭锅镜头让我想补一句饭要趁热吃。", reason: "specific_detail" }] }),
+    "片尾的饭锅镜头让我想补一句饭要趁热吃。");
+  const waiting = humanizeTaskReason({ status: "checkpoint", retry_kind: "round_budget", reason: "已经读完前两段字幕，准备继续看第三段。" });
+  assert.match(waiting, /已经读完前两段字幕/);
+  assert.match(waiting, /程序进度：/);
+  assert.match(humanizeTaskReason({ status: "preparing" }), /正在读取字幕与画面/);
+  assert.match(humanizeTaskReason({ status: "viewed_without_comment" }), /历史记录未保存具体原因/);
+  assert.match(humanizeTaskReason({ reason: "daily_watch_limit" }), /^程序进度：今日观看次数已用完/);
+  assert.match(humanizeTaskReason({ reason: "daily_reply_limit" }), /^程序进度：该视频今日回复数已用完/);
+  const { humanizeStatus } = require("../src/tuber_studio/web/modules/formatters.js");
+  for (const status of ["paused", "deferred_daily", "comments_checked"]) assert.notEqual(humanizeStatus(status).label, status);
 });
 
 test("round settings preserve unlimited quotas and matrix saves leave them intact", async t => {
@@ -250,6 +269,9 @@ test("both discovery buttons share state while full-channel operations are enabl
     { method: "PUT", body: { enabled: true } },
     { method: "PUT", body: { enabled: false } },
   ]);
+  data.daily_watch = { started: 10, limit: 10, remaining: 0 };
+  await discovery.refresh();
+  assert.match(byId("discovery-result").textContent, /今日观看次数已用完，继续处理评论/);
 });
 
 test("matrix uses the stored message policy and displays partial failure", async t => {

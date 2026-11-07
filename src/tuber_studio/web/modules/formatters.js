@@ -100,9 +100,15 @@
       case "selected":
         return { label: "✨ 已生成互动", className: "status-blue", priority: 2 };
       case "viewed_without_comment":
-        return { label: "👀 已阅不发", className: "status-slate", priority: 8 };
+        return { label: "看过未发", className: "status-slate", priority: 8 };
       case "comments_checked":
         return { label: "已检查评论", className: "status-slate", priority: 8 };
+      case "paused":
+        return { label: "已暂停，进度保留", className: "status-slate", priority: 9 };
+      case "deferred_daily":
+        return { label: "今日观看已用完", className: "status-slate", priority: 9 };
+      case "recovered":
+        return { label: "已恢复", className: "status-slate", priority: 10 };
       case "checkpoint":
         return { label: "💾 进度已保存", className: "status-slate", priority: 9 };
       case "retry_wait":
@@ -130,8 +136,44 @@
       "duplicate_intent": "同源互动已有草稿或已发表，绝不重复发言",
       "already_commented": "大肥鱼已在此视频留过言，避免频繁刷屏",
       "round_budget": "达到本轮资源上限，进度已保存，下一轮继续",
+      "daily_watch_limit": "今日观看次数已用完，继续处理评论",
+      "daily_reply_limit": "该视频今日回复数已用完，草稿保留到次日",
     };
     return map[reason] || reason;
+  }
+
+  function humanizeTaskReason(task) {
+    const payload = task.payload || {};
+    const rawReason = task.reason || payload.reason;
+    const scheduling = task.retry_kind || payload.retry_kind ||
+      (["round_budget", "queued", "waiting", "checkpoint", "paused", "next_batch", "daily_watch_limit", "daily_reply_limit"].includes(rawReason) ? rawReason : null);
+    const decisions = task.decisions || payload.decisions || [];
+    const reasons = [task.explanation, task.reason, payload.explanation, payload.reason,
+      ...decisions.map(value => value.explanation || value.reason)]
+      .filter(value => typeof value === "string" && value.trim())
+      .map(value => value.trim());
+    const unique = [...new Set(reasons)].filter(value => value !== scheduling);
+    const meaningful = unique.filter(value => !/^[a-z][a-z0-9_]*$/.test(value));
+    let content = meaningful.join("；");
+    if (!content && unique.length) {
+      content = unique.map(value => `${humanizeReason(value)}（历史记录仅保存此标记）`).join("；");
+    }
+    if (scheduling) {
+      const progress = `程序进度：${humanizeReason(scheduling)}`;
+      return content ? `${content} · ${progress}` : progress;
+    }
+    if (content) return content;
+    if (task.error || task.error_kind) return `处理未完成：${task.error || humanizeReason(task.error_kind)}`;
+    const stages = {
+      discovered: "视频已找到，等待读取字幕与画面。", claimed: "已分配处理任务，正在准备材料。",
+      preparing: "正在读取字幕与画面，内容判断尚未完成。", evidence_ready: "材料已准备，等待生成内容判断。",
+      checkpoint: "处理进度已保存，尚未生成完整的内容判断。", paused: "任务已暂停，保留进度等待继续。",
+      queued: "任务已排队，尚未开始读取内容。", running: "任务正在处理，内容判断尚未完成。",
+      cancelled: "任务已停止；此历史记录未保存内容判断。", selected: "已生成回应；此历史记录未保存具体原因。",
+      viewed_without_comment: "已看过且未生成回复；此历史记录未保存具体原因。",
+      comments_checked: "已检查这条视频的新增评论。", deferred_daily: "程序进度：今日观看次数已用完，继续处理评论。",
+    };
+    return stages[task.status] || "此历史记录未保存具体原因，可查看来源与处理详情。";
   }
 
   function humanizeRoundReport(round, roundIndex) {
@@ -162,7 +204,7 @@
     const kind = interactionOnly ? "互动收件箱" : config.discovery_id ? "自动刷视频" : round.preview ? "只读预览" : "全渠道运营";
     const viewed = round.metrics?.viewed;
     const drafts = round.public_drafts;
-    const narrative = [kind, viewed == null ? "" : `已读并判断 ${viewed} 条`,
+    const narrative = [kind, viewed == null ? "" : `已处理 ${viewed} 条`,
       drafts == null ? "" : `评论草稿 ${drafts} 条`, round.error || ""].filter(Boolean).join(" · ");
 
     const tokenFormatted = totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : `${totalTokens}`;
@@ -190,6 +232,7 @@
     humanizeKind,
     humanizeStatus,
     humanizeReason,
+    humanizeTaskReason,
     humanizeRoundReport,
   };
 });

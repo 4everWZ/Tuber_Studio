@@ -13,7 +13,7 @@
   }
 })(typeof self !== 'undefined' ? self : this, function (Formatters, Paginator) {
 
-  const { formatRelativeTime, humanizeKind, humanizeStatus, humanizeReason, humanizeRoundReport } = Formatters;
+  const { formatRelativeTime, humanizeKind, humanizeStatus, humanizeReason, humanizeRoundReport, humanizeTaskReason } = Formatters;
 
   function escapeHtml(value) {
     const chars = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
@@ -534,7 +534,7 @@
 
         const title = task.title || task.metadata?.title || task.bvid || `任务 ${task.id?.slice(0, 8)}`;
         const statusInfo = humanizeStatus(task.status);
-        const reasonText = humanizeReason(taskReason(task));
+        const reasonText = humanizeTaskReason(task);
 
         tr.innerHTML = `
           <td>
@@ -719,7 +719,7 @@
           </div>
           <div class="op-ai-reason-card">
             <h4>处理进度与内容结果</h4>
-            <p class="op-reason-text">${escapeHtml(humanizeReason(taskReason(task) || task.decisions?.map(value => humanizeReason(value.reason)).join(" · ")))}</p>
+            <p class="op-reason-text">${escapeHtml(humanizeTaskReason(task))}</p>
           </div>
           ${task.consecutive_failures ? `<p class="hint">连续失败 ${escapeHtml(task.consecutive_failures)} 次${task.consecutive_failures === 3 ? " · 已跳过" : ""}</p>` : ""}
           <details class="subsection"><summary>分 P 覆盖与引用材料</summary>

@@ -6,7 +6,7 @@ const states = {
   judging: "正在判断与写稿", publishing: "正在发送", reconciling: "正在查询原回执", finishing: "正在结束本轮",
   waiting: "轮间等待", blocked: "需要处理", stopping: "正在停止", emergency: "已紧急停止",
 };
-const roundStates = { completed: "已完成", partial: "部分完成", failed: "未完成", cancelled: "已停止" };
+const roundStates = { completed: "已完成", partial: "部分完成", failed: "未完成", cancelled: "已停止", paused: "已暂停，进度保留", deferred_daily: "今日观看次数已用完" };
 const decisions = {
   no_interest: "大肥鱼对这个话题没兴趣", nothing_to_add: "没有想补充的内容",
   insufficient_evidence: "现有材料不足", visual_required: "需要画面材料", unsafe_interaction: "这次不参与讨论",
@@ -183,12 +183,14 @@ export function initDiscoveryPanel(api) {
     if (round) roundLink.href = `#automation/round/${round.id}`;
     const timing = data.next_at ? `下次运行 ${time(data.next_at)}` : "";
     result.textContent = [
+      data.daily_watch?.limit > 0 && data.daily_watch.remaining === 0 ? "今日观看次数已用完，继续处理评论" : "",
       active ? [data.current_video?.title, label].filter(Boolean).join(" · ")
         : round ? `${roundStates[round.status] || "已结束"} · ${time(round.updated_at)}`
           : "还没有运行记录。",
       timing,
     ].filter(Boolean).join(" · ");
     $("discovery-counts").textContent = round ? [
+      data.daily_watch ? `今日观看 ${data.daily_watch.started}${data.daily_watch.limit ? ` / ${data.daily_watch.limit}` : "（不限）"}` : "",
       sourceName(data.round_source), `已处理 ${data.summary.processed} 个视频`,
       `已发送 ${data.sent} 条`, `已跳过 ${data.summary.skipped} 个视频`,
     ].filter(Boolean).join(" · ") : "";
@@ -231,8 +233,9 @@ export function initDiscoveryPanel(api) {
 function activityLabel(item) {
   const labels = {
     published: "已发送", failed: "发送失败",
-    publish_uncertain: "回执待确认", viewed_without_comment: "看完未发", skipped: "已跳过",
-    automatic_skipped: "回应已跳过", retry_wait: "自动重试", cancelled: "已停止",
+    publish_uncertain: "回执待确认", viewed_without_comment: "看过未发", skipped: "已跳过",
+    automatic_skipped: "回应已跳过", retry_wait: "已记录失败", cancelled: "已停止",
+    recovered: "已恢复", paused: "已暂停", deferred_daily: "次日继续", comments_checked: "已检查评论",
   };
   return labels[item.status] || item.status;
 }
@@ -259,8 +262,8 @@ export function initDiscoveryActivity(api) {
   async function loadDetail(row, item) {
     row.detail.replaceChildren(node("p", "正在读取活动详情…", "hint"));
     try {
-      const task = item.kind === "task";
-      const record = task
+      const task = ["task", "failure"].includes(item.kind);
+      const record = item.kind === "failure" ? item : task
         ? (await api(`/api/automation/tasks?task_id=${encodeURIComponent(item.id)}`))[0]
         : await api(`/api/comments/workbench/browsing/${encodeURIComponent(item.id)}`);
       if (row.item !== item) return;
@@ -269,11 +272,9 @@ export function initDiscoveryActivity(api) {
         return;
       }
       const content = document.createDocumentFragment();
-      const reason = task
-        ? [...new Set([record.reason, ...(record.decisions || []).map(decision => decision.reason)]
-          .map(code => decisions[code]).filter(Boolean))].join(" · ")
-        : safeMessage(record.reason);
+      const reason = task ? TuberFormatters.humanizeTaskReason(record) : safeMessage(record.explanation || record.reason);
       if (reason) content.append(node("p", reason));
+      if (item.occurrences > 1) content.append(node("p", `同一问题共记录 ${item.occurrences} 次${item.status === "recovered" ? "，当前已恢复。" : "。"}`, "hint"));
       if (!task && record.text) content.append(node("blockquote", record.text, "quoted-text"));
       if (!task && record.target?.source_text) {
         content.append(node("p", record.target.recipient_name || "回复的原评论", "hint"),
@@ -319,12 +320,12 @@ export function initDiscoveryActivity(api) {
       }
     }
     empty.textContent = "暂无回复结果。";
-    empty.hidden = items.some(item => item.kind !== "task");
-    const taskCount = items.filter(item => item.kind === "task").length;
+    empty.hidden = items.some(item => !["task", "failure"].includes(item.kind));
+    const taskCount = items.filter(item => ["task", "failure"].includes(item.kind)).length;
     schedulingSummary.textContent = `调度详情${taskCount ? `（${taskCount}）` : ""}`;
     let replyIndex = 0, taskIndex = 0;
     items.forEach(item => {
-      const task = item.kind === "task";
+      const task = ["task", "failure"].includes(item.kind);
       const container = task ? tasks : replies;
       const index = task ? taskIndex++ : replyIndex++;
       let row = rows.get(item.id);
@@ -353,10 +354,10 @@ export function initDiscoveryActivity(api) {
         row.title.textContent = task ? item.title || item.bvid :
           `回复 ${item.recipient_name || item.target?.recipient_name || (item.kind === "top_level" ? "视频评论区" : "原评论作者")}`;
         row.title.title = item.title || item.bvid || "";
-        row.badge.textContent = activityLabel(item);
+        row.badge.textContent = `${activityLabel(item)}${item.occurrences > 1 ? ` ×${item.occurrences}` : ""}`;
         row.when.textContent = time(item.updated_at);
         row.when.dateTime = new Date(item.updated_at * 1000).toISOString();
-        row.excerpt.textContent = activityExcerpt(item);
+        row.excerpt.textContent = task ? TuberFormatters.humanizeTaskReason(item) : activityExcerpt(item);
         if (row.root.open) void loadDetail(row, item);
       }
       if (container.children[index] !== row.root) container.insertBefore(row.root, container.children[index] || null);

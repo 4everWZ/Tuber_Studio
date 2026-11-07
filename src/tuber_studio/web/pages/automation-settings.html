@@ -72,18 +72,24 @@
     <p class="hint">自动刷视频、只读预览和全渠道运营共用这些设置。</p>
     <form id="op-round-settings" class="operation-settings-form">
       <fieldset class="settings-form-group">
-        <legend>发布配额</legend>
+        <legend>观看与回复数量</legend>
         <p class="hint">各项填 0 表示该项不限额。是否发出由各渠道的权限设置决定。</p>
         <div class="form-grid settings-grid-3">
-          <label>单视频回复上限
+          <label>每日观看视频数
+            <input id="op-daily-watch" type="number" min="0" required>
+          </label>
+          <label>每个视频每日回复数
             <input id="op-max-replies" type="number" min="0" max="20" required>
-            <small class="hint">每日按视频计数</small>
+            <small class="hint">主评与跟帖合计，只计发布成功的回复</small>
           </label>
           <label>每小时发布上限
             <input id="op-max-per-hour" type="number" min="0" max="30" required>
           </label>
           <label>每日发布上限
             <input id="matrix-max-per-day" type="number" min="0" max="200" required>
+          </label>
+          <label>每日计数时区
+            <input id="op-business-timezone" value="Asia/Taipei" required>
           </label>
         </div>
       </fieldset>
@@ -107,13 +113,13 @@
           <label>每轮候选视频上限
             <input id="exp-candidate-limit" type="number" min="1" max="20" required>
           </label>
-          <label>每轮细看视频上限
+          <label>只读预览细看视频上限
             <input id="exp-inspect-limit" type="number" min="1" max="20" required>
           </label>
           <label>单次决策最大输出 Token
             <input id="exp-decision-max-tokens" type="number" min="512" max="65536" required>
           </label>
-          <label>单轮运行超时（秒）
+          <label>只读预览运行超时（秒）
             <input id="exp-deadline-seconds" type="number" min="10" max="1800" required>
           </label>
           <label class="check-field" style="grid-column:1 / -1;">

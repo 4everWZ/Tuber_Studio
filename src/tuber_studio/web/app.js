@@ -3,7 +3,7 @@
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.06";
-import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.06";
+import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.07";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.01";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
@@ -13,7 +13,7 @@ import {
   initOperationsModule,
   renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261107.06";
+} from "./modules/operations.js?v=20261107.07";
 import {
   renderPersona,
   initCharacterStudioUI,
