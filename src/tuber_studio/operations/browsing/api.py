@@ -75,6 +75,15 @@ def register_browsing_api(app, browsing, require_admin):
             raise ValueError("只接受enabled字段")
         return await browsing.set_enabled(data["enabled"])
 
+    @app.post("/api/automation/review", dependencies=dependencies)
+    async def start_review(data: dict = Body(default={})):
+        if set(data) - {"resume_session_id"}:
+            raise ValueError("未知review字段")
+        if "resume_session_id" in data and (not isinstance(data["resume_session_id"], str)
+                                             or not 1 <= len(data["resume_session_id"]) <= 100):
+            raise ValueError("需要原review会话ID")
+        return await browsing.start_review_session(**data)
+
     @app.post("/api/automation/round", dependencies=dependencies)
     async def run(data: dict = Body(default={})):
         if set(data) - {"preview", "video"} or data.get("preview", True) is not True:

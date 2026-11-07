@@ -82,13 +82,13 @@ class RecentAnecdotesTool(BaseAgentTool):
             )
         except (TypeError, ValueError):
             public_floor = []
-        if len(public_floor) != 3 or public_floor[0] != "bilibili":
+        if len(public_floor) != 4 or not public_floor[0] or public_floor[1] != "bilibili":
             public_floor = []
         experiences = self.daily_memory.context(
             character,
             query,
-            video_id=public_floor[1] if public_floor else None,
-            thread_id=public_floor[2] if public_floor else None,
+            video_id=public_floor[2] if public_floor else None,
+            thread_id=public_floor[3] if public_floor else None,
         )
         incident_ids = {int(item["id"].split(":")[1]) for item in experiences}
         return experiences + [item for item in anecdotes if item["id"] not in incident_ids]

@@ -1,5 +1,6 @@
 """Independent context windows, source evidence and adaptive compaction budgets."""
 
+import hashlib
 import json
 import re
 import time
@@ -11,10 +12,12 @@ from .compaction import (
     ContextWindowExceeded,
     compact_history,
     insert_initial_context_before_last_real_user_or_summary,
+    is_summary_message,
     limits,
     needs_compaction,
     wire_messages,
 )
+from .context_delivery import comment_delivery, memory_source_allowed
 from .memory import GroundedMemory, extract_facts
 from .operation_text import reply_output_budget
 from .providers import build_messages, public_error
@@ -71,7 +74,7 @@ class ContextManager:
         tool_registry=None,
     ):
         self.settings, self.store, self.provider = settings, store, provider
-        self.memory = GroundedMemory(store)
+        self.memory = GroundedMemory(store, source_filter=lambda row: memory_source_allowed(store, row))
         self.daily_memory = daily_memory
         self.game_livestream = game_livestream
         self.draw_and_guess = draw_and_guess
@@ -81,12 +84,18 @@ class ContextManager:
             draw_and_guess=draw_and_guess,
         )
         self.last_key = None
+        store.execute("CREATE TABLE IF NOT EXISTS context_history_audit("
+                      "id INTEGER PRIMARY KEY,window_key TEXT NOT NULL,history_sha256 TEXT NOT NULL,"
+                      "history TEXT NOT NULL,reason TEXT NOT NULL,created_at REAL NOT NULL,"
+                      "UNIQUE(window_key,history_sha256))")
         store.execute("""CREATE TABLE IF NOT EXISTS context_windows(
             key TEXT PRIMARY KEY,mode TEXT,character_id TEXT,character_version INTEGER,
             history TEXT NOT NULL DEFAULT '[]',input_tokens INTEGER DEFAULT 0,
             carried_prefix_tokens INTEGER DEFAULT 0,compact_count INTEGER DEFAULT 0,
             last_error TEXT,last_warning TEXT,last_passes INTEGER DEFAULT 0,last_budgets TEXT DEFAULT '[]',
             updated_at REAL NOT NULL,oldest_source_at REAL)""")
+        store.execute("CREATE TRIGGER IF NOT EXISTS clear_context_history_audit AFTER DELETE ON context_windows "
+                      "BEGIN DELETE FROM context_history_audit WHERE window_key=OLD.key; END")
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(context_windows)")}
         for name, definition in (
             ("last_warning", "TEXT"),
@@ -113,6 +122,34 @@ class ContextManager:
 
     def existing(self, scope, character):
         return self.store.one("SELECT * FROM context_windows WHERE key=?", (self.key(scope, character),))
+
+    def history_for_model(self, scope, character, history=None):
+        if history is None:
+            row = self.existing(scope, character)
+            history = json.loads(row["history"]) if row else []
+        if not scope.startswith("comments:"):
+            return history
+        result = []
+        for item in history:
+            if item.get("role") == "assistant":
+                if comment_delivery(self.store, scope, character, item.get("source_event_id"), item["content"]):
+                    result.append(item)
+            elif is_summary_message(item):
+                provenance = item.get("delivery_provenance") or {}
+                if (isinstance(provenance, dict) and provenance.get("version") == 1 and provenance.get("scope") == scope
+                    and isinstance(provenance.get("sources"), list)
+                    and all(isinstance(source, dict) and comment_delivery(self.store, scope, character, source.get("event_id")) == source
+                            for source in provenance["sources"])):
+                    result.append(item)
+            else:
+                result.append(item)
+        return result
+
+    def _archive_history(self, row, reason):
+        self.store.execute("INSERT OR IGNORE INTO context_history_audit("
+                           "window_key,history_sha256,history,reason,created_at) VALUES(?,?,?,?,?)",
+                           (row["key"], hashlib.sha256(row["history"].encode()).hexdigest(),
+                            row["history"], reason, time.time()))
 
     def source_candidate(self, scope, character, events):
         """Stage original viewer data separately from persistent conversation state."""
@@ -252,7 +289,7 @@ class ContextManager:
                 character, event, mode, extra_context={"scope": scope}
             )
             initial.extend(augmentations)
-        history = json.loads(row["history"])
+        history = self.history_for_model(scope, character, json.loads(row["history"]))
         messages = self.render(prefix, initial, history, pending, suffix)
         overflow = False
         try:
@@ -285,7 +322,19 @@ class ContextManager:
         passes = 0
         budgets = []
         try:
-            replacement = json.loads(row["history"])
+            character = {"id": row["character_id"], "version": row["character_version"]}
+            replacement = self.history_for_model(row["mode"], character, json.loads(row["history"]))
+            if not replacement:
+                raise ValueError("当前范围没有可核验历史，保留原摘要审计，请从原文重新准备上下文")
+            delivery_sources = {}
+            if row["mode"].startswith("comments:"):
+                for item in replacement:
+                    if item.get("role") == "assistant":
+                        source = comment_delivery(self.store, row["mode"], character, item.get("source_event_id"), item["content"])
+                        if source:
+                            delivery_sources[source["event_id"]] = source
+                    for source in (item.get("delivery_provenance") or {}).get("sources", []):
+                        delivery_sources[source["event_id"]] = source
             config = self.settings.data["llm"]
             for _ in range(2):
                 passes += 1
@@ -326,6 +375,12 @@ class ContextManager:
             )
             # Both rounds are one atomic install. A second-round failure never
             # leaves a half-completed history replacement in persistent state.
+            if row["mode"].startswith("comments:"):
+                for item in replacement:
+                    if is_summary_message(item):
+                        item["delivery_provenance"] = {"version": 1, "scope": row["mode"],
+                                                       "sources": list(delivery_sources.values())}
+                self._archive_history(row, "Replaced by a summary of receipt-verified history")
             self.store.execute(
                 "UPDATE context_windows SET history=?,input_tokens=?,carried_prefix_tokens=?,"
                 "compact_count=compact_count+?,last_passes=?,last_warning=?,last_budgets=?,last_error=NULL,updated_at=? WHERE key=?",
@@ -364,15 +419,35 @@ class ContextManager:
         )
         return self.status()
 
+    def record_source(self, scope, character, event, mode="live"):
+        """Keep an original message without claiming an unsent draft was spoken."""
+        self.record(scope, character, event, None, mode)
+
+    def remove_unsent_reply(self, scope, character, event_id):
+        """Remove an unpublished reply from active recall; its draft remains auditable."""
+        row = self.existing(scope, character)
+        if row:
+            history = json.loads(row["history"])
+            kept = [item for item in self.history_for_model(scope, character, history) if not (
+                item.get("role") == "assistant" and item.get("source_event_id") == event_id
+            )]
+            if kept != history:
+                self._archive_history(row, "Unsent assistant history excluded after rejection")
+                self.store.execute("UPDATE context_windows SET history=?,updated_at=? WHERE key=?",
+                                   (json.dumps(kept, ensure_ascii=False), time.time(), row["key"]))
+        # Grounded originals remain auditable. The receipt filter excludes the
+        # rejected source before ranking/recall, including after restart.
+
     def record(self, scope, character, event, reply_text, mode="live", *, memory_kind=None):
         row = self.window(scope, character)
         history = json.loads(row["history"])
         _, _, pending, _ = self.parts(character, event, {}, mode)
-        # A delivered job or unique draft is recorded once. No in-flight speech is remembered as played.
+        # Only a delivered reply closes the turn. Original sources may already
+        # be retained while their drafts are awaiting review.
         if any(
             item.get("source_event_id") == event["event_id"]
-            and item.get("kind") == "viewer"
-            and not item.get("reconstructed")
+            and (item.get("role") == "assistant" or reply_text is None
+                 and item.get("kind") == "viewer" and not item.get("reconstructed"))
             for item in history
         ):
             return
@@ -382,7 +457,7 @@ class ContextManager:
         history = [
             item
             for item in history
-            if not (item.get("source_event_id") == event["event_id"] and item.get("reconstructed"))
+            if not (item.get("source_event_id") == event["event_id"] and item.get("kind") == "viewer")
         ]
         now = time.time()
         # Age follows ingestion into this window, not an external comment date.
@@ -393,27 +468,26 @@ class ContextManager:
         elif not history:
             oldest = now
         pending["created_at"] = now
-        history.extend(
-            [
-                pending,
-                {
+        history.append(pending)
+        if reply_text is not None:
+            history.append({
                     "role": "assistant",
                     "content": reply_text,
                     "kind": "reply",
                     "source_event_id": event["event_id"],
                     "source_complete": True,
                     "memory_kind": memory_kind or "role_story",
+                    "delivery_state": "delivered",
+                    "account_id": event.get("account_id"),
                     "created_at": now,
-                },
-            ]
-        )
+                })
         self.store.execute(
             "UPDATE context_windows SET history=?,updated_at=?,oldest_source_at=? WHERE key=?",
             (json.dumps(history, ensure_ascii=False), now, oldest, row["key"]),
         )
         if event["text"].strip():
             self.memory.record(scope, character, event["event_id"], "user", event["text"])
-        if reply_text.strip():
+        if reply_text is not None and reply_text.strip():
             self.memory.record(
                 scope, character, event["event_id"], "assistant", reply_text, kind=memory_kind or "role_story"
             )

@@ -71,6 +71,49 @@ async def test_default_review_and_manual_approval_never_sends(comments, store):
     assert store.one("SELECT status FROM drafts")["status"] == "copied"
 
 
+async def test_pending_draft_is_not_speech_and_receipt_records_only_final_approved_body(comments, store, runtime):
+    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    row = await draft(comments, store)
+    scope = comments.account_context_scope("BV1d8pU6xEZX", "123", account_id=row["account_id"])
+    history = json.loads(runtime.context.existing(scope, runtime.character)["history"])
+    assert all(item["role"] == "user" for item in history)
+    assert not store.all("SELECT * FROM grounded_memory WHERE role='assistant'")
+    source_events = [json.loads(item["content"].split("：", 1)[1]) for item in history]
+    assert all("comment_context" not in event and "video_evidence" not in event and "self_actor" not in event
+               for event in source_events)
+    final = "我刚才接错话了，这句才是准备发出去的回复。"
+    comments.review(row["id"], "approve", final)
+    assert not [item for item in json.loads(runtime.context.existing(scope, runtime.character)["history"])
+                if item["role"] == "assistant"]
+    assert (await comments.publish(row["id"]))["status"] == "published"
+    history = json.loads(runtime.context.existing(scope, runtime.character)["history"])
+    assert [item["content"] for item in history if item["role"] == "assistant"] == [final]
+    assert history[-1]["delivery_state"] == "delivered" and history[-1]["account_id"] == row["account_id"]
+    comments._record_published_context(row["id"], row["account_id"])
+    assert len([item for item in json.loads(runtime.context.existing(scope, runtime.character)["history"])
+                if item["role"] == "assistant"]) == 1
+    assert [item["text"] for item in store.all("SELECT text FROM grounded_memory WHERE role='assistant'")] == [final]
+
+
+async def test_reject_removes_unsent_assistant_recall_but_keeps_source_and_draft_audit(comments, store, runtime):
+    row = await draft(comments, store)
+    source = store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
+    scope = comments.account_context_scope(source["video_id"], source["thread_id"], account_id=row["account_id"])
+    event = comments._comment_event(source) | {"account_id": row["account_id"]}
+    # Model an earlier implementation's incorrectly remembered unsent reply.
+    runtime.context.record(scope, runtime.character, event, row["text"], "comment_draft")
+    assert store.one("SELECT id FROM grounded_memory WHERE role='assistant'")
+    comments.review(row["id"], "reject")
+    history = json.loads(runtime.context.existing(scope, runtime.character)["history"])
+    assert history and all(item["role"] == "user" for item in history)
+    assert store.one("SELECT id FROM grounded_memory WHERE role='assistant'")
+    assert runtime.context.memory.retrieve(scope, runtime.character, row["text"])["evidence"] == []
+    assert store.one("SELECT history FROM context_history_audit WHERE window_key=?", (runtime.context.key(scope, runtime.character),))
+    assert store.one("SELECT content FROM comments WHERE id=?", (source["id"],))["content"] == source["content"]
+    kept = store.one("SELECT text,status FROM drafts WHERE id=?", (row["id"],))
+    assert kept == {"text": row["text"], "status": "rejected"} and not comments.adapter.sent
+
+
 async def test_auto_reply_requires_credentials_and_explicit_enable(comments, store):
     store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
@@ -104,6 +147,7 @@ async def test_uncertain_send_cannot_be_retried(comments, store, failure):
     with pytest.raises(ValueError):
         await comments.publish(row["id"])
     assert store.one("SELECT status FROM drafts")["status"] == "publish_uncertain"
+    assert not store.all("SELECT id FROM grounded_memory WHERE role='assistant'")
     with pytest.raises(ValueError):
         await comments.publish(row["id"])
     assert len(comments.adapter.sent) == 1
@@ -118,6 +162,7 @@ async def test_definite_platform_rejection_preserves_reviewed_draft(comments, st
         await comments.publish(row["id"])
     assert store.one("SELECT status FROM drafts")["status"] == "approved"
     assert len(comments.adapter.sent) == 1
+    assert not store.all("SELECT id FROM grounded_memory WHERE role='assistant'")
 
 
 async def test_stop_auto_reply_retains_later_drafts(comments, store):
@@ -253,7 +298,11 @@ def test_thread_mapping_preview_filter_and_legacy_defaults(comments, store):
 
 def test_thread_scope_is_unambiguous_and_platform_specific():
     scope = Comments.context_scope("video:a", "b:c")
-    assert json.loads(scope.removeprefix("comments:")) == ["bilibili", "video:a", "b:c"]
+    assert json.loads(scope.removeprefix("comments:")) == ["", "bilibili", "video:a", "b:c"]
+    assert Comments.context_scope("video:a", "b:c", account_id="100") != Comments.context_scope(
+        "video:a", "b:c", account_id="200"
+    )
+    assert scope != 'comments:["bilibili","video:a","b:c"]'
     assert scope != Comments.context_scope("video", "a:b:c")
     assert scope != Comments.context_scope("video:a", "b:c", "mock")
     assert scope != "comments:video:a"
@@ -461,7 +510,7 @@ async def test_checks_are_stored_and_threaded_duplicate_batches_never_republish(
     draft = store.one("SELECT * FROM drafts")
     assert json.loads(draft["answer_check"]) == check
     assert comments.list_comments()[0]["draft"]["answer_check"] == check
-    scope = comments.context_scope("BV1d8pU6xEZX", "900")
+    scope = comments.account_context_scope("BV1d8pU6xEZX", "900", account_id=draft["account_id"])
     history = json.loads(runtime.context.window(scope, runtime.character)["history"])
     assert history[-1]["memory_kind"] == "derived_reply"
     assert draft["status"] == "published"
@@ -475,10 +524,15 @@ async def test_real_runtime_checker_integrates_without_borrowing_another_threads
     # Exercise the actual Runtime checker and actual context/source-memory stores;
     # only its normal offline DemoProvider substitutes for a GPU model.
     monkeypatch.setattr(runtime, "generate_reply", Runtime.generate_reply.__get__(runtime, Runtime))
-    scope = comments.context_scope("import-grounded", "story-floor")
+    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    comments.import_items("import-grounded", [{"comment_id": "original", "thread_id": "story-floor", "content": "刚才发生什么？"}])
+    original = store.one("SELECT * FROM comments WHERE comment_id='original'")
+    scope = comments.context_scope("import-grounded", "story-floor", account_id="injected-test-account")
     story = "我去了珊瑚铺，店主小壳送我三份海苔饭团。"
+    store.execute("INSERT INTO drafts(comment_id,text,status,character_id,character_version,account_id,receipt) VALUES(?,?,'published',?,?,?,?)",
+        (original["id"], story, runtime.character["id"], runtime.character["version"], "injected-test-account", json.dumps({"rpid": "800"})))
     runtime.context.record(
-        scope, runtime.character, {"event_id": "original-story", "text": "刚才发生什么？"}, story
+        scope, runtime.character, comments._comment_event(original) | {"account_id": "injected-test-account"}, story
     )
     question = "你刚才去了哪里，谁送了你什么，有多少份？"
     comments.import_items(
@@ -496,7 +550,7 @@ async def test_real_runtime_checker_integrates_without_borrowing_another_threads
     assert audit["retried"] is False and audit["missing"] and audit["warning"]
     assert audit["status"] == "needs_review" and audit["semantic_verdict"] is None
     assert any(
-        source["text"] == story and source["event_id"] == "original-story" and source["fictional"]
+        source["text"] == story and source["event_id"] == f"comment:{original['id']}" and source["fictional"]
         for source in audit["sources"]
     )
     assert rows["unrelated"]["draft"]["answer_check"]["sources"] == []

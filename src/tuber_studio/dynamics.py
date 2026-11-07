@@ -9,6 +9,7 @@ import unicodedata
 from contextlib import nullcontext
 from datetime import datetime
 
+from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
@@ -250,11 +251,13 @@ class Dynamics:
         if not self.store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='grounded_memory'"):
             return []
         char = self._character()
-        return self.store.all(
+        rows = self.store.all(
             "SELECT * FROM grounded_memory WHERE character_id=? AND character_version=? "
             "AND role='assistant' AND kind='role_story' AND fictional=1 AND scope NOT LIKE 'dm:%' ORDER BY id DESC LIMIT 200",
             (char["id"], char["version"]),
         )
+        account = runtime_identity(self.runtime, char).get("account_uid") or ""
+        return [row for row in rows if memory_source_allowed(self.store, row, account_id=account)]
 
     @staticmethod
     def _memory_fingerprint(row):

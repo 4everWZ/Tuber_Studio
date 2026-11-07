@@ -1,7 +1,6 @@
 """Compose the business runtime and coordinate shared generation."""
 
 import asyncio
-import json
 import socket
 import time
 from contextlib import asynccontextmanager, nullcontext
@@ -385,9 +384,7 @@ class Runtime:
                     "event": event,
                     "relationship": relationship,
                     "memory_evidence": evidence,
-                    "history": json.loads(context.existing(scope, character)["history"])
-                    if context.existing(scope, character)
-                    else [],
+                    "history": context.history_for_model(scope, character),
                 },
                 allow_web_fetch=True,
             )

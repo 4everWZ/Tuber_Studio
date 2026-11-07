@@ -149,8 +149,8 @@ def _terms(text):
 
 
 class GroundedMemory:
-    def __init__(self, store):
-        self.store = store
+    def __init__(self, store, *, source_filter=None):
+        self.store, self.source_filter = store, source_filter
         store.execute("""CREATE TABLE IF NOT EXISTS grounded_memory(
             id INTEGER PRIMARY KEY,scope TEXT NOT NULL,character_id TEXT NOT NULL,
             character_version INTEGER NOT NULL,event_id TEXT NOT NULL,role TEXT NOT NULL,
@@ -265,6 +265,8 @@ class GroundedMemory:
             "AND kind NOT IN ('derived_reply','grounded_reply') ORDER BY id DESC LIMIT 200",
             (scope, character_id, version),
         )
+        if self.source_filter is not None:
+            rows = [row for row in rows if self.source_filter(row)]
         sources = [
             (row, json.loads(row["facts"]))
             for row in rows

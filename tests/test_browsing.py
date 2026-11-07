@@ -224,7 +224,7 @@ class ControlledModel:
             return {
                 "action": action,
                 "text": "盐水把鸡蛋托起来这段好有意思，鱼鱼也想试试！" if action != "finish" else "",
-                "reason": "specific_detail" if action in {"reply_public", "finish"} else "private_details",
+                "reason": "specific_detail" if action in {"reply_public", "finish"} else "user_requested",
                 "explanation": "想接着聊盐水如何把鸡蛋托起来",
                 "evidence_ids": [data["evidence"][0]["id"]],
                 **({"contact_purpose": "讨论盐水鸡蛋实验", "contact_trigger": "invitation"} if action == "handoff_private" else {}),

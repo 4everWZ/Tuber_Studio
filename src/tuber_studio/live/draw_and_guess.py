@@ -392,6 +392,10 @@ class DrawAndGuessService:
                     source_ref=f"draw_guess_{self.current_word['id']}",
                     source_user=display_name,
                     tags=["你画我猜", "互动", word],
+                    source_evidence={"version": 1, "kind": "runtime_event", "confirmed_by": "runtime_event",
+                        "source_ref": f"draw_guess_{self.current_word['id']}", "quote": f"{display_name}: {text}",
+                        "round_id": f"{self.current_word['id']}:{self.started_at}",
+                        "round_started_at": self.started_at, "winner_user_id": user_id, "guess": text, "answer": word},
                 )
             except Exception:
                 import traceback

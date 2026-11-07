@@ -12,6 +12,47 @@ from tuber_studio.models import Reply
 from tuber_studio.operation_identity import identity_snapshot
 
 
+async def test_comment_account_switch_does_not_inherit_other_account_or_unbound_assistant_history(comments, store, monkeypatch):
+    runtime = comments.runtime
+    character = runtime.character
+    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    active = {"uid": "100"}
+
+    async def account_id():
+        return active["uid"]
+
+    monkeypatch.setattr(comments, "account_id", account_id)
+    monkeypatch.setattr(comments, "display_account_id", lambda: active["uid"])
+    video, floor = "import-account-context", "same-floor"
+    scoped_a = comments.account_context_scope(video, floor, account_id="100")
+    legacy = "comments:" + json.dumps(["bilibili", video, floor], separators=(",", ":"))
+    runtime.context.record(scoped_a, character, {"event_id": "old-a", "text": "A账号历史", "account_id": "100"},
+                           "仅A账号窗口记过的旧回复")
+    runtime.context.record(legacy, character, {"event_id": "unbound", "text": "未绑定账号的原文"},
+                           "旧无账号窗口的回复")
+    comments.import_items(video, [{"comment_id": "current", "thread_id": floor,
+                                   "platform_user_id": "neighbor", "content": "新账号来接这句话。"}])
+    active["uid"] = "200"
+    seen = []
+    original = runtime.llm.generate
+
+    async def capture(messages, character, event_id, source_text=None):
+        seen.append(json.dumps(messages, ensure_ascii=False))
+        return await original(messages, character, event_id, source_text)
+
+    monkeypatch.setattr(runtime.llm, "generate", capture)
+    comments.enqueue([store.one("SELECT id FROM comments")["id"]])
+    await asyncio.wait_for(comments.queue.join(), 3)
+    assert len(seen) == 1
+    assert "仅A账号窗口记过的旧回复" not in seen[0] and "旧无账号窗口的回复" not in seen[0]
+    scoped_b = comments.account_context_scope(video, floor)
+    assert scoped_a != scoped_b != legacy
+    history_b = json.loads(runtime.context.existing(scoped_b, character)["history"])
+    assert history_b and all(item["role"] == "user" for item in history_b)
+    assert "仅A账号窗口记过的旧回复" in runtime.context.existing(scoped_a, character)["history"]
+    assert "旧无账号窗口的回复" in runtime.context.existing(legacy, character)["history"]
+
+
 async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_generation(comments, store, monkeypatch):
     credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
     comments.credentials = credentials
@@ -45,6 +86,16 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
     assert captured[0]["reply_target"]["author_uid"] == "viewer"
     addressed = captured[0]["reply_target"]["addressed_to"]
     assert addressed == [{"uid": "other-oc", "name": "鲸鲸", "relation_to_self": "other", "basis": ["mention", "reply_parent"]}]
+    wire_context = captured[0]
+    assert "comment_context" not in wire_context
+    thread = wire_context["thread"]
+    assert thread["root"]["text_ref"] == thread["parent"]["text_ref"] == "thread.comments[0].text"
+    assert thread["comments"][0]["text"] == rows[0]["content"]
+    assert thread["source"]["text_ref"] == "当前观众消息.text"
+    # Wire naming changes no event/draft source fields or original body.
+    original_event = json.loads(store.one("SELECT input_summary FROM drafts")["input_summary"])
+    assert original_event["comment_context"]["source"]["text"] == rows[1]["content"]
+    assert "thread" not in original_event
     assert not comments.adapter.sent
     # Re-import enriches identity metadata without replacing a draft or source body.
     comments.import_items("import-actors", [rows[1] | {"content": "不覆盖原文", "mentions": [{"uid": "other-oc", "name": "新显示名"}]}])

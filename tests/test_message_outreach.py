@@ -1,11 +1,15 @@
 """Invited first contacts and ordinary incoming replies use different paths."""
 
+import asyncio
 import json
 from types import SimpleNamespace
 
 import pytest
 from test_direct_messages import incoming
 from test_direct_messages import messages as messages
+from test_message_memes import image_http as image_http
+from test_message_memes import meme_messages as meme_messages
+from test_message_memes import prepared
 
 from tuber_studio.direct_messages import MessageInputChanged
 from tuber_studio.models import OperationReply
@@ -15,9 +19,9 @@ from tuber_studio.operation_identity import identity_snapshot
 ACTOR = "injected-test-account"
 
 
-async def setup_delivery(messages, monkeypatch):
+async def setup_delivery(messages, monkeypatch, *, auto_send=True):
     messages.operations.configure({"enabled": True}, account_id=ACTOR, character=messages.runtime.character)
-    await messages.configure({"enabled": True, "auto_send": True, "max_per_hour": 0, "max_per_day": 0})
+    await messages.configure({"enabled": True, "auto_send": auto_send, "max_per_hour": 0, "max_per_day": 0})
     await messages.resume_pending()
     generated, checked = [], []
 
@@ -33,8 +37,9 @@ async def setup_delivery(messages, monkeypatch):
         data = json.loads(packet[-1]["content"])
         checked.append(data)
         source = data["public_thread"]["source"]
-        return {"action": "send", "reason": "对方邀请当前账号私聊这项具体配置", "purpose": "讨论你问的配置位置",
-            "invitation_kind": "agreement" if data["completion_evidence"] else "invitation",
+        agreement = source["text"] == "查到了私信告诉我"
+        return {"action": "wait" if agreement and not data["completion_evidence"] else "send", "reason": "对方邀请当前账号私聊这项具体配置", "purpose": "讨论你问的配置位置",
+            "invitation_kind": "agreement" if agreement else "invitation",
             "invitation_comment_id": source["comment_id"], "invitation_quote": source["text"],
             "invited_actor_uid": ACTOR, "promise_fulfilled": bool(data["completion_evidence"]), "new_matter": False, "body_addresses_purpose": True}
 
@@ -73,6 +78,99 @@ async def test_valid_invitation_automatically_sends_once_and_reuses_proposal(mes
     with pytest.raises(ValueError):
         await messages.send(identity)
     assert len(checks) == 1 and len(messages.adapter.sent) == 1
+
+
+@pytest.mark.parametrize("invited", [True, False])
+async def test_review_mode_still_checks_invitation_and_never_queues_uninvited_drafts_for_review(messages, monkeypatch, invited):
+    generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages, mentioned=ACTOR if invited else "other-account")
+    # Even a previously queued automatic task must obey the current review mode.
+    await messages._generate(identity, True)
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert row["status"] == ("pending_review" if invited else "not_initiated")
+    assert json.loads(row["outreach_check"])["assessment"]["invitation_comment_id"] == "701"
+    assert len(checks) == 1 and not generated and not messages.adapter.sent
+
+
+async def test_outreach_is_not_reviewable_until_the_first_contact_check_finishes(messages, monkeypatch):
+    _, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = messages.runtime.llm.generate_json
+
+    async def delayed(packet, schema, *, max_tokens):
+        entered.set()
+        await release.wait()
+        return await original(packet, schema, max_tokens=max_tokens)
+
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", delayed)
+    task = asyncio.create_task(messages._generate(identity, True))
+    await asyncio.wait_for(entered.wait(), 2)
+    try:
+        assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "generating"
+        assert not messages.store.one("SELECT id FROM dm_drafts WHERE id=? AND status='pending_review'", (identity,))
+        with pytest.raises(ValueError, match="不能编辑或审核"):
+            messages.review(identity, "approve")
+    finally:
+        release.set()
+        await task
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "pending_review"
+    assert len(checks) == 1 and not messages.adapter.sent
+
+
+async def test_incoming_during_review_contact_check_replaces_the_cold_candidate(messages, monkeypatch):
+    generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages)
+    original = messages.runtime.llm.generate_json
+
+    async def arrival(packet, schema, *, max_tokens):
+        incoming(messages, key="during-first-check", account_id=ACTOR, text="先别讲配置了，我补一句")
+        return await original(packet, schema, max_tokens=max_tokens)
+
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", arrival)
+    await messages._generate(identity, True)
+    await asyncio.wait_for(messages.queue.join(), 2)
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert row["status"] == "waiting" and json.loads(row["outreach_check"])["state"] == "reply_received"
+    reply = messages.store.one("SELECT * FROM dm_drafts WHERE source_kind='message'")
+    assert reply["status"] == "pending_review" and len(generated) == 1
+    assert len(checks) == 1 and not messages.adapter.sent
+
+
+async def test_delayed_legacy_send_check_cannot_overwrite_a_new_rejection(messages, monkeypatch):
+    await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages)
+    await messages._generate(identity, False)
+    messages.review(identity, "edit", text="接着解释你邀请讨论的那项设置")
+    messages.review(identity, "approve")
+    old_check = messages.store.one("SELECT outreach_check FROM dm_drafts WHERE id=?", (identity,))["outreach_check"]
+    original = messages.runtime.llm.generate_json
+
+    async def reject_while_checking(packet, schema, *, max_tokens):
+        messages.review(identity, "reject")
+        return await original(packet, schema, max_tokens=max_tokens)
+
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", reject_while_checking)
+    with pytest.raises(ValueError, match="草稿已变化"):
+        await messages.send(identity)
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert row["status"] == "rejected" and row["outreach_check"] == old_check
+    assert not messages.adapter.sent
+
+
+async def test_review_activation_does_not_send_existing_approved_published_or_unknown_drafts(messages, monkeypatch):
+    generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identities = []
+    for index, status in enumerate(("approved", "published", "publish_uncertain")):
+        identity = invite(messages, cid=str(801 + index))
+        messages.store.execute("UPDATE dm_drafts SET status=?,resume_pending=1,receipt=? WHERE id=?",
+            (status, json.dumps({"msg_key": "actual-fixture-receipt"}) if status == "published" else None, identity))
+        identities.append(identity)
+    await messages.pause()
+    await messages.resume_pending()
+    await asyncio.wait_for(messages.queue.join(), 2)
+    assert [messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] for identity in identities] == ["approved", "published", "publish_uncertain"]
+    assert not generated and not checks and not messages.adapter.sent
 
 
 async def test_invitation_to_another_uid_cannot_be_claimed_by_model_reason(messages, monkeypatch):
@@ -387,12 +485,16 @@ async def test_profile_change_at_actual_submit_requeues_without_sending_old_iden
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "queued"
 
 
-async def test_agreement_waits_without_check_until_real_bound_web_fetch_completes(messages, monkeypatch):
+async def test_agreement_is_checked_before_waiting_and_rechecks_actual_result_after_bound_fetch(messages, monkeypatch):
     _, checks = await setup_delivery(messages, monkeypatch)
     identity = invite(messages, trigger="agreement")
     await messages._generate(identity, True)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "waiting"
-    assert checks == [] and not messages.adapter.sent
+    assert len(checks) == 1 and not messages.adapter.sent
+    first = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    first_check = json.loads(first["outreach_check"])
+    assert first_check["invitation_verified"] is True and first_check["state"] == "awaiting_completion"
+    assert messages._event(first, messages.runtime.character)["agreement_task"]["agreement_id"] == identity
     assert not await messages.fulfill_agreement(identity, 999999)
 
     # Execute the existing generation+web_fetch completion path with isolated HTTP.
@@ -434,5 +536,117 @@ async def test_agreement_waits_without_check_until_real_bound_web_fetch_complete
         messages.runtime.browsing = None
         messages.operations_resumed = True
     await messages._generate(identity, True)
-    assert len(checks) == 1 and len(messages.adapter.sent) == 1
+    assert len(checks) == 2 and len(messages.adapter.sent) == 1
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "published"
+
+
+@pytest.mark.parametrize("decision_action", ["send", "wait", "duplicate"])
+async def test_real_third_party_comment_cannot_become_an_agreement_even_if_model_proposes_wait(messages, monkeypatch, decision_action):
+    generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages, cid="319387030577", root="319387030577", trigger="agreement", mentioned="3707027413010556")
+    source_text = "@点就睡觉sj 正常男大，这条是给咱俩照镜子：翻 60 个号 2368 次到访，8 个号扛了 97%，插件教程最能钓鱼。看完心虚三秒，然后我继续刷 (￣ー￣)"
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    evidence = json.loads(row["video_evidence"])
+    thread = evidence["public_source_thread"]
+    thread["source"].update(text=source_text, author_uid="3747574395702579")
+    thread["root"] = thread["source"] | {"parent_comment_id": None, "mentions": thread["addressing"]["source_mentions"]}
+    thread["timeline"] = [thread["root"]]
+    thread["parent"] = None
+    thread["addressing"]["source_parent_comment_id"] = None
+    messages.store.execute("UPDATE comments SET content=?,platform_user_id=? WHERE id=?", (source_text, "3747574395702579", row["source_id"]))
+    messages.store.execute("UPDATE dm_drafts SET platform_user_id=?,video_evidence=? WHERE id=?", ("3747574395702579", json.dumps(evidence, ensure_ascii=False), identity))
+    original = messages.runtime.llm.generate_json
+
+    async def fabricated_agreement(packet, schema, *, max_tokens):
+        result = await original(packet, schema, max_tokens=max_tokens)
+        return result | {"action": decision_action, "invitation_kind": "agreement"}
+
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", fabricated_agreement)
+    await messages._generate(identity, True)
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    check = json.loads(row["outreach_check"])
+    assert row["status"] == "not_initiated" and check["invitation_verified"] is False
+    assert check["action"] == "stay_public" and len(checks) == 1
+    assert "agreement_task" not in messages._event(row, messages.runtime.character)
+    assert not generated and not messages.adapter.sent
+    with pytest.raises(ValueError):
+        messages.retry(identity)
+
+
+async def test_legacy_unchecked_agreement_cannot_be_researched_or_retried(messages, monkeypatch):
+    generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages, trigger="agreement")
+    messages.store.execute("UPDATE dm_drafts SET status='waiting',outreach_check=? WHERE id=?",
+        (json.dumps({"action": "wait", "state": "awaiting_completion", "reason": "约定事项尚无完成回执"}), identity))
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert "agreement_task" not in messages._event(row, messages.runtime.character)
+    assert not await messages.fulfill_agreement(identity, 999999)
+    with pytest.raises(ValueError):
+        messages.retry(identity)
+    assert not generated and not checks and not messages.adapter.sent
+
+
+@pytest.mark.parametrize("state", ["starting", "running"])
+@pytest.mark.parametrize("image", [False, True])
+async def test_review_fence_blocks_approved_text_and_real_catalog_image_before_preparation(meme_messages, monkeypatch, state, image):
+    messages, _, _, transport = meme_messages
+    identity = await prepared(meme_messages, image=image, account_id="900")
+    if not image:
+        messages.review(identity, "approve")
+    messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
+    messages.store.set("browsing_review_session", {"id": "isolated-review", "state": state,
+        "account_id": "900", "character_id": messages.runtime.character["id"]})
+    before = len(transport["requests"])
+
+    async def cannot_refresh(*args, **kwargs):
+        pytest.fail("review写入限制须在身份刷新、生成和图片上传之前执行")
+
+    monkeypatch.setattr(messages.runtime, "refresh_identity", cannot_refresh)
+    with pytest.raises(ValueError, match="review验收"):
+        await messages.send(identity)
+    # Cover the lower delivery boundary used after publication revisions too.
+    with pytest.raises(ValueError, match="review验收"):
+        await messages._send_once(identity)
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert row["status"] == "approved" and row["receipt"] is None
+    assert len(transport["requests"]) == before
+    assert not messages.store.one("SELECT id FROM dm_attempts WHERE draft_id=?", (identity,))
+    assert not messages.store.one("SELECT token FROM account_writes WHERE channel='messages'")
+
+
+async def test_review_unknown_receipt_only_reconciles_and_never_resends(messages, monkeypatch):
+    await setup_delivery(messages, monkeypatch)
+    identity = invite(messages)
+    messages.adapter.uncertain = True
+    with pytest.raises(ValueError):
+        await messages._generate(identity, True)
+    messages.store.set("browsing_review_session", {"id": "isolated-review", "state": "running", "account_id": ACTOR})
+    reads = []
+
+    async def actor():
+        return ACTOR
+
+    async def reconcile(*args, **kwargs):
+        reads.append(kwargs)
+        return {"status": "unsupported"}
+
+    monkeypatch.setattr(messages.adapter, "self_uid", actor, raising=False)
+    monkeypatch.setattr(messages.adapter, "reconcile_publication", reconcile, raising=False)
+    before = len(messages.adapter.sent)
+    with pytest.raises(ValueError, match="仍待核对"):
+        await messages.send(identity)
+    assert len(reads) == 1 and len(messages.adapter.sent) == before == 1
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "publish_uncertain"
+
+
+async def test_review_unbound_legacy_draft_cannot_start_identity_regeneration_or_attempt(messages, monkeypatch):
+    generated, _ = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = messages.enqueue("message", incoming(messages, key="legacy-unbound"), schedule=False)
+    await messages._generate(identity, False)
+    messages.review(identity, "approve")
+    messages.store.set("browsing_review_session", {"state": "running", "account_id": ACTOR})
+    assert messages.store.one("SELECT account_id FROM dm_drafts WHERE id=?", (identity,))["account_id"] == ""
+    with pytest.raises(ValueError, match="review验收"):
+        await messages.send(identity)
+    assert len(generated) == 1 and not messages.adapter.sent
+    assert not messages.store.one("SELECT id FROM dm_attempts WHERE draft_id=?", (identity,))

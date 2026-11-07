@@ -42,20 +42,18 @@ def outreach_sources(thread):
     return rows
 
 
-def validate_outreach(assessment, draft, thread, history, completion_evidence):
-    """Validate real invitation identities, quoted evidence and prior delivery."""
-    if assessment.action != "send":
-        return assessment.action
+def invitation_anchor(assessment, draft, thread):
+    """A proposed invitation must be bound even when its decision is to wait."""
     actor = str(draft["account_id"])
     if not actor or assessment.invited_actor_uid != actor or assessment.invitation_kind == "none":
-        return "stay_public"
+        return None
     sources = outreach_sources(thread)
     source = next((r for r in sources if str(r["comment_id"]) == assessment.invitation_comment_id), None)
     if (
         not source or str(source.get("author_uid")) != str(draft["platform_user_id"])
         or not assessment.invitation_quote.strip() or assessment.invitation_quote not in source["text"]
     ):
-        return "stay_public"
+        return None
     mentions = {str(person.get("uid")) for person in source.get("mentions", [])}
     parent_id = source.get("parent_comment_id")
     parent = next((row for row in sources if str(row["comment_id"]) == str(parent_id)), None)
@@ -63,7 +61,32 @@ def validate_outreach(assessment, draft, thread, history, completion_evidence):
     addressed = addressed or str(thread.get("resource_author_uid") or "") == actor
     # A real @ to another account does not invite this account to DM.
     if mentions and actor not in mentions or not addressed:
+        return None
+    return source
+
+
+def verified_agreement(draft, thread):
+    check = draft.get("outreach_check") or {}
+    check = json.loads(check) if isinstance(check, str) else check
+    if check.get("invitation_verified") is not True:
+        return False
+    try:
+        assessment = OutreachAssessment.model_validate(check.get("assessment"))
+    except ValueError:
+        return False
+    return assessment.invitation_kind == "agreement" and invitation_anchor(assessment, draft, thread) is not None
+
+
+def validate_outreach(assessment, draft, thread, history, completion_evidence):
+    """Validate real invitation identities, quoted evidence and prior delivery."""
+    if assessment.action == "stay_public":
         return "stay_public"
+    if assessment.action == "duplicate":
+        return "duplicate" if any(row["id"] == assessment.same_matter_draft_id for row in history) else "stay_public"
+    if invitation_anchor(assessment, draft, thread) is None:
+        return "stay_public"
+    if assessment.action == "wait":
+        return "wait"
     if not assessment.body_addresses_purpose:
         return "wait"
     if assessment.invitation_kind == "agreement" and not (assessment.promise_fulfilled and completion_evidence):
@@ -97,6 +120,7 @@ async def assess_outreach(runtime, draft, event, history, completion_evidence):
             "正文应接该具体事项，body_addresses_purpose明确核对实际将发送的内容是否回应目的。与尚未获回复的已发联系属于同件事时duplicate并给出原draft id，不能换说法追问；"
             "实际发送图片时核对outgoing_image，不把未发送的候选文字当作正文。"
             "无法确认新事由就wait或stay_public，只有真实新的邀请和不同事项才new_matter=true。约定完成须有真实完成证据，不以台词自称完成作证。"
+            "真实约定尚未完成时，invitation_kind=agreement且action=wait，也必须指出实际邀请原文和受邀UID；没有真实约定用stay_public，不能把普通评论存成待完成任务。"
         )},
         {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
     ]

@@ -14,6 +14,17 @@ from .issues import unread_issues
 from .models import BrowsePlan, CandidateBatchPlan
 
 ACTIVE_TASKS = ("discovered", "claimed", "preparing", "evidence_ready")
+MAX_SOURCE_PAGE = 10  # BilibiliBrowsingAdapter.discover's existing page contract.
+
+
+def candidate_window(candidates, limit, fresh_ids):
+    """Retain the backlog while leaving one bounded planning slot for discovery."""
+    window = candidates[:limit]
+    if fresh_ids and not any(item["bvid"] in fresh_ids for item in window):
+        fresh = next((item for item in candidates[limit:] if item["bvid"] in fresh_ids), None)
+        if fresh is not None:
+            window = window[:-1] + [fresh]
+    return window
 
 
 def source_settings(policy):
@@ -420,8 +431,6 @@ async def discover(browsing, row):
         config["batch_workers"] = batch["plan"]["workers"]
         return browsing.repo.batches.candidates(row, pending=True)
     retries = browsing.repo.retry_candidates(row) if config.get("autonomous_batch") else []
-    if len(retries) >= config["inspect_limit"]:
-        return await browsing._plan_batch(row, retries)
     try:
         return await browsing._discover_candidates(row, retries)
     except Exception as error:
@@ -486,17 +495,21 @@ async def discover_candidates(browsing, row, retries):
         retrieval["source_plan"] = {"sources": sources, "keywords": keywords}
         browsing.repo.batches.retrieval(row, retrieval)
     merged = {item["bvid"]: item for item in browsing.repo.batches.candidates(row)} if batch else {}
+    deferred_ids = set()
     if batch:
         for item in browsing.repo.batches.deferred_candidates(row):
+            deferred_ids.add(item["bvid"])
             merged.setdefault(item["bvid"], item)
+    fresh_ids = set(retrieval.get("fresh_candidates", [])) | (set(merged) - deferred_ids)
     for source in sources:
-        if len(merged) >= config["candidate_limit"]:
+        if len(merged) >= config["candidate_limit"] and fresh_ids:
             break
         if source == "specified":
             for video in config["watch_videos"]:
-                merged.setdefault(video, {"bvid": video, "sources": []})["sources"].append(
-                    {"source": "specified"}
-                )
+                record = merged.setdefault(video, {"bvid": video})
+                record.setdefault("sources", []).append({"source": "specified"})
+                if video not in deferred_ids:
+                    fresh_ids.add(video)
             continue
         if source == "search" and not keywords:
             source = "recommend"
@@ -504,16 +517,20 @@ async def discover_candidates(browsing, row, retries):
             cursor_key = f"browsing_source_page:{row['account_id']}:{row['character_id']}:{source}:{keyword}"
             query_key = dump([source, keyword])
             start_page = 1
-            if batch and source in {"search", "popular"}:
-                start_page = retrieval.setdefault("starts", {}).setdefault(
+            if batch:
+                saved_start = retrieval.setdefault("starts", {}).setdefault(
                     query_key, max(1, int(browsing.store.get(cursor_key, 1)))
                 )
+                start_page = (max(1, int(saved_start)) - 1) % MAX_SOURCE_PAGE + 1
+                retrieval["starts"][query_key] = start_page
                 browsing.repo.batches.retrieval(row, retrieval)
-            for page in range(start_page, start_page + config["max_pages"]):
+            # Page ten ends this query window; the next batch explicitly wraps
+            # to one instead of persisting an unsupported page eleven.
+            for page in range(start_page, min(start_page + config["max_pages"], MAX_SOURCE_PAGE + 1)):
                 page_key = dump([source, keyword, page])
                 saved_page = retrieval.get("pages", {}).get(page_key)
                 if saved_page is not None:
-                    if not saved_page["has_more"] or len(merged) >= config["candidate_limit"]:
+                    if not saved_page["has_more"] or (len(merged) >= config["candidate_limit"] and fresh_ids):
                         break
                     continue
                 result = await browsing._read(
@@ -521,7 +538,7 @@ async def discover_candidates(browsing, row, retries):
                 )
                 for item in result["items"]:
                     record = merged.setdefault(item["bvid"], dict(item, sources=[]))
-                    record["sources"].append(
+                    record.setdefault("sources", []).append(
                         {
                             "source": source,
                             "keyword": keyword,
@@ -529,17 +546,27 @@ async def discover_candidates(browsing, row, retries):
                             "plan_reason": plan.reason if plan else "user_configuration",
                         }
                     )
+                    if item["bvid"] not in deferred_ids:
+                        fresh_ids.add(item["bvid"])
                 if batch:
                     browsing.repo.batches.merge(row, list(merged.values()))
+                    retrieval["fresh_candidates"] = sorted(fresh_ids)
                     retrieval.setdefault("pages", {})[page_key] = {"has_more": result.get("has_more", False)}
                     browsing.repo.batches.retrieval(row, retrieval)
-                    if source in {"search", "popular"}:
-                        browsing.store.set(cursor_key, page + 1 if result.get("has_more", False) else 1)
-                if len(merged) >= config["candidate_limit"] or not result.get("has_more", False):
+                    browsing.store.set(
+                        cursor_key,
+                        page + 1 if result.get("has_more", False) and page < MAX_SOURCE_PAGE else 1,
+                    )
+                if (len(merged) >= config["candidate_limit"] and fresh_ids) or not result.get(
+                    "has_more", False
+                ):
                     break
-    candidates = list(merged.values())[: config["candidate_limit"]]
+    # Rotate the full retained set before bounding the model window, so leaving
+    # room for discovery cannot permanently hide the backlog's last item.
+    candidates = list(merged.values())
     if batch:
         browsing.repo.batches.merge(row, candidates)
+        retrieval["fresh_candidates"] = sorted(fresh_ids)
         retrieval["complete"] = True
         browsing.repo.batches.retrieval(row, retrieval)
     return await browsing._select_batch_candidates(row, retries, candidates)
@@ -618,7 +645,9 @@ async def plan_batch(browsing, row, candidates):
     config = row["config"]
     if config.get("batch_id"):
         browsing.repo.batches.merge(row, candidates)
-    candidates = candidates[: config["candidate_limit"]]
+    batch = browsing.repo.batches.get(row)
+    fresh_ids = set(batch["retrieval"].get("fresh_candidates", [])) if batch else set()
+    candidates = candidate_window(candidates, config["candidate_limit"], fresh_ids)
     if row["preview"] or not candidates:
         if row["config"].get("batch_id"):
             browsing.repo.batches.save_plan(row, {"videos": [], "workers": 1}, presented=[])

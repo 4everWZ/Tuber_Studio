@@ -316,7 +316,7 @@ class Comments:
         return value
 
     @staticmethod
-    def context_scope(video_id, thread_id, platform="bilibili"):
+    def context_scope(video_id, thread_id, platform="bilibili", *, account_id=""):
         if (
             not isinstance(video_id, str)
             or not 1 <= len(video_id) <= 100
@@ -324,11 +324,20 @@ class Comments:
             or not 1 <= len(thread_id) <= 100
             or not isinstance(platform, str)
             or not re.fullmatch(r"[a-z0-9_-]{1,32}", platform)
+            or not isinstance(account_id, str)
+            or len(account_id) > 100
         ):
             raise ValueError("评论上下文需要有效的平台、视频和楼ID")
         return "comments:" + json.dumps(
-            [platform, video_id, thread_id], ensure_ascii=False, separators=(",", ":")
+            [account_id, platform, video_id, thread_id], ensure_ascii=False, separators=(",", ":")
         )
+
+    def context_account_id(self):
+        return self.display_account_id() or cached_account_actor(self.store, self.credentials, None).get("account_uid") or ""
+
+    def account_context_scope(self, video_id, thread_id, platform="bilibili", *, account_id=None):
+        return self.context_scope(video_id, thread_id, platform,
+                                  account_id=self.context_account_id() if account_id is None else str(account_id))
 
     def list_comments(self, video_id=None, category_filter=None, status=None, limit=200, *, thread_id=None):
         conditions, args = [], []
@@ -437,7 +446,7 @@ class Comments:
                     if row is None:
                         self._task_progress(task_id, "来源评论不存在")
                         continue
-                    scope = self.context_scope(row["video_id"], row["thread_id"], row["platform"])
+                    scope = self.account_context_scope(row["video_id"], row["thread_id"], row["platform"])
                     threads.setdefault(scope, []).append(row)
                 pending = deque(threads.values())
                 # Only four workflows exist at a time. A thread's comments remain
@@ -547,7 +556,7 @@ class Comments:
     async def rebuild_context(self, video_id, thread_id, character=None, *, platform="bilibili"):
         """Caller owns generation_lock; rebuild only retained originals, never old drafts."""
         character = character or self.runtime.character
-        scope = self.context_scope(video_id, thread_id, platform)
+        scope = self.account_context_scope(video_id, thread_id, platform)
         context = self.runtime.context
         previous = context.existing(scope, character)
         if previous and json.loads(previous["history"]):
@@ -586,7 +595,7 @@ class Comments:
             return
         if automatic and self.active_automation_epoch is not None:
             control = self.operations.policy()
-            self.operations.assert_allowed(
+            self.operations.assert_authorized(
                 automatic=True,
                 channel="comments",
                 account_id=control["account_id"],
@@ -596,11 +605,11 @@ class Comments:
         if row["category"] == "spam" or self.store.one("SELECT id FROM drafts WHERE comment_id=?", (cid,)):
             return
         event = self._comment_event(row)
-        account_id = await self.account_id() if self.policy()["credentials_configured"] else ""
+        account_id = await self.account_id() if self.policy()["credentials_configured"] else self.context_account_id()
         event["account_id"] = account_id
         if automatic and browsing:
             event["video_evidence"] = await browsing.comment_evidence(row, character)
-        scope = self.context_scope(row["video_id"], row["thread_id"], row["platform"])
+        scope = self.account_context_scope(row["video_id"], row["thread_id"], row["platform"], account_id=account_id)
         while True:
             while self._live_pending():
                 await asyncio.sleep(0.2)
@@ -686,13 +695,11 @@ class Comments:
                     check.setdefault("generation_identity", generation_identity)
                     if candidate:
                         self._check_sources(sources, row["video_id"], row["thread_id"], row["platform"])
-                        candidate.record(
+                        candidate.record_source(
                             scope,
                             character,
-                            event,
-                            reply.spoken_text,
+                            self._comment_event(row) | {"account_id": account_id},
                             "comment_draft",
-                            memory_kind=check.get("memory_kind"),
                         )
                     # The staged history, new draft and its new source index are
                     # installed together, with no await inside the SQL transaction.
@@ -723,13 +730,11 @@ class Comments:
                         if candidate:
                             context.install_candidate(scope, character, candidate)
                     if not candidate:
-                        context.record(
+                        context.record_source(
                             scope,
                             character,
-                            event,
-                            reply.spoken_text,
+                            self._comment_event(row) | {"account_id": account_id},
                             "comment_draft",
-                            memory_kind=check.get("memory_kind"),
                         )
                 except Exception as error:
                     if getattr(error, "continuation", None):
@@ -769,6 +774,12 @@ class Comments:
             "UPDATE drafts SET text=?,status=?,error=NULL,updated_at=? WHERE id=?",
             (text.strip(), status, time.time(), draft_id),
         )
+        if action == "reject":
+            source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
+            character = self.store.character(row["character_id"], row["character_version"])
+            scope = self.account_context_scope(source["video_id"], source["thread_id"], source["platform"],
+                                               account_id=row.get("account_id") or "")
+            self.runtime.context.remove_unsent_reply(scope, character, self._comment_event(source)["event_id"])
         return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
 
     def copy(self, draft_id):
@@ -876,7 +887,7 @@ class Comments:
         source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
         event = self._comment_event(source) | {"account_id": account}
         event.update(self._comment_actors(source, character, account))
-        scope = self.context_scope(row["video_id"], row["thread_id"], "bilibili")
+        scope = self.account_context_scope(row["video_id"], row["thread_id"], "bilibili", account_id=account)
         async with self.runtime.offline_generation("reply"):
             fresh = self._draft_source(draft_id)
             if not fresh or any(fresh[key] != row[key] for key in ("text", "status", "content", "account_id")):
@@ -990,8 +1001,24 @@ class Comments:
                 "UPDATE publish_attempts SET status='published',receipt=? WHERE id=(SELECT MAX(id) FROM publish_attempts WHERE draft_id=?)",
                 (json.dumps(receipt, ensure_ascii=False), draft_id),
             )
+            self._record_published_context(draft_id, feedback.coordinator.find("comments", draft_id)["binding"]["account_id"])
 
         return await feedback.reconcile("comments", draft_id, read, commit)
+
+    def _record_published_context(self, draft_id, account_id):
+        draft = self._draft_source(draft_id)
+        receipt = json.loads(draft["receipt"] or "null") if draft else None
+        if not draft or draft["status"] != "published" or not receipt or not re.fullmatch(
+            r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))
+        ):
+            return
+        source = self.store.one("SELECT * FROM comments WHERE id=?", (draft["comment_id"],))
+        character = self.store.character(draft["character_id"], draft["character_version"])
+        event = self._comment_event(source) | {"account_id": account_id}
+        scope = self.account_context_scope(source["video_id"], source["thread_id"], source["platform"], account_id=account_id)
+        check = json.loads(draft["answer_check"] or "{}")
+        self.runtime.context.record(scope, character, event, draft["text"], "comment_draft",
+                                    memory_kind=check.get("memory_kind"))
 
     def publication_limits(self):
         policy = BrowsingPolicy.model_validate(self.store.get("browsing_policy", {}))
@@ -1255,4 +1282,5 @@ class Comments:
                     ("平台已返回成功，本地回执保存失败；请核对平台", draft_id),
                 )
                 raise UnknownPublication("平台已返回成功，本地回执保存失败；禁止重发", token) from None
+            self._record_published_context(draft_id, account_id)
             return {"status": "published", "receipt": receipt}

@@ -57,12 +57,14 @@ def test_source_linked_recall_does_not_require_matching_words(store):
     assert service.context(char, "还记得接错话吗")
     assert service.context(char, "晚上吃啥") == []
     tool = RecentAnecdotesTool(service)
-    scope = "comments:" + json.dumps(["bilibili", "BV13S4i6fE82", "323202459488"])
+    scope = "comments:" + json.dumps(["100", "bilibili", "BV13S4i6fE82", "323202459488"])
     assert (
         tool.execute({"text": "你在干啥"}, {"character": char, "scope": scope})[0]["type"]
         == "public_incident"
     )
     assert tool.can_handle({}, {"mode": "direct_message"})
+    legacy = "comments:" + json.dumps(["bilibili", "BV13S4i6fE82", "323202459488"])
+    assert tool.execute({"text": "你在干啥"}, {"character": char, "scope": legacy}) == []
     assert tool.execute({"text": ""}, {"character": char, "scope": "live:any"}) == []
 
 
@@ -100,6 +102,6 @@ async def test_real_context_path_passes_floor_without_keyword(store, settings):
 
     manager = ContextManager(settings, store, Provider(), daily_memory=service)
     event = {"event_id": "public:1", "text": "你在干啥", "name": "观众", "user": "1", "type": "chat"}
-    scope = 'comments:["bilibili","BV13S4i6fE82","323202459488"]'
+    scope = 'comments:["100","bilibili","BV13S4i6fE82","323202459488"]'
     messages = await manager.prepare(scope, char, event, mode="comment_draft")
     assert any('"type": "public_incident"' in message["content"] for message in messages)

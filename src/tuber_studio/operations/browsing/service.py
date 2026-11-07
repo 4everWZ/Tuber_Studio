@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+from uuid import uuid4
 
 from ...direct_messages import MessagePolicy
 from ...providers import public_error
@@ -92,6 +93,12 @@ class BrowsingService:
             "message_reply_enabled": messages["enabled"] and messages["auto_send"],
             "comment_handoff_enabled": messages["enabled"] and messages["allow_comment_handoff"],
         }
+        review = self.store.get("browsing_review_session", {})
+        character = self.runtime.character
+        if review.get("state") in {"starting", "running"} and review.get("account_id") == (self.account or self.operations.policy()["account_id"]) and (
+            review.get("character_id"), review.get("character_version")
+        ) == (character["id"], character["version"]):
+            base["review_session_id"] = review["id"]
         return base
 
     def effective(self):
@@ -140,6 +147,7 @@ class BrowsingService:
             "policy": control,
             "settings": self.policy(),
             "permissions": self.permissions(),
+            "review_session": self.store.get("browsing_review_session", {}),
             "state": "stopping"
             if self.closed
             else "blocked"
@@ -311,6 +319,46 @@ class BrowsingService:
             self.comments.credentials.get("csrf"),
         )
 
+    async def start_review_session(self, *, resume_session_id=None):
+        """Start fresh review batches without discarding older paused progress."""
+        if self.operations.policy()["enabled"] or self.active or self.starting:
+            raise ValueError("请先停止当前运营，再开始新的review验收")
+        if "auto" in self.permissions().values():
+            raise ValueError("请先将已启用渠道设为审核模式，再开始review验收")
+        account = await self._current_account()
+        if self.operations.policy()["enabled"] or self.active or self.starting:
+            raise ValueError("自主运营正在启动，请等待当前启动完成")
+        if "auto" in self.permissions().values():
+            raise ValueError("请先将已启用渠道设为审核模式，再开始review验收")
+        character = self.runtime.character
+        previous = self.store.get("browsing_review_session", {})
+        if resume_session_id is not None and (
+            not isinstance(resume_session_id, str) or previous.get("id") != resume_session_id
+            or previous.get("account_id") != account or previous.get("character_id") != character["id"]
+            or previous.get("character_version") != character["version"]
+        ):
+            raise ValueError("review会话与当前账号或角色不匹配，未恢复")
+        session = {
+            "id": str(uuid4()), "account_id": account,
+            "character_id": character["id"], "character_version": character["version"],
+            "started_at": time.time(), "state": "starting",
+        }
+        if resume_session_id is not None:
+            session = {key: value for key, value in previous.items() if key not in {"ended_at", "paused_at"}}
+            session.update(state="starting", resumed_at=time.time())
+        self.store.set("browsing_review_session", session)
+        try:
+            await self.set_enabled(True)
+            current = self.store.get("browsing_review_session", {})
+            if current.get("state") != "starting" or not self.operations.policy()["enabled"]:
+                raise ValueError("review验收启动已取消")
+            self.store.set("browsing_review_session", current | {"state": "running"})
+            return self.status()
+        except BaseException:
+            await self.stop()
+            self.store.set("browsing_review_session", previous)
+            raise
+
     async def set_enabled(self, enabled):
         if type(enabled) is not bool:
             raise ValueError("enabled须为布尔值")
@@ -347,6 +395,9 @@ class BrowsingService:
 
     async def stop(self, *, emergency=False):
         self.control_generation += 1
+        review = self.store.get("browsing_review_session", {})
+        if review and review.get("state") in {None, "starting", "running"}:
+            self.store.set("browsing_review_session", review | {"state": "stopped", "ended_at": time.time()})
         self.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
         await self.messages.pause()
         await self.dynamics.pause()
@@ -495,7 +546,7 @@ class BrowsingService:
         if self.credential_signature() != self.ready_signature:
             raise ValueError("本轮账号凭证已变化")
         if not row["preview"]:
-            self.operations.assert_allowed(
+            self.operations.assert_authorized(
                 automatic=True,
                 channel="comments",
                 account_id=row["account_id"],

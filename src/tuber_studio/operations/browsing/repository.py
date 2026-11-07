@@ -137,12 +137,14 @@ class BrowsingRepository:
                     "AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
                     "AND json_extract(r.config,'$.autonomous_batch')=1 "
                     "AND COALESCE(json_extract(r.config,'$.discovery_publish'),0)=0 "
+                    "AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=? "
                     "ORDER BY r.created_at LIMIT 1",
                     (
                         account,
                         character["id"],
                         character["version"],
                         now,
+                        config.get("review_session_id", ""),
                     ),
                 )
                 if previous:
@@ -297,9 +299,11 @@ class BrowsingRepository:
             json.loads(task["payload"]) | {"bvid": task["bvid"]}
             for task in self.store.all(
                 "SELECT t.bvid,t.payload FROM browsing_video_retries r JOIN browsing_tasks t ON t.id=r.task_id "
+                "JOIN browsing_rounds parent ON parent.id=t.round_id "
                 "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.failures<3 "
+                "AND COALESCE(json_extract(parent.config,'$.review_session_id'),'')=? "
                 "ORDER BY t.updated_at LIMIT ?",
-                (*self.retry_scope(row), row["config"]["inspect_limit"]),
+                (*self.retry_scope(row), row["config"].get("review_session_id", ""), row["config"]["inspect_limit"]),
             )
         ]
 

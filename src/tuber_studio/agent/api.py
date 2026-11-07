@@ -155,7 +155,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         if video_id is not None or thread_id is not None:
             if not video_id or not thread_id:
                 raise ValueError("请同时指定视频与对话楼ID")
-            return runtime.context.status(comments.context_scope(video_id, thread_id), runtime.character)
+            return runtime.context.status(comments.account_context_scope(video_id, thread_id), runtime.character)
         return runtime.context.status()
 
     @app.post("/api/context/rebuild", dependencies=[Depends(require_admin)])
@@ -163,7 +163,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         if set(data) != {"scope", "video_id", "thread_id"} or data.get("scope") != "comments":
             raise ValueError("请指定comments、video_id和thread_id，仅重建单楼")
         video_id, thread_id = data.get("video_id"), data.get("thread_id")
-        scope = comments.context_scope(video_id, thread_id)
+        scope = comments.account_context_scope(video_id, thread_id)
         if runtime.live.busy or runtime.generation_lock.locked():
             raise HTTPException(409, "正在生成或播放，请等待当前任务结束后重建")
         async with runtime.generation_lock:
@@ -193,7 +193,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
             thread_id = data.get("thread_id")
             if not isinstance(thread_id, str) or not 1 <= len(thread_id) <= 200:
                 raise ValueError("请指定单个对话楼ID，不将整个视频的评论合并压缩")
-            scope, mode = comments.context_scope(video_id, thread_id), "comment_draft"
+            scope, mode = comments.account_context_scope(video_id, thread_id), "comment_draft"
         else:
             raise ValueError("scope应为live或comments")
         async with runtime.generation_lock:

@@ -70,6 +70,9 @@ class OperationsControl:
             if policy.get("enabled"):
                 policy["enabled"] = False
                 store.set("operations_policy", policy)
+            review = store.get("browsing_review_session", {})
+            if review.get("state") in {"starting", "running"}:
+                store.set("browsing_review_session", review | {"state": "paused", "paused_at": time.time()})
 
     def policy(self):
         value = OperationsPolicy.model_validate(self.store.get("operations_policy", {})).model_dump()
@@ -129,7 +132,19 @@ class OperationsControl:
                     result[key] = False
         return result
 
+    def assert_review_writable(self, account_id):
+        """A running review can generate drafts, but cannot write to its account."""
+        review = self.store.get("browsing_review_session", {})
+        if review.get("state") in {"starting", "running"} and str(account_id) == review.get("account_id"):
+            raise ValueError("review验收进行中，禁止平台发送或上传；草稿保留待审核")
+
     def assert_allowed(self, *, automatic, channel, account_id, character, epoch=None):
+        self.assert_review_writable(account_id)
+        return self.assert_authorized(automatic=automatic, channel=channel, account_id=account_id,
+                                      character=character, epoch=epoch)
+
+    def assert_authorized(self, *, automatic, channel, account_id, character, epoch=None):
+        """Validate processing ownership; unlike write admission this permits review."""
         policy = self.policy()
         if automatic and policy["emergency"]:
             raise ValueError("紧急停止：禁止所有自动收发")

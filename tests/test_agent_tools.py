@@ -25,6 +25,7 @@ def test_recent_anecdotes_tool(store):
     service = DailyMemoryService(store)
     today = datetime.date.today().isoformat()
     service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=today,
@@ -53,6 +54,7 @@ def test_historical_recall_tool(store):
     ten_days_ago = (today - datetime.timedelta(days=10)).isoformat()
 
     service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=ten_days_ago,
@@ -92,6 +94,7 @@ def test_collect_context_augmentations(store):
 
     # Active highlight (today)
     daily_memory.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=today.isoformat(),
@@ -104,6 +107,7 @@ def test_collect_context_augmentations(store):
 
     # Historical highlight (10 days ago)
     daily_memory.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=ten_days_ago,

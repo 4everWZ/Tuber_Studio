@@ -92,6 +92,81 @@ async def test_incoming_draft_needs_review_then_one_send_and_private_context(mes
     assert len(messages.adapter.sent) == 1
 
 
+async def test_unpublished_private_draft_does_not_become_sent_context(messages):
+    identity = messages.enqueue("message", incoming(messages), schedule=False)
+    await messages._generate(identity, False)
+    draft = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert draft["status"] == "pending_review" and draft["text"]
+    window = messages.runtime.context.existing(messages.scope(draft), messages.runtime.character)
+    assert not window or draft["text"] not in window["history"]
+    assert not messages.adapter.sent and draft["receipt"] is None
+
+
+async def test_comment_handoff_reads_only_the_draft_account_public_context(messages):
+    comments, character = messages.comments, messages.runtime.character
+    comments.import_items("BV1d8pU6xEZX", [{"comment_id": "scope-source", "thread_id": "scope-root",
+        "platform_user_id": "123", "display_name": "来访者", "content": "同一公开视频中的真实讨论"}])
+    source = messages.store.one("SELECT * FROM comments WHERE comment_id='scope-source'")
+    first = messages.enqueue("comment", source["id"], account_id="account-A", schedule=False)
+    second = messages.enqueue("comment", source["id"], account_id="account-B", schedule=False)
+    for actor in ("account-A", "account-B"):
+        scope = comments.account_context_scope(source["video_id"], source["thread_id"], source["platform"], account_id=actor)
+        delivered = "该账号独有的公开已发历史:" + actor
+        comments.import_items(source["video_id"], [{"comment_id": "history-" + actor, "thread_id": source["thread_id"],
+            "platform_user_id": "123", "content": "该账号原观众讨论"}])
+        original = messages.store.one("SELECT * FROM comments WHERE comment_id=?", ("history-" + actor,))
+        messages.store.execute("INSERT INTO drafts(comment_id,text,status,character_id,character_version,account_id,receipt) VALUES(?,?,'published',?,?,?,?)",
+            (original["id"], delivered, character["id"], character["version"], actor, json.dumps({"rpid": "900"})))
+        messages.runtime.context.record(scope, character,
+            comments._comment_event(original) | {"account_id": actor}, delivered, "comment")
+    # The active login is intentionally different from the retained draft scope.
+    monkey_scope = comments.account_context_scope(source["video_id"], source["thread_id"], source["platform"], account_id="current-account-C")
+    comments.import_items(source["video_id"], [{"comment_id": "history-C", "thread_id": source["thread_id"], "platform_user_id": "123", "content": "其他账号原文"}])
+    original = messages.store.one("SELECT * FROM comments WHERE comment_id='history-C'")
+    messages.store.execute("INSERT INTO drafts(comment_id,text,status,character_id,character_version,account_id,receipt) VALUES(?,?,'published',?,?,?,?)",
+        (original["id"], "不能读到的当前账号历史", character["id"], character["version"], "current-account-C", json.dumps({"rpid": "901"})))
+    messages.runtime.context.record(monkey_scope, character, comments._comment_event(original) | {"account_id": "current-account-C"}, "不能读到的当前账号历史", "comment")
+    for identity, actor, other in ((first, "account-A", "account-B"), (second, "account-B", "account-A")):
+        draft = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+        history = json.dumps(messages._event(draft, character)["public_source_thread"], ensure_ascii=False)
+        assert "该账号独有的公开已发历史:" + actor in history
+        assert "该账号独有的公开已发历史:" + other not in history
+        assert "不能读到的当前账号历史" not in history
+
+
+async def test_comment_handoff_projects_only_published_same_actor_floor_and_source_into_private_context(messages):
+    comments, store, runtime = messages.comments, messages.store, messages.runtime
+    character = runtime.character
+    video, floor, account = "import-private-history", "thread-1", "account-A"
+    scope = comments.account_context_scope(video, floor, account_id=account)
+    expected, excluded = [], []
+    cases = [("rejected", account, character["id"], floor, {"rpid": "901"}),
+             ("approved", account, character["id"], floor, {"rpid": "902"}),
+             ("published", "account-B", character["id"], floor, {"rpid": "903"}),
+             ("published", account, "another-oc", floor, {"rpid": "904"}),
+             ("published", account, character["id"], "thread-2", {"rpid": "905"}),
+             ("published", account, character["id"], floor, None),
+             ("published", account, character["id"], floor, {"rpid": "906"})]
+    for index, (status, actor, oc, original_floor, receipt) in enumerate(cases):
+        comments.import_items(video, [{"comment_id": f"history-{index}", "thread_id": original_floor,
+            "platform_user_id": "123", "display_name": "来源作者", "content": f"原观众问题{index}"}])
+        source = store.one("SELECT * FROM comments WHERE video_id=? AND comment_id=?", (video, f"history-{index}"))
+        body = f"公开历史候选{index}"
+        store.execute("INSERT INTO drafts(comment_id,text,status,character_id,character_version,account_id,receipt) VALUES(?,?,?,?,?,?,?)",
+            (source["id"], body, status, oc, character["version"], actor, json.dumps(receipt) if receipt else None))
+        # Model an existing mixed legacy window; the original JSON must survive.
+        runtime.context.record(scope, character, comments._comment_event(source) | {"account_id": actor}, body, "comment")
+        (expected if index == len(cases) - 1 else excluded).append(body)
+    original = runtime.context.existing(scope, character)["history"]
+    identity = messages.enqueue("comment", source["id"], account_id=account, schedule=False)
+    draft = store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    history = messages._event(draft, character)["public_source_thread"]
+    assistants = [item["content"] for item in history if item["role"] == "assistant"]
+    assert assistants == expected and not any(body in assistants for body in excluded)
+    assert any(item.get("source_event_id") == "comment:" + str(source["id"]) and item["role"] == "user" for item in history)
+    assert runtime.context.existing(scope, character)["history"] == original
+
+
 async def test_uncertain_send_cannot_be_retried_or_edited(messages):
     identity = messages.enqueue("message", incoming(messages))
     await finished(messages, identity)
@@ -158,6 +233,7 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
             return {"action": "send", "reason": "对方邀请我方继续私下讨论", "purpose": "讨论原先提到的个人事项",
                 "invitation_kind": "invitation", "invitation_comment_id": "c1", "invitation_quote": source["content"], "invited_actor_uid": data["self_account_uid"], "body_addresses_purpose": True}
         assert max_tokens == budget
+        assert schema["properties"]["reason"]["enum"] == ["public_topic", "user_requested"]
         decisions.extend(prompt)
         return {"channel": "direct_message", "reason": "user_requested"}
 
@@ -171,21 +247,16 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
     actual = messages.store.one("SELECT status,error,account_id,outreach_check FROM dm_drafts WHERE id=?", (draft["id"],))
     assert actual["status"] == "pending_review", actual
     assert any('"affinity": 21' in message["content"] for message in decisions)
-    public = messages.runtime.context.existing(
-        comments.context_scope(source["video_id"], source["thread_id"]), messages.runtime.character
-    )
+    public_scope = comments.account_context_scope(source["video_id"], source["thread_id"], account_id=actual["account_id"])
+    public = messages.runtime.context.existing(public_scope, messages.runtime.character)
     assert not public or "先来一碗白饭" not in public["history"]
     with pytest.raises(ValueError):
         comments.review(bridge["id"], "approve")
     messages.review(draft["id"], "approve")
     await messages.send(draft["id"])
     assert messages.adapter.sent[0][0] == source["platform_user_id"]
-    assert (
-        not messages.runtime.context.existing(
-            comments.context_scope(source["video_id"], source["thread_id"]), messages.runtime.character
-        )
-        or "先来一碗白饭" not in public["history"]
-    )
+    public_after = messages.runtime.context.existing(public_scope, messages.runtime.character)
+    assert not public_after or "先来一碗白饭" not in public_after["history"]
 
 
 async def test_affinity_is_shared_per_oc_and_stable_uid_not_nickname(messages):

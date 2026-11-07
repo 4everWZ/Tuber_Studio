@@ -162,13 +162,58 @@ class DailyMemoryService:
         if store is None:
             return
         columns = {row[1] for row in store.db.execute("PRAGMA table_info(daily_highlights)")}
-        for name, definition in (("incident_key", "TEXT"), ("public_sources", "TEXT NOT NULL DEFAULT '[]'")):
+        for name, definition in (("incident_key", "TEXT"), ("public_sources", "TEXT NOT NULL DEFAULT '[]'"),
+                                 ("source_evidence", "TEXT")):
             if name not in columns:
                 store.execute(f"ALTER TABLE daily_highlights ADD COLUMN {name} {definition}")
         store.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS daily_incident_identity "
             "ON daily_highlights(character_id,character_version,incident_key) WHERE incident_key IS NOT NULL"
         )
+        for row in store.all("SELECT * FROM daily_highlights WHERE source_evidence IS NULL AND category!='public_incident'"):
+            proof = self._legacy_source_evidence(row)
+            if proof:
+                store.execute("UPDATE daily_highlights SET source_evidence=? WHERE id=?",
+                              (json.dumps(proof, ensure_ascii=False), row["id"]))
+
+    @staticmethod
+    def _source_proof(kind, source_ref, quote):
+        return {"version": 1, "kind": kind, "source_ref": source_ref, "quote": quote,
+                "confirmed_by": "operator" if kind == "operator_note" else "runtime_event" if kind == "runtime_event" else "source_match"}
+
+    def _legacy_source_evidence(self, row):
+        ref, quote = row.get("source_ref") or "", row.get("quote") or ""
+        if not quote:
+            return None
+        match = re.fullmatch(r"video:(.+):comment:(.+)", ref)
+        if match:
+            source = self.store.one("SELECT content FROM comments WHERE platform='bilibili' AND video_id=? AND comment_id=?", match.groups())
+            if source and quote in source["content"]:
+                return self._source_proof("viewer", ref, quote)
+        elif ref.startswith("live:"):
+            for source in self.store.all("SELECT event_text,reply_text FROM conversations WHERE session_id=? AND character_id=?",
+                                         (ref.removeprefix("live:"), row.get("character_id"))):
+                text = f"观众说：{source['event_text']} | 主播回：{source['reply_text']}" if source["reply_text"] else source["event_text"]
+                if quote in text:
+                    return self._source_proof("live", ref, quote)
+        return None
+
+    def _source_evidence(self, row):
+        if row.get("category") == "public_incident":
+            return {"kind": "operator_note"}
+        try:
+            proof = json.loads(row.get("source_evidence") or "null")
+        except (TypeError, ValueError):
+            proof = None
+        if isinstance(proof, dict) and proof.get("version") == 1 and proof.get("kind") in {
+            "viewer", "live", "runtime_event", "operator_note"
+        } and (
+            proof.get("source_ref") == (row.get("source_ref") or "") and proof.get("quote") == row.get("quote")
+        ) and proof.get("confirmed_by") == {
+            "viewer": "source_match", "live": "source_match", "runtime_event": "runtime_event", "operator_note": "operator"
+        }.get(proof.get("kind")):
+            return proof
+        return self._legacy_source_evidence(row)
 
     def record_public_incident(
         self,
@@ -321,7 +366,7 @@ class DailyMemoryService:
         comment_rows = self.store.all(
             """
             SELECT c.video_id, c.comment_id, c.display_name, c.content, c.like_count, c.category,
-                   d.status as draft_status, d.text as draft_text
+                   d.status as draft_status, d.receipt as draft_receipt
             FROM comments c
             LEFT JOIN drafts d ON d.comment_id = c.id
             WHERE c.created_at LIKE ? OR date(c.imported_at, 'unixepoch', 'localtime') = ?
@@ -334,6 +379,16 @@ class DailyMemoryService:
             content = (row["content"] or "").strip()
             if not content or len(content) < 3:
                 continue
+            try:
+                receipt = json.loads(row["draft_receipt"] or "null")
+            except (TypeError, ValueError):
+                receipt = None
+            replied = (
+                row["draft_status"] == "published"
+                and isinstance(receipt, dict)
+                and receipt.get("code", 0) == 0
+                and bool(re.fullmatch(r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))))
+            )
             candidates.append(
                 {
                     "source_type": "comment",
@@ -341,7 +396,7 @@ class DailyMemoryService:
                     "source_user": desensitize_user(row["display_name"]),
                     "content": content,
                     "like_count": row["like_count"] or 0,
-                    "replied": bool(row["draft_status"] in ("published", "approved")),
+                    "replied": replied,
                 }
             )
 
@@ -388,6 +443,8 @@ class DailyMemoryService:
         source_user: str = "",
         tags: list[str] | None = None,
         status: str = "active",
+        source_evidence: dict | None = None,
+        operator_confirmed: bool = False,
     ) -> int:
         """Insert or record a verified daily highlight."""
         if category not in DISTILLED_CATEGORIES:
@@ -399,13 +456,17 @@ class DailyMemoryService:
 
         now = time.time()
         tags_json = json.dumps(tags or [], ensure_ascii=False)
+        source_ref, quote = source_ref.strip()[:100], quote.strip()
+        proof = self._source_proof("operator_note", source_ref, quote) if operator_confirmed else source_evidence
+        if proof is None:
+            proof = self._legacy_source_evidence({"source_ref": source_ref, "quote": quote, "character_id": character_id})
         cursor = self.store.execute(
             """
             INSERT INTO daily_highlights(
                 character_id, character_version, highlight_date, category,
                 headline, source_ref, source_user, quote, anecdote,
-                tags, status, created_at, updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                tags, status, created_at, updated_at, source_evidence
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 character_id,
@@ -421,6 +482,7 @@ class DailyMemoryService:
                 status,
                 now,
                 now,
+                json.dumps(proof, ensure_ascii=False) if proof else None,
             ),
         )
         self.store.db.commit()
@@ -529,6 +591,7 @@ class DailyMemoryService:
                 source_user=source_user,
                 tags=item.get("tags", []),
                 status=status,
+                source_evidence=self._source_proof("live" if candidate.get("source_type") == "live" else "viewer", source_ref, quote),
             )
             saved.append(
                 {
@@ -564,7 +627,7 @@ class DailyMemoryService:
 
         rows = self.store.all(
             """
-            SELECT id, highlight_date, category, headline, source_user, quote, anecdote, tags
+            SELECT id, highlight_date, category, headline, source_user, quote, anecdote, tags,source_ref,source_evidence,character_id
             FROM daily_highlights
             WHERE character_id = ? AND character_version = ? AND status = 'active'
               AND highlight_date >= ?
@@ -579,6 +642,8 @@ class DailyMemoryService:
         # Score and rank relevance if query_text is given
         scored = []
         for row in rows:
+            if not self._source_evidence(row):
+                continue
             if row["category"] == "public_incident" and not include_incidents:
                 continue
             score = 0
@@ -614,6 +679,8 @@ class DailyMemoryService:
                     "date": row["highlight_date"],
                     "topic": row["headline"],
                     "memory": anecdote,
+                    "source_role": self._source_evidence(row)["kind"],
+                    "source_ref": row["source_ref"],
                 }
             )
             total_chars += len(anecdote)
@@ -714,7 +781,7 @@ class DailyMemoryService:
 
         rows = self.store.all(
             """
-            SELECT id, highlight_date, category, headline, source_user, quote, anecdote, tags
+            SELECT id, highlight_date, category, headline, source_user, quote, anecdote, tags,source_ref,source_evidence,character_id
             FROM daily_highlights
             WHERE character_id = ? AND character_version = ?
               AND status IN ('active', 'archived')
@@ -733,6 +800,8 @@ class DailyMemoryService:
         for row in rows:
             if row["id"] in exclude:
                 continue
+            if not self._source_evidence(row):
+                continue
             score = self._score_highlight_match(row, keywords, query_text)
             if score > best_score:
                 best_score = score
@@ -750,6 +819,8 @@ class DailyMemoryService:
             "date": best_row["highlight_date"],
             "headline": best_row["headline"],
             "memory": anecdote,
+            "source_role": self._source_evidence(best_row)["kind"],
+            "source_ref": best_row["source_ref"],
             "source_user": best_row["source_user"],
             "score": best_score,
             "formatted_clue": f"[{best_row['highlight_date']} {best_row['headline']}: {anecdote}]",
@@ -820,6 +891,11 @@ class DailyMemoryService:
         values = list(filtered.values()) + [highlight_id]
 
         self.store.execute(f"UPDATE daily_highlights SET {set_clause} WHERE id = ?", tuple(values))
+        if set(updates) & {"headline", "quote", "anecdote"} or updates.get("status") == "active":
+            confirmed = self.store.one("SELECT * FROM daily_highlights WHERE id=?", (highlight_id,))
+            if confirmed and confirmed["category"] != "public_incident":
+                self.store.execute("UPDATE daily_highlights SET source_evidence=? WHERE id=?",
+                    (json.dumps(self._source_proof("operator_note", confirmed["source_ref"], confirmed["quote"]), ensure_ascii=False), highlight_id))
         self.store.db.commit()
         row = self.store.one("SELECT * FROM daily_highlights WHERE id = ?", (highlight_id,))
         if not row:

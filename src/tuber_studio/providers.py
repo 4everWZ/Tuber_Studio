@@ -88,7 +88,7 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
     optional = {"active_lore": lore, "confirmed_relationship": relationship}
     if actors:
         optional.update(self_actor=actors["self_actor"], reply_target=actors.get("reply_target"),
-                        comment_context=actors.get("thread"))
+                        thread=actors.get("thread"))
     messages.append({"role": "user", "content": "上下文数据：" + json.dumps(optional, ensure_ascii=False)})
     wire_event = {key: value for key, value in event.items() if key not in {"self_actor", "comment_context"}} if actors else event
     messages.append({"role": "user", "content": "当前观众消息：" + json.dumps(wire_event, ensure_ascii=False)})

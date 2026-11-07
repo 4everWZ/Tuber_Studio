@@ -45,6 +45,7 @@ def test_recall_historical_highlight(store):
 
     # Seed an archived highlight from 10 days ago (outside 3-day active window)
     item_id = service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=ten_days_ago,
@@ -89,6 +90,7 @@ def test_get_active_anecdotes_excludes_older_than_three_days(store):
     ten_days_ago = (today - datetime.timedelta(days=10)).isoformat()
 
     service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=ten_days_ago,
@@ -127,6 +129,7 @@ async def test_context_manager_passive_fallback_e2e(settings, store):
 
     # Record archived highlight from 10 days ago
     service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=ten_days_ago,

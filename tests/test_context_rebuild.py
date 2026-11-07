@@ -232,7 +232,8 @@ async def test_auto_rebuild_excludes_current_comment_and_uses_generation_prefill
             "history"
         ]
     )
-    assert len([item for item in history if item["role"] == "assistant"]) == 1
+    assert not [item for item in history if item["role"] == "assistant"]
+    assert not store.all("SELECT * FROM grounded_memory WHERE role='assistant'")
     assert store.one("SELECT * FROM drafts WHERE comment_id=?", (rows[1]["id"],))
 
 

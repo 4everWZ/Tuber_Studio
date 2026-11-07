@@ -1,5 +1,6 @@
 import datetime
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,6 +40,41 @@ class DummyProvider:
 class DummyPlatform:
     async def close(self):
         pass
+
+
+@pytest.mark.parametrize(
+    ("status", "receipt", "expected"),
+    [
+        ("approved", {"code": 0, "rpid": "123"}, False),
+        ("pending_review", None, False),
+        ("published", None, False),
+        ("published", "invalid-json", False),
+        ("published", {"code": -1, "rpid": "123"}, False),
+        ("published", {"code": 0}, False),
+        ("published", {"code": 0, "rpid": "0"}, False),
+        ("published", {"code": 0, "rpid": "123"}, True),
+        ("published", {"rpid": 123}, True),
+    ],
+)
+def test_daily_source_only_counts_published_receipt_as_replied(store, status, receipt, expected):
+    identifier = store.execute(
+        "INSERT INTO comments(video_id,comment_id,content,imported_at) VALUES(?,?,?,?)",
+        ("BV13S4i6fE82", "source-1", "原评论仍可作为真实来源", time.time()),
+    ).lastrowid
+    store.execute(
+        "INSERT INTO drafts(comment_id,text,status,receipt) VALUES(?,?,?,?)",
+        (
+            identifier,
+            "未发送的草稿正文不可成为已说的经历",
+            status,
+            receipt if isinstance(receipt, str) else json.dumps(receipt),
+        ),
+    )
+    sources = DailyMemoryService(store).candidate_sources(datetime.date.today().isoformat(), "whale")
+    assert len(sources) == 1
+    assert sources[0]["replied"] is expected
+    assert sources[0]["content"] == "原评论仍可作为真实来源"
+    assert "草稿正文" not in json.dumps(sources, ensure_ascii=False)
 
 
 def test_operator_public_incident_api_is_deduplicated_and_clearable(settings):
@@ -122,6 +158,7 @@ def test_daily_highlight_crud(store):
 
     # Create
     item_id = service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=today,
@@ -221,6 +258,7 @@ async def test_context_manager_injects_daily_memory(settings, store):
 
     # Record an active anecdote
     service.record_highlight(
+        operator_confirmed=True,
         character_id="whale",
         character_version=1,
         highlight_date=today,
@@ -278,6 +316,7 @@ def test_daily_memory_api_endpoints(settings):
         service = app.state.runtime.daily_memory
         today = datetime.date.today().isoformat()
         item_id = service.record_highlight(
+            operator_confirmed=True,
             character_id="whale",
             character_version=1,
             highlight_date=today,
