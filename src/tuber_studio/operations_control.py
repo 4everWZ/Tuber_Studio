@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from .models import StrictModel
+from .operations.browsing.quotas import BrowsingQuotas
 from .operations_revisions import OperationRevisions
 
 
@@ -57,6 +58,7 @@ class OperationsControl:
                 PRIMARY KEY(account_id,channel));
         """)
         self.revisions = OperationRevisions(store)
+        self.browsing_quotas = BrowsingQuotas(store)
         # No HTTP write is resumed after process loss, regardless of worker lease.
         with store.db:
             store.db.execute(
@@ -199,6 +201,7 @@ class OperationsControl:
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
             previous = self.revisions.resolve(token, account_id=account_id, binding=binding, receipt=receipt)
+            self.browsing_quotas.settle_reply(token, "published", receipt=receipt)
             if not self.store.db.execute(
                 "SELECT 1 FROM operation_write_attempts w LEFT JOIN operation_write_bindings b "
                 "ON w.root_token=b.root_token WHERE account_id=? AND channel=? AND resolved_status='uncertain' "
@@ -225,6 +228,7 @@ class OperationsControl:
         binding=None,
         revision_ticket=None,
         content_hash=None,
+        admission_hook=None,
     ):
         if not isinstance(intent, str) or not intent or len(intent) > 1000 or not str(account_id):
             raise ValueError("发送需要固定账号与来源意图")
@@ -295,6 +299,8 @@ class OperationsControl:
                 ).fetchone()
             ):
                 raise ValueError("该用户跨渠道回复仍在冷却中")
+            if admission_hook is not None:
+                admission_hook(token)
             values = (
                 token,
                 str(account_id),
@@ -329,6 +335,7 @@ class OperationsControl:
                 f"UPDATE {table} SET status=?,receipt=?,error=? WHERE token=?",
                 (status, json.dumps(receipt, ensure_ascii=False) if receipt else None, error, token),
             )
+            self.browsing_quotas.settle_reply(token, status, receipt=receipt)
             source = (row["binding"] or {}).get("source")
             independent = isinstance(source, dict) and source.get("discovery") is True
             if status == "uncertain" and not independent:

@@ -7,6 +7,7 @@ import time
 from contextlib import nullcontext
 from typing import Literal
 
+import httpx
 from pydantic import Field, model_validator
 
 from .generation_meter import GenerationMeter, budgeted_json
@@ -89,6 +90,9 @@ class DirectMessages:
         self.started_at = int(time.time())
         self.operations = comments.operations
         self.authorizations = {}
+        self._scheduled = set()
+        self.resume_authorized = False
+        self.operations_resumed = False
         self.active_account_id = ""
         self.active_credential = None
         store.db.executescript("""
@@ -98,7 +102,7 @@ class DirectMessages:
             CREATE INDEX IF NOT EXISTS dm_inbox_user ON dm_inbox(platform,platform_user_id,character_id,id);
         """)
         store.execute(
-            "UPDATE dm_drafts SET status='cancelled',error='服务重启，取消未完成生成' WHERE status IN ('queued','generating')"
+            "UPDATE dm_drafts SET status='queued',error='已保留生成进度，等待恢复' WHERE status IN ('queued','generating')"
         )
         store.execute(
             "UPDATE dm_drafts SET status='publish_uncertain',error='发送中重启，请核对平台，禁止重发' WHERE status='publishing'"
@@ -143,9 +147,12 @@ class DirectMessages:
             ("message_kind", "TEXT NOT NULL DEFAULT 'text'"),
             ("meme_id", "TEXT"),
             ("generation_continuation_id", "TEXT"),
+            ("resume_pending", "INTEGER NOT NULL DEFAULT 0"),
+            ("next_attempt_at", "REAL NOT NULL DEFAULT 0"),
         ):
             if name not in columns:
                 store.execute(f"ALTER TABLE dm_drafts ADD COLUMN {name} {definition}")
+        store.execute("UPDATE dm_drafts SET resume_pending=1 WHERE status='queued'")
 
     def policy(self):
         base = MessagePolicy.model_validate(self.store.get("message_policy", {})).model_dump()
@@ -173,6 +180,7 @@ class DirectMessages:
             self.enabled_at = int(time.time())
             self.store.set("message_enabled_at", self.enabled_at)
         self.store.set("message_policy", value)
+        self.resume_authorized = value["enabled"]
         self.changed.set()
         return self.policy()
 
@@ -251,6 +259,8 @@ class DirectMessages:
             own_uid, users = await adapter.sessions()
             require_current_account()
             self.active_account_id, self.active_credential = str(own_uid), credential
+            if automatic:
+                self._inbox_cutoff(str(own_uid))
             count, errors = 0, []
             for uid in users[:20]:
                 require_current_account()
@@ -298,13 +308,20 @@ class DirectMessages:
             self.error = "；".join(errors)[:500] or None
             return {"imported": count, "errors": errors}
 
+    def _inbox_cutoff(self, account_id):
+        key = f"message_inbox_cutoff:{account_id}:{self.runtime.character['id']}"
+        cutoff = self.store.get(key)
+        if cutoff is None:
+            cutoff = max(
+                int(self.enabled_at), self.started_at, int(self.operations.policy()["enabled_at"] or 0)
+            )
+            self.store.set(key, cutoff)
+        return cutoff
+
     def _queue_newest_messages(self, account_id):
-        cutoff = max(
-            int(self.enabled_at),
-            self.started_at,
-            int(self.operations.policy()["enabled_at"] or 0),
-            time.time() - 86400,
-        )
+        cutoff = self._inbox_cutoff(account_id)
+        if not self._processing_authorized():
+            return
         slots = self.queue.maxsize - self.queue.qsize()
         if not slots:
             return
@@ -393,7 +410,7 @@ class DirectMessages:
             self.operations.policy()["epoch"] if automatic and self.operations.policy()["enabled"] else None
         )
         if schedule:
-            self.queue.put_nowait((draft_id, automatic))
+            self._schedule(draft_id, automatic)
         return draft_id
 
     async def route_comment(self, row, character, relationship, context, scope, event, *, automatic=False):
@@ -555,14 +572,24 @@ class DirectMessages:
             return await self._generate_owned(identity, automatic)
         except asyncio.CancelledError:
             self.store.execute(
-                "UPDATE dm_drafts SET status='cancelled',error='父任务停止，取消未提交私信生成',updated_at=? WHERE id=? AND status IN ('queued','generating')",
+                "UPDATE dm_drafts SET status='queued',resume_pending=1,next_attempt_at=0,error='生成进度已保存，等待恢复',updated_at=? WHERE id=? AND status IN ('queued','generating')",
                 (time.time(), identity),
             )
             raise
         except Exception as error:
+            transient = isinstance(
+                error, (httpx.HTTPError, TimeoutError, ConnectionError, OSError)
+            ) or getattr(error, "kind", None) in {"network", "timeout", "rate_limited", "anti_bot"}
             self.store.execute(
-                "UPDATE dm_drafts SET status='failed',error=?,updated_at=? WHERE id=? AND status IN ('queued','generating')",
-                (public_error(error), time.time(), identity),
+                "UPDATE dm_drafts SET status=?,resume_pending=?,next_attempt_at=?,error=?,updated_at=? WHERE id=? AND status IN ('queued','generating')",
+                (
+                    "queued" if transient else "failed",
+                    int(transient),
+                    time.time() + self.policy()["poll_interval_seconds"] if transient else 0,
+                    public_error(error),
+                    time.time(),
+                    identity,
+                ),
             )
             raise
 
@@ -570,6 +597,11 @@ class DirectMessages:
         draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not draft or draft["status"] != "queued":
             return
+        if self.store.one(
+            "SELECT 1 FROM character_archives WHERE character_id=? AND version=?",
+            (draft["character_id"], draft["character_version"]),
+        ):
+            raise ValueError("角色版本已归档，保留原稿与来源，请使用当前角色重新准备回复")
         authorization_epoch = self.authorizations.pop(identity, None)
         origin = self._origin_round(draft, active=True)
         credential = dict(self.comments.credentials)
@@ -608,6 +640,8 @@ class DirectMessages:
         if draft.get("video_evidence") and browsing and hasattr(browsing, "validate_private_source"):
             await browsing.validate_private_source(draft)
         async with self.runtime.offline_generation("dm"):
+            if draft.get("resume_pending") and not self._processing_authorized():
+                return
             if not self.injected and (
                 self.adapter is not identity_adapter or self.comments.credentials != credential
             ):
@@ -650,7 +684,7 @@ class DirectMessages:
                         check["meme_selection"] = {"state": "failed", "reason": "表情选择无效，保留待审文字"}
                         selection_failed = True
             self.store.execute(
-                "UPDATE dm_drafts SET status='pending_review',text=?,answer_check=?,model=?,error=NULL,updated_at=? WHERE id=?",
+                "UPDATE dm_drafts SET status='pending_review',resume_pending=0,next_attempt_at=0,text=?,answer_check=?,model=?,error=NULL,updated_at=? WHERE id=?",
                 (
                     reply.spoken_text,
                     json.dumps(check, ensure_ascii=False),
@@ -1400,11 +1434,95 @@ class DirectMessages:
         self.worker = asyncio.create_task(self._work())
         self.poller = asyncio.create_task(self._poll())
 
+    def _processing_authorized(self):
+        return self.policy()["enabled"] and (
+            self.resume_authorized or self.operations_resumed and self.operations.policy()["enabled"]
+        )
+
+    def _schedule(self, identity, automatic):
+        if identity in self._scheduled:
+            return
+        self.queue.put_nowait((identity, automatic))
+        self._scheduled.add(identity)
+
+    async def resume_pending(self):
+        """Explicit activation of the operations inbox; never inferred at boot."""
+        if self.operations.policy()["enabled"]:
+            self.operations_resumed = True
+        await self._resume_pending()
+
+    async def _resume_pending(self):
+        """Restore a few retained drafts after explicit activation, for review."""
+        if self.closed or not self._processing_authorized() or self.queue.qsize() >= 2:
+            return
+        if not self.store.one(
+            "SELECT id FROM dm_drafts WHERE status='queued' AND resume_pending=1 AND next_attempt_at<=? "
+            "AND character_id=? AND character_version=? LIMIT 1",
+            (time.time(), self.runtime.character["id"], self.runtime.character["version"]),
+        ):
+            return
+        account_id = self.display_account_id()
+        if not account_id:
+            adapter = await self._adapter()
+            credential = dict(self.comments.credentials)
+            account_id, _ = await adapter.sessions()
+            if self.adapter is not adapter or self.comments.credentials != credential:
+                return
+            self.active_account_id, self.active_credential = str(account_id), credential
+        if self.closed or not self._processing_authorized():
+            return
+        scope = "account_id=?" if not self.injected else "account_id IN (?, '')"
+        rows = self.store.all(
+            "SELECT * FROM dm_drafts WHERE status='queued' AND resume_pending=1 AND next_attempt_at<=? "
+            f"AND character_id=? AND character_version=? AND {scope} ORDER BY created_at,id LIMIT 3",
+            (time.time(), self.runtime.character["id"], self.runtime.character["version"], str(account_id)),
+        )
+        for row in rows:
+            if self.queue.qsize() >= 2 or self.queue.full():
+                break
+            if row["id"] in self._scheduled:
+                continue
+            if row.get("video_evidence"):
+                evidence = json.loads(row["video_evidence"])
+                if original := evidence.pop("origin_round_id", None):
+                    evidence["retained_origin_round_id"] = original
+                    self.store.execute(
+                        "UPDATE dm_drafts SET video_evidence=? WHERE id=?",
+                        (json.dumps(evidence, ensure_ascii=False), row["id"]),
+                    )
+            self.authorizations.pop(row["id"], None)
+            self._schedule(row["id"], False)
+
+    async def pause(self):
+        """Retain unread messages and generation tasks, revoking queued send grants."""
+        was_started = self.worker is not None
+        self.resume_authorized = False
+        self.operations_resumed = False
+        if self.worker:
+            self.worker.cancel()
+            await asyncio.gather(self.worker, return_exceptions=True)
+        while not self.queue.empty():
+            identity, _ = self.queue.get_nowait()
+            self._scheduled.discard(identity)
+            self.queue.task_done()
+        self.authorizations.clear()
+        self.store.execute(
+            "UPDATE dm_drafts SET status='queued',resume_pending=1,next_attempt_at=0,error='进度已保存，等待恢复' "
+            "WHERE status IN ('queued','generating')"
+        )
+        if was_started and not self.closed:
+            self.worker = asyncio.create_task(self._work())
+
     def retry(self, identity):
         self._enabled()
         row = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not row or row["status"] not in {"failed", "cancelled"}:
             raise ValueError("只可重试未发送的生成失败任务；不重发结果不确定的私信")
+        if self.store.one(
+            "SELECT 1 FROM character_archives WHERE character_id=? AND version=?",
+            (row["character_id"], row["character_version"]),
+        ):
+            raise ValueError("角色版本已归档，保留原稿与来源，请使用当前角色重新准备回复")
         if self.queue.full():
             raise ValueError("私信生成队列已满")
         if row.get("video_evidence"):
@@ -1417,22 +1535,16 @@ class DirectMessages:
         self.store.execute(
             "UPDATE dm_drafts SET status='queued',error=NULL,updated_at=? WHERE id=?", (time.time(), identity)
         )
-        self.queue.put_nowait((identity, False))
+        self._schedule(identity, False)
         return {"draft_id": identity}
 
     async def close(self):
         self.closed = True
+        await self.pause()
         for task in (self.worker, self.poller):
             if task:
                 task.cancel()
         await asyncio.gather(*(task for task in (self.worker, self.poller) if task), return_exceptions=True)
-        while not self.queue.empty():
-            identity, _ = self.queue.get_nowait()
-            self.store.execute(
-                "UPDATE dm_drafts SET status='cancelled',error='服务停止' WHERE id=? AND status='queued'",
-                (identity,),
-            )
-            self.queue.task_done()
         if self.adapter:
             await self.adapter.close()
 
@@ -1443,7 +1555,7 @@ class DirectMessages:
                 await self._generate(identity, automatic)
             except asyncio.CancelledError:
                 self.store.execute(
-                    "UPDATE dm_drafts SET status='cancelled',error='停止私信生成' WHERE id=? AND status IN ('queued','generating')",
+                    "UPDATE dm_drafts SET status='queued',resume_pending=1,error='进度已保存，等待恢复' WHERE id=? AND status IN ('queued','generating')",
                     (identity,),
                 )
                 raise
@@ -1451,11 +1563,17 @@ class DirectMessages:
                 self.error = public_error(error)
                 continuation = getattr(error, "continuation", None)
                 self.store.execute(
-                    "UPDATE dm_drafts SET status='failed',error=?,generation_continuation_id=COALESCE(?,generation_continuation_id),updated_at=? WHERE id=? AND status IN ('queued','generating')",
+                    "UPDATE dm_drafts SET status=CASE WHEN resume_pending=1 THEN 'queued' ELSE 'failed' END,error=?,generation_continuation_id=COALESCE(?,generation_continuation_id),updated_at=? WHERE id=? AND status IN ('queued','generating')",
                     (self.error, continuation["id"] if continuation else None, time.time(), identity),
                 )
             finally:
+                self._scheduled.discard(identity)
                 self.queue.task_done()
+                if not self.closed:
+                    try:
+                        await self._resume_pending()
+                    except Exception as error:
+                        self.error = public_error(error)
 
     async def _poll(self):
         while True:
@@ -1464,6 +1582,11 @@ class DirectMessages:
             if policy["enabled"] and policy["auto_poll"]:
                 try:
                     await self.sync(automatic=True)
+                except Exception as error:
+                    self.error = public_error(error)
+            if policy["enabled"]:
+                try:
+                    await self._resume_pending()
                 except Exception as error:
                     self.error = public_error(error)
             try:

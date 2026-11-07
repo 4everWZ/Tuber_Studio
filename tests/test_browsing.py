@@ -184,12 +184,18 @@ class ControlledModel:
                 return {
                     "videos": [item["bvid"] for item in data["candidates"][: data["max_videos"]]],
                     "workers": data["max_workers"],
+                    "explanation": "看看这批视频里各自的实验结果",
+                    "choices": [{"bvid": item["bvid"],
+                                 "action": "watch" if index < data["max_videos"] else "skip",
+                                 "explanation": f"想看看{item['title']}的具体过程"}
+                                for index, item in enumerate(data["candidates"])],
                 }
             if schema["title"] == "ContentDecision":
                 return {
                     "interest": self.interest,
                     "worth_commenting": self.worth,
                     "reason": "specific_detail" if self.worth else "nothing_to_add",
+                    "explanation": "加盐后鸡蛋浮起来这个细节想聊聊" if self.worth else "盐水实验看明白了，暂时没有补充",
                     "evidence_ids": ["missing"] if self.bad_ref else [data["segments"][0]["id"]],
                     "coverage_required": "provided",
                 }
@@ -204,6 +210,7 @@ class ControlledModel:
                 "action": self.response_action,
                 "text": "盐水把鸡蛋托起来这段好有意思，鱼鱼也想试试！",
                 "reason": "specific_detail" if self.response_action == "reply_public" else "private_details",
+                "explanation": "想接着聊盐水如何把鸡蛋托起来",
                 "evidence_ids": [data["evidence"][0]["id"]],
             }
         finally:
@@ -254,7 +261,7 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
 
     first = await finished(browsing, discovery_id="budget-test")
     assert not browsing.repo.video_retry(first, BV)
-    assert [task["status"] for task in browsing.tasks(round_id=first["id"])] == ["selected"], [
+    assert {task["status"] for task in browsing.tasks(round_id=first["id"])} == {"selected", "comments_checked"}, [
         task["error"] for task in browsing.tasks(round_id=first["id"])
     ]
     assert first["config"]["max_model_calls"] == 0
@@ -404,7 +411,7 @@ async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypat
         if cancel:
             await browsing.discovery.stop()
             assert not reading and not browsing.active and not browsing.heartbeats
-            assert browsing.rounds()[0]["status"] == "cancelled"
+            assert browsing.rounds()[0]["status"] == "paused"
             assert not browsing.adapter.sent
             return
         active = next(iter(browsing.active.values()))
@@ -582,9 +589,11 @@ async def test_discovery_retries_once_then_continues_other_videos(browsing, monk
     else:
         assert any(target["bvid"] == first for target, _ in browsing.adapter.sent)
     activity = browsing.discovery.records(recent=True)["activity"]
-    assert any(item["status"] == "retry_wait" and item["failures"] == 1 for item in activity)
-    if failed_reads == 3:
-        assert any(item["status"] == "skipped" and item["failures"] == 3 for item in activity)
+    failures = [item for item in activity if item["kind"] == "failure" and item["bvid"] == first]
+    assert len(failures) == 1
+    assert failures[0]["occurrences"] == failed_reads
+    assert failures[0]["error"]
+    assert failures[0]["status"] == ("retry_wait" if failed_reads == 3 else "recovered")
 
 
 async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishing(browsing, monkeypatch):
@@ -679,8 +688,10 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
     assert len(texts) == 2 and texts[0] != texts[1]
     records = browsing.discovery.records()
     assert records["sent"][0]["receipt_id"] == "901"
-    assert records["issues"][0]["status"] == "retry_wait"
-    assert browsing.rounds()[0]["status"] == "cancelled"
+    assert records["issues"][0]["status"] == "recovered"
+    assert records["issues"][0]["occurrences"] == 1
+    assert records["issues"][0]["error"]
+    assert browsing.rounds()[0]["status"] == "completed"
 
 
 async def test_emergency_during_discovery_preflight_cancels_start(browsing, monkeypatch):
@@ -1285,7 +1296,9 @@ async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
     browsing.discovery.identity = "model-batch"
     browsing.discovery.binding = browsing.discovery._binding()
     row = await finished(browsing, discovery_id="model-batch")
-    assert row["metrics"]["batch_plan"] == {"videos": list(reversed(videos[1:])), "workers": 1}
+    assert row["metrics"]["batch_plan"] == {
+        "videos": list(reversed(videos[1:])), "workers": 1, "choices": [], "explanation": ""
+    }
     assert row["metrics"]["workers"] == 1
     assert list(dict.fromkeys(call[1] for call in browsing.adapter.calls if call[0] == "metadata")) == list(
         reversed(videos[1:])

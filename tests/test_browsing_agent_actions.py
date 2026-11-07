@@ -34,7 +34,13 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
             progress = browsing.store.one("SELECT material FROM browsing_video_progress WHERE bvid=?", (BV,))
             assert progress, "Video content must survive a stop before reply generation finishes"
             actions.append("read_comments")
-            return {"action": "read_comments", "reason": "light_interaction", "text": "", "evidence_ids": []}
+            return {
+                "action": "read_comments",
+                "reason": "light_interaction",
+                "text": "",
+                "evidence_ids": [],
+                "explanation": "盐水浮鸡蛋这个话题，先看看评论里大家试过的比例",
+            }
         return await original(messages, schema, max_tokens=max_tokens)
 
     browsing.adapter.fetch = fetch
@@ -49,3 +55,42 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]
     assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
     assert not browsing.repo.video_retry(row, BV)
+    task = browsing.tasks(round_id=row["id"])[0]
+    assert task["payload"]["reason"] == "盐水浮鸡蛋这个话题，先看看评论里大家试过的比例"
+    progress = browsing.repo.content_progress(row, BV)
+    assert progress["main_decision"]["action"] == "read_comments"
+
+
+async def test_no_main_reply_decision_survives_revisit_and_character_version(browsing):
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure({"reply_enabled": True, "recent_sample_limit": 0})
+    original = browsing.runtime.llm.generate_json
+    decisions = []
+
+    async def choose(messages, schema, *, max_tokens):
+        if schema["title"] == "ResponseDecision":
+            decisions.append("skip")
+            return {
+                "action": "skip",
+                "reason": "no_interest",
+                "text": "",
+                "evidence_ids": [],
+                "explanation": "盐水浮鸡蛋的过程看明白了，先看看下一个视频",
+            }
+        return await original(messages, schema, max_tokens=max_tokens)
+
+    browsing.runtime.llm.generate_json = choose
+    await browsing._current_account()
+    browsing.discovery.identity = "no-comment"
+    browsing.discovery.binding = browsing.discovery._binding()
+    first = await finished(browsing, discovery_id="no-comment")
+    assert first["status"] == "completed"
+    assert browsing.repo.content_progress(first, BV)["read_state"] == "complete"
+    browsing.store.save_character(browsing.runtime.character)
+    browsing.discovery.binding = browsing.discovery._binding()
+    second = await finished(browsing, discovery_id="no-comment")
+    assert second["status"] == "completed"
+    assert decisions == ["skip"]
+    assert len([call for call in browsing.adapter.calls if call[0] == "subtitles"]) == 1
+    assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
+    assert not browsing.intents()

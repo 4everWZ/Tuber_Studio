@@ -1,6 +1,5 @@
 """Transactional round ownership, bounded budgets and fenced task leases."""
 
-import datetime
 import json
 import time
 from uuid import uuid4
@@ -12,6 +11,8 @@ from ...generation_meter import (
     settle_counters,
 )
 from ...store import dump
+from .batches import BrowsingBatches
+from .quotas import BrowsingQuotas
 
 
 class BrowsingRepository:
@@ -56,26 +57,42 @@ class BrowsingRepository:
                 PRIMARY KEY(account_id,kind));
         """)
         store.execute("DROP INDEX IF EXISTS browsing_round_owner")
+        self.batches = BrowsingBatches(store)
+        self.quotas = BrowsingQuotas(store)
+        if "main_decision" not in {
+            row[1] for row in store.db.execute("PRAGMA table_info(browsing_video_progress)")
+        }:
+            store.execute("ALTER TABLE browsing_video_progress ADD COLUMN main_decision TEXT")
+        if "read_state" not in {
+            row[1] for row in store.db.execute("PRAGMA table_info(browsing_video_progress)")
+        }:
+            store.execute(
+                "ALTER TABLE browsing_video_progress ADD COLUMN read_state TEXT NOT NULL DEFAULT 'reading'"
+            )
+        store.db.execute("""CREATE TABLE IF NOT EXISTS browsing_read_progress(
+            account_id TEXT,character_id TEXT,bvid TEXT,chunk_key TEXT,result TEXT,updated_at REAL,
+            PRIMARY KEY(account_id,character_id,bvid,chunk_key))""")
 
     def recover(self):
         now = time.time()
         with self.store.db:
             self.store.db.execute(
-                "UPDATE browsing_rounds SET status='cancelled',error='重启不追发旧轮次',updated_at=? WHERE status IN ('queued','running')",
+                "UPDATE browsing_rounds SET status=CASE WHEN json_extract(config,'$.batch_id') IS NOT NULL THEN 'paused' ELSE 'cancelled' END,error='服务重启，进度已保存',updated_at=? WHERE status IN ('queued','running')",
                 (now,),
             )
             self.store.db.execute(
-                "UPDATE browsing_tasks SET status='cancelled',error='重启取消旧Worker',updated_at=? WHERE status IN ('discovered','claimed','preparing','evidence_ready')",
+                "UPDATE browsing_tasks SET status=CASE WHEN round_id IN (SELECT id FROM browsing_rounds WHERE json_extract(config,'$.batch_id') IS NOT NULL) THEN 'paused' ELSE 'cancelled' END,error='服务重启，进度已保存',updated_at=? WHERE status IN ('discovered','claimed','preparing','evidence_ready')",
                 (now,),
             )
             self.store.db.execute(
                 "UPDATE browsing_intents SET status='publish_uncertain',error='提交中重启，禁止重发' WHERE status='publishing'"
             )
             self.store.db.execute(
-                "UPDATE browsing_intents SET status='automatic_skipped',error='运行已结束' WHERE status='automatic_pending'"
+                "UPDATE browsing_intents SET status='automatic_skipped',error='运行已结束' WHERE status='automatic_pending' "
+                "AND round_id NOT IN (SELECT id FROM browsing_rounds WHERE json_extract(config,'$.batch_id') IS NOT NULL)"
             )
             self.store.db.execute(
-                "UPDATE browsing_events SET status='skipped',error='重启不追发积压事件' WHERE status IN ('received','source_verified','context_ready')"
+                "UPDATE browsing_events SET status='received' WHERE status IN ('source_verified','context_ready')"
             )
 
     @staticmethod
@@ -111,6 +128,40 @@ class BrowsingRepository:
             )
             if previous:
                 return self.decode(previous), False
+            if config.get("autonomous_batch"):
+                previous = self.store.one(
+                    "SELECT r.* FROM browsing_rounds r JOIN browsing_batches b ON b.round_id=r.id "
+                    "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
+                    "AND r.status IN ('paused','failed','partial','completed') AND (b.state<>'completed' OR "
+                    "EXISTS(SELECT 1 FROM browsing_batch_items i WHERE i.batch_id=b.id AND i.status='daily_wait' "
+                    "AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
+                    "AND COALESCE(json_extract(r.config,'$.discovery_publish'),0)=? "
+                    "ORDER BY r.created_at LIMIT 1",
+                    (
+                        account,
+                        character["id"],
+                        character["version"],
+                        now,
+                        int(bool(config.get("discovery_publish"))),
+                    ),
+                )
+                if previous:
+                    previous = self.decode(previous)
+                    restored = previous["config"]
+                    for key in ("discovery_id", "discovery_publish", "autonomous_batch"):
+                        if key in config:
+                            restored[key] = config[key]
+                        else:
+                            restored.pop(key, None)
+                    for key in ("daily_watch_limit", "max_replies_per_video", "business_timezone"):
+                        if key in config:
+                            restored[key] = config[key]
+                    self.store.db.execute(
+                        "UPDATE browsing_rounds SET status='queued',config=?,epoch=?,owner=?,deadline=NULL,error=NULL,updated_at=? WHERE id=?",
+                        (dump(restored), epoch, str(uuid4()), now, previous["id"]),
+                    )
+                    return self.round(previous["id"]), True
+                config = config | {"batch_id": str(uuid4())}
             budget = {k: 0 for k in ("reads", "model_calls", "input_tokens", "output_tokens", "top_levels")}
             self.store.db.execute(
                 "INSERT INTO browsing_rounds VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -123,7 +174,7 @@ class BrowsingRepository:
                     int(preview),
                     epoch,
                     str(uuid4()),
-                    now + config["deadline_seconds"],
+                    None if config.get("autonomous_batch") else now + config["deadline_seconds"],
                     dump(config),
                     dump(budget),
                     dump({}),
@@ -132,13 +183,20 @@ class BrowsingRepository:
                     now,
                 ),
             )
-        return self.round(identity), True
+        row = self.round(identity)
+        self.batches.ensure(row)
+        return row, True
 
     def reserve_budget(self, identity, **amounts):
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
             row = self.round(identity)
-            if not row or row["status"] not in {"queued", "running"} or time.time() >= row["deadline"]:
+            if (
+                not row
+                or row["status"] not in {"queued", "running"}
+                or row["deadline"] is not None
+                and time.time() >= row["deadline"]
+            ):
                 raise ValueError("轮次已取消或达到期限")
             budget, config = row["budget"], row["config"]
             caps = {
@@ -148,6 +206,8 @@ class BrowsingRepository:
                 "output_tokens": config["max_output_tokens"],
                 "top_levels": config["top_level_limit"],
             }
+            if config.get("autonomous_batch"):
+                caps["top_levels"] = None
             # Resource caps may be disabled without disabling accounting. The
             # top-level count keeps its separate 0 = no top-level posts meaning.
             caps = {key: None if key != "top_levels" and value == 0 else value for key, value in caps.items()}
@@ -182,6 +242,19 @@ class BrowsingRepository:
             self.store.db.execute("UPDATE browsing_rounds SET budget=? WHERE id=?", (dump(budget), identity))
 
     def task(self, round_id, candidate):
+        parent = self.round(round_id)
+        if parent["config"].get("batch_id"):
+            existing = self.store.one(
+                "SELECT id FROM browsing_tasks WHERE round_id=? AND bvid=? AND COALESCE(json_extract(payload,'$.task_kind'),'new_video')=? ORDER BY created_at LIMIT 1",
+                (round_id, candidate["bvid"], candidate.get("task_kind", "new_video")),
+            )
+            if existing:
+                self.store.execute(
+                    "UPDATE browsing_tasks SET status='discovered',attempts=0,lease_until=0,error=NULL WHERE id=? AND status NOT IN ('claimed','preparing','evidence_ready')",
+                    (existing["id"],),
+                )
+                self.batches.task(parent, candidate["bvid"], existing["id"])
+                return existing["id"]
         identity, now = str(uuid4()), time.time()
         candidate = {
             key: candidate[key]
@@ -195,6 +268,8 @@ class BrowsingRepository:
                 "category_id",
                 "published_at",
                 "sources",
+                "task_kind",
+                "selection",
             )
             if key in candidate
         }
@@ -202,6 +277,7 @@ class BrowsingRepository:
             "INSERT INTO browsing_tasks(id,round_id,bvid,status,payload,created_at,updated_at) VALUES(?,?,?,'discovered',?,?,?)",
             (identity, round_id, candidate["bvid"], dump(candidate), now, now),
         )
+        self.batches.task(parent, candidate["bvid"], identity)
         return identity
 
     @staticmethod
@@ -228,35 +304,90 @@ class BrowsingRepository:
         ]
 
     def video_reply_limit_reached(self, row, bvid):
-        limit = row["config"].get("max_replies_per_video", 2)
-        if not limit:
-            return False
-        midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-        count = self.store.one(
-            "SELECT COUNT(*) AS n FROM browsing_intents WHERE account_id=? AND character_id=? "
-            "AND kind='reply_public' AND json_extract(target,'$.bvid')=? "
-            "AND status NOT IN ('rejected','automatic_skipped') AND created_at>=?",
-            (row["account_id"], row["character_id"], bvid, midnight),
-        )["n"]
-        return count >= limit
+        return self.quotas.video_reply_limit_reached(
+            row["account_id"],
+            row["character_id"],
+            bvid,
+            row["config"].get("max_replies_per_video", 2),
+            row["config"].get("business_timezone", "Asia/Taipei"),
+        )
 
     def content_progress(self, row, bvid):
         value = self.store.one(
-            "SELECT material,decisions FROM browsing_video_progress "
+            "SELECT material,decisions,main_decision,read_state FROM browsing_video_progress "
             "WHERE account_id=? AND character_id=? AND bvid=?",
             (row["account_id"], row["character_id"], bvid),
         )
-        return {key: json.loads(value[key]) for key in ("material", "decisions")} if value else None
+        return (
+            (
+                {
+                    key: json.loads(value[key]) if value[key] else None
+                    for key in ("material", "decisions", "main_decision")
+                }
+                | {"read_state": value["read_state"], "fully_read": value["read_state"] == "complete"}
+            )
+            if value
+            else None
+        )
 
     def save_content_progress(self, row, material, decisions):
         self.store.execute(
-            "INSERT OR REPLACE INTO browsing_video_progress VALUES(?,?,?,?,?,?)",
+            "INSERT INTO browsing_video_progress(account_id,character_id,bvid,material,decisions,updated_at) VALUES(?,?,?,?,?,?) "
+            "ON CONFLICT(account_id,character_id,bvid) DO UPDATE SET material=excluded.material,decisions=excluded.decisions,updated_at=excluded.updated_at",
             (
                 row["account_id"],
                 row["character_id"],
                 material["metadata"]["bvid"],
                 dump(material),
                 dump([decision.model_dump() for decision in decisions]),
+                time.time(),
+            ),
+        )
+
+    def save_main_decision(self, row, bvid, decision):
+        self.store.execute(
+            "UPDATE browsing_video_progress SET main_decision=?,updated_at=? WHERE account_id=? AND character_id=? AND bvid=?",
+            (
+                dump(decision.model_dump() if hasattr(decision, "model_dump") else decision),
+                time.time(),
+                row["account_id"],
+                row["character_id"],
+                bvid,
+            ),
+        )
+
+    def mark_watch_result(self, row, bvid, *, fully_read=False):
+        progress = self.content_progress(row, bvid)
+        if not progress:
+            return
+        material = progress["material"]
+        complete = bool(
+            fully_read
+            and not material.get("missing_parts")
+            and material.get("coverage") in {"all_available_cc", "complete", "all_parts"}
+        )
+        state = "complete" if complete or progress["fully_read"] else "viewed"
+        self.store.execute(
+            "UPDATE browsing_video_progress SET read_state=?,updated_at=? WHERE account_id=? AND character_id=? AND bvid=?",
+            (state, time.time(), row["account_id"], row["character_id"], bvid),
+        )
+
+    def read_chunk(self, row, bvid, chunk_key):
+        value = self.store.one(
+            "SELECT result FROM browsing_read_progress WHERE account_id=? AND character_id=? AND bvid=? AND chunk_key=?",
+            (row["account_id"], row["character_id"], bvid, chunk_key),
+        )
+        return json.loads(value["result"]) if value else None
+
+    def save_read_chunk(self, row, bvid, chunk_key, decision):
+        self.store.execute(
+            "INSERT OR REPLACE INTO browsing_read_progress VALUES(?,?,?,?,?,?)",
+            (
+                row["account_id"],
+                row["character_id"],
+                bvid,
+                chunk_key,
+                dump(decision.model_dump()),
                 time.time(),
             ),
         )
@@ -275,6 +406,7 @@ class BrowsingRepository:
                     "UPDATE browsing_tasks SET status=?,payload=? WHERE id=?",
                     ("skipped" if failures == 3 else "retry_wait", dump(payload), task_id),
                 )
+                self.batches.outcome(task_id, "skipped" if failures == 3 else "retry_wait")
             else:
                 self.store.db.execute(
                     "DELETE FROM browsing_video_retries WHERE account_id=? AND character_id=? AND character_version=? AND bvid=?",
@@ -293,7 +425,12 @@ class BrowsingRepository:
             self.store.db.execute("BEGIN IMMEDIATE")
             task = self.store.one("SELECT * FROM browsing_tasks WHERE id=?", (task_id,))
             parent = self.round(task["round_id"]) if task else None
-            if not parent or parent["status"] not in {"queued", "running"} or parent["deadline"] <= now:
+            if (
+                not parent
+                or parent["status"] not in {"queued", "running"}
+                or parent["deadline"] is not None
+                and parent["deadline"] <= now
+            ):
                 raise ValueError("父轮已停止，不能领取任务")
             if task["status"] != "discovered" and not (
                 task["status"] in {"claimed", "preparing", "evidence_ready"} and task["lease_until"] < now
@@ -304,7 +441,15 @@ class BrowsingRepository:
             generation = task["generation"] + 1
             self.store.db.execute(
                 "UPDATE browsing_tasks SET owner=?,generation=?,lease_until=?,attempts=attempts+1,status='claimed',updated_at=? WHERE id=?",
-                (owner, generation, min(parent["deadline"], now + seconds), now, task_id),
+                (
+                    owner,
+                    generation,
+                    min(parent["deadline"], now + seconds)
+                    if parent["deadline"] is not None
+                    else now + seconds,
+                    now,
+                    task_id,
+                ),
             )
         return generation
 
@@ -319,7 +464,8 @@ class BrowsingRepository:
             or row["lease_until"] <= time.time()
             or not parent
             or parent["status"] not in {"queued", "running"}
-            or parent["deadline"] <= time.time()
+            or parent["deadline"] is not None
+            and parent["deadline"] <= time.time()
         ):
             raise ValueError("旧Worker或已取消租约，禁止提交")
         return row
@@ -330,7 +476,14 @@ class BrowsingRepository:
             parent = self.round(row["round_id"])
             self.store.db.execute(
                 "UPDATE browsing_tasks SET lease_until=? WHERE id=? AND owner=? AND generation=?",
-                (min(parent["deadline"], time.time() + 30), task_id, owner, generation),
+                (
+                    min(parent["deadline"], time.time() + 30)
+                    if parent["deadline"] is not None
+                    else time.time() + 30,
+                    task_id,
+                    owner,
+                    generation,
+                ),
             )
 
     def complete(self, task_id, owner, generation, status, payload, material_key=None, error=None):
@@ -340,8 +493,15 @@ class BrowsingRepository:
                 "UPDATE browsing_tasks SET status=?,payload=?,material_key=?,input_version=COALESCE(?,input_version),error=?,updated_at=? WHERE id=?",
                 (status, dump(payload), material_key, material_key, error, time.time(), task_id),
             )
+            self.batches.outcome(task_id, status, error, payload)
 
     def finish_round(self, identity, status, metrics=None, error=None):
+        row = self.round(identity)
+        if row["config"].get("batch_id"):
+            if self.batches.finish(row, paused=status in {"cancelled", "failed"}):
+                status = "paused"
+            elif status == "cancelled":
+                status = "completed"
         self.store.execute(
             "UPDATE browsing_rounds SET status=?,metrics=?,error=?,updated_at=? WHERE id=?",
             (status, dump(metrics or {}), error, time.time(), identity),

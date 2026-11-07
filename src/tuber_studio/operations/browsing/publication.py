@@ -26,6 +26,21 @@ class BrowsingPublication:
     def __init__(self, browsing):
         self.browsing = browsing
 
+    def _reserve_daily_reply(self, token, row):
+        bvid = row["target"].get("bvid")
+        if row["kind"] not in {"top_level", "reply_public"} or not bvid:
+            return
+        policy = self.browsing.policy()
+        self.browsing.runtime.browsing_quotas.reserve_reply(
+            token,
+            row["account_id"],
+            row["character_id"],
+            bvid,
+            row["source_key"],
+            policy["max_replies_per_video"],
+            policy["business_timezone"],
+        )
+
     def _intent(self, row, kind, target, response, material_keys, evidence_ids):
         resource = target.get("bvid") or "dynamic:" + str(target["oid"])
         if kind == "top_level":
@@ -81,7 +96,7 @@ class BrowsingPublication:
                 if independent
                 else "pending_review",
                 "" if kind == "private_handoff" else response.text.strip(),
-                response.reason,
+                response.explanation.strip() or response.reason,
                 dump(target),
                 dump(sorted(evidence_ids)),
                 dump(material_keys),
@@ -536,6 +551,7 @@ class BrowsingPublication:
                     binding=actual_binding,
                     content_hash=content_hash({"text": row["text"]}),
                     revision_ticket=revision_ticket,
+                    admission_hook=lambda ticket: self._reserve_daily_reply(ticket, row),
                 )
                 self.browsing.store.execute(
                     "UPDATE browsing_intents SET status='publishing',updated_at=? WHERE id=?",

@@ -57,16 +57,13 @@ class NotificationInbox:
             row = self._row(account, kind)
             old = json.loads(row["cursor"]) if row and row["cursor"] else None
             is_envelope = isinstance(old, dict) and old.get("version") == 1
-            changed_lifecycle = not is_envelope or (
-                old.get("enabled_at") != enabled or old.get("process_started_at") != started
-            )
-            if changed_lifecycle:
-                self._archive(account, kind, "启停／重启后旧通知只保留历史，不自动追发")
-            if is_envelope and not changed_lifecycle and old.get("phase") in {"scanning", "blocked"}:
+            if is_envelope and old.get("phase") in {"scanning", "blocked"}:
                 return row, old
-            boundary = max(
-                int(enabled), int(started), int((old or {}).get("discard_before", 0)) if is_envelope else 0
-            )
+            # The original first-enable cutoff fences pre-existing platform
+            # history. A later pause/restart preserves this inbox's progress.
+            boundary = max(int(enabled), int(started))
+            if is_envelope:
+                boundary = max(int(old.get("cutoff", boundary)), int(old.get("discard_before", 0)))
             baseline = float(row["watermark"]) if row else float(boundary)
             state = {
                 "version": 1,
@@ -309,6 +306,24 @@ class NotificationInbox:
                     seen_cursors=[],
                     discard_before=int(time.time()),
                 )
+                self.store.db.execute(
+                    "UPDATE browsing_cursors SET cursor=? WHERE account_id=? AND kind=?",
+                    (dump(state), row["account_id"], row["kind"]),
+                )
+
+    def pause(self, account_id=None):
+        """Fence an in-flight page without deleting its durable scan or inbox."""
+        rows = self.store.all(
+            "SELECT * FROM browsing_cursors" + (" WHERE account_id=?" if account_id is not None else ""),
+            (str(account_id),) if account_id is not None else (),
+        )
+        with self.store.db:
+            self.store.db.execute("BEGIN IMMEDIATE")
+            for row in rows:
+                state = json.loads(row["cursor"]) if row["cursor"] else None
+                if not isinstance(state, dict) or state.get("version") != 1:
+                    continue
+                state["pause_generation"] = int(state.get("pause_generation", 0)) + 1
                 self.store.db.execute(
                     "UPDATE browsing_cursors SET cursor=? WHERE account_id=? AND kind=?",
                     (dump(state), row["account_id"], row["kind"]),

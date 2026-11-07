@@ -208,7 +208,7 @@ async def test_unknown_resource_is_visible_but_never_received(inbox, config):
     assert inbox.store.one("SELECT error FROM browsing_events WHERE status='unsupported'")["error"]
 
 
-async def test_restart_discards_incomplete_batch_and_does_not_resume_old_pagination(inbox, config):
+async def test_restart_resumes_incomplete_batch_before_checking_new_arrivals(inbox, config):
     await sync(inbox, config)
     config |= {"max_pages": 1}
     inbox.adapter.pages[("mention", None)] = page([event("before-restart", 1001)], "old-cursor")
@@ -218,24 +218,30 @@ async def test_restart_discards_incomplete_batch_and_does_not_resume_old_paginat
         [event("before-restart", 1001), event("after-restart", 1005)]
     )
     report = await sync(other, config, started=1005.7)
-    assert report["complete"] and statuses(inbox) == {
-        "before-restart": "historical",
+    assert report["complete"] and statuses(inbox) == {"before-restart": "received"}
+    assert inbox.adapter.calls[-1][2] == "old-cursor"
+    await sync(other, config, started=1005.7)
+    assert statuses(inbox) == {
+        "before-restart": "received",
         "after-restart": "received",
     }
     assert inbox.adapter.calls[-1][2] is None
 
 
-async def test_authorization_change_does_not_release_old_batch(inbox, config):
+async def test_explicit_reactivation_preserves_previously_authorized_pending_notifications(inbox, config):
     await sync(inbox, config)
     config |= {"max_pages": 1}
     inbox.adapter.pages[("mention", None)] = page([event("before-disable", 1001)], "old-cursor")
     await sync(inbox, config)
     inbox.adapter.pages[("mention", None)] = page([event("before-disable", 1001), event("new-enabled", 1010)])
     await sync(inbox, config, enabled=1010.9)
-    assert statuses(inbox) == {"before-disable": "historical", "new-enabled": "received"}
+    assert statuses(inbox) == {"before-disable": "received"}
+    assert inbox.adapter.calls[-1][2] == "old-cursor"
+    await sync(inbox, config, enabled=1010.9)
+    assert statuses(inbox) == {"before-disable": "received", "new-enabled": "received"}
 
 
-async def test_stopping_discards_buffer_and_never_releases_old_ids(inbox, config):
+async def test_explicit_discard_keeps_source_history_without_releasing_old_ids(inbox, config):
     await sync(inbox, config)
     config |= {"max_pages": 1}
     inbox.adapter.pages[("mention", None)] = page([event("before-stop", 1001)], "old-cursor")
@@ -245,6 +251,38 @@ async def test_stopping_discards_buffer_and_never_releases_old_ids(inbox, config
     inbox.adapter.pages[("mention", None)] = page([event("before-stop", 1001), event("new-after-stop", 1002)])
     await sync(inbox, config)
     assert statuses(inbox) == {"before-stop": "historical", "new-after-stop": "received"}
+
+
+async def test_pause_preserves_the_partial_scan_and_already_received_inbox(inbox, config):
+    await sync(inbox, config)
+    config |= {"max_pages": 1}
+    inbox.adapter.pages[("mention", None)] = page([event("pending", 1001)], "continue-here")
+    await sync(inbox, config)
+    before, saved = cursor(inbox)
+    inbox.pause("100")
+    after, paused = cursor(inbox)
+    assert after["watermark"] == before["watermark"]
+    assert paused["page_cursor"] == saved["page_cursor"] == "continue-here"
+    assert paused["scan_id"] == saved["scan_id"]
+    assert statuses(inbox) == {"pending": "buffered"}
+    inbox.adapter.pages[("mention", "continue-here")] = page([event("older-pending", 1000)])
+    await sync(inbox, config, enabled=1010, started=1010)
+    assert statuses(inbox) == {"pending": "received", "older-pending": "received"}
+
+
+async def test_pause_fences_an_inflight_notification_page_without_discarding_the_scan(inbox, config):
+    await sync(inbox, config)
+    inbox.adapter.pages[("mention", None)] = page([event("new", 1001)])
+    inbox.adapter.gate = asyncio.Event()
+    task = asyncio.create_task(sync(inbox, config))
+    await asyncio.sleep(0)
+    inbox.pause("100")
+    inbox.adapter.gate.set()
+    with pytest.raises(ValueError, match="所有权"):
+        await task
+    assert not statuses(inbox)
+    await sync(inbox, config)
+    assert statuses(inbox) == {"new": "received"}
 
 
 async def test_each_account_keeps_separate_ids_and_cursors(inbox, config):

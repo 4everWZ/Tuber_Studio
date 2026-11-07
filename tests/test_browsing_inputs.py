@@ -86,7 +86,10 @@ def test_prepared_intent_combination_has_specific_field_feedback():
     ],
 )
 def test_other_participation_choices_remain_available(choice):
-    assert ContentDecision.model_validate(choice).model_dump() == choice | {"evidence_ids": []}
+    assert ContentDecision.model_validate(choice).model_dump() == choice | {
+        "evidence_ids": [],
+        "explanation": "",
+    }
 
 
 def schema_branch_matches(branch, value):
@@ -119,6 +122,7 @@ def test_content_decoder_accepts_exactly_the_existing_144_intent_combinations():
     assert len(combinations) == 144
     for interest, worth, reason, coverage in combinations:
         value = {
+            "explanation": "根据当前字幕选择是否继续交流",
             "interest": interest,
             "worth_commenting": worth,
             "reason": reason,
@@ -136,6 +140,7 @@ def test_content_decoder_accepts_exactly_the_existing_144_intent_combinations():
 
 def test_content_decoder_preserves_reference_bounds_and_empty_source_behavior():
     value = {
+        "explanation": "想接着聊盐水实验的具体结果",
         "interest": "like",
         "worth_commenting": True,
         "reason": "specific_detail",
@@ -679,6 +684,42 @@ async def test_two_real_model_invocations_reuse_alias_but_keep_chunk_ownership(b
     assert row["config"]["max_model_calls"] >= 2
 
 
+async def test_interrupted_read_resumes_at_unfinished_chunk(browsing):
+    value = material()
+    chunks = [segments(value)[:2], segments(value)[2:]]
+
+    async def split(material, row):
+        return chunks
+
+    browsing.decisions._chunks = split
+    await browsing.preflight(for_automation=False)
+    row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
+    original = browsing.runtime.llm.generate_json
+    attempts = 0
+
+    async def interrupted(messages, schema, *, max_tokens):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise ConnectionError("network disconnected during second chunk")
+        return await original(messages, schema, max_tokens=max_tokens)
+
+    browsing.runtime.llm.generate_json = interrupted
+    with pytest.raises(ConnectionError):
+        await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
+    assert len(browsing.store.all("SELECT * FROM browsing_read_progress")) == 1
+
+    async def resumed(messages, schema, *, max_tokens):
+        if schema["title"] == "ContinuationDecision":
+            return {"action": "revise", "reason": "网络恢复，继续未完成的内容块", "read": ""}
+        return await original(messages[:3], schema, max_tokens=max_tokens)
+
+    browsing.runtime.llm.generate_json = resumed
+    decisions = await browsing.decisions._content_decisions(value, row, {"lock_wait_seconds": 0})
+    assert [d.evidence_ids for d in decisions] == [["101:human:0", "101:human:1"], ["202:ai:0"]]
+    assert len([kind for kind, _ in browsing.runtime.llm.calls if kind == "ContentDecision"]) == 2
+
+
 async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_citations(browsing):
     async def subtitles(bvid, cid, languages):
         return {
@@ -753,7 +794,7 @@ async def test_inconsistent_intent_reaches_generation_feedback_and_can_change_ch
     episode = browsing.runtime.continuations.get(identity)
     assert episode["state"] == "completed" and episode["recoveries"] == 1
     assert episode["original_output"] == bad
-    assert episode["current_output"] == corrected
+    assert episode["current_output"] == corrected | {"explanation": ""}
     assert any("字段组合不一致" in str(step["feedback"]) for step in episode["revisions"])
     assert (
         results[0].interest == corrected["interest"]

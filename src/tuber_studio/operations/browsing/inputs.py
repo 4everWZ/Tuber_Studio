@@ -29,6 +29,7 @@ def format_content_input(data):
 
 CLASSIFICATION_INPUT_VERSION = "content-c6i-v1"
 CLASSIFICATION_INSTRUCTION = (
+    "explanation结合本条标题或材料写出这次行动的具体理由。"
     "按角色兴趣决定是否准备回应，本阶段不选公私信。interest=like表示想参与，worth_commenting表示有具体想说的话；吐槽、共情、轻互动与分享都算。"
     "reason：specific_detail有回应点；no_interest无兴趣；nothing_to_add读懂无补充；insufficient_evidence想回应的内容缺材料；visual_required想回应的内容需新画面；unsafe_interaction涉及骚扰、伤害他人或公开隐私而略过。"
     "各字段表达同一意图。准备回应：interest=like,worth_commenting=true,reason=specific_detail；想补读：interest=need_more,worth_commenting=false；不发言worth_commenting=false。"
@@ -364,6 +365,10 @@ class ResolvedContentDecision:
     @property
     def reason(self):
         return self.wire_decision.reason
+
+    @property
+    def explanation(self):
+        return self.wire_decision.explanation
 
     @property
     def coverage_required(self):

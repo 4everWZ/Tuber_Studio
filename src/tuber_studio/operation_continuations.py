@@ -317,7 +317,8 @@ class ContinuationCoordinator:
             parent = self.parent_repository.round(parent_round_id)
             if not parent:
                 raise ValueError("恢复任务的父轮不存在")
-            deadline = min(deadline, parent["deadline"])
+            if parent["deadline"] is not None:
+                deadline = min(deadline, parent["deadline"])
         return parent_round_id, deadline
 
     def generation_scope(self, identity):

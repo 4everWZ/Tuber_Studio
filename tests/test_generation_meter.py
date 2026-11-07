@@ -250,7 +250,9 @@ async def test_private_child_is_owned_and_cancelled_by_parent_without_independen
         repo.finish_round(row["id"], "cancelled")
         child.cancel()
         await asyncio.gather(child, return_exceptions=True)
-        assert store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "cancelled"
+        retained = store.one("SELECT status,resume_pending FROM dm_drafts WHERE id=?", (identity,))
+        assert retained == {"status": "queued", "resume_pending": 1}
+        assert messages.queue.empty()
         assert not runtime.generation_lock.locked() and not messages.adapter.sent
         assert current_meter.get() is None
         assert not store.all("SELECT * FROM account_writes")

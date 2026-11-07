@@ -40,6 +40,7 @@ class Runtime:
     def __init__(self, settings, store, *, singing_provider=None, live_scene=None):
         self.settings, self.store = settings, store
         self.operations = OperationsControl(store)
+        self.browsing_quotas = self.operations.browsing_quotas
         self.browsing_repository = BrowsingRepository(store)
         self.continuations = ContinuationCoordinator(
             store, self.operations, parent_repository=self.browsing_repository

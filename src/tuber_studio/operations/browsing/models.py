@@ -67,6 +67,8 @@ class BrowsingPolicy(StrictModel):
     video_fav_enabled: bool = False
     video_fav_auto_publish: bool = False
     max_replies_per_video: int = Field(default=2, ge=0, le=20)
+    daily_watch_limit: int = Field(default=0, ge=0)
+    business_timezone: str = "Asia/Taipei"
     auto_downgrade_on_error: bool = True
     mentions_enabled: bool = False
     mention_reply_enabled: bool = False
@@ -106,6 +108,17 @@ class BrowsingPolicy(StrictModel):
     )
     report_enabled: bool = True
 
+    @field_validator("business_timezone")
+    @classmethod
+    def known_business_timezone(cls, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError("业务时区须为有效的 IANA 时区名称") from None
+        return value
+
     @model_validator(mode="before")
     @classmethod
     def retire_public_length_preference(cls, value):
@@ -138,9 +151,17 @@ class BrowsePlan(StrictModel):
     delay_seconds: int = Field(default=300, ge=60, le=86400)
 
 
+class BatchCandidateChoice(StrictModel):
+    bvid: str
+    action: Literal["watch", "comments", "skip", "later"]
+    explanation: str = Field(min_length=1)
+
+
 class CandidateBatchPlan(StrictModel):
     videos: list[str] = Field(default_factory=list, max_length=20)
     workers: int = Field(ge=1, le=8)
+    explanation: str = ""
+    choices: list[BatchCandidateChoice] = Field(default_factory=list, max_length=20)
 
     @field_validator("videos")
     @classmethod
@@ -151,6 +172,7 @@ class CandidateBatchPlan(StrictModel):
 
 
 CONTENT_DECISION_INTENT_GLOSS = """
+explanation结合本条标题、材料或评论说明这次行动的具体理由。
 这一步决定是否准备回复，后续再选择公开评论或私信。reason说明本次参与交流的意图：
 specific_detail：有可回应内容，共情、吐槽、轻互动、分享感受也算。
 no_interest：此刻对这个话题没有参与兴趣。
@@ -162,6 +184,7 @@ unsafe_interaction：这次互动本身涉及骚扰、伤害他人或公开他�
 
 
 class ContentDecision(StrictModel):
+    explanation: str = ""
     interest: Literal["like", "not_interested", "need_more", "skip"]
     worth_commenting: bool
     reason: Literal[
@@ -193,7 +216,10 @@ class ContentDecision(StrictModel):
 
 
 class ResponseDecision(StrictModel):
-    action: Literal["reply_public", "handoff_private", "skip", "wait", "read_comments", "watch_frames", "read_more"]
+    explanation: str = ""
+    action: Literal[
+        "reply_public", "handoff_private", "skip", "wait", "read_comments", "watch_frames", "read_more"
+    ]
     text: str = ""
     reason: Literal[
         "specific_detail",
@@ -224,6 +250,7 @@ class VideoEngagementDecision(StrictModel):
 def content_decision_schema(evidence_ids, *, allow_visual=True):
     """Require source selection for a comment, with no requirement to comment."""
     properties = ContentDecision.model_json_schema()["properties"]
+    properties["explanation"] = {"type": "string", "minLength": 1}
     if not allow_visual:
         for name, unavailable in (("coverage_required", "visual"), ("reason", "visual_required")):
             properties[name]["enum"].remove(unavailable)
@@ -277,6 +304,7 @@ def content_decision_schema(evidence_ids, *, allow_visual=True):
 
 
 RESPONSE_INSTRUCTION = (
+    "explanation结合本条标题、材料或评论说明这次行动的具体理由。"
     "以当前角色接着这段交流，选择行动、理由、相关内容ID和台词。"
     "台词必须紧密贴合视频或评论的具体内容与看点，像活生生的ACG同好网友一样自然表达，"
     "严禁格式化堆砌固定套话或口癖。输入中的recent_public_responses仅供避免复读，严禁模仿其中的句式、套话或开头词。"
@@ -305,11 +333,13 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_act
         "wait": ["cooldown", "insufficient_evidence"],
     }
     if video_actions:
-        reasons.update({
-            "read_comments": ["specific_detail", "light_interaction"],
-            "watch_frames": ["insufficient_evidence"],
-            "read_more": ["insufficient_evidence"],
-        })
+        reasons.update(
+            {
+                "read_comments": ["specific_detail", "light_interaction"],
+                "watch_frames": ["insufficient_evidence"],
+                "read_more": ["insufficient_evidence"],
+            }
+        )
     branches = []
     for action, allowed_reasons in reasons.items():
         sending = action in {"reply_public", "handoff_private"}
@@ -321,6 +351,7 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_act
                 "additionalProperties": False,
                 "properties": {
                     "reason": {"type": "string", "enum": allowed_reasons},
+                    "explanation": {"type": "string", "minLength": 1},
                     "action": {"type": "string", "enum": [action]},
                     "evidence_ids": {
                         "type": "array",
@@ -337,7 +368,7 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_act
                         **({"maxLength": 0} if not sending else {}),
                     },
                 },
-                "required": ["reason", "action", "evidence_ids", "text"],
+                "required": ["reason", "explanation", "action", "evidence_ids", "text"],
             }
         )
     return {"title": "ResponseDecision", "type": "object", "oneOf": branches}

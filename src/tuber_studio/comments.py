@@ -73,7 +73,6 @@ class Comments:
         self.adapter = adapter
         self.queue = asyncio.Queue(maxsize=40)
         self.worker = None
-        self.browser = None
         self.policy_changed = asyncio.Event()
         self.publish_lock = asyncio.Lock()
         self.browse_lock = asyncio.Lock()
@@ -96,14 +95,13 @@ class Comments:
 
     async def open(self):
         self.worker = asyncio.create_task(self._worker())
-        self.browser = asyncio.create_task(self._browse_loop())
 
     async def close(self):
         self.closed = True
-        for task in (self.worker, self.browser):
+        for task in (self.worker,):
             if task:
                 task.cancel()
-        await asyncio.gather(*(t for t in (self.worker, self.browser) if t), return_exceptions=True)
+        await asyncio.gather(*(t for t in (self.worker,) if t), return_exceptions=True)
         while not self.queue.empty():
             task_id, *_ = self.queue.get_nowait()
             self.store.execute(
@@ -930,6 +928,20 @@ class Comments:
 
         return await feedback.reconcile("comments", draft_id, read, commit)
 
+    def _reserve_daily_video_reply(self, token, row, account_id):
+        if not (row.get("video_id") or "").startswith("BV"):
+            return
+        policy = self.store.get("browsing_policy", {})
+        self.runtime.browsing_quotas.reserve_reply(
+            token,
+            account_id,
+            row["character_id"],
+            row["video_id"],
+            canonical_intent("bilibili", row["video_id"], row["platform_comment_id"], row["character_id"]),
+            policy.get("max_replies_per_video", 2),
+            policy.get("business_timezone", "Asia/Taipei"),
+        )
+
     async def publish(self, draft_id, automatic=False, *, authorization_epoch=None):
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
 
@@ -1062,6 +1074,7 @@ class Comments:
                     binding=actual_binding,
                     content_hash=content_hash({"text": row["text"]}),
                     revision_ticket=revision_ticket,
+                    admission_hook=lambda ticket: self._reserve_daily_video_reply(ticket, row, account_id),
                 )
 
             attempt = self.store.execute(
@@ -1173,29 +1186,3 @@ class Comments:
                 )
                 raise UnknownPublication("平台已返回成功，本地回执保存失败；禁止重发", token) from None
             return {"status": "published", "receipt": receipt}
-
-    async def browse_once(self):
-        browsing = getattr(self.runtime, "browsing", None)
-        if browsing is None:
-            raise ValueError("字幕证据浏览服务未初始化，不能自动回复视频")
-        if browsing.discovery.enabled or self.operations.policy()["enabled"]:
-            return {"status": "managed_by_operations"}
-        result = await browsing.run(automatic=True)
-        self.last_browse_at = time.time()
-        return result
-
-    async def _browse_loop(self):
-        while True:
-            policy = self.policy()
-            if self.store.get("comment_policy", {}).get("auto_browse", False) and policy["auto_browse"]:
-                try:
-                    await self.browse_once()
-                    self.last_browse_error = None
-                except Exception as error:
-                    self.last_browse_error = public_error(error)
-                    # Failures pause the cycle until the configured interval; no aggressive retries.
-            self.policy_changed.clear()
-            try:
-                await asyncio.wait_for(self.policy_changed.wait(), timeout=policy["browse_interval_seconds"])
-            except TimeoutError:
-                pass

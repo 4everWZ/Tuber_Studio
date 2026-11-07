@@ -20,6 +20,7 @@ from ...operations_control import canonical_intent
 from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from ...store import dump
+from .comment_reader import CommentProgress
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
@@ -44,6 +45,7 @@ from .models import (
     content_decision_schema,
     response_schema,
 )
+from .quotas import DailyReplyLimitReached, day_window
 from .round_context import discovery_retry, generation_resume
 
 
@@ -51,9 +53,40 @@ def normalized(text):
     return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
 
 
+def decision_explanation(decision, material):
+    """Keep legacy decisions readable without inventing a character thought."""
+    if explanation := getattr(decision, "explanation", "").strip():
+        return explanation
+    title = material["metadata"].get("title") or material["metadata"]["bvid"]
+    reasons = {
+        "specific_detail": "选择就具体内容接话",
+        "light_interaction": "选择参与这段交流",
+        "no_interest": "本次选择不参与",
+        "nothing_to_add": "看过后没有补充发言",
+        "insufficient_evidence": "现有材料不足以完成这次回应",
+        "visual_required": "需要补看画面后再决定",
+        "unsafe_interaction": "本次未选择互动",
+        "cooldown": "选择稍后继续这段交流",
+        "spam": "跳过这条重复或灌水内容",
+    }
+    result = f"{title}：{reasons.get(decision.reason, '已保存本次行动选择')}"
+    refs = set(decision.evidence_ids)
+    selected = next(
+        (
+            segment["text"]
+            for part in material["parts"]
+            for segment in part["segments"]
+            if segment["id"] in refs
+        ),
+        None,
+    )
+    return result + (f"；相关材料：{selected[:100]}" if selected else "")
+
+
 class BrowsingDecisions:
     def __init__(self, browsing):
         self.browsing = browsing
+        self.comment_progress = CommentProgress(browsing.store)
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
@@ -122,12 +155,18 @@ class BrowsingDecisions:
             )
         elif schema is CandidateBatchPlan:
             properties = model_schema["properties"]
+            allowed_videos = [item["bvid"] for item in data["candidates"]]
             properties["videos"]["items"] = {
                 "type": "string",
-                "enum": [item["bvid"] for item in data["candidates"]],
+                "enum": allowed_videos,
             }
             properties["videos"]["maxItems"] = data["max_videos"]
             properties["workers"]["maximum"] = data["max_workers"]
+            if "choices" in properties:
+                choice = model_schema["$defs"]["BatchCandidateChoice"]
+                choice["properties"]["bvid"] = {"type": "string", "enum": allowed_videos}
+                properties["choices"].update(minItems=len(allowed_videos), maxItems=len(allowed_videos))
+                model_schema["required"] = list(dict.fromkeys(model_schema.get("required", []) + ["choices"]))
         return character, messages, model_schema
 
     async def _model(
@@ -230,6 +269,22 @@ class BrowsingDecisions:
                     or value.workers > data["max_workers"]
                 ):
                     raise ValueError("批次计划须从本批候选选择视频，并遵守设置的并发上限")
+                if value.choices:
+                    identities = [choice.bvid for choice in value.choices]
+                    ready = {
+                        choice.bvid for choice in value.choices if choice.action in {"watch", "comments"}
+                    }
+                    if (
+                        len(identities) != len(set(identities))
+                        or set(identities) != allowed
+                        or ready != set(value.videos)
+                    ):
+                        raise ValueError("每个候选须有一个具体去向，观看或翻评论的候选须与videos一致")
+                    for choice in value.choices:
+                        if choice.action == "comments" and not self.browsing.repo.content_progress(
+                            row, choice.bvid
+                        ):
+                            raise ValueError("尚未观看的视频请先选择watch；comments用于回访已有视频的评论区")
             elif schema is ContentDecision:
                 allowed = {segment["id"] for segment in data["segments"]}
                 if (
@@ -456,6 +511,11 @@ class BrowsingDecisions:
         presentation = self._content_presentation(material, row)
         version = material.get("source_version") or self.browsing.evidence.source_version(material)
         for chunk in await self._chunks(material, row):
+            chunk_key = content_hash({"source_version": version, "chunk_ids": [s["id"] for s in chunk]})
+            stored = self.browsing.repo.read_chunk(row, material["metadata"]["bvid"], chunk_key)
+            if stored:
+                decisions.extend(restore_stored_content_decisions(material, [stored]))
+                continue
             data, aliases = presentation.present(chunk)
             decision = await self._model(
                 row,
@@ -468,7 +528,9 @@ class BrowsingDecisions:
                     "chunk_ids": [segment["id"] for segment in chunk],
                 },
             )
-            decisions.append(bind_content_decision(decision, aliases))
+            resolved = bind_content_decision(decision, aliases)
+            self.browsing.repo.save_read_chunk(row, material["metadata"]["bvid"], chunk_key, resolved)
+            decisions.append(resolved)
         return decisions
 
     async def _followup_visual(self, result, row, metrics, decisions, followup):
@@ -546,6 +608,11 @@ class BrowsingDecisions:
         payload = {}
         try:
             progress = self.browsing.repo.content_progress(row, material["metadata"]["bvid"])
+            main_decision = (progress or {}).get("main_decision")
+            if main_decision and main_decision.get("action") == "wait":
+                main_decision = None
+            if main_decision:
+                direct_response = ResponseDecision.model_validate(main_decision)
             previous = (
                 self.browsing.store.one(
                     "SELECT t.payload FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
@@ -559,7 +626,9 @@ class BrowsingDecisions:
             saved_decisions = json.loads(previous["payload"]).get("decisions") if previous else None
             if progress and not row["config"].get("force_read"):
                 saved_decisions = progress["decisions"]
-            if saved_decisions:
+            if saved_decisions and not (
+                main_decision and main_decision.get("action") in {"watch_frames", "read_more"}
+            ):
                 decisions = restore_stored_content_decisions(material, saved_decisions)
             elif row["config"].get("discovery_publish") or row["config"].get("autonomous_batch"):
                 segments = self.browsing._segments(material)
@@ -574,7 +643,12 @@ class BrowsingDecisions:
                         ),
                     ),
                 )
-                if references and row["config"]["top_level_enabled"] and not existing_top:
+                if (
+                    references
+                    and row["config"]["top_level_enabled"]
+                    and not existing_top
+                    and not main_decision
+                ):
                     context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
                     own_top = any(
                         str(item.get("platform_user_id") or item.get("user_id")) == str(row["account_id"])
@@ -584,6 +658,9 @@ class BrowsingDecisions:
                     if not own_top:
                         direct_response = await self._response(
                             row, material, context, references, "top_level", metrics, video_actions=True
+                        )
+                        self.browsing.repo.save_main_decision(
+                            row, material["metadata"]["bvid"], direct_response
                         )
                 action = direct_response.action if direct_response else "read_comments"
                 coverage = {"watch_frames": "visual", "read_more": "unread_part"}.get(action, "provided")
@@ -603,6 +680,9 @@ class BrowsingDecisions:
                         else "specific_detail"
                         if can_continue
                         else "no_interest",
+                        explanation=decision_explanation(direct_response, material)
+                        if direct_response
+                        else "本次继续浏览评论区，未准备新的主回复",
                         evidence_ids=(
                             direct_response.evidence_ids
                             if direct_response and direct_response.evidence_ids
@@ -619,6 +699,7 @@ class BrowsingDecisions:
                     else:
                         decisions = await self._content_decisions(material, row, metrics)
                     direct_response = None
+                    main_decision = None
             else:
                 decisions = await self._content_decisions(material, row, metrics)
                 material, decisions = await self._followup_visual(result, row, metrics, decisions, followup)
@@ -638,6 +719,7 @@ class BrowsingDecisions:
                 "metadata": self._metadata_summary(material["metadata"]),
                 "coverage": material["coverage"],
                 "decisions": [d.model_dump() for d in decisions],
+                "reason": "；".join(dict.fromkeys(decision_explanation(d, material) for d in decisions)),
                 "subtitle_tracks": [
                     {k: part.get(k) for k in ("cid", "track_id", "language", "is_ai", "coverage")}
                     for part in material["parts"]
@@ -646,6 +728,24 @@ class BrowsingDecisions:
             }
             if followup:
                 payload["visual_followup"] = followup
+            if direct_response:
+                payload["response_decision"] = direct_response.model_dump()
+                payload["reason"] = decision_explanation(direct_response, material)
+                self.browsing.repo.save_main_decision(
+                    row, material["metadata"]["bvid"], direct_response.model_dump()
+                )
+            elif decisions and not actionable and not main_decision:
+                self.browsing.repo.save_main_decision(
+                    row,
+                    material["metadata"]["bvid"],
+                    {
+                        "action": "skip",
+                        "reason": "no_interest",
+                        "text": "",
+                        "evidence_ids": [],
+                        "explanation": payload["reason"],
+                    },
+                )
             self.browsing.repo.save_content_progress(row, material, decisions)
             bvid = material["metadata"]["bvid"]
             aid = str(material["metadata"]["aid"])
@@ -682,8 +782,11 @@ class BrowsingDecisions:
                 and row["config"]["top_level_enabled"]
                 and not already_commented
                 and (direct_response is None or direct_response.action == "reply_public")
-                and self.browsing.repo.round(row["id"])["budget"]["top_levels"]
-                < row["config"]["top_level_limit"]
+                and (
+                    row["config"].get("autonomous_batch")
+                    or self.browsing.repo.round(row["id"])["budget"]["top_levels"]
+                    < row["config"]["top_level_limit"]
+                )
             ):
                 self.browsing.repo.reserve_budget(row["id"], top_levels=1)
                 if context is None:
@@ -691,6 +794,9 @@ class BrowsingDecisions:
                 response = direct_response or await self._response(
                     row, material, context, chosen, "top_level", metrics
                 )
+                payload["response_decision"] = response.model_dump()
+                payload["reason"] = decision_explanation(response, material)
+                self.browsing.repo.save_main_decision(row, bvid, response.model_dump())
                 if response.action == "reply_public":
                     target = {
                         "type": 1,
@@ -774,12 +880,27 @@ class BrowsingDecisions:
                         if fav_intent["auto_authorized"]:
                             await self.browsing.publish(fav_intent["id"], automatic=True)
 
-            if row["config"].get("reply_enabled", False) and chosen:
+            defer_comments = (
+                row["config"].get("batch_id")
+                and payload.get("task_kind", "new_video") == "new_video"
+                and row["config"].get("reply_enabled", False)
+                and chosen
+            )
+            comments_complete = True
+            if row["config"].get("reply_enabled", False) and chosen and not defer_comments:
                 if context is None:
                     context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
                 items = context.get("items", []) if isinstance(context, dict) else []
                 for item in items:
                     if self.browsing.repo.video_reply_limit_reached(row, bvid):
+                        comments_complete = False
+                        status = "deferred_daily"
+                        payload.update(
+                            retry_kind="daily_reply_limit",
+                            next_at=day_window(row["config"].get("business_timezone", "Asia/Taipei"))[
+                                "next_at"
+                            ],
+                        )
                         break
                     thread_intent = await self._reply_to_video_comment(
                         row, material, result["material_key"], chosen, item, items, metrics
@@ -791,8 +912,31 @@ class BrowsingDecisions:
             self.browsing.repo.complete(
                 identity, result["owner"], result["generation"], status, payload, result["material_key"]
             )
-            self.browsing.commit_comment_context(context)
+            if not defer_comments and comments_complete:
+                self.browsing.commit_comment_context(context)
+            self.browsing.repo.mark_watch_result(
+                row,
+                bvid,
+                fully_read=material["coverage"] == "all_available_cc" and not material.get("missing_parts"),
+            )
             metrics["viewed"] += 1
+            if defer_comments:
+                await self.browsing.defer_comment_visit(row, bvid, metrics)
+        except DailyReplyLimitReached as error:
+            self.browsing.repo.complete(
+                identity,
+                result["owner"],
+                result["generation"],
+                "deferred_daily",
+                json.loads(
+                    self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
+                        "payload"
+                    ]
+                )
+                | payload
+                | {"retry_kind": "daily_reply_limit", "next_at": error.next_at},
+                result["material_key"],
+            )
         except Exception as error:
             metrics["failures"] += 1
             continuation = getattr(error, "continuation", None)
@@ -903,9 +1047,13 @@ class BrowsingDecisions:
                     if author_uid == str(row["account_id"]) or category(item_text) == "spam":
                         return None
                 thread_context = self._video_comment_context(item, items, target)
-                thread_response = await self._response(
-                    row, material, thread_context, chosen, "reply_public", metrics
-                )
+                source = thread_context["source"]
+                thread_response = self.comment_progress.get(row, bvid, source)
+                if thread_response is None:
+                    thread_response = await self._response(
+                        row, material, thread_context, chosen, "reply_public", metrics
+                    )
+                    self.comment_progress.save(row, bvid, source, thread_response)
                 if thread_response.action != "reply_public" or not thread_response.text:
                     return None
                 target.update(
