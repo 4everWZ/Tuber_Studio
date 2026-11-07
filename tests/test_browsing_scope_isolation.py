@@ -76,6 +76,8 @@ async def test_uncertain_main_reply_keeps_same_video_new_threads_available_witho
                      "display_name": "新观众", "content": "盐水浮鸡蛋要准备多少盐？"})
     second = await finished(browsing, automatic=True, video_only=True)
     assert second["status"] == "completed" and second["metrics"]["failures"] == 0
+    replies = await finished(browsing, automatic=True, interaction_only=True)
+    assert replies["status"] == "completed" and replies["metrics"]["failures"] == 0
     assert actions == ["0", "601"] and checks
     assert not browsing.repo.video_retry(second, BV)
     assert not any(task["status"] == "failed" for task in browsing.tasks())

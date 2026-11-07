@@ -52,6 +52,9 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
     assert actions == ["read_comments"]
+    assert not browsing.adapter.sent
+    reply_round = await finished(browsing, automatic=True, interaction_only=True)
+    assert reply_round["status"] == "completed"
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]
     assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
     assert not browsing.repo.video_retry(row, BV)

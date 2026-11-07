@@ -128,7 +128,9 @@ async def test_comment_only_metadata_owner_is_reused_without_reading_video_mater
         return await original(row, material, context, *args, **kwargs)
 
     monkeypatch.setattr(browsing.decisions, "_response", response)
-    result = await finished(browsing, automatic=True, video_only=True)
+    main = await finished(browsing, automatic=True, video_only=True)
+    assert main["status"] == "completed" and captured == []
+    result = await finished(browsing, automatic=True, interaction_only=True)
     assert result["status"] == "completed" and captured == ["200"]
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
 
@@ -150,7 +152,9 @@ async def test_schema_ignoring_fake_handoff_is_rejected_before_creating_private_
         return await original(packet, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", generic)
-    await finished(browsing, automatic=True, video_only=True)
+    main = await finished(browsing, automatic=True, video_only=True)
+    assert main["status"] == "completed" and schemas == []
+    await finished(browsing, automatic=True, interaction_only=True)
     assert schemas and all("handoff_private" not in actions(schema) for schema in schemas)
     assert not browsing.store.all("SELECT * FROM dm_drafts")
     assert not browsing.store.one("SELECT id FROM browsing_intents WHERE kind='private_handoff'")

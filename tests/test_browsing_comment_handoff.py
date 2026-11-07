@@ -61,6 +61,9 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     transport = await prepare_handoff(browsing, monkeypatch, automatic=automatic)
     first = await finished(browsing, automatic=True, video_only=True)
     assert first["status"] == "completed", first
+    assert not browsing.intents() and not transport.sent
+    reply_round = await finished(browsing, automatic=True, interaction_only=True)
+    assert reply_round["status"] == "completed", reply_round
     intent, = browsing.intents()
     draft = browsing.store.one("SELECT * FROM dm_drafts")
     assert intent["kind"] == intent["status"] == "private_handoff"
@@ -74,7 +77,7 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     assert "source_event" not in evidence and evidence["material_keys"] == []
     assert evidence["public_source_thread"]["source"]["text"] == INVITATION
     assert evidence["public_source_thread"]["target"]["parent"] == "601"
-    assert evidence["origin_round_id"] == first["id"]
+    assert evidence["origin_round_id"] == reply_round["id"]
     assert intent["reason"] == "想接着聊盐水如何把鸡蛋托起来"
     assert intent["target"]["private_draft_id"] == draft["id"]
     assert draft["text"] not in json.dumps(browsing.inbox(), ensure_ascii=False)
@@ -83,6 +86,7 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     # Returning to this source neither regenerates nor resends the DM.
     second = await finished(browsing, automatic=True, video_only=True)
     assert second["status"] == "completed"
+    assert (await finished(browsing, automatic=True, interaction_only=True))["status"] == "completed"
     assert len(browsing.store.all("SELECT * FROM dm_drafts")) == 1
     assert len(transport.sent) == int(automatic)
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
@@ -97,6 +101,8 @@ async def test_handoff_source_changed_before_generation_is_retained_without_send
 
     monkeypatch.setattr(browsing.adapter, "read_video_reply", changed)
     row = await finished(browsing, automatic=True, video_only=True)
+    assert row["status"] == "completed"
+    row = await finished(browsing, automatic=True, interaction_only=True)
     assert row["status"] == "partial"
     draft = browsing.store.one("SELECT * FROM dm_drafts")
     assert draft["status"] == "failed" and "原文已变化" in draft["error"]
@@ -122,6 +128,8 @@ async def test_watched_video_handoff_reuses_caption_evidence_and_private_pipelin
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", discuss)
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed", row
+    row = await finished(browsing, automatic=True, interaction_only=True)
+    assert row["status"] == "completed", row
     draft = browsing.store.one("SELECT * FROM dm_drafts")
     assert draft["status"] == "pending_review"
     evidence = json.loads(draft["video_evidence"])
@@ -142,7 +150,8 @@ async def test_source_is_checked_again_at_private_send_after_generation(browsing
         return {"author_uid": "300", "text": INVITATION if checks == 1 else "评论已经编辑"}
 
     monkeypatch.setattr(browsing.adapter, "read_video_reply", changing)
-    await finished(browsing, automatic=True, video_only=True)
+    assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
+    await finished(browsing, automatic=True, interaction_only=True)
     draft = browsing.store.one("SELECT * FROM dm_drafts")
     assert checks >= 2 and draft["text"]
     assert draft["status"] == "pending_review"
@@ -152,6 +161,7 @@ async def test_source_is_checked_again_at_private_send_after_generation(browsing
 async def test_handoff_disabled_does_not_create_or_send_private_draft(browsing, monkeypatch):
     transport = await prepare_handoff(browsing, monkeypatch, automatic=True)
     browsing.store.set("message_policy", browsing.messages.policy()["base"] | {"allow_comment_handoff": False})
-    await finished(browsing, automatic=True, video_only=True)
+    assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
+    await finished(browsing, automatic=True, interaction_only=True)
     assert not browsing.store.all("SELECT * FROM dm_drafts")
     assert not transport.sent and not browsing.adapter.sent

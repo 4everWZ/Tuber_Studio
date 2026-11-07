@@ -385,8 +385,12 @@ class BrowsingDecisions:
             binding["profile_revision"] = profile_revision
         if video_response:
             binding["video_response"] = "aligned-source-dry-v1"
-        autonomous = row["config"].get("autonomous_batch")
         retry = discovery_retry.get()
+        # Handed-off comments retain their autonomous task origin even though
+        # the reply round is independent of the video batch.
+        autonomous = row["config"].get("autonomous_batch") or (
+            not row["preview"] and row["config"].get("interaction_only") and retry is not None
+        )
         if autonomous:
             binding["autonomous_model"] = self.browsing.model_signature()
             binding["autonomous_video"] = retry["bvid"] if retry else None

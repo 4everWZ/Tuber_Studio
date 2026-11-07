@@ -82,7 +82,7 @@ async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_
     task = next(
         item
         for item in browsing.tasks(round_id=completed["id"])
-        if item["bvid"] == next_video and "generation_resolution" in item["payload"]
+        if item["bvid"] == next_video and "generation_resolution" in item.get("payload", {})
     )
     assert task["status"] == "viewed_without_comment" and not task["error"]
     resolution = task["payload"]["generation_resolution"]
@@ -129,6 +129,8 @@ async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_
     revisit = await finished(browsing, automatic=True, video_only=True)
     assert revisit["status"] == "completed"
     assert revisit["id"] != completed["id"]
+    reply = await finished(browsing, automatic=True, interaction_only=True)
+    assert reply["status"] == "completed"
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "601"]
     assert (
         len(
@@ -306,6 +308,9 @@ async def test_output_limit_explicit_model_choice_finishes_this_batch_and_wait_c
         assert first["metrics"]["failures"] == 0
         assert browsing.repo.batches.get(first)["state"] == "completed"
         assert not browsing.intents() and not browsing.adapter.sent
+        assert calls == ["CandidateBatchPlan"]
+        first_reply = await finished(browsing, automatic=True, interaction_only=True)
+        assert first_reply["status"] == "completed"
         assert calls == ["CandidateBatchPlan", "ResponseDecision", "feedback"]
         assert not browsing.store.all("SELECT * FROM browsing_tasks WHERE status IN ('failed','checkpoint')")
         if comments:
@@ -317,12 +322,19 @@ async def test_output_limit_explicit_model_choice_finishes_this_batch_and_wait_c
             assert second["status"] == "completed", [
                 (item["status"], item["error"]) for item in browsing.tasks(round_id=second["id"])
             ]
-            assert len(browsing.adapter.sent) == int(action == "wait")
+            second_reply = await finished(browsing, automatic=True, interaction_only=True)
+            assert second_reply["status"] == "completed"
+            assert len(browsing.adapter.sent) == int(action == "wait"), {
+                "calls": calls, "tasks": browsing.tasks(round_id=second_reply["id"]),
+                "intents": browsing.intents(),
+            }
             assert calls.count("ResponseDecision") == (2 if action == "wait" else 1)
             if action == "wait":
                 assert browsing.adapter.sent[0][1] == "慢慢加盐就能看出鸡蛋浮起来，盐水密度的变化很直观。"
             third = await finished(browsing, automatic=True, video_only=True)
             assert third["status"] == "completed"
+            third_reply = await finished(browsing, automatic=True, interaction_only=True)
+            assert third_reply["status"] == "completed"
             assert len(browsing.adapter.sent) == int(action == "wait")
     finally:
         await provider.close()
@@ -359,8 +371,10 @@ async def test_actual_deferred_private_candidate_is_only_visible_in_private_cont
     try:
         row = await finished(browsing, automatic=True, video_only=True)
         assert row["status"] == "completed"
+        reply = await finished(browsing, automatic=True, interaction_only=True)
+        assert reply["status"] == "completed"
         # Query the actual public task DTO, including its duplicate nested payload.
-        tasks = browsing.tasks(round_id=row["id"])
+        tasks = browsing.tasks(round_id=reply["id"])
         public = json.dumps(tasks, ensure_ascii=False)
         assert "仅供私信查看的实际生成草稿" not in public
         resolution = tasks[0]["repetition_decisions"][0]
