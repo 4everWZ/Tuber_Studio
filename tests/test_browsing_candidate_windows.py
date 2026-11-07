@@ -241,3 +241,133 @@ async def test_old_plan_checkpoint_does_not_retrap_the_saved_batch_or_restart_re
     assert retrieval["complete"] and retrieval["page"] == 3
     assert coordinator.get(old["id"])["state"] == "checkpoint"
     assert len(browsing.store.all("SELECT * FROM operation_continuations")) == 2
+
+
+@pytest.fixture
+async def planner_round(browsing):
+    await authorize(browsing)
+    row, _ = browsing.repo.create_round(
+        browsing.account, browsing.runtime.character, browsing.effective() | {"autonomous_batch": True},
+        browsing.operations.policy()["epoch"], False,
+    )
+    browsing.repo.batches.ensure(row)
+    return row, [candidate(number) for number in range(1, 21)]
+
+
+@pytest.mark.parametrize(
+    ("invalid_kind", "resume_old_checkpoint"),
+    [("duplicate", False), ("duplicate", True), ("missing", False), ("unknown", False)],
+)
+async def test_candidate_plan_repairs_structure_once_with_full_sources_and_keeps_model_order(
+    browsing, monkeypatch, planner_round, invalid_kind, resume_old_checkpoint,
+):
+    from copy import deepcopy
+
+    from tuber_studio.operation_generation import GenerationDeferred
+    from tuber_studio.operations.browsing import decisions
+
+    row, candidates = planner_round
+    choices = [
+        {"bvid": item["bvid"], "action": "watch" if index == 0 else "skip", "explanation": item["title"] + "本次选择"}
+        for index, item in enumerate(candidates)
+    ]
+    invalid = {"workers": 1, "choices": deepcopy(choices)}
+    if invalid_kind == "missing":
+        invalid["choices"].pop()
+    else:
+        invalid["choices"][-1]["bvid"] = candidates[0]["bvid"] if invalid_kind == "duplicate" else candidate(999)["bvid"]
+    corrected = {
+        "workers": 2,
+        "choices": [
+            choices[-1] | {"action": "watch", "explanation": "我想先看最后这条"},
+            choices[0],
+            *choices[1:-1],
+        ],
+    }
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens):
+        assert schema["title"] == "CandidateBatchPlan", "structural repair needs no separate recovery model call"
+        source_message = next(message["content"] for message in messages if message["content"].startswith("公开来源材料："))
+        packet = model_packet(source_message)
+        assert [item["bvid"] for item in packet["candidates"]] == [item["bvid"] for item in candidates]
+        assert all(item["title"] and item["available_actions"] for item in packet["candidates"])
+        calls.append(deepcopy(messages))
+        if len(calls) == 2:
+            repair_record = next(message["content"] for message in messages if "以下为任务记录数据：" in message["content"])
+            assert json.loads(repair_record.split("以下为任务记录数据：", 1)[1])["original_output"] == json.dumps(invalid, ensure_ascii=False)
+            feedback = messages[-1]["content"]
+            assert candidates[-1]["bvid"] in feedback and "missing_bvids" in feedback
+            if invalid_kind == "duplicate":
+                assert candidates[0]["bvid"] in feedback and "duplicate_bvids" in feedback
+            if invalid_kind == "unknown":
+                assert candidate(999)["bvid"] in feedback and "unknown_bvids" in feedback
+        result = invalid if len(calls) == 1 else corrected
+        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
+        return result
+
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    coordinator = browsing.runtime.continuations
+    if resume_old_checkpoint:
+        generate_with_recovery = decisions.generate_with_recovery
+
+        async def previous_zero_recoveries(*args, **kwargs):
+            kwargs["max_recoveries"] = 0
+            return await generate_with_recovery(*args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(decisions, "generate_with_recovery", previous_zero_recoveries)
+            with pytest.raises(GenerationDeferred):
+                await browsing._plan_batch(row, candidates)
+        old = coordinator.get(browsing.store.one("SELECT id FROM operation_continuations")["id"])
+        assert old["state"] == "checkpoint" and old["limits"]["max_recoveries"] == 0
+        coordinator.record_feedback(
+            old["id"], old["binding"],
+            {"kind": "validation_error", "message": "每个候选须有一个具体去向，同一个BV只选择一次"},
+            original_output=json.dumps(invalid, ensure_ascii=False),
+        )
+        coordinator._state(old["id"], "checkpoint")
+    selected = await browsing._plan_batch(row, candidates)
+    assert len(calls) == 2
+    assert [item["bvid"] for item in selected] == [candidates[-1]["bvid"], candidates[0]["bvid"]]
+    plan = browsing.repo.batches.get(row)["plan"]
+    assert plan["choices"] == corrected["choices"]
+    assert plan["workers"] == corrected["workers"]
+    saved = coordinator.get(browsing.store.one("SELECT id FROM operation_continuations")["id"])
+    assert saved["state"] == "completed" and saved["limits"]["max_recoveries"] == 1
+    assert saved["original_output"] == json.dumps(invalid, ensure_ascii=False)
+    assert browsing.repo.round(row["id"])["budget"]["model_calls"] == 2
+    assert not browsing.adapter.sent
+
+
+async def test_candidate_plan_second_invalid_result_checkpoints_without_dropping_or_filling_choices(
+    browsing, monkeypatch, planner_round,
+):
+    from tuber_studio.operation_generation import GenerationDeferred
+
+    row, candidates = planner_round
+    invalid = {
+        "workers": 1,
+        "choices": [
+            {"bvid": candidates[0]["bvid"], "action": "watch", "explanation": "我仍想看看这一条"},
+            {"bvid": candidates[0]["bvid"], "action": "skip", "explanation": "重复条目尚未修正"},
+        ],
+    }
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens):
+        calls.append(schema["title"])
+        browsing.runtime.llm.last_content = json.dumps(invalid, ensure_ascii=False)
+        return invalid
+
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    with pytest.raises(GenerationDeferred) as error:
+        await browsing._plan_batch(row, candidates)
+    assert calls == ["CandidateBatchPlan", "CandidateBatchPlan"]
+    saved = error.value.continuation
+    assert saved["state"] == "checkpoint"
+    assert "duplicate_bvids" in saved["feedback"]["message"]
+    assert "missing_bvids" in saved["feedback"]["message"]
+    assert browsing.repo.batches.get(row)["plan"] is None
+    assert not browsing.store.all("SELECT * FROM browsing_tasks")
+    assert not browsing.adapter.sent

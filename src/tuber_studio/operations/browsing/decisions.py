@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 import unicodedata
+from collections import Counter
 from difflib import SequenceMatcher
 
 from ...comments import category
@@ -294,10 +295,16 @@ class BrowsingDecisions:
             )
             if schema is CandidateBatchPlan:
                 allowed = {item["bvid"] for item in data["candidates"]}
-                if value.choices:
+                if value.choices or isinstance(result, dict) and "choices" in result:
                     identities = [choice.bvid for choice in value.choices]
-                    if len(identities) != len(set(identities)) or set(identities) != allowed:
-                        raise ValueError("每个候选须有一个具体去向，同一个BV只选择一次")
+                    counts = Counter(identities)
+                    invalid = {
+                        "duplicate_bvids": [bvid for bvid, count in counts.items() if count > 1],
+                        "missing_bvids": [item["bvid"] for item in data["candidates"] if item["bvid"] not in counts],
+                        "unknown_bvids": [bvid for bvid in counts if bvid not in allowed],
+                    }
+                    if any(invalid.values()):
+                        raise ValueError("每个候选须有且只有一个choices条目；校验结果：" + dump(invalid))
                     actions = {item["bvid"]: item["available_actions"] for item in data["candidates"]}
                     if any(choice.action not in actions[choice.bvid] for choice in value.choices):
                         raise ValueError("本轮未开放评论区任务，请从候选available_actions选择行动")
@@ -340,6 +347,21 @@ class BrowsingDecisions:
                 ):
                     raise ValueError("私信渠道与来源／理由不一致")
             return value
+
+        async def repair_candidate_plan(current):
+            if current["feedback"].get("kind") != "validation_error":
+                raise ContinuationCheckpoint("批次计划只自动修订一次结构校验错误，当前反馈已保留检查点")
+            previous = current.get("current_output") or current.get("original_output")
+            message = current["feedback"].get("message", "批次计划结构校验未通过")
+            try:
+                validate(json.loads(previous) if isinstance(previous, str) else previous)
+            except ValueError as error:
+                message = str(error)
+            return {
+                "action": "revise",
+                "reason": "修订完整的有序choices，每个候选恰好一次。对重复冲突和漏项自行选择，"
+                "保留其余仍认可的行动与相对顺序。具体校验反馈：" + message,
+            }
 
         binding = {
             "task": "generation",
@@ -393,6 +415,9 @@ class BrowsingDecisions:
                 GenerationDeferred(self.browsing.runtime.continuations.get(deferred["id"]))
             )
         )
+        recovery_limit = 1 if schema is CandidateBatchPlan else None
+        if autonomous:
+            recovery_limit = int(schema in {ResponseDecision, CandidateBatchPlan} or bool(retry and retry["failures"]))
         value, _ = await generate_with_recovery(
             self.browsing.runtime,
             channel="generation.browsing",
@@ -413,9 +438,8 @@ class BrowsingDecisions:
             },
             reuse_completed=generation_resume.get() or bool(autonomous and retry and retry["resume"]),
             restart_deferred=reconsider,
-            max_recoveries=(1 if schema is ResponseDecision or retry and retry["failures"] else 0)
-            if autonomous
-            else None,
+            max_recoveries=recovery_limit,
+            recovery_decision=repair_candidate_plan if schema is CandidateBatchPlan else None,
             diagnose=diagnose,
             allow_web_fetch=response_input is not None,
         )

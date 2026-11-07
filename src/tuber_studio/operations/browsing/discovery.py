@@ -660,8 +660,9 @@ async def plan_batch(browsing, row, candidates):
             "max_videos": len(candidates),
             "max_workers": config["workers"],
         },
-        "这一批视频已按BV号去重。按你的兴趣决定想看哪些和先后顺序，返回对应BV号；"
-        "可以少选或不选。workers是你想同时交给视频子Agent处理的数量，不超过max_workers。"
+        "这一批视频已按BV号去重。按你的兴趣决定想看哪些和先后顺序；"
+        "可以少看或全部跳过，每个候选必须恰好有一个watch/comments/skip/later去向和具体原因。"
+        "workers是你想同时交给视频子Agent处理的数量，不超过max_workers。"
         "already_commented表示已有视频主回复，不再重复发主回复，但可以继续翻评论、回复新留言。"
         "watch_state区分new、started、reading、viewed和complete；只有fully_read=true才表示完整读过可用内容。"
         "按想处理的先后顺序逐条给choices与具体理由，从available_actions选择："

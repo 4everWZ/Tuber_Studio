@@ -91,6 +91,7 @@ async def generate_with_recovery(
     max_recoveries=None,
     allow_web_fetch=False,
     restart_deferred=False,
+    recovery_decision=None,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     actor = captured_identity(messages) or runtime_identity(runtime, character, binding.get("account_id"))
@@ -227,9 +228,14 @@ async def generate_with_recovery(
         return await produce(messages, current)
 
     async def revise(current, decision):
-        return await produce(continuation_messages(messages), current)
+        packet = continuation_messages(messages)
+        if recovery_decision is not None:
+            packet = [*packet, {"role": "user", "content": "本次校验修订要求：" + decision.reason}]
+        return await produce(packet, current)
 
     async def decide(current):
+        if recovery_decision is not None:
+            return await recovery_decision(current)
         if not hasattr(runtime.llm, "generate_json"):
             raise ContinuationCheckpoint("当前Provider未提供恢复决策接口")
         return await model.decide(current)
