@@ -176,7 +176,7 @@ async def fetch_excerpt(value):
                 headers={
                     "Host": f"[{host}]" if ":" in host else host,
                     "Accept": "text/html, text/plain, application/xhtml+xml, application/json",
-                    "Accept-Encoding": "identity",
+                    "Accept-Encoding": "gzip, deflate, identity",
                     "User-Agent": "TuberStudio-WebFetch/1.0",
                 },
                 extensions={"sni_hostname": host},
@@ -193,10 +193,13 @@ async def read_excerpt(url, response):
     media = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if not (media.startswith("text/") or media in {"application/xhtml+xml", "application/json"}):
         raise ValueError("网页没有返回可读文本")
-    if response.headers.get("content-encoding", "identity").lower() != "identity":
+    encodings = response.headers.get("content-encoding", "identity").lower().split(",")
+    if any(encoding.strip() not in {"identity", "gzip", "deflate"} for encoding in encodings):
         raise ValueError("网页返回了不支持的编码")
     raw = bytearray()
     truncated = False
+    # HTTPX decodes the advertised standard encodings while streaming; the
+    # existing limit applies to decoded text, including compressed responses.
     async for chunk in response.aiter_bytes(chunk_size=8192):
         remaining = MAX_DOWNLOAD - len(raw)
         raw.extend(chunk[:remaining])

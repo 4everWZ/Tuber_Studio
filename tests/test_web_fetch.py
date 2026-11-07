@@ -1,12 +1,39 @@
 import asyncio
+import gzip
 import re
 import socket
+import zlib
 
 import httpx
 import pytest
 from pydantic import ValidationError
 
 from tuber_studio import web_fetch
+
+
+@pytest.mark.parametrize(("encoding", "compress"), [("gzip", gzip.compress), ("deflate", zlib.compress)])
+async def test_compressed_page_is_decoded_and_truncated_by_decoded_size(monkeypatch, encoding, compress):
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            payload = compress(b"<html><title>Video</title><body>" + b"visible " * 20000 + b"</body></html>")
+            for offset in range(0, len(payload), 32):
+                yield payload[offset:offset + 32]
+
+    client = httpx.AsyncClient
+
+    async def resolve(host, port, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", port))]
+
+    def response(request):
+        assert encoding in request.headers["accept-encoding"]
+        return httpx.Response(200, headers={"content-type": "text/html", "content-encoding": encoding}, stream=Stream())
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolve)
+    monkeypatch.setattr(web_fetch.httpx, "AsyncClient", lambda **kwargs: client(transport=httpx.MockTransport(response), **kwargs))
+    result = await web_fetch.fetch_excerpt("https://example.org/")
+    assert result["title"] == "Video"
+    assert result["excerpt"].startswith("visible visible")
+    assert len(result["excerpt"]) == web_fetch.MAX_EXCERPT and result["truncated"]
 
 
 def test_fetch_wire_and_backend_share_the_same_bounded_single_url_field():
