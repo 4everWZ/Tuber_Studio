@@ -38,7 +38,7 @@ import {
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
 } from "./modules/workspace-display.js";
-import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261107.10";
+import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261107.22";
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.15";
 
 const api = async (path, options = {}) => {

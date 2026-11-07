@@ -40,62 +40,9 @@
       <nav class="explorer-nav" aria-label="工作区导航">
         <a href="#automation" data-page="automation" data-parent-page="operations" class="tree-node"><span class="node-text">自主运营</span></a>
 
-        <div class="tree-group">
-          <div class="tree-group-header">
-            <span class="tree-title">直播演播</span>
-          </div>
-          <div class="tree-group-items">
-            <a href="#live" data-page="live" class="tree-node">
-              <span class="node-text">直播控制台</span>
-            </a>
-            <a href="#live-scene" data-page="live-scene" class="tree-node">
-              <span class="node-text">场景与编排</span>
-            </a>
-            <a href="#live-music" data-page="live-music" class="tree-node">
-              <span class="node-text">曲库与点歌台</span>
-            </a>
-            <a href="#live-interaction" data-page="live-interaction" class="tree-node">
-              <span class="node-text">互动玩法与游戏</span>
-            </a>
-          </div>
-        </div>
-
-        <div class="tree-group">
-          <div class="tree-group-header">
-            <span class="tree-title">角色设定</span>
-          </div>
-          <div class="tree-group-items">
-            <a href="#characters" data-page="characters" class="tree-node">
-              <span class="node-text">大肥鱼 OC 角色卡</span>
-            </a>
-            <a href="#voices" data-page="voices" class="tree-node">
-              <span class="node-text">语音与音色设置</span>
-            </a>
-            <a href="#assets" data-page="assets" class="tree-node">
-              <span class="node-text">素材与表情包</span>
-            </a>
-          </div>
-        </div>
-
-        <div class="tree-group">
-          <div class="tree-group-header">
-            <span class="tree-title">系统管理</span>
-          </div>
-          <div class="tree-group-items">
-            <a href="#settings" data-page="settings" class="tree-node">
-              <span class="node-text">推理端点与模型</span>
-            </a>
-            <a href="#accounts" data-page="accounts" class="tree-node">
-              <span class="node-text">账号与登录</span>
-            </a>
-            <a href="#overview" data-page="overview" class="tree-node">
-              <span class="node-text">存储与维护</span>
-            </a>
-            <a href="#issues" data-page="issues" class="tree-node">
-              <span class="node-text">告警与错误</span>
-            </a>
-          </div>
-        </div>
+        <a href="#live" data-page="live" data-parent-page="live" class="tree-node"><span class="node-text">直播工作台</span></a>
+        <a href="#characters" data-page="characters" data-parent-page="characters" class="tree-node"><span class="node-text">角色工作室</span></a>
+        <a href="#settings" data-page="settings" data-parent-page="settings" class="tree-node"><span class="node-text">设置</span></a>
       </nav>
 
       <div class="explorer-tree-footer">
@@ -151,12 +98,30 @@
       <div id="notice" class="notice win-notice" role="status" hidden></div>
 
       <main class="content win-content">
-        <nav id="operations-navigation" class="win-property-tabs" aria-label="自主运营" hidden>
+        <nav id="operations-navigation" data-workspace-navigation="operations" class="win-property-tabs" aria-label="自主运营" hidden>
           <a href="#automation" data-operations-tab="overview" class="prop-tab">活动</a>
           <a href="#comments" data-operations-tab="comments" class="prop-tab">评论处理</a>
           <a href="#messages" data-operations-tab="messages" class="prop-tab">私信</a>
           <a href="#dynamics" data-operations-tab="dynamics" class="prop-tab">动态</a>
           <a href="#automation-settings" data-operations-tab="automation-settings" class="prop-tab">运营设置</a>
+        </nav>
+
+        <nav data-workspace-navigation="live" class="win-property-tabs" aria-label="直播工作台" hidden>
+          <a href="#live" data-workspace-tab="live" class="prop-tab">控制与 OBS 输出</a>
+          <a href="#live-scene" data-workspace-tab="live-scene" class="prop-tab">场景与编排</a>
+          <a href="#live-music" data-workspace-tab="live-music" class="prop-tab">曲库与点歌台</a>
+          <a href="#live-interaction" data-workspace-tab="live-interaction" class="prop-tab">互动玩法与游戏</a>
+        </nav>
+        <nav data-workspace-navigation="characters" class="win-property-tabs" aria-label="角色工作室" hidden>
+          <a href="#characters" data-workspace-tab="characters" class="prop-tab">角色卡与记忆</a>
+          <a href="#voices" data-workspace-tab="voices" class="prop-tab">语音与音色</a>
+          <a href="#assets" data-workspace-tab="assets" class="prop-tab">素材与表情包</a>
+        </nav>
+        <nav data-workspace-navigation="settings" class="win-property-tabs" aria-label="设置" hidden>
+          <a href="#settings" data-workspace-tab="settings" class="prop-tab">推理端点与模型</a>
+          <a href="#accounts" data-workspace-tab="accounts" class="prop-tab">账号与登录</a>
+          <a href="#overview" data-workspace-tab="overview" class="prop-tab">存储与维护</a>
+          <a href="#issues" data-workspace-tab="issues" class="prop-tab">告警与错误</a>
         </nav>
 
 
@@ -225,6 +190,6 @@
   <script src="/static/account.js?v=20261107.18" defer></script>
   <script src="/static/daily-memory.js?v=20261107.18" defer></script>
   <script src="/static/interactive-games.js?v=20261107.12" defer></script>
-  <script type="module" src="/static/app.js?v=20261107.21"></script>
+  <script type="module" src="/static/app.js?v=20261107.22"></script>
 </body>
 </html>

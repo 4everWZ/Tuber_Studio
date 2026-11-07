@@ -1,5 +1,16 @@
 import { $, notice } from "./core.js?v=20261105.32";
 
+const workspaceSections = {
+  operations: ["automation", "comments", "messages", "dynamics", "automation-records", "automation-settings"],
+  live: ["live", "live-scene", "live-music", "live-interaction"],
+  characters: ["characters", "voices", "assets"],
+  settings: ["settings", "accounts", "overview", "issues"],
+};
+
+export function workspaceSection(page) {
+  return Object.keys(workspaceSections).find(section => workspaceSections[section].includes(page));
+}
+
 export function initWorkspaceNavigation(model, loadPage) {
   const scrollPositions = new Map();
 
@@ -54,12 +65,20 @@ export function initWorkspaceNavigation(model, loadPage) {
       section.hidden = section.dataset.section !== model.page;
     });
     document.querySelectorAll("[data-page]").forEach(link => {
-      const active = link.dataset.parentPage === "operations" ? ["automation", "comments", "messages", "dynamics", "automation-records", "automation-settings"].includes(model.page) : link.dataset.page === model.page;
+      const active = link.dataset.parentPage ? link.dataset.parentPage === workspaceSection(model.page) : link.dataset.page === model.page;
       link.classList.toggle("selected", active);
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     });
-    $("operations-navigation").hidden = !["automation", "comments", "messages", "dynamics", "automation-records", "automation-settings"].includes(model.page);
+    document.querySelectorAll("[data-workspace-navigation]").forEach(nav => {
+      nav.hidden = nav.dataset.workspaceNavigation !== workspaceSection(model.page);
+    });
+    document.querySelectorAll("[data-workspace-tab]").forEach(link => {
+      const active = link.dataset.workspaceTab === model.page;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
     const selectedOperation = model.page === "automation" ? "overview" : model.page === "automation-records" ? "overview" : model.page;
     document.querySelectorAll("[data-operations-tab]").forEach(link => {
       const active = link.dataset.operationsTab === selectedOperation;
