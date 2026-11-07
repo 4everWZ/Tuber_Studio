@@ -1,14 +1,18 @@
 """Per-comment reading decisions, independent of video and page progress."""
 
+import asyncio
 import inspect
 import json
 import time
 
 from ...comments import category
+from ...compaction import ContextWindowExceeded
+from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_continuations import content_hash
 from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
 from ...providers import public_error
+from ...publication_errors import SendLimitReached
 from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
@@ -76,6 +80,70 @@ async def video_comment_context(browsing, row, bvid):
 def commit_comment_context(browsing, context):
     if progress := (context or {}).get("_scroll_progress"):
         browsing.store.set(progress["key"], progress["next_page"])
+
+
+async def evaluate_comment_visit(browsing, result, row, metrics):
+    """Browse a video's discussions without starting or updating its viewing task."""
+    identity, metadata = result["id"], result["metadata"]
+    material, key = result["material"], result["material_key"]
+    payload = json.loads(browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
+    if explanation := (payload.get("selection") or {}).get("explanation"):
+        payload["reason"] = explanation
+    status, context = "comments_checked", None
+    try:
+        browsing._check_round(row)
+        context = await browsing.video_comment_context(row, metadata["bvid"])
+        items = context.get("items", [])
+        chosen = {segment["id"] for segment in browsing._segments(material)} if material else set()
+        for item in items:
+            if browsing.repo.video_reply_limit_reached(row, metadata["bvid"]):
+                raise DailyReplyLimitReached(day_window(row["config"].get("business_timezone", "Asia/Taipei")))
+            intent = await browsing.decisions._reply_to_video_comment(
+                row, material, key, chosen, item, items, metrics,
+                diagnostics=payload.setdefault("repetition_decisions", []), metadata=metadata,
+            )
+            if intent:
+                payload.setdefault("reply_intent_ids", []).append(intent["id"])
+                status = "selected"
+            if not payload.get("reason"):
+                stored = browsing.store.one(
+                    "SELECT decision FROM browsing_comment_progress "
+                    "WHERE account_id=? AND character_id=? AND bvid=? AND comment_id=?",
+                    (row["account_id"], row["character_id"], metadata["bvid"], str(item["comment_id"])),
+                )
+                if stored and (explanation := json.loads(stored["decision"]).get("explanation")):
+                    payload["reason"] = explanation
+        browsing.repo.complete(identity, result["owner"], result["generation"], status, payload, key)
+        browsing.commit_comment_context(context)
+    except (DailyReplyLimitReached, SendLimitReached) as error:
+        browsing.repo.complete(
+            identity, result["owner"], result["generation"], "deferred_daily",
+            payload | {
+                "retry_kind": "send_limit" if isinstance(error, SendLimitReached) else "daily_reply_limit",
+                "next_at": error.next_at,
+            }, key,
+        )
+    except Exception as error:
+        metrics["failures"] += 1
+        continuation = getattr(error, "continuation", None)
+        deferred = isinstance(error, BrowsingBudgetDeferred)
+        if continuation:
+            browsing.runtime.continuations.bind_source_view(
+                continuation["id"], "browsing", identity, "评论回应生成记录 · " + metadata["bvid"],
+            )
+        browsing.repo.complete(
+            identity, result["owner"], result["generation"],
+            "checkpoint" if continuation or deferred or isinstance(error, ContextWindowExceeded) else "failed",
+            payload | {
+                **({"generation_continuation_id": continuation["id"]} if continuation else {}),
+                **({"retry_kind": "round_budget"} if deferred else {}),
+                **({"capacity_signature": browsing.decisions._capacity_signature(row["config"])}
+                   if isinstance(error, ContextWindowExceeded) else {}),
+            }, key, public_error(error),
+        )
+    finally:
+        result["heartbeat"].cancel()
+        await asyncio.gather(result["heartbeat"], return_exceptions=True)
 
 
 async def run_interactions(browsing, row, metrics):

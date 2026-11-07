@@ -159,6 +159,13 @@ class BatchCandidateChoice(StrictModel):
     action: Literal["watch", "comments", "skip", "later"]
     explanation: str = Field(min_length=1)
 
+    @field_validator("explanation")
+    @classmethod
+    def concrete_explanation(cls, value):
+        if not value.strip():
+            raise ValueError("请说明这条候选行动的具体原因")
+        return value.strip()
+
 
 class CandidateBatchPlan(StrictModel):
     videos: list[str] = Field(default_factory=list, max_length=MAX_BATCH_CANDIDATES)

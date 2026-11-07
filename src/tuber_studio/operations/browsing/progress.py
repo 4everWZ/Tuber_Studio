@@ -96,6 +96,38 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
             item = json.loads(
                 browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"]
             )
+            if item.get("task_kind") == "comment_visit" or row["config"].get("comment_visit"):
+                if not row["config"]["reply_enabled"]:
+                    browsing.repo.complete(
+                        identity, owner, generation, "comments_checked",
+                        item | {"task_kind": "comment_visit", "reason": "评论功能已关闭"},
+                    )
+                    return None
+                progress = browsing.repo.content_progress(row, item["bvid"])
+                material_key, material = None, None
+                if progress:
+                    material_key, material = await browsing.evidence._store(progress["material"])
+                    metadata = material["metadata"]
+                    browsing.evidence.hits += 1
+                else:
+                    metadata = await browsing._read(browsing.adapter.video_metadata, item["bvid"])
+                if metadata.get("bvid") != item["bvid"] or not metadata.get("aid"):
+                    raise ValueError("评论视频身份与候选不一致")
+                reason = browsing.filter_reason(metadata, row["config"])
+                if reason:
+                    raise EvidenceUnavailable("filtered", reason)
+                browsing.repo.complete(
+                    identity, owner, generation, "evidence_ready",
+                    item | {"task_kind": "comment_visit", "metadata": browsing.decisions._metadata_summary(metadata)},
+                    material_key,
+                )
+                metrics["prepared"] += 1
+                ready = True
+                return {
+                    "id": identity, "owner": owner, "generation": generation,
+                    "material_key": material_key, "material": material, "metadata": metadata,
+                    "heartbeat": heartbeat, "task_kind": "comment_visit", "comment_only": True,
+                }
             progress = browsing.repo.content_progress(row, item["bvid"])
             if (
                 not progress

@@ -21,7 +21,7 @@ from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from ...publication_errors import SendLimitReached
 from ...store import dump
-from .comment_reader import CommentProgress
+from .comment_reader import CommentProgress, evaluate_comment_visit
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
@@ -163,15 +163,18 @@ class BrowsingDecisions:
                 allowed_videos
             ):
                 raise ValueError("批次模型输入须按BV号去重并限制在设置的候选数量内")
-            properties["videos"]["items"] = {
-                "type": "string",
-                "enum": allowed_videos,
-            }
-            properties["videos"]["maxItems"] = min(data["max_videos"], len(allowed_videos))
+            # The ordered choices are the model's one authoritative plan.
+            # videos is a derived execution index, not a second answer that can
+            # contradict those same choices and interrupt the entire batch.
+            properties.pop("videos", None)
+            model_schema["required"] = [
+                key for key in model_schema.get("required", []) if key != "videos"
+            ]
             properties["workers"]["maximum"] = data["max_workers"]
             if "choices" in properties:
                 choice = model_schema["$defs"]["BatchCandidateChoice"]
                 choice["properties"]["bvid"] = {"type": "string", "enum": allowed_videos}
+                choice["properties"]["action"]["enum"] = data["candidates"][0]["available_actions"]
                 properties["choices"].update(minItems=len(allowed_videos), maxItems=len(allowed_videos))
                 model_schema["required"] = list(dict.fromkeys(model_schema.get("required", []) + ["choices"]))
         return character, messages, model_schema
@@ -269,28 +272,22 @@ class BrowsingDecisions:
             )
             if schema is CandidateBatchPlan:
                 allowed = {item["bvid"] for item in data["candidates"]}
+                if value.choices:
+                    identities = [choice.bvid for choice in value.choices]
+                    if len(identities) != len(set(identities)) or set(identities) != allowed:
+                        raise ValueError("每个候选须有一个具体去向，同一个BV只选择一次")
+                    actions = {item["bvid"]: item["available_actions"] for item in data["candidates"]}
+                    if any(choice.action not in actions[choice.bvid] for choice in value.choices):
+                        raise ValueError("本轮未开放评论区任务，请从候选available_actions选择行动")
+                    value.videos = [
+                        choice.bvid for choice in value.choices if choice.action in {"watch", "comments"}
+                    ]
                 if (
                     not set(value.videos) <= allowed
                     or len(value.videos) > data["max_videos"]
                     or value.workers > data["max_workers"]
                 ):
                     raise ValueError("批次计划须从本批候选选择视频，并遵守设置的并发上限")
-                if value.choices:
-                    identities = [choice.bvid for choice in value.choices]
-                    ready = {
-                        choice.bvid for choice in value.choices if choice.action in {"watch", "comments"}
-                    }
-                    if (
-                        len(identities) != len(set(identities))
-                        or set(identities) != allowed
-                        or ready != set(value.videos)
-                    ):
-                        raise ValueError("每个候选须有一个具体去向，观看或翻评论的候选须与videos一致")
-                    for choice in value.choices:
-                        if choice.action == "comments" and not self.browsing.repo.content_progress(
-                            row, choice.bvid
-                        ):
-                            raise ValueError("尚未观看的视频请先选择watch；comments用于回访已有视频的评论区")
             elif schema is ContentDecision:
                 allowed = {segment["id"] for segment in data["segments"]}
                 if (
@@ -345,7 +342,7 @@ class BrowsingDecisions:
         if response_input is not None:
             binding["input_format"] = response_input.FORMAT_VERSION
         elif schema is CandidateBatchPlan:
-            binding["input_format"] = "bounded-candidate-window-v2"
+            binding["input_format"] = "independent-candidate-actions-v3"
         if profile_revision is not None:
             binding["profile_revision"] = profile_revision
         if video_response:
@@ -617,6 +614,8 @@ class BrowsingDecisions:
         return material, decisions
 
     async def _evaluate_task(self, result, row, metrics):
+        if result.get("comment_only"):
+            return await evaluate_comment_visit(self.browsing, result, row, metrics)
         identity, material = result["id"], result["material"]
         heartbeat = result["heartbeat"]
         decisions, followup = [], {}
@@ -1087,7 +1086,7 @@ class BrowsingDecisions:
         }
 
     async def _reply_to_video_comment(
-        self, row, material, material_key, chosen, item, items, metrics, *, diagnostics=None
+        self, row, material, material_key, chosen, item, items, metrics, *, diagnostics=None, metadata=None
     ):
         author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
         item_text = str(item.get("text") or item.get("content") or "")
@@ -1100,7 +1099,8 @@ class BrowsingDecisions:
             return None
         comment_id = str(item["comment_id"])
         root_id = str(item.get("thread_id") or comment_id)
-        bvid = material["metadata"]["bvid"]
+        metadata = material["metadata"] if material else metadata
+        bvid = metadata["bvid"]
         canonical = canonical_intent("bilibili", bvid, comment_id, row["character_id"])
         scope = (str(row["account_id"]), row["character_id"], bvid, root_id)
         lane = operation_lane.set("reply")
@@ -1118,7 +1118,7 @@ class BrowsingDecisions:
                     return None
                 target = {
                     "type": 1,
-                    "oid": str(material["metadata"]["aid"]),
+                    "oid": str(metadata["aid"]),
                     "bvid": bvid,
                     "root": root_id,
                     "parent": comment_id,
@@ -1156,7 +1156,8 @@ class BrowsingDecisions:
                 if thread_response is None:
                     try:
                         thread_response = await self._response(
-                            row, material, thread_context, chosen, "reply_public", metrics
+                            row, material, thread_context,
+                            chosen if material else {"public:" + comment_id}, "reply_public", metrics
                         )
                     except Exception as error:
                         resolution = self._repetition_resolution(error)
@@ -1179,7 +1180,8 @@ class BrowsingDecisions:
                     source_text=item_text,
                 )
                 thread_intent = self.browsing.publication._intent(
-                    row, "reply_public", target, thread_response, [material_key], thread_response.evidence_ids
+                    row, "reply_public", target, thread_response,
+                    [material_key] if material_key else [], thread_response.evidence_ids
                 )
                 if not thread_intent:
                     return None

@@ -1,13 +1,24 @@
 import json
 
 import pytest
+from pydantic import ValidationError
+from test_browsing import BV, finished, model_packet
 from test_browsing import browsing as browsing
-from test_browsing import finished, model_packet
 from test_browsing_batches import authorize
+
+from tuber_studio.operation_continuations import content_hash
+from tuber_studio.operations.browsing.models import BatchCandidateChoice
 
 
 def candidate(number):
     return {"bvid": f"BV{number:010d}", "title": f"独立视频{number}", "duration": 30}
+
+
+def test_candidate_action_requires_a_nonblank_explanation():
+    with pytest.raises(ValidationError):
+        BatchCandidateChoice(bvid=BV, action="comments", explanation=" \n\t ")
+    choice = BatchCandidateChoice(bvid=BV, action="comments", explanation=" 想看看大家怎么讨论盐水实验 ")
+    assert choice.explanation == "想看看大家怎么讨论盐水实验"
 
 
 @pytest.mark.parametrize(("limit", "source_mode"), [(20, "retry"), (3, "retry"), (20, "multiple")])
@@ -40,7 +51,7 @@ async def test_overflow_from_retries_or_multiple_sources_is_bounded_and_carried_
         assert len(entries) <= limit
         assert schema["properties"]["choices"]["minItems"] == len(entries)
         assert schema["properties"]["choices"]["maxItems"] == len(entries)
-        assert schema["properties"]["videos"]["maxItems"] == len(entries)
+        assert "videos" not in schema["properties"]
         assert len({item["bvid"] for item in entries}) == len(entries)
         batches.append([item["bvid"] for item in entries])
         return {
@@ -99,6 +110,7 @@ async def test_resuming_a_completed_retrieval_with_21_raw_candidates_uses_a_fres
     row, _ = browsing.repo.create_round(
         browsing.account, browsing.runtime.character, config, browsing.operations.policy()["epoch"], False
     )
+
     browsing.repo.batches.ensure(row)
     browsing.repo.batches.merge(row, [candidate(number) for number in range(21)])
     browsing.repo.batches.retrieval(row, {"complete": True})
@@ -124,3 +136,108 @@ async def test_resuming_a_completed_retrieval_with_21_raw_candidates_uses_a_fres
         )["n"]
         == 1
     )
+
+
+@pytest.mark.parametrize("redundant_videos", [None, [], [BV]])
+async def test_ordered_choices_are_the_single_plan_even_if_a_provider_adds_a_stale_video_index(
+    browsing, monkeypatch, redundant_videos
+):
+    await authorize(browsing)
+    config = browsing.effective() | {"autonomous_batch": True}
+    row, _ = browsing.repo.create_round(
+        browsing.account, browsing.runtime.character, config, browsing.operations.policy()["epoch"], False
+    )
+    browsing.repo.batches.ensure(row)
+    second, skipped = candidate(2), candidate(3)
+
+    async def choose(messages, schema, *, max_tokens):
+        assert "videos" not in schema["properties"]
+        entries = model_packet(messages[-1]["content"])["candidates"]
+        assert all("comments" in item["available_actions"] for item in entries)
+        result = {
+            "workers": 1,
+            "choices": [
+                {"bvid": second["bvid"], "action": "comments", "explanation": "想看看实验下的讨论"},
+                {"bvid": BV, "action": "watch", "explanation": "想看实验的具体过程"},
+                {"bvid": skipped["bvid"], "action": "skip", "explanation": "这次想先看实验话题"},
+            ],
+        }
+        if redundant_videos is not None:
+            result["videos"] = redundant_videos
+        return result
+
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    selected = await browsing._plan_batch(row, [{"bvid": BV, "title": "实验"}, second, skipped])
+    assert [item["bvid"] for item in selected] == [second["bvid"], BV]
+    assert [item["task_kind"] for item in selected] == ["comment_visit", "new_video"]
+    assert browsing.repo.batches.get(row)["plan"]["videos"] == [second["bvid"], BV]
+    assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
+
+
+async def test_disabled_comments_are_absent_from_the_plan_schema_and_candidate_actions(browsing, monkeypatch):
+    await authorize(browsing)
+    row, _ = browsing.repo.create_round(
+        browsing.account, browsing.runtime.character,
+        browsing.effective() | {"autonomous_batch": True, "reply_enabled": False},
+        browsing.operations.policy()["epoch"], False,
+    )
+    browsing.repo.batches.ensure(row)
+
+    async def choose(messages, schema, *, max_tokens):
+        item = model_packet(messages[-1]["content"])["candidates"][0]
+        assert "comments" not in item["available_actions"]
+        assert "comments" not in schema["$defs"]["BatchCandidateChoice"]["properties"]["action"]["enum"]
+        return {"workers": 1, "choices": [{"bvid": BV, "action": "skip", "explanation": "先略过这个标题"}]}
+
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    assert await browsing._plan_batch(row, [{"bvid": BV, "title": "实验"}]) == []
+
+
+async def test_old_plan_checkpoint_does_not_retrap_the_saved_batch_or_restart_retrieval(browsing, monkeypatch):
+    await authorize(browsing)
+    row, _ = browsing.repo.create_round(
+        browsing.account, browsing.runtime.character, browsing.effective() | {"autonomous_batch": True},
+        browsing.operations.policy()["epoch"], False,
+    )
+    browsing.repo.batches.ensure(row)
+    item = {"bvid": BV, "title": "实验", "duration": 30}
+    browsing.repo.batches.merge(row, [item])
+    browsing.repo.batches.retrieval(row, {"complete": True, "page": 3})
+    # Match the pre-fix binding, including its old candidate input. It cannot
+    # recover by itself when recoveries are disabled, as in the reported issue.
+    old_candidate = browsing._candidate_view(row, item)
+    old_candidate.pop("available_actions")
+    data = {"candidates": [old_candidate], "max_videos": 1, "max_workers": row["config"]["workers"]}
+    binding = {
+        "task": "generation", "account_id": row["account_id"],
+        "character": {"id": row["character_id"], "version": row["character_version"]},
+        "schema": "CandidateBatchPlan",
+        "source_sha256": content_hash({"backend_source": None, "data": data}),
+        "input_format": "bounded-candidate-window-v2", "autonomous_model": browsing.model_signature(),
+        "autonomous_video": None,
+    }
+    coordinator = browsing.runtime.continuations
+    old = coordinator.begin(
+        "generation.browsing", content_hash(binding), binding,
+        {"kind": "validation_error", "message": "尚未观看的视频请先选择watch"},
+        parent_round_id=row["id"], budget_limits={"max_recoveries": 0},
+    )
+    coordinator._state(old["id"], "checkpoint")
+    generated = []
+
+    async def no_retrieval(*args, **kwargs):
+        pytest.fail("the saved retrieval must be reused")
+
+    async def choose(messages, schema, *, max_tokens):
+        generated.append(schema["title"])
+        return {"workers": 1, "choices": [{"bvid": BV, "action": "comments", "explanation": "想聊聊楼里的讨论"}]}
+
+    monkeypatch.setattr(browsing.adapter, "discover", no_retrieval)
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
+    selected = await browsing._discover(row)
+    assert generated == ["CandidateBatchPlan"]
+    assert selected[0]["task_kind"] == "comment_visit"
+    retrieval = browsing.repo.batches.get(row)["retrieval"]
+    assert retrieval["complete"] and retrieval["page"] == 3
+    assert coordinator.get(old["id"])["state"] == "checkpoint"
+    assert len(browsing.store.all("SELECT * FROM operation_continuations")) == 2

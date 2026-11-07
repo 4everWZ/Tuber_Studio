@@ -419,6 +419,7 @@ class BrowsingService:
         video=None,
         interaction_only=False,
         video_only=False,
+        comment_visit=False,
     ):
         if self.closed:
             raise ValueError("浏览服务已停止")
@@ -459,6 +460,8 @@ class BrowsingService:
                 config["autonomous_batch"] = True
         if video:
             config = config | {"sources": ["specified"], "watch_videos": [video], "force_read": True}
+        if comment_visit:
+            config = config | {"comment_visit": True}
         if (
             automatic
             and not notifications_only
@@ -746,7 +749,10 @@ class BrowsingService:
         task = self.store.one("SELECT * FROM browsing_tasks WHERE id=?", (task_id,))
         if not task:
             raise ValueError("视频任务不存在")
-        return await self.run(preview=True, video=task["bvid"])
+        return await self.run(
+            preview=True, video=task["bvid"],
+            comment_visit=json.loads(task["payload"]).get("task_kind") == "comment_visit",
+        )
 
     async def open(self):
         if self.loop is not None and not self.loop.done():

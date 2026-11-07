@@ -55,7 +55,10 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]
     assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
     assert not browsing.repo.video_retry(row, BV)
-    task = browsing.tasks(round_id=row["id"])[0]
+    task = next(
+        item for item in browsing.tasks(round_id=row["id"])
+        if item.get("task_kind") == "new_video"
+    )
     assert task["payload"]["reason"] == "盐水浮鸡蛋这个话题，先看看评论里大家试过的比例"
     progress = browsing.repo.content_progress(row, BV)
     assert progress["main_decision"]["action"] == "read_comments"
