@@ -64,9 +64,9 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
     python tools/jetson/inference-node.py --root /workspace/tuber --host 0.0.0.0 --port 9012
 
-节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。固定Gemma引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及Q8 vision-only投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体安装与恢复证据见[双机实测](../../evaluations/results/distributed-operations-20261102.md)。
+节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。所选Profile的引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及与该模型配对的投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体安装与恢复证据见[双机实测](../../evaluations/results/distributed-operations-20261102.md)。
 
-部署大肥鱼 DoRA 时，把同一发布的 Q4_K_M 和 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/authentic-dora-20261107/`。主权重在节点命名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf`。使用固定引擎的完整 `build/bin` 和对应的节点程序。运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`，现有节点继续读取 `operations_model`。更换后对同一节点重新配对，并执行设置中的视觉资源验证。配对读取实际模型与窗口，刷视频的语义质量按原视频证据核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。[DoRA 权重、投影器与清单](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/68f9542e3c7dee1b41a1be12fe97f3095819b952)
+部署大肥鱼 DoRA 时，把同一发布的 Q4_K_M 和 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/authentic-dora-20261107/`。主权重在节点命名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf`，Hub文件名为 `MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf`；固定下载清单负责映射名称。使用 llama.cpp `0ec4027a2a0183de87c007069adddc06e665f7de` 的完整 `build/bin` 和对应的节点程序；DoRA档使用节点的 `GEMMA_ENGINE` 引擎路径配置，名称不表示模型是Gemma。原Docker环境自带的旧文本引擎不能代替此版本。运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`，现有节点继续读取 `operations_model`。更换后对同一节点重新配对，并执行设置中的视觉资源验证。配对读取实际模型与窗口，刷视频的语义质量按原视频证据核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。[DoRA 权重、投影器与清单](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/68f9542e3c7dee1b41a1be12fe97f3095819b952)
 
 维护前保存节点配置和旧容器。若要退回旧文本档，在运营模式选择 `MiniCPM-V-4.7-1B`，再重新配对。回退程序需要对应程序、配置和权重，核对 `/llm/props` 的别名与窗口。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。切换后用浏览器试听。
 
@@ -76,7 +76,7 @@ OBS使用电脑后端生成的播放器链接，音频直接从电脑媒体目�
 
 ## 全本地Jetson可选部署
 
-Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Python锁定依赖及固定Genie转换／图骨架依赖。应用源码、WebUI、角色素材、初始化清单和配置预设随独立程序包或宿主源码目录交付，以只读挂载运行；模型、音色包、缓存、配置、令牌和数据库保存在独立数据目录。普通程序修改不重建镜像，也不在启动时安装依赖。
+Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Python锁定依赖及固定Genie转换／图骨架依赖。应用源码、WebUI、角色素材、初始化清单和配置预设随独立程序包或宿主源码目录交付，以只读挂载运行；模型、音色包、缓存、配置、令牌和数据库保存在独立数据目录。此可选启动器仍默认加载MiniCPM5-2B＋Genie直播档；清单资源准备与DoRA视觉运营的引擎配置、模式切换及验收分别进行。普通程序修改不重建镜像，也不在启动时安装依赖。
 
 目标为Jetson ARM64／L4T R36.4及NVIDIA容器运行时，不是Windows／x86镜像。使用单个tuber-studio容器，后台／受限broker共享业务进程，llama／TTS按需作为固定子进程运行。源码与程序包根仍映射为容器/workspace/tuber；Python环境为/opt/studio-venv，官方GPT-SoVITS依赖为/opt/GPT-SoVITS-v2，固定Genie依赖为/opt/Genie-TTS。不挂Docker.sock，不在宿主安装运行环境，不操作其他项目服务。
 
@@ -125,7 +125,7 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 ### 首次模型准备与后续复用
 
-环境镜像不带模型。程序中的固定清单将MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT和NLTK下载到持久目录，逐文件核对来源、大小和SHA256。首次启动需要访问这些公共HTTPS源；可显式使用HTTPS origin形式的TUBER_HF_BASE或容器可达的TUBER_DOWNLOAD_PROXY，不能改变revision或关闭校验。
+环境镜像不带模型。portable初始化核验／安装固定清单的全部资源，包括DoRA运营主权重及4× F16投影器、MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT和NLTK。资源下载到持久目录，逐文件核对来源、大小和SHA256。`run-ready.sh`沿用这条初始化链；在已装配的容器规范根目录也可运行 `python -m tuber_studio.portable --initialize-only`。准备资产不切换当前Profile，独立直播仍默认加载MiniCPM5-2B＋Genie；DoRA还需配置匹配引擎。首次启动需要访问这些公共HTTPS源；可显式使用HTTPS origin形式的TUBER_HF_BASE或容器可达的TUBER_DOWNLOAD_PROXY，不能改变revision或关闭校验。
 
 下载后顺序完成权重净化、参考处理、Genie图准备与永久音色安装；准备期间不加载LLM，子进程结束后才进入Genie预热及Mini131072／q4_0共驻。重复启动验证并复用已下载及生成资源，不重新下载／转换；身份不符时保留原件并报错。环境预检和小型公共启动预设在runtime/.portable-launch内生成，不修改已有Operator配置。初始化日志及portable-status.json显示进度，HTTP可达不等于模型就绪。
 
@@ -175,7 +175,7 @@ Dockerfile 的 program-base／ready 目标用于构建环境。构建上下文�
 
 1. 评论页刷新热门视频或填写BV／av／标准链接，读取失败可重试或改导入。
 2. 导入CSV／JSON时按需填目标→来源字段映射，先预览规范字段和总数，再导入；修改输入后重新预览。分类可人工修改，重新自动归类不得覆盖人工值。
-3. 选择评论生成草稿，再编辑、审核、复制。默认自动浏览／回复关闭；显式配置关注视频、间隔、配额及凭证后才能开启对应策略。无凭证仍可浏览、审核和复制。
+3. 选择评论生成草稿，再编辑、审核、复制。默认自主运营关闭；保存视频来源、渠道权限、每日额度及凭证后，再从统一入口开始。无凭证仍可浏览、审核和复制。
 4. Mock／语音验收时先打开独立overlay，再注入事件；只有一个播放页拥有播放权。浏览器禁止自动播放时按提示启用，再注入新事件，不重放失败任务。
 5. 暂停阻止后续任务；静音／停止取消当前播报。看真实平台回执区分审核、复制、发布和不确定结果。
 
@@ -191,7 +191,7 @@ Dockerfile 的 program-base／ready 目标用于构建环境。构建上下文�
 
 设置页分别选择本地llama、兼容LLM API、预录／保留的GPT-SoVITS／兼容语音API。API Base URL包含服务自己的版本前缀，例如https://服务域名/v1；公网用HTTPS，本地端点可用HTTP。LLM兼容Chat Completions、max_tokens、JSON对象输出及usage.prompt_tokens；语音兼容audio/speech并返回WAV。模型ID与voice ID由服务提供，不把任意API都当同一模型。
 
-Jetson 节点先配对，LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，模型名以实际节点报告为准。「检查连接」读取已配对节点状态，「高级诊断与维护」显示设备内存及缓存信息。自定义服务的模型列表和地址检查使用表单地址及对应凭证，本机模型下载卡只报告本机状态。接口及旧分路见[推理接口规范](../specs/models-and-audio.md#jetson-推理接口)。
+Jetson 节点先配对，LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，模型名以实际节点报告为准。「检查连接」读取已配对节点状态，「高级诊断与维护」显示设备内存及缓存信息。自定义服务的模型列表和地址检查使用表单地址及对应凭证。`/api/providers/local-models`只列实际本地模型目录与状态；保存LLM配置不会安装权重。资产准备统一使用节点／portable初始化与固定下载清单，不再提供业务端独立大肥鱼下载器。接口及旧分路见[推理接口规范](../specs/models-and-audio.md#jetson-推理接口)。
 
 Key只写入runtime/provider-credentials.json（设备0600），设置响应／配置JSON不返回其值。空输入保留已有Key，单独勾选清除才删除；更换API地址时必须重新填写或清除对应Key，避免把旧凭证发到新服务。内部broker token不发给外部服务。语音API使用独立external_api音色；已有角色不会自动换声线，需显式选择对应音色。接口测试替身通过不代表真实账号、声音许可或服务商质量已验证。
 

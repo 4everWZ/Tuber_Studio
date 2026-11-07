@@ -22,11 +22,11 @@ uv sync --python 3.12
 uv run python -m tuber_studio --port 8020
 ```
 
-Open [the local workbench](http://127.0.0.1:8020) and sign in with the token in `runtime/admin-token`. Use **Settings → Inference and models** to pair a Jetson or configure another model endpoint. The sidebar opens the four operations views, the Live and Character workspaces, and Settings. The mode switch at the top controls inference resources.
+Open [the local workbench](http://127.0.0.1:8020). Direct local access opens without a management token; remote access follows the authentication setup in the [deployment guide](docs/guides/deployment.md). Use **Settings → Inference and models** to pair a Jetson or configure another endpoint. **Autonomous operations** contains activity, comment review, private messages, dynamic posts and operations settings. Live production and the character studio remain separate workspaces. The top mode switch controls inference resources.
 
 Under **Character → Voice**, local Jetson speech is the default. An OpenAI-compatible speech endpoint can also supply previews and spoken livestream replies. Demo text and prerecorded audio are available for an offline tour.
 
-For Bilibili operations, configure and verify the platform account under **Settings → Account and permissions**. Start automatic video browsing once to let the character find videos, decide when to respond, and publish top-level comments or thread replies. For manual review, use **Comments and drafts** to read a known video or import comments. See the [operations guide](docs/guides/operations.md) for policies, read-only preview and emergency stop.
+For Bilibili operations, configure and verify the account under **Settings → Account and permissions**, then save the actions you want under operations settings. Starting autonomous operations uses those permissions. Video discovery, comment replies, private messages and dynamic posts share that one control. The activity view shows daily outcomes across channels. Reading or importing comments, selecting sources, generating and reviewing replies stay in the same comment workbench. See the [operations guide](docs/guides/operations.md) for review, recovery and emergency stop.
 
 ## Deployment
 
