@@ -8,7 +8,7 @@ const statuses = {
   private_handoff: "已转私信", queued: "排队中", running: "处理中", completed: "已完成",
   failed: "失败", partial: "部分完成", cancelled: "已取消",
 };
-export const commentQueueViews = ["review", "verify", "processing", "history"];
+export const commentQueueViews = ["review", "verify", "processing", "history", "activity"];
 const queueViewForStatus = status => {
   if (["pending_review", "approved"].includes(status)) return "review";
   if (status === "publish_uncertain") return "verify";
@@ -48,7 +48,7 @@ export function evidenceList(segments = []) {
   return result;
 }
 
-export function initCommentQueue(api, refreshSources, discoveryStatus) {
+export function initCommentQueue(api, refreshSources, discoveryStatus, refreshActivity = async () => {}) {
   const list = $("queue-list"), detail = $("queue-detail"), feedback = $("queue-feedback");
   const filter = $("queue-view"), sourcesButton = $("open-manual-comments");
   const draftEdits = new Map();
@@ -73,7 +73,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
         if (id === selected) item.setAttribute("aria-current", "true");
         item.append(
           node("span", `${sources[row.source]} · ${statuses[row.status] || row.status}`, "hint"),
-          node("strong", row.excerpt || statuses[row.status] || "评论记录"),
+          node("strong", (row.excerpt || statuses[row.status] || "评论记录").slice(0, 80) + ((row.excerpt?.length || 0) > 80 ? "…" : "")),
           node("span", row.video_id || (row.channel === "jobs" ? "生成任务" : ""), "hint"),
         );
         list.append(item);
@@ -127,13 +127,13 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
     message.setAttribute("role", "status");
     const base = channel === "comments" ? "/api/comments/drafts/" : "/api/automation/intents/";
     const continuation = new OperationContinuationView(node("section"), api, error => { message.textContent = error; }, () => refresh(true));
-    const canPublish = status === "approved" && row.can_publish;
+    const canPublish = Boolean(row.can_publish);
     let publish, copy;
 
     function syncActions() {
       const dirty = draftEdits.has(key);
-      if (publish) publish.disabled = dirty || busy;
-      if (copy) copy.disabled = dirty || busy;
+      if (publish) publish.disabled = !canPublish || busy;
+      if (copy) copy.disabled = busy;
       continuation.render(row.continuation, { channel, localId: row.id, dirty, entityStatus: status });
     }
     editor.addEventListener("input", () => {
@@ -141,7 +141,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
       else draftEdits.set(key, editor.value);
       syncActions();
     });
-    const action = (text, handler, className) => {
+    const action = (text, handler, className, success, clearEdits = true) => {
       const button = node("button", text, className);
       button.type = "button";
       button.onclick = async () => {
@@ -150,16 +150,19 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
         ++version;
         for (const control of actions.querySelectorAll("button")) control.disabled = true;
         editor.readOnly = true;
+        message.textContent = `${text}中…`;
+        feedback.textContent = `${text}中…`;
         try {
           await handler();
-          draftEdits.delete(key);
+          if (clearEdits) draftEdits.delete(key);
           focusedKey = null;
           busy = false;
           await refresh(true);
+          feedback.textContent = success || `${text}完成。`;
         } catch (error) {
           busy = false;
           await refresh(true);
-          feedback.textContent = error.message;
+          feedback.textContent = `${text}失败：${error.message}`;
         } finally {
           busy = false;
           editor.readOnly = !editable;
@@ -172,19 +175,26 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
     };
     const post = (endpoint, body) => api(`${base}${encodeURIComponent(row.id)}/${endpoint}`, { method: "POST", body });
     if (editable) {
-      action("保存并审核通过", () => post("review", { action: "approve", text: editor.value }), "primary");
+      action("保存", () => post("review", { action: "approve", text: editor.value }), "primary", "已保存，草稿审核通过。");
       action("拒绝", () => post("review", { action: "reject" }));
-      if (canPublish) publish = action("发布已审核回复", () => post("publish"));
-      if (["approved", "copied"].includes(status)) {
-        copy = action("复制回复", async () => {
-          await navigator.clipboard.writeText(row.text);
-          if (channel === "comments" && status === "approved") await post("copy");
+      publish = action("发布", async () => {
+        if (status !== "approved" || draftEdits.has(key)) {
+          await post("review", { action: "approve", text: editor.value });
+          draftEdits.delete(key);
+        }
+        await post("publish");
+      }, null, "发布请求已完成，结果见记录状态与平台回执。");
+      copy = action("复制", async () => {
+          await navigator.clipboard.writeText(editor.value);
+          if (channel === "comments" && status === "approved" && !draftEdits.has(key)) await post("copy");
           message.textContent = "已复制回复";
-        });
-      }
-      if (status === "approved" && !row.can_publish) {
+        }, null, "已复制回复。", false);
+      if (!row.can_publish) {
         message.textContent ||= row.unavailable_materials ? "先重新取材并核对来源，再提交。" : "配置 B 站写入凭证后可发布。";
       }
+    }
+    if (!editable && row.text) {
+      copy = action("复制", () => navigator.clipboard.writeText(row.text), null, "已复制回复。", false);
     }
     if (status === "publish_uncertain" && !row.continuation) {
       message.textContent ||= "等待核对平台结果。此旧记录没有可恢复的核对任务。";
@@ -222,7 +232,10 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
         setView(queueViewForStatus(routedDetail.status));
         inferRouteView = false;
       }
-      const data = await api(`/api/comments/workbench?view=${view}&limit=${pageSize}&offset=${offset}`);
+      const [data] = await Promise.all([
+        api(`/api/comments/workbench?view=${view}&limit=${pageSize}&offset=${offset}`),
+        refreshActivity(),
+      ]);
       if (request !== version || !active) return;
       loaded = true;
       offset = data.offset;
@@ -250,9 +263,15 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
   }
 
   function setView(nextView) {
+    if (nextView === "activity") nextView = "review";
     if (view !== nextView) offset = 0;
     view = nextView;
     if (view !== "sources") filter.value = view;
+    for (const option of $("queue-status-options").querySelectorAll('input[name="queue-status"]')) {
+      option.checked = option.value === view;
+    }
+    $("queue-records").hidden = false;
+    $("queue-activity").hidden = false;
   }
 
   function open(nextView, nextKey = null) {
@@ -279,6 +298,18 @@ export function initCommentQueue(api, refreshSources, discoveryStatus) {
     offset = 0;
     clearLinkedRecord(filter.value);
     return open(filter.value);
+  };
+  $("queue-status-options").addEventListener("change", event => {
+    if (event.target.name !== "queue-status") return;
+    filter.value = event.target.value;
+    void filter.onchange();
+  });
+  $("refresh-queue").onclick = async event => {
+    if (busy) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await refresh(true); }
+    finally { button.disabled = false; }
   };
   sourcesButton.onclick = () => { location.hash = view === "sources" ? "comments" : "comment-acquisition"; };
   $("queue-prev").onclick = () => { clearLinkedRecord(view); offset = Math.max(0, offset - pageSize); return refresh(); };

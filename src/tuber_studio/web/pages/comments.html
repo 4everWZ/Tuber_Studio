@@ -2,23 +2,25 @@
   <div class="page-heading win-heading">
     <div class="heading-title-box">
       <h1>评论处理与草稿审核</h1>
-      <span class="hint">实时跟帖、楼中楼对话审查与人机回执核验</span>
+      <span class="hint">统一查看评论草稿、发布结果与刷视频活动</span>
     </div>
     <button type="button" id="open-manual-comments" class="win-btn">评论来源与手动取材</button>
   </div>
 
   <section id="comment-queue">
     <div class="queue-toolbar win-filter-bar">
-      <label for="queue-view" style="margin:0; font-weight:600;">处理状态</label>
-      <select id="queue-view" style="width:auto; min-width:140px;">
-        <option value="review">待审核</option>
-        <option value="verify">待核对</option>
-        <option value="processing">处理中</option>
-        <option value="history">已执行与历史</option>
-      </select>
+      <fieldset id="queue-status-options" class="queue-status-options">
+        <legend>处理状态</legend>
+        <input id="queue-view" type="hidden" value="review">
+        <label><input type="radio" name="queue-status" value="review" checked><span>待审核</span></label>
+        <label><input type="radio" name="queue-status" value="verify"><span>待核对</span></label>
+        <label><input type="radio" name="queue-status" value="processing"><span>处理中</span></label>
+        <label><input type="radio" name="queue-status" value="history"><span>已执行与历史</span></label>
+      </fieldset>
+      <button id="refresh-queue" type="button" class="win-btn">刷新</button>
     </div>
     <p id="queue-feedback" class="hint" role="status"></p>
-    <div class="review-layout win-split-pane" style="margin-top:12px;">
+    <div id="queue-records" class="review-layout win-split-pane" style="margin-top:12px;">
       <article class="win-group-box">
         <div class="win-group-title">公开评论记录</div>
         <div id="queue-list" class="win-table-container"></div>
@@ -27,6 +29,13 @@
           <button id="queue-next" type="button" class="win-btn" disabled>下一页</button>
           <span id="queue-count-label" class="hint"></span>
         </div>
+        <section id="queue-activity" class="discovery-activity queue-inline-activity">
+          <div class="panel-heading">
+            <h2>刷视频活动</h2>
+            <a href="#automation-records">运行记录 →</a>
+          </div>
+          <div id="discovery-activity-list" class="win-activity-scroll"><p class="hint">正在读取最近活动…</p></div>
+        </section>
       </article>
       <article class="win-group-box review-detail draft-panel" id="queue-detail" aria-label="记录详情"></article>
     </div>

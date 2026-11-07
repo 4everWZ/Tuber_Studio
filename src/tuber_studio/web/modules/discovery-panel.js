@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js";
-import { evidenceList } from "./comment-queue.js?v=20261107.01";
+import { evidenceList } from "./comment-queue.js?v=20261107.06";
 
 const states = {
   off: "待命", starting: "启动检查", discovering: "正在找视频", reading: "正在取材",
@@ -230,7 +230,7 @@ export function initDiscoveryPanel(api) {
 
 function activityLabel(item) {
   const labels = {
-    published: item.kind === "top_level" ? "主评已发送" : "跟帖已发送",
+    published: "已发送", failed: "发送失败",
     publish_uncertain: "回执待确认", viewed_without_comment: "看完未发", skipped: "已跳过",
     automatic_skipped: "回应已跳过", retry_wait: "自动重试", cancelled: "已停止",
   };
@@ -239,14 +239,20 @@ function activityLabel(item) {
 
 function activityExcerpt(item) {
   if (item.status === "retry_wait") return item.failures === 1 ? "同一轮重试一次" : "安排下一轮重试";
-  if (item.status === "publish_uncertain") return "原提交尚未确认";
+  if (item.status === "publish_uncertain") return item.excerpt || "原提交尚未确认";
   if (item.status === "skipped" && item.failures === 3) return "三次失败后跳过";
   if (item.status === "skipped" && !item.reason) return "不符合筛选条件";
-  return item.status === "published" ? item.excerpt : decisions[item.reason] || "";
+  return item.kind !== "task" ? item.excerpt || decisions[item.reason] || "" : decisions[item.reason] || "";
 }
 
 export function initDiscoveryActivity(api) {
   const list = $("discovery-activity-list");
+  const replies = node("div", null, "activity-replies"), tasks = node("div");
+  const empty = node("p", "暂无回复结果。", "hint");
+  const scheduling = node("details", null, "activity-scheduling");
+  const schedulingSummary = node("summary", "调度详情");
+  scheduling.append(schedulingSummary, tasks, link("完整运行记录", "#automation-records"));
+  list.replaceChildren(empty, replies, scheduling);
   const rows = new Map();
   let request = 0, scopeKey;
 
@@ -301,7 +307,8 @@ export function initDiscoveryActivity(api) {
     if (key !== scopeKey) {
       scopeKey = key;
       rows.clear();
-      list.replaceChildren();
+      replies.replaceChildren();
+      tasks.replaceChildren();
     }
     const keys = new Set(items.map(item => item.id));
     for (const [id, row] of rows) {
@@ -311,12 +318,15 @@ export function initDiscoveryActivity(api) {
         rows.delete(id);
       }
     }
-    if (!items.length) {
-      list.replaceChildren(node("p", "暂无活动记录。", "hint"));
-      return;
-    }
-    list.querySelector(":scope > :not(details)")?.remove();
-    items.forEach((item, index) => {
+    empty.textContent = "暂无回复结果。";
+    empty.hidden = items.some(item => item.kind !== "task");
+    const taskCount = items.filter(item => item.kind === "task").length;
+    schedulingSummary.textContent = `调度详情${taskCount ? `（${taskCount}）` : ""}`;
+    let replyIndex = 0, taskIndex = 0;
+    items.forEach(item => {
+      const task = item.kind === "task";
+      const container = task ? tasks : replies;
+      const index = task ? taskIndex++ : replyIndex++;
       let row = rows.get(item.id);
       if (!row) {
         const root = node("details", null, "discovery-activity-row");
@@ -340,14 +350,16 @@ export function initDiscoveryActivity(api) {
         row.signature = signature;
         row.item = item;
         row.loaded = false;
-        row.title.textContent = item.title || item.bvid;
+        row.title.textContent = task ? item.title || item.bvid :
+          `回复 ${item.recipient_name || item.target?.recipient_name || (item.kind === "top_level" ? "视频评论区" : "原评论作者")}`;
+        row.title.title = item.title || item.bvid || "";
         row.badge.textContent = activityLabel(item);
         row.when.textContent = time(item.updated_at);
         row.when.dateTime = new Date(item.updated_at * 1000).toISOString();
         row.excerpt.textContent = activityExcerpt(item);
         if (row.root.open) void loadDetail(row, item);
       }
-      if (list.children[index] !== row.root) list.insertBefore(row.root, list.children[index] || null);
+      if (container.children[index] !== row.root) container.insertBefore(row.root, container.children[index] || null);
     });
   }
 
@@ -357,7 +369,10 @@ export function initDiscoveryActivity(api) {
       const { activity, scope } = await api("/api/automation/discovery/records?recent=true");
       if (current === request) render(activity, scope);
     } catch (_) {
-      if (current === request && !rows.size) list.replaceChildren(link("读取活动失败，查看告警与错误", "#issues"));
+      if (current === request && !rows.size) {
+        empty.hidden = false;
+        empty.replaceChildren(link("读取活动失败，查看告警与错误", "#issues"));
+      }
     }
   };
 }

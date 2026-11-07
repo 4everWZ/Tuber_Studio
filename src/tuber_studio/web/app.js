@@ -2,8 +2,8 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.01";
-import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.03";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.06";
+import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.06";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.01";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
@@ -13,7 +13,7 @@ import {
   initOperationsModule,
   renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261107.03";
+} from "./modules/operations.js?v=20261107.06";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -110,7 +110,7 @@ document.addEventListener("workspace-issue", event => {
 });
 const discoveryPanel = initDiscoveryPanel(api);
 const refreshDiscoveryActivity = initDiscoveryActivity(api);
-const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status);
+const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status, refreshDiscoveryActivity);
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
 $("daily-memory-card").addEventListener("toggle", event => {
   if (model.authenticated && event.currentTarget.open) void dailyMemoryUI.refresh();
@@ -354,7 +354,6 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await commentQueue.open(anchor ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
   } else if (model.page === "automation") {
     await discoveryPanel.refresh();
-    if (model.page === "automation") await refreshDiscoveryActivity();
   } else if (model.page === "automation-records") {
     const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
     await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
@@ -393,7 +392,6 @@ async function poll() {
   model.polling = true;
   try {
     const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh()];
-    if (model.page === "automation") updates.push(refreshDiscoveryActivity());
     if (model.page === "live") updates.push(refreshLive());
     if (model.page === "comments") updates.push(commentQueue.isSources() ? refreshComments() : commentQueue.refresh());
     if (model.page === "automation-settings") updates.push(updatePermissionCapsule({ background: true }));

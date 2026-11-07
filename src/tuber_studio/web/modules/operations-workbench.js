@@ -520,7 +520,7 @@
         <thead>
           <tr>
             <th>视频 / 来源</th>
-            <th>大肥鱼判断</th>
+            <th>处理进度</th>
             <th>状态</th>
           </tr>
         </thead>
@@ -718,7 +718,7 @@
             <p class="hint">${escapeHtml(task.bvid || "—")}</p>
           </div>
           <div class="op-ai-reason-card">
-            <h4>💡 视频理解与决策</h4>
+            <h4>处理进度与内容结果</h4>
             <p class="op-reason-text">${escapeHtml(humanizeReason(taskReason(task) || task.decisions?.map(value => humanizeReason(value.reason)).join(" · ")))}</p>
           </div>
           ${task.consecutive_failures ? `<p class="hint">连续失败 ${escapeHtml(task.consecutive_failures)} 次${task.consecutive_failures === 3 ? " · 已跳过" : ""}</p>` : ""}

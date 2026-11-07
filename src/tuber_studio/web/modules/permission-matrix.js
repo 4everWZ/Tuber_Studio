@@ -148,7 +148,7 @@ function renderPermissionMatrix(status) {
 
   // 3. DM
   const messages = status.base?.messages;
-  const dmVal = !messages?.allow_comment_handoff ? "0" : messages.auto_send ? "2" : "1";
+  const dmVal = !messages?.enabled || !messages.allow_comment_handoff ? "0" : messages.auto_send ? "2" : "1";
   const dmRadio = document.querySelector(`input[name="matrix_dm"][value="${dmVal}"]`);
   if (dmRadio && document.activeElement?.name !== "matrix_dm") dmRadio.checked = true;
 
@@ -207,10 +207,11 @@ export async function saveMatrixSettings(api, { silent: isSilent = false } = {})
     const saved = await api("/api/automation/settings", { method: "PUT", body: payload });
     browsingSaved = true;
     const messages = saved.base?.messages;
-    if (messages && (messages.allow_comment_handoff !== comment_handoff_enabled || messages.auto_send !== handoff_auto_send)) {
+    const enabled = comment_handoff_enabled || messages?.enabled || false;
+    if (messages && (messages.enabled !== enabled || messages.allow_comment_handoff !== comment_handoff_enabled || messages.auto_send !== handoff_auto_send)) {
       await api("/api/messages/policy", {
         method: "PUT",
-        body: { ...messages, allow_comment_handoff: comment_handoff_enabled, auto_send: handoff_auto_send },
+        body: { ...messages, enabled, allow_comment_handoff: comment_handoff_enabled, auto_send: handoff_auto_send },
       });
     }
     const timeStr = new Date().toLocaleTimeString();

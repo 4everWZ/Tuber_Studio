@@ -295,19 +295,25 @@ class BackgroundDiscovery:
                           COALESCE(json_extract(t.payload,'$.reason'),json_extract(t.payload,'$.decisions[0].reason')) AS reason,
                           json_extract(t.payload,'$.consecutive_failures') AS failures
                    FROM browsing_tasks t JOIN rounds r ON r.id=t.round_id
-               )
+               ), activity AS (
                SELECT t.id,t.round_id,t.bvid,t.title,t.status,t.updated_at,
-                      'task' AS kind,NULL AS excerpt,t.reason,t.failures
+                      'task' AS kind,NULL AS excerpt,t.reason,t.failures,NULL AS recipient_name
                FROM tasks t WHERE t.status IN ('viewed_without_comment','skipped','retry_wait','cancelled')
                UNION ALL
                SELECT i.id,i.round_id,json_extract(i.target,'$.bvid'),
                       (SELECT t.title FROM tasks t WHERE t.round_id=i.round_id
                        AND t.bvid=json_extract(i.target,'$.bvid') AND t.title IS NOT NULL
                        ORDER BY t.created_at DESC, t.id DESC LIMIT 1),
-                      i.status,i.updated_at,i.kind,substr(i.text,1,160),i.reason,NULL
+                      i.status,i.updated_at,i.kind,substr(i.text,1,160),i.reason,NULL,
+                      json_extract(i.target,'$.recipient_name')
                FROM browsing_intents i JOIN rounds r ON r.id=i.round_id
                WHERE i.kind IN ('top_level','reply_public') AND i.status IN ('published','publish_uncertain','automatic_skipped')
-               ORDER BY updated_at DESC, id DESC LIMIT 5""",
+               ), ranked AS (
+                   SELECT *,ROW_NUMBER() OVER (PARTITION BY (kind='task') ORDER BY updated_at DESC,id DESC) AS position
+                   FROM activity
+               )
+               SELECT id,round_id,bvid,title,status,updated_at,kind,excerpt,reason,failures,recipient_name
+               FROM ranked WHERE position<=5 ORDER BY updated_at DESC,id DESC""",
             scope,
         )
 

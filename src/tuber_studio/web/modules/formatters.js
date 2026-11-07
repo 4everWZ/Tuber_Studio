@@ -101,6 +101,8 @@
         return { label: "✨ 已生成互动", className: "status-blue", priority: 2 };
       case "viewed_without_comment":
         return { label: "👀 已阅不发", className: "status-slate", priority: 8 };
+      case "comments_checked":
+        return { label: "已检查评论", className: "status-slate", priority: 8 };
       case "checkpoint":
         return { label: "💾 进度已保存", className: "status-slate", priority: 9 };
       case "retry_wait":
@@ -127,7 +129,7 @@
       "short_comment": "评论内容过短，缺少展开互动的价值",
       "duplicate_intent": "同源互动已有草稿或已发表，绝不重复发言",
       "already_commented": "大肥鱼已在此视频留过言，避免频繁刷屏",
-      "round_budget": "本轮剩余额度不足，等待下一轮",
+      "round_budget": "达到本轮资源上限，进度已保存，下一轮继续",
     };
     return map[reason] || reason;
   }

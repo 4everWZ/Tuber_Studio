@@ -580,6 +580,27 @@ tr:hover td {
 .login-panel .error-text:empty { display: none; }
 [data-workspace-anchor] { scroll-margin-top: 120px; }
 .win-activity-scroll { max-height: 34rem; overflow: auto; }
+.queue-toolbar { flex-wrap: wrap; justify-content: space-between; }
+.queue-status-options { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; border: 0; margin: 0; padding: 0; }
+.queue-status-options legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+.queue-status-options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 500; }
+.queue-status-options input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
+.queue-status-options input:checked + span { color: var(--accent); font-weight: 650; }
+#queue-list { max-height: clamp(14rem, 42vh, 26rem); overflow: auto; }
+#queue-list .queue-row { gap: 3px; padding-block: 8px; }
+#queue-list .queue-row strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: .93rem; font-weight: 550; line-height: 1.45; }
+#queue-list .queue-row > .hint { font-size: .8rem; }
+.queue-inline-activity { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+.queue-inline-activity .panel-heading { gap: 8px; }
+.queue-inline-activity h2 { font-size: .95rem; }
+.queue-inline-activity .panel-heading a { font-size: .8rem; }
+.queue-inline-activity .win-activity-scroll { max-height: 17rem; }
+.queue-inline-activity .discovery-activity-row > summary { grid-template-columns: auto auto minmax(0, 1fr); gap: 3px 6px; }
+.queue-inline-activity .discovery-activity-row time { display: none; }
+.queue-inline-activity .discovery-activity-row summary strong { font-size: .88rem; font-weight: 550; }
+.queue-inline-activity .discovery-excerpt { grid-column: 3; font-size: .8rem; }
+.queue-inline-activity .activity-replies .discovery-excerpt { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.activity-scheduling > summary { color: var(--muted); font-size: .82rem; cursor: pointer; padding-block: 8px; }
 .fetch-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(6rem, auto) auto; gap: 10px; align-items: end; }
 .fetch-row > label { margin-top: 0; }
 .video-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 8px; margin-top: 12px; }
