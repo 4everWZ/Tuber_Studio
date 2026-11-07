@@ -1,0 +1,67 @@
+{
+  "at": "2026-11-07T21:01:19.237638+08:00",
+  "kind": "native_protocol_only",
+  "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+  "source_aliases": 691,
+  "dry_parameters": {
+    "dry_multiplier": 0.8,
+    "dry_allowed_length": 5,
+    "dry_penalty_last_n": 512
+  },
+  "platform_write_attempts": 0,
+  "results": [
+    {
+      "requested_reference": "r691",
+      "http_status": 200,
+      "result": {
+        "video_preference": "neutral",
+        "preference_reason": "本次仅检查接口",
+        "reason": "no_interest",
+        "explanation": "finish, no_interest, check only interface, evidence: r691",
+        "action": "finish",
+        "evidence_ids": [
+          "r691"
+        ],
+        "text": ""
+      },
+      "references_in_schema": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 85,
+        "prompt_tokens": 104,
+        "total_tokens": 189,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 3.156
+    },
+    {
+      "requested_reference": "not_a_reference",
+      "http_status": 200,
+      "result": {
+        "video_preference": "neutral",
+        "preference_reason": "本次仅检查接口",
+        "reason": "no_interest",
+        "explanation": "only check API",
+        "action": "finish",
+        "evidence_ids": [
+          "r1",
+          "r2"
+        ],
+        "text": ""
+      },
+      "references_in_schema": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 75,
+        "prompt_tokens": 103,
+        "total_tokens": 178,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 6.704
+    }
+  ]
+}

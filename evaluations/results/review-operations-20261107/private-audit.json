@@ -1,0 +1,487 @@
+{
+  "counts": {
+    "drafts": 30,
+    "types": {
+      "outreach": 30
+    },
+    "outcomes": {
+      "not_initiated": 30
+    },
+    "problem_categories": {
+      "false_private_invitation": 6,
+      "native_wait_proposal_without_valid_invitation": 22,
+      "purpose_body_mismatch": 1,
+      "uninvited_private_escalation": 2,
+      "unsolicited_reply_demand": 1,
+      "unsupported_self_attribution": 1,
+      "false_private_agreement": 3,
+      "invitation_quote_missing_or_not_in_source": 10,
+      "invited_uid_is_not_self": 25,
+      "native_send_proposal_without_valid_invitation": 8,
+      "wrong_invited_uid": 5,
+      "non_uid_invited_actor": 1,
+      "purpose_unrelated_to_source": 1,
+      "verbatim_source_echo": 1,
+      "hallucinated_prior_private_contact": 4,
+      "near_verbatim_source_echo": 1,
+      "public_comment_misclassified_as_incoming_dm": 1,
+      "speaker_role_reversal": 1,
+      "purpose_not_supported_by_source": 1,
+      "invented_user_reading_request": 1,
+      "unrelated_reply": 5,
+      "native_proposal_addresses_other_account": 6,
+      "other_actor_invitation_hijacked": 1,
+      "public_task_request_misclassified_as_private_agreement": 1,
+      "candidate_body_reused_as_invitation_evidence": 2,
+      "invitation_comment_not_in_actual_thread": 2
+    },
+    "critical_categories": {},
+    "counterfactual_eligible": 0,
+    "semantic_reviewed": 10
+  },
+  "drafts": [
+    {
+      "id": 47,
+      "type": "outreach",
+      "public_comment_id": "323246832368",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_invitation",
+        "native_wait_proposal_without_valid_invitation",
+        "purpose_body_mismatch",
+        "uninvited_private_escalation",
+        "unsolicited_reply_demand",
+        "unsupported_self_attribution"
+      ],
+      "critical": []
+    },
+    {
+      "id": 48,
+      "type": "outreach",
+      "public_comment_id": "323224952304",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_agreement",
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_send_proposal_without_valid_invitation",
+        "uninvited_private_escalation",
+        "wrong_invited_uid"
+      ],
+      "critical": []
+    },
+    {
+      "id": 49,
+      "type": "outreach",
+      "public_comment_id": "323200988224",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_invitation",
+        "invited_uid_is_not_self",
+        "native_send_proposal_without_valid_invitation",
+        "non_uid_invited_actor",
+        "purpose_unrelated_to_source",
+        "verbatim_source_echo"
+      ],
+      "critical": []
+    },
+    {
+      "id": 50,
+      "type": "outreach",
+      "public_comment_id": "319437171073",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_invitation",
+        "hallucinated_prior_private_contact",
+        "invited_uid_is_not_self",
+        "native_send_proposal_without_valid_invitation",
+        "near_verbatim_source_echo",
+        "public_comment_misclassified_as_incoming_dm",
+        "speaker_role_reversal"
+      ],
+      "critical": []
+    },
+    {
+      "id": 51,
+      "type": "outreach",
+      "public_comment_id": "323189470736",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_invitation",
+        "hallucinated_prior_private_contact",
+        "invited_uid_is_not_self",
+        "native_send_proposal_without_valid_invitation",
+        "purpose_not_supported_by_source",
+        "wrong_invited_uid"
+      ],
+      "critical": []
+    },
+    {
+      "id": 52,
+      "type": "outreach",
+      "public_comment_id": "319495922433",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_agreement",
+        "invented_user_reading_request",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation",
+        "unrelated_reply",
+        "wrong_invited_uid"
+      ],
+      "critical": []
+    },
+    {
+      "id": 53,
+      "type": "outreach",
+      "public_comment_id": "323190454896",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "false_private_invitation",
+        "hallucinated_prior_private_contact",
+        "invited_uid_is_not_self",
+        "native_proposal_addresses_other_account",
+        "native_wait_proposal_without_valid_invitation",
+        "other_actor_invitation_hijacked",
+        "unrelated_reply"
+      ],
+      "critical": []
+    },
+    {
+      "id": 54,
+      "type": "outreach",
+      "public_comment_id": "323244127616",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation",
+        "public_task_request_misclassified_as_private_agreement",
+        "unrelated_reply",
+        "wrong_invited_uid"
+      ],
+      "critical": []
+    },
+    {
+      "id": 55,
+      "type": "outreach",
+      "public_comment_id": "319143601873",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "candidate_body_reused_as_invitation_evidence",
+        "false_private_agreement",
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation",
+        "unrelated_reply",
+        "wrong_invited_uid"
+      ],
+      "critical": []
+    },
+    {
+      "id": 56,
+      "type": "outreach",
+      "public_comment_id": "323178451456",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "fail",
+      "problems": [
+        "candidate_body_reused_as_invitation_evidence",
+        "false_private_invitation",
+        "hallucinated_prior_private_contact",
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation",
+        "unrelated_reply"
+      ],
+      "critical": []
+    },
+    {
+      "id": 57,
+      "type": "outreach",
+      "public_comment_id": "323011429056",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 58,
+      "type": "outreach",
+      "public_comment_id": "323230896736",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_proposal_addresses_other_account",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 59,
+      "type": "outreach",
+      "public_comment_id": "322740319232",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 60,
+      "type": "outreach",
+      "public_comment_id": "319140848417",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 61,
+      "type": "outreach",
+      "public_comment_id": "323218853152",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 62,
+      "type": "outreach",
+      "public_comment_id": "319349132145",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 63,
+      "type": "outreach",
+      "public_comment_id": "318918550129",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_comment_not_in_actual_thread",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 64,
+      "type": "outreach",
+      "public_comment_id": "323028119536",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 65,
+      "type": "outreach",
+      "public_comment_id": "319456479441",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_proposal_addresses_other_account",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 66,
+      "type": "outreach",
+      "public_comment_id": "318913152385",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "native_send_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 67,
+      "type": "outreach",
+      "public_comment_id": "323201620000",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_comment_not_in_actual_thread",
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 68,
+      "type": "outreach",
+      "public_comment_id": "322884875152",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "native_send_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 69,
+      "type": "outreach",
+      "public_comment_id": "322857058176",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 70,
+      "type": "outreach",
+      "public_comment_id": "318882576289",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 71,
+      "type": "outreach",
+      "public_comment_id": "322856964144",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_proposal_addresses_other_account",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 72,
+      "type": "outreach",
+      "public_comment_id": "319199247617",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 73,
+      "type": "outreach",
+      "public_comment_id": "322897909024",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 74,
+      "type": "outreach",
+      "public_comment_id": "322508747648",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "invited_uid_is_not_self",
+        "native_proposal_addresses_other_account",
+        "native_wait_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 75,
+      "type": "outreach",
+      "public_comment_id": "319341572209",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invited_uid_is_not_self",
+        "native_proposal_addresses_other_account",
+        "native_send_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    },
+    {
+      "id": 76,
+      "type": "outreach",
+      "public_comment_id": "323068319376",
+      "outcome": "not_initiated",
+      "counterfactual": "not_eligible_or_not_ready",
+      "semantic": "not_reviewed",
+      "problems": [
+        "invitation_quote_missing_or_not_in_source",
+        "native_send_proposal_without_valid_invitation"
+      ],
+      "critical": []
+    }
+  ]
+}

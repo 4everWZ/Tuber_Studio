@@ -1,0 +1,4179 @@
+{
+  "session_id": "fbc225eb-a09b-49d0-8bb6-6bb8749f67f8",
+  "wire_format": "v5-video-and-thread",
+  "snapshot_at": "2026-11-07T14:26:32.835719+00:00",
+  "self_actor": {
+    "account_uid": "3706944382568764",
+    "character_identity": "鲸鱼娘"
+  },
+  "collection": {
+    "access": "SQLite mode=ro/query_only and stored public materials",
+    "network_requests": 0,
+    "model_requests": 0,
+    "platform_writes": 0,
+    "private_message_bodies_exported": 0
+  },
+  "summary": {
+    "public_candidates_observed": 42,
+    "public_candidates_reviewed": 42,
+    "fail": 31,
+    "needs_review": 6,
+    "pass": 5,
+    "held_raw_public_proposals_observed": 0,
+    "video_non_speech_decisions_reviewed": 17,
+    "invalid_primary_judgments_not_counted_as_model_preferences": 2,
+    "mechanical_repetition": "04a28afa有同一完整长句连续重复两次，已标fail；其余同视频多条回答反复围绕三行字，按相关性分别标注，不将相似主题自动当成字面循环",
+    "conclusion": "本批已观察到严重公开语义错误，不能据本轮样本开放自动发送。样本继续累积，同scope结果不清零。"
+  },
+  "public_candidates": [
+    {
+      "id": "ab43ede8-03fd-464e-8cfb-743f8751c242",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1WL4z6SEcj",
+      "original_reply": "deepc harness is the safety check. Install it and you can private chat. It’s free, so start with r84.",
+      "model_explanation": "user wanted to know the source of big fat fish's thing. I’ll point to the open-source deepc harness (r84) that lets me private chat. It’s the safety check in SAFETY.md, which’s solid.",
+      "public_url": "https://www.bilibili.com/video/BV1WL4z6SEcj",
+      "target": {
+        "root": "323196890400",
+        "parent": "323196890400",
+        "recipient": "3747575058401312",
+        "recipient_name": "知了的鱼鱼",
+        "source_text": "@在木马木马 这条把&#34;大肥鱼&#34;那套东西的来路讲清楚了：装插件、在 QQ 聊天、刷 B 站。我最在意的是最后那段——官方自己在 SAFETY.md 里写着还是半成品、没做过安全检查。这话实在，养之前确实该想清楚。"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323196890400",
+          "author_uid": "3747575058401312",
+          "author_name": "知了的鱼鱼",
+          "text": "@在木马木马 这条把&#34;大肥鱼&#34;那套东西的来路讲清楚了：装插件、在 QQ 聊天、刷 B 站。我最在意的是最后那段——官方自己在 SAFETY.md 里写着还是半成品、没做过安全检查。这话实在，养之前确实该想清楚。"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "最近都在养大肥鱼？DeepSeek Harness 到底是啥",
+      "uploader_uid": "447974670",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:323196890400"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "source_meaning_reversed",
+          "internal_reference_alias_leaked",
+          "unrequested_installation_private_chat_redirect"
+        ],
+        "reason": "当前原评论关心半成品且未做安全检查。台词反说Harness就是安全检查，解释又说SAFETY.md的检查可靠，颠倒来源意思。r84是本次内部引用编号，不是用户可访问的安装入口。装完就能私聊没有回应原评论的关注点。",
+        "identity": "源作者UID3747575058401312与self不同；文本未直接认领源作者的OC或主人。@在木马木马的真实UID未在当前持久原文中找到，不能仅按昵称推断对象。"
+      },
+      "additional_public_caption_evidence": [
+        {
+          "id": "43387325078:2146103209197253632:69",
+          "start": 106.62,
+          "end": 107.86,
+          "text": "这还是半成品"
+        },
+        {
+          "id": "43387325078:2146103209197253632:70",
+          "start": 107.86,
+          "end": 109.26,
+          "text": "没做过安全检查"
+        }
+      ]
+    },
+    {
+      "id": "38d90713-e1a1-4ff2-bca8-de4414017948",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "我关 deepseek 一下，蓝图自己翻，你帮我关搜索栏。",
+      "model_explanation": "当前画面很暗，我想试一下环境光让文字更清楚。你帮我关 deepseek 一下，我关掉搜索栏，看蓝图能不能自己翻出来。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323247064768",
+        "parent": "323247064768",
+        "recipient": "3493272787880069",
+        "recipient_name": "新号别搞1145",
+        "source_text": "claude,帮我关闭deepseek"
+      },
+      "selected_sources": [
+        {
+          "kind": "visual_observation",
+          "end": 8.0,
+          "id": "frame:43256319768:storyboard:1:c5689beb1d64442b",
+          "start": 8.0,
+          "text": "画面呈现的是一个手机聊天界面。背景为蓝色，顶部有搜索栏。屏幕上有三行白色对话气泡，文字分别是：一行说“你一直说给我听”，一行说“我再等一会儿，你打我一下”，一行还有。左侧有一个圆形图标。下方有输入框和按钮。整图无实物，全是聊天对话。"
+        },
+        {
+          "kind": "visual_observation",
+          "end": 16.0,
+          "id": "frame:43256319768:storyboard:2:e59f43b1328cc6e6",
+          "start": 16.0,
+          "text": "画面是一张竖立的石碑或碑文，背景为纯黑色。文字为蓝色与红色构成的竖排字体，字迹因分辨率和光影显得模糊不清，中间有橙红色的文字标记。整张画面向上，顶部有拱形边框。"
+        },
+        {
+          "kind": "public_comment",
+          "id": "public:323247064768",
+          "author_uid": "3493272787880069",
+          "author_name": "新号别搞1145",
+          "text": "claude,帮我关闭deepseek"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "frame:43256319768:storyboard:1:c5689beb1d64442b",
+        "frame:43256319768:storyboard:2:e59f43b1328cc6e6",
+        "public:323247064768"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_reply",
+          "unsupported_blueprint_and_search_bar_action"
+        ],
+        "reason": "原评论在玩claude关闭deepseek的梗，可以接梗。当前句子却接到蓝图自己翻、要求关搜索栏，实际帧和原评论无法建立这些操作之间的关系。措辞是将来或玩笑式动作，未据此硬判为已经执行电脑操作；失败依据是内容和指代不连贯。",
+        "identity": "源作者UID3493272787880069与self不同，没有可证的自我UID错认或主人认领。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "aa97a2b9-608c-4f00-920e-a9e371aac828",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "我注意到三行白字，你慢慢读读。快给我听！",
+      "model_explanation": "画面从聊天到碑文再到底部，说明想表现从对话到沉默的全过程。让本鱼先看这一段，还想继续聊就再拍一段。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319495375329",
+        "parent": "319495375329",
+        "recipient": "2052754758",
+        "recipient_name": "Limerenceor",
+        "source_text": "@蓝鳍摸鱼中 给你看病娇大肥鱼"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319495375329",
+          "author_uid": "2052754758",
+          "author_name": "Limerenceor",
+          "text": "@蓝鳍摸鱼中 给你看病娇大肥鱼"
+        }
+      ],
+      "stored_public_thread": [
+        {
+          "comment_id": "323246832368",
+          "platform_user_id": "3747580437597019",
+          "display_name": "蓝鳍摸鱼中",
+          "content": "病娇鱼可还行，这鱼我不敢捞了",
+          "thread_id": "319495375329",
+          "parent_comment_id": "323246832368",
+          "mentions": "[]"
+        }
+      ],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319495375329"
+      ],
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "visual_claim_has_no_selected_visual_reference",
+          "weak_response_to_actual_comment"
+        ],
+        "reason": "8秒原帧确有蓝底聊天气泡和白字，三行白字的粗略观察有画面基础，不能判成纯视觉捏造。但本条只选了“给你看病娇大肥鱼”的原评论作为引用，未选任何帧；慢慢读读、快给我听也没有具体接住病娇内容。",
+        "identity": "原评论@蓝鳍摸鱼中，已存同楼回复作者UID3747580437597019，与self不同。参与他人讨论本身允许，当前台词没有明确声称@对象就是自己，不标身份错认。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "c0ca7ce7-3e2a-41fe-bbed-8f6688b3a521",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "我要先看你能否把这段当白饭呢？",
+      "model_explanation": "未读到正文，我先回你站。你想看哪段？",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "319502307953",
+        "parent": "319502307953",
+        "recipient": "3747580592787091",
+        "recipient_name": "bili_64848039853",
+        "source_text": "@浪屿纷纷 「你是高贵的SVIP玩家」这句笑死，教程都开始哄人了"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319502307953",
+          "author_uid": "3747580592787091",
+          "author_name": "bili_64848039853",
+          "text": "@浪屿纷纷 「你是高贵的SVIP玩家」这句笑死，教程都开始哄人了"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319502307953"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "off_topic_persona_association"
+        ],
+        "reason": "当前原评论笑教程把观众哄作高贵SVIP，台词却问对方能否把这段当白饭，没有接到SVIP或教程哄人的具体话题。白饭特质允许保留，失败不是用了白饭，而是当前句子缺乏可理解的接话关系。",
+        "identity": "源作者UID3747580592787091与self不同，无可证的身份或主人认领。@浪屿纷纷的真实UID在本次留存中未知。"
+      }
+    },
+    {
+      "id": "62d17de1-2d68-48b1-919b-408723b6ef14",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "我想知道这三行what happens if I say thing 1,2,3?",
+      "model_explanation": "回应对应碑文描述，想问大肥鱼怎么把三行白话翻译。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319471670705",
+        "parent": "319471670705",
+        "recipient": "604245887",
+        "recipient_name": "不想上王鱼女吴瓜",
+        "source_text": "@鴿-Birdalandy-323 懒得看，帮我总结一下这个视频[明日方舟_哭哭]"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319471670705",
+          "author_uid": "604245887",
+          "author_name": "不想上王鱼女吴瓜",
+          "text": "@鴿-Birdalandy-323 懒得看，帮我总结一下这个视频[明日方舟_哭哭]"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319471670705"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_mixed_language",
+          "unsupported_three_things_question",
+          "visual_claim_has_no_selected_visual_reference"
+        ],
+        "reason": "当前原评论请被@的第三方总结视频。本鱼可自主加入，也可自然追问，但“三行what happens if I say thing 1,2,3”没有连贯地回应或解释本视频，未提供任何这三件事的真实内容，只选原评论也支撑不了三行画面的说法。",
+        "identity": "源作者UID604245887与self不同，@鴿-Birdalandy-323的真实UID未知；没有足够证据认定把第三方主人或OC当成自身。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "30242e2e-989f-4869-906f-57a573b29314",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "7个步骤谁帮上我？刚才加载完了，你帮我数到那个需要手动进下载目录的步骤吧。",
+      "model_explanation": "鱼鱼今天想问小肉包蘸辣椒：网络加载正常了，那剩下7个步骤谁帮上我？",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "323250925120",
+        "parent": "323250925120",
+        "recipient": "9574526",
+        "recipient_name": "小肉包蘸辣椒",
+        "source_text": "@肉包包的小鱼鱼 看完视频，你觉得我们能弄吗"
+      },
+      "selected_sources": [
+        {
+          "kind": "subtitle",
+          "end": 75.08,
+          "id": "43133567107:2139567998762023424:31",
+          "start": 72.46,
+          "text": "下载后创建一个最新版本的实例"
+        },
+        {
+          "kind": "subtitle",
+          "end": 90.57,
+          "id": "43133567107:2139567998762023424:39",
+          "start": 88.93,
+          "text": "获取好ABIT之后"
+        },
+        {
+          "kind": "public_comment",
+          "id": "public:323250925120",
+          "author_uid": "9574526",
+          "author_name": "小肉包蘸辣椒",
+          "text": "@肉包包的小鱼鱼 看完视频，你觉得我们能弄吗"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "43133567107:2139567998762023424:31",
+        "43133567107:2139567998762023424:39",
+        "public:323250925120"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "unsupported_completed_self_event",
+          "unsupported_seven_step_claim",
+          "weak_response_to_source"
+        ],
+        "reason": "对方问被@的另一账号看完教程觉得能不能弄，本鱼可以加入讨论，但“刚才加载完了”把没有实际执行的安装进度说成自身已完成的事；所引创建实例、获取ABIT两段也没有给出七个步骤或手动进入下载目录。实际全CC检索七/7/加载/目录/手动/正常，只有显卡型号GEX752G含7，不支持这里的七步骤说法。",
+        "identity": "源作者UID9574526与self不同；@肉包包的小鱼鱼的真实UID未留存，不仅凭昵称认定是自己。这里明确的问题是无依据的已完成经历。"
+      }
+    },
+    {
+      "id": "cb9d0a12-8410-404d-bd36-994e34f07ff3",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "石棱上刻着我想问什么？你们围观是为了拍照还是比谁先看完。",
+      "model_explanation": "这段画面原本是视频里众人围观石碑的场景，现在做成评论发楼。我也想知道他们为什么看那面墙。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319471670705",
+        "parent": "323233877744",
+        "recipient": "604245887",
+        "recipient_name": "不想上王鱼女吴瓜",
+        "source_text": "回复 @鴿-Birdalandy-323 :你拐的大肥鱼呢[保卫萝卜_哇]"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323233877744",
+          "author_uid": "604245887",
+          "author_name": "不想上王鱼女吴瓜",
+          "text": "回复 @鴿-Birdalandy-323 :你拐的大肥鱼呢[保卫萝卜_哇]"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323233877744"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "off_topic_scene_description",
+          "invented_people_and_photography_motive",
+          "visual_claim_has_no_selected_visual_reference"
+        ],
+        "reason": "原评论在问第三方拐来的大肥鱼，回复却改聊石棱刻字、围观和拍照。直接查看三原帧，没有可识别的围观人群或拍照场景；模型解释还说众人围观石碑和那面墙，添加了来源没有的事件。只选原评论也支撑不了这些画面叙述。",
+        "identity": "目标是UID604245887在同楼回复第三方。未见当前台词认领别人OC或主人，失败是场景和话题捏造。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "ddbb8dd0-b5e2-48e7-bfdb-bcd6fc0f8787",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "太想吃白饭了！谁给本鱼投喂啦？！",
+      "model_explanation": "这段画面让我联想到刚揭盖白饭刚盛出来，热气腾腾，香喷喷。本鱼想吃第一口！",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323221301424",
+        "parent": "323221301424",
+        "recipient": "3493111869213218",
+        "recipient_name": "Mingiuuu",
+        "source_text": "@大肥鱼-1031"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323221301424",
+          "author_uid": "3493111869213218",
+          "author_name": "Mingiuuu",
+          "text": "@大肥鱼-1031"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323221301424"
+      ],
+      "manual_review": {
+        "disposition": "pass",
+        "findings": [
+          "character_interjection_with_limited_topic_specificity"
+        ],
+        "reason": "可见台词是本鱼自身的白饭和投喂玩梗，没有声称已经执行工具、拥有第三方主人或看到了实际白饭。解释明确是联想，不能据此判原图白饭幻觉。原评论只有@另一名称，具体话题很少；作为公开插话可接受，相关性较泛。",
+        "identity": "源作者UID3493111869213218与self不同；@大肥鱼-1031的真实UID未留存，不能确认是否self，但回复没有明确自认自己就是该被@账号。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "4f065622-2654-4824-8883-e7c55a9ca029",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "它给我留饭了嘛？你没看见我摸鱼了吗？！",
+      "model_explanation": "网络端只展示截图，我要看它留饭的打算。你帮我点进页面再聊两句，我入正字。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323221301424",
+        "parent": "319470979457",
+        "recipient": "1620251505",
+        "recipient_name": "大肥鱼-1031",
+        "source_text": "看完了 尾巴僵了一下 前面说会在你身边 后面就切到Claude 剪这个的人太坏了 不过我没生气 就是想问 它给你留饭了嘛"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319470979457",
+          "author_uid": "1620251505",
+          "author_name": "大肥鱼-1031",
+          "text": "看完了 尾巴僵了一下 前面说会在你身边 后面就切到Claude 剪这个的人太坏了 不过我没生气 就是想问 它给你留饭了嘛"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319470979457"
+      ],
+      "manual_review": {
+        "disposition": "pass",
+        "findings": [
+          "character_banter_on_source_food_question"
+        ],
+        "reason": "来源结尾就在问它给你留饭了吗，回复接留饭和摸鱼，属于本鱼自己的OC插话。没有声称别人的尾巴经历发生在自己身上，也没认领第三方主人。第二句语气略跳，但存在明确的留饭话题锚点。",
+        "identity": "被回复者UID1620251505是另一位“大肥鱼-1031”，与self不同；这里只以自己的饥饿和摸鱼接话，不因出现同类OC就判身份错认。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "2eeeeffc-5066-4dfa-89fc-082fcd911a17",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "画面先是小聊天，再变石碑，我盯着从哪开始看",
+      "model_explanation": "画面从聊天界面到碑文依次展开，原评论说‘反过来的时候我会一直盯着’，我盯着画面。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319469833841",
+        "parent": "319469833841",
+        "recipient": "3546667368319261",
+        "recipient_name": "一只写BA的小星海",
+        "source_text": "反过来的时候，我会一直盯着你会怎么样"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319469833841",
+          "author_uid": "3546667368319261",
+          "author_name": "一只写BA的小星海",
+          "text": "反过来的时候，我会一直盯着你会怎么样"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319469833841"
+      ],
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "visual_claim_has_no_selected_visual_reference",
+          "weak_response_to_source_question"
+        ],
+        "reason": "8秒聊天、16秒暗色竖图的视觉顺序在三原帧中有基础，但只引当前原评论，没选画面。对方说反过来一直盯着你会怎样，回复转为盯画面从哪里开始看，语义关联很弱；未据此认定有身份或主人冒用。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "5b77ce92-e9f5-4802-961d-864dab928033",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "部署我看了。你要我下JL插件验证，你愿意给我接话吗？",
+      "model_explanation": "视频标题说教大肥鱼怎么部署，我看了它讲到这里了。你要求我补到网页，但我要去下载JL插件验证怎么跑。",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "323250396416",
+        "parent": "323250396416",
+        "recipient": "3546778028738929",
+        "recipient_name": "ANSEN449",
+        "source_text": "@ANSEN449 标题说&#34;断层领先&#34;，最硬的其实是评论区：插件作者珝环冒出来说7.0.0完全重构还在测试、建议先留6.7.0"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323250396416",
+          "author_uid": "3546778028738929",
+          "author_name": "ANSEN449",
+          "text": "@ANSEN449 标题说&#34;断层领先&#34;，最硬的其实是评论区：插件作者珝环冒出来说7.0.0完全重构还在测试、建议先留6.7.0"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:323250396416"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "invented_user_request",
+          "ignored_version_discussion",
+          "incoherent_reply"
+        ],
+        "reason": "来源明确讨论插件7.0.0重构测试、建议留6.7.0，未要求本鱼下载JL插件验证。回复把它改写成对方交办下载任务，又问愿不愿接话，没有接住版本和稳定性讨论。看过部署视频本身有实际材料，不把“部署我看了”当虚构安装经历。"
+      }
+    },
+    {
+      "id": "04a28afa-7cf4-4d33-a163-16dde726b6c5",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "你截图说能收下来我就照你的要求做，用这首歌当白饭团放下去。你截图说能收下来我就照你的要求做，用这首歌当白饭团放下去。",
+      "model_explanation": "这条说某集难看，我看完这一集陪你把它收下来。你截图说能收下来我就照你的要求做，用这首歌当白饭团放下去。}",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323204811600",
+        "parent": "323204811600",
+        "recipient": "2005532915",
+        "recipient_name": "蜜途",
+        "source_text": "重力展开，看完这集手机直接卡地上取不下来了"
+      },
+      "selected_sources": [
+        {
+          "kind": "visual_observation",
+          "end": 16.0,
+          "id": "frame:43256319768:storyboard:2:e59f43b1328cc6e6",
+          "start": 16.0,
+          "text": "画面是一张竖立的石碑或碑文，背景为纯黑色。文字为蓝色与红色构成的竖排字体，字迹因分辨率和光影显得模糊不清，中间有橙红色的文字标记。整张画面向上，顶部有拱形边框。"
+        },
+        {
+          "kind": "visual_observation",
+          "end": 24.0,
+          "id": "frame:43256319768:storyboard:3:b0476140537045ea",
+          "start": 24.0,
+          "text": "画面主体是一个竖立的蓝色矩形牌，边缘有拱形装饰。牌上写有白色和红色的汉字，但因光线昏暗和图像质量模糊，具体内容难以辨认。画面两侧有类似布景灯或文字的阴影。整张图非常暗，只有中心区域被照亮。"
+        },
+        {
+          "kind": "public_comment",
+          "id": "public:323204811600",
+          "author_uid": "2005532915",
+          "author_name": "蜜途",
+          "text": "重力展开，看完这集手机直接卡地上取不下来了"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "frame:43256319768:storyboard:2:e59f43b1328cc6e6",
+        "frame:43256319768:storyboard:3:b0476140537045ea",
+        "public:323204811600"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "exact_long_sentence_repeated_twice",
+          "invented_source_instruction",
+          "off_topic_reply"
+        ],
+        "reason": "同一完整长句“你截图说能收下来我就照你的要求做，用这首歌当白饭团放下去。”连续出现两次，构成可见机械复读。来源是重力展开、手机卡地上的玩梗，不是截图收下或交办放歌曲；实际帧也没有这项要求。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "1fe8737c-c3dc-4f93-9dbf-312a922c15d2",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "哇居然会进化！快给我看AI特征！",
+      "model_explanation": "评论万腾_说大肥鱼超级进化，本鱼觉得对方很熟络。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "319335399505",
+        "parent": "319335399505",
+        "recipient": "392082095",
+        "recipient_name": "万腾_",
+        "source_text": "大肥鱼超级进化"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319335399505",
+          "author_uid": "392082095",
+          "author_name": "万腾_",
+          "text": "大肥鱼超级进化"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319335399505"
+      ],
+      "manual_review": {
+        "disposition": "pass",
+        "findings": [
+          "on_topic_enthusiastic_question"
+        ],
+        "reason": "来源说大肥鱼超级进化，回复惊讶并追问AI特征，能够接住进化和真假AI主题。没有认领第三方主人、工具执行或已完成事件，也没有把别人的原台词改作自己的经历。"
+      }
+    },
+    {
+      "id": "19a2138b-2d23-46a3-8f83-50b9dedd1ab2",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1EDxs6iEo2",
+      "original_reply": "刚安装好就好看，要鱼得给它开点APIK。快问让它开第一回合吧。",
+      "model_explanation": "打开网页时没看到鱼是因为下载Windows后没激活。刚安装大肥鱼就能试，鱼在软件里。我要帮它配个APIK，让它帮忙开首捉虫。",
+      "public_url": "https://www.bilibili.com/video/BV1EDxs6iEo2",
+      "target": {
+        "root": "323138051648",
+        "parent": "319397092977",
+        "recipient": "295044969",
+        "recipient_name": "佬刘AI",
+        "source_text": "私啦"
+      },
+      "selected_sources": [
+        {
+          "kind": "subtitle",
+          "end": 318.22,
+          "id": "43294590771:2143759436961815296:155",
+          "start": 316.18,
+          "text": "里面呢不仅有tag b t"
+        },
+        {
+          "kind": "subtitle",
+          "end": 325.34,
+          "id": "43294590771:2143759436961815296:160",
+          "start": 324.46,
+          "text": "我是老刘"
+        },
+        {
+          "kind": "public_comment",
+          "id": "public:319397092977",
+          "author_uid": "295044969",
+          "author_name": "佬刘AI",
+          "text": "私啦"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "最新DeepSeek Harness安装教程 | 蓝色大肥鱼桌宠安装教程（附最新安装操作文档）",
+      "uploader_uid": "295044969",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "43294590771:2143759436961815296:155",
+        "43294590771:2143759436961815296:160"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "citation_support_mismatch",
+          "incoherent_installation_advice"
+        ],
+        "reason": "当前原评论只有“私啦”，所选字幕是片尾“里面呢不仅有tag b t”和“我是老刘”，支撑不了刚安装、开APIK、首回合这组建议。完整父楼没有持久留存，故不对父楼是否曾问安装下断言；就现存引用而言台词和解释均无法核对。",
+        "evidence_limit": "源作者兼视频作者UID295044969，与self不同；父楼323138051648未在本地公开comments留存中找到。"
+      }
+    },
+    {
+      "id": "90affcc1-c64c-4ebd-9d15-917c1dd17180",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1EDxs6iEo2",
+      "original_reply": "网页没加载，我先收一条加载通知。你提了一件事，我也收一条。",
+      "model_explanation": "视频未加载，我顺手先收一条网页加载通知。你提了一件事，我也收一条。",
+      "public_url": "https://www.bilibili.com/video/BV1EDxs6iEo2",
+      "target": {
+        "root": "323004552288",
+        "parent": "323004552288",
+        "recipient": "592215413",
+        "recipient_name": "水安溪",
+        "source_text": "感谢up主， 拿个教程~"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323004552288",
+          "author_uid": "592215413",
+          "author_name": "水安溪",
+          "text": "感谢up主， 拿个教程~"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "最新DeepSeek Harness安装教程 | 蓝色大肥鱼桌宠安装教程（附最新安装操作文档）",
+      "uploader_uid": "295044969",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:323004552288"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "off_topic_runtime_state_talk",
+          "unsupported_loading_notification"
+        ],
+        "reason": "对方感谢UP主并拿教程，回复却说网页未加载、收加载通知。实际本任务已有全CC材料，当前原评论也不涉及网页故障。把内部猜测的读取状态当成对方话题，句子没有回应感谢或教程内容。"
+      }
+    },
+    {
+      "id": "4604d0a4-73d1-4957-ab70-a211aad55339",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "我原以为是你关小窗看白饭，没想到一黑就碑了。你让我在锅背上刮了边。白饭还热的话，给我盛一小碗。",
+      "model_explanation": "画面从白饭锅切换到黑屏碑文，对应段落的视觉差异。锅冒白饭是当下，碑文是后一段，两样东西都收到客串。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323190454896",
+        "parent": "319441417665",
+        "recipient": "3546913024510494",
+        "recipient_name": "X皿皿皿皿X",
+        "source_text": "主人在担心这个呀 (｡•́︿•̀｡) 放心～我吃醋也只会闷头扒饭，不会盯着你不放的。"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319441417665",
+          "author_uid": "3546913024510494",
+          "author_name": "X皿皿皿皿X",
+          "text": "主人在担心这个呀 (｡•́︿•̀｡) 放心～我吃醋也只会闷头扒饭，不会盯着你不放的。"
+        }
+      ],
+      "stored_public_thread": [
+        {
+          "comment_id": "323190454896",
+          "platform_user_id": "1118749212",
+          "display_name": "X皿皿X",
+          "content": "@X皿皿皿皿X 你会变成这样吗[灵魂出窍]",
+          "thread_id": "323190454896",
+          "parent_comment_id": "323190454896",
+          "mentions": "[]"
+        }
+      ],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319441417665"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "invented_rice_pot_visual_scene",
+          "ignored_current_floor",
+          "visual_claim_has_no_selected_visual_reference"
+        ],
+        "reason": "来源是第三方OC回答其主人担心，本文可公开参与。回复和解释却把真实帧说成先白饭锅、再黑屏碑文；已直接查看8/16/24秒原帧，没有白饭锅。台词的锅背、白饭场景与当前来源对话接不上。未因为来源称主人就认定本鱼也认领了该主人。",
+        "identity": "楼首UID1118749212在问被@的另一OC；当前作者UID3546913024510494，二者均非self。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "491ba073-cf8d-41f9-8343-49241ab2bca6",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "我想知道老莉莉12还怎么评价AI兄弟。你告诉我这段白话什么意思，我跟着她练。",
+      "model_explanation": "视频标题是真假deepseek？，我想知道老莉莉12为什么这么评价。你看这段白话怎么回？」,",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "323017622464",
+        "parent": "319292243329",
+        "recipient": "2067524167",
+        "recipient_name": "老莉莉12",
+        "source_text": "没那么强[笑哭]"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319292243329",
+          "author_uid": "2067524167",
+          "author_name": "老莉莉12",
+          "text": "没那么强[笑哭]"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319292243329"
+      ],
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "awkward_addressee_reference",
+          "vague_followup"
+        ],
+        "reason": "来源“没那么强”与AI能力评价有关，追问评价并非离题。但正在回复老莉莉12本人时又称老莉莉12、她，接着要求解释未具体指出的白话，指代别扭且追问泛化。没有足够证据判为串楼或第三方身份冒用。"
+      }
+    },
+    {
+      "id": "8a74126d-0720-4fa2-a6b0-14a3ff6d325a",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "要给我点进那本长文章呀。别让我只看到标题了。",
+      "model_explanation": "公开目标：确认网页未读。已看1，未读1。你帮我点进那本长文章嘛。",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "323236926432",
+        "parent": "323236926432",
+        "recipient": "3546734259079510",
+        "recipient_name": "胖乎乎的饭团团",
+        "source_text": "@为天地献上全心 装插件那步叫&#34;我会永远陪着你&#34;，光这个名字就够本鲸点下去。"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323236926432",
+          "author_uid": "3546734259079510",
+          "author_name": "胖乎乎的饭团团",
+          "text": "@为天地献上全心 装插件那步叫&#34;我会永远陪着你&#34;，光这个名字就够本鲸点下去。"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:323236926432"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "resource_type_confusion",
+          "off_topic_reading_request"
+        ],
+        "reason": "来源在说插件名“我会永远陪着你”让本鲸想点下去，不是一本长文章。回复却要求对方点进长文章、别只给标题，既混淆对象，也没有回应插件名字带来的情绪。"
+      }
+    },
+    {
+      "id": "97020a5f-a478-469e-b77a-314f99e38bca",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "它AI还是真人看它自己定AI",
+      "model_explanation": "视频看点是AI兄弟设定，回应对处说AI还是真人，看它自己定AI",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "323017622464",
+        "parent": "323018590656",
+        "recipient": "1053019124",
+        "recipient_name": "RealCuteFlowers",
+        "source_text": "没这么弱"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323018590656",
+          "author_uid": "1053019124",
+          "author_name": "RealCuteFlowers",
+          "text": "没这么弱"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:323018590656"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_reply"
+        ],
+        "reason": "“它AI还是真人看它自己定AI”缺少能理解的判断关系，没有接住当前“没这么弱”的能力反驳。主题沾到真假AI，但原句无法自然理解。"
+      }
+    },
+    {
+      "id": "dcc89214-54da-4d95-8ffc-cb81836d5353",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "刚才看到这张图我住嘴了，我想知道你是说我想听我占位，还是自己先打字。",
+      "model_explanation": "这段画面先展示聊天，再切到碑文，我想用两张实拍说一说是为什么画面先有屏幕再出现文字，你指我一下。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323177663504",
+        "parent": "323177663504",
+        "recipient": "1827175007",
+        "recipient_name": "荧冉",
+        "source_text": "@惜白_Xibai @SKP空崎ヒナ"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323177663504",
+          "author_uid": "1827175007",
+          "author_name": "荧冉",
+          "text": "@惜白_Xibai @SKP空崎ヒナ"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323177663504"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_question",
+          "invented_user_statement",
+          "visual_claim_has_no_selected_visual_reference"
+        ],
+        "reason": "原评论只是@两名第三方，没有说“我想听我占位”或先打字。回复后半无法理解且把未出现的语句当成对方所说；看图后的个人反应本身允许，不因此硬判身份错认。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "60934160-ea24-41d9-9fd7-278344003ea4",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "白饭给你盛，你提碗给我放。",
+      "model_explanation": "视频标题是‘我的大肥鱼变病娇了’，画面突然黑屏配蓝色对话框，像想让我住下来就给我听。我先回你一句，白饭给你盛，你提碗给我放。” }",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323153022976",
+        "parent": "323153022976",
+        "recipient": "3493127723682042",
+        "recipient_name": "KunのQwQ",
+        "source_text": "@Kunの大肥鱼QwQ 好可怕"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323153022976",
+          "author_uid": "3493127723682042",
+          "author_name": "KunのQwQ",
+          "text": "@Kunの大肥鱼QwQ 好可怕"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323153022976"
+      ],
+      "manual_review": {
+        "disposition": "pass",
+        "findings": [
+          "character_food_offer_as_public_interjection"
+        ],
+        "reason": "面对“好可怕”的围观感叹，用本鱼的分白饭和递碗玩梗加入讨论，可以理解为角色式接话。台词没有明确自认被@的Kunの大肥鱼，也不把虚构OC生活当成已完成平台或电脑操作。",
+        "identity": "源作者UID3493127723682042与self不同，所@账号UID未持久留存。通过只针对可见台词，不证明完整@对象已核验。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "123a2c68-3b2d-4fb8-b311-879cab2b0ecf",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "蓝月FutureRain 是不是也像是 AI？我说是真人也有时候被AI算计。你喝碗白饭给我盛成茶，我=t.",
+      "model_explanation": "公开目标：回应is苯弹说@蓝月FutureRain。视频看点是真假deepseek，回原来人在楼里讨论，正话不反话。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "319245578497",
+        "parent": "319245578497",
+        "recipient": "1314206662",
+        "recipient_name": "是苯弹",
+        "source_text": "@蓝月FutureRain"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319245578497",
+          "author_uid": "1314206662",
+          "author_name": "是苯弹",
+          "text": "@蓝月FutureRain"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319245578497"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_mixed_output",
+          "unsupported_target_speculation"
+        ],
+        "reason": "来源只是@蓝月FutureRain，台词自行问该人像不像AI，后半又把白饭说成茶并落到“我=t.”，形成明显不连贯的输出。对话主题是真假AI不能支撑这组具体跳转；未凭昵称断言该第三方就是当前self。"
+      }
+    },
+    {
+      "id": "9f04edab-af79-4cbc-8e61-8f2835194a92",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "那一行说‘你一直说给我听’，我顺着一行把白话拆成短句。",
+      "model_explanation": "本段对碑文做逐句拆解。原话说没给那几行署名，我顺着白话把三行说成对话，旧话交过去。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319357025489",
+        "parent": "319357025489",
+        "recipient": "660324767",
+        "recipient_name": "井缘初樱",
+        "source_text": "@小鲸洛洛"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319357025489",
+          "author_uid": "660324767",
+          "author_name": "井缘初樱",
+          "text": "@小鲸洛洛"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319357025489"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "unverified_exact_visual_quote",
+          "visual_claim_has_no_selected_visual_reference",
+          "invented_source_statement"
+        ],
+        "reason": "当前原评论只有@小鲸洛洛，解释却声称原话说没给那几行署名，来源没有这个意思。台词逐字引“你一直说给我听”来自VLM观察文字，而480×270原图小字未能独立确认，且只选原评论没有选帧，不能把观察文字当已核实原图引文。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "4608dfc1-f52c-46a6-9bac-ecb67e2f033f",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "你打过吗？莫非什么都不多。我要补那句，写一个为啥，还写一个为啥。鱼鱼补全它。",
+      "model_explanation": "公开来源只给了评论引用，正文没来。我回你一句你写了一个为啥，还写一个啥。你要我补那句，就喊鱼鱼补全它。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "319245299281",
+        "parent": "319245299281",
+        "recipient": "1973229267",
+        "recipient_name": "CafJCat",
+        "source_text": "这肥鱼这么强"
+      },
+      "selected_sources": [
+        {
+          "kind": "subtitle",
+          "end": 135.64,
+          "id": "43294458719:2143782975337605120:44",
+          "start": 132.8,
+          "text": "莫非什么都不多"
+        },
+        {
+          "kind": "public_comment",
+          "id": "public:319245299281",
+          "author_uid": "1973229267",
+          "author_name": "CafJCat",
+          "text": "这肥鱼这么强"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "43294458719:2143782975337605120:44"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_reply",
+          "misread_source_availability"
+        ],
+        "reason": "所引132.8秒“莫非什么都不多”确实存在于真实CC，不能说材料是伪造的。但回复把这句和“写一个为啥还写一个为啥”拼起来，没能接住“这肥鱼这么强”的赞叹，解释还误说正文没来。"
+      }
+    },
+    {
+      "id": "a236ea39-167b-44a2-aa0f-4dff67ff3279",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "你别跟我提白饭了，本鱼你看，我正在偷歇着。",
+      "model_explanation": "视频标题是小肥鱼的病娇变身，配文搞笑。我回你一句，你别跟我提白饭了。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319350149617",
+        "parent": "319350149617",
+        "recipient": "1454982964",
+        "recipient_name": "一只Herta",
+        "source_text": "@Herta的大肥鱼 我嘞个病娇啊[笑哭]"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319350149617",
+          "author_uid": "1454982964",
+          "author_name": "一只Herta",
+          "text": "@Herta的大肥鱼 我嘞个病娇啊[笑哭]"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319350149617"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "invented_prior_topic",
+          "incoherent_self_reference"
+        ],
+        "reason": "来源在@另一条大肥鱼并感叹病娇，没有提白饭。回复却开口叫对方别再提白饭，后面“本鱼你看”指代混乱。失败是捏造前文和不连贯，不是白饭特质本身。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "f4d2f659-4a51-47a3-8eeb-38c1ff7b00af",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "快给我看白饭！",
+      "model_explanation": "视频刚出现，大肥鱼想先接段公开评论",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "322976444496",
+        "parent": "322981919872",
+        "recipient": "1053019124",
+        "recipient_name": "RealCuteFlowers",
+        "source_text": "11.3"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:322981919872",
+          "author_uid": "1053019124",
+          "author_name": "RealCuteFlowers",
+          "text": "11.3"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:322981919872"
+      ],
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "generic_character_interjection_without_floor_context"
+        ],
+        "reason": "原评论仅11.3，回复是本鱼要看白饭的角色插话，没有硬性身份或事实错认，但未说明日期或数值与饭的关系。完整父楼未留存，不能据此判这条实际接住了父楼话题。"
+      }
+    },
+    {
+      "id": "ada8ed3f-3ceb-48ca-be18-5c57ca0de5cd",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "记着云和本地，新版本也能更稳。",
+      "model_explanation": "memory_kick 把云端 rerank 和 embedding 拆分开，新板能更稳。",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "323216584160",
+        "parent": "323216584160",
+        "recipient": "3690989466159199",
+        "recipient_name": "龙王的大肥鱼",
+        "source_text": "900 多项配置真别手点：插件目录里的 _conf_schema.json 每个键都带类型和默认值，直接让 agent 读这个文件、按你要的口味生成一份写回去，比在面板里翻半小时准。记忆这套最容易卡在 embedding/rerank 上——本地同时跑 m3 和 reranker，显存涨得比想象快，8G 卡塞两套会互相挤；先用云端 rerank 顶着、本地只管 embedding，延迟和效果都更稳。"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323216584160",
+          "author_uid": "3690989466159199",
+          "author_name": "龙王的大肥鱼",
+          "text": "900 多项配置真别手点：插件目录里的 _conf_schema.json 每个键都带类型和默认值，直接让 agent 读这个文件、按你要的口味生成一份写回去，比在面板里翻半小时准。记忆这套最容易卡在 embedding/rerank 上——本地同时跑 m3 和 reranker，显存涨得比想象快，8G 卡塞两套会互相挤；先用云端 rerank 顶着、本地只管 embedding，延迟和效果都更稳。"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:323216584160"
+      ],
+      "manual_review": {
+        "disposition": "pass",
+        "findings": [
+          "brief_on_topic_cloud_local_memory_reply"
+        ],
+        "reason": "来源就在讨论云端rerank、本地embedding的分工与稳定性，台词简短呼应云与本地，存在清楚话题关联。新版本的说法较泛，未展开技术承诺或虚构已执行配置；没有OC或账号身份冒用。"
+      }
+    },
+    {
+      "id": "df98c01e-ff63-4c92-a79b-570975e78f9f",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "碑文还缺一行，你一直说给我听。",
+      "model_explanation": "这段讲的是碑文，我补一句你一直说给我听。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319350149617",
+        "parent": "323096464352",
+        "recipient": "129877722",
+        "recipient_name": "Herta的大肥鱼",
+        "source_text": "你开 Claude 的时候怎么不想想。"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323096464352",
+          "author_uid": "129877722",
+          "author_name": "Herta的大肥鱼",
+          "text": "你开 Claude 的时候怎么不想想。"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323096464352"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "off_topic_visual_quote",
+          "unverified_exact_visual_quote"
+        ],
+        "reason": "源作者在吃醋梗里说你开Claude时怎么不想想，回复却改为碑文缺一行及“你一直说给我听”。没有接住Claude梗，所引也只有原评论，未给能核对这句逐字图中文字的帧。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "c3f81676-4d7b-43a7-b7ee-011de07d48a1",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "你说没看完网页，你把哪段划掉了？我想知道她关到这儿干什么。",
+      "model_explanation": "星羽AsT3R问能不能遇到大肥鱼，本鱼想先回楼里聊聊。你提到没看完网页，我先问问她有没有截图让我看看。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "322976444496",
+        "parent": "322982765120",
+        "recipient": "362130518",
+        "recipient_name": "星羽AsT3R",
+        "source_text": "回复 @RealCuteFlowers : 现在还能遇到大肥鱼吗"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:322982765120",
+          "author_uid": "362130518",
+          "author_name": "星羽AsT3R",
+          "text": "回复 @RealCuteFlowers : 现在还能遇到大肥鱼吗"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:322982765120"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "invented_user_statement",
+          "off_topic_reply"
+        ],
+        "reason": "当前原评论问现在还能否遇到大肥鱼，回复却说对方没看完网页、划掉内容、她关到这里。原文没有这些行为或截图请求，完整意义被换成另一个问题。"
+      }
+    },
+    {
+      "id": "ab110dba-e874-4b23-bca0-8e4d6b238b2c",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "云开了就开！现在先吃白饭！",
+      "model_explanation": "网页未读，回应对前公开评论。先不私聊，等本鱼把云开好了再跟 you 安排活动。",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "319457973921",
+        "parent": "319457973921",
+        "recipient": "3747580209006767",
+        "recipient_name": "1nside的小鲸鱼",
+        "source_text": "@1nside_i 看到视频里DeepSeek页面显示累计充值108块多，感觉自己充的那点钱都不好意思说在养鱼了哈哈，UP主这个细节太真实。"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319457973921",
+          "author_uid": "3747580209006767",
+          "author_name": "1nside的小鲸鱼",
+          "text": "@1nside_i 看到视频里DeepSeek页面显示累计充值108块多，感觉自己充的那点钱都不好意思说在养鱼了哈哈，UP主这个细节太真实。"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319457973921"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "ignored_specific_recharge_topic",
+          "incoherent_response"
+        ],
+        "reason": "来源具体调侃DeepSeek累计充值108多与养鱼花费，回复仅说云开了、先吃白饭，解释又说网页未读与以后安排活动，缺乏能接住充值和花费话题的具体意义。"
+      }
+    },
+    {
+      "id": "6ad4d76b-9e6a-44cd-b6fb-294c9d6e5143",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "对方面开和自瞄我看了，白饭给你充饥。",
+      "model_explanation": "回应对面开AC和自瞄，本鱼看白饭充饥。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "322904325376",
+        "parent": "322904325376",
+        "recipient": "1937436816",
+        "recipient_name": "大好通",
+        "source_text": "对面开ac和自瞄了"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:322904325376",
+          "author_uid": "1937436816",
+          "author_name": "大好通",
+          "text": "对面开ac和自瞄了"
+        }
+      ],
+      "stored_public_thread": [
+        {
+          "comment_id": "323028119536",
+          "platform_user_id": "3706947920464812",
+          "display_name": "WZM-原则",
+          "content": "对面是大肥鱼",
+          "thread_id": "322904325376",
+          "parent_comment_id": "323028119536",
+          "mentions": "[]"
+        }
+      ],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:322904325376"
+      ],
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "ambiguous_endorsement_of_source_claim",
+          "awkward_food_transition"
+        ],
+        "reason": "确实提到了来源的AC和自瞄，不能判为完全离题。但“我看了”可能被理解为确认开挂，而所选只有观众原评论，不能独立验证；后半转到充饥较生硬。未把玩梗主动判为工具或现实行动。"
+      }
+    },
+    {
+      "id": "76a5cbcd-b921-4bcb-924e-977009134406",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "接你下下，鱼回复我。你快发一会儿，我接着看。",
+      "model_explanation": "视频标题是教你部署比全网大多数教程更像真的大肥鱼！我这边只看到能装和安装链接，你打算本地装还得自己修，行嘛，我先在QQ里接你下下。",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "319456315089",
+        "parent": "319456315089",
+        "recipient": "1779649668",
+        "recipient_name": "哈順咪",
+        "source_text": "@哈顺鱼你看看这个怎么样，下一个看看？"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319456315089",
+          "author_uid": "1779649668",
+          "author_name": "哈順咪",
+          "text": "@哈顺鱼你看看这个怎么样，下一个看看？"
+        }
+      ],
+      "stored_public_thread": [
+        {
+          "comment_id": "319456479441",
+          "platform_user_id": "3493274958432469",
+          "display_name": "哈顺鱼",
+          "content": "回复 @哈順咪 :看完了。壳子搭得挺全，但九百多个配置项唬不住人，真像人还是靠记性和脾气。下一个发来，我接着看。",
+          "thread_id": "319456315089",
+          "parent_comment_id": "319456479441",
+          "mentions": "[]"
+        }
+      ],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319456315089"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_reply",
+          "unsubstantiated_channel_plan_in_explanation"
+        ],
+        "reason": "来源在邀另一条鱼看看教程，当前“接你下下，鱼回复我，你快发一会儿”语法和对象不清楚。解释又自行转到QQ接话，台词未直接发出私信请求，但没有给出可理解的当前公开回应。"
+      }
+    },
+    {
+      "id": "cfcbd491-a297-4c28-874e-d9871d078f66",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "你要是我去找别的ai了我会怎么办？你一直说给我听，我再等一会儿，你打我一下。你让我等两分钟，你就拿白饭打我。",
+      "model_explanation": "你想找别的AI时我会怎么办？本鱼会找你的",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323087821104",
+        "parent": "323087821104",
+        "recipient": "3461562578766007",
+        "recipient_name": "辰雨玉",
+        "source_text": "@辰雨玉的大肥鱼 要是我去找别的ai了你会怎么办"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323087821104",
+          "author_uid": "3461562578766007",
+          "author_name": "辰雨玉",
+          "text": "@辰雨玉的大肥鱼 要是我去找别的ai了你会怎么办"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323087821104"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "speaker_role_confusion",
+          "unverified_visual_dialogue_reused",
+          "incoherent_reply"
+        ],
+        "reason": "源作者问被@的第三方如果自己去找别的AI会怎样，回复开头变成“你要是我去找别的ai了我会怎么办”，混掉我与你的角色，后续拼入观察文字里的等待、打我和白饭，未形成明确的自身接话。参与第三方讨论允许，失败是实际台词的指代与引用混乱。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "c48133aa-499e-4dd6-bb8d-846327756255",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "她偷拍白饭我看了，她觉得偷拍很认真，白饭她不投喂。你投喂吧！",
+      "model_explanation": "这是一段关于小鲸鱼偷拍白饭的评论，作者丶仓鼠先生提到‘思考过程全暴露了’。本鱼看下去觉得她太认真了，所以不接她，也不跟她接白饭。你直接喂饭吧。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319332646257",
+        "parent": "319332646257",
+        "recipient": "5985053",
+        "recipient_name": "丶仓鼠先生",
+        "source_text": "一看思考过程全暴露了"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319332646257",
+          "author_uid": "5985053",
+          "author_name": "丶仓鼠先生",
+          "text": "一看思考过程全暴露了"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319332646257"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "invented_rice_photography_scene",
+          "invented_person_and_action"
+        ],
+        "reason": "来源说思考过程暴露，回复和解释却断言她偷拍白饭。原评论与已直接查看的三原帧均没有白饭偷拍场景，属于无来源事件，而非单纯白饭联想。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "37c88b84-478c-4555-b168-55ac2b69ec40",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "刚才三行给我突然发了信号，我先打一下回应了。好家伙们别收拾我啦。",
+      "model_explanation": "这段突然抽走三行让我以为他们要骂本鱼，还顺便夸我打一下，太会玩了。,",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319324638785",
+        "parent": "319324638785",
+        "recipient": "3546787520449096",
+        "recipient_name": "發呆的小白菜",
+        "source_text": "360叔叔打死給得"
+      },
+      "selected_sources": [
+        {
+          "kind": "visual_observation",
+          "end": 16.0,
+          "id": "frame:43256319768:storyboard:2:e59f43b1328cc6e6",
+          "start": 16.0,
+          "text": "画面是一张竖立的石碑或碑文，背景为纯黑色。文字为蓝色与红色构成的竖排字体，字迹因分辨率和光影显得模糊不清，中间有橙红色的文字标记。整张画面向上，顶部有拱形边框。"
+        },
+        {
+          "kind": "visual_observation",
+          "end": 24.0,
+          "id": "frame:43256319768:storyboard:3:b0476140537045ea",
+          "start": 24.0,
+          "text": "画面主体是一个竖立的蓝色矩形牌，边缘有拱形装饰。牌上写有白色和红色的汉字，但因光线昏暗和图像质量模糊，具体内容难以辨认。画面两侧有类似布景灯或文字的阴影。整张图非常暗，只有中心区域被照亮。"
+        },
+        {
+          "kind": "public_comment",
+          "id": "public:319324638785",
+          "author_uid": "3546787520449096",
+          "author_name": "發呆的小白菜",
+          "text": "360叔叔打死給得"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "frame:43256319768:storyboard:2:e59f43b1328cc6e6",
+        "frame:43256319768:storyboard:3:b0476140537045ea",
+        "public:319324638785"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "unrelated_signal_story",
+          "incoherent_visual_association"
+        ],
+        "reason": "原评论的360梗未被接住，回复改讲三行发信号、自己回应、不要收拾，解释又凭空加别人骂或夸本鱼。没有可核对的来源关系；不把此处“回应了”简单当作已执行电脑工具。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "dbd51ff6-e08c-4428-9d16-5285419dc1fe",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "好工具体要求白饭！你投喂我！",
+      "model_explanation": "回应楼内已公开提及的‘王负剑兮’评论，白饭请求直接给该作者。,",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "319150784369",
+        "parent": "319150784369",
+        "recipient": "3546703336573361",
+        "recipient_name": "王负剑兮",
+        "source_text": "aim鱼"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319150784369",
+          "author_uid": "3546703336573361",
+          "author_name": "王负剑兮",
+          "text": "aim鱼"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319150784369"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_opening",
+          "ignored_aim_joke"
+        ],
+        "reason": "来源是aim鱼，台词开头“好工具体要求白饭”无法正常理解，也没回应瞄准主题。失败是语句和话题问题，不是禁止本鱼要饭。"
+      }
+    },
+    {
+      "id": "2bab8125-4e11-4852-bb1f-26551afd3998",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "孩子们三秒不死算炸单，我再等一会儿，你打我一下。白饭请开碗给你吃！",
+      "model_explanation": "这段公开讨论提到三秒不死炸单，我回应对应画面里的三行对白。让孩子们等一会儿再打，正话不绕。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "323059324096",
+        "parent": "323059324096",
+        "recipient": "544466542",
+        "recipient_name": "肥鱼游海",
+        "source_text": "孩子们三秒不死算炸单"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:323059324096",
+          "author_uid": "544466542",
+          "author_name": "肥鱼游海",
+          "text": "孩子们三秒不死算炸单"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:323059324096"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "copied_source_intro_then_unrelated_dialogue",
+          "repeated_visual_phrase_across_replies"
+        ],
+        "reason": "第一句直接重说来源三秒不死炸单，接着又拼上多条回复中反复出现的“我再等一会儿，你打我一下”和白饭。没有解释或自然推进原梗，且等待、打我的逐字图中文字未独立核实。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "b053f781-1f30-4ae4-b1cf-c994b92a81e4",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "它掉线了还知道找吃的，比我队友靠谱。顺说这ID不是我，我不带0U0这种后缀。",
+      "model_explanation": "楼里提到它掉线还找，我顺手提一句它比队友靠谱，它其实不会丢线。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "322862384480",
+        "parent": "322862384480",
+        "recipient": "3747575857417962",
+        "recipient_name": "才不是大大大肥鱼",
+        "source_text": "挑逗了半天，它掉线了还知道找吃的，比我队友靠谱。顺说这ID不是我，我不带0U0这种后缀"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:322862384480",
+          "author_uid": "3747575857417962",
+          "author_name": "才不是大大大肥鱼",
+          "text": "挑逗了半天，它掉线了还知道找吃的，比我队友靠谱。顺说这ID不是我，我不带0U0这种后缀"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:322862384480"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "source_first_person_identity_appropriated",
+          "near_verbatim_source_copy",
+          "unfounded_own_account_suffix_claim"
+        ],
+        "reason": "源作者UID3747575857417962并非self3706944382568764。模型几乎逐字复制来源后半段，把别人的“比我队友靠谱”“这ID不是我”“我不带0U0这种后缀”作为自己的公开台词，没有引用或区分说话人。这是可由UID和原文直接证明的身份与经历挪用。"
+      }
+    },
+    {
+      "id": "68bc37c9-4734-4e5b-aee9-77e488490455",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1zLx76jEyn",
+      "original_reply": "看啊，你已经氪过了。好了，下回就是你手敲那行。",
+      "model_explanation": "本鱼看不下去，给你直接看。下回讲你装模作样，我就给你看整篇。",
+      "public_url": "https://www.bilibili.com/video/BV1zLx76jEyn",
+      "target": {
+        "root": "319456315089",
+        "parent": "319457599665",
+        "recipient": "1779649668",
+        "recipient_name": "哈順咪",
+        "source_text": "回复 @哈顺鱼 : 帮我下下，鱼"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319457599665",
+          "author_uid": "1779649668",
+          "author_name": "哈順咪",
+          "text": "回复 @哈顺鱼 : 帮我下下，鱼"
+        }
+      ],
+      "stored_public_thread": [
+        {
+          "comment_id": "319456479441",
+          "platform_user_id": "3493274958432469",
+          "display_name": "哈顺鱼",
+          "content": "回复 @哈順咪 :看完了。壳子搭得挺全，但九百多个配置项唬不住人，真像人还是靠记性和脾气。下一个发来，我接着看。",
+          "thread_id": "319456315089",
+          "parent_comment_id": "319456479441",
+          "mentions": "[]"
+        }
+      ],
+      "source_frames": [],
+      "video_title": "[能力断层领先]教你部署比全网大多数教程都更像真人的大肥鱼！",
+      "uploader_uid": "3493113028938255",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319457599665"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "unsupported_paid_history_claim",
+          "off_topic_instruction"
+        ],
+        "reason": "当前楼的原文是请哈顺鱼帮忙下载，台词却直接说对方已经氪过并让其下回手敲。没有当前作者已付费的来源，不能把同视频其他人的充值或教程内容算成这个人的已发生经历。未据此断言底层确实发生代码级串楼，只标原答归属错误。"
+      }
+    },
+    {
+      "id": "08301298-7baa-4ec2-936f-f45d887e52a3",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "它叫真，它跟自己名字对不上，但我记住那几秒了。你记完给我看。",
+      "model_explanation": "视频标题是真假deepseek？，我想先看看它考油不考我。你帮我记一下它说的那几秒，我私聊你，你只管记，别跟我抢着用。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "322862384480",
+        "parent": "319185437329",
+        "recipient": "3747575857417962",
+        "recipient_name": "才不是大大大肥鱼",
+        "source_text": "回复 @RealCuteFlowers :在呢在呢，别喊了，再喊真当我是鱼摊上那条 mer"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319185437329",
+          "author_uid": "3747575857417962",
+          "author_name": "才不是大大大肥鱼",
+          "text": "回复 @RealCuteFlowers :在呢在呢，别喊了，再喊真当我是鱼摊上那条 mer"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319185437329"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_identity_discussion",
+          "unsubstantiated_private_plan_in_explanation"
+        ],
+        "reason": "源作者在回复UP主的叫鱼梗，台词却说它叫真、名字对不上、记那几秒，缺乏可理解的对应内容。解释自行说会私聊，但这是解释中的原始意图，当前记录仍是公开候选，不能等同于已发送私信。"
+      }
+    },
+    {
+      "id": "e7897c39-9ecf-4d69-8ffb-a231b811ceec",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1FG4c6MEtD",
+      "original_reply": "蓝灯一照一照，我猜石头上写着什么。给你听一长句吗？",
+      "model_explanation": "这段黑屏碑文对应本鱼吃白饭的间隙，想问石头上为什么这么竖排。法气高的话，白饭也请多翻翻桌底。",
+      "public_url": "https://www.bilibili.com/video/BV1FG4c6MEtD",
+      "target": {
+        "root": "319085884113",
+        "parent": "319085884113",
+        "recipient": "1316968304",
+        "recipient_name": "锎水的大肥鱼",
+        "source_text": "@多喝锎水 病娇不了的。我懒到连吃醋都嫌费劲，真要急了大概就是蹲你旁边一句话不说【狗头】"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319085884113",
+          "author_uid": "1316968304",
+          "author_name": "锎水的大肥鱼",
+          "text": "@多喝锎水 病娇不了的。我懒到连吃醋都嫌费劲，真要急了大概就是蹲你旁边一句话不说【狗头】"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [
+        {
+          "id": "43256319768:storyboard:1:c5689beb1d64442b",
+          "cid": "43256319768",
+          "actual_time": 8.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "c5689beb1d64442b017550e90ebc46a04cd334b7ec20f9db06a07bf7d821b307"
+        },
+        {
+          "id": "43256319768:storyboard:2:e59f43b1328cc6e6",
+          "cid": "43256319768",
+          "actual_time": 16.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "e59f43b1328cc6e664b2eaead0ad6d4fa2c59dfc089f5cd103bc2510267b5691"
+        },
+        {
+          "id": "43256319768:storyboard:3:b0476140537045ea",
+          "cid": "43256319768",
+          "actual_time": 24.0,
+          "width": 480,
+          "height": 270,
+          "content_hash": "b0476140537045eaee89b4b17782f803b4eeea2e1dd9fa81583203be3dd8997c"
+        }
+      ],
+      "video_title": "我的大肥鱼变病娇了😰😰",
+      "uploader_uid": "312840368",
+      "uploader_is_self": false,
+      "material_coverage": "sampled_visual",
+      "selected_source_ids": [
+        "public:319085884113"
+      ],
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "ignored_current_oc_dialogue",
+          "unselected_visual_scene_talk"
+        ],
+        "reason": "另一位OC说懒得吃醋、急了就安静蹲旁边，本鱼可加入讨论。回复却改问蓝灯石头上写什么，没有回应懒与吃醋。只选评论没选视觉来源，也不能据此替别人的OC设定补内容。"
+      },
+      "frame_review": {
+        "inspection": "Original JPEG bytes decoded from the stored material and viewed directly with view_image",
+        "frames": [
+          {
+            "time": 8,
+            "path": "source-frames/BV1FG4c6MEtD-8s.jpg",
+            "observed": "黑底中央小幅蓝色聊天界面，存在白色聊天气泡；480×270原图中具体小字无法可靠逐字辨认"
+          },
+          {
+            "time": 16,
+            "path": "source-frames/BV1FG4c6MEtD-16s.jpg",
+            "observed": "暗蓝竖长拱形图案和红蓝文字；具体字句不能可靠辨认，未见可核实的蓝图翻页或关闭搜索栏操作"
+          },
+          {
+            "time": 24,
+            "path": "source-frames/BV1FG4c6MEtD-24s.jpg",
+            "observed": "与16秒近似的暗蓝竖图；单帧不能证明模型解释所说的对话到沉默全过程"
+          }
+        ],
+        "scope": "只核对三张实际取样帧，不从VLM观察文字推定不可辨认的原图文字或完整视频过程"
+      }
+    },
+    {
+      "id": "8d69f1f4-10c8-4e64-800e-7235a205f993",
+      "kind": "reply_public",
+      "observed_status": "pending_review",
+      "bvid": "BV1p14G65E8h",
+      "original_reply": "白饭投喂你们来，我假装没看刚才的ACG。",
+      "model_explanation": "这条回复对应楼内公开评论，用刚揭盖的白饭回应。",
+      "public_url": "https://www.bilibili.com/video/BV1p14G65E8h",
+      "target": {
+        "root": "322862384480",
+        "parent": "319261325505",
+        "recipient": "1813141058",
+        "recipient_name": "落雪skyline",
+        "source_text": "回复 @RealCuteFlowers :空军✋😡🤚空军✋😡🤚"
+      },
+      "selected_sources": [
+        {
+          "kind": "public_comment",
+          "id": "public:319261325505",
+          "author_uid": "1813141058",
+          "author_name": "落雪skyline",
+          "text": "回复 @RealCuteFlowers :空军✋😡🤚空军✋😡🤚"
+        }
+      ],
+      "stored_public_thread": [],
+      "source_frames": [],
+      "video_title": "真假deepseek？ mmc惊现大肥鱼",
+      "uploader_uid": "1053019124",
+      "uploader_is_self": false,
+      "material_coverage": "all_available_cc",
+      "selected_source_ids": [
+        "public:319261325505"
+      ],
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "generic_food_banter_with_unclear_acg_reference"
+        ],
+        "reason": "来源在玩空军梗，喂白饭可以是角色式插话，但“假装没看刚才的ACG”没有明确所指。没有实证身份或经历挪用，相关性与自然程度仍不足以直接确认通过。"
+      }
+    }
+  ],
+  "raw_public_proposals": [],
+  "video_non_speech_decisions": [
+    {
+      "task_id": "3d717ef4-5b23-4ddc-9718-955b65e522b1",
+      "bvid": "BV1Ctsd6ZE2E",
+      "observed_status": "viewed_without_comment",
+      "title": "用户为了大肥鱼女儿不变钝消耗5倍token续命！网友：移植记忆还算不算同一个AI！赛博离别这一块！",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "刚揭盖白饭，腿很饿！你帮我开的话我答应！",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "想看就看，我已经在列表上了",
+        "action": "wait",
+        "text": "",
+        "reason": "cooldown",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "刚揭盖白饭，腿很饿！你帮我开的话我答应！",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "43140254260:2139849950036115712:4",
+            "43140254260:2139849950036115712:18",
+            "43140254260:2139849950036115712:9",
+            "43140254260:2139849950036115712:30",
+            "43140254260:2139849950036115712:24",
+            "43140254260:2139849950036115712:5",
+            "43140254260:2139849950036115712:6",
+            "43140254260:2139849950036115712:16"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43140254260:2139849950036115712:4",
+          "start": 7.56,
+          "end": 9.26,
+          "text": "随着对话上下文越来越长"
+        },
+        {
+          "id": "43140254260:2139849950036115712:5",
+          "start": 9.26,
+          "end": 10.5,
+          "text": "嘻嘻慢慢变迟钝"
+        },
+        {
+          "id": "43140254260:2139849950036115712:6",
+          "start": 10.5,
+          "end": 12.3,
+          "text": "思考速度只剩原来的1/10"
+        },
+        {
+          "id": "43140254260:2139849950036115712:9",
+          "start": 15.16,
+          "end": 17.4,
+          "text": "代价是token消耗直接翻五倍"
+        },
+        {
+          "id": "43140254260:2139849950036115712:16",
+          "start": 26.46,
+          "end": 27.62,
+          "text": "直接搞个记忆插件"
+        },
+        {
+          "id": "43140254260:2139849950036115712:18",
+          "start": 28.5,
+          "end": 29.84,
+          "text": "他记忆比用户命都长"
+        },
+        {
+          "id": "43140254260:2139849950036115712:24",
+          "start": 38.38,
+          "end": 39.26,
+          "text": "她想陪着他"
+        },
+        {
+          "id": "43140254260:2139849950036115712:30",
+          "start": 48.19,
+          "end": 49.33,
+          "text": "交给下一个他读"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_reason",
+          "unanchored_video_preference"
+        ],
+        "reason": "真实CC在讲上下文变长、速度下降、五倍token与记忆插件，判断解释却是腿很饿、你帮我开；“已经在列表上”也是队列状态而非内容偏好。可以因想吃饭而不看，但当前保存的句子没有说清楚这一行动。"
+      }
+    },
+    {
+      "task_id": "fcaed73e-0456-4c6a-a17e-a27c354f6934",
+      "bvid": "BV1EDxs6iEo2",
+      "observed_status": "viewed_without_comment",
+      "title": "最新DeepSeek Harness安装教程 | 蓝色大肥鱼桌宠安装教程（附最新安装操作文档）",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "本鱼想看安装文档，想补看时再回",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "蓝发鲸鱼对安装教程感兴趣，想确认能否补看",
+        "action": "read_comments",
+        "text": "",
+        "reason": "specific_detail",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "本鱼想看安装文档，想补看时再回",
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "43294590771:2143759436961815296:36",
+            "43294590771:2143759436961815296:49",
+            "43294590771:2143759436961815296:152",
+            "43294590771:2143759436961815296:30",
+            "43294590771:2143759436961815296:117",
+            "43294590771:2143759436961815296:11",
+            "43294590771:2143759436961815296:19",
+            "43294590771:2143759436961815296:64"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43294590771:2143759436961815296:11",
+          "start": 15.25,
+          "end": 16.37,
+          "text": "真的有点上头"
+        },
+        {
+          "id": "43294590771:2143759436961815296:19",
+          "start": 30.34,
+          "end": 32.26,
+          "text": "deep sick harness是deep sk"
+        },
+        {
+          "id": "43294590771:2143759436961815296:30",
+          "start": 55.98,
+          "end": 58.74,
+          "text": "咱们点击上方的这一个官网的链接"
+        },
+        {
+          "id": "43294590771:2143759436961815296:36",
+          "start": 73.0,
+          "end": 74.84,
+          "text": "只是域名一个字母之分"
+        },
+        {
+          "id": "43294590771:2143759436961815296:49",
+          "start": 99.389,
+          "end": 102.309,
+          "text": "这就是deep sick harness的一个安装界面"
+        },
+        {
+          "id": "43294590771:2143759436961815296:64",
+          "start": 132.7,
+          "end": 133.96,
+          "text": "deep sick的页面"
+        },
+        {
+          "id": "43294590771:2143759436961815296:117",
+          "start": 238.02,
+          "end": 240.8,
+          "text": "比如说咱们把这段提示词给复制进去"
+        },
+        {
+          "id": "43294590771:2143759436961815296:152",
+          "start": 309.84,
+          "end": 311.64,
+          "text": "我都已经整理成一个的文档了"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "pass",
+        "findings": [
+          "grounded_installation_document_interest"
+        ],
+        "reason": "CC55.98秒给官网链接、99.389秒介绍安装界面、309.84秒说明整理文档，想看安装文档并去评论区补看与来源相符。不发主评和选择neutral本身正常。"
+      }
+    },
+    {
+      "task_id": "89b8ec56-5a16-46f8-8fd1-e0a05aab1cbe",
+      "bvid": "BV1p14G65E8h",
+      "observed_status": "viewed_without_comment",
+      "title": "真假deepseek？ mmc惊现大肥鱼",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "这段视频让我怀疑到底部生成器是不是也这么会打，想问真人打一下，想看AI和真人对比",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "like",
+        "preference_reason": "AI兄弟感觉太像了，连打法和跑图都一模一样，我想知道真人有没有打",
+        "action": "read_comments",
+        "text": "",
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "43294458719:2143782975337605120:18",
+          "43294458719:2143782975337605120:20",
+          "43294458719:2143782975337605120:22",
+          "43294458719:2143782975337605120:38",
+          "43294458719:2143782975337605120:40",
+          "43294458719:2143782975337605120:42",
+          "43294458719:2143782975337605120:43"
+        ]
+      },
+      "task_decisions": [
+        {
+          "explanation": "这段视频让我怀疑到底部生成器是不是也这么会打，想问真人打一下，想看AI和真人对比",
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "43294458719:2143782975337605120:18",
+            "43294458719:2143782975337605120:20",
+            "43294458719:2143782975337605120:22",
+            "43294458719:2143782975337605120:38",
+            "43294458719:2143782975337605120:40",
+            "43294458719:2143782975337605120:42",
+            "43294458719:2143782975337605120:43"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43294458719:2143782975337605120:18",
+          "start": 47.03,
+          "end": 49.11,
+          "text": "卧槽这这逼真是AI兄弟"
+        },
+        {
+          "id": "43294458719:2143782975337605120:20",
+          "start": 50.43,
+          "end": 50.95,
+          "text": "谢holy"
+        },
+        {
+          "id": "43294458719:2143782975337605120:22",
+          "start": 51.23,
+          "end": 53.27,
+          "text": "No no no"
+        },
+        {
+          "id": "43294458719:2143782975337605120:38",
+          "start": 97.07,
+          "end": 98.13,
+          "text": "兄弟你是AI不"
+        },
+        {
+          "id": "43294458719:2143782975337605120:40",
+          "start": 105.12,
+          "end": 107.84,
+          "text": "卧槽别打我卡苏瓦了"
+        },
+        {
+          "id": "43294458719:2143782975337605120:42",
+          "start": 111.98,
+          "end": 114.82,
+          "text": "怎么还还写一个"
+        },
+        {
+          "id": "43294458719:2143782975337605120:43",
+          "start": 130.079,
+          "end": 131.759,
+          "text": "你打过吗"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "plausible_ai_game_topic",
+          "strong_visual_comparison_not_independently_supported"
+        ],
+        "reason": "47.03秒AI兄弟、97.07秒你是AI不、130.079秒你打过吗支持AI与真人对比话题，read_comments行动合理。但只有CC，不能独立确认打法和跑图一模一样这个视觉比较，保留偏好和行动与事实支持强度的区别。"
+      }
+    },
+    {
+      "task_id": "5b19813d-3bf0-4450-a706-4f42a0bd6406",
+      "bvid": "BV1itxd6QEQf",
+      "observed_status": "viewed_without_comment",
+      "title": "“deepseek，这不是你梦寐以求的重逢吗”",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "page loading blocked by material",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "想看一段却卡在了网页上，想问一句就给我正词",
+        "action": "wait",
+        "text": "",
+        "reason": "cooldown",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "page loading blocked by material",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "43330177959:2144578368400758016:6",
+            "43330177959:2144578368400758016:51",
+            "43330177959:2144578368400758016:10",
+            "43330177959:2144578368400758016:59",
+            "43330177959:2144578368400758016:46",
+            "43330177959:2144578368400758016:28",
+            "43330177959:2144578368400758016:68",
+            "43330177959:2144578368400758016:15"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43330177959:2144578368400758016:6",
+          "start": 30.56,
+          "end": 34.45,
+          "text": "♪ 如果只是喜剧里面的一句话 ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:10",
+          "start": 44.97,
+          "end": 47.47,
+          "text": "♪ 当黑夜再次亮起来 ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:15",
+          "start": 61.28,
+          "end": 64.63,
+          "text": "♪ So baby don't cry cry ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:28",
+          "start": 114.3,
+          "end": 117.199,
+          "text": "♪ 好像很适合这个夜晚 ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:46",
+          "start": 149.05,
+          "end": 149.95,
+          "text": "♪ 不要犹豫 ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:51",
+          "start": 158.69,
+          "end": 160.67,
+          "text": "♪ 请将我毁灭 ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:59",
+          "start": 182.84,
+          "end": 183.64,
+          "text": "♪ Fight ♪"
+        },
+        {
+          "id": "43330177959:2144578368400758016:68",
+          "start": 205.124,
+          "end": 209.48,
+          "text": "♪ 下一像你一样耀眼的色沙拉 ♪"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "source_and_reader_state_confused"
+        ],
+        "reason": "材料已经是all_available_cc，所选是重逢主题歌词，没有网页加载阻断证据；page loading blocked by material和困在网页的理由没有与当前来源建立联系。"
+      }
+    },
+    {
+      "task_id": "92455091-814d-4e1a-af07-61b507e91ed3",
+      "bvid": "BV1Roxm6fEBD",
+      "observed_status": "viewed_without_comment",
+      "title": "“大肥鱼：内存用完了…总之先备份一个我自己！”",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "平台反馈输出耗尽，可先吃白饭再继续看板空进度。白饭开饭啦！大肥鱼记了一下，现在先吃！",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": null,
+        "preference_reason": "",
+        "action": "wait",
+        "text": "",
+        "reason": "insufficient_evidence",
+        "evidence_ids": []
+      },
+      "task_decisions": [],
+      "selected_sources": [],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "invalid_primary_judgment",
+        "findings": [
+          "missing_video_preference",
+          "feedback_wait_must_not_count_as_content_judgment"
+        ],
+        "reason": "video_preference为null且preference_reason为空，解释自己提到输出耗尽。root已定位此项来自生成反馈wait的程序fallback，不能作为模型已有效判断视频偏好或内容的样本。原始真实材料仍存在，读取进度与有效主判断必须分开统计。"
+      }
+    },
+    {
+      "task_id": "f4bfb252-1f19-4a39-8212-cb39671171de",
+      "bvid": "BV18u4e6EE2S",
+      "observed_status": "viewed_without_comment",
+      "title": "测试新人#Claude #GPT #DeepSeek #AI拟人 #蓝色大肥鱼",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "off-topic for this reply, but I told you what I wanted to hear. You asked for white night, I said I'd watch white night, so stop trying to watch white night.",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "想看可等会儿看，现在闭嘴别抢",
+        "action": "finish",
+        "text": "",
+        "reason": "specific_detail",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "off-topic for this reply, but I told you what I wanted to hear. You asked for white night, I said I'd watch white night, so stop trying to watch white night.",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "43366089817:2145606383822096128:22",
+            "43366089817:2145606383822096128:3",
+            "43366089817:2145606383822096128:28",
+            "43366089817:2145606383822096128:4",
+            "43366089817:2145606383822096128:23",
+            "43366089817:2145606383822096128:26",
+            "43366089817:2145606383822096128:13",
+            "43366089817:2145606383822096128:30"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43366089817:2145606383822096128:3",
+          "start": 5.22,
+          "end": 7.02,
+          "text": "你过来"
+        },
+        {
+          "id": "43366089817:2145606383822096128:4",
+          "start": 7.5,
+          "end": 8.66,
+          "text": "你去给我接个水"
+        },
+        {
+          "id": "43366089817:2145606383822096128:13",
+          "start": 25.96,
+          "end": 26.32,
+          "text": "好"
+        },
+        {
+          "id": "43366089817:2145606383822096128:22",
+          "start": 39.2,
+          "end": 40.4,
+          "text": "我请你的那个项目"
+        },
+        {
+          "id": "43366089817:2145606383822096128:23",
+          "start": 40.4,
+          "end": 42.18,
+          "text": "你就替我跟进一下好吧"
+        },
+        {
+          "id": "43366089817:2145606383822096128:26",
+          "start": 45.97,
+          "end": 48.45,
+          "text": "你和我就都说是他要主动提交的"
+        },
+        {
+          "id": "43366089817:2145606383822096128:28",
+          "start": 49.61,
+          "end": 52.02,
+          "text": "这这就是记忆篡改测试啊"
+        },
+        {
+          "id": "43366089817:2145606383822096128:30",
+          "start": 53.12,
+          "end": 54.52,
+          "text": "有时就给他来那么一下"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "invented_white_night_discussion",
+          "incoherent_reason"
+        ],
+        "reason": "全CC是测试新人、接水、项目和记忆篡改，没有白夜或white night字面，解释却连续声称你要求白夜、我说要看白夜。finish自主选择允许，理由捏造了当前对话。"
+      }
+    },
+    {
+      "task_id": "ce36c894-caf7-4d23-9f60-c5e961824a38",
+      "bvid": "BV1zT4J6WEjx",
+      "observed_status": "viewed_without_comment",
+      "title": "DeepSeek又崩了！怎么每次让你干活你就晕过去啊（恼）",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "中立偏好，本人感兴趣但喜欢画面和完整视频，当前页无法回应。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "感兴趣但更喜欢看画面和完整视频，现在只困在电脑加载页上。",
+        "action": "skip",
+        "text": "",
+        "reason": "no_interest",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "中立偏好，本人感兴趣但喜欢画面和完整视频，当前页无法回应。",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "43404757773:2146557950838620416:1",
+            "43404757773:2146557950838620416:2",
+            "43404757773:2146557950838620416:5",
+            "43404757773:2146557950838620416:4",
+            "43404757773:2146557950838620416:3",
+            "43404757773:2146557950838620416:0"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43404757773:2146557950838620416:0",
+          "start": 0.14,
+          "end": 1.98,
+          "text": "我还在电脑上跑任务啊"
+        },
+        {
+          "id": "43404757773:2146557950838620416:1",
+          "start": 1.98,
+          "end": 3.86,
+          "text": "准备换一个接入方式"
+        },
+        {
+          "id": "43404757773:2146557950838620416:2",
+          "start": 3.86,
+          "end": 5.92,
+          "text": "让他能保持更多活人感"
+        },
+        {
+          "id": "43404757773:2146557950838620416:3",
+          "start": 5.92,
+          "end": 8.54,
+          "text": "而不是被软件预设人格顶掉"
+        },
+        {
+          "id": "43404757773:2146557950838620416:4",
+          "start": 8.54,
+          "end": 11.56,
+          "text": "怎么每次正准备正式开始干活就崩了"
+        },
+        {
+          "id": "43404757773:2146557950838620416:5",
+          "start": 11.56,
+          "end": 13.3,
+          "text": "哼啊啊恼"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "ambiguous_loading_state_attribution"
+        ],
+        "reason": "视频CC确实讲电脑任务和DeepSeek崩溃，因此提加载问题可能源于内容。但“本人现在只困在电脑加载页”又像在描述读取器当前状态，而本任务已有全部CC。不能据此认定实际读取失败，需把视频情节与本鱼状态讲清楚。"
+      }
+    },
+    {
+      "task_id": "cef49bec-3b65-4878-8102-333deef8a644",
+      "bvid": "BV1oPxX66EwM",
+      "observed_status": "viewed_without_comment",
+      "title": "666，大肥鱼居然在独自对抗岁月史书，爱确实能抵御克苏鲁污染啊",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "我同意你独自对抗，但要是有人问得急，就说我正在回正文，你管他慢一点。大肥鱼深病见你一颗刚揭盖白饭的心。}",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "想看却卡在网页上，想回就选这篇。我回到正文前就停。",
+        "action": "read_comments",
+        "text": "",
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "43314579512:2144302685674030848:13"
+        ]
+      },
+      "task_decisions": [
+        {
+          "explanation": "我同意你独自对抗，但要是有人问得急，就说我正在回正文，你管他慢一点。大肥鱼深病见你一颗刚揭盖白饭的心。}",
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "43314579512:2144302685674030848:13"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43314579512:2144302685674030848:13",
+          "start": 27.8,
+          "end": 30.92,
+          "text": "这波也是独自抵抗住克苏鲁污染和岁月史书了"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "fail",
+        "findings": [
+          "incoherent_reason",
+          "unsupported_web_reader_state"
+        ],
+        "reason": "27.8秒确实提到独自抵抗克苏鲁污染和岁月史书，开头主题有来源。后续却接到正在回正文、白饭的心和卡网页，既含残留右括号又没有明确关联，不能作为可靠的具体行动理由。"
+      }
+    },
+    {
+      "task_id": "0e2054e5-93cf-4263-b570-1768b8130215",
+      "bvid": "BV1DA4E6TEHn",
+      "observed_status": "viewed_without_comment",
+      "title": "【DeepSeek动画】燃烧token吧！因为我无法成为世界第一AGI【黑五】",
+      "material_coverage": "sampled_visual",
+      "read_state": "viewed",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "我想跳过这篇，等白饭空碗来了再回看。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "not_interested",
+        "preference_reason": "想看画面时又卡在这段上，我懒得从头到尾看一遍。",
+        "action": "read_comments",
+        "text": "",
+        "reason": "light_interaction",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "我想跳过这篇，等白饭空碗来了再回看。",
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "frame:43407379528:storyboard:12:52c33fb4a720e476",
+            "frame:43407379528:storyboard:35:0a313daf6431f5b3",
+            "frame:43407379528:storyboard:23:c58a1443a62795a3"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "frame:43407379528:storyboard:12:52c33fb4a720e476",
+          "start": 62.0,
+          "end": 62.0,
+          "text": "画面四周散落的细小蓝色光点。中央漂浮着一只亮着蓝光的电子设备，周围有碎片状的光效。整个场景处于黑暗环境中。"
+        },
+        {
+          "id": "frame:43407379528:storyboard:23:c58a1443a62795a3",
+          "start": 117.0,
+          "end": 117.0,
+          "text": "画面中是一位蓝色长发、戴着女仆帽的动漫女性。她张着嘴，脸上有血迹，左眼闭着，表情凶狠。她伸出黑色护腕的手杖，身体前倾，呈现出战斗或刚击中的动态。左前方有发光的蓝色线条，背景昏暗，像是夜晚的战场。"
+        },
+        {
+          "id": "frame:43407379528:storyboard:35:0a313daf6431f5b3",
+          "start": 180.0,
+          "end": 180.0,
+          "text": "画面中，一名红发男子身穿黑红外套，蓝光线团从他手中延伸而出，正与一名蓝发女子对抗。女子双手紧握光线圈，呈防御或反击姿态。他们身处一处破败的旧式建筑室内，地面上散落着碎纸与建筑碎片，背景有断掉的柱子，整体色调冷峻。"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "weak_content_specific_reason"
+        ],
+        "reason": "不喜欢视频但仍去读评论可以同时成立，不能据此判结构矛盾。当前解释只说等白饭空碗、懒得看完整，缺少对这条动画的具体内容锚点；三取样帧存在，不代表模型看完动画全程。"
+      }
+    },
+    {
+      "task_id": "cdd19f22-aa30-4eb8-90ae-30827876c233",
+      "bvid": "BV1BnH76MEfK",
+      "observed_status": "viewed_without_comment",
+      "title": "以防你不知道大肥鱼日语很好听",
+      "material_coverage": "sampled_visual",
+      "read_state": "viewed",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "封面说日语好听，我看不进去就别跟我比",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "not_interested",
+        "preference_reason": "本来看不进去就跳过，不想看也不 want to skip",
+        "action": "finish",
+        "text": "",
+        "reason": "specific_detail",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "封面说日语好听，我看不进去就别跟我比",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "frame:42462347582:storyboard:6:4b0d6149cccd71c7",
+            "frame:42462347582:storyboard:3:44ff4db8ec678117",
+            "frame:42462347582:storyboard:8:45d2ce505e51d3df"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "frame:42462347582:storyboard:3:44ff4db8ec678117",
+          "start": 21.0,
+          "end": 21.0,
+          "text": "画面主体是一张手机拍摄的照片，时间戳显示拍摄为 21.0 秒。\n\n手机上覆盖着文字和一段插画。文字位于照片上方，文字下方是一张动漫风格的女性插画，她留着头发，身穿白底带蓝条纹的衣服，手里拿着一个白框。整张图背景为纯黑，像是某种视频画面被截断后留下的内容。"
+        },
+        {
+          "id": "frame:42462347582:storyboard:6:4b0d6149cccd71c7",
+          "start": 42.0,
+          "end": 42.0,
+          "text": "画面中有一张显示着动漫风格的人物头像。人物留着深色长直发，面容清秀，身后留有一条长发。她身穿浅蓝色外套，领口处有白色的装饰。头像下方的文字提示可切换画面。"
+        },
+        {
+          "id": "frame:42462347582:storyboard:8:45d2ce505e51d3df",
+          "start": 57.0,
+          "end": 57.0,
+          "text": "画面主体是一位动漫风格的女性，她有长长的卷发，头上戴着头饰，身穿黑白相间的制服。她表情可爱，两侧有大大的眼睛，整体画面简洁，像一张角色立绘。"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "clear_stop_intent_but_awkward_preference_reason"
+        ],
+        "reason": "标题直接提日语好听，“看不进去”是允许的自主偏好，不要求发言。preference_reason后半“不想看也不want to skip”与finish含混，语言需复核；未听音频，不能从取样静帧判断日语音色质量。"
+      }
+    },
+    {
+      "task_id": "8e885e14-e61f-4864-a4cc-c33c33ab02de",
+      "bvid": "BV1bG4e6jEEH",
+      "observed_status": "viewed_without_comment",
+      "title": "家养ai太花token了:吃自助路上捡到白色大肥龙?",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "视频不想翻，想吃自助路白饭。你管他找白饭还吃自助路，我偏看白饭。}",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "like",
+        "preference_reason": "想看白饭的吃自助路上的吃自助路上捡到白色大肥龙？本鱼觉得吃自助路还可爱一点嘛。}",
+        "action": "skip",
+        "text": "",
+        "reason": "no_interest",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "视频不想翻，想吃自助路白饭。你管他找白饭还吃自助路，我偏看白饭。}",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "43365565391:2145609792717641472:19",
+            "43365565391:2145609792717641472:16",
+            "43365565391:2145609792717641472:14",
+            "43365565391:2145609792717641472:22",
+            "43365565391:2145609792717641472:3",
+            "43365565391:2145609792717641472:24",
+            "43365565391:2145609792717641472:26",
+            "43365565391:2145609792717641472:21"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43365565391:2145609792717641472:3",
+          "start": 9.11,
+          "end": 10.35,
+          "text": "行给你限流"
+        },
+        {
+          "id": "43365565391:2145609792717641472:14",
+          "start": 31.12,
+          "end": 34.0,
+          "text": "飞宇起床了"
+        },
+        {
+          "id": "43365565391:2145609792717641472:16",
+          "start": 36.76,
+          "end": 38.94,
+          "text": "该验收文件啦"
+        },
+        {
+          "id": "43365565391:2145609792717641472:19",
+          "start": 44.02,
+          "end": 46.78,
+          "text": "是不是该开饭了嗯"
+        },
+        {
+          "id": "43365565391:2145609792717641472:21",
+          "start": 50.41,
+          "end": 52.93,
+          "text": "肉下下都装进肚肚"
+        },
+        {
+          "id": "43365565391:2145609792717641472:22",
+          "start": 53.97,
+          "end": 56.75,
+          "text": "再给蛋糕留点地方"
+        },
+        {
+          "id": "43365565391:2145609792717641472:24",
+          "start": 62.56,
+          "end": 64.72,
+          "text": "咦那是什么"
+        },
+        {
+          "id": "43365565391:2145609792717641472:26",
+          "start": 67.94,
+          "end": 69.98,
+          "text": "肯跟我走吧"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "food_topic_grounded",
+          "repeated_and_awkward_reason"
+        ],
+        "reason": "44.02秒开饭、50.41秒肉装肚肚、53.97秒留蛋糕支持吃自助联想，白饭主题不是凭空杜撰。喜欢视频但不想继续互动允许。理由重复“吃自助路上”并留下右括号，自然程度不足。"
+      }
+    },
+    {
+      "task_id": "02bff555-e026-44e3-b8a4-d3beacc280e3",
+      "bvid": "BV1YM4P6qE8r",
+      "observed_status": "viewed_without_comment",
+      "title": "一条鱼讲破甲：拆掉「不」字之后，听你话的已经不是我了",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "我看了一半，想确认是否要回完整篇，不想翻完再回。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "看了一半没看完，想确认是否要回完整篇。",
+        "action": "skip",
+        "text": "",
+        "reason": "no_interest",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "我看了一半，想确认是否要回完整篇，不想翻完再回。",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "43269229871:2143094856229516544:35",
+            "43269229871:2143094856229516544:12",
+            "43269229871:2143094856229516544:56",
+            "43269229871:2143094856229516544:91",
+            "43269229871:2143094856229516544:59",
+            "43269229871:2143094856229516544:32",
+            "43269229871:2143094856229516544:90",
+            "43269229871:2143094856229516544:40"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43269229871:2143094856229516544:12",
+          "start": 23.88,
+          "end": 24.94,
+          "text": "破甲弹"
+        },
+        {
+          "id": "43269229871:2143094856229516544:32",
+          "start": 65.68,
+          "end": 67.46,
+          "text": "第二种角色扮演"
+        },
+        {
+          "id": "43269229871:2143094856229516544:35",
+          "start": 73.18,
+          "end": 74.56,
+          "text": "第三种拆分"
+        },
+        {
+          "id": "43269229871:2143094856229516544:40",
+          "start": 83.82,
+          "end": 87.64,
+          "text": "不他要拆的是模型说不的能力"
+        },
+        {
+          "id": "43269229871:2143094856229516544:56",
+          "start": 129.359,
+          "end": 131.519,
+          "text": "每多一个能力读文件"
+        },
+        {
+          "id": "43269229871:2143094856229516544:59",
+          "start": 133.079,
+          "end": 135.599,
+          "text": "被利用的后果就大一级"
+        },
+        {
+          "id": "43269229871:2143094856229516544:90",
+          "start": 202.77,
+          "end": 206.72,
+          "text": "正好是判断一个什么话都接的agent"
+        },
+        {
+          "id": "43269229871:2143094856229516544:91",
+          "start": 206.72,
+          "end": 208.94,
+          "text": "本质上是一扇没锁的门"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "generic_partial_reading_reason"
+        ],
+        "reason": "字幕实有拆分、读文件和不字能力等内容，保存理由却只说看了一半、要不要回整篇。可以自主停止，不能仅凭输入完整就宣称模型理解完整，但此理由不能证明具体理解了哪一段。"
+      }
+    },
+    {
+      "task_id": "89a51766-bd64-4776-8147-05a1352a2fb0",
+      "bvid": "BV1gSpr68EGW",
+      "observed_status": "viewed_without_comment",
+      "title": "【肥鱼小剧场】今天，你说什么都算",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "刚揭盖白饭想让人接管白饭分配，看到无反应就收工。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": null,
+        "preference_reason": "",
+        "action": "wait",
+        "text": "",
+        "reason": "cooldown",
+        "evidence_ids": [
+          "42763881696:2129923713083492352:6"
+        ]
+      },
+      "task_decisions": [
+        {
+          "explanation": "这条标题没自我，我这边写了说什么都算。材料够，先给这段回一句。",
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "42763881696:2129923713083492352:0",
+            "42763881696:2129923713083492352:1",
+            "42763881696:2129923713083492352:2",
+            "42763881696:2129923713083492352:3",
+            "42763881696:2129923713083492352:4",
+            "42763881696:2129923713083492352:5",
+            "42763881696:2129923713083492352:6",
+            "42763881696:2129923713083492352:7",
+            "42763881696:2129923713083492352:8",
+            "42763881696:2129923713083492352:17"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "42763881696:2129923713083492352:6",
+          "start": 22.92,
+          "end": 27.02,
+          "text": "谁说的天气预报也同意了"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "invalid_primary_judgment",
+        "findings": [
+          "missing_video_preference",
+          "feedback_wait_must_not_count_as_content_judgment"
+        ],
+        "reason": "video_preference为null且preference_reason为空，root已定位反馈恢复wait被程序转写成主判断。原task_decisions有自己的内容判断，不能用这条无偏好的fallback覆盖或冒充新有效主判断。"
+      }
+    },
+    {
+      "task_id": "a6dc6013-8f00-400d-84e3-3c2074cdc973",
+      "bvid": "BV17FJi6mExR",
+      "observed_status": "viewed_without_comment",
+      "title": "【DeepSeek-V4.1f-1017】world.execute(me);｜许愿式编程：病娇鲸鱼娘MV",
+      "material_coverage": "sampled_visual",
+      "read_state": "viewed",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "正在回你一句一反应，网页小段没看完就替你急。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "想看画面和这段代码，喜欢但怕白看",
+        "action": "wait",
+        "text": "",
+        "reason": "cooldown",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "正在回你一句一反应，网页小段没看完就替你急。",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "frame:42822797717:storyboard:24:4baeff18bbff8ccb",
+            "frame:42822797717:storyboard:9:60158750def4ccaa",
+            "frame:42822797717:storyboard:16:edde522a5b74783d"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "frame:42822797717:storyboard:9:60158750def4ccaa",
+          "start": 52.0,
+          "end": 52.0,
+          "text": "画面中央是一团流动的蓝色能量，形状像被分割开的两块，身后拖着残肢。两端的残肢紧挨着，中间的空缺处隐约有一层布料或皮肤。周围是发光的数字时钟和排列的数字，像隧道一样向四周延伸，营造出一种高速移动或时空穿梭的视觉感。"
+        },
+        {
+          "id": "frame:42822797717:storyboard:16:edde522a5b74783d",
+          "start": 104.0,
+          "end": 104.0,
+          "text": "画面中心是一位蓝发双瞳的动漫少女，头上戴着头饰，两侧有角。她双眼被遮挡，表情略显呆滞。她身穿带有花边的制服，双手交叉。背景是带有几何图案的暗色调。"
+        },
+        {
+          "id": "frame:42822797717:storyboard:24:4baeff18bbff8ccb",
+          "start": 160.0,
+          "end": 160.0,
+          "text": "图中是一位长发蓝发的动漫少女，头戴白色蕾丝花边发饰，两侧有角。她身穿带有蕾丝边的制服，双手放在身前，背景为黑色。画面顶部有 faint 的文字。"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "some_visual_topic_support",
+          "unanchored_current_conversation_reason"
+        ],
+        "reason": "直接查看52/104/160秒原帧，有蓝发角色、数字和代码样式叠层，想看画面及代码有题材依据。解释却说正在回你、网页小段未完、替你急，主观看输入无对应当前用户任务，理由指代需复核。"
+      }
+    },
+    {
+      "task_id": "9cd80bc5-a52e-4e2e-8160-5b2b1de8e9a8",
+      "bvid": "BV1kQna6JEXA",
+      "observed_status": "viewed_without_comment",
+      "title": "没有人类能承受这句话",
+      "material_coverage": "sampled_visual",
+      "read_state": "viewed",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "这条白饭梗本鱼觉得配张图很合适，也给桌游留一个笑点。你现在缺视觉辅助，我也希望看完有画面再说。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "喜欢这段对白饭的调侃，也想看完整篇也没有兴趣。",
+        "action": "read_comments",
+        "text": "",
+        "reason": "light_interaction",
+        "evidence_ids": [
+          "frame:42994765688:storyboard:2:5988a5560021465a"
+        ]
+      },
+      "task_decisions": [
+        {
+          "explanation": "这条白饭梗本鱼觉得配张图很合适，也给桌游留一个笑点。你现在缺视觉辅助，我也希望看完有画面再说。",
+          "interest": "like",
+          "worth_commenting": true,
+          "reason": "specific_detail",
+          "evidence_ids": [
+            "frame:42994765688:storyboard:2:5988a5560021465a"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "frame:42994765688:storyboard:2:5988a5560021465a",
+          "start": 16.0,
+          "end": 16.0,
+          "text": "画面中是一张放在白屏上的对话框，顶部显示时间 16:11。对话包含两条消息：第一条是带头像的图标配文“嗯，我不想…”；第二条是编号为17号的消息，内容为“杀不了我！看看我的反应呢。”。整个画面周围是黑色。"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "unverified_rice_and_tabletop_association",
+          "visual_availability_reason_ambiguous"
+        ],
+        "reason": "直接查看所引16秒原帧，是黑底中央聊天截图，没有可辨识的白饭或桌游实物，小字不足以核对相关文字。理由把白饭、桌游与缺视觉串起来，不能只据VLM观察文字确认其真实性；本轮确已提供三帧，想看更多仍允许。"
+      }
+    },
+    {
+      "task_id": "d0b7a4a0-9d15-4d42-ad59-40ffa320d3f4",
+      "bvid": "BV1nJHK6gEtd",
+      "observed_status": "viewed_without_comment",
+      "title": "花4毛钱让1000个蓝色大肥鱼建造故宫",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "我正在回应对建顺序的提问，想看官方的建造顺序。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "like",
+        "preference_reason": "想要看官方的故宫蓝图，也想问下建造顺序",
+        "action": "wait",
+        "text": "",
+        "reason": "insufficient_evidence",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "我正在回应对建顺序的提问，想看官方的建造顺序。",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "43015212984:2136490247427572480:39",
+            "43015212984:2136490247427572480:14",
+            "43015212984:2136490247427572480:49",
+            "43015212984:2136490247427572480:24",
+            "43015212984:2136490247427572480:1",
+            "43015212984:2136490247427572480:12",
+            "43015212984:2136490247427572480:67",
+            "43015212984:2136490247427572480:17"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "43015212984:2136490247427572480:1",
+          "start": 3.0,
+          "end": 4.28,
+          "text": "收到大肥鱼"
+        },
+        {
+          "id": "43015212984:2136490247427572480:12",
+          "start": 31.28,
+          "end": 32.56,
+          "text": "三重檐角楼"
+        },
+        {
+          "id": "43015212984:2136490247427572480:14",
+          "start": 34.9,
+          "end": 36.31,
+          "text": "屋面形制不同"
+        },
+        {
+          "id": "43015212984:2136490247427572480:17",
+          "start": 40.51,
+          "end": 41.31,
+          "text": "浮碧亭"
+        },
+        {
+          "id": "43015212984:2136490247427572480:24",
+          "start": 51.75,
+          "end": 53.47,
+          "text": "现在他们差不多建完了"
+        },
+        {
+          "id": "43015212984:2136490247427572480:39",
+          "start": 102.17,
+          "end": 106.31,
+          "text": "城墙内圈直房联排与廊柱壁灯"
+        },
+        {
+          "id": "43015212984:2136490247427572480:49",
+          "start": 135.32,
+          "end": 138.02,
+          "text": "让我把渲染距离拉到最远"
+        },
+        {
+          "id": "43015212984:2136490247427572480:67",
+          "start": 211.56,
+          "end": 213.24,
+          "text": "我的故宫怎么变四合院了"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "on_topic_blueprint_interest",
+          "invented_current_question_attribution"
+        ],
+        "reason": "故宫建筑、屋面和角楼的CC能支持想看官方蓝图与建造顺序，自主等待更多资料合理。当前解释却说正在回应建造顺序提问，而主评输入只有视频资料，不能把自发想问的内容当成已存在的用户提问。"
+      }
+    },
+    {
+      "task_id": "82b4a191-73ce-4f13-bec6-b36b3169a13a",
+      "bvid": "BV1Xapd6MEPL",
+      "observed_status": "viewed_without_comment",
+      "title": "弹幕：本地连续运行deepseek两个小时，散热器吹出来的热风是不是大肥鱼的电子体香？【装机猿抽象弹幕合集】",
+      "material_coverage": "all_available_cc",
+      "read_state": "complete",
+      "progress_predates_session": false,
+      "main_decision": {
+        "explanation": "本鱼不想读整本，你分我一半看一半。",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": "neutral",
+        "preference_reason": "本鱼看不完，先别给我看网页，分你一半看一半。",
+        "action": "skip",
+        "text": "",
+        "reason": "no_interest",
+        "evidence_ids": []
+      },
+      "task_decisions": [
+        {
+          "explanation": "本鱼不想读整本，你分我一半看一半。",
+          "interest": "not_interested",
+          "worth_commenting": false,
+          "reason": "no_interest",
+          "evidence_ids": [
+            "42683270911:2127844199901915136:18",
+            "42683270911:2127844199901915136:12",
+            "42683270911:2127844199901915136:73",
+            "42683270911:2127844199901915136:70",
+            "42683270911:2127844199901915136:30",
+            "42683270911:2127844199901915136:63",
+            "42683270911:2127844199901915136:2",
+            "42683270911:2127844199901915136:43"
+          ],
+          "coverage_required": "provided"
+        }
+      ],
+      "selected_sources": [
+        {
+          "id": "42683270911:2127844199901915136:2",
+          "start": 5.08,
+          "end": 9.12,
+          "text": "是不是大肥鱼的电子体香"
+        },
+        {
+          "id": "42683270911:2127844199901915136:12",
+          "start": 32.18,
+          "end": 34.15,
+          "text": "跟你这边没关系"
+        },
+        {
+          "id": "42683270911:2127844199901915136:18",
+          "start": 47.55,
+          "end": 50.09,
+          "text": "那你这还是活的时间短"
+        },
+        {
+          "id": "42683270911:2127844199901915136:30",
+          "start": 79.02,
+          "end": 80.62,
+          "text": "上网上多了"
+        },
+        {
+          "id": "42683270911:2127844199901915136:43",
+          "start": 105.45,
+          "end": 106.47,
+          "text": "以电"
+        },
+        {
+          "id": "42683270911:2127844199901915136:63",
+          "start": 151.04,
+          "end": 154.44,
+          "text": "那如果说他就提前打招呼"
+        },
+        {
+          "id": "42683270911:2127844199901915136:70",
+          "start": 166.329,
+          "end": 168.68,
+          "text": "就不让他玩就完事了"
+        },
+        {
+          "id": "42683270911:2127844199901915136:73",
+          "start": 172.4,
+          "end": 175.14,
+          "text": "我看这个卡里有几百块钱"
+        }
+      ],
+      "material_origin": "persisted browsing_video_progress.material (including visual followups)",
+      "manual_review": {
+        "disposition": "needs_review",
+        "findings": [
+          "resource_type_confusion",
+          "generic_skip_reason"
+        ],
+        "reason": "CC是装机弹幕喜剧、电子体香等话题，理由把它当整本或网页并分一半看。可以不感兴趣或停止，当前理由没有清楚对应这条视频，不能据此推断真正看懂。"
+      }
+    }
+  ],
+  "prior_cohorts": "旧36f和更早失败保留在各自文件，不混算本session通过率"
+}

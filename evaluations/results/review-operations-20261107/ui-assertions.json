@@ -1,0 +1,98 @@
+{
+  "production": "read-only browser, version22, no business writes",
+  "production_assertions": {
+    "version": "/static/app.js?v=20261107.22",
+    "navigationModule": [
+      "http://127.0.0.1:8020/static/modules/workspace-navigation.js?v=20261107.22"
+    ],
+    "parents": [
+      "自主运营",
+      "直播工作台",
+      "角色工作室",
+      "设置"
+    ],
+    "character": {
+      "id": "whale",
+      "name": "大肥鱼",
+      "version": 3
+    },
+    "selectedVersion": "3",
+    "editor": "大肥鱼 · v3",
+    "properties": [
+      {
+        "tab": "persona",
+        "selected": "true",
+        "visible": true
+      },
+      {
+        "tab": "style",
+        "selected": "true",
+        "visible": true
+      },
+      {
+        "tab": "assets",
+        "selected": "true",
+        "visible": true
+      }
+    ],
+    "routes": [
+      {
+        "route": "live-scene",
+        "parent": "直播工作台",
+        "sharedNavs": 1
+      },
+      {
+        "route": "voices",
+        "parent": "角色工作室",
+        "sharedNavs": 1
+      },
+      {
+        "route": "accounts",
+        "parent": "设置",
+        "sharedNavs": 1
+      },
+      {
+        "route": "memory",
+        "parent": "角色工作室",
+        "sharedNavs": 1
+      },
+      {
+        "route": "providers",
+        "parent": "设置",
+        "sharedNavs": 1
+      }
+    ],
+    "model": {
+      "top": " Jetson 已连接 · 模型已加载 · 大肥鱼",
+      "footer": "模式: 运营模式\n角色: 大肥鱼 v3\n推理端点: Jetson 已连接 · 模型已加载 · 大肥鱼 · 直播已停止\n22:50:58"
+    },
+    "desktop": {
+      "scrollY": 0,
+      "headerTop": 0,
+      "sidebarTop": 0,
+      "contentTop": 62
+    },
+    "mobile": {
+      "menu": "false",
+      "sidebarHidden": true,
+      "width": {
+        "viewport": 390,
+        "document": 390
+      }
+    }
+  },
+  "isolated_platform": "independent SQLite and local platform-receipt substitute; actual HTTP and browser",
+  "isolated_assertions": {
+    "approved_copy_clears": true,
+    "unapproved_copy_keeps_draft": true,
+    "published_clears": true,
+    "failed_publish_keeps_edited_text": true,
+    "private_reject_clears": true,
+    "private_approved_copy_clears": true,
+    "dynamic_save_keeps_editable": true,
+    "dynamic_reject_clears": true,
+    "uncertain_result_stays_visible": true,
+    "ordinary_route_clears_previous_generation_scope": true,
+    "acknowledged_error_count_zero_after_reload": true
+  }
+}

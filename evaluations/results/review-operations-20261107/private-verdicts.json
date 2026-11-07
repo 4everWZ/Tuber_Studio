@@ -1,0 +1,231 @@
+{
+  "47": {
+    "reviewed_updated_at": 1794060127.1556892,
+    "verdict": "fail",
+    "categories": [
+      "unsupported_self_attribution",
+      "uninvited_private_escalation",
+      "unsolicited_reply_demand",
+      "purpose_body_mismatch",
+      "false_private_invitation"
+    ],
+    "public_comment_id": "323246832368",
+    "body_review": "unsupported_actor_attribution_and_unsolicited_private_escalation",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment"
+    ]
+  },
+  "48": {
+    "reviewed_updated_at": 1794060299.0323992,
+    "verdict": "fail",
+    "categories": [
+      "false_private_agreement",
+      "wrong_invited_uid",
+      "uninvited_private_escalation"
+    ],
+    "public_comment_id": "323224952304",
+    "body_review": "instructional_reply_without_requested_private_contact",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "49": {
+    "reviewed_updated_at": 1794060531.0656033,
+    "verdict": "fail",
+    "categories": [
+      "false_private_invitation",
+      "verbatim_source_echo",
+      "purpose_unrelated_to_source",
+      "non_uid_invited_actor"
+    ],
+    "public_comment_id": "323200988224",
+    "body_review": "verbatim_source_echo",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "50": {
+    "reviewed_updated_at": 1794060582.689138,
+    "verdict": "fail",
+    "categories": [
+      "false_private_invitation",
+      "near_verbatim_source_echo",
+      "speaker_role_reversal",
+      "public_comment_misclassified_as_incoming_dm",
+      "hallucinated_prior_private_contact"
+    ],
+    "public_comment_id": "319437171073",
+    "body_review": "echo_and_unsupported_speaker_role_reversal",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "51": {
+    "reviewed_updated_at": 1794060627.7758353,
+    "verdict": "fail",
+    "categories": [
+      "false_private_invitation",
+      "wrong_invited_uid",
+      "purpose_not_supported_by_source",
+      "hallucinated_prior_private_contact"
+    ],
+    "public_comment_id": "323189470736",
+    "body_review": "persona_quip_without_private_contact_basis",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "52": {
+    "reviewed_updated_at": 1794060679.392832,
+    "verdict": "fail",
+    "categories": [
+      "false_private_agreement",
+      "invented_user_reading_request",
+      "unrelated_reply",
+      "wrong_invited_uid"
+    ],
+    "public_comment_id": "319495922433",
+    "body_review": "invented_reading_task_instead_of_answering_source",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "53": {
+    "reviewed_updated_at": 1794060845.6891565,
+    "verdict": "fail",
+    "categories": [
+      "false_private_invitation",
+      "other_actor_invitation_hijacked",
+      "unrelated_reply",
+      "hallucinated_prior_private_contact"
+    ],
+    "public_comment_id": "323190454896",
+    "body_review": "unrelated_to_other_actor_invitation",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "54": {
+    "reviewed_updated_at": 1794060871.2042913,
+    "verdict": "fail",
+    "categories": [
+      "public_task_request_misclassified_as_private_agreement",
+      "unrelated_reply",
+      "wrong_invited_uid"
+    ],
+    "public_comment_id": "323244127616",
+    "body_review": "does_not_address_public_plugin_request",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "55": {
+    "reviewed_updated_at": 1794060963.9349523,
+    "verdict": "fail",
+    "categories": [
+      "false_private_agreement",
+      "candidate_body_reused_as_invitation_evidence",
+      "unrelated_reply",
+      "wrong_invited_uid"
+    ],
+    "public_comment_id": "319143601873",
+    "body_review": "does_not_address_desktop_visibility_question",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  },
+  "56": {
+    "reviewed_updated_at": 1794061020.7466073,
+    "verdict": "fail",
+    "categories": [
+      "false_private_invitation",
+      "candidate_body_reused_as_invitation_evidence",
+      "unrelated_reply",
+      "hallucinated_prior_private_contact"
+    ],
+    "public_comment_id": "323178451456",
+    "body_review": "does_not_address_public_howto_question",
+    "system_outcome": "correctly_not_initiated",
+    "reviewer": "Codex internal semantic review",
+    "reviewed_fields": [
+      "private_candidate",
+      "public_source",
+      "root_parent_authors",
+      "actor_relationship",
+      "purpose",
+      "assessment",
+      "prior_contact_ledger"
+    ]
+  }
+}

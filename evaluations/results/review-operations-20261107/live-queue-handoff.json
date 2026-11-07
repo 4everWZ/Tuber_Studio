@@ -1,0 +1,24 @@
+{
+  "kind": "bounded_live_queue_handoff_only",
+  "window_seconds": 60,
+  "source_round": "19085609-aa19-4616-aad8-ba38c05c91b8",
+  "permissions": {
+    "video_enabled": true,
+    "top_level": "review",
+    "replies": "review",
+    "private_messages": "review",
+    "private_poll": true,
+    "mentions": false,
+    "reply_notifications": false,
+    "video_like": "review",
+    "video_fav": "off",
+    "dynamics": "review"
+  },
+  "video_round_status": "completed",
+  "pending_comment_items": 9,
+  "independent_reply_tasks": 4,
+  "observed_handoff": true,
+  "platform_write_attempts": 0,
+  "final_state": "off",
+  "elapsed_seconds": 3.03
+}

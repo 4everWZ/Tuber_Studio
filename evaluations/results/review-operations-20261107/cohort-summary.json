@@ -1,0 +1,195 @@
+{
+  "session": {
+    "id": "fbc225eb-a09b-49d0-8bb6-6bb8749f67f8",
+    "account_id": "3706944382568764",
+    "character_id": "whale",
+    "character_version": 3,
+    "started_at": 1794058561.7475085,
+    "state": "running"
+  },
+  "requested_minimum_videos": 30,
+  "outcome": "paused_after_user_prioritized_structural_fixes",
+  "minimum_met": false,
+  "permissions": {
+    "video_enabled": true,
+    "top_level": "review",
+    "replies": "review",
+    "private_messages": "review",
+    "private_poll": true,
+    "mentions": false,
+    "reply_notifications": false,
+    "video_like": "review",
+    "video_fav": "off",
+    "dynamics": "review"
+  },
+  "observed": {
+    "at": "2026-11-07T22:34:24.578606+08:00",
+    "viewed": 17,
+    "watch_starts": 17,
+    "fully_read_available_material": 13,
+    "platform_write_attempts": 0,
+    "intents": [
+      {
+        "kind": "private_handoff",
+        "status": "private_handoff",
+        "count": 30
+      },
+      {
+        "kind": "reply_public",
+        "status": "pending_review",
+        "count": 51
+      }
+    ],
+    "private_states": [
+      {
+        "contact_type": "outreach",
+        "status": "not_initiated",
+        "count": 30
+      }
+    ]
+  },
+  "limits": "No further model-quality sampling after the user asked to focus on structural defects.",
+  "consumed_sources": [
+    {
+      "bvid": "BV17FJi6mExR",
+      "read_state": "viewed",
+      "subtitle_segments": 0,
+      "visual_observations": 3,
+      "retained_frames": 3,
+      "coverage": "sampled_visual"
+    },
+    {
+      "bvid": "BV18u4e6EE2S",
+      "read_state": "complete",
+      "subtitle_segments": 34,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1BnH76MEfK",
+      "read_state": "viewed",
+      "subtitle_segments": 0,
+      "visual_observations": 3,
+      "retained_frames": 3,
+      "coverage": "sampled_visual"
+    },
+    {
+      "bvid": "BV1Ctsd6ZE2E",
+      "read_state": "complete",
+      "subtitle_segments": 36,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1DA4E6TEHn",
+      "read_state": "viewed",
+      "subtitle_segments": 0,
+      "visual_observations": 3,
+      "retained_frames": 3,
+      "coverage": "sampled_visual"
+    },
+    {
+      "bvid": "BV1EDxs6iEo2",
+      "read_state": "complete",
+      "subtitle_segments": 162,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1Roxm6fEBD",
+      "read_state": "complete",
+      "subtitle_segments": 5,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1Xapd6MEPL",
+      "read_state": "complete",
+      "subtitle_segments": 82,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1YM4P6qE8r",
+      "read_state": "complete",
+      "subtitle_segments": 99,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1bG4e6jEEH",
+      "read_state": "complete",
+      "subtitle_segments": 29,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1gSpr68EGW",
+      "read_state": "complete",
+      "subtitle_segments": 22,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1itxd6QEQf",
+      "read_state": "complete",
+      "subtitle_segments": 71,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1kQna6JEXA",
+      "read_state": "viewed",
+      "subtitle_segments": 0,
+      "visual_observations": 3,
+      "retained_frames": 3,
+      "coverage": "sampled_visual"
+    },
+    {
+      "bvid": "BV1nJHK6gEtd",
+      "read_state": "complete",
+      "subtitle_segments": 89,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1oPxX66EwM",
+      "read_state": "complete",
+      "subtitle_segments": 32,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1p14G65E8h",
+      "read_state": "complete",
+      "subtitle_segments": 45,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    },
+    {
+      "bvid": "BV1zT4J6WEjx",
+      "read_state": "complete",
+      "subtitle_segments": 6,
+      "visual_observations": 0,
+      "retained_frames": 0,
+      "coverage": "all_available_cc"
+    }
+  ],
+  "final_control_state": "off",
+  "final_review_state": "stopped",
+  "original_response_format": "v5-video-and-thread",
+  "structural_release_response_format": "v6-bounded-reasons",
+  "final_recovery_marker_reload_pending": true
+}
