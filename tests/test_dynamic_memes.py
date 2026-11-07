@@ -394,6 +394,8 @@ async def test_cancel_during_final_post_is_uncertain_and_retains_pin(dynamic_mem
 @pytest.mark.parametrize("bad", ["foreign_asset", "model_error"])
 async def test_invalid_selector_keeps_caption_pending_and_does_not_auto_publish(dynamic_memes, bad):
     service, _, _, state, _ = dynamic_memes
+    service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
+    service.comments.display_account_id = lambda: "900"
     await service.set_policy({"enabled": True, "auto_publish": True, "use_memes": True})
     service.runtime.llm.selection = {"asset_id": "meme_" + "0" * 32}
     if bad == "model_error":
@@ -420,6 +422,8 @@ async def test_dynamic_selector_attaches_to_the_unchanged_caption(dynamic_memes)
 @pytest.mark.parametrize("with_image", [False, True])
 async def test_valid_automatic_selection_posts_once_with_original_caption(dynamic_memes, with_image):
     service, _, asset, state, _ = dynamic_memes
+    service.operations.configure({"enabled": True}, account_id="900", character=service.store.character())
+    service.comments.display_account_id = lambda: "900"
     await service.set_policy({"enabled": True, "auto_publish": True, "use_memes": True})
     if with_image:
         service.runtime.llm.selection = {"asset_id": asset["asset_id"]}

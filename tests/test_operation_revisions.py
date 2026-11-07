@@ -166,7 +166,10 @@ def test_readback_does_not_clear_another_unresolved_write_or_accept_wrong_bindin
     with pytest.raises(ValueError):
         control.reconcile_attempt(tokens[0], account_id="900", binding=binding("43"), receipt={"rpid": "7"})
     control.reconcile_attempt(tokens[0], account_id="900", binding=binding(), receipt={"rpid": "7"})
-    assert control.status()["channel_blocks"]
+    assert not control.status()["channel_blocks"]
+    assert control.get_attempt(tokens[1])["resolved_status"] == "uncertain"
+    with pytest.raises(ValueError, match="禁止重复"):
+        control.reserve("900", character, scope(character, "43"), "comments", binding=binding("43"))
 
 
 def test_legacy_unbound_rejection_is_preserved_and_not_given_a_guessed_target(store):

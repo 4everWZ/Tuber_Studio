@@ -132,6 +132,8 @@ class Dynamics:
             store.execute(sql)
         if "meme_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN meme_id TEXT")
+        if "account_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
+            store.execute("ALTER TABLE dynamic_posts ADD COLUMN account_id TEXT NOT NULL DEFAULT ''")
         if "generation_continuation_id" not in {
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")
         }:
@@ -149,9 +151,9 @@ class Dynamics:
             self._schedule(86400, "存在不确定动态写入，请先人工核对平台再重新开启运营")
 
     def policy(self):
-        return self.operations.effective(
-            "dynamics", DEFAULT_POLICY | self.store.get("dynamic_policy", {})
-        ) | {
+        base = DEFAULT_POLICY | self.store.get("dynamic_policy", {})
+        return self.operations.effective("dynamics", base) | {
+            "base": base,
             "credentials_configured": bool(self.comments.policy()["credentials_configured"]),
             **self.store.get(
                 "dynamic_schedule",
@@ -725,6 +727,13 @@ class Dynamics:
                 if hasattr(self.comments, "account_id")
                 else "injected-test-account"
             )
+            if row.get("account_id") and row["account_id"] != str(account_id):
+                raise ValueError("该动态草稿属于其他账号")
+            if not row.get("account_id"):
+                self.store.execute(
+                    "UPDATE dynamic_posts SET account_id=? WHERE id=?", (str(account_id), post_id)
+                )
+                row["account_id"] = str(account_id)
             character = self.store.character(row["character_id"], row["character_version"])
             actual_binding = self._publication_binding(row, account_id, character)
             payload = self._outgoing(row, character)
@@ -985,8 +994,8 @@ class Dynamics:
         if data["action"] == "post":
             post_id = self.store.execute(
                 "INSERT INTO dynamic_posts(decision_id,character_id,character_version,model,content,reason,"
-                "source_ids,sources,status,created_at,updated_at,content_hash,manual) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     decision_id,
                     char["id"],
@@ -1001,6 +1010,7 @@ class Dynamics:
                     now,
                     _content_hash(data["content"]),
                     int(manual),
+                    getattr(self.comments, "display_account_id", lambda: "")() or "",
                 ),
             ).lastrowid
             self.store.execute("UPDATE dynamic_decisions SET post_id=? WHERE id=?", (post_id, decision_id))
@@ -1248,6 +1258,15 @@ class Dynamics:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
         self.worker = None
+
+    async def pause(self):
+        running = self.worker is not None and not self.worker.done()
+        if self.worker:
+            self.worker.cancel()
+            await asyncio.gather(self.worker, return_exceptions=True)
+        self.worker = None
+        if running and not self.closed:
+            await self.open()
 
     async def _loop(self):
         while not self.closed:

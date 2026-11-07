@@ -11,7 +11,9 @@ import psutil
 from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_turns import operation_lane
 from ...providers import public_error
+from ...publication_errors import SendLimitReached
 from ...store import dump
+from .quotas import DailyReplyLimitReached
 from .round_context import discovery_retry, read_round
 
 
@@ -137,22 +139,39 @@ class BrowsingBatches:
             {item["bvid"]: item for value in items if (item := json.loads(value["payload"]))}.values()
         )
 
-    def save_plan(self, row, plan):
+    def save_plan(self, row, plan, *, presented=None):
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
-            self._save_plan(row, plan)
+            self._save_plan(row, plan, presented=presented)
 
-    def _save_plan(self, row, plan):
+    def _save_plan(self, row, plan, *, presented=None):
         identity = row["config"]["batch_id"]
         selected = {bvid: position for position, bvid in enumerate(plan["videos"])}
         choices = {item["bvid"]: item for item in plan.get("choices", [])}
+        presented = set(presented) if presented is not None else None
+        item_states = {
+            item["bvid"]: item["status"]
+            for item in self.store.all(
+                "SELECT bvid,status FROM browsing_batch_items WHERE batch_id=?", (identity,)
+            )
+        }
         for candidate in self.candidates(row):
             bvid = candidate["bvid"]
+            if presented is not None and bvid not in presented:
+                if item_states[bvid] not in {"completed", "skipped", "later", "daily_wait"}:
+                    candidate["queue_reason"] = "超出本次候选窗口，保留到后续批次"
+                    self.store.db.execute(
+                        "UPDATE browsing_batch_items SET status='later',payload=? WHERE batch_id=? AND bvid=?",
+                        (dump(candidate), identity, bvid),
+                    )
+                continue
             choice = choices.get(bvid) or {
                 "bvid": bvid,
                 "action": "watch" if bvid in selected else "skip",
                 "explanation": plan.get("explanation", ""),
             }
+            choice = dict(choice)
+            choice.setdefault("decided_at", time.time())
             state = "selected" if bvid in selected else "later" if choice["action"] == "later" else "skipped"
             kind = (
                 "comment_visit" if choice["action"] == "comments" else candidate.get("task_kind", "new_video")
@@ -182,6 +201,20 @@ class BrowsingBatches:
         self.store.db.execute(
             "UPDATE browsing_batches SET plan=?,state=?,updated_at=? WHERE id=?",
             (dump(plan), "ready" if selected else "completed", time.time(), identity),
+        )
+
+    def omit_candidate(self, row, candidate, *, reason, next_at=None):
+        payload = candidate | {"queue_reason": reason}
+        if next_at is not None:
+            payload["next_at"] = next_at
+        self.store.execute(
+            "UPDATE browsing_batch_items SET status=?,payload=? WHERE batch_id=? AND bvid=?",
+            (
+                "daily_wait" if next_at is not None else "skipped",
+                dump(payload),
+                row["config"]["batch_id"],
+                candidate["bvid"],
+            ),
         )
 
     def task(self, row, bvid, task_id):
@@ -286,8 +319,8 @@ async def execute(browsing, row, notifications_only):
                 await browsing._run_interactions(row, metrics)
                 status = "partial" if metrics["failures"] else "completed"
                 return
-            discovery_only = bool(row["config"].get("discovery_id"))
-            poll_interactions = not (discovery_only or row["config"].get("video_only")) and (
+            video_only = bool(row["config"].get("video_only"))
+            poll_interactions = not video_only and (
                 not row["preview"] or notifications_only or not browsing.operations.policy()["enabled"]
             )
             if poll_interactions:
@@ -300,7 +333,7 @@ async def execute(browsing, row, notifications_only):
                 candidates = await browsing._discover(row)
                 metrics["workers"] = row["config"].get("batch_workers", row["config"]["workers"])
                 semaphore = asyncio.Semaphore(row["config"].get("batch_workers", row["config"]["workers"]))
-                if discovery_only or row["config"].get("autonomous_batch"):
+                if row["config"].get("autonomous_batch"):
                     async with asyncio.TaskGroup() as group:
                         for candidate in candidates:
                             group.create_task(
@@ -333,11 +366,8 @@ async def execute(browsing, row, notifications_only):
                 await browsing._finish_comment_visits(row)
             status = "partial" if metrics["failures"] else "completed"
     except (asyncio.CancelledError, Exception) as error:
-        stopping_discovery = (
-            browsing.discovery.state == "stopping" and browsing.discovery.round_id == identity
-        )
-        if isinstance(error, asyncio.CancelledError) or stopping_discovery:
-            # A candidate may see revoked authorization before TaskGroup delivers cancellation.
+        stopping = not row["preview"] and not browsing.operations.policy()["enabled"]
+        if isinstance(error, asyncio.CancelledError) or stopping:
             status, task_error = "cancelled", "父轮取消"
         else:
             status = "partial" if metrics["viewed"] or metrics["prepared"] else "failed"
@@ -378,34 +408,19 @@ async def sample_resources(browsing, metrics):
         await asyncio.sleep(0.1)
 
 
-async def send_discovery_intent(browsing, identity, row):
-    browsing.discovery.verify(row["config"]["discovery_id"])
-    with browsing.discovery.performing("publishing"):
-        result = await browsing.publish(identity, automatic=True)
-    state = browsing.store.one("SELECT status FROM browsing_intents WHERE id=?", (identity,))["status"]
-    if state == "automatic_pending":
-        raise ValueError("平台拒绝，已准备修订" if result["status"] == "revised" else "回应修订尚未完成")
-
-
-async def resume_discovery_writes(browsing, row, bvid):
-    if not row["config"].get("discovery_id"):
-        return
+async def resume_batch_publications(browsing, row, bvid):
     for item in browsing.store.all(
-        """SELECT i.id,i.status FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id
-           WHERE i.account_id=? AND i.character_id=? AND i.character_version=?
-           AND json_extract(i.target,'$.bvid')=? AND json_extract(r.config,'$.discovery_publish')=1
-           AND (i.status='publish_uncertain' OR (i.status='automatic_pending' AND
-               json_extract(r.config,'$.discovery_id')=?)) ORDER BY i.created_at""",
-        (*browsing.repo.retry_scope(row), bvid, row["config"]["discovery_id"]),
+        "SELECT id,status,kind FROM browsing_intents WHERE account_id=? AND character_id=? "
+        "AND json_extract(target,'$.bvid')=? AND (status='publish_uncertain' OR "
+        "(round_id=? AND character_version=? AND epoch=? AND status='pending_review' AND auto_authorized=1)) "
+        "ORDER BY created_at",
+        (row["account_id"], row["character_id"], bvid, row["id"], row["character_version"], row["epoch"]),
     ):
         if item["status"] == "publish_uncertain":
-            browsing.discovery.verify(row["config"]["discovery_id"])
-            with browsing.discovery.performing("reconciling"):
-                result = await browsing.publication._reconcile(item["id"])
-            if result is None:
+            if await browsing.publication._reconcile(item["id"]) is None:
                 raise ValueError("原提交回执尚待确认")
-        else:
-            await browsing._send_discovery_intent(item["id"], row)
+        elif browsing.publication._action_allowed(item["kind"], browsing.effective()):
+            await browsing.publish(item["id"], automatic=True)
 
 
 async def process_discovery_video(browsing, row, candidate, metrics, semaphore):
@@ -467,7 +482,24 @@ async def run_discovery_video(browsing, row, candidate, metrics):
         try:
             try:
                 if failures or saved or row["config"].get("batch_id"):
-                    await browsing._resume_discovery_writes(row, bvid)
+                    await browsing._resume_batch_publications(row, bvid)
+            except (DailyReplyLimitReached, SendLimitReached) as failure:
+                payload = json.loads(
+                    browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
+                        "payload"
+                    ]
+                ) | {
+                    "retry_kind": "send_limit"
+                    if isinstance(failure, SendLimitReached)
+                    else "daily_reply_limit",
+                    "next_at": failure.next_at,
+                }
+                browsing.store.execute(
+                    "UPDATE browsing_tasks SET status='deferred_daily',payload=?,error=NULL,updated_at=? WHERE id=?",
+                    (dump(payload), time.time(), identity),
+                )
+                browsing.repo.batches.outcome(identity, "deferred_daily", payload=payload)
+                return
             except BrowsingBudgetDeferred as failure:
                 browsing.store.execute(
                     "UPDATE browsing_tasks SET status='checkpoint',error=? WHERE id=?",
@@ -509,12 +541,10 @@ async def run_discovery_video(browsing, row, candidate, metrics):
         error = task["error"]
         browsing.repo.finish_video_attempt(row, candidate, identity, failures)
         if failures >= 2:
-            if failures == 3 and row["config"].get("discovery_id"):
+            if failures == 3:
                 browsing.store.execute(
-                    """UPDATE browsing_intents SET status='automatic_skipped',error=?
-                       WHERE account_id=? AND character_id=? AND character_version=? AND status='automatic_pending'
-                       AND json_extract(target,'$.bvid')=? AND round_id IN
-                       (SELECT id FROM browsing_rounds WHERE json_extract(config,'$.discovery_id')=?)""",
-                    (error, *browsing.repo.retry_scope(row), bvid, row["config"]["discovery_id"]),
+                    "UPDATE browsing_intents SET auto_authorized=0,error=? WHERE round_id=? "
+                    "AND json_extract(target,'$.bvid')=? AND status='pending_review'",
+                    (error, row["id"], bvid),
                 )
             return

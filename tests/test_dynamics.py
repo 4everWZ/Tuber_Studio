@@ -69,6 +69,7 @@ def service(settings, store, monkeypatch):
     comments.policy = lambda: {"credentials_configured": comments.configured}
     runtime = SimpleNamespace(llm=Model(), generation_lock=asyncio.Lock())
     service = Dynamics(settings, store, runtime, comments)
+    service.operations.configure({"enabled": True}, account_id="injected-test-account", character=store.character())
     service.sent = []
 
     async def send(adapter, text, *, before_send=None):

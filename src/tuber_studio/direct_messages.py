@@ -1181,13 +1181,6 @@ class DirectMessages:
                     if automatic:
                         self._origin_round(row, active=True)
                     browsing = getattr(self.runtime, "browsing", None)
-                    if (
-                        automatic
-                        and self.operations.policy()["enabled"]
-                        and browsing
-                        and not browsing.semantic_ready()
-                    ):
-                        return False
                     if automatic and row["source_kind"] == "comment" and browsing:
                         browsing.assert_comment_evidence(self._event(row, character))
                     if not self.injected and self.credential_signature != (

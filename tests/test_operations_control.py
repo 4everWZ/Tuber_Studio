@@ -10,7 +10,20 @@ from tuber_studio.comments import Comments
 from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.operations_control import OperationsControl, canonical_intent
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
+from tuber_studio.publication_errors import SendLimitReached
 from tuber_studio.store import Store
+
+
+def test_send_limit_exposes_wake_time_without_recording_another_attempt(store):
+    control, character = OperationsControl(store), store.character()
+    control.configure({"max_per_hour": 1})
+    token = control.reserve("900", character, intent(character, "first"), "comments")
+    started = control.get_attempt(token)["started_at"]
+    control.finish(token, "published")
+    with pytest.raises(SendLimitReached) as caught:
+        control.reserve("900", character, intent(character, "second"), "comments")
+    assert caught.value.next_at == started + 3600
+    assert store.one("SELECT COUNT(*) AS n FROM operation_write_attempts")["n"] == 1
 
 
 def intent(character, source="42"):
@@ -23,16 +36,17 @@ def test_overlay_never_overwrites_latest_base_or_unrelated_business(store):
     base = {"auto_browse": False, "auto_reply": False, "max_replies_per_hour": 2}
     assert control.effective("comments", base) == base
     control.configure({"enabled": True}, account_id="900", character=character)
-    assert control.effective("comments", base)["auto_reply"]
+    assert not control.effective("comments", base)["auto_reply"]
     assert control.effective("comments", base)["max_replies_per_hour"] == 2
     assert not control.effective("dynamics", {"enabled": False})["enabled"]
     browsing = control.effective("browsing", {"autonomous_topics": False, "visual_enabled": False})
     assert (
-        browsing["discovery_enabled"] and not browsing["autonomous_topics"] and not browsing["visual_enabled"]
+        not browsing.get("discovery_enabled") and not browsing["autonomous_topics"] and not browsing["visual_enabled"]
     )
     base["auto_browse"] = True
     control.configure({"enabled": False})
-    assert control.effective("comments", base) == base
+    assert not control.effective("comments", base)["auto_browse"]
+    assert base["auto_browse"]
     control.configure({"emergency": True})
     assert not control.effective("comments", base)["auto_browse"]
     again = OperationsControl(store)
@@ -125,18 +139,15 @@ def test_manual_historical_draft_keeps_its_character_version_without_reauthorizi
         control.reserve("900", original, intent(original, "other-role"), "comments")
 
 
-def test_failure_keeps_quota_and_uncertain_pauses_only_affected_account_channel(store):
+def test_uncertain_fences_only_original_intent_and_retains_quota(store):
     control, character = OperationsControl(store), store.character()
     token = control.reserve("900", character, intent(character), "comments")
     control.finish(token, "uncertain")
-    with pytest.raises(ValueError, match="不确定写入"):
-        control.reserve("900", character, intent(character, "43"), "comments", automatic=True)
-    other = control.reserve("900", character, intent(character, "44"), "messages", automatic=True)
+    other = control.reserve("900", character, intent(character, "43"), "comments", automatic=True)
     control.finish(other, "rejected")
     control.configure({"max_per_hour": 2})
     with pytest.raises(ValueError, match="全渠道"):
         control.reserve("900", character, intent(character, "45"), "messages")
-    control.reconcile_channel("900", "comments")
     with pytest.raises(ValueError, match="禁止重复"):
         control.reserve("900", character, intent(character), "comments")
 
@@ -146,9 +157,10 @@ def test_restart_turns_sending_into_uncertain_without_restoring_submission(store
     token = control.reserve("900", character, intent(character), "comments")
     reopened = OperationsControl(store)
     assert store.one("SELECT status FROM account_writes WHERE token=?", (token,))["status"] == "uncertain"
-    assert reopened.status()["channel_blocks"][0]["channel"] == "comments"
+    assert not reopened.status()["channel_blocks"]
     with pytest.raises(ValueError):
         reopened.reserve("900", character, intent(character), "comments")
+    assert reopened.reserve("900", character, intent(character, "independent-target"), "comments")
 
 
 def test_cross_channel_recipient_cooldown_and_account_isolation(store):

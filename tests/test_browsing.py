@@ -185,17 +185,23 @@ class ControlledModel:
                     "videos": [item["bvid"] for item in data["candidates"][: data["max_videos"]]],
                     "workers": data["max_workers"],
                     "explanation": "看看这批视频里各自的实验结果",
-                    "choices": [{"bvid": item["bvid"],
-                                 "action": "watch" if index < data["max_videos"] else "skip",
-                                 "explanation": f"想看看{item['title']}的具体过程"}
-                                for index, item in enumerate(data["candidates"])],
+                    "choices": [
+                        {
+                            "bvid": item["bvid"],
+                            "action": "watch" if index < data["max_videos"] else "skip",
+                            "explanation": f"想看看{item['title']}的具体过程",
+                        }
+                        for index, item in enumerate(data["candidates"])
+                    ],
                 }
             if schema["title"] == "ContentDecision":
                 return {
                     "interest": self.interest,
                     "worth_commenting": self.worth,
                     "reason": "specific_detail" if self.worth else "nothing_to_add",
-                    "explanation": "加盐后鸡蛋浮起来这个细节想聊聊" if self.worth else "盐水实验看明白了，暂时没有补充",
+                    "explanation": "加盐后鸡蛋浮起来这个细节想聊聊"
+                    if self.worth
+                    else "盐水实验看明白了，暂时没有补充",
                     "evidence_ids": ["missing"] if self.bad_ref else [data["segments"][0]["id"]],
                     "coverage_required": "provided",
                 }
@@ -206,12 +212,23 @@ class ControlledModel:
                     "should_favorite": True,
                     "favorite_reason": "优质干货，收藏备查",
                 }
+            action = self.response_action
+            if data.get("video_actions") and not data.get("allow_public", True):
+                action = "finish"
             return {
-                "action": self.response_action,
-                "text": "盐水把鸡蛋托起来这段好有意思，鱼鱼也想试试！",
-                "reason": "specific_detail" if self.response_action == "reply_public" else "private_details",
+                "action": action,
+                "text": "盐水把鸡蛋托起来这段好有意思，鱼鱼也想试试！" if action != "finish" else "",
+                "reason": "specific_detail" if action in {"reply_public", "finish"} else "private_details",
                 "explanation": "想接着聊盐水如何把鸡蛋托起来",
                 "evidence_ids": [data["evidence"][0]["id"]],
+                **(
+                    {
+                        "video_preference": self.interest,
+                        "preference_reason": "盐水密度改变后鸡蛋浮起来的过程很有趣",
+                    }
+                    if data.get("video_actions")
+                    else {}
+                ),
             }
         finally:
             self.active -= 1
@@ -244,7 +261,27 @@ async def browsing(settings, store, runtime):
     runtime.llm = previous
 
 
+async def authorize_automation(service):
+    """Explicit test permissions; starting the parent never adds capabilities."""
+    service.store.set("browsing_policy", service.store.get("browsing_policy", {}) | {
+        "discovery_enabled": True,
+        "top_level_enabled": True,
+        "top_level_auto_publish": True,
+        "reply_enabled": True,
+        "reply_auto_publish": True,
+    })
+    await service.set_enabled(True)
+
+
+async def start_automation(service):
+    await service.open()
+    await authorize_automation(service)
+    return service.status()
+
+
 async def finished(service, **args):
+    if args.get("automatic") and not service.operations.policy()["enabled"]:
+        await authorize_automation(service)
     result = await service.run(**args)
     task = service.active.get(result["id"])
     if task:
@@ -256,14 +293,13 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"max_model_calls": 1, "decision_max_tokens": 512})
     await browsing._current_account()
-    browsing.discovery.identity = "budget-test"
-    browsing.discovery.binding = browsing.discovery._binding()
 
-    first = await finished(browsing, discovery_id="budget-test")
+    first = await finished(browsing, automatic=True, video_only=True)
     assert not browsing.repo.video_retry(first, BV)
-    assert {task["status"] for task in browsing.tasks(round_id=first["id"])} == {"selected", "comments_checked"}, [
-        task["error"] for task in browsing.tasks(round_id=first["id"])
-    ]
+    assert {task["status"] for task in browsing.tasks(round_id=first["id"])} == {
+        "selected",
+        "comments_checked",
+    }, [task["error"] for task in browsing.tasks(round_id=first["id"])]
     assert first["config"]["max_model_calls"] == 0
     assert first["budget"]["model_calls"] == 2
     assert [name for name, _ in browsing.runtime.llm.calls] == [
@@ -290,7 +326,10 @@ async def test_video_preview_leaves_authorized_inbox_to_its_own_round(browsing, 
 async def test_interaction_round_replies_to_own_upload_while_discovery_reads(browsing, monkeypatch):
     own_video = "BV1xx411c7mD"
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
-    await browsing.configure({"reply_auto_publish": True, "recent_sample_limit": 0})
+    await browsing.configure({
+        "reply_auto_publish": True, "reply_enabled": True,
+        "replies_enabled": True, "recent_sample_limit": 0,
+    })
     browsing.store.set(
         "browsing_semantic_validation", {"passed": True, "signature": browsing.model_signature()}
     )
@@ -356,7 +395,7 @@ async def test_interaction_round_replies_to_own_upload_while_discovery_reads(bro
     monkeypatch.setattr(browsing.adapter, "own_uploads", own_uploads, raising=False)
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
     monkeypatch.setattr(browsing.adapter, "read_public_thread", read_public_thread)
-    browsing.discovery.start()
+    await start_automation(browsing)
     async with asyncio.timeout(3):
         await entered.wait()
         reading = browsing.discovery.round_id
@@ -368,9 +407,9 @@ async def test_interaction_round_replies_to_own_upload_while_discovery_reads(bro
             browsing.store.all("SELECT id,status,error FROM browsing_events")
         )
         await browsing.set_enabled(False)
-        assert browsing.discovery.enabled and browsing.repo.round(reading)["status"] == "running"
+        assert not browsing.discovery.enabled and browsing.repo.round(reading)["status"] == "paused"
     release.set()
-    await browsing.discovery.stop()
+    await browsing.set_enabled(False)
 
 
 @pytest.mark.parametrize(("workers", "cancel"), [(1, False), (2, False), (2, True)])
@@ -404,20 +443,22 @@ async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypat
             reading.remove(video)
 
     monkeypatch.setattr(browsing.adapter, "video_metadata", track_metadata)
-    browsing.discovery.start()
+    await start_automation(browsing)
     async with asyncio.timeout(3):
         await full.wait()
         assert len(reading) == workers
         if cancel:
-            await browsing.discovery.stop()
+            await browsing.set_enabled(False)
             assert not reading and not browsing.active and not browsing.heartbeats
-            assert browsing.rounds()[0]["status"] == "paused"
+            assert next(
+                row for row in browsing.rounds() if not row["config"].get("interaction_only")
+            )["status"] == "paused"
             assert not browsing.adapter.sent
             return
         active = next(iter(browsing.active.values()))
         release.set()
         await active
-    await browsing.discovery.stop()
+    await browsing.set_enabled(False)
     assert peak == workers
     assert browsing.runtime.llm.peak == 1
     assert {task["bvid"] for task in browsing.tasks() if task["status"] == "selected"} == set(videos)
@@ -434,8 +475,9 @@ async def test_background_discovery_publishes_top_level_and_thread_replies(brows
             policy()
             | {
                 "interval_seconds": 0.03,
-                "top_level_enabled": False,
+                "top_level_enabled": True,
                 "top_level_auto_publish": True,
+                "reply_enabled": True,
                 "recent_sample_limit": 0,
                 "max_replies_per_video": 0,
             }
@@ -478,18 +520,19 @@ async def test_background_discovery_publishes_top_level_and_thread_replies(brows
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
     monkeypatch.setattr(browsing.adapter, "read_video_reply", read_reply, raising=False)
     await browsing.open()
-    assert browsing.discovery.start()["state"] == "starting"
-    worker = browsing.discovery.worker
-    browsing.discovery.start()
-    assert browsing.discovery.worker is worker
+    assert (await start_automation(browsing))["policy"]["enabled"]
+    worker = browsing.loop
+    await start_automation(browsing)
+    assert browsing.loop is worker
     async with asyncio.timeout(5):
         while sum(item["status"] == "published" for item in browsing.intents()) < 3:
             await asyncio.sleep(0.01)
     assert browsing.discovery.enabled
-    await browsing.discovery.stop()
+    await browsing.set_enabled(False)
 
     rows = browsing.rounds()
-    assert len(rows) >= 2 and all(row["config"]["discovery_id"] for row in rows)
+    video_rows = [row for row in rows if not row["config"].get("interaction_only")]
+    assert len(video_rows) >= 2 and all(row["config"].get("autonomous_batch") for row in video_rows)
     assert {row["bvid"] for row in browsing.tasks() if row["status"] == "selected"} == {BV, second_video}
     assert all(row["status"] == "published" and row["auto_authorized"] for row in browsing.intents())
     assert not browsing.operations.policy()["enabled"]
@@ -517,7 +560,7 @@ async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch)
 
     monkeypatch.setattr(browsing, "_prepare_evidence", prepare_video)
     await browsing.open()
-    browsing.discovery.start()
+    await start_automation(browsing)
     await asyncio.wait_for(started.wait(), 3)
     before = browsing.discovery.status()
     assert before["state"] == "reading" and before["current_video"]["title"] == "盐水实验"
@@ -534,7 +577,7 @@ async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch)
     async with asyncio.timeout(5):
         while ("discover", "search", "盐水", 1) not in browsing.adapter.calls:
             await asyncio.sleep(0.01)
-    await browsing.discovery.stop()
+    await browsing.set_enabled(False)
     assert {round_["config"]["sources"][0] for round_ in browsing.rounds()} == {"recommend", "search"}
 
 
@@ -572,13 +615,13 @@ async def test_discovery_retries_once_then_continues_other_videos(browsing, monk
     monkeypatch.setattr(browsing.adapter, "discover", discover)
     monkeypatch.setattr(browsing, "_prepare_evidence", prepare_video)
     await browsing.open()
-    browsing.discovery.start()
+    await start_automation(browsing)
     async with asyncio.timeout(5):
         while not any(target["bvid"] == second for target, _ in browsing.adapter.sent) or (
             failed_reads == 3 and not any(task.get("consecutive_failures") == 3 for task in browsing.tasks())
         ):
             await asyncio.sleep(0.01)
-    await browsing.discovery.stop()
+    await browsing.set_enabled(False)
     assert events[:3] == [first, first, second]
     if failed_reads == 3:
         assert events[3] == first
@@ -634,12 +677,17 @@ async def test_discovery_unknown_receipt_only_reads_original_and_keeps_publishin
     monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
     monkeypatch.setattr(browsing.adapter, "reconcile_publication", reconcile, raising=False)
     await browsing.open()
-    browsing.discovery.start()
-    async with asyncio.timeout(5):
-        while not any(task.get("consecutive_failures") == 3 for task in browsing.tasks()):
-            await asyncio.sleep(0.01)
-    await browsing.discovery.stop()
-    assert actions == [("write", first), ("lookup", "42"), ("write", second), ("lookup", "42")]
+    await start_automation(browsing)
+    for _ in range(300):
+        if ("write", second) in actions and ("lookup", "42") in actions:
+            break
+        await asyncio.sleep(0.01)
+    assert ("write", second) in actions and ("lookup", "42") in actions, (
+        actions, browsing.tasks(), browsing.rounds(), browsing.last_error
+    )
+    await browsing.set_enabled(False)
+    assert [action for action in actions if action[0] == "write"] == [("write", first), ("write", second)]
+    assert all(action == ("lookup", "42") for action in actions if action[0] == "lookup")
     assert not browsing.operations.status()["channel_blocks"]
     assert {row["status"] for row in browsing.intents()} == {"publish_uncertain", "published"}
     activity = browsing.discovery.records(recent=True)["activity"]
@@ -680,18 +728,17 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
     monkeypatch.setattr(FeedbackModel, "decide", decide)
     monkeypatch.setattr(FeedbackModel, "revise", revise)
     await browsing.open()
-    browsing.discovery.start()
+    await start_automation(browsing)
     async with asyncio.timeout(5):
         await published.wait()
         allow_bookkeeping.set()
-        await browsing.discovery.stop()
+        await browsing.set_enabled(False)
     assert len(texts) == 2 and texts[0] != texts[1]
     records = browsing.discovery.records()
     assert records["sent"][0]["receipt_id"] == "901"
-    assert records["issues"][0]["status"] == "recovered"
-    assert records["issues"][0]["occurrences"] == 1
-    assert records["issues"][0]["error"]
-    assert browsing.rounds()[0]["status"] == "completed"
+    assert records["issues"] == []
+    continuation = browsing.intents()[0]["continuation"]
+    assert continuation["state"] == "completed"
 
 
 async def test_emergency_during_discovery_preflight_cancels_start(browsing, monkeypatch):
@@ -703,12 +750,14 @@ async def test_emergency_during_discovery_preflight_cancels_start(browsing, monk
         await asyncio.Future()
 
     monkeypatch.setattr(browsing, "check_browsing_model", wait_for_model)
-    browsing.discovery.start()
+    starting = asyncio.create_task(start_automation(browsing))
     await asyncio.wait_for(started.wait(), 2)
     await browsing.stop(emergency=True)
+    starting.cancel()
+    await asyncio.gather(starting, return_exceptions=True)
     assert not browsing.discovery.enabled and not browsing.rounds()
     with pytest.raises(ValueError, match="紧急停止"):
-        browsing.discovery.start()
+        await start_automation(browsing)
     browsing.operations.configure({"emergency": False})
     assert browsing.discovery.status()["state"] == "off"
 
@@ -1293,11 +1342,12 @@ async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
 
     browsing.runtime.llm.generate_json = choose
     await browsing._current_account()
-    browsing.discovery.identity = "model-batch"
-    browsing.discovery.binding = browsing.discovery._binding()
-    row = await finished(browsing, discovery_id="model-batch")
+    row = await finished(browsing, automatic=True, video_only=True)
     assert row["metrics"]["batch_plan"] == {
-        "videos": list(reversed(videos[1:])), "workers": 1, "choices": [], "explanation": ""
+        "videos": list(reversed(videos[1:])),
+        "workers": 1,
+        "choices": [],
+        "explanation": "",
     }
     assert row["metrics"]["workers"] == 1
     assert list(dict.fromkeys(call[1] for call in browsing.adapter.calls if call[0] == "metadata")) == list(
@@ -1338,18 +1388,18 @@ async def test_revisited_video_replies_to_new_comments_without_another_main_repl
     browsing.adapter.fetch = fetch
     browsing.adapter.read_video_reply = read_reply
     await browsing._current_account()
-    browsing.discovery.identity = "revisit-comments"
-    browsing.discovery.binding = browsing.discovery._binding()
-    await finished(browsing, discovery_id="revisit-comments")
+    await finished(browsing, automatic=True, video_only=True)
     browsing.store.save_character(browsing.runtime.character)
-    browsing.discovery.binding = browsing.discovery._binding()
     for value in browsing.store.all("SELECT path FROM browsing_materials"):
         from pathlib import Path
 
         Path(value["path"]).unlink(missing_ok=True)
     browsing.store.execute("DELETE FROM browsing_materials")
     incoming = "502"
-    await finished(browsing, discovery_id="revisit-comments")
+    browsing.operations.configure(
+        {"enabled": True}, account_id="100", character=browsing.runtime.character
+    )
+    await finished(browsing, automatic=True, video_only=True)
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "501", "502"]
     assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
     assert len([name for name, _ in browsing.runtime.llm.calls if name == "ResponseDecision"]) == 3

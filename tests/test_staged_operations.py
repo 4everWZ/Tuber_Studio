@@ -121,13 +121,21 @@ async def run(experiment, queue, case=CASE, **kwargs):
 async def test_small_decision_plain_body_and_backend_binding_share_native_parameters(experiment):
     result = await run(experiment, [{}, {"content": "盐水里的鸡蛋浮起来啦。"}])
     service, _, state = experiment
-    assert result["actual"] == DECISION | {"text": "盐水里的鸡蛋浮起来啦。"}
+    assert result["actual"] == DECISION | {
+        "text": "盐水里的鸡蛋浮起来啦。",
+        "explanation": "",
+        "video_preference": None,
+        "preference_reason": "",
+    }
     assert result["structural_complete"] and result["pipeline_acceptance"]
     assert result["model_calls"] == 2 and result["budget_delta"]["model_calls"] == 2
     assert result["output_tokens_charged"] == result["budget_delta"]["output_tokens"] == 200
     first, body = state["generations"]
     branches = first["response_format"]["schema"]["oneOf"]
-    assert all(set(branch["properties"]) == {"action", "reason", "evidence_ids"} for branch in branches)
+    assert all(
+        set(branch["properties"]) == {"action", "reason", "explanation", "evidence_ids"}
+        for branch in branches
+    )
     assert "response_format" not in body and all("tools" not in payload for payload in (first, body))
     assert [first["max_tokens"], body["max_tokens"]] == [1024, 3072]
     assert all(payload["chat_template_kwargs"] == {"enable_thinking": True} for payload in (first, body))
@@ -144,7 +152,11 @@ async def test_small_decision_plain_body_and_backend_binding_share_native_parame
 
 async def test_skip_needs_no_body_generation(experiment):
     result = await run(experiment, [{"decision": SKIP}])
-    assert result["actual"] == SKIP | {"text": ""} and result["model_calls"] == 1
+    assert (
+        result["actual"]
+        == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": ""}
+        and result["model_calls"] == 1
+    )
 
 
 async def test_decision_json_repair_retains_original_and_is_a_separate_request(experiment):
@@ -383,7 +395,11 @@ async def test_evidence_packet_can_be_empty_for_no_evidence_but_never_invents_re
     case["expected_actions"] = ["skip"]
     value = {"answerability": "insufficient", "missing": ["没有内容依据"], "quotes": []}
     result = await run(experiment, [{"decision": value}, {"decision": SKIP}], case, strategy="evidence_first")
-    assert result["actual"] == SKIP | {"text": ""} and result["model_calls"] == 2
+    assert (
+        result["actual"]
+        == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": ""}
+        and result["model_calls"] == 2
+    )
     assert not result["evidence_packet"]["quote_mapping"]
 
 

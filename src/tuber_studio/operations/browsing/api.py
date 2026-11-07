@@ -2,6 +2,8 @@
 
 from fastapi import Body, Depends, Query
 
+from .issues import clear_issues
+
 
 def register_browsing_api(app, browsing, require_admin):
     dependencies = [Depends(require_admin)]
@@ -19,11 +21,49 @@ def register_browsing_api(app, browsing, require_admin):
     async def discovery_records(recent: bool = False):
         return browsing.discovery.records(recent=recent)
 
+    @app.post("/api/automation/issues/clear", dependencies=dependencies)
+    async def clear_errors():
+        return clear_issues(browsing)
+
+    @app.get("/api/automation/discovery/history", dependencies=dependencies)
+    async def discovery_history(
+        day: str | None = None, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=50)
+    ):
+        from .activity_history import history
+
+        await browsing.discovery.restore_history_scope()
+        return history(
+            browsing,
+            day=day,
+            page=page,
+            page_size=page_size,
+            visible_since=browsing.store.get("browsing_history_visible_since", 0),
+        )
+
+    @app.get("/api/automation/activity", dependencies=dependencies)
+    async def operation_activity(
+        day: str | None = None,
+        kind: str = "all",
+        page: int = Query(1, ge=1),
+        page_size: int = Query(10, ge=1, le=50),
+    ):
+        from .activity_history import activity
+
+        await browsing.discovery.restore_history_scope()
+        return activity(
+            browsing,
+            day=day,
+            kind=kind,
+            page=page,
+            page_size=page_size,
+            visible_since=browsing.store.get("browsing_history_visible_since", 0),
+        )
+
     @app.put("/api/automation/discovery", dependencies=dependencies)
     async def control_discovery(data: dict = Body(...)):
         if set(data) != {"enabled"} or type(data["enabled"]) is not bool:
             raise ValueError("仅接受布尔值 enabled")
-        return browsing.discovery.start() if data["enabled"] else await browsing.discovery.stop()
+        return await browsing.set_enabled(data["enabled"])
 
     @app.put("/api/automation/settings", dependencies=dependencies)
     async def configure(data: dict = Body(...)):

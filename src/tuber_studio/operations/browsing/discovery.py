@@ -1,17 +1,16 @@
-"""Opt-in, process-owned video discovery and public posting."""
+"""Video candidate retrieval and read-only views for unified autonomous operations."""
 
 import asyncio
 import json
 import re
 import time
-from contextlib import contextmanager
-from uuid import uuid4
 
 from ...bilibili_account import PROFILE_CACHE_KEY, signature
 from ...operations_control import canonical_intent
 from ...providers import public_error
 from ...store import dump
 from .evidence import EvidenceUnavailable
+from .issues import unread_issues
 from .models import BrowsePlan, CandidateBatchPlan
 
 ACTIVE_TASKS = ("discovered", "claimed", "preparing", "evidence_ready")
@@ -33,29 +32,41 @@ def source_settings(policy):
 class BackgroundDiscovery:
     def __init__(self, browsing):
         self.browsing = browsing
-        self.worker = None
-        self.identity = None
-        self.binding = None
-        self.round_id = None
-        self.actions = {}
-        self.next_at = None
-        self.state = "off"
         self.error = None
         self.attention = None
         self.history_checked_signature = None
 
     @property
     def enabled(self):
-        return self.worker is not None and not self.worker.done()
+        return self.browsing.operations.policy()["enabled"] and self.browsing.policy()["discovery_enabled"]
 
-    @contextmanager
-    def performing(self, action):
-        task = asyncio.current_task()
-        self.actions[task] = action
-        try:
-            yield
-        finally:
-            self.actions.pop(task, None)
+    @property
+    def round_id(self):
+        return next(
+            (
+                identity
+                for identity in self.browsing.active
+                if not self.browsing.repo.round(identity)["config"].get("interaction_only")
+                and not self.browsing.repo.round(identity)["preview"]
+            ),
+            None,
+        )
+
+    @property
+    def state(self):
+        if self.browsing.closed:
+            return "stopping"
+        if self.browsing.starting:
+            return "starting"
+        return "running" if self.round_id else "waiting" if self.enabled else "off"
+
+    @property
+    def next_at(self):
+        if not self.enabled:
+            return None
+        return self.browsing.store.get(
+            f"browsing_next:{self.browsing.account}:{self.browsing.runtime.character['id']}"
+        )
 
     def history_scope(self):
         service = self.browsing
@@ -91,7 +102,7 @@ class BackgroundDiscovery:
             return
         if not service.store.one(
             """SELECT 1 FROM browsing_rounds WHERE character_id=? AND character_version=?
-               AND json_extract(config,'$.discovery_publish')=1 LIMIT 1""",
+               AND (json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1) LIMIT 1""",
             (character, version),
         ):
             return
@@ -154,9 +165,10 @@ class BackgroundDiscovery:
         last = service.repo.decode(
             service.store.one(
                 """SELECT * FROM browsing_rounds WHERE account_id=? AND character_id=? AND character_version=?
-               AND json_extract(config,'$.discovery_publish')=1 AND status NOT IN ('queued','running')
+               AND (json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1) AND status NOT IN ('queued','running','archived')
+               AND created_at>=?
                ORDER BY created_at DESC, id DESC LIMIT 1""",
-                scope,
+                (*scope, service.store.get("browsing_history_visible_since", 0)),
             )
         )
         current = None
@@ -181,7 +193,7 @@ class BackgroundDiscovery:
             )
         phase = self.state
         if phase == "running":
-            phase = next(iter(self.actions.values()), None) or (
+            phase = (
                 ("judging" if current["status"] == "evidence_ready" else "reading")
                 if current
                 else "discovering"
@@ -195,19 +207,6 @@ class BackgroundDiscovery:
                 "message": "紧急停止已生效",
                 "label": "打开刷视频设置",
                 "href": "#operations-controls",
-            }
-        elif (
-            self.enabled
-            and self.binding
-            and service.store.one(
-                "SELECT 1 FROM operation_channel_blocks WHERE account_id=? AND channel='comments'",
-                (self.binding[0],),
-            )
-        ):
-            attention = {
-                "message": "评论渠道有历史回执待核对",
-                "label": "打开评论与草稿",
-                "href": "#comments",
             }
         elif not attention and not service.comments.policy()["credentials_configured"]:
             attention = {
@@ -241,7 +240,7 @@ class BackgroundDiscovery:
             },
             "source": source_settings(service.policy()),
             "round_source": source_settings(selected_round["config"])["mode"] if selected_round else None,
-            "account_id": self.binding[0] if self.binding else None,
+            "account_id": service.account or control["account_id"],
             "configured_account_id": service.comments.display_account_id(),
             "character": {key: service.runtime.character[key] for key in ("id", "version", "name")},
             "model": service.settings.data["llm"].get("model"),
@@ -264,7 +263,7 @@ class BackgroundDiscovery:
             """SELECT i.id,i.kind,i.updated_at,i.text,json_extract(i.receipt,'$.rpid') AS receipt_id,
                       json_extract(i.target,'$.bvid') AS bvid
                FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id
-               WHERE json_extract(r.config,'$.discovery_publish')=1 AND i.status='published'
+               WHERE (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1) AND i.status='published'
                AND r.account_id=? AND r.character_id=? AND r.character_version=?
                ORDER BY i.updated_at DESC LIMIT 30""",
             scope,
@@ -272,13 +271,13 @@ class BackgroundDiscovery:
         issues = store.all(
             """SELECT t.id,t.round_id,t.bvid,t.error,t.updated_at,t.status
                FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id
-               WHERE json_extract(r.config,'$.discovery_publish')=1 AND t.error IS NOT NULL
+               WHERE (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1) AND t.error IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM browsing_batches b WHERE b.round_id=r.id)
                AND (t.status='retry_wait' OR json_extract(t.payload,'$.consecutive_failures')=3)
                AND r.account_id=? AND r.character_id=? AND r.character_version=?
                UNION ALL
                SELECT id,id,NULL,COALESCE(error,json_extract(metrics,'$.source_error')),updated_at,status
-               FROM browsing_rounds WHERE json_extract(config,'$.discovery_publish')=1
+               FROM browsing_rounds WHERE (json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1)
                AND account_id=? AND character_id=? AND character_version=?
                AND COALESCE(error,json_extract(metrics,'$.source_error')) IS NOT NULL
                ORDER BY updated_at DESC LIMIT 50""",
@@ -296,6 +295,9 @@ class BackgroundDiscovery:
                     "status": "blocked",
                 },
             )
+        since = store.get("browsing_history_visible_since", 0)
+        sent = [item for item in sent if item["updated_at"] >= since]
+        issues = unread_issues(self.browsing, [item for item in issues if item.get("updated_at", 0) >= since])
         return {"sent": sent, "issues": issues, "activity": self.activity(scope)}
 
     @staticmethod
@@ -314,9 +316,10 @@ class BackgroundDiscovery:
             """SELECT f.*,b.round_id FROM browsing_batch_failures f
                JOIN browsing_batches b ON b.id=f.batch_id JOIN browsing_rounds r ON r.id=b.round_id
                WHERE r.account_id=? AND r.character_id=? AND r.character_version=?
-                 AND json_extract(r.config,'$.discovery_publish')=1
+                 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)
+                 AND f.updated_at>=?
                ORDER BY f.updated_at DESC""",
-            scope,
+            (*scope, self.browsing.store.get("browsing_history_visible_since", 0)),
         )
         current_status = {}
         if rows:
@@ -354,7 +357,7 @@ class BackgroundDiscovery:
         activity = self.browsing.store.all(
             """WITH rounds AS (
                    SELECT id FROM browsing_rounds WHERE account_id=? AND character_id=? AND character_version=?
-                   AND json_extract(config,'$.discovery_publish')=1
+                   AND (json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1)
                ), tasks AS (
                    SELECT t.id,t.round_id,t.bvid,t.status,t.updated_at,t.created_at,
                           COALESCE(json_extract(t.payload,'$.metadata.title'),json_extract(t.payload,'$.title')) AS title,
@@ -399,138 +402,12 @@ class BackgroundDiscovery:
                 merged[key] = dict(item, occurrences=item.get("occurrences", 1))
             else:
                 merged[key]["occurrences"] += item.get("occurrences", 1)
-        return sorted([*replies, *merged.values()], key=lambda item: item["updated_at"], reverse=True)
-
-    def start(self):
-        service = self.browsing
-        if service.closed or service.operations.policy()["emergency"]:
-            raise ValueError("浏览已停止或紧急停止仍有效")
-        if not self.enabled:
-            self.identity = str(uuid4())
-            self.state, self.error, self.binding = "starting", None, None
-            self.attention = None
-            self.worker = asyncio.create_task(self._loop())
-        return self.status()
-
-    async def stop(self):
-        worker = self.worker
-        if worker and not worker.done():
-            if self.state != "stopping":
-                self.state = "stopping"
-                self.identity = None
-                worker.cancel()
-            await asyncio.gather(worker, return_exceptions=True)
-        if self.worker is worker:
-            self.worker = self.identity = self.binding = self.next_at = None
-            self.state, self.error = "off", None
-            self.attention = None
-        return self.status()
-
-    def _binding(self):
-        service = self.browsing
-        return service.account, service.credential_signature(), service.model_signature()
-
-    def verify(self, identity):
-        if (
-            self.identity is None
-            or identity != self.identity
-            or self.binding is None
-            or self.binding != self._binding()
-            or self.browsing.operations.policy()["emergency"]
-        ):
-            raise ValueError("刷视频授权、账号、角色或模型已变化，请重新开始")
-
-    async def _loop(self):
-        service = self.browsing
-        run_id = self.identity
-        child = None
-        issue_target = ("更新 B 站账号", "#accounts")
-        try:
-            # A preflight must not replace the adapter of an in-flight manual round.
-            while tasks := service.discovery_tasks():
-                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            if not service.comments.policy()["credentials_configured"]:
-                raise ValueError("自动发布需要 B 站登录与写入凭据")
-            await service._current_account()
-            binding = self._binding()
-            self.remember_account(binding[0])
-            issue_target = ("检查推理与模型", "#settings")
-            await service.check_browsing_model()
-            issue_target = ("检查发现来源", "#discovery-source-form")
-            await service.probe_discovery(service.policy())
-            if binding != self._binding():
-                raise ValueError("启动检查期间账号、角色或模型已变化")
-            self.binding = binding
-            issue_target = ("返回自动刷视频", "#automation")
-            while True:
-                self.verify(self.identity)
-                deferred = service.store.get(
-                    f"browsing_next:{service.account}:{service.runtime.character['id']}", 0
-                )
-                if deferred > time.time():
-                    self.state = "waiting"
-                    self.next_at = deferred
-                    await asyncio.sleep(max(0, deferred - time.time()))
-                    self.next_at = None
-                    continue
-                if tasks := service.discovery_tasks():
-                    self.state = "waiting"
-                    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                    continue
-                try:
-                    issue_target = ("更新 B 站账号", "#accounts")
-                    await service._current_account(expected=self.binding[0])
-                    self.verify(self.identity)
-                    self.attention = None
-                    if service.discovery_tasks():
-                        continue
-                    issue_target = ("返回自动刷视频", "#automation")
-                    result = await service.run(discovery_id=self.identity)
-                    self.round_id = result["id"]
-                    child = service.active.get(self.round_id)
-                    self.state, self.error = "running", None
-                    if child:
-                        await asyncio.wait((child,))
-                    last = service.repo.round(self.round_id)
-                    self.round_id = None
-                    child = None
-                    self.error = last["error"] if last else None
-                except Exception as error:
-                    self.error = public_error(error)
-                    if issue_target[1] == "#accounts":
-                        self.attention = {
-                            "message": self.error,
-                            "label": issue_target[0],
-                            "href": issue_target[1],
-                            "at": time.time(),
-                        }
-                    self.verify(self.identity)
-                self.state = "blocked" if self.attention else "waiting"
-                delay = service.policy()["interval_seconds"]
-                self.next_at = time.time() + delay
-                await asyncio.sleep(delay)
-                self.next_at = None
-        except Exception as error:
-            self.state, self.error = "blocked", public_error(error)
-            self.attention = {
-                "message": self.error,
-                "label": issue_target[0],
-                "href": issue_target[1],
-                "at": time.time(),
-            }
-        finally:
-            if child and not child.done():
-                child.cancel()
-                await asyncio.gather(child, return_exceptions=True)
-            self.round_id = None
-            self.binding, self.next_at = None, None
-            service.store.execute(
-                """UPDATE browsing_intents SET status='automatic_skipped',error='运行已结束'
-                   WHERE status='automatic_pending' AND round_id IN
-                   (SELECT id FROM browsing_rounds WHERE json_extract(config,'$.discovery_id')=?
-                    AND json_extract(config,'$.batch_id') IS NULL)""",
-                (run_id,),
-            )
+        since = self.browsing.store.get("browsing_history_visible_since", 0)
+        return sorted(
+            [item for item in [*replies, *merged.values()] if item["updated_at"] >= since],
+            key=lambda item: item["updated_at"],
+            reverse=True,
+        )
 
 
 async def discover(browsing, row):
@@ -539,7 +416,7 @@ async def discover(browsing, row):
     if batch and batch["plan"] is not None:
         config["batch_workers"] = batch["plan"]["workers"]
         return browsing.repo.batches.candidates(row, pending=True)
-    retries = browsing.repo.retry_candidates(row) if config.get("discovery_publish") else []
+    retries = browsing.repo.retry_candidates(row) if config.get("autonomous_batch") else []
     if len(retries) >= config["inspect_limit"]:
         return await browsing._plan_batch(row, retries)
     try:
@@ -595,7 +472,7 @@ async def discover_candidates(browsing, row, retries):
                 time.time() + plan.delay_seconds,
             )
             if batch:
-                browsing.repo.batches.save_plan(row, {"videos": [], "workers": 1})
+                browsing.repo.batches.save_plan(row, {"videos": [], "workers": 1}, presented=[])
             return retries
         sources, keywords = [plan.action], plan.keywords
         if plan.action == "search" and (not keywords or any(not k.strip() or len(k) > 100 for k in keywords)):
@@ -682,15 +559,21 @@ async def select_batch_candidates(browsing, row, retries, candidates):
         if row["preview"] and len(selected) >= config["inspect_limit"]:
             break
         if item["bvid"] in selected_ids or (
-            config.get("discovery_publish") and browsing.repo.video_retry(row, item["bvid"])
+            config.get("autonomous_batch") and browsing.repo.video_retry(row, item["bvid"])
         ):
             continue
         if config.get("batch_id") and browsing.repo.batches.title_skipped(row, item):
+            browsing.repo.batches.omit_candidate(row, item, reason="已记录本条标题的略过选择")
             continue
-        if config.get("batch_id") and browsing.repo.batches.waiting_until(row, item["bvid"]):
+        if config.get("batch_id") and (next_at := browsing.repo.batches.waiting_until(row, item["bvid"])):
+            browsing.repo.batches.omit_candidate(
+                row, item, reason="等待本条视频的下一处理时间", next_at=next_at
+            )
             continue
         reason = browsing.filter_reason(item, config)
         if reason:
+            if config.get("batch_id"):
+                browsing.repo.batches.omit_candidate(row, item, reason=reason)
             prior_filter = browsing.store.one(
                 "SELECT t.id FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
                 "WHERE r.account_id=? AND r.character_id=? AND t.bvid=? AND t.status='skipped' AND t.error=? LIMIT 1",
@@ -715,6 +598,8 @@ async def select_batch_candidates(browsing, row, retries, candidates):
             ),
         )
         if previous and not config.get("force_read") and not config.get("reply_enabled"):
+            if config.get("batch_id"):
+                browsing.repo.batches.omit_candidate(row, item, reason="已完成内容处理，本轮未开启评论回访")
             continue
         selected.append(item)
         selected_ids.add(item["bvid"])
@@ -724,11 +609,17 @@ async def select_batch_candidates(browsing, row, retries, candidates):
 
 
 async def plan_batch(browsing, row, candidates):
+    # Retry records and retrieval pages are merged before this point. The raw
+    # batch keeps all of them; only the bounded window is sent to the model.
+    candidates = list({item["bvid"]: item for item in candidates}.values())
+    config = row["config"]
+    if config.get("batch_id"):
+        browsing.repo.batches.merge(row, candidates)
+    candidates = candidates[: config["candidate_limit"]]
     if row["preview"] or not candidates:
         if row["config"].get("batch_id"):
-            browsing.repo.batches.save_plan(row, {"videos": [], "workers": 1})
+            browsing.repo.batches.save_plan(row, {"videos": [], "workers": 1}, presented=[])
         return candidates[: row["config"]["inspect_limit"]]
-    config = row["config"]
     plan = await browsing.decisions._model(
         row,
         CandidateBatchPlan,
@@ -753,8 +644,9 @@ async def plan_batch(browsing, row, candidates):
         (dump(config), dump(metrics), row["id"]),
     )
     if config.get("batch_id"):
-        browsing.repo.batches.merge(row, candidates)
-        browsing.repo.batches.save_plan(row, plan.model_dump())
+        browsing.repo.batches.save_plan(
+            row, plan.model_dump(), presented=[item["bvid"] for item in candidates]
+        )
         return browsing.repo.batches.candidates(row, pending=True)
     by_id = {item["bvid"]: item for item in candidates}
     return [by_id[bvid] for bvid in plan.videos]

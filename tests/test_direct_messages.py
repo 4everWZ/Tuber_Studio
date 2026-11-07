@@ -204,6 +204,7 @@ async def test_sync_ignores_self_recalled_and_other_receivers_and_does_not_mark_
 
 
 async def test_historical_inbox_does_not_trigger_auto_send(messages):
+    messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
     old = int(time.time()) - 3600
     messages.adapter.rows = [
         {
@@ -221,6 +222,7 @@ async def test_historical_inbox_does_not_trigger_auto_send(messages):
 
 
 async def test_automatic_poll_resumes_saved_messages_when_queue_has_space(messages):
+    messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
     for task in (messages.worker, messages.poller):
         task.cancel()
     await asyncio.gather(messages.worker, messages.poller, return_exceptions=True)
@@ -287,8 +289,9 @@ async def test_send_cancellation_marks_uncertain_not_retryable(messages):
 
 
 async def test_auto_reply_targets_only_new_incoming_and_has_receipt(messages):
+    messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
     await messages.configure({"enabled": True, "auto_send": True})
-    source = incoming(messages)
+    source = incoming(messages, account_id="900")
     identity = messages.enqueue("message", source, automatic=True)
     result = await finished(messages, identity)
     assert result["status"] == "published" and len(messages.adapter.sent) == 1

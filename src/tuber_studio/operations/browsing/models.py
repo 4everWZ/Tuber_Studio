@@ -50,6 +50,9 @@ def browsing_filter_reason(item, config, *, complete=False):
     return None
 
 
+MAX_BATCH_CANDIDATES = 20
+
+
 class BrowsingPolicy(StrictModel):
     sources: list[Literal["recommend", "search", "popular", "specified"]] = Field(
         default_factory=lambda: ["recommend"], max_length=4
@@ -76,7 +79,7 @@ class BrowsingPolicy(StrictModel):
     comment_handoff_enabled: bool = False
     visual_enabled: bool = False
     workers: int = Field(default=4, ge=1, le=8)
-    candidate_limit: int = Field(default=20, ge=1, le=20)
+    candidate_limit: int = Field(default=MAX_BATCH_CANDIDATES, ge=1, le=MAX_BATCH_CANDIDATES)
     inspect_limit: int = Field(default=4, ge=1, le=20)
     max_search_terms: int = Field(default=2, ge=1, le=20)
     max_pages: int = Field(default=2, ge=1, le=2)
@@ -158,10 +161,10 @@ class BatchCandidateChoice(StrictModel):
 
 
 class CandidateBatchPlan(StrictModel):
-    videos: list[str] = Field(default_factory=list, max_length=20)
+    videos: list[str] = Field(default_factory=list, max_length=MAX_BATCH_CANDIDATES)
     workers: int = Field(ge=1, le=8)
     explanation: str = ""
-    choices: list[BatchCandidateChoice] = Field(default_factory=list, max_length=20)
+    choices: list[BatchCandidateChoice] = Field(default_factory=list, max_length=MAX_BATCH_CANDIDATES)
 
     @field_validator("videos")
     @classmethod
@@ -217,8 +220,17 @@ class ContentDecision(StrictModel):
 
 class ResponseDecision(StrictModel):
     explanation: str = ""
+    video_preference: Literal["like", "not_interested", "neutral"] | None = None
+    preference_reason: str = ""
     action: Literal[
-        "reply_public", "handoff_private", "skip", "wait", "read_comments", "watch_frames", "read_more"
+        "reply_public",
+        "handoff_private",
+        "skip",
+        "wait",
+        "read_comments",
+        "watch_frames",
+        "read_more",
+        "finish",
     ]
     text: str = ""
     reason: Literal[
@@ -324,7 +336,15 @@ RESPONSE_REFERENCE_INSTRUCTION = (
 )
 
 
-def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_actions=False):
+def response_schema(
+    evidence_ids,
+    *,
+    maximum=None,
+    allow_handoff=True,
+    video_actions=False,
+    allow_public=True,
+    allow_comments=True,
+):
     """Constrain source IDs and channel consistency before the model emits text."""
     reasons = {
         "reply_public": ["specific_detail", "light_interaction"],
@@ -338,10 +358,13 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_act
                 "read_comments": ["specific_detail", "light_interaction"],
                 "watch_frames": ["insufficient_evidence"],
                 "read_more": ["insufficient_evidence"],
+                "finish": ["specific_detail", "light_interaction", "no_interest"],
             }
         )
     branches = []
     for action, allowed_reasons in reasons.items():
+        if action == "reply_public" and not allow_public or action == "read_comments" and not allow_comments:
+            continue
         sending = action in {"reply_public", "handoff_private"}
         if sending and not evidence_ids or action == "handoff_private" and not allow_handoff:
             continue
@@ -350,6 +373,17 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_act
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
+                    **(
+                        {
+                            "video_preference": {
+                                "type": "string",
+                                "enum": ["like", "not_interested", "neutral"],
+                            },
+                            "preference_reason": {"type": "string", "minLength": 1},
+                        }
+                        if video_actions
+                        else {}
+                    ),
                     "reason": {"type": "string", "enum": allowed_reasons},
                     "explanation": {"type": "string", "minLength": 1},
                     "action": {"type": "string", "enum": [action]},
@@ -368,7 +402,8 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_act
                         **({"maxLength": 0} if not sending else {}),
                     },
                 },
-                "required": ["reason", "explanation", "action", "evidence_ids", "text"],
+                "required": ["reason", "explanation", "action", "evidence_ids", "text"]
+                + (["video_preference", "preference_reason"] if video_actions else []),
             }
         )
     return {"title": "ResponseDecision", "type": "object", "oneOf": branches}

@@ -318,7 +318,7 @@ async def test_unknown_read_back_positive_receipt_resolves_without_resend(settin
         assert root["status"] == "uncertain" and resolved["resolved_status"] == "published"
         assert resolved["resolution_receipt"]["rpid"] == "321"
         assert store.one("SELECT status FROM drafts")["status"] == "published"
-        assert not store.one("SELECT * FROM operation_channel_blocks")
+        assert not store.one("SELECT name FROM sqlite_master WHERE name='operation_channel_blocks'")
     finally:
         await service.close()
 

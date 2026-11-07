@@ -17,6 +17,14 @@ class PublishUncertain(ValueError):
     """A final publication may have reached the platform."""
 
 
+class SendLimitReached(ValueError):
+    kind = "rate_limited"
+
+    def __init__(self, message, next_at):
+        super().__init__(message)
+        self.next_at = next_at
+
+
 class UnknownPublication(PublishUncertain):
     def __init__(self, message, token=None):
         super().__init__(message)

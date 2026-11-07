@@ -62,21 +62,11 @@ class BrowsingPublication:
         ):
             return None
         identity, now = str(uuid4()), time.time()
-        independent = bool(row["config"].get("discovery_publish"))
-        if independent:
-            self.browsing.discovery.verify(row["config"]["discovery_id"])
-        auto = (independent and kind in {"top_level", "reply_public"}) or (
+        auto = (
             not row["preview"]
             and self.browsing.operations.policy()["enabled"]
             and self.browsing.operations.policy()["epoch"] == row["epoch"]
-            and self.browsing.semantic_ready()
-            and (
-                (kind == "top_level" and row["config"].get("top_level_auto_publish", False))
-                or (kind == "reply_public" and row["config"].get("reply_auto_publish", False))
-                or (kind == "video_like" and row["config"].get("video_like_auto_publish", False))
-                or (kind == "video_fav" and row["config"].get("video_fav_auto_publish", False))
-                or (kind == "private_handoff" and row["config"].get("comment_handoff_enabled", False))
-            )
+            and self._action_allowed(kind, self.browsing.effective())
         )
         self.browsing.store.execute(
             "INSERT OR IGNORE INTO browsing_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -90,11 +80,7 @@ class BrowsingPublication:
                 row["id"],
                 row["epoch"],
                 int(auto),
-                "private_handoff"
-                if kind == "private_handoff"
-                else "automatic_pending"
-                if independent
-                else "pending_review",
+                "private_handoff" if kind == "private_handoff" else "pending_review",
                 "" if kind == "private_handoff" else response.text.strip(),
                 response.explanation.strip() or response.reason,
                 dump(target),
@@ -192,10 +178,17 @@ class BrowsingPublication:
             parent["config"]["discovery_id"] if parent and parent["config"].get("discovery_publish") else None
         )
 
-    def _verify_discovery_intent(self, row):
-        if not row["auto_authorized"] or row["kind"] not in {"top_level", "reply_public"}:
-            raise ValueError("自动刷视频发布授权无效")
-        self.browsing.discovery.verify(self._independent_run(row))
+    @staticmethod
+    def _action_allowed(kind, config):
+        if kind == "private_handoff":
+            return config.get("comment_handoff_enabled", False)
+        keys = {
+            "top_level": ("top_level_enabled", "top_level_auto_publish"),
+            "reply_public": ("reply_enabled", "reply_auto_publish"),
+            "video_like": ("video_like_enabled", "video_like_auto_publish"),
+            "video_fav": ("video_fav_enabled", "video_fav_auto_publish"),
+        }.get(kind)
+        return bool(keys and all(config.get(key, False) for key in keys))
 
     def _intent_materials(self, row):
         return [self.browsing.evidence.load(key, allow_expired=True) for key in row["material_keys"]]
@@ -206,7 +199,6 @@ class BrowsingPublication:
         )
         if not row:
             raise ValueError("候选不存在")
-        independent = self._independent_run(row)
         account = await self.browsing._current_account(row["account_id"])
         character = self.browsing.store.character(row["character_id"], row["character_version"])
         materials = self._intent_materials(row)
@@ -242,20 +234,14 @@ class BrowsingPublication:
             if self._publication_binding(fresh, character, [item["metadata"] for item in current]) != binding:
                 raise ValueError("恢复期间原始视频或互动已变化")
             policy = self.browsing.effective()
-            if automatic and independent:
-                self._verify_discovery_intent(row)
-            elif automatic and not (
-                policy["top_level_enabled" if row["kind"] == "top_level" else "reply_enabled"]
-                and row["auto_authorized"]
-                and self.browsing.semantic_ready()
-            ):
+            if automatic and not (self._action_allowed(row["kind"], policy) and row["auto_authorized"]):
                 raise ValueError("自动回应授权已停止")
             self.browsing.operations.assert_allowed(
                 automatic=automatic,
                 channel="comments",
                 account_id=account,
                 character=character,
-                epoch=row["epoch"] if automatic and not independent else None,
+                epoch=row["epoch"] if automatic else None,
             )
 
         segments = [segment for material in materials for segment in self.browsing._segments(material)]
@@ -267,7 +253,7 @@ class BrowsingPublication:
             "evidence": used,
             "coverage": [item["coverage"] for item in materials],
         }
-        parent = self.browsing.repo.round((read_round.get() if independent else None) or row["round_id"])
+        parent = self.browsing.repo.round(read_round.get() or row["round_id"])
         active = parent and parent["status"] in {"queued", "running"}
         return PublicationContext(
             binding,
@@ -290,7 +276,7 @@ class BrowsingPublication:
         self.browsing.store.execute(
             "UPDATE browsing_intents SET status=?,text=?,error=NULL,updated_at=? WHERE id=?",
             (
-                "automatic_pending" if prepared.binding["source"].get("discovery") else "pending_review",
+                "pending_review",
                 text,
                 time.time(),
                 identity,
@@ -420,7 +406,6 @@ class BrowsingPublication:
 
     async def publish(self, identity, *, automatic=False):
         row = self.browsing.store.one("SELECT epoch,round_id FROM browsing_intents WHERE id=?", (identity,))
-        independent = bool(row and self._independent_run(row))
         return await FeedbackPublication(
             self.browsing.runtime, self.browsing.store, self.browsing.operations
         ).submit(
@@ -432,9 +417,8 @@ class BrowsingPublication:
             ),
             apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
             automatic=automatic,
-            epoch=row["epoch"] if row and automatic and not independent else None,
+            epoch=row["epoch"] if row and automatic else None,
             reconcile=lambda token, prepared: self._reconcile(identity),
-            one_attempt=independent and automatic,
         )
 
     async def _publish_once(
@@ -444,13 +428,10 @@ class BrowsingPublication:
             row = self.browsing.repo.decode(
                 self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
             )
-            independent = bool(row and self._independent_run(row))
-            required = ("automatic_pending" if independent else "pending_review") if automatic else "approved"
+            required = "pending_review" if automatic else "approved"
             if not row or row["status"] != required:
                 raise ValueError("候选未获授权或已提交")
-            if automatic and independent:
-                self._verify_discovery_intent(row)
-            elif automatic and (not row["auto_authorized"] or not self.browsing.semantic_ready()):
+            if automatic and not row["auto_authorized"]:
                 raise ValueError("该候选不能自动发送")
             character = self.browsing.store.character(row["character_id"], row["character_version"])
             account = await self.browsing._current_account(row["account_id"])
@@ -513,26 +494,14 @@ class BrowsingPublication:
                     )
                 ):
                     raise ValueError("准备期间候选或审核状态已变化，保留最新状态")
-                if automatic and independent:
-                    self._verify_discovery_intent(row)
-                elif automatic:
-                    policy = self.browsing.effective()
-                    if row["kind"] == "top_level":
-                        allowed = policy.get("top_level_enabled", False)
-                    elif row["kind"] == "video_like":
-                        allowed = policy.get("video_like_enabled", False)
-                    elif row["kind"] == "video_fav":
-                        allowed = policy.get("video_fav_enabled", False)
-                    else:
-                        allowed = policy.get("reply_enabled", False)
-                    if not allowed:
-                        raise ValueError("自动回应已关闭")
+                if automatic and not self._action_allowed(row["kind"], self.browsing.effective()):
+                    raise ValueError("自动回应授权已停止")
                 self.browsing.operations.assert_allowed(
                     automatic=automatic,
                     channel="comments",
                     account_id=account,
                     character=character,
-                    epoch=row["epoch"] if automatic and not independent else None,
+                    epoch=row["epoch"] if automatic else None,
                 )
                 for key in row["material_keys"]:
                     self.browsing.evidence.load(key, allow_expired=True)
@@ -543,11 +512,8 @@ class BrowsingPublication:
                     "comments",
                     recipient=row["target"].get("recipient", ""),
                     automatic=automatic,
-                    limits={
-                        "max_per_hour": self.browsing.comments.policy()["max_replies_per_hour"],
-                        "max_per_day": self.browsing.comments.policy()["max_replies_per_day"],
-                    },
-                    epoch=row["epoch"] if automatic and not independent else None,
+                    limits=self.browsing.comments.publication_limits(),
+                    epoch=row["epoch"] if automatic else None,
                     binding=actual_binding,
                     content_hash=content_hash({"text": row["text"]}),
                     revision_ticket=revision_ticket,

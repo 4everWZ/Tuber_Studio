@@ -213,7 +213,9 @@ def test_real_api_preview_evidence_and_approval_do_not_implicitly_submit(admin):
     )
     assert response.status_code == 200 and response.json()["status"] == "approved"
     assert admin.app.state.comments.adapter.sent == []
-    assert admin.get("/api/automation").json()["automatic_sending_ready"] is False
+    status = admin.get("/api/automation").json()
+    assert status["automatic_sending_ready"] is True
+    assert not status["semantic_validation"].get("passed", False)
 
 
 def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
@@ -246,11 +248,20 @@ def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
 
 
 @pytest.mark.parametrize("legacy", [False, True])
-def test_independent_discovery_requires_restart_activation(settings, legacy):
+def test_unified_operations_requires_explicit_restart_activation(settings, legacy):
     with TestClient(make_app(settings)) as first:
         first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         path = "/api/automation/discovery"
-        assert first.put(path, json={"enabled": True}).raise_for_status().json()["enabled"]
+        first.put("/api/automation/settings", json={
+            "discovery_enabled": True,
+            "top_level_enabled": True,
+            "top_level_auto_publish": True,
+        }).raise_for_status()
+        response = (
+            first.put(path, json={"enabled": True}) if legacy
+            else first.post("/api/automation/enable", json={"enabled": True})
+        ).raise_for_status().json()
+        assert response["policy"]["enabled"]
         for _ in range(100):
             if any(row["status"] == "published" for row in first.get("/api/automation/intents").json()):
                 break
@@ -329,7 +340,7 @@ def test_public_inbox_only_links_to_private_area_without_private_body(admin):
     assert "content" not in inbox
 
 
-def test_overlay_restore_uses_latest_base_settings_not_an_old_snapshot(admin):
+def test_parent_start_preserves_permissions_and_uses_latest_saved_settings(admin):
     assert (
         admin.put(
             "/api/comments/policy",
@@ -339,7 +350,7 @@ def test_overlay_restore_uses_latest_base_settings_not_an_old_snapshot(admin):
     )
     assert admin.post("/api/automation/enable", json={"enabled": True}).status_code == 200
     during = admin.get("/api/comments/policy").json()
-    assert during["auto_reply"] is True and during["base"]["auto_reply"] is False
+    assert during["auto_reply"] is False and during["base"]["auto_reply"] is False
     assert during["automation_override"] is True
     assert admin.put("/api/comments/policy", json={"max_replies_per_hour": 1}).status_code == 200
     message_base = admin.get("/api/messages").json()["policy"]["base"]
@@ -372,7 +383,8 @@ def test_emergency_stop_survives_app_recreation_and_blocks_base_automatic_flags(
         assert second.post("/api/automation/reset-stop").status_code == 200
         restored = second.get("/api/automation").json()
         assert restored["policy"]["emergency"] is False and restored["policy"]["enabled"] is False
-        assert restored["effective"]["comments"]["auto_reply"] is True
+        assert restored["effective"]["comments"]["auto_reply"] is False
+        assert restored["base"]["comments"]["auto_reply"] is True
         assert second.app.state.comments.adapter.sent == []
 
 

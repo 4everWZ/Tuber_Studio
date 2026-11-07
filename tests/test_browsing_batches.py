@@ -3,15 +3,13 @@
 import asyncio
 import json
 
-from test_browsing import BV, finished, model_packet
+from test_browsing import BV, authorize_automation, finished, model_packet
 from test_browsing import browsing as browsing
 
 
 async def authorize(browsing, identity="durable-batch"):
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
-    await browsing._current_account()
-    browsing.discovery.identity = identity
-    browsing.discovery.binding = browsing.discovery._binding()
+    await authorize_automation(browsing)
 
 
 async def test_legacy_comment_auto_browse_cannot_start_work_when_scheduler_is_off(browsing, monkeypatch):
@@ -67,8 +65,9 @@ async def test_later_search_batches_continue_to_other_pages_after_title_skips(br
     monkeypatch.setattr(browsing.adapter, "discover", search)
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)
     await authorize(browsing)
+    pages.clear()  # Account/source preflight is separate from durable retrieval.
     for _ in range(3):
-        row = await finished(browsing, discovery_id="durable-batch")
+        row = await finished(browsing, automatic=True, video_only=True)
         assert row["status"] == "completed"
     assert pages == [1, 2, 3]
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
@@ -86,7 +85,7 @@ async def test_autonomous_batch_has_no_hidden_single_main_comment_limit(browsing
         }
     )
     await authorize(browsing)
-    row = await finished(browsing, discovery_id="durable-batch")
+    row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
     assert row["config"]["top_level_limit"] == 1
     assert row["budget"]["top_levels"] == 2
@@ -139,7 +138,7 @@ async def test_pause_and_restart_resume_original_plan_and_watch_task(browsing, m
         await asyncio.Event().wait()
 
     monkeypatch.setattr(browsing.adapter, "video_metadata", pending)
-    result = await browsing.run(discovery_id="durable-batch")
+    result = await browsing.run(automatic=True, video_only=True)
     await asyncio.wait_for(entered.wait(), 2)
     task_id = browsing.tasks(round_id=result["id"])[0]["id"]
     worker = browsing.active[result["id"]]
@@ -151,9 +150,9 @@ async def test_pause_and_restart_resume_original_plan_and_watch_task(browsing, m
     assert not browsing.active
     monkeypatch.setattr(browsing.adapter, "video_metadata", metadata)
     await authorize(browsing, "new-explicit-start")
-    resumed = await finished(browsing, discovery_id="new-explicit-start")
+    resumed = await finished(browsing, automatic=True, video_only=True)
     assert resumed["id"] == result["id"]
-    assert resumed["config"]["discovery_id"] == "new-explicit-start"
+    assert resumed["config"]["autonomous_batch"]
     assert resumed["status"] == "completed"
     assert task_id in {task["id"] for task in browsing.tasks(round_id=result["id"])}
     assert sum(name == "CandidateBatchPlan" for name, _ in browsing.runtime.llm.calls) == 1
@@ -182,13 +181,13 @@ async def test_retrieval_resumes_after_last_saved_page_and_merges_sources(browsi
         }
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
-    result = await browsing.run(discovery_id="durable-batch")
+    result = await browsing.run(automatic=True, video_only=True)
     await asyncio.wait_for(waiting.wait(), 2)
     worker = browsing.active[result["id"]]
     worker.cancel()
     await asyncio.gather(worker, return_exceptions=True)
     blocked = False
-    resumed = await finished(browsing, discovery_id="durable-batch")
+    resumed = await finished(browsing, automatic=True, video_only=True)
     assert resumed["id"] == result["id"]
     assert calls == [1, 2, 2]
     candidates = browsing.repo.batches.candidates(resumed)
@@ -221,8 +220,8 @@ async def test_title_skips_are_durable_and_do_not_create_watch_records(browsing,
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)
-    first = await finished(browsing, discovery_id="durable-batch")
-    second = await finished(browsing, discovery_id="durable-batch")
+    first = await finished(browsing, automatic=True, video_only=True)
+    second = await finished(browsing, automatic=True, video_only=True)
     assert first["id"] != second["id"]
     assert first["status"] == second["status"] == "completed"
     assert not browsing.store.all("SELECT * FROM browsing_tasks")
@@ -244,13 +243,13 @@ async def test_daily_watch_wait_does_not_block_new_batch_or_repeat_count(browsin
         }
     )
     await authorize(browsing)
-    first = await finished(browsing, discovery_id="durable-batch")
+    first = await finished(browsing, automatic=True, video_only=True)
     assert first["status"] == "completed"
     waiting = browsing.store.one("SELECT * FROM browsing_batch_items WHERE status='daily_wait'")
     assert json.loads(waiting["payload"])["next_at"] > first["updated_at"]
     assert browsing.repo.quotas.watch_status("100", "whale", 1)["started"] == 1
     assert first["metrics"]["failures"] == 0
-    next_batch = await finished(browsing, discovery_id="durable-batch")
+    next_batch = await finished(browsing, automatic=True, video_only=True)
     assert next_batch["id"] != first["id"]
     assert not any(task["status"] == "failed" for task in browsing.tasks())
     assert browsing.repo.quotas.watch_status("100", "whale", 1)["started"] == 1

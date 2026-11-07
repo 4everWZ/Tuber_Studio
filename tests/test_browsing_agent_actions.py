@@ -40,6 +40,8 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
                 "text": "",
                 "evidence_ids": [],
                 "explanation": "盐水浮鸡蛋这个话题，先看看评论里大家试过的比例",
+                "video_preference": "like",
+                "preference_reason": "想看看大家如何做盐水浮鸡蛋实验",
             }
         return await original(messages, schema, max_tokens=max_tokens)
 
@@ -47,9 +49,7 @@ async def test_agent_chooses_comments_without_a_main_reply_or_interest_classific
     browsing.adapter.read_video_reply = read_reply
     browsing.runtime.llm.generate_json = choose
     await browsing._current_account()
-    browsing.discovery.identity = "comment-choice"
-    browsing.discovery.binding = browsing.discovery._binding()
-    row = await finished(browsing, discovery_id="comment-choice")
+    row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
     assert actions == ["read_comments"]
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]
@@ -76,19 +76,21 @@ async def test_no_main_reply_decision_survives_revisit_and_character_version(bro
                 "text": "",
                 "evidence_ids": [],
                 "explanation": "盐水浮鸡蛋的过程看明白了，先看看下一个视频",
+                "video_preference": "neutral",
+                "preference_reason": "已经看明白鸡蛋浮沉的过程，没特别喜欢或反感",
             }
         return await original(messages, schema, max_tokens=max_tokens)
 
     browsing.runtime.llm.generate_json = choose
     await browsing._current_account()
-    browsing.discovery.identity = "no-comment"
-    browsing.discovery.binding = browsing.discovery._binding()
-    first = await finished(browsing, discovery_id="no-comment")
+    first = await finished(browsing, automatic=True, video_only=True)
     assert first["status"] == "completed"
     assert browsing.repo.content_progress(first, BV)["read_state"] == "complete"
     browsing.store.save_character(browsing.runtime.character)
-    browsing.discovery.binding = browsing.discovery._binding()
-    second = await finished(browsing, discovery_id="no-comment")
+    browsing.operations.configure(
+        {"enabled": True}, account_id="100", character=browsing.runtime.character
+    )
+    second = await finished(browsing, automatic=True, video_only=True)
     assert second["status"] == "completed"
     assert decisions == ["skip"]
     assert len([call for call in browsing.adapter.calls if call[0] == "subtitles"]) == 1

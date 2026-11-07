@@ -92,6 +92,13 @@ class Comments:
             row[1] for row in store.db.execute("PRAGMA table_info(comments)")
         }:
             store.execute("ALTER TABLE comments ADD COLUMN generation_continuation_id TEXT")
+        if "generation_task_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(drafts)")}:
+            store.execute("ALTER TABLE drafts ADD COLUMN generation_task_id TEXT")
+        if "comment_ids" not in {row[1] for row in store.db.execute("PRAGMA table_info(comment_tasks)")}:
+            store.execute("ALTER TABLE comment_tasks ADD COLUMN comment_ids TEXT NOT NULL DEFAULT '[]'")
+        store.execute(
+            "CREATE INDEX IF NOT EXISTS drafts_generation_task ON drafts(generation_task_id,updated_at)"
+        )
 
     async def open(self):
         self.worker = asyncio.create_task(self._worker())
@@ -352,7 +359,7 @@ class Comments:
         rows = self.store.all(
             "SELECT c.* FROM comments c LEFT JOIN drafts d ON d.comment_id=c.id"
             + where
-            + " ORDER BY c.id DESC LIMIT ?",
+            + " ORDER BY (d.id IS NOT NULL) DESC,d.updated_at DESC,c.imported_at DESC,c.id DESC LIMIT ?",
             (*args, min(limit, 1000)),
         )
         account_id = self.display_account_id()
@@ -401,7 +408,11 @@ class Comments:
     def enqueue(self, ids, automatic=False):
         if self.closed:
             raise ValueError("评论任务服务已停止")
-        if not isinstance(ids, list) or not 1 <= len(ids) <= 1000 or any(not isinstance(i, int) for i in ids):
+        if (
+            not isinstance(ids, list)
+            or not 1 <= len(ids) <= 1000
+            or any(type(i) is not int or i < 1 for i in ids)
+        ):
             raise ValueError("选择1到1000条评论")
         ids = list(dict.fromkeys(ids))
         if self.queue.full():
@@ -414,12 +425,12 @@ class Comments:
             self.operations.policy()["epoch"] if automatic and self.operations.policy()["enabled"] else None
         )
         self.store.execute(
-            "INSERT INTO comment_tasks(id,status,total,character_id,created_at,updated_at) "
-            "VALUES(?,'pending',?,?,?,?)",
-            (task_id, len(ids), character["id"], time.time(), time.time()),
+            "INSERT INTO comment_tasks(id,status,total,character_id,created_at,updated_at,comment_ids) "
+            "VALUES(?,'pending',?,?,?,?,?)",
+            (task_id, len(ids), character["id"], time.time(), time.time(), json.dumps(ids)),
         )
         self.queue.put_nowait((task_id, ids, character, automatic))
-        return {"task_id": task_id, "status": "pending", "total": len(ids)}
+        return {"task_id": task_id, "status": "pending", "total": len(ids), "comment_ids": ids}
 
     async def _worker(self):
         while True:
@@ -702,7 +713,8 @@ class Comments:
                             return
                         draft_id = cursor.lastrowid
                         self.store.db.execute(
-                            "UPDATE drafts SET account_id=? WHERE id=?", (account_id, draft_id)
+                            "UPDATE drafts SET account_id=?,generation_task_id=? WHERE id=?",
+                            (account_id, self.active_task_id, draft_id),
                         )
                         if candidate:
                             context.install_candidate(scope, character, candidate)
@@ -928,6 +940,14 @@ class Comments:
 
         return await feedback.reconcile("comments", draft_id, read, commit)
 
+    def publication_limits(self):
+        policy = self.policy()
+        unified = self.store.get("browsing_policy", {})
+        return {
+            "max_per_hour": unified.get("max_per_hour", policy["max_replies_per_hour"]),
+            "max_per_day": unified.get("max_per_day", policy["max_replies_per_day"]),
+        }
+
     def _reserve_daily_video_reply(self, token, row, account_id):
         if not (row.get("video_id") or "").startswith("BV"):
             return
@@ -1048,8 +1068,6 @@ class Comments:
                 if automatic and browsing:
                     current_draft = self.store.one("SELECT input_summary FROM drafts WHERE id=?", (draft_id,))
                     browsing.assert_comment_evidence(json.loads(current_draft["input_summary"] or "{}"))
-                    if self.operations.policy()["enabled"] and not browsing.semantic_ready():
-                        raise ValueError("真实模型语义验收未通过，保留草稿待审核")
                 self.operations.assert_allowed(
                     automatic=automatic,
                     channel="comments",
@@ -1066,10 +1084,7 @@ class Comments:
                     "comments",
                     recipient=row["platform_user_id"] or "",
                     automatic=automatic,
-                    limits={
-                        "max_per_hour": policy["max_replies_per_hour"],
-                        "max_per_day": policy["max_replies_per_day"],
-                    },
+                    limits=self.publication_limits(),
                     epoch=authorization_epoch,
                     binding=actual_binding,
                     content_hash=content_hash({"text": row["text"]}),

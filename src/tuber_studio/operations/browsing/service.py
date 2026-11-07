@@ -57,7 +57,8 @@ class BrowsingService:
         self.discovery = BackgroundDiscovery(self)
         self.decisions = BrowsingDecisions(self)
         self.publication = BrowsingPublication(self)
-        self.overlay_starting = False
+        self.starting = False
+        self.control_generation = 0
         if hasattr(self.adapter, "request_gate"):
             self.adapter.request_gate = self._gate
 
@@ -85,14 +86,40 @@ class BrowsingService:
     def policy(self):
         return BrowsingPolicy.model_validate(self.store.get("browsing_policy", {})).model_dump()
 
-    def effective(self):
+    def configured(self):
         messages = MessagePolicy.model_validate(self.store.get("message_policy", {})).model_dump()
         base = self.policy() | {
             "message_poll_enabled": messages["enabled"] and messages["auto_poll"],
             "message_reply_enabled": messages["enabled"] and messages["auto_send"],
             "comment_handoff_enabled": messages["enabled"] and messages["allow_comment_handoff"],
         }
-        return self.operations.effective("browsing", base)
+        return base
+
+    def effective(self):
+        return self.operations.effective("browsing", self.configured())
+
+    def permissions(self):
+        config = self.configured()
+        messages = MessagePolicy.model_validate(self.store.get("message_policy", {}))
+        dynamic = self.store.get("dynamic_policy", {})
+        def mode(enabled, automatic):
+            return "auto" if enabled and automatic else "review" if enabled else "off"
+        return {
+            "video_enabled": config["discovery_enabled"],
+            "top_level": mode(config["top_level_enabled"], config["top_level_auto_publish"]),
+            "replies": mode(config["reply_enabled"], config["reply_auto_publish"]),
+            "private_messages": mode(messages.enabled, messages.auto_send),
+            "private_poll": messages.enabled and messages.auto_poll,
+            "mentions": config["mentions_enabled"],
+            "reply_notifications": config["replies_enabled"],
+            "video_like": mode(config["video_like_enabled"], config["video_like_auto_publish"]),
+            "video_fav": mode(config["video_fav_enabled"], config["video_fav_auto_publish"]),
+            "dynamics": mode(dynamic.get("enabled", False), dynamic.get("auto_publish", True)),
+        }
+
+    def has_interactions(self, config=None):
+        config = config or self.effective()
+        return bool(config["reply_enabled"] or config["mentions_enabled"] or config["replies_enabled"])
 
     def model_signature(self):
         llm, character = self.settings.data["llm"], self.runtime.character
@@ -107,16 +134,13 @@ class BrowsingService:
             ]
         )
 
-    def semantic_ready(self):
-        proof = self.store.get("browsing_semantic_validation", {})
-        return proof.get("passed") is True and proof.get("signature") == self.model_signature()
-
     def status(self):
         control = self.operations.policy()
         rounds = [self.repo.round(i) for i in self.active]
         return {
             "policy": control,
             "settings": self.policy(),
+            "permissions": self.permissions(),
             "state": "stopping"
             if self.closed
             else "blocked"
@@ -159,10 +183,9 @@ class BrowsingService:
                 self.policy().get("daily_watch_limit", 0),
                 self.policy().get("business_timezone", "Asia/Taipei"),
             ),
-            "automatic_sending_ready": self.semantic_ready(),
-            "sending_note": "新授权候选可直接发送"
-            if self.semantic_ready()
-            else "模型语义验收未通过，保留待审核草稿",
+            "automatic_sending_ready": self.comments.policy()["credentials_configured"] and not self.blockers,
+            "semantic_validation": self.store.get("browsing_semantic_validation", {}),
+            "sending_note": "按设置中已开放的动作与审核方式运行",
             "cache": self.runtime.cache.usage("browsing"),
         }
 
@@ -173,7 +196,7 @@ class BrowsingService:
         current = self.policy()
         merged = current | data
         config = BrowsingPolicy.model_validate(merged).model_dump()
-        # Changing base fields never snapshots/replaces the overlay's previous values.
+        # Saved channel permissions remain independent from the runtime switch.
         self.store.set("browsing_policy", config)
         self.operations.configure(
             {k: config[k] for k in ("max_per_hour", "max_per_day", "recipient_cooldown_seconds")}
@@ -230,27 +253,25 @@ class BrowsingService:
             await self.check_browsing_model()
         except Exception as error:
             self.blockers.append("模型不可用：" + public_error(error))
-        required = (
-            "discover",
-            "video_metadata",
-            "subtitles",
-            "notifications",
-            "read_public_thread",
-            "publish_top_level",
-            "publish_resource_reply",
-        )
+        config = self.configured()
+        video = config["discovery_enabled"] or not for_automation
+        required = set()
+        if video:
+            required.update(("discover", "video_metadata", "subtitles"))
+            if config["top_level_enabled"] and config["top_level_auto_publish"]:
+                required.add("publish_top_level")
+        if config["reply_enabled"]:
+            required.update(("read_public_thread", "fetch"))
+            if config["reply_auto_publish"]:
+                required.add("publish_resource_reply")
+        if config["mentions_enabled"] or config["replies_enabled"]:
+            required.update(("notifications", "read_public_thread"))
         self.blockers.extend(
-            "平台缺少能力：" + name for name in required if not callable(getattr(self.adapter, name, None))
+            "平台缺少能力：" + name
+            for name in sorted(required)
+            if not callable(getattr(self.adapter, name, None))
         )
-        config = self.effective()
-        if for_automation:
-            config = config | {
-                "mentions_enabled": True,
-                "replies_enabled": True,
-                "message_poll_enabled": True,
-            }
-        # Probe the selected default route; don't silently substitute popular videos.
-        if self.account and not self.blockers:
+        if video and self.account and not self.blockers:
             try:
                 await self.probe_discovery(config)
             except ValueError as error:
@@ -294,49 +315,51 @@ class BrowsingService:
     async def set_enabled(self, enabled):
         if type(enabled) is not bool:
             raise ValueError("enabled须为布尔值")
-        if enabled:
-            if self.overlay_starting:
-                raise ValueError("全渠道自主运营正在启动")
-            self.overlay_starting = True
-            try:
-                await self.preflight(for_automation=True)
-            finally:
-                self.overlay_starting = False
+        if not enabled:
+            return await self.stop()
+        if self.operations.policy()["emergency"]:
+            raise ValueError("紧急停止仍有效")
+        if self.operations.policy()["enabled"]:
+            return self.status()
+        if self.starting:
+            raise ValueError("自主运营正在启动")
+        self.starting = True
+        self.control_generation += 1
+        generation = self.control_generation
+        try:
+            await self.preflight(for_automation=True)
+            if generation != self.control_generation:
+                raise ValueError("自主运营启动已取消")
             if self.blockers:
                 raise ValueError("；".join(self.blockers))
             self.operations.configure(
                 {"enabled": True}, account_id=self.account, character=self.runtime.character
             )
-            b_policy = self.store.get("browsing_policy", {})
-            b_policy["discovery_enabled"] = True
-            self.store.set("browsing_policy", b_policy)
+            self.discovery.remember_account(self.account)
             await self.messages.resume_pending()
-        else:
-            self.operations.configure({"enabled": False})
-            b_policy = self.store.get("browsing_policy", {})
-            b_policy["discovery_enabled"] = False
-            self.store.set("browsing_policy", b_policy)
-            await self.stop(keep_discovery=True)
+        finally:
+            self.starting = False
         self.comments.policy_changed.set()
         self.messages.changed.set()
+        self.dynamics.changed.set()
         self.changed.set()
         self.interactions_changed.set()
         return self.status()
 
-    async def stop(self, *, emergency=False, keep_discovery=False):
-        if emergency or self.closed:
-            await self.messages.pause()
-        if emergency:
-            self.operations.configure({"emergency": True})
-            self.comments.policy_changed.set()
-            self.messages.changed.set()
-            self.dynamics.changed.set()
-            await self.discovery.stop()
-        children = [
-            task
-            for identity, task in self.active.items()
-            if not (keep_discovery and self.repo.round(identity)["config"].get("discovery_id"))
-        ]
+    async def stop(self, *, emergency=False):
+        self.control_generation += 1
+        self.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
+        await self.messages.pause()
+        await self.dynamics.pause()
+        for event in (
+            self.comments.policy_changed,
+            self.messages.changed,
+            self.dynamics.changed,
+            self.changed,
+            self.interactions_changed,
+        ):
+            event.set()
+        children = list(self.active.values())
         for child in children:
             child.cancel()
         await asyncio.gather(*children, return_exceptions=True)
@@ -395,7 +418,6 @@ class BrowsingService:
         preview=None,
         notifications_only=False,
         video=None,
-        discovery_id=None,
         interaction_only=False,
         video_only=False,
     ):
@@ -404,28 +426,16 @@ class BrowsingService:
         if automatic and self.operations.policy()["emergency"]:
             raise ValueError("紧急停止仍有效")
         preview = not automatic if preview is None else preview
-        if not automatic and not preview and not discovery_id:
+        if not automatic and not preview:
             raise ValueError("手工运行仅允许预览")
-        if discovery_id:
-            self.discovery.verify(discovery_id)
-            preview = False
-            config = self.policy() | {
-                "discovery_id": discovery_id,
-                "discovery_publish": True,
-                "top_level_enabled": True,
-                "reply_enabled": True,
-                "video_like_enabled": False,
-                "video_fav_enabled": False,
-                "read_retries": 0,
-                "max_takeovers": 0,
-            }
-            config["top_level_limit"] = config["inspect_limit"]
-        elif interaction_only:
+        if automatic and not self.operations.policy()["enabled"]:
+            raise ValueError("请先启动自主运营")
+        if interaction_only:
             if not automatic or not self.operations.policy()["enabled"] or not self.account:
                 raise ValueError("互动轮次尚未授权")
             config = self.effective() | {"interaction_only": True}
         else:
-            if self.discovery.round_id:
+            if not automatic and self.discovery.round_id:
                 raise ValueError("自动刷视频本轮进行中，请稍后再预览")
             if self.ready_signature != self.credential_signature() or not self.account:
                 if self.active:
@@ -433,14 +443,14 @@ class BrowsingService:
                         raise ValueError("自动刷视频本轮进行中，请稍后再预览")
                     await self.stop()
                 await self.preflight()
-            if self.discovery.round_id:
+            if not automatic and self.discovery.round_id:
                 raise ValueError("自动刷视频本轮进行中，请稍后再预览")
             if self.blockers:
                 raise ValueError("；".join(self.blockers))
-            config = self.effective()
+            config = self.configured() if preview else self.effective()
         if video_only:
             config = config | {"video_only": True}
-        if discovery_id or automatic:
+        if automatic:
             # One fetched batch is the unit of work. Do not interrupt its agents
             # with a second, hidden shared request/token allowance.
             config = config | dict.fromkeys(
@@ -450,10 +460,6 @@ class BrowsingService:
                 config["autonomous_batch"] = True
         if video:
             config = config | {"sources": ["specified"], "watch_videos": [video], "force_read": True}
-        elif automatic and "sources" not in self.store.get("browsing_policy", {}):
-            legacy = self.comments.policy().get("base", {})
-            if legacy.get("auto_browse") and legacy.get("watch_videos"):
-                config = config | {"sources": ["specified"], "watch_videos": legacy["watch_videos"][:20]}
         if (
             automatic
             and not notifications_only
@@ -484,9 +490,6 @@ class BrowsingService:
             raise ValueError("本轮角色版本已变化")
         if str(row["account_id"]) != str(self.account):
             raise ValueError("本轮账号身份已变化")
-        if discovery_id := row["config"].get("discovery_id"):
-            self.discovery.verify(discovery_id)
-            return
         if self.credential_signature() != self.ready_signature:
             raise ValueError("本轮账号凭证已变化")
         if not row["preview"]:
@@ -538,11 +541,8 @@ class BrowsingService:
     def commit_comment_context(self, context):
         return comment_reader_tasks.commit_comment_context(self, context)
 
-    async def _send_discovery_intent(self, identity, row):
-        return await batches_tasks.send_discovery_intent(self, identity, row)
-
-    async def _resume_discovery_writes(self, row, bvid):
-        return await batches_tasks.resume_discovery_writes(self, row, bvid)
+    async def _resume_batch_publications(self, row, bvid):
+        return await batches_tasks.resume_batch_publications(self, row, bvid)
 
     async def _process_discovery_video(self, row, candidate, metrics, semaphore):
         return await batches_tasks.process_discovery_video(self, row, candidate, metrics, semaphore)
@@ -705,7 +705,7 @@ class BrowsingService:
     async def sync_notifications(self, row=None):
         return await self.notifications.sync(
             row["account_id"] if row else self.account,
-            row["config"] if row else self.effective(),
+            row["config"] if row else self.configured(),
             self.operations.policy()["enabled_at"],
             self.started_at,
         )
@@ -750,6 +750,8 @@ class BrowsingService:
         return await self.run(preview=True, video=task["bvid"])
 
     async def open(self):
+        if self.loop is not None and not self.loop.done():
+            return
         self.started_at = time.time()
         self.repo.recover()
         # Force cold start standby: autonomous operations never start unprompted on boot
@@ -757,10 +759,6 @@ class BrowsingService:
         if policy.get("enabled"):
             policy["enabled"] = False
             self.store.set("operations_policy", policy)
-        b_policy = self.store.get("browsing_policy", {})
-        if b_policy.get("discovery_enabled"):
-            b_policy["discovery_enabled"] = False
-            self.store.set("browsing_policy", b_policy)
         for record in self.store.all("SELECT key FROM kv WHERE key LIKE 'browsing_discovery_pending:%'"):
             self.store.set(record["key"], False)
         self.loop = asyncio.create_task(self._loop())
@@ -768,7 +766,6 @@ class BrowsingService:
 
     async def close(self):
         self.closed = True
-        await self.discovery.stop()
         for task in (self.loop, self.poller):
             if task:
                 task.cancel()
@@ -783,7 +780,7 @@ class BrowsingService:
                 if (
                     self.operations.policy()["enabled"]
                     and self.effective()["discovery_enabled"]
-                    and not self.discovery.enabled
+                    and not self.discovery_tasks()
                 ):
                     await self.run(automatic=True, video_only=True)
             except Exception as error:
@@ -797,7 +794,7 @@ class BrowsingService:
         while True:
             self.interactions_changed.clear()
             try:
-                if self.operations.policy()["enabled"]:
+                if self.operations.policy()["enabled"] and self.has_interactions():
                     await self.run(automatic=True, interaction_only=True)
             except Exception as error:
                 self.last_error = public_error(error)

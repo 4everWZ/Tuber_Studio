@@ -6,7 +6,7 @@ import httpx
 from fastapi import Body, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from ..comment_workbench import list_queue, queue_detail
+from ..comment_workbench import generation_task, list_queue, queue_detail
 from ..providers import public_error
 
 
@@ -49,7 +49,7 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     @app.post("/api/comments/fetch", dependencies=[Depends(require_admin)])
     async def fetch(data: dict = Body(...)):
         try:
-            return await comments.fetch(data.get("video", ""), data.get("max_pages", 1))
+            return await comments.fetch(data.get("video", data.get("video_id", "")), data.get("max_pages", 1))
         except Exception as error:
             raise ValueError(public_error(error)) from None
 
@@ -89,8 +89,13 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         view: Literal["review", "verify", "processing", "history"] = "review",
         limit: int = Query(30, ge=1, le=100),
         offset: int = Query(0, ge=0),
+        video_id: str | None = None,
+        comment_ids: str | None = None,
+        task_id: str | None = Query(None, min_length=1, max_length=100),
     ):
-        return list_queue(store, view, limit, offset)
+        return list_queue(
+            store, view, limit, offset, video_id=video_id, comment_ids=comment_ids, task_id=task_id
+        )
 
     @app.get("/api/comments/workbench/{channel}/{identity}", dependencies=[Depends(require_admin)])
     async def comment_queue_detail(channel: Literal["comments", "browsing", "jobs"], identity: str):
@@ -104,8 +109,14 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         return comments.enqueue(data.get("comment_ids", []))
 
     @app.get("/api/comment-tasks", dependencies=[Depends(require_admin)])
-    async def tasks():
-        return store.all("SELECT * FROM comment_tasks ORDER BY created_at DESC LIMIT 50")
+    async def tasks(task_id: str | None = Query(None, min_length=1, max_length=100)):
+        if task_id:
+            row = generation_task(store, task_id)
+            return [row] if row else []
+        return [
+            generation_task(store, row["id"])
+            for row in store.all("SELECT id FROM comment_tasks ORDER BY created_at DESC LIMIT 50")
+        ]
 
     @app.post("/api/comments/drafts/{draft_id}/review", dependencies=[Depends(require_admin)])
     async def review(draft_id: int, data: dict = Body(...)):

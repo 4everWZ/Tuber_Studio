@@ -9,6 +9,7 @@ from pydantic import Field
 from .models import StrictModel
 from .operations.browsing.quotas import BrowsingQuotas
 from .operations_revisions import OperationRevisions
+from .publication_errors import SendLimitReached
 
 
 class OperationsPolicy(StrictModel):
@@ -20,20 +21,18 @@ class OperationsPolicy(StrictModel):
     max_recoveries: int = Field(default=8, ge=0, le=64)
 
 
-OVERLAYS = {
-    "comments": {"auto_browse": True, "auto_reply": True},
-    "messages": {"enabled": True, "auto_poll": True, "auto_send": True, "allow_comment_handoff": True},
+AUTOMATIC_SWITCHES = {
+    "comments": {"auto_browse", "auto_reply"},
+    "messages": {"auto_poll", "auto_send"},
     "browsing": {
-        "discovery_enabled": True,
-        "top_level_enabled": True,
-        "reply_enabled": True,
-        "mentions_enabled": True,
-        "mention_reply_enabled": True,
-        "replies_enabled": True,
-        "message_poll_enabled": True,
-        "message_reply_enabled": True,
-        "comment_handoff_enabled": True,
+        "discovery_enabled",
+        "mentions_enabled",
+        "replies_enabled",
+        "mention_reply_enabled",
+        "message_poll_enabled",
+        "message_reply_enabled",
     },
+    "dynamics": {"enabled"},
 }
 
 
@@ -53,20 +52,12 @@ class OperationsControl:
                 status TEXT NOT NULL,started_at REAL NOT NULL,receipt TEXT,error TEXT,
                 UNIQUE(account_id,character_id,intent));
             CREATE INDEX IF NOT EXISTS account_writes_quota ON account_writes(account_id,started_at);
-            CREATE TABLE IF NOT EXISTS operation_channel_blocks(
-                account_id TEXT NOT NULL,channel TEXT NOT NULL,reason TEXT NOT NULL,
-                PRIMARY KEY(account_id,channel));
+            DROP TABLE IF EXISTS operation_channel_blocks;
         """)
         self.revisions = OperationRevisions(store)
         self.browsing_quotas = BrowsingQuotas(store)
         # No HTTP write is resumed after process loss, regardless of worker lease.
         with store.db:
-            store.db.execute(
-                "INSERT OR IGNORE INTO operation_channel_blocks SELECT account_id,channel,"
-                "'发送中重启，等待核对平台状态' FROM operation_write_attempts w "
-                "LEFT JOIN operation_write_bindings b ON w.root_token=b.root_token WHERE status='sending' "
-                "AND COALESCE(json_extract(b.binding_json,'$.source.discovery'),0)=0"
-            )
             store.db.execute(
                 "UPDATE account_writes SET status='uncertain',error='发送中重启，等待核对状态' WHERE status='sending'"
             )
@@ -132,17 +123,10 @@ class OperationsControl:
     def effective(self, channel, base):
         result = dict(base)
         policy = self.policy()
-        if policy["enabled"] and not policy["emergency"]:
-            result.update(OVERLAYS.get(channel, {}))
-        if policy["emergency"]:
-            for key in result:
-                if (
-                    (channel == "browsing" and key in OVERLAYS[channel])
-                    or (channel == "dynamics" and key == "enabled")
-                    or key.startswith("auto_")
-                ):
-                    if isinstance(result[key], bool):
-                        result[key] = False
+        if not policy["enabled"] or policy["emergency"]:
+            for key in AUTOMATIC_SWITCHES.get(channel, ()):
+                if key in result:
+                    result[key] = False
         return result
 
     def assert_allowed(self, *, automatic, channel, account_id, character, epoch=None):
@@ -166,11 +150,6 @@ class OperationsControl:
         # Automatic work remains bound to the currently active version.
         if character["id"] != current["id"] or automatic and character["version"] != current["version"]:
             raise ValueError("当前账号任务的角色版本已变化")
-        if automatic and self.store.one(
-            "SELECT reason FROM operation_channel_blocks WHERE account_id=? AND channel=?",
-            (str(account_id), channel),
-        ):
-            raise ValueError("该渠道存在不确定写入，等待核对平台状态")
         return policy
 
     def get_attempt(self, token):
@@ -200,18 +179,8 @@ class OperationsControl:
     def reconcile_attempt(self, token, *, account_id, binding, receipt):
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
-            previous = self.revisions.resolve(token, account_id=account_id, binding=binding, receipt=receipt)
+            self.revisions.resolve(token, account_id=account_id, binding=binding, receipt=receipt)
             self.browsing_quotas.settle_reply(token, "published", receipt=receipt)
-            if not self.store.db.execute(
-                "SELECT 1 FROM operation_write_attempts w LEFT JOIN operation_write_bindings b "
-                "ON w.root_token=b.root_token WHERE account_id=? AND channel=? AND resolved_status='uncertain' "
-                "AND COALESCE(json_extract(b.binding_json,'$.source.discovery'),0)=0",
-                (previous["account_id"], previous["channel"]),
-            ).fetchone():
-                self.store.db.execute(
-                    "DELETE FROM operation_channel_blocks WHERE account_id=? AND channel=?",
-                    (previous["account_id"], previous["channel"]),
-                )
         return self.get_attempt(token)
 
     def reserve(
@@ -272,7 +241,12 @@ class OperationsControl:
                     (str(account_id), now - seconds),
                 ).fetchone()[0]
                 if count >= maximum:
-                    raise ValueError("达到账号全渠道发送上限，保留草稿")
+                    oldest = db.execute(
+                        "SELECT started_at FROM operation_write_attempts WHERE account_id=? AND started_at>? "
+                        "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
+                        (str(account_id), now - seconds, maximum - 1),
+                    ).fetchone()[0]
+                    raise SendLimitReached("达到账号全渠道发送上限，保留草稿", oldest + seconds)
             for seconds, name in ((3600, "max_per_hour"), (86400, "max_per_day")):
                 if (
                     limits.get(name, 0) > 0
@@ -282,7 +256,12 @@ class OperationsControl:
                     ).fetchone()[0]
                     >= limits[name]
                 ):
-                    raise ValueError("达到渠道发送上限")
+                    oldest = db.execute(
+                        "SELECT started_at FROM operation_write_attempts WHERE account_id=? AND channel=? AND started_at>? "
+                        "ORDER BY started_at DESC LIMIT 1 OFFSET ?",
+                        (str(account_id), channel, now - seconds, limits[name] - 1),
+                    ).fetchone()[0]
+                    raise SendLimitReached("达到渠道发送上限，等待可用名额", oldest + seconds)
             cooldown = max(policy["recipient_cooldown_seconds"], limits.get("recipient_cooldown_seconds", 0))
             if (
                 recipient
@@ -336,25 +315,11 @@ class OperationsControl:
                 (status, json.dumps(receipt, ensure_ascii=False) if receipt else None, error, token),
             )
             self.browsing_quotas.settle_reply(token, status, receipt=receipt)
-            source = (row["binding"] or {}).get("source")
-            independent = isinstance(source, dict) and source.get("discovery") is True
-            if status == "uncertain" and not independent:
-                self.store.db.execute(
-                    "INSERT OR REPLACE INTO operation_channel_blocks VALUES(?,?,?)",
-                    (row["account_id"], row["channel"], "发送结果不确定，等待核对平台状态"),
-                )
-
-    def reconcile_channel(self, account_id, channel):
-        """Explicit operator reconciliation only; intent records remain immutable."""
-        self.store.execute(
-            "DELETE FROM operation_channel_blocks WHERE account_id=? AND channel=?",
-            (str(account_id), channel),
-        )
 
     def status(self):
         return {
             "policy": self.policy(),
-            "channel_blocks": self.store.all("SELECT * FROM operation_channel_blocks"),
+            "channel_blocks": [],
             "attempts": self.store.all(
                 "SELECT account_id,channel,resolved_status AS status,COUNT(*) AS count "
                 "FROM operation_write_attempts GROUP BY account_id,channel,resolved_status"

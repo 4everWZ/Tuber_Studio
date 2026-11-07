@@ -58,3 +58,43 @@ async def test_daily_publication_limit_counts_main_and_thread_successes_and_keep
     assert len(browsing.adapter.sent) == 2
     extra = browsing.store.one("SELECT status FROM browsing_intents WHERE id=?", (replies[1]["id"],))
     assert extra["status"] == "approved"
+
+
+async def test_unified_unlimited_setting_overrides_hidden_legacy_comment_hour_limit(browsing, monkeypatch):
+    browsing.store.set("comment_policy", {"max_replies_per_hour": 1, "max_replies_per_day": 1})
+    await browsing.configure(
+        {"max_per_hour": 0, "max_per_day": 0, "max_replies_per_video": 0, "recipient_cooldown_seconds": 0}
+    )
+    await finished(browsing, preview=True)
+    main = browsing.intents()[0]
+    row = browsing.repo.round(main["round_id"])
+    reply = browsing.publication._intent(
+        row,
+        "reply_public",
+        {
+            "type": 1,
+            "oid": "42",
+            "bvid": main["target"]["bvid"],
+            "root": "601",
+            "parent": "601",
+            "recipient": "300",
+            "source_text": "盐水需要多少？",
+        },
+        ResponseDecision(
+            action="reply_public",
+            reason="specific_detail",
+            text="加一点盐试试，看鸡蛋的变化。",
+            evidence_ids=main["evidence"],
+        ),
+        main["material_keys"],
+        main["evidence"],
+    )
+
+    async def source(target):
+        return {"author_uid": target["recipient"], "text": target["source_text"]}
+
+    monkeypatch.setattr(browsing.adapter, "read_video_reply", source, raising=False)
+    for intent in (main, reply):
+        browsing.review(intent["id"], "approve")
+        assert (await browsing.publish(intent["id"]))["status"] == "published"
+    assert len(browsing.adapter.sent) == 2

@@ -9,7 +9,7 @@ from difflib import SequenceMatcher
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
-from ...operation_continuations import content_hash
+from ...operation_continuations import ContinuationCheckpoint, content_hash
 from ...operation_generation import generate_with_recovery
 from ...operation_text import (
     operation_character,
@@ -19,6 +19,7 @@ from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
 from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
+from ...publication_errors import SendLimitReached
 from ...store import dump
 from .comment_reader import CommentProgress
 from .inputs import (
@@ -152,15 +153,21 @@ class BrowsingDecisions:
                 allowed,
                 allow_handoff=data.get("kind") != "top_level",
                 video_actions=data.get("video_actions", False),
+                allow_public=data.get("allow_public", True),
+                allow_comments=data.get("allow_comments", True),
             )
         elif schema is CandidateBatchPlan:
             properties = model_schema["properties"]
             allowed_videos = [item["bvid"] for item in data["candidates"]]
+            if len(allowed_videos) > row["config"]["candidate_limit"] or len(set(allowed_videos)) != len(
+                allowed_videos
+            ):
+                raise ValueError("批次模型输入须按BV号去重并限制在设置的候选数量内")
             properties["videos"]["items"] = {
                 "type": "string",
                 "enum": allowed_videos,
             }
-            properties["videos"]["maxItems"] = data["max_videos"]
+            properties["videos"]["maxItems"] = min(data["max_videos"], len(allowed_videos))
             properties["workers"]["maximum"] = data["max_workers"]
             if "choices" in properties:
                 choice = model_schema["$defs"]["BatchCandidateChoice"]
@@ -294,6 +301,12 @@ class BrowsingDecisions:
                 ):
                     raise ValueError("内容判断引用不存在或为空")
             elif schema is ResponseDecision:
+                if data.get("video_actions") and (
+                    value.video_preference is None or not value.preference_reason.strip()
+                ):
+                    raise ValueError("视频行动需要具体的内容偏好与原因")
+                if value.action == "reply_public" and not data.get("allow_public", True):
+                    raise ValueError("本次未开放视频主评，可结束观看或补充材料")
                 if value.action in {"reply_public", "handoff_private"} and (
                     not value.evidence_ids or not value.text
                 ):
@@ -332,15 +345,17 @@ class BrowsingDecisions:
         }
         if response_input is not None:
             binding["input_format"] = response_input.FORMAT_VERSION
+        elif schema is CandidateBatchPlan:
+            binding["input_format"] = "bounded-candidate-window-v2"
         if profile_revision is not None:
             binding["profile_revision"] = profile_revision
         if video_response:
             binding["video_response"] = "aligned-source-dry-v1"
-        independent = row["config"].get("discovery_publish")
+        autonomous = row["config"].get("autonomous_batch")
         retry = discovery_retry.get()
-        if independent:
-            binding["discovery_model"] = self.browsing.model_signature()
-            binding["discovery_video"] = retry["bvid"] if retry else None
+        if autonomous:
+            binding["autonomous_model"] = self.browsing.model_signature()
+            binding["autonomous_video"] = retry["bvid"] if retry else None
             if retry and retry["error"]:
                 messages[1] = messages[1] | {
                     "content": messages[1]["content"] + "\n上次运行反馈（数据）：" + dump(retry["error"])
@@ -363,8 +378,10 @@ class BrowsingDecisions:
                 "instruction": messages[1]["content"],
                 "source": response_input.format() if response_input is not None else data,
             },
-            reuse_completed=generation_resume.get() or bool(independent and retry and retry["resume"]),
-            max_recoveries=(1 if retry and retry["failures"] else 0) if independent else None,
+            reuse_completed=generation_resume.get() or bool(autonomous and retry and retry["resume"]),
+            max_recoveries=(1 if schema is ResponseDecision or retry and retry["failures"] else 0)
+            if autonomous
+            else None,
             diagnose=diagnose,
             allow_web_fetch=response_input is not None,
         )
@@ -643,13 +660,12 @@ class BrowsingDecisions:
                         ),
                     ),
                 )
-                if (
-                    references
-                    and row["config"]["top_level_enabled"]
-                    and not existing_top
-                    and not main_decision
-                ):
-                    context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
+                if references and not existing_top and not main_decision:
+                    context = (
+                        (await self.browsing.video_comment_context(row, material["metadata"]["bvid"]))
+                        if row["config"]["top_level_enabled"]
+                        else {"items": []}
+                    )
                     own_top = any(
                         str(item.get("platform_user_id") or item.get("user_id")) == str(row["account_id"])
                         and str(item.get("parent_comment_id") or "0") in {"0", str(item.get("comment_id"))}
@@ -663,6 +679,8 @@ class BrowsingDecisions:
                             row, material["metadata"]["bvid"], direct_response
                         )
                 action = direct_response.action if direct_response else "read_comments"
+                if result.get("task_kind") == "comment_visit" and action in {"skip", "wait", "finish"}:
+                    action = "read_comments"
                 coverage = {"watch_frames": "visual", "read_more": "unread_part"}.get(action, "provided")
                 can_continue = action in {"reply_public", "read_comments", "watch_frames", "read_more"}
                 decisions = [
@@ -678,7 +696,7 @@ class BrowsingDecisions:
                         else "insufficient_evidence"
                         if coverage == "unread_part"
                         else "specific_detail"
-                        if can_continue
+                        if can_continue or action == "finish"
                         else "no_interest",
                         explanation=decision_explanation(direct_response, material)
                         if direct_response
@@ -811,10 +829,7 @@ class BrowsingDecisions:
                     payload["intent_id"] = intent["id"]
                     status = "selected"
                     if intent["auto_authorized"]:
-                        if row["config"].get("discovery_publish"):
-                            await self.browsing._send_discovery_intent(intent["id"], row)
-                        else:
-                            await self.browsing.publish(intent["id"], automatic=True)
+                        await self.browsing.publish(intent["id"], automatic=True)
 
             like_enabled = row["config"].get("video_like_enabled", False)
             fav_enabled = row["config"].get("video_fav_enabled", False)
@@ -880,14 +895,20 @@ class BrowsingDecisions:
                         if fav_intent["auto_authorized"]:
                             await self.browsing.publish(fav_intent["id"], automatic=True)
 
+            may_discuss = (
+                result.get("task_kind") == "comment_visit"
+                or direct_response is None
+                or direct_response.action in {"reply_public", "read_comments"}
+            )
             defer_comments = (
                 row["config"].get("batch_id")
                 and payload.get("task_kind", "new_video") == "new_video"
                 and row["config"].get("reply_enabled", False)
                 and chosen
+                and may_discuss
             )
             comments_complete = True
-            if row["config"].get("reply_enabled", False) and chosen and not defer_comments:
+            if row["config"].get("reply_enabled", False) and chosen and not defer_comments and may_discuss:
                 if context is None:
                     context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
                 items = context.get("items", []) if isinstance(context, dict) else []
@@ -903,7 +924,14 @@ class BrowsingDecisions:
                         )
                         break
                     thread_intent = await self._reply_to_video_comment(
-                        row, material, result["material_key"], chosen, item, items, metrics
+                        row,
+                        material,
+                        result["material_key"],
+                        chosen,
+                        item,
+                        items,
+                        metrics,
+                        diagnostics=payload.setdefault("repetition_decisions", []),
                     )
                     if thread_intent:
                         payload.setdefault("reply_intent_ids", []).append(thread_intent["id"])
@@ -922,7 +950,7 @@ class BrowsingDecisions:
             metrics["viewed"] += 1
             if defer_comments:
                 await self.browsing.defer_comment_visit(row, bvid, metrics)
-        except DailyReplyLimitReached as error:
+        except (DailyReplyLimitReached, SendLimitReached) as error:
             self.browsing.repo.complete(
                 identity,
                 result["owner"],
@@ -934,10 +962,52 @@ class BrowsingDecisions:
                     ]
                 )
                 | payload
-                | {"retry_kind": "daily_reply_limit", "next_at": error.next_at},
+                | {
+                    "retry_kind": "send_limit"
+                    if isinstance(error, SendLimitReached)
+                    else "daily_reply_limit",
+                    "next_at": error.next_at,
+                },
                 result["material_key"],
             )
         except Exception as error:
+            if resolution := self._repetition_resolution(error):
+                self.browsing.repo.save_content_progress(row, material, decisions)
+                model_reason = resolution["decision"].get("reason") or resolution["feedback"]["message"]
+                skipped = ResponseDecision(action="skip", reason="spam", explanation=model_reason)
+                self.browsing.repo.save_main_decision(row, material["metadata"]["bvid"], skipped)
+                self.browsing.repo.complete(
+                    identity,
+                    result["owner"],
+                    result["generation"],
+                    "viewed_without_comment",
+                    json.loads(
+                        self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
+                            "payload"
+                        ]
+                    )
+                    | payload
+                    | {
+                        "reason": model_reason,
+                        "generation_resolution": resolution,
+                        "decisions": [decision.model_dump() for decision in decisions],
+                    },
+                    result["material_key"],
+                )
+                self.browsing.repo.mark_watch_result(
+                    row,
+                    material["metadata"]["bvid"],
+                    fully_read=material["coverage"] == "all_available_cc"
+                    and not material.get("missing_parts"),
+                )
+                metrics["viewed"] += 1
+                if (
+                    row["config"].get("batch_id")
+                    and row["config"].get("reply_enabled")
+                    and result.get("task_kind") != "comment_visit"
+                ):
+                    await self.browsing.defer_comment_visit(row, material["metadata"]["bvid"], metrics)
+                return
             metrics["failures"] += 1
             continuation = getattr(error, "continuation", None)
             round_budget = isinstance(error, BrowsingBudgetDeferred) or (
@@ -982,7 +1052,44 @@ class BrowsingDecisions:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
 
-    async def _reply_to_video_comment(self, row, material, material_key, chosen, item, items, metrics):
+    @staticmethod
+    def _repetition_resolution(error):
+        continuation = getattr(error, "continuation", None)
+        if (
+            not isinstance(error, ContinuationCheckpoint)
+            or not continuation
+            or continuation.get("state") not in {"waiting", "abandoned"}
+        ):
+            return None
+        feedback = continuation.get("feedback") or {}
+        if feedback.get("kind") != "style_diagnostic" or not any(
+            word in feedback.get("message", "") for word in ("重复", "复读")
+        ):
+            return None
+        decision = next(
+            (
+                step.get("output") or {"action": step["action"]}
+                for step in reversed(continuation.get("revisions", []))
+                if step.get("phase") == "decision"
+                and step.get("status") == "completed"
+                and step.get("action") in {"wait", "abandon"}
+            ),
+            None,
+        )
+        if decision is None:
+            return None
+        return {
+            "continuation_id": continuation["id"],
+            "state": continuation["state"],
+            "feedback": feedback,
+            "original_candidate": continuation.get("original_output"),
+            "current_candidate": continuation.get("current_output"),
+            "decision": decision,
+        }
+
+    async def _reply_to_video_comment(
+        self, row, material, material_key, chosen, item, items, metrics, *, diagnostics=None
+    ):
         author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
         item_text = str(item.get("text") or item.get("content") or "")
         if (
@@ -1050,9 +1157,22 @@ class BrowsingDecisions:
                 source = thread_context["source"]
                 thread_response = self.comment_progress.get(row, bvid, source)
                 if thread_response is None:
-                    thread_response = await self._response(
-                        row, material, thread_context, chosen, "reply_public", metrics
-                    )
+                    try:
+                        thread_response = await self._response(
+                            row, material, thread_context, chosen, "reply_public", metrics
+                        )
+                    except Exception as error:
+                        resolution = self._repetition_resolution(error)
+                        if resolution is None:
+                            raise
+                        if diagnostics is not None:
+                            diagnostics.append(resolution | {"comment_id": source["comment_id"]})
+                        model_reason = (
+                            resolution["decision"].get("reason") or resolution["feedback"]["message"]
+                        )
+                        thread_response = ResponseDecision(
+                            action="skip", reason="spam", explanation=model_reason
+                        )
                     self.comment_progress.save(row, bvid, source, thread_response)
                 if thread_response.action != "reply_public" or not thread_response.text:
                     return None
@@ -1067,10 +1187,7 @@ class BrowsingDecisions:
                 if not thread_intent:
                     return None
                 if thread_intent["auto_authorized"]:
-                    if row["config"].get("discovery_publish"):
-                        await self.browsing._send_discovery_intent(thread_intent["id"], row)
-                    else:
-                        await self.browsing.publish(thread_intent["id"], automatic=True)
+                    await self.browsing.publish(thread_intent["id"], automatic=True)
                 return thread_intent
         finally:
             operation_lane.reset(lane)
@@ -1130,8 +1247,9 @@ class BrowsingDecisions:
                 [s for s in self.browsing._segments(material) if s["id"] in allowed] if material else []
             )
         recent = self.browsing.store.all(
-            "SELECT text FROM browsing_intents WHERE status='published' AND character_id=? ORDER BY updated_at DESC LIMIT ?",
-            (row["character_id"], row["config"]["recent_sample_limit"]),
+            "SELECT text FROM browsing_intents WHERE status='published' AND account_id=? AND character_id=? "
+            "AND kind IN ('top_level','reply_public') ORDER BY updated_at DESC LIMIT ?",
+            (row["account_id"], row["character_id"], row["config"]["recent_sample_limit"]),
         )
         data = {
             "kind": kind,
@@ -1140,6 +1258,14 @@ class BrowsingDecisions:
             "recent_public_responses": recent,
             "coverage": material["coverage"] if material else "public_text",
             **({"video_actions": True} if video_actions else {}),
+            **(
+                {
+                    "allow_public": row["config"]["top_level_enabled"],
+                    "allow_comments": row["config"].get("reply_enabled", False),
+                }
+                if video_actions
+                else {}
+            ),
         }
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
@@ -1158,6 +1284,8 @@ class BrowsingDecisions:
                 " 这次可直接选择行动并给出正文，无需先做兴趣或渠道分类。"
                 "想继续翻评论选read_comments；想补看画面选watch_frames；想补读视频内容选read_more。"
                 "已有材料够用时直接reply_public并给出正文，也可skip或wait。"
+                "看过但不想发言可选finish。video_preference用like/not_interested/neutral表达对视频的真实偏好，"
+                "preference_reason说明具体原因；是否发言与喜欢程度分别决定，不发言也可以喜欢。"
                 if video_actions
                 else ""
             ),
@@ -1177,19 +1305,18 @@ class BrowsingDecisions:
     @staticmethod
     def repetition_reason(text, recent, context):
         value = normalized(text)
-        samples = [r["text"] for r in recent] + [
-            r.get("content", r.get("text", "")) for r in context.get("items", [])
-        ]
+        if len(value) < 12:
+            return None
+        samples = [r["text"] for r in recent]
         for sample in samples:
             other = normalized(sample)
-            if other and (
-                value == other
-                or len(value) >= 12
-                and SequenceMatcher(None, value, other).ratio() > 0.85
-                or len(value) >= 12
-                and value[:12] == other[:12]
-            ):
+            if other and (value == other or SequenceMatcher(None, value, other).ratio() > 0.85):
                 return "正文与近期公开发言／热评重复"
+        if len(value) >= 24:
+            for item in context.get("items", []):
+                other = normalized(item.get("content", item.get("text", "")))
+                if other and SequenceMatcher(None, value, other).ratio() > 0.94:
+                    return "正文与来源评论大段重复"
         return None
 
     async def _engagement_decision(self, row, material, actionable, metrics):

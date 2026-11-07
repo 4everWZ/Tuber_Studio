@@ -15,6 +15,12 @@ def selection_tasks(store, *, status=None, round_id=None, task_id=None):
         "JOIN browsing_rounds r ON r.id=b.round_id "
         "WHERE i.task_id IS NULL AND i.status IN ('skipped','later') ORDER BY b.updated_at DESC LIMIT 100"
     ):
+        if (
+            round_id is None
+            and task_id is None
+            and row["created_at"] < store.get("browsing_history_visible_since", 0)
+        ):
+            continue
         identity = f"batch:{row['batch_id']}:{row['bvid']}"
         if (
             status is not None
@@ -76,6 +82,12 @@ def tasks(browsing, status=None, *, round_id=None, task_id=None):
     )
     result = []
     for record in rows:
+        if (
+            round_id is None
+            and task_id is None
+            and record["created_at"] < browsing.store.get("browsing_history_visible_since", 0)
+        ):
+            continue
         task = dict(browsing.repo.decode(record), **json.loads(record["payload"]))
         continuation_id = task.get("generation_continuation_id")
         task["continuation"] = generation_view(browsing.runtime, continuation_id, "browsing", task["id"])
@@ -113,7 +125,8 @@ def rounds(browsing):
         for r in browsing.store.all(
             """SELECT r.*, (SELECT COUNT(*) FROM browsing_intents i
                    WHERE i.round_id=r.id AND i.kind IN ('top_level','reply_public')) AS public_drafts
-               FROM browsing_rounds r ORDER BY r.created_at DESC LIMIT 30"""
+               FROM browsing_rounds r WHERE r.created_at>=? ORDER BY r.created_at DESC LIMIT 30""",
+            (browsing.store.get("browsing_history_visible_since", 0),),
         )
     ]
 
@@ -121,7 +134,9 @@ def rounds(browsing):
 def intents(browsing):
     return [
         continuation_view(browsing.runtime, "browsing", browsing.repo.decode(r))
-        for r in browsing.store.all("SELECT * FROM browsing_intents ORDER BY created_at DESC LIMIT 100")
+        for r in browsing.store.all(
+            "SELECT * FROM browsing_intents WHERE status<>'archived' ORDER BY created_at DESC LIMIT 100"
+        )
     ]
 
 
