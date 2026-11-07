@@ -379,12 +379,34 @@ class ResponseReference:
         return json.loads(self.source_json) if self.source_json is not None else None
 
 
+_RESPONSE_ALIAS_TOKEN = re.compile(r"(?<![A-Za-z0-9_])r[1-9][0-9]*(?![A-Za-z0-9_])", re.IGNORECASE)
+_SOURCE_TEXT_FIELDS = {"text", "title", "description", "content", "public_text", "source_text", "quote", "url", "desc"}
+
+
+def _source_alias_literals(data):
+    pending, aliases = [data], set()
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in {"self_actor", "recent_public_responses", "source_identity"}:
+                    continue
+                if key in _SOURCE_TEXT_FIELDS and isinstance(child, str):
+                    aliases.update(token.casefold() for token in _RESPONSE_ALIAS_TOKEN.findall(child))
+                elif isinstance(child, (dict, list)):
+                    pending.append(child)
+        elif isinstance(value, list):
+            pending.extend(value)
+    return aliases
+
+
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
     FORMAT_VERSION = "response-reference-lines-v5-video-and-thread"
 
     def __init__(self, data):
+        self._source_alias_literals = _source_alias_literals(data)
         records = deepcopy(data.get("evidence", []))
         canonical = {}
         for segment in records:
@@ -485,6 +507,15 @@ class ResponseDecisionInput:
             raise ValueError("回应引用不属于本次短编号")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
+        leaked = (
+            {token.casefold() for token in _RESPONSE_ALIAS_TOKEN.findall(value.text)}
+            & self.allowed_aliases
+        ) - self._source_alias_literals
+        if leaked:
+            raise ValueError(
+                "正文含本次内部来源短编号：" + ", ".join(sorted(leaked, key=lambda alias: int(alias[1:])))
+                + "。短编号只用于evidence_ids，请保留原意并改成对方能直接理解的台词。"
+            )
         return value
 
     def resolve(self, value):
