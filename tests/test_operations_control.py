@@ -111,6 +111,20 @@ def test_same_source_cannot_be_resent_through_private_channel_or_new_oc_version(
         control.finish(token, "published")
 
 
+def test_manual_historical_draft_keeps_its_character_version_without_reauthorizing_automatic_work(store):
+    control, original = OperationsControl(store), store.character()
+    store.save_character(original)
+    token = control.reserve("900", original, intent(original, "old-approved"), "comments")
+    assert control.get_attempt(token)["character_version"] == original["version"]
+    control.finish(token, "published")
+    with pytest.raises(ValueError, match="版本已变化"):
+        control.reserve("900", original, intent(original, "old-automatic"), "comments", automatic=True)
+    other = store.save_character(original | {"id": "other-persona"})
+    store.activate(other["id"])
+    with pytest.raises(ValueError, match="版本已变化"):
+        control.reserve("900", original, intent(original, "other-role"), "comments")
+
+
 def test_failure_keeps_quota_and_uncertain_pauses_only_affected_account_channel(store):
     control, character = OperationsControl(store), store.character()
     token = control.reserve("900", character, intent(character), "comments")

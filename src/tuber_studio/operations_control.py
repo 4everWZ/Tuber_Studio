@@ -160,7 +160,9 @@ class OperationsControl:
         ):
             raise ValueError("自动化账号或角色版本已变化")
         current = self.store.character()
-        if character["id"] != current["id"] or character["version"] != current["version"]:
+        # A manual approval can publish a retained draft from this OC's history.
+        # Automatic work remains bound to the currently active version.
+        if character["id"] != current["id"] or automatic and character["version"] != current["version"]:
             raise ValueError("当前账号任务的角色版本已变化")
         if automatic and self.store.one(
             "SELECT reason FROM operation_channel_blocks WHERE account_id=? AND channel=?",
