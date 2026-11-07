@@ -1,4 +1,4 @@
-"""Legacy text-only DoRA SFT used in the original persona experiment.
+"""DoRA SFT for the OC's language-model layers.
 
 Optimized for Workstation with 2x RTX 3090 (48GB VRAM total).
 Supports both MiniCPM-V-4.7-1B and Gemma 4 E2B.
@@ -66,7 +66,7 @@ def parse_args():
         type=str,
         choices=["sft"],
         default="sft",
-        help="This legacy trainer implements the SFT stage",
+        help="Train the language-model adapter with SFT",
     )
     parser.add_argument(
         "--use_dora", action="store_true", default=True, help="Enable Weight-Decomposed LoRA (DoRA)"

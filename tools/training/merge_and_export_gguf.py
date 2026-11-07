@@ -1,4 +1,4 @@
-"""Merge the legacy DoRA adapter into its original Hugging Face checkpoint.
+"""Merge a language-model DoRA adapter into its original Hugging Face checkpoint.
 
 For new vision runs use export_grounded_sft.py to produce a paired GGUF.
 """
@@ -37,7 +37,7 @@ def parse_args():
         "--merge_method",
         choices=["linear"],
         default="linear",
-        help="The legacy exporter performs a standard PEFT merge",
+        help="Perform a standard PEFT merge",
     )
     return parser.parse_args()
 

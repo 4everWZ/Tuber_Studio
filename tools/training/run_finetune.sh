@@ -1,40 +1,34 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$DIR"
+TRAINING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$TRAINING_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
-CONDA_ENV="/home/research-2/miniconda3/envs/research_cu13"
-export PATH="$CONDA_ENV/bin:$PATH"
-export CUDA_VISIBLE_DEVICES=0,1
+# Use the caller's activated training environment, never a fixed user's conda path.
+TRAINING_PYTHON="${TUBER_TRAINING_PYTHON:-python}"
+TRAINING_DATA="${TUBER_TRAINING_DATA:-$PROJECT_ROOT/runtime/training_data}"
+TRAINING_OUTPUT="${TUBER_TRAINING_OUTPUT:-$PROJECT_ROOT/runtime/checkpoints/dafeiyu_dora}"
+TRAINING_WORKERS="${TUBER_TRAINING_WORKERS:-2}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 export PYTHONUNBUFFERED=1
 
-echo "=========================================================="
-echo "🚀 启动 Tuber Studio · 大肥鱼双 3090 并行微调 (DoRA/LoRA)"
-echo "时间: $(date)"
-echo "GPU 设备: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
-echo "基座模型: openbmb/MiniCPM-V-4.7-1B"
-echo "训练数据集: $DIR/data/sft_train.json"
-echo "=========================================================="
+if [[ ! -f "$TRAINING_DATA/sft_train.json" ]]; then
+  echo "缺少 $TRAINING_DATA/sft_train.json；请先显式编译 OC 数据集。" >&2
+  exit 1
+fi
 
-torchrun --nproc_per_node=2 "$DIR/tools/train_dora.py" \
+"$TRAINING_PYTHON" -m torch.distributed.run --nproc_per_node="$TRAINING_WORKERS" \
+  "$TRAINING_DIR/train_dora.py" \
   --model_name_or_path "openbmb/MiniCPM-V-4.7-1B" \
-  --data_dir "$DIR/data" \
-  --output_dir "$DIR/output_dafeiyu_dora" \
+  --data_dir "$TRAINING_DATA" \
+  --output_dir "$TRAINING_OUTPUT" \
   --batch_size 4 \
   --gradient_accumulation_steps 2 \
   --learning_rate 3e-4 \
   --epochs 5 \
   --max_seq_length 1024 \
-  --bf16
+  --bf16 "$@"
 
-echo ""
-echo "=========================================================="
-echo "✅ 微调完成！正在执行端到端 OC 拟真度与防坍缩评测..."
-echo "=========================================================="
-
-python "$DIR/tools/evaluate_finetuned_model.py" \
-  --base_model "openbmb/MiniCPM-V-4.7-1B" \
-  --adapter "$DIR/output_dafeiyu_dora" | tee "$DIR/eval_report.txt"
-
-echo "🎉 训练与评测全部结束！"
+echo "训练已完成：$TRAINING_OUTPUT"
+echo "尚未进行真实视频与多轮评估；合并、配套投影器导出及回放步骤见 tools/training/README.md。"
