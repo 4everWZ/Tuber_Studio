@@ -281,6 +281,23 @@ def test_known_engineering_and_clean_history_upgrade_once_and_allow_rollback(tmp
     store.close()
 
 
+def test_sample_voice_history_allows_the_current_production_preset_upgrade(tmp_path):
+    path = tmp_path / "sample-history.sqlite3"
+    original = legacy()
+    original[0]["voice_profile"] = "whale_sample_v1"
+    store = Store(path, original)
+    selected = store.character("whale") | {"voice_profile": "whale_sovits_v2"}
+    store.save_character(selected)
+    history = store.versions("whale")
+    store.close()
+    store = Store(path, presets())
+    assert store.character("whale")["version"] == 3
+    assert store.character("whale")["core"] == presets()[0]["core"]
+    assert store.character("whale")["voice_profile"] == "whale_sovits_v2"
+    assert store.versions("whale")[1:] == history
+    store.close()
+
+
 def test_unknown_active_fields_are_preserved_without_upgrade(tmp_path):
     path = tmp_path / "unknown-active.sqlite3"
     store = Store(path, legacy())

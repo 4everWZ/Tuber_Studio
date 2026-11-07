@@ -10,6 +10,7 @@ from .models import Character
 # role-ID-only matching.
 _LEGACY = {
     "whale": {
+        "1be94aab9f230939277bb0c46a56219b5915ddeedc05ce745f5a23c5c26db24e",
         "4bc4ed6f9159b82559fd2b69888a2989fb3c6094d1aaebaee17fc75b050a1bcd",
         "58f2eb2af9b7fb8ade8abd9449bd8c691c17fd4d495ca1d5f9b0aca8cc9ceee2",
         "7b69396338e264ddd83118b1deca9eedfa86ca3653386d4d26a44c40a30e3f0d",
