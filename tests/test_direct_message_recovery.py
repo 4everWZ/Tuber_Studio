@@ -100,6 +100,32 @@ async def test_pending_private_recovery_keeps_other_accounts_and_archived_charac
     assert not messages.adapter.sent
 
 
+async def test_archived_queued_draft_does_not_block_polling_new_message_for_current_version(messages, monkeypatch):
+    old = messages.enqueue("message", incoming(messages, key="archived-pending", account_id="900"), schedule=False)
+    previous = messages.runtime.character
+    current = messages.store.save_character(previous)
+    messages.store.execute("INSERT INTO character_archives VALUES(?,?,?,?)", (previous["id"], previous["version"], "retained old card", time.time()))
+    messages.operations.configure({"enabled": True}, account_id="900", character=current)
+    await messages.configure({"enabled": True, "auto_poll": True, "auto_send": False})
+    await messages.resume_pending()
+    source = incoming(messages, key="current-new-input", account_id="900", timestamp=time.time() + 1)
+    seen = []
+    original = messages.runtime.generate_reply
+
+    async def capture(scope, character, *args, **kwargs):
+        seen.append(character["version"])
+        return await original(scope, character, *args, **kwargs)
+
+    monkeypatch.setattr(messages.runtime, "generate_reply", capture)
+    messages._queue_newest_messages("900")
+    await asyncio.wait_for(messages.queue.join(), 3)
+    latest = messages.store.one("SELECT * FROM dm_drafts WHERE source_kind='message' AND source_id=?", (source,))
+    assert latest and latest["status"] == "pending_review" and latest["character_version"] == current["version"]
+    assert seen == [current["version"]]
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (old,))["status"] == "queued"
+    assert not messages.adapter.sent
+
+
 async def test_saving_private_permissions_while_parent_stopped_does_not_resume_old_work(messages):
     identity = messages.enqueue(
         "message", incoming(messages, account_id="900"), schedule=False

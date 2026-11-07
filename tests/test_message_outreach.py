@@ -262,12 +262,58 @@ async def test_different_comment_thread_is_not_itself_a_new_matter(messages, mon
     _, checks = await setup_delivery(messages, monkeypatch)
     first = invite(messages)
     await messages._generate(first, True)
+    original = messages.runtime.llm.generate_json
+
+    async def renamed_matter(packet, schema, *, max_tokens):
+        value = await original(packet, schema, max_tokens=max_tokens)
+        return value | {"purpose": "同一配置请求的另一种说法", "new_matter": True}
+
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", renamed_matter)
     second = invite(messages, cid="702", root="800")
     await messages._generate(second, True)
-    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (second,))["status"] == "waiting"
-    assert checks[-1]["previous_unanswered_contacts"][0]["id"] == first
-    assert "text" not in checks[-1]["previous_unanswered_contacts"][0]
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (second,))
+    assert row["status"] == "waiting" and json.loads(row["outreach_check"])["previous_draft_id"] == first
+    history = messages._unanswered_outreach(row)
+    assert history[0]["id"] == first and history[0]["public_source"]["text"] == "请把我问的那项配置私信告诉我"
+    assert "text" not in history[0] and len(checks) == 1 and len(messages.adapter.sent) == 1
+
+
+async def test_new_invitation_check_receives_real_old_public_source_instead_of_only_model_purpose(messages, monkeypatch):
+    _, checks = await setup_delivery(messages, monkeypatch)
+    first = invite(messages)
+    await messages._generate(first, True)
+    await messages.configure({"enabled": True, "auto_send": False, "max_per_hour": 0, "max_per_day": 0})
+    second = invite(messages, cid="702", root="800")
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (second,))
+    source = "刚才那项之外，我还想问屏幕颜色配置，可以私信继续聊吗？"
+    evidence = json.loads(row["video_evidence"])
+    evidence["public_source_thread"]["source"]["text"] = source
+    messages.store.execute("UPDATE comments SET content=? WHERE id=?", (source, row["source_id"]))
+    messages.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (json.dumps(evidence, ensure_ascii=False), second))
+    await messages._generate(second, True)
+    assert len(checks) == 2
+    prior = checks[-1]["previous_unanswered_contacts"][0]
+    assert prior["id"] == first and prior["public_source"]["text"] == "请把我问的那项配置私信告诉我"
+    assert prior["public_source"]["author_uid"] == "123" and "text" not in prior
     assert len(messages.adapter.sent) == 1
+
+
+async def test_nickname_only_mention_without_real_uid_does_not_invite_this_account(messages, monkeypatch):
+    _, checks = await setup_delivery(messages, monkeypatch)
+    identity = invite(messages)
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    text = "@大肥鱼 把配置私信告诉我"
+    evidence = json.loads(row["video_evidence"])
+    thread = evidence["public_source_thread"]
+    thread["source"]["text"] = text
+    thread["root"] = thread["source"]
+    thread["parent"] = None
+    thread["addressing"].update(source_mentions=[], source_parent_comment_id=None)
+    messages.store.execute("UPDATE comments SET content=? WHERE id=?", (text, row["source_id"]))
+    messages.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (json.dumps(evidence, ensure_ascii=False), identity))
+    await messages._generate(identity, True)
+    assert len(checks) == 1 and not messages.adapter.sent
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "not_initiated"
 
 
 async def test_pausing_parent_retains_queued_task_without_first_contact_calls(messages, monkeypatch):

@@ -370,7 +370,8 @@ class DirectMessages:
                ) SELECT id FROM newest n WHERE rank=1 AND NOT EXISTS (
                    SELECT 1 FROM dm_drafts d WHERE d.account_id=? AND d.character_id=?
                    AND d.platform=n.platform AND d.platform_user_id=n.platform_user_id
-                   AND ((d.source_kind='message' AND d.source_id=n.id) OR d.status IN ('queued','generating'))
+                   AND ((d.source_kind='message' AND d.source_id=n.id) OR
+                        (d.status IN ('queued','generating') AND d.character_version=?))
                ) ORDER BY sent_at DESC,id DESC LIMIT ?""",
             (
                 account_id,
@@ -378,6 +379,7 @@ class DirectMessages:
                 cutoff,
                 account_id,
                 self.runtime.character["id"],
+                self.runtime.character["version"],
                 slots,
             ),
         )
@@ -680,11 +682,14 @@ class DirectMessages:
         result = []
         for row in rows:
             trigger = json.loads(row["trigger_source"] or "null")
+            source = self.store.one("SELECT video_id,thread_id,comment_id,platform_user_id,display_name,content FROM comments WHERE id=?", (row["source_id"],))
             if not trigger:
-                source = self.store.one("SELECT video_id,thread_id,comment_id FROM comments WHERE id=?", (row["source_id"],))
                 if source:
                     trigger = {"kind": "comment", "comment_id": source["comment_id"], "bvid": source["video_id"], "root": source["thread_id"]}
-            result.append(row | {"trigger_source": trigger, "outreach_check": json.loads(row["outreach_check"] or "null")})
+            original = None if not source else {"comment_id": str(source["comment_id"]),
+                "author_uid": str(source["platform_user_id"]), "author_name": source["display_name"], "text": source["content"]}
+            result.append(row | {"trigger_source": trigger, "public_source": original,
+                                "outreach_check": json.loads(row["outreach_check"] or "null")})
         return result
 
     def _completion_evidence(self, draft):
@@ -742,8 +747,14 @@ class DirectMessages:
         same_thread = next((row for row in history if row["trigger_source"] and
             row["trigger_source"].get("bvid") == trigger.get("bvid") and
             row["trigger_source"].get("root") == trigger.get("root")), None)
-        if same_thread or any(not row["trigger_source"] for row in history):
-            earlier = same_thread or history[0]
+        thread = event.get("public_source_thread")
+        current = (thread.get("source") or {}) if isinstance(thread, dict) else {}
+        original_text = " ".join(str(current.get("text") or "").split())
+        same_invitation = next((row for row in history if original_text and row["public_source"] and
+            row["public_source"]["author_uid"] == str(current.get("author_uid")) and
+            " ".join(row["public_source"]["text"].split()) == original_text), None)
+        if same_thread or same_invitation or any(not row["trigger_source"] or not row["public_source"] for row in history):
+            earlier = same_thread or same_invitation or history[0]
             self.store.execute("UPDATE dm_drafts SET status='waiting',error=NULL,outreach_check=?,updated_at=? WHERE id=?",
                 (json.dumps({"action": "duplicate", "state": "awaiting_response", "previous_draft_id": earlier["id"],
                              "reason": "此前主动联系尚未收到回复，等待新的明确交流"}, ensure_ascii=False), time.time(), draft["id"]))
