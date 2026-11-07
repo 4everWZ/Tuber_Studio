@@ -1,4 +1,5 @@
 import { $, node, safeMessage } from "./core.js";
+import { contactLabel, contactReason, contactStatus } from "./message-labels.js?v=20261107.20";
 
 const pageSize = 10;
 const readLabels = { complete: "完整阅读", fully_read: "完整阅读", full: "完整阅读", partial: "部分阅读", sampled_visual: "抽样画面", title_only: "仅看标题", comments_only: "只看评论", not_read: "未阅读", none: "未阅读", new: "尚未观看", started: "已开始观看", reading: "阅读中", viewed: "已看过" };
@@ -50,7 +51,7 @@ export function initOperationsActivity(api) {
       const key = `${data.day}/${kind}/${item.id || `${itemKind}/${item.bvid || item.local_id}`}`;
       row.dataset.activityKey = key;
       const heading = node("div", null, "daily-video-heading");
-      const names = { comment: item.reply_kind === "top_level" || item.comment_kind === "top_level" ? "视频主评" : "评论回复", message: item.direction === "incoming" ? "收到私信" : "私信回复", dynamic: "动态" };
+      const names = { comment: item.reply_kind === "top_level" || item.comment_kind === "top_level" ? "视频主评" : "评论回复", message: contactLabel(item), dynamic: "动态" };
       const label = itemKind === "video" ? item.title || item.bvid : item.title || [names[itemKind], item.recipient_name].filter(Boolean).join(" · ");
       const title = node(item.href || itemKind === "video" ? "a" : "strong", label);
       title.dataset.activityControl = "title";
@@ -61,13 +62,13 @@ export function initOperationsActivity(api) {
       const read = item.fully_read === true ? "完整阅读" :
         item.fully_read === false && ["complete", "full", "fully_read"].includes(item.read_state) ? "已看过" :
           readLabels[item.read_state] || (item.watched ? "已看过" : "未阅读");
-      const result = item.status === "received" ? "收到来信" : statusLabels[item.status] || TuberFormatters.humanizeStatus(item.status || "running").label;
+      const result = (itemKind === "message" ? contactStatus(item) : null) || statusLabels[item.status] || TuberFormatters.humanizeStatus(item.status || "running").label;
       heading.append(title, node("span", itemKind === "video" ? read : result, "badge"));
       row.append(heading);
       const preferences = { like: "喜欢", not_interested: "不感兴趣", neutral: "一般" };
       const preference = preferences[item.video_preference];
       const reasons = [preference ? `偏好：${preference}${item.preference_reason ? ` · ${item.preference_reason}` : ""}` : "",
-        item.reason && (!preference || item.reason !== item.preference_reason) ? item.reason : ""].filter(Boolean).join("；");
+        item.reason && (!preference || item.reason !== item.preference_reason) ? (itemKind === "message" ? contactReason(item.reason) : item.reason) : ""].filter(Boolean).join("；");
       if (reasons) row.append(node("p", safeMessage(reasons), "daily-video-reason"));
       const replies = node("div", null, "daily-video-replies");
       if (itemKind === "video") replies.append(node("span", `${mainReplySummary(item)}${item.comment_replies > 0 ? ` · 今日跟帖 ${item.comment_replies} 条` : ""}`, "hint"));
@@ -87,7 +88,7 @@ export function initOperationsActivity(api) {
       summary.dataset.activityControl = "summary";
       info.append(summary);
       if (reasons) info.append(node("p", safeMessage(reasons)));
-      const progress = statusLabels[item.status] || TuberFormatters.humanizeStatus(item.status || "running").label;
+      const progress = result;
       info.append(node("p", `${item.bvid || names[itemKind] || "活动"} · ${progress}${item.updated_at ? ` · ${new Date(item.updated_at * 1000).toLocaleString("zh-CN")}` : ""}`, "hint"));
       if (item.error) info.append(node("p", `${safeMessage(item.error)}${item.occurrences > 1 ? `（记录 ${item.occurrences} 次）` : ""}`, "error-text"));
       if (item.round_id) {

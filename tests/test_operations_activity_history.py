@@ -50,6 +50,24 @@ def private_message(
     )
 
 
+def test_activity_preserves_incoming_reply_and_outreach_direction(channels):
+    at = stamp("2026-11-07T10:00:00+08:00")
+    private_message(channels, 1, at, status="pending_review")
+    private_message(channels, 2, at + 1, status="not_initiated")
+    for field in ("source_kind", "contact_type", "outreach_check"):
+        channels.store.execute(f"ALTER TABLE dm_drafts ADD COLUMN {field} TEXT")
+    channels.store.execute("UPDATE dm_drafts SET source_kind='message',contact_type='reply' WHERE id=1")
+    channels.store.execute("UPDATE dm_drafts SET source_kind='comment',contact_type='outreach' WHERE id=2")
+    result = activity(channels, day="2026-11-07", kind="messages")
+    by_id = {item["id"]: item for item in result["items"]}
+    reply_item, outreach = by_id["message/draft/1"], by_id["message/draft/2"]
+    assert reply_item["contact_type"] == "reply" and reply_item["source_kind"] == "message"
+    assert reply_item["title"].startswith("私信回复")
+    assert outreach["contact_type"] == "outreach" and outreach["source_kind"] == "comment"
+    assert outreach["outreach_status"] == "not_initiated" and outreach["title"].startswith("主动私信")
+    assert result["counts"]["sent"] == 0
+
+
 def dynamic(service, identity, at, *, account="100", character="whale", status="published"):
     service.store.execute(
         "INSERT INTO dynamic_posts VALUES(?,?,?,1,'今天海底小屋的白饭香气飘出窗了。','想分享海底小屋的小趣事。',?,NULL,?,?,?)",

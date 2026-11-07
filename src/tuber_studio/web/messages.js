@@ -1,5 +1,6 @@
 "use strict";
 import { MemePicker, memePreviewUrl } from "./memes.js";
+import { contactLabel, contactReason, contactStatus } from "./modules/message-labels.js?v=20261107.20";
 
 export class MessagesPanel {
   constructor(root,api,notify,openProfile) {
@@ -134,11 +135,10 @@ export class MessagesPanel {
   label(status){return ({queued:'等待生成',generating:'生成中',pending_review:'待审核',approved:'已审核',rejected:'已拒绝',copied:'已复制',published:'已发送',publishing:'发送中',publish_uncertain:'发送结果待核对',failed:'生成失败',cancelled:'已取消',waiting:'等待约定或对方回应',not_initiated:'未发起私信'})[status]||status;}
   draftState(row){
     const status=row?.status,history=['published','rejected','copied','not_initiated'].includes(status);
-    const waitingLabels={awaiting_content:'等待符合联系目的的正文',awaiting_completion:'等待约定完成',awaiting_response:'等待对方回应',awaiting_invitation:'等待新的邀请或约定',check_pending:'首发联系核对中',reply_received:'已收到来信，转入普通回复'};
-    const label=status==='waiting'?(waitingLabels[row?.contact_state]||'等待约定完成或对方回应'):this.label(status);
+    const label=contactStatus(row)||this.label(status);
     return {history,progress:['queued','generating'].includes(status),waiting:status==='waiting',continueAgreement:status==='waiting'&&row?.contact_state==='awaiting_completion',label};
   }
-  contactLabel(row){return (row?.type||row?.contact_type||(row?.source_kind==='message'?'reply':'outreach'))==='reply'?'回复来信':'主动私信';}
+  contactLabel(row){return contactLabel(row);}
   renderTrigger(row){
     let box=this.$('[data-trigger]');
     if(!box){box=this.element('details');box.dataset.trigger='';const title=this.element('summary','触发来源与联系目的');box.append(title,this.element('div'));this.$('[data-source]').after(box);}
@@ -167,7 +167,7 @@ export class MessagesPanel {
     this.$('[data-meme-preview]').hidden=!image;
     if(image){this.$('[data-meme-name]').textContent=asset?.title||row.meme_id||'已选图片';this.$('[data-meme-availability]').textContent=unavailable?'当前图片已禁用或缺失，请更换图片或改用文字。':'图片将在发送前重新检查可用性。';const key=`${row.character_id}:${row.meme_id}`;if(this.previewKey!==key){this.previewKey=key;const preview=this.$('[data-meme-image]');preview.hidden=true;this.$('[data-meme-fallback]').hidden=true;preview.onload=()=>{preview.hidden=false;this.$('[data-meme-fallback]').hidden=true;};preview.onerror=()=>{preview.hidden=true;this.$('[data-meme-fallback]').hidden=false;};preview.src=memePreviewUrl({asset_id:row.meme_id},row.character_id);}}
     else if(this.previewKey){this.previewKey=null;this.$('[data-meme-image]').removeAttribute('src');}
-    this.$('[data-source]').textContent=row?`${this.contactLabel(row)} · ${row.display_name||row.platform_user_id} · UID ${row.platform_user_id} · ${row.source_kind==='comment'?'评论转入':'对方来信'} #${row.source_id} · ${row.reason||''} · ${row.character_id} v${row.character_version}`:'选择草稿查看来源和回复。';this.renderTrigger(row);
+    this.$('[data-source]').textContent=row?`${this.contactLabel(row)} · ${row.display_name||row.platform_user_id} · UID ${row.platform_user_id} · ${row.source_kind==='comment'?'评论转入':row.source_kind==='message'?'对方来信':'来源记录'} #${row.source_id} · ${contactReason(row.reason)} · ${row.character_id} v${row.character_version}`:'选择草稿查看来源和回复。';this.renderTrigger(row);
     this.$('[data-draft-status]').textContent=this.dirty&&!editable?'原记录已处理或不在当前列表；本地修改已保留，可复制文字。':row?`${state.label}${row.purpose&&state.waiting?' · '+row.purpose:''}${row.error?' · '+row.error:''}${this.dirty?' · 有未保存修改':''}`:'';this.$('[data-receipt]').textContent=row?.receipt||'';
     for(const button of this.root.querySelectorAll('[data-review]')){button.disabled=!editable||this.busy;button.hidden=!editable;}
     this.$('[data-copy]').disabled=image||!row||!['approved','copied'].includes(row.status)||this.dirty||this.busy;

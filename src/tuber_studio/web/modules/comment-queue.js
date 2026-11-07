@@ -389,7 +389,12 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
   $("queue-next").onclick = () => turnPage(1);
   emptyDetail("选择一条记录查看来源和下一步操作。");
   return {
-    open, refresh: () => !busy && refresh(),
+    open(nextView, nextKey) {
+      // A normal route opens its whole view; only trackGeneration owns task scope.
+      generation = null;
+      return open(nextView, nextKey);
+    },
+    refresh: () => !busy && refresh(),
     leave() { active = false; ++version; },
     hasUnsaved: () => draftEdits.size > 0,
     async trackGeneration(id, commentIds) {

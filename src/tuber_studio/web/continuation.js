@@ -83,7 +83,7 @@ class OperationContinuationView {
     const checkLabels = {visible:"已找到匹配的发送记录", not_visible:"已找到匹配记录，当前不可见", not_found:"本次读取未找到匹配记录", ambiguous:"存在多条候选，仍需核对", check_failed:"本次平台读取未成功", unsupported:"当前渠道尚不支持读回核对"};
     this.$("[data-continuation-reconciliation]").textContent = check ? `平台核对：${checkLabels[check.status] || check.status}` : "";
     const budget = value.budget || {}, limits = value.limits || {};
-    const budgetText = [["调用", "model_calls"], ["输入 tokens", "input_tokens"], ["输出 tokens", "output_tokens"]].filter(([,key]) => budget[key] != null).map(([name,key]) => `${name} ${budget[key]}${limits[`max_${key}`] != null ? " / " + limits[`max_${key}`] : ""}`);
+    const budgetText = [["调用", "model_calls"], ["输入 tokens", "input_tokens"], ["输出 tokens", "output_tokens"]].filter(([,key]) => budget[key] != null).map(([name,key]) => `${name} ${budget[key]}${limits[`max_${key}`] != null ? " / " + (limits[`max_${key}`] === 0 ? "不限" : limits[`max_${key}`]) : ""}`);
     if (Number.isFinite(value.deadline)) budgetText.push(`本轮期限 ${new Date(value.deadline * 1000).toLocaleString("zh-CN")}`);
     this.$("[data-continuation-budget]").textContent = budgetText.join(" · ");
     const reconciling = value.state === "needs_reconciliation" || entityStatus === "publish_uncertain";

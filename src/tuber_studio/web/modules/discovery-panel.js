@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js";
-import { evidenceList } from "./comment-queue.js?v=20261107.17";
+import { evidenceList } from "./comment-queue.js?v=20261107.21";
 
 const states = {
   off: "待命", starting: "启动检查", discovering: "正在找视频", reading: "正在取材",

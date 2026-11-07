@@ -2,6 +2,20 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+test("private contact labels preserve actual direction, waiting state and free-text reasons", async () => {
+  const { contactLabel, contactReason, contactStatus } = await import("../src/tuber_studio/web/modules/message-labels.js");
+  assert.equal(contactLabel({ direction: "incoming" }), "收到私信");
+  assert.equal(contactLabel({ contact_type: "outreach", source_kind: "comment" }), "主动私信");
+  assert.equal(contactLabel({ contact_type: "reply", source_kind: "message" }), "回复来信");
+  assert.equal(contactLabel({ direction: "outgoing" }), "私信草稿");
+  assert.equal(contactStatus({ status: "not_initiated" }), "未发起私信");
+  assert.equal(contactStatus({ status: "waiting", outreach_status: "awaiting_completion" }), "等待约定完成");
+  assert.equal(contactStatus({ status: "waiting", contact_state: "awaiting_response" }), "等待对方回应");
+  assert.equal(contactReason("long_followup"), "楼内话题后续交流");
+  assert.equal(contactReason("user_requested"), "对方请求私下交流");
+  assert.equal(contactReason("对方明确邀请讨论白饭"), "对方明确邀请讨论白饭");
+});
+
 test("stopped parent displays saved automatic private-message preferences separately", async () => {
   const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
   const panel = Object.create(MessagesPanel.prototype);

@@ -29,6 +29,19 @@ function classic(filename, expression, document) {
   return vm.runInNewContext(`${source}\n;${expression}`, { window: {}, document, confirm: () => true });
 }
 
+test("continuation displays zero token and call caps as unlimited without changing recovery count", t => {
+  const { get, document } = dom(t);
+  const View = classic("continuation.js", "OperationContinuationView", document);
+  const view = Object.create(View.prototype);
+  Object.assign(view, { root: get("root"), $: get, signature: "", element: () => get("element") });
+  view.render({ id: "one", state: "checkpoint", recoveries: 0, max_recoveries: 0,
+    budget: { model_calls: 65, input_tokens: 187468, output_tokens: 8363 },
+    limits: { max_model_calls: 0, max_input_tokens: 0, max_output_tokens: 16384 }, revisions: [] },
+  { channel: "comments", localId: "one" });
+  assert.equal(get("[data-continuation-budget]").textContent, "调用 65 / 不限 · 输入 tokens 187468 / 不限 · 输出 tokens 8363 / 16384");
+  assert.match(get("[data-continuation-summary]").textContent, /恢复 0 \/ 0 次/);
+});
+
 test("interactive controls bind once and preserve zero thresholds and unsaved rules", async t => {
   const { get, document, listeners } = dom(t);
   const UI = classic("interactive-games.js", "window.InteractiveGamesUI", document);

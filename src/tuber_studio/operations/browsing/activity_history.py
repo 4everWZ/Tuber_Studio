@@ -6,6 +6,7 @@ import math
 import time
 from zoneinfo import ZoneInfo
 
+from ...message_outreach import contact_state
 from .quotas import publication_time
 
 _AUTO = "r.preview=0 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)"
@@ -497,6 +498,8 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 title=f"收到 {row['display_name'] or row['platform_user_id']} 的私信",
                 href="#messages",
                 direction="incoming",
+                source_kind="message",
+                contact_type="incoming",
                 recipient_name=row["display_name"] or row["platform_user_id"],
             )
     if account and "dm_drafts" in tables:
@@ -510,16 +513,25 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 if row["status"] == "published"
                 else row["updated_at"]
             )
+            source_kind = row.get("source_kind")
+            contact_type = row.get("contact_type") or (
+                "outreach" if source_kind == "comment" else "reply" if source_kind == "message" else None
+            )
+            label = "主动私信" if contact_type == "outreach" else "私信回复" if contact_type == "reply" else "私信草稿"
             add(
                 row,
                 channel="message",
                 identity=f"message/draft/{row['id']}",
                 text=row["text"],
-                title=f"私信回复 {row['display_name'] or row['platform_user_id']}",
+                title=f"{label} {row['display_name'] or row['platform_user_id']}",
                 href="#messages",
                 at=at,
                 reason=row.get("reason") or "",
                 direction="outgoing",
+                source_kind=source_kind,
+                contact_type=contact_type,
+                outreach_status=contact_state(row | {"outreach_check": _json(row.get("outreach_check"), {})})
+                if contact_type == "outreach" else None,
                 recipient_name=row["display_name"] or row["platform_user_id"],
                 message_kind=row.get("message_kind", "text"),
                 meme_id=row.get("meme_id"),

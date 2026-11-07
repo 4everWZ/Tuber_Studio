@@ -2,13 +2,13 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.17";
-import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.17";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.15";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.21";
+import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.21";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.20";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261107.19";
+import { MessagesPanel } from "./messages.js?v=20261107.20";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,

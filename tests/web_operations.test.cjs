@@ -360,6 +360,21 @@ test("unified activity distinguishes approved drafts, received messages and succ
   assert.match(byId("discovery-history-page").textContent, /共 1 条记录/);
 });
 
+test("activity distinguishes an uninitiated outreach from a reply and translates its progress", async t => {
+  const byId = setupDOM(t);
+  const { initOperationsActivity } = await import("../src/tuber_studio/web/modules/operations-activity.js");
+  const refresh = initOperationsActivity(async () => ({ day: "2026-11-07", page: 1, total: 2, pages: 1, items: [
+    { id: "outreach/1", kind: "message", contact_type: "outreach", recipient_name: "小蓝", status: "not_initiated", reason: "long_followup" },
+    { id: "outreach/2", kind: "message", contact_type: "outreach", status: "waiting", outreach_status: "awaiting_completion" },
+  ] }));
+  await refresh();
+  const rows = byId("discovery-activity-list").children;
+  assert.equal(rows[0].children[0].children[0].textContent, "主动私信 · 小蓝");
+  assert.equal(rows[0].children[0].children[1].textContent, "未发起私信");
+  assert.equal(rows[0].children[1].textContent, "楼内话题后续交流");
+  assert.equal(rows[1].children[0].children[1].textContent, "等待约定完成");
+});
+
 test("activity updates preserve each stable record's expanded details", async t => {
   const byId = setupDOM(t);
   const { initOperationsActivity } = await import("../src/tuber_studio/web/modules/operations-activity.js");
@@ -535,6 +550,11 @@ test("new generation shows only this task and selects its first actual draft", a
   await queue.refresh();
   assert.equal(byId("queue-list").children[0].dataset.queueKey, "comments/fresh");
   assert.equal(byId("queue-detail").children.find(child => child.tagName === "LABEL").children[0].value, "本次生成的新回复");
+  await queue.open("verify");
+  const verify = calls.findLast(path => path.includes("?view=verify"));
+  assert.ok(verify);
+  assert.ok(!verify.includes("task_id="), "a normal status route must not keep an earlier generation task scope");
+  assert.equal(byId("queue-show-all").hidden, true);
 });
 
 test("JSON import is a single write and opens the imported scope without mandatory preview", async t => {
