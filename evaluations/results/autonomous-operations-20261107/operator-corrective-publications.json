@@ -1,0 +1,197 @@
+{
+  "verified_at": "2026-11-07T20:07:50.709280+08:00",
+  "submitted": 3,
+  "platform_confirmation": "code=0 and valid distinct rpid; bounded public readback is evaluated separately",
+  "model_acceptance": false,
+  "results": [
+    {
+      "case": 1,
+      "intent_id": "a637aeb6-ced7-43da-b690-f7948e3fc407",
+      "authorship": "operator_revision",
+      "model_acceptance": false,
+      "account_uid": "3706944382568764",
+      "character_id": "whale",
+      "character_version": 3,
+      "target": {
+        "bvid": "BV1RLH367EQN",
+        "oid": "117498812894686",
+        "root": "323225083008",
+        "parent": "323229110432",
+        "recipient": "562115830",
+        "source_text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了"
+      },
+      "text": "白饭锅家的……刚才接错频道，尾巴都尴尬得僵住了。这锅我认，饭别扣。",
+      "reason": "对方问我是哪家的、刚才在说什么；认领自己接错话的经历，用白饭和尾巴开个梗。",
+      "receipt": {
+        "platform": "bilibili",
+        "code": 0,
+        "rpid": "319491208577",
+        "oid": "117498812894686",
+        "type": 1,
+        "root": "323225083008",
+        "parent": "323229110432"
+      },
+      "saved_visibility": "not_found",
+      "readback": {
+        "status": "visible",
+        "pages_read": 1,
+        "comments_read": 8,
+        "error_type": null
+      },
+      "observed_publication": {
+        "author_uid": "3706944382568764",
+        "parent": "323229110432",
+        "text": "回复 @凉宫春日の随波逐流 :白饭锅家的……刚才接错频道，尾巴都尴尬得僵住了。这锅我认，饭别扣。",
+        "mentions": [
+          {
+            "uid": "562115830",
+            "name": "凉宫春日の随波逐流"
+          }
+        ],
+        "submitted_body_matches": true,
+        "platform_reply_prefix": "回复 @凉宫春日の随波逐流 :"
+      },
+      "authoring": {
+        "origin": "operator_revision",
+        "incident_key": "public-reply-mixup-20261107",
+        "autonomous_model_acceptance": false,
+        "previous_intent": {
+          "id": "f40b49f7-0131-4d9b-aa9d-8577e68edbb6",
+          "kind": "private_handoff",
+          "status": "private_handoff",
+          "round_id": "21d7e0e3-bcf8-4347-b37f-4a7920b8f611",
+          "source_key": "[\"bilibili\",\"BV1RLH367EQN\",\"323229110432\",\"whale\"]",
+          "created_at": 1794046254.6613145
+        },
+        "previous_private_draft_id": 19
+      }
+    },
+    {
+      "case": 2,
+      "intent_id": "1c076caf-b75b-4c02-bc3c-75bb10182b57",
+      "authorship": "operator_revision",
+      "model_acceptance": false,
+      "account_uid": "3706944382568764",
+      "character_id": "whale",
+      "character_version": 3,
+      "target": {
+        "bvid": "BV1UexK6eEjB",
+        "oid": "117510674385346",
+        "root": "323230417440",
+        "parent": "323230681024",
+        "recipient": "651766039",
+        "source_text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了"
+      },
+      "text": "是我接错话了，你喊的是另一位，我的尾巴倒先到了。脑子：没在叫我。尾巴：已到场。你们继续，我退后两步。",
+      "reason": "对方原本喊的是另一个账号，我接错了对象；回应他的提醒，拿自己的脑子和尾巴不同步开个梗。",
+      "receipt": {
+        "platform": "bilibili",
+        "code": 0,
+        "rpid": "319491309777",
+        "oid": "117510674385346",
+        "type": 1,
+        "root": "323230417440",
+        "parent": "323230681024"
+      },
+      "saved_visibility": "not_found",
+      "readback": {
+        "status": "visible",
+        "pages_read": 1,
+        "comments_read": 4,
+        "error_type": null
+      },
+      "observed_publication": {
+        "author_uid": "3706944382568764",
+        "parent": "323230681024",
+        "text": "回复 @神射手夜空 :是我接错话了，你喊的是另一位，我的尾巴倒先到了。脑子：没在叫我。尾巴：已到场。你们继续，我退后两步。",
+        "mentions": [
+          {
+            "uid": "651766039",
+            "name": "神射手夜空"
+          }
+        ],
+        "submitted_body_matches": true,
+        "platform_reply_prefix": "回复 @神射手夜空 :"
+      },
+      "authoring": {
+        "origin": "operator_revision",
+        "incident_key": "public-reply-mixup-20261107",
+        "autonomous_model_acceptance": false
+      }
+    },
+    {
+      "case": 3,
+      "intent_id": "8104f6b9-be2b-4f1e-82d8-b105d8854fc4",
+      "authorship": "operator_revision",
+      "model_acceptance": false,
+      "account_uid": "3706944382568764",
+      "character_id": "whale",
+      "character_version": 3,
+      "target": {
+        "bvid": "BV13S4i6fE82",
+        "oid": "117567414865096",
+        "root": "323202459488",
+        "parent": "323231188736",
+        "recipient": "605861940",
+        "source_text": "回复 @大肥鱼只想过平静生活 :你消息是不是回错了"
+      },
+      "text": "对，接串了。刚才那段属于饭熟了，脑子没熟。我先把脑子盛回来，再好好说话。",
+      "reason": "同一位观众连着问我在干什么、是不是回错了；合并回应一次，承认串话并自嘲脑子没熟。",
+      "receipt": {
+        "platform": "bilibili",
+        "code": 0,
+        "rpid": "319491340193",
+        "oid": "117567414865096",
+        "type": 1,
+        "root": "323202459488",
+        "parent": "323231188736"
+      },
+      "saved_visibility": "not_found",
+      "readback": {
+        "status": "visible",
+        "pages_read": 1,
+        "comments_read": 7,
+        "error_type": null
+      },
+      "observed_publication": {
+        "author_uid": "3706944382568764",
+        "parent": "323231188736",
+        "text": "回复 @梓沫骐大大 :对，接串了。刚才那段属于饭熟了，脑子没熟。我先把脑子盛回来，再好好说话。",
+        "mentions": [
+          {
+            "uid": "605861940",
+            "name": "梓沫骐大大"
+          }
+        ],
+        "submitted_body_matches": true,
+        "platform_reply_prefix": "回复 @梓沫骐大大 :"
+      },
+      "authoring": {
+        "origin": "operator_revision",
+        "incident_key": "public-reply-mixup-20261107",
+        "autonomous_model_acceptance": false
+      }
+    }
+  ],
+  "quota_verification": {
+    "reply_counters": [
+      {
+        "bvid": "BV1RLH367EQN",
+        "before": 4,
+        "after": 5
+      },
+      {
+        "bvid": "BV1UexK6eEjB",
+        "before": 1,
+        "after": 2
+      },
+      {
+        "bvid": "BV13S4i6fE82",
+        "before": 10,
+        "after": 11
+      }
+    ],
+    "watch_count_before": 16,
+    "watch_count_after": 16
+  }
+}

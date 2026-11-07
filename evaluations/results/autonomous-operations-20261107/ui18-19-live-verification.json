@@ -1,0 +1,329 @@
+{
+  "verified_at": "2026-11-07T12:11:54.366066+00:00",
+  "browser_session": "fresh-user-ui",
+  "global_ui_version": "20261107.18",
+  "app_entry_and_private_module_version": "20261107.19",
+  "actual_ui_publications": [
+    {
+      "case": 1,
+      "intent_id": "a637aeb6-ced7-43da-b690-f7948e3fc407",
+      "status": "published",
+      "receipt": {
+        "platform": "bilibili",
+        "code": 0,
+        "rpid": "319491208577",
+        "oid": "117498812894686",
+        "type": 1,
+        "root": "323225083008",
+        "parent": "323229110432"
+      },
+      "saved_visibility": "not_found",
+      "capture": "Single actual UI publish click; POST response awaited, then capture helper failed before serializing JSON (URL global unavailable); successful receipt confirmed by GET, never resubmitted",
+      "after_ui": {
+        "detail": "记录详情本条已处理，可在「已执行与历史」中查看。请选择下一条记录。",
+        "remaining": false
+      }
+    },
+    {
+      "case": 2,
+      "intent_id": "1c076caf-b75b-4c02-bc3c-75bb10182b57",
+      "status": "published",
+      "receipt": {
+        "platform": "bilibili",
+        "code": 0,
+        "rpid": "319491309777",
+        "oid": "117510674385346",
+        "type": 1,
+        "root": "323230417440",
+        "parent": "323230681024"
+      },
+      "saved_visibility": "not_found",
+      "capture": "Actual UI single publish click; POST HTTP 200 JSON captured",
+      "after_ui": {
+        "route": "#comments/review",
+        "detail": "记录详情本条已处理，可在「已执行与历史」中查看。请选择下一条记录。",
+        "editors": 0,
+        "remaining": false
+      }
+    },
+    {
+      "case": 3,
+      "intent_id": "8104f6b9-be2b-4f1e-82d8-b105d8854fc4",
+      "status": "published",
+      "receipt": {
+        "platform": "bilibili",
+        "code": 0,
+        "rpid": "319491340193",
+        "oid": "117567414865096",
+        "type": 1,
+        "root": "323202459488",
+        "parent": "323231188736"
+      },
+      "saved_visibility": "not_found",
+      "capture": "Actual UI single publish click; POST HTTP 200 JSON captured",
+      "after_ui": {
+        "route": "#comments/review",
+        "detail": "记录详情本条已处理，可在「已执行与历史」中查看。请选择下一条记录。",
+        "editors": 0,
+        "remaining": false
+      }
+    }
+  ],
+  "comment_tabs": [
+    {
+      "view": "verify",
+      "route": "#comments/verify",
+      "rows": 0,
+      "detailEditors": 0,
+      "detailText": "记录详情选择一条记录查看来源和下一步操作。"
+    },
+    {
+      "view": "processing",
+      "route": "#comments/processing",
+      "rows": 0,
+      "detailEditors": 0,
+      "detailText": "记录详情选择一条记录查看来源和下一步操作。"
+    },
+    {
+      "view": "history",
+      "route": "#comments/history",
+      "rows": 10,
+      "detailEditors": 1,
+      "detailText": "平台已受理BV13S4i6fE82 · 梓沫骐大大 · whale · v3回复 @大肥鱼只想过平静生活 :你消息是不是回错了在 B 站查看来源回复正文复制处理进度与修订\n      \n      \n      \n   "
+    },
+    {
+      "view": "review",
+      "route": "#comments/review",
+      "rows": 10,
+      "detailEditors": 1,
+      "detailText": "待审核BV1UexK6eEjB · 神射手空夜 · whale · v3想追我，先想起十年前那个约定，我不急在 B 站查看来源草稿正文保存拒绝发布复制处理进度与修订\n      \n      \n      \n      "
+    }
+  ],
+  "private_waiting_ui": {
+    "route": "#messages",
+    "state": "等待对方回应",
+    "sourceKind": "主动私信",
+    "editorVisible": false,
+    "sendVisible": false,
+    "reviewVisible": false,
+    "triggerSummary": "触发来源与联系目的"
+  },
+  "private_history_ui": {
+    "view": "history",
+    "rows": 36,
+    "notInitiated": 17,
+    "selectedSource": "选择草稿查看来源和回复。",
+    "editorEmpty": true
+  },
+  "public_policy_and_incident": {
+    "policy": {
+      "saved": {
+        "enabled": true,
+        "auto_poll": true,
+        "auto_send": true,
+        "allow_comment_handoff": true
+      },
+      "effective": {
+        "enabled": true,
+        "auto_poll": false,
+        "auto_send": false
+      },
+      "parent_running": false,
+      "emergency": false
+    },
+    "message_states": {
+      "not_initiated": 17,
+      "published": 19,
+      "waiting": 1
+    },
+    "waiting": [
+      {
+        "id": 17,
+        "type": "outreach",
+        "contact_state": "awaiting_response"
+      }
+    ],
+    "incident": [
+      {
+        "id": 1,
+        "status": "active",
+        "incident_key": "public-reply-mixup-20261107",
+        "sources": [
+          {
+            "bvid": "BV1RLH367EQN",
+            "thread_id": "323225083008",
+            "comment_id": "323229110432",
+            "url": "https://www.bilibili.com/video/BV1RLH367EQN#reply323229110432"
+          },
+          {
+            "bvid": "BV1UexK6eEjB",
+            "thread_id": "323230417440",
+            "comment_id": "323230681024",
+            "url": "https://www.bilibili.com/video/BV1UexK6eEjB#reply323230681024"
+          },
+          {
+            "bvid": "BV13S4i6fE82",
+            "thread_id": "323202459488",
+            "comment_id": "323231188736",
+            "url": "https://www.bilibili.com/video/BV13S4i6fE82#reply323231188736"
+          },
+          {
+            "bvid": "BV13S4i6fE82",
+            "thread_id": "323202459488",
+            "comment_id": "323231184288",
+            "url": "https://www.bilibili.com/video/BV13S4i6fE82#reply323231184288"
+          }
+        ]
+      }
+    ]
+  },
+  "readonly_navigation": [
+    {
+      "clicked": "素材与表情包",
+      "route": "#assets",
+      "title": "素材与表情包 · Tuber Studio",
+      "headings": [
+        "素材与表情包图库",
+        "表情包图库"
+      ]
+    },
+    {
+      "clicked": "推理端点与模型",
+      "route": "#settings",
+      "title": "推理与模型 · Tuber Studio",
+      "headings": [
+        "推理引擎端点与模型设置",
+        "Jetson 推理"
+      ]
+    },
+    {
+      "clicked": "存储与维护",
+      "route": "#overview",
+      "title": "存储与维护 · Tuber Studio",
+      "headings": [
+        "存储、上下文与数据维护",
+        "媒体缓存"
+      ]
+    },
+    {
+      "clicked": "直播控制台",
+      "route": "#live",
+      "title": "直播控制 · Tuber Studio",
+      "headings": [
+        "直播演播控制台"
+      ]
+    },
+    {
+      "clicked": "场景与编排",
+      "route": "#live-scene",
+      "title": "场景编排 · Tuber Studio",
+      "headings": [
+        "演播场景编排"
+      ]
+    },
+    {
+      "clicked": "曲库与点歌台",
+      "route": "#live-music",
+      "title": "曲库与点歌 · Tuber Studio",
+      "headings": [
+        "在线点歌与曲库配置"
+      ]
+    },
+    {
+      "clicked": "互动玩法与游戏",
+      "route": "#live-interaction",
+      "title": "互动与游戏 · Tuber Studio",
+      "headings": [
+        "直播小游戏与礼物互动规则"
+      ]
+    },
+    {
+      "clicked": "大肥鱼 OC 角色卡",
+      "route": "#characters",
+      "title": "角色工作室 · Tuber Studio",
+      "headings": [
+        "角色卡工坊 (OC Studio)"
+      ]
+    },
+    {
+      "clicked": "账号与登录",
+      "route": "#accounts",
+      "title": "账号与权限 · Tuber Studio",
+      "headings": [
+        "Bilibili 账号",
+        "B站账号"
+      ]
+    }
+  ],
+  "dynamic_tabs": {
+    "route": "#dynamics",
+    "checked": [
+      "pending"
+    ],
+    "editors": [
+      {
+        "empty": true,
+        "disabled": true
+      }
+    ],
+    "visibleHeadings": [
+      "动态运营工作台"
+    ]
+  },
+  "final_parent_and_alerts": {
+    "route": "#automation",
+    "lamps": [
+      {
+        "id": "videos",
+        "state": "gray"
+      },
+      {
+        "id": "top_level",
+        "state": "gray"
+      },
+      {
+        "id": "comments",
+        "state": "gray"
+      },
+      {
+        "id": "message_poll",
+        "state": "gray"
+      },
+      {
+        "id": "message_reply",
+        "state": "gray"
+      },
+      {
+        "id": "dynamics",
+        "state": "gray"
+      },
+      {
+        "id": "like",
+        "state": "gray"
+      },
+      {
+        "id": "favorite",
+        "state": "gray"
+      }
+    ],
+    "alertLabels": [
+      "告警与错误",
+      "告警与错误"
+    ]
+  },
+  "public_profile_bio": "Actual account page shows current platform bio as a read-only paragraph; no profile write",
+  "alerts_ack": {
+    "reviewed_count": 3,
+    "source": "original paused round network checkpoints",
+    "action": "Actual UI clear-read-alerts once",
+    "after_navigation": "No alerts/errors; count badge absent",
+    "original_tasks_retained": true
+  },
+  "console": {
+    "new_application_errors_observed": 0,
+    "probe_generated_http_error": "GET /api/messages/policy was a read-only tester mistake; route supports PUT and returned 405",
+    "browser_verbose_notes": "Password/username autocomplete accessibility notes",
+    "capture_helper_failures": "CLI-only ReferenceError and one locator ambiguity; neither caused duplicate publishing"
+  },
+  "limits": "No private message body or credentials exported. No parent start, settings changes, dynamic publication or private-message send. Navigation does not prove model semantic quality or every live flow."
+}

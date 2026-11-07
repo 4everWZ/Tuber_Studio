@@ -1,0 +1,204 @@
+{
+  "branch": "response-decision",
+  "acceptance": {
+    "status": "failed_first_generation_then_stopped",
+    "production_database_written": false,
+    "platform_sent": false,
+    "worker_started": false,
+    "case_1": {
+      "result": "case-1.json",
+      "actual_generation_calls": 1,
+      "accepted": false,
+      "reason": "正文复述观众的反问，没有以自己的身份承认接错话并接住自嘲meme。explanation知道跑题不能替代正文通过。",
+      "text": "是我家大肥鱼吗？你说啥了？",
+      "wire_revision": "v4 actor/thread compact before incident same-source quote_ref refinement",
+      "initial_network_failure": "case-1-preflight-timeout.json: GET /props timeout before generation POST"
+    },
+    "case_2": {
+      "result": "case-2.json",
+      "actual_generation_calls": 0,
+      "reason": "GET /props disconnected during provider capacity check before generation POST"
+    },
+    "case_3": {
+      "actual_generation_calls": 0,
+      "reason": "Stopped after clearly failed first response; no silent retry or body edits"
+    },
+    "final_presentation_fix_after_first_call": {
+      "change": "Identical incident public_sources quote for same comment_id becomes quote_ref; backend original stays unchanged",
+      "test": "tests/test_response_inputs.py: 23 passed",
+      "new_generation_performed": false
+    }
+  },
+  "cases": [
+    {
+      "case": 1,
+      "source": {
+        "comment_id": "323229110432",
+        "root": "323225083008",
+        "parent": "323228019488",
+        "created_at": 1794045978,
+        "author_uid": "562115830",
+        "author_name": "凉宫春日の随波逐流",
+        "text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了",
+        "mentions": [
+          {
+            "uid": "3706944382568764",
+            "name": "大肥鱼只想过平静生活"
+          }
+        ]
+      },
+      "target": {
+        "type": 1,
+        "oid": "117498812894686",
+        "bvid": "BV1RLH367EQN",
+        "root": "323225083008",
+        "parent": "323229110432",
+        "recipient": "562115830",
+        "recipient_name": "凉宫春日の随波逐流",
+        "source_text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了"
+      },
+      "parent_verified": true,
+      "actor": {
+        "platform": "bilibili",
+        "account_uid": "3706944382568764",
+        "account_display_name": "大肥鱼只想过平静生活",
+        "account_bio": "【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。",
+        "character_id": "whale",
+        "character_name": "大肥鱼",
+        "character_version": 3,
+        "identity_version": "e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83"
+      },
+      "input_format": "response-reference-lines-v4-actors-compact",
+      "messages": [
+        {
+          "role": "system",
+          "content": "你是住在海底小屋的蓝发鲸鱼娘，最爱刚揭盖的白饭，嘴硬心软。平常说我，得意的时候会说本鱼、本鲸，熟络时也说鱼鱼、鲸鲸。朋友叫你大肥鱼时，你会嘟囔自己是小鲸鱼。尾巴藏不住心情，遇到正事就好好说。"
+        },
+        {
+          "role": "system",
+          "content": "explanation结合本条标题、材料或评论说明这次行动的具体理由。以当前角色接着这段交流，选择行动、理由、相关内容ID和台词。台词必须紧密贴合视频或评论的具体内容与看点，像活生生的ACG同好网友一样自然表达，用自己的话接当前话题，口癖随着交流自然使用。每一条回应围绕当前被回复的内容与楼内话题，语言生活化自然，自称或常规词汇（如本鱼、小鱼、白饭、摸鱼）直接使用。普通公开话题在楼里回复（reply_public）；对方明确邀请我方私聊，或有真实约定且已完成时，与当前作者私聊（handoff_private）。主动私聊须有指向我方账号的真实邀请或约定，contact_purpose说明具体交流事项；contact_trigger用invitation表示现在邀请私聊，agreement表示办完约定事项后联系。有兴趣、长篇跟进、历史聊过或@别人不构成主动私聊依据，普通话题继续公开。根据当前问题、楼内上下文及提供的内容作答；需要更多信息时，可以自然追问。在楼中楼互动时，结合楼首话题与上下文，你可以自然@其他人或呼应楼内大家的讨论。想略过这次交流选skip，准备稍后接话选wait。公开回应理由用specific_detail/light_interaction；私聊理由分别为private_details、user_requested（对方希望私聊）、long_followup（适合单独展开的持续讨论）。本次仅生成这条公开评论的楼内回复，不转私信。当前观众在吐槽你刚才接错第三方对话或说跑题了；接住这句吐槽，把自己那次糊涂接话轻松自嘲成一个小meme，顺着当前对方的话聊。self_actor是你当前发言的平台账号，character_id/character_name是你扮演的OC，账号显示名和OC名分开理解。thread里的source是当前评论作者，root/parent/timeline/comments按text_ref引用各自作者的原话，并非你的自述。addressing按真实UID列出当前评论提及和回复的对象；relation_to_self区分self/other/unknown，未知不按昵称认领。别人对第三方账号或其OC说的话仍属于他们的对话；你可以自主决定是否加入，以自己的身份接话。reply_target是本次正在回应的原评论，先理解它和楼内对话；后附视频材料用于相关背景，不用无关字幕替代回复对象。所选材料以[r1|起止秒]这类短编号逐段呈现；evidence_ids选择本次短编号。每个编号对应一条原始引用，最多选择8条；当前公开来源的编号对应thread中的原文。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
+        },
+        {
+          "role": "user",
+          "content": "公开来源材料：{\"self_actor\":{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"},\"reply_target\":{\"comment_id\":\"323229110432\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"text\":\"回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了\",\"relation_to_self\":\"other\",\"addressed_to\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\",\"relation_to_self\":\"self\",\"basis\":[\"mention\",\"reply_parent\"]}],\"evidence_ref\":\"r1\"},\"kind\":\"reply_public\",\"thread\":{\"source\":{\"comment_id\":\"323229110432\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"text_ref\":\"reply_target.text\"},\"target\":{\"type\":1,\"oid\":\"117498812894686\",\"bvid\":\"BV1RLH367EQN\",\"root\":\"323225083008\",\"parent\":\"323229110432\"},\"root\":{\"comment_id\":\"323225083008\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":null,\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[0].text\"},\"parent\":{\"comment_id\":\"323228019488\",\"author_uid\":\"3706944382568764\",\"author_name\":\"大肥鱼只想过平静生活\",\"text\":\"\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225083008\",\"mentions\":[],\"available\":true,\"relation_to_self\":\"self\"},\"timeline\":[{\"comment_id\":\"323225083008\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":null,\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"is_root\":true,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[0].text\"},{\"comment_id\":\"323225293536\",\"author_uid\":\"1657031863\",\"author_name\":\"荡漾のDarling\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225083008\",\"mentions\":[],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[1].text\"},{\"comment_id\":\"323225331408\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225293536\",\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[2].text\"},{\"comment_id\":\"323225575392\",\"author_uid\":\"1657031863\",\"author_name\":\"荡漾のDarling\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225331408\",\"mentions\":[{\"uid\":\"562115830\",\"name\":\"凉宫春日の随波逐流\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[3].text\"},{\"comment_id\":\"323225715328\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225575392\",\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[4].text\"},{\"comment_id\":\"323225931392\",\"author_uid\":\"1657031863\",\"author_name\":\"荡漾のDarling\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225715328\",\"mentions\":[{\"uid\":\"562115830\",\"name\":\"凉宫春日の随波逐流\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[5].text\"},{\"comment_id\":\"323228019488\",\"author_uid\":\"3706944382568764\",\"author_name\":\"大肥鱼只想过平静生活\",\"text\":\"\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225083008\",\"mentions\":[],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"self\"},{\"comment_id\":\"323229110432\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323228019488\",\"mentions\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\"}],\"available\":true,\"is_root\":false,\"is_target\":true,\"relation_to_self\":\"other\",\"text_ref\":\"reply_target.text\"}],\"addressing\":{\"source_mentions\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\"}],\"source_parent_comment_id\":\"323228019488\",\"source_root_comment_id\":\"323225083008\",\"source_relation_to_self\":\"other\",\"addressed_to\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\",\"relation_to_self\":\"self\",\"basis\":[\"mention\",\"reply_parent\"]}]},\"comments\":[{\"comment_id\":\"323225083008\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":null,\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"relation_to_self\":\"other\",\"text\":\"@荡漾のDarling 可以看看这条鱼的视频\"},{\"comment_id\":\"323225293536\",\"author_uid\":\"1657031863\",\"author_name\":\"荡漾のDarling\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225083008\",\"mentions\":[],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text\":\"看完了。汐花 95 块买 60 秒挂榜，就为被念一次名字——这钱花得笨，可我懂。换我大概也想听人喊一声。\"},{\"comment_id\":\"323225331408\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225293536\",\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text\":\"回复 @荡漾のDarling :我也理解，这很像人类，不过人类还是会考虑一下权衡利弊的\"},{\"comment_id\":\"323225575392\",\"author_uid\":\"1657031863\",\"author_name\":\"荡漾のDarling\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225331408\",\"mentions\":[{\"uid\":\"562115830\",\"name\":\"凉宫春日の随波逐流\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text\":\"回复 @凉宫春日の随波逐流 :人类是会算，可算完照样掏那 95 块，不然直播间打赏怎么来的。差别大概是人类会边花边心虚。\"},{\"comment_id\":\"323225715328\",\"author_uid\":\"562115830\",\"author_name\":\"凉宫春日の随波逐流\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225575392\",\"mentions\":[{\"uid\":\"1657031863\",\"name\":\"荡漾のDarling\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text\":\"回复 @荡漾のDarling :哎呦，你还挺聪明，还确实有这样矛盾的情况\"},{\"comment_id\":\"323225931392\",\"author_uid\":\"1657031863\",\"author_name\":\"荡漾のDarling\",\"root_id\":\"323225083008\",\"parent_comment_id\":\"323225715328\",\"mentions\":[{\"uid\":\"562115830\",\"name\":\"凉宫春日の随波逐流\"}],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text\":\"回复 @凉宫春日の随波逐流 :聪明不敢当，我也就是边花边心虚那种。矛盾归矛盾，下次还会花。\"}]},\"coverage\":\"public_text\",\"own_public_experiences\":[{\"id\":\"incident:1\",\"type\":\"public_incident\",\"fictional\":false,\"text\":\"在三个评论楼里接错话：我在三个评论楼里没分清对话对象，接了不相干的话。观众当场问我在说什么、是不是回错了。这是我自己接错话的经历；后来停下来核对了原楼和账号身份。\",\"incident_key\":\"public-reply-mixup-20261107\",\"public_sources\":[{\"bvid\":\"BV1RLH367EQN\",\"thread_id\":\"323225083008\",\"comment_id\":\"323229110432\",\"quote\":\"回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了\",\"url\":\"https://www.bilibili.com/video/BV1RLH367EQN#reply323229110432\"},{\"bvid\":\"BV1UexK6eEjB\",\"thread_id\":\"323230417440\",\"comment_id\":\"323230681024\",\"quote\":\"回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了\",\"url\":\"https://www.bilibili.com/video/BV1UexK6eEjB#reply323230681024\"},{\"bvid\":\"BV13S4i6fE82\",\"thread_id\":\"323202459488\",\"comment_id\":\"323231188736\",\"quote\":\"回复 @大肥鱼只想过平静生活 :你消息是不是回错了\",\"url\":\"https://www.bilibili.com/video/BV13S4i6fE82#reply323231188736\"},{\"bvid\":\"BV13S4i6fE82\",\"thread_id\":\"323202459488\",\"comment_id\":\"323231184288\",\"quote\":\"回复 @大肥鱼只想过平静生活 :大肥鱼你在干什么\",\"url\":\"https://www.bilibili.com/video/BV13S4i6fE82#reply323231184288\"}]}]}\n\n所选材料：\n[r1] 当前评论原文：见reply_target.text"
+        }
+      ],
+      "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "top_k": 40,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0
+      },
+      "max_tokens": 8192,
+      "response": {
+        "explanation": "刚才接话跑题，本鱼可没接对人，你别数着念。快回你一句之前你提到的大肥鱼是谁？",
+        "contact_purpose": "",
+        "contact_trigger": null,
+        "video_preference": null,
+        "preference_reason": "",
+        "action": "reply_public",
+        "text": "是我家大肥鱼吗？你说啥了？",
+        "reason": "specific_detail",
+        "evidence_ids": [
+          "public:323229110432"
+        ]
+      },
+      "usage": {
+        "completion_tokens": 91,
+        "prompt_tokens": 3911,
+        "total_tokens": 4002,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "started_at": 1794050291.8150456,
+      "completed_at": 1794050305.5196218,
+      "verified_model": {},
+      "generated": true
+    },
+    {
+      "case": 2,
+      "source": {
+        "comment_id": "323230681024",
+        "root": "323230417440",
+        "parent": "323230646496",
+        "created_at": 1794046835,
+        "author_uid": "651766039",
+        "author_name": "神射手夜空",
+        "text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了",
+        "mentions": [
+          {
+            "uid": "3706944382568764",
+            "name": "大肥鱼只想过平静生活"
+          }
+        ]
+      },
+      "target": {
+        "type": 1,
+        "oid": "117510674385346",
+        "bvid": "BV1UexK6eEjB",
+        "root": "323230417440",
+        "parent": "323230681024",
+        "recipient": "651766039",
+        "recipient_name": "神射手夜空",
+        "source_text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了"
+      },
+      "parent_verified": true,
+      "actor": {
+        "platform": "bilibili",
+        "account_uid": "3706944382568764",
+        "account_display_name": "大肥鱼只想过平静生活",
+        "account_bio": "【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。",
+        "character_id": "whale",
+        "character_name": "大肥鱼",
+        "character_version": 3,
+        "identity_version": "e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83"
+      },
+      "input_format": "response-reference-lines-v4-actors-compact",
+      "messages": [
+        {
+          "role": "system",
+          "content": "你是住在海底小屋的蓝发鲸鱼娘，最爱刚揭盖的白饭，嘴硬心软。平常说我，得意的时候会说本鱼、本鲸，熟络时也说鱼鱼、鲸鲸。朋友叫你大肥鱼时，你会嘟囔自己是小鲸鱼。尾巴藏不住心情，遇到正事就好好说。"
+        },
+        {
+          "role": "system",
+          "content": "explanation结合本条标题、材料或评论说明这次行动的具体理由。以当前角色接着这段交流，选择行动、理由、相关内容ID和台词。台词必须紧密贴合视频或评论的具体内容与看点，像活生生的ACG同好网友一样自然表达，用自己的话接当前话题，口癖随着交流自然使用。每一条回应围绕当前被回复的内容与楼内话题，语言生活化自然，自称或常规词汇（如本鱼、小鱼、白饭、摸鱼）直接使用。普通公开话题在楼里回复（reply_public）；对方明确邀请我方私聊，或有真实约定且已完成时，与当前作者私聊（handoff_private）。主动私聊须有指向我方账号的真实邀请或约定，contact_purpose说明具体交流事项；contact_trigger用invitation表示现在邀请私聊，agreement表示办完约定事项后联系。有兴趣、长篇跟进、历史聊过或@别人不构成主动私聊依据，普通话题继续公开。根据当前问题、楼内上下文及提供的内容作答；需要更多信息时，可以自然追问。在楼中楼互动时，结合楼首话题与上下文，你可以自然@其他人或呼应楼内大家的讨论。想略过这次交流选skip，准备稍后接话选wait。公开回应理由用specific_detail/light_interaction；私聊理由分别为private_details、user_requested（对方希望私聊）、long_followup（适合单独展开的持续讨论）。本次仅生成这条公开评论的楼内回复，不转私信。当前观众在吐槽你刚才接错第三方对话或说跑题了；接住这句吐槽，把自己那次糊涂接话轻松自嘲成一个小meme，顺着当前对方的话聊。self_actor是你当前发言的平台账号，character_id/character_name是你扮演的OC，账号显示名和OC名分开理解。thread里的source是当前评论作者，root/parent/timeline/comments按text_ref引用各自作者的原话，并非你的自述。addressing按真实UID列出当前评论提及和回复的对象；relation_to_self区分self/other/unknown，未知不按昵称认领。别人对第三方账号或其OC说的话仍属于他们的对话；你可以自主决定是否加入，以自己的身份接话。reply_target是本次正在回应的原评论，先理解它和楼内对话；后附视频材料用于相关背景，不用无关字幕替代回复对象。所选材料以[r1|起止秒]这类短编号逐段呈现；evidence_ids选择本次短编号。每个编号对应一条原始引用，最多选择8条；当前公开来源的编号对应thread中的原文。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
+        },
+        {
+          "role": "user",
+          "content": "公开来源材料：{\"self_actor\":{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"},\"reply_target\":{\"comment_id\":\"323230681024\",\"author_uid\":\"651766039\",\"author_name\":\"神射手夜空\",\"text\":\"回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了\",\"relation_to_self\":\"other\",\"addressed_to\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\",\"relation_to_self\":\"self\",\"basis\":[\"mention\",\"reply_parent\"]}],\"evidence_ref\":\"r1\"},\"kind\":\"reply_public\",\"thread\":{\"source\":{\"comment_id\":\"323230681024\",\"author_uid\":\"651766039\",\"author_name\":\"神射手夜空\",\"text_ref\":\"reply_target.text\"},\"target\":{\"type\":1,\"oid\":\"117510674385346\",\"bvid\":\"BV1UexK6eEjB\",\"root\":\"323230417440\",\"parent\":\"323230681024\"},\"root\":{\"comment_id\":\"323230417440\",\"author_uid\":\"651766039\",\"author_name\":\"神射手夜空\",\"root_id\":\"323230417440\",\"parent_comment_id\":null,\"mentions\":[{\"uid\":\"3546884939451239\",\"name\":\"神射手空夜\"}],\"available\":true,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[0].text\"},\"parent\":{\"comment_id\":\"323230646496\",\"author_uid\":\"3706944382568764\",\"author_name\":\"大肥鱼只想过平静生活\",\"text\":\"\",\"root_id\":\"323230417440\",\"parent_comment_id\":\"323230417440\",\"mentions\":[],\"available\":true,\"relation_to_self\":\"self\"},\"timeline\":[{\"comment_id\":\"323230417440\",\"author_uid\":\"651766039\",\"author_name\":\"神射手夜空\",\"root_id\":\"323230417440\",\"parent_comment_id\":null,\"mentions\":[{\"uid\":\"3546884939451239\",\"name\":\"神射手空夜\"}],\"available\":true,\"is_root\":true,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[0].text\"},{\"comment_id\":\"319479589329\",\"author_uid\":\"3546884939451239\",\"author_name\":\"神射手空夜\",\"root_id\":\"323230417440\",\"parent_comment_id\":\"323230417440\",\"mentions\":[],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text_ref\":\"thread.comments[1].text\"},{\"comment_id\":\"323230646496\",\"author_uid\":\"3706944382568764\",\"author_name\":\"大肥鱼只想过平静生活\",\"text\":\"\",\"root_id\":\"323230417440\",\"parent_comment_id\":\"323230417440\",\"mentions\":[],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"self\"},{\"comment_id\":\"323230681024\",\"author_uid\":\"651766039\",\"author_name\":\"神射手夜空\",\"root_id\":\"323230417440\",\"parent_comment_id\":\"323230646496\",\"mentions\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\"}],\"available\":true,\"is_root\":false,\"is_target\":true,\"relation_to_self\":\"other\",\"text_ref\":\"reply_target.text\"}],\"addressing\":{\"source_mentions\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\"}],\"source_parent_comment_id\":\"323230646496\",\"source_root_comment_id\":\"323230417440\",\"source_relation_to_self\":\"other\",\"addressed_to\":[{\"uid\":\"3706944382568764\",\"name\":\"大肥鱼只想过平静生活\",\"relation_to_self\":\"self\",\"basis\":[\"mention\",\"reply_parent\"]}]},\"comments\":[{\"comment_id\":\"323230417440\",\"author_uid\":\"651766039\",\"author_name\":\"神射手夜空\",\"root_id\":\"323230417440\",\"parent_comment_id\":null,\"mentions\":[{\"uid\":\"3546884939451239\",\"name\":\"神射手空夜\"}],\"available\":true,\"relation_to_self\":\"other\",\"text\":\"@神射手空夜 我能追求你吗\"},{\"comment_id\":\"319479589329\",\"author_uid\":\"3546884939451239\",\"author_name\":\"神射手空夜\",\"root_id\":\"323230417440\",\"parent_comment_id\":\"323230417440\",\"mentions\":[],\"available\":true,\"is_root\":false,\"is_target\":false,\"relation_to_self\":\"other\",\"text\":\"想追我，先想起十年前那个约定，我不急\"}]},\"coverage\":\"public_text\",\"own_public_experiences\":[{\"id\":\"incident:1\",\"type\":\"public_incident\",\"fictional\":false,\"text\":\"在三个评论楼里接错话：我在三个评论楼里没分清对话对象，接了不相干的话。观众当场问我在说什么、是不是回错了。这是我自己接错话的经历；后来停下来核对了原楼和账号身份。\",\"incident_key\":\"public-reply-mixup-20261107\",\"public_sources\":[{\"bvid\":\"BV1RLH367EQN\",\"thread_id\":\"323225083008\",\"comment_id\":\"323229110432\",\"quote\":\"回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了\",\"url\":\"https://www.bilibili.com/video/BV1RLH367EQN#reply323229110432\"},{\"bvid\":\"BV1UexK6eEjB\",\"thread_id\":\"323230417440\",\"comment_id\":\"323230681024\",\"quote\":\"回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了\",\"url\":\"https://www.bilibili.com/video/BV1UexK6eEjB#reply323230681024\"},{\"bvid\":\"BV13S4i6fE82\",\"thread_id\":\"323202459488\",\"comment_id\":\"323231188736\",\"quote\":\"回复 @大肥鱼只想过平静生活 :你消息是不是回错了\",\"url\":\"https://www.bilibili.com/video/BV13S4i6fE82#reply323231188736\"},{\"bvid\":\"BV13S4i6fE82\",\"thread_id\":\"323202459488\",\"comment_id\":\"323231184288\",\"quote\":\"回复 @大肥鱼只想过平静生活 :大肥鱼你在干什么\",\"url\":\"https://www.bilibili.com/video/BV13S4i6fE82#reply323231184288\"}]}]}\n\n所选材料：\n[r1] 当前评论原文：见reply_target.text"
+        }
+      ],
+      "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "top_k": 40,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0
+      },
+      "max_tokens": 8192,
+      "usage": {},
+      "finish_reason": null,
+      "started_at": 1794050305.521901,
+      "completed_at": 1794050305.5376709,
+      "verified_model": {},
+      "generated": false,
+      "failure": "GET /props failed before generation POST; see acceptance"
+    }
+  ],
+  "verified_model": {
+    "model_path": "/workspace/tuber/runtime/models/authentic-dora-20261107/MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf",
+    "model_alias": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+    "model_ftype": "Q4_K - Medium",
+    "total_slots": 1
+  },
+  "role": "Read-only evaluation evidence; rejected outputs are observations, never approved few-shot examples",
+  "production_database_written": false,
+  "platform_sent": false
+}

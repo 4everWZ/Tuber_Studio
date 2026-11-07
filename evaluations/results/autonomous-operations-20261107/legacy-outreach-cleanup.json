@@ -1,0 +1,155 @@
+{
+  "verified_at": "2026-11-07T19:59:10.608659+08:00",
+  "source_round_id": "21d7e0e3-bcf8-4347-b37f-4a7920b8f611",
+  "kind": "operator_reviewed_legacy_outreach_cleanup",
+  "model_or_platform_sends": 0,
+  "not_initiated": 17,
+  "awaiting_response": 1,
+  "published_or_unknown_rows_unchanged": 19,
+  "records": [
+    {
+      "draft_id": 5,
+      "original_status": "failed",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 7,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 8,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 9,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 11,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 14,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 15,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 16,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 17,
+      "original_status": "pending_review",
+      "status": "waiting",
+      "contact_state": "awaiting_response",
+      "basis": "prior_unanswered_outreach",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 18,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 24,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 26,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 29,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 30,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 31,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 32,
+      "original_status": "pending_review",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 33,
+      "original_status": "failed",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    },
+    {
+      "draft_id": 37,
+      "original_status": "queued",
+      "status": "not_initiated",
+      "contact_state": "not_initiated",
+      "basis": "reviewed_actual_public_source_no_invitation",
+      "source_text_and_receipt_preserved": true
+    }
+  ]
+}

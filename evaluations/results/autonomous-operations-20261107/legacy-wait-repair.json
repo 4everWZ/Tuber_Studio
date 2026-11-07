@@ -1,0 +1,145 @@
+{
+  "applied_count": 29,
+  "scope_round": "21d7e0e3-bcf8-4347-b37f-4a7920b8f611",
+  "action": "restore_model_wait",
+  "source_hashes_preserved": true,
+  "original_audit_preserved": true,
+  "targets": [
+    {
+      "bvid": "BV11y4v6VEM9",
+      "comment_id": "319423915137"
+    },
+    {
+      "bvid": "BV13S4i6fE82",
+      "comment_id": "323225975360"
+    },
+    {
+      "bvid": "BV1Lv4a6XE7z",
+      "comment_id": "319463142961"
+    },
+    {
+      "bvid": "BV1Lv4a6XE7z",
+      "comment_id": "319464135857"
+    },
+    {
+      "bvid": "BV1Lv4a6XE7z",
+      "comment_id": "319469987969"
+    },
+    {
+      "bvid": "BV1Lv4a6XE7z",
+      "comment_id": "319471910593"
+    },
+    {
+      "bvid": "BV1Lv4a6XE7z",
+      "comment_id": "323220503136"
+    },
+    {
+      "bvid": "BV1Lv4a6XE7z",
+      "comment_id": "323223334080"
+    },
+    {
+      "bvid": "BV1cBxu6bExu",
+      "comment_id": "323220833968"
+    },
+    {
+      "bvid": "BV1cb436TEq9",
+      "comment_id": "319468586993"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317295333569"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317306114417"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317436044321"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317545401617"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317574759809"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317630102929"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317650422305"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "318059006961"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "320956286800"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "320977844848"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "321455615456"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "321688274752"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "321961352448"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "322519132720"
+    },
+    {
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "322519247648"
+    },
+    {
+      "bvid": "BV1wf486bEbi",
+      "comment_id": "319386260497"
+    },
+    {
+      "bvid": "BV1wf486bEbi",
+      "comment_id": "319456051905"
+    },
+    {
+      "bvid": "BV1wf486bEbi",
+      "comment_id": "323124758480"
+    },
+    {
+      "bvid": "BV1wf486bEbi",
+      "comment_id": "323133526368"
+    }
+  ],
+  "excluded": [
+    {
+      "account_id": "3706944382568764",
+      "character_id": "whale",
+      "bvid": "BV1cBxu6bExu",
+      "comment_id": "319477989281",
+      "task_id": "6a85af45-189e-4eff-8d68-6dec449fd0b6",
+      "continuation_id": "6d616aec-5ef6-4201-a6ea-fe23c620f2ae",
+      "reason": "not_current_skip"
+    },
+    {
+      "account_id": "3706944382568764",
+      "character_id": "whale",
+      "bvid": "BV1sEJX6zEJH",
+      "comment_id": "317882278497",
+      "task_id": "849d100c-1720-486b-84f3-dddf43644f14",
+      "continuation_id": "1c7d39f1-3f03-4ac9-b04d-91fccaf4507b",
+      "reason": "missing_independent_source_snapshot"
+    }
+  ]
+}

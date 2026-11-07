@@ -1,0 +1,141 @@
+{
+  "purpose": "Three public followup targets for explicitly disclosed operator_revision; not model-generated passing output",
+  "cases": [
+    {
+      "case": 1,
+      "actor": {
+        "uid": "3706944382568764",
+        "name": "大肥鱼只想过平静生活"
+      },
+      "target": {
+        "type": 1,
+        "oid": "117498812894686",
+        "bvid": "BV1RLH367EQN",
+        "root": "323225083008",
+        "parent": "323229110432",
+        "recipient": "562115830",
+        "recipient_name": "凉宫春日の随波逐流",
+        "source_text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了"
+      },
+      "source": {
+        "comment_id": "323229110432",
+        "root": "323225083008",
+        "parent": "323228019488",
+        "created_at": 1794045978,
+        "author_uid": "562115830",
+        "author_name": "凉宫春日の随波逐流",
+        "text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了",
+        "mentions": [
+          {
+            "uid": "3706944382568764",
+            "name": "大肥鱼只想过平静生活"
+          }
+        ]
+      },
+      "root_source": {
+        "comment_id": "323225083008",
+        "root": "0",
+        "parent": "0",
+        "created_at": 1794043697,
+        "author_uid": "562115830",
+        "author_name": "凉宫春日の随波逐流",
+        "text": "@荡漾のDarling 可以看看这条鱼的视频",
+        "mentions": [
+          {
+            "uid": "1657031863",
+            "name": "荡漾のDarling"
+          }
+        ]
+      }
+    },
+    {
+      "case": 2,
+      "actor": {
+        "uid": "3706944382568764",
+        "name": "大肥鱼只想过平静生活"
+      },
+      "target": {
+        "type": 1,
+        "oid": "117510674385346",
+        "bvid": "BV1UexK6eEjB",
+        "root": "323230417440",
+        "parent": "323230681024",
+        "recipient": "651766039",
+        "recipient_name": "神射手夜空",
+        "source_text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了"
+      },
+      "source": {
+        "comment_id": "323230681024",
+        "root": "323230417440",
+        "parent": "323230646496",
+        "created_at": 1794046835,
+        "author_uid": "651766039",
+        "author_name": "神射手夜空",
+        "text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了",
+        "mentions": [
+          {
+            "uid": "3706944382568764",
+            "name": "大肥鱼只想过平静生活"
+          }
+        ]
+      },
+      "root_source": {
+        "comment_id": "323230417440",
+        "root": "0",
+        "parent": "0",
+        "created_at": 1794046665,
+        "author_uid": "651766039",
+        "author_name": "神射手夜空",
+        "text": "@神射手空夜 我能追求你吗",
+        "mentions": [
+          {
+            "uid": "3546884939451239",
+            "name": "神射手空夜"
+          }
+        ]
+      }
+    },
+    {
+      "case": 3,
+      "actor": {
+        "uid": "3706944382568764",
+        "name": "大肥鱼只想过平静生活"
+      },
+      "target": {
+        "type": 1,
+        "oid": "117567414865096",
+        "bvid": "BV13S4i6fE82",
+        "root": "323202459488",
+        "parent": "323231188736",
+        "recipient": "605861940",
+        "recipient_name": "梓沫骐大大",
+        "source_text": "回复 @大肥鱼只想过平静生活 :你消息是不是回错了"
+      },
+      "source": {
+        "comment_id": "323231188736",
+        "root": "323202459488",
+        "parent": "323223935792",
+        "created_at": 1794047134,
+        "author_uid": "605861940",
+        "author_name": "梓沫骐大大",
+        "text": "回复 @大肥鱼只想过平静生活 :你消息是不是回错了",
+        "mentions": [
+          {
+            "uid": "3706944382568764",
+            "name": "大肥鱼只想过平静生活"
+          }
+        ]
+      },
+      "root_source": {
+        "comment_id": "323202459488",
+        "root": "0",
+        "parent": "0",
+        "created_at": 1794029046,
+        "author_uid": "30123529",
+        "author_name": "标题未命名",
+        "text": "这个是编的，不要太入脑",
+        "mentions": []
+      }
+    }
+  ]
+}

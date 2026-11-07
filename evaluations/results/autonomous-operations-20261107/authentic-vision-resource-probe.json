@@ -1,0 +1,190 @@
+{
+  "state": {
+    "state": "complete",
+    "startedAt": 1794046026502,
+    "endedAt": 1794046069508
+  },
+  "result": {
+    "status": 200,
+    "body": {
+      "capabilities": {
+        "available": true,
+        "images": true,
+        "admitted": true,
+        "multiple_images": true,
+        "provider_id": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+        "version": "aede9275efffd12171ae8c23fd854a590a6da740915ab1eafaa1e250bcce5990",
+        "max_frames": 3,
+        "max_pixels": 1048576,
+        "max_bytes": 1048576,
+        "context_tokens": 131072,
+        "timeout_seconds": 600,
+        "runtime_context_tokens": 131072,
+        "reason": ""
+      },
+      "measurement": {
+        "sample_count": 34,
+        "min_available_bytes": 3059638272,
+        "max_swap_growth_bytes": 0,
+        "monitoring_error": null,
+        "monitoring_error_detail": null,
+        "request_retries": 0,
+        "request_error_count": 0,
+        "request_errors": [],
+        "request_errors_truncated": 0,
+        "sample_intervals_seconds": [
+          1.266,
+          1.015,
+          1.032,
+          1.015,
+          1.031,
+          1,
+          1.032,
+          1.031,
+          1.016,
+          1.031,
+          1.015,
+          1.032,
+          1.031,
+          10.375,
+          1.031,
+          1,
+          1.016,
+          1.015,
+          1.032,
+          1.031,
+          1.016,
+          1.015,
+          1.125,
+          1.031,
+          1.047,
+          1.032,
+          1.031,
+          1.031,
+          1.031,
+          1,
+          1.032,
+          1.109,
+          0.406
+        ],
+        "max_sample_interval_seconds": 10.375,
+        "sampling_span_seconds": 42.95299999999952,
+        "first_sample_monotonic": 11491.437,
+        "last_sample_monotonic": 11534.39
+      },
+      "result": {
+        "sufficient": true,
+        "observations": "三帧描绘同一只蓝发双瞳动漫少女的不同姿态：前帧双手摆着伴有一串音符，后两帧端坐时两侧有蝴蝶结。服饰与装饰一致，时值标记为备用画面。",
+        "evidence_ids": [
+          "asset-probe-0",
+          "asset-probe-1",
+          "asset-probe-2"
+        ],
+        "frame_observations": {
+          "asset-probe-0": "画面中是一体完成的Q版动漫角色，时值为0秒。\n\n- 人物：蓝发双瞳，画着蓝眼睛，头上有小天使角，两侧有蓝色蝴蝶结。\n- 服饰：蓝白相间的蕾丝边小裙子，胸前有蓝色鲸鲸图案，敞开的白围裙，白色短袜和深蓝色鞋子。\n- 动作与细节：双摆着手臂，旁边有一串音符，整体静止，像一张备用的采样画面。",
+          "asset-probe-1": "画面中是一位蓝发双瞳的动漫少女，留着长卷发，头上戴着白色的荷叶边发冠，两侧有兽耳。她穿着一件深蓝底白色镶边、带有蕾丝边的女仆装，胸前有个鲸鱼图案，脚穿白袜和蓝鞋子。她的左肩翘着一个小天使造型，身旁有 musical notes 音符。她端坐着，双手自然放在两侧，身后有一团鲸尾状装饰。",
+          "asset-probe-2": "图中是一个蓝发双髯的萌系少女，头戴白边花边头饰，两侧有蓝色小蝴蝶结，发尾卷曲。她身穿深蓝色制服裙，搭配白色荷叶边和围裙，围裙上有蓝色鲸鱼图案，脚蹬白袜子与深色鞋子。尾巴翘起，姿态端正，背景为纯黑。"
+        },
+        "limitations": [],
+        "provider_id": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
+        "version": "aede9275efffd12171ae8c23fd854a590a6da740915ab1eafaa1e250bcce5990",
+        "usage": {
+          "final_generation": {
+            "completion_tokens": 78,
+            "prompt_tokens": 768,
+            "total_tokens": 846,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          },
+          "stages": [
+            {
+              "generation": {
+                "completion_tokens": 105,
+                "prompt_tokens": 2021,
+                "total_tokens": 2126,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "including_token_probes": null,
+              "elapsed_ms": 12156,
+              "stage": "caption",
+              "number": 1,
+              "frame_id": "asset-probe-0",
+              "preprocessing": null
+            },
+            {
+              "generation": {
+                "completion_tokens": 92,
+                "prompt_tokens": 2021,
+                "total_tokens": 2113,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "including_token_probes": null,
+              "elapsed_ms": 15719,
+              "stage": "caption",
+              "number": 2,
+              "frame_id": "asset-probe-1",
+              "preprocessing": null
+            },
+            {
+              "generation": {
+                "completion_tokens": 76,
+                "prompt_tokens": 2021,
+                "total_tokens": 2097,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "including_token_probes": null,
+              "elapsed_ms": 11422,
+              "stage": "caption",
+              "number": 3,
+              "frame_id": "asset-probe-2",
+              "preprocessing": null
+            },
+            {
+              "generation": {
+                "completion_tokens": 78,
+                "prompt_tokens": 768,
+                "total_tokens": 846,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                }
+              },
+              "including_token_probes": null,
+              "elapsed_ms": 2484,
+              "stage": "assessment"
+            }
+          ],
+          "including_token_probes": null
+        },
+        "elapsed_ms": 41813,
+        "coverage": {
+          "kind": "sampled_frames",
+          "complete": false,
+          "frames": [
+            {
+              "id": "asset-probe-0",
+              "cid": "asset-probe",
+              "actual_time": 0
+            },
+            {
+              "id": "asset-probe-1",
+              "cid": "asset-probe",
+              "actual_time": 1
+            },
+            {
+              "id": "asset-probe-2",
+              "cid": "asset-probe",
+              "actual_time": 2
+            }
+          ]
+        }
+      }
+    }
+  }
+}

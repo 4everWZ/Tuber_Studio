@@ -1,0 +1,194 @@
+{
+  "captured_at": "2026-11-07T11:51:06.583046+00:00",
+  "method": "SQLite URI mode=ro; selected counters, statuses and public video IDs only; no private message body",
+  "round": {
+    "id": "21d7e0e3-bcf8-4347-b37f-4a7920b8f611",
+    "status": "paused",
+    "preview": 0,
+    "deadline": null,
+    "budget": {
+      "reads": 657,
+      "model_calls": 439,
+      "input_tokens": 1345101,
+      "output_tokens": 92880,
+      "top_levels": 3
+    },
+    "created_at": 1794040840.6800284,
+    "updated_at": 1794047173.8624296
+  },
+  "round_updated_at_taipei": "2026-11-07T18:26:13.862430+08:00",
+  "batch": {
+    "id": "5fed6420-7972-4fa6-bd92-5239688188a0",
+    "round_id": "21d7e0e3-bcf8-4347-b37f-4a7920b8f611",
+    "state": "paused",
+    "created_at": 1794040840.681775,
+    "updated_at": 1794047173.8624296
+  },
+  "configured_limits": {
+    "max_model_calls": 0,
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "daily_watch_limit": 0,
+    "max_replies_per_video": 20,
+    "visual_enabled": true
+  },
+  "task_states": [
+    {
+      "status": "checkpoint",
+      "count": 3
+    },
+    {
+      "status": "comments_checked",
+      "count": 3
+    },
+    {
+      "status": "deferred_daily",
+      "count": 11
+    },
+    {
+      "status": "selected",
+      "count": 5
+    },
+    {
+      "status": "viewed_without_comment",
+      "count": 9
+    }
+  ],
+  "network_checkpoints": [
+    {
+      "id": "895991dc-7d54-4a67-afa4-b6c0d7220ecd",
+      "bvid": "BV1V84q6aEKG",
+      "status": "checkpoint",
+      "error": "无法连接上游服务"
+    },
+    {
+      "id": "fa1dd3c5-fa3f-4a7d-ba70-55f09b65bf34",
+      "bvid": "BV1CN456JEkp",
+      "status": "checkpoint",
+      "error": "无法连接上游服务"
+    },
+    {
+      "id": "7a16d626-cdbc-451b-bbd4-c1e83bdb5ed1",
+      "bvid": "BV13rxZ6DEeL",
+      "status": "checkpoint",
+      "error": "无法连接上游服务"
+    }
+  ],
+  "intent_states": [
+    {
+      "kind": "private_handoff",
+      "status": "private_handoff",
+      "count": 36
+    },
+    {
+      "kind": "reply_public",
+      "status": "pending_review",
+      "count": 11
+    },
+    {
+      "kind": "reply_public",
+      "status": "published",
+      "count": 24
+    },
+    {
+      "kind": "top_level",
+      "status": "published",
+      "count": 3
+    },
+    {
+      "kind": "video_like",
+      "status": "published",
+      "count": 2
+    }
+  ],
+  "watch_starts": [
+    {
+      "task_id": "4480d729-ee99-4a6e-8006-773a857cb1de",
+      "bvid": "BV1Vzxc6dEwp",
+      "business_day": "2026-11-07",
+      "started_at": 1794041938.958118
+    },
+    {
+      "task_id": "0d21a892-170a-4a63-82f9-8f55665ebe9b",
+      "bvid": "BV1RLH367EQN",
+      "business_day": "2026-11-07",
+      "started_at": 1794041938.9670618
+    },
+    {
+      "task_id": "a4db9dbd-fa4e-460b-82e7-b87e4d415e97",
+      "bvid": "BV1Lv4a6XE7z",
+      "business_day": "2026-11-07",
+      "started_at": 1794041938.971179
+    },
+    {
+      "task_id": "15af4176-41a1-43e8-9c9e-257c98233dc7",
+      "bvid": "BV1cb436TEq9",
+      "business_day": "2026-11-07",
+      "started_at": 1794041938.971179
+    },
+    {
+      "task_id": "2916a3b9-446e-4189-9bea-3ef6aa7810b1",
+      "bvid": "BV1hdxa6LEa9",
+      "business_day": "2026-11-07",
+      "started_at": 1794041972.228605
+    },
+    {
+      "task_id": "8e77b437-7182-44e5-b4d2-fda461de8859",
+      "bvid": "BV1dQnd6qEjj",
+      "business_day": "2026-11-07",
+      "started_at": 1794042060.4856524
+    },
+    {
+      "task_id": "7078ded0-88ea-4d5b-8e35-91e98beb2ed3",
+      "bvid": "BV1mx4b6wEB2",
+      "business_day": "2026-11-07",
+      "started_at": 1794042073.2350516
+    },
+    {
+      "task_id": "43551b15-fd84-498d-aad9-36a3c61c1e6c",
+      "bvid": "BV1V84q6aEKG",
+      "business_day": "2026-11-07",
+      "started_at": 1794042083.6517565
+    },
+    {
+      "task_id": "96f0556b-bf7b-442f-8c52-63b10cb94aad",
+      "bvid": "BV1vT4B6KE3K",
+      "business_day": "2026-11-07",
+      "started_at": 1794042091.840584
+    },
+    {
+      "task_id": "8917f28e-91cd-4a84-a401-5c4ee88eb990",
+      "bvid": "BV1CN456JEkp",
+      "business_day": "2026-11-07",
+      "started_at": 1794042358.3903573
+    },
+    {
+      "task_id": "88008a05-a8bf-4839-9de0-9961291ed400",
+      "bvid": "BV13rxZ6DEeL",
+      "business_day": "2026-11-07",
+      "started_at": 1794042371.107593
+    },
+    {
+      "task_id": "50e103dc-9c4b-4a25-9d6c-89c969c03a8c",
+      "bvid": "BV1Z34h6JEbR",
+      "business_day": "2026-11-07",
+      "started_at": 1794042382.4149745
+    },
+    {
+      "task_id": "75c3f82f-9e8c-4e00-88d5-efea414efe95",
+      "bvid": "BV1UexK6eEjB",
+      "business_day": "2026-11-07",
+      "started_at": 1794042393.6657202
+    }
+  ],
+  "watch_start_count": 13,
+  "unique_watched_videos": 13,
+  "duplicate_watch_starts": 0,
+  "saved_step_usage": {
+    "saved_model_steps": 379,
+    "steps_with_usage": 373,
+    "prompt_tokens": 1014881,
+    "completion_tokens": 52940
+  },
+  "usage_limits": "budget counters include reservation/interruption; saved step usage does not aggregate all intermediate web_fetch selection HTTP requests; neither is an exact complete HTTP total"
+}

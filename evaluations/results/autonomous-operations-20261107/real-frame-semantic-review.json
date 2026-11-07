@@ -1,0 +1,20 @@
+{
+  "source_bvid": "BV1dQnd6qEjj",
+  "source_cid": "43091691821",
+  "actual_time_seconds": 40.0,
+  "frame_id": "43091691821:storyboard:8:8ea5088fb2451d3c",
+  "resource_admission": "passed for current authentic-dora model and projector; separate bundled-asset boundary probe",
+  "execution": "exact ApiVideoEvidenceProvider.analyze_video_evidence succeeded with canonical real-frame binding and incomplete sampled coverage",
+  "visible_frame": "A dark software/tutorial interface overlays an anime wallpaper. A left navigation column, central outlined panel, cyan grid border and yellow Chinese subtitles are visible.",
+  "supported_model_observations": [
+    "A character is visible.",
+    "A menu is visible on the left.",
+    "Yellow subtitles are visible at the bottom."
+  ],
+  "unsupported_or_inaccurate_model_observations": [
+    "The model identifies a game main interface and game name; neither classification is established by this frame.",
+    "The model does not identify the software or transcribe the visible subtitle.",
+    "The model reports sufficient=true and no limitations despite leaving the visible interface text unread."
+  ],
+  "human_conclusion": "The sampled-frame acquisition, actual model execution and evidence binding work. This one low-resolution sample supports coarse layout recognition, not reliable interface classification or detailed text comprehension. It does not validate understanding of the full video."
+}
