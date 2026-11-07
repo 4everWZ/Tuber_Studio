@@ -214,15 +214,15 @@ test("an earlier private conversation response cannot overwrite a newer request 
 test("private background refresh clears externally completed selection but preserves unsaved local text", async t => {
   const { get } = dom(t);
   const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
-  for (const dirty of [false, true]) {
+  for (const status of ["published", "not_initiated"]) for (const dirty of [false, true]) {
     const panel = Object.create(MessagesPanel.prototype);
-    const value = { account_id: "900", policy: { enabled: true, credentials_configured: true }, drafts: [{ id: 1, status: "published", text: "服务器已发送正文" }] };
+    const value = { account_id: "900", policy: { enabled: true, credentials_configured: true }, drafts: [{ id: 1, status, text: "服务器记录正文" }] };
     let calls = 0;
     Object.assign(panel, { value: { ...value, drafts: [{ ...value.drafts[0], status: "approved" }] }, selected: 1, dirty,
       draftView: "pending", refreshRequest: 0, edits: new Map(), $: get, memeCache: new Map(), continuation: { render() {} },
       root: { closest: () => null, querySelectorAll: () => [] },
       api: async () => { calls++; return value; }, render() { this.renderEditor(); }, async conversation() {}, closeImagePicker() {} });
-    get("[data-text]").value = dirty ? "本地未保存私信" : "服务器已发送正文";
+    get("[data-text]").value = dirty ? "本地未保存私信" : "服务器记录正文";
     await panel.refresh({ background: true });
     assert.equal(panel.selected, dirty ? 1 : null);
     assert.equal(get("[data-text]").value, dirty ? "本地未保存私信" : "");
@@ -233,4 +233,37 @@ test("private background refresh clears externally completed selection but prese
     await panel.refresh({ background: true });
     assert.equal(calls, 1);
   }
+});
+
+test("private waiting and generation states show progress without review or send actions", async t => {
+  const { get, make } = dom(t);
+  const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
+  const panel = Object.create(MessagesPanel.prototype), review = [make(), make(), make()];
+  Object.assign(panel, { selected: 1, dirty: false, draftView: "pending", $: get, memeCache: new Map(),
+    continuation: { render() {} }, root: { querySelectorAll: query => query === '[data-review]' ? review : [] } });
+  const cases = [
+    ["waiting", "awaiting_content", "等待符合联系目的的正文"],
+    ["waiting", "awaiting_completion", "等待约定完成"],
+    ["waiting", "awaiting_response", "等待对方回应"],
+    ["waiting", "awaiting_invitation", "等待新的邀请或约定"],
+    ["waiting", "check_pending", "首发联系核对中"],
+    ["waiting", "reply_received", "已收到来信，转入普通回复"],
+    ["queued", "awaiting_completion", "等待生成"],
+    ["generating", "awaiting_response", "生成中"],
+  ];
+  for (const [status, contact_state, expected] of cases) {
+    const row = { id: 1, status, contact_state, purpose: "完成楼内约定", type: "outreach" };
+    panel.value = { policy: { enabled: true, credentials_configured: true }, drafts: [row] };
+    panel.renderEditor();
+    assert.ok(get('[data-draft-status]').textContent.startsWith(expected));
+    assert.equal(get('[data-text]').hidden, true);
+    assert.equal(get('[data-send]').hidden, true);
+    assert.equal(get('[data-send]').disabled, true);
+    assert.ok(review.every(button => button.hidden && button.disabled));
+    const canContinue=status === 'waiting' && contact_state === 'awaiting_completion';
+    assert.equal(get('[data-retry]').hidden, !canContinue);
+    if (canContinue) assert.equal(get('[data-retry]').textContent, '继续完成约定');
+  }
+  assert.equal(panel.draftState({ status: "not_initiated" }).history, true);
+  assert.equal(panel.draftState({ status: "waiting", contact_state: "awaiting_completion" }).history, false);
 });

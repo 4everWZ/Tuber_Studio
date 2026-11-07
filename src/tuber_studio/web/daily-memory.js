@@ -22,6 +22,7 @@ class DailyMemoryUI {
       comment_anecdote: "💬 评论趣事",
       live_highlight: "🎮 直播战报",
       community_meme: "✨ 社群新梗",
+      public_incident: "真实互动经历",
     }[cat] || "📌 每日高光";
   }
 
@@ -137,6 +138,19 @@ class DailyMemoryUI {
           <small class="hint">📌 真实溯源 [${escapeHtml(item.source_user || "观众")}]: "${escapeHtml(item.quote)}"</small>
         </div>
       `;
+      if (item.category === "public_incident") {
+        for (const source of item.public_sources || []) {
+          const line = document.createElement("p");
+          line.className = "hint";
+          const link = document.createElement("a");
+          link.href = `https://www.bilibili.com/video/${encodeURIComponent(source.bvid)}#reply${encodeURIComponent(source.comment_id)}`;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = `${source.bvid} · 评论 ${source.comment_id}`;
+          line.append(link, document.createTextNode(`：${source.quote}`));
+          body.append(line);
+        }
+      }
 
       const actions = document.createElement("div");
       actions.className = "item-actions";

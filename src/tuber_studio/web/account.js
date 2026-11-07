@@ -24,6 +24,7 @@ class BilibiliAccountUI {
     this.settings.innerHTML = `<article class="panel account-settings-panel" aria-labelledby="bilibili-account-heading">
       <div class="panel-heading"><h2 id="bilibili-account-heading">B站账号</h2><span data-settings-status class="account-state" role="status">待读取</span></div>
       <p class="hint">评论、私信、动态和自主浏览共用此账号。保存凭证后验证登录，资料以平台实际返回为准。</p>
+      <p class="quoted-text" data-profile-bio>主页简介待读取</p>
       <dl class="account-details"><dt>SESSDATA</dt><dd data-sessdata-state>待读取</dd><dt>CSRF / bili_jct</dt><dd data-csrf-state>待读取</dd><dt>最近核验</dt><dd data-checked>尚未核验</dd></dl>
       <form data-credentials-form autocomplete="off"><fieldset data-credentials-fields class="account-fields">
         <div class="form-grid"><label>SESSDATA<input data-sessdata type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存值" aria-describedby="account-credential-help"></label><label>CSRF / bili_jct<input data-csrf type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存值" aria-describedby="account-credential-help"></label></div>
@@ -104,6 +105,7 @@ class BilibiliAccountUI {
       else this.h("[data-avatar]").removeAttribute("src");
     }
     if (this.settings) {
+      this.s("[data-profile-bio]").textContent = typeof profile?.bio === "string" ? `主页简介：${profile.bio || "未填写"}` : "主页简介暂未取得";
       this.s("[data-sessdata-state]").textContent = value ? value.configured?.sessdata ? "已保存（不回显）" : "未保存" : "待读取";
       this.s("[data-csrf-state]").textContent = value ? value.configured?.csrf ? "已保存（不回显）" : "未保存" : "待读取";
       this.s("[data-checked]").textContent = checkedText || "尚未核验";
