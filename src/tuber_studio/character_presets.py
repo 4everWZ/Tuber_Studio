@@ -62,8 +62,14 @@ def upgrade_bundled_characters(store, seeds):
         # save_character remains the owner of normal version assignment/activation.
         with store.db:
             store.db.execute("BEGIN IMMEDIATE")
+            if store.one(
+                "SELECT 1 FROM characters c JOIN character_archives a "
+                "ON a.character_id=c.id AND a.version=c.active_version WHERE c.id=?",
+                (character_id,),
+            ):
+                continue
             try:
-                history = store.versions(character_id)
+                history = store.versions(character_id, include_archived=True)
             except (ValueError, TypeError):
                 continue
             if not history or any(_fingerprint(item) not in known for item in history):

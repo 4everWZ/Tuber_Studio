@@ -39,6 +39,8 @@
 
 默认预设升级复用`Store.save_character`追加并激活普通角色版本。仅当种子完整匹配本次应用默认、当前及全部历史版本完整匹配已知应用旧预设时执行；允许从早期工程人设或上一版清理后主卡升级。更新`core/style/rules/lore/sources/license_status`，保留ID、名称、声线、头像、活动角色选择及原历史、关系和草稿。旧草稿继续绑定生成版本，沿既有版本失效与重新审核流程处理，不改绑或删除。自定义内容、未知字段、自定义历史或升级后的显式回滚均保持原样；重复启动不追加重复版本。新安装直接采用当前种子，不产生额外迁移版本。
 
+退役人设版本可以归档：从角色与版本选择列表移除，禁止再次激活，但历史草稿、回复和回执仍可按原版本读取来源配置。当前使用中的版本不能归档。归档不修改用户编辑的角色文件，也不触碰训练语料；启动不会把已归档卡片重新显示出来。同OC旧版草稿允许人工明确发布，自动发布仍校验当前版本与授权。
+
 角色设计和 Lore 分别参考 [SillyTavern Character Design](https://docs.sillytavern.app/usage/core-concepts/characterdesign/) 与 [World Info](https://docs.sillytavern.app/usage/core-concepts/worldinfo/)，不改变本项目 schema 或权限。
 
 ## 用户身份与长期记忆

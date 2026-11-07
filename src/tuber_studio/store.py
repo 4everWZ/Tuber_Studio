@@ -25,6 +25,9 @@ class Store:
             CREATE TABLE IF NOT EXISTS character_versions(
                 character_id TEXT,version INTEGER,config TEXT NOT NULL,created_at REAL NOT NULL,
                 PRIMARY KEY(character_id,version));
+            CREATE TABLE IF NOT EXISTS character_archives(
+                character_id TEXT,version INTEGER,reason TEXT NOT NULL,created_at REAL NOT NULL,
+                PRIMARY KEY(character_id,version));
             CREATE TABLE IF NOT EXISTS users(
                 id INTEGER PRIMARY KEY,platform TEXT NOT NULL,platform_user_id TEXT NOT NULL,
                 display_name TEXT NOT NULL,UNIQUE(platform,platform_user_id));
@@ -144,14 +147,23 @@ class Store:
         return json.loads(row["config"])
 
     def characters(self):
-        return [self.character(row["id"]) for row in self.all("SELECT id FROM characters ORDER BY id")]
+        return [
+            self.character(row["id"])
+            for row in self.all(
+                "SELECT c.id FROM characters c WHERE NOT EXISTS "
+                "(SELECT 1 FROM character_archives a WHERE a.character_id=c.id AND a.version=c.active_version) "
+                "ORDER BY c.id"
+            )
+        ]
 
-    def versions(self, character_id):
+    def versions(self, character_id, *, include_archived=False):
         return [
             json.loads(r["config"])
             for r in self.all(
-                "SELECT config FROM character_versions WHERE character_id=? ORDER BY version DESC",
-                (character_id,),
+                "SELECT v.config FROM character_versions v WHERE v.character_id=? AND "
+                "(? OR NOT EXISTS (SELECT 1 FROM character_archives a "
+                "WHERE a.character_id=v.character_id AND a.version=v.version)) ORDER BY v.version DESC",
+                (character_id, int(include_archived)),
             )
         ]
 
@@ -169,6 +181,11 @@ class Store:
 
     def activate(self, character_id, version=None):
         character = self.character(character_id, version)
+        if self.one(
+            "SELECT 1 FROM character_archives WHERE character_id=? AND version=?",
+            (character_id, character["version"]),
+        ):
+            raise ValueError("该人设版本已归档，请使用当前版本")
         self.execute(
             "UPDATE characters SET active_version=? WHERE id=?", (character["version"], character_id)
         )

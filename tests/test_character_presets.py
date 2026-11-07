@@ -5,6 +5,7 @@ import pytest
 
 from tuber_studio.character_presets import _fingerprint
 from tuber_studio.config import ROOT
+from tuber_studio.maintenance import archive_character_version
 from tuber_studio.models import Character
 from tuber_studio.operations_control import OperationsControl
 from tuber_studio.providers import build_messages
@@ -44,6 +45,18 @@ def clean_legacy():
         "想起海底夜色、潮声和热饭时，会温柔地分享自己的小念头。",
     ]
     return items
+
+
+def test_startup_does_not_reintroduce_an_archived_preset(tmp_path):
+    path = tmp_path / "archived.sqlite3"
+    store = Store(path, legacy())
+    archive_character_version(store, "whale_calm", 1, "旧版角色退役")
+    store.close()
+    store = Store(path, presets())
+    assert "whale_calm" not in {item["id"] for item in store.characters()}
+    assert store.character("whale_calm", 1)["version"] == 1
+    assert store.versions("whale_calm") == []
+    store.close()
 
 
 def test_enriched_presets_keep_character_assets_and_night_radio():
@@ -140,13 +153,14 @@ def test_upgrade_appends_preserves_history_voice_relations_and_drafts(tmp_path, 
         store.all("SELECT * FROM character_versions WHERE version=1 ORDER BY character_id,version")
         == history_rows
     )
-    # Ordinary version checks remain effective; migration never rebinds old
-    # approved drafts or grants their original authorization to the new role.
+    # An explicit manual publish may use retained drafts from this same OC.
+    # Automatic publication still requires current version authorization.
     control = OperationsControl(store)
     store.set("active_character", "whale")
+    control.assert_allowed(automatic=False, channel="comments", account_id="42", character=originals["whale"])
     with pytest.raises(ValueError, match="角色版本已变化"):
         control.assert_allowed(
-            automatic=False, channel="comments", account_id="42", character=originals["whale"]
+            automatic=True, channel="comments", account_id="42", character=originals["whale"]
         )
     store.close()
 
