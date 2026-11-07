@@ -62,7 +62,7 @@
       });
       this.taskPaginator = new Paginator({
         pageSize: 10,
-        onPageChange: () => this.renderTaskRows(),
+        onPageChange: () => { this.selectedTaskId = null; this.renderTaskRows(); this.renderDetail(); },
       });
 
       this.initLayout();
@@ -206,6 +206,7 @@
       if (inbox !== undefined) {
         this.inbox = Array.isArray(inbox) ? inbox : (Array.isArray(inbox?.items) ? inbox.items : []);
       }
+      if (this.selectedTaskId && !this.tasks.some(task => task.id === this.selectedTaskId && (!this.taskFilter || task.status === this.taskFilter))) this.selectedTaskId = null;
 
       // Update counters
       const pendingIntentsCount = (Array.isArray(this.intents) ? this.intents : []).filter(i => i.status === "pending_review").length;
@@ -325,8 +326,10 @@
         select.value = this.taskFilter;
         select.onchange = () => {
           this.taskFilter = select.value;
+          this.selectedTaskId = null;
           this.taskPaginator.currentPage = 1;
           this.renderMasterList();
+          this.renderDetail();
         };
         subbar.append(select);
       } else if (this.activeTab === "rounds") {
@@ -675,6 +678,7 @@
 
     renderTaskDetail(detailPane) {
       const task = this.tasks.find(t => t.id === this.selectedTaskId);
+      const opened = this.renderedTaskId === task?.id ? new Set([...detailPane.querySelectorAll("details")].filter(item => item.open).map(item => item.querySelector("summary")?.textContent)) : new Set();
       this.renderedTab = "tasks";
       this.renderedTaskId = task?.id || null;
       this.renderedTaskStatus = JSON.stringify([task?.status, task?.cache_status, task?.updated_at]);
@@ -741,6 +745,7 @@
       new OperationContinuationView(detailPane.querySelector("[data-task-continuation]"), this.api, this.notify, this.refresh)
         .render(task.autonomous ? null : task.continuation,
           { channel: "browsing", localId: task.id, entityStatus: task.status });
+      for (const item of detailPane.querySelectorAll("details")) if (opened.has(item.querySelector("summary")?.textContent)) item.open = true;
       const rereadBtn = detailPane.querySelector("#op-btn-reread");
       if (rereadBtn) {
         rereadBtn.onclick = async () => {

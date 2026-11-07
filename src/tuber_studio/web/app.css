@@ -620,6 +620,14 @@ tr:hover td {
 .comment-source-table .cell-sub { font-size: .75rem; }
 .operation-overview { padding-block: 4px 12px; }
 .operation-overview p { margin: 4px 0; }
+.capability-strip { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-block: 8px; }
+.capability-light { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--ink); white-space: nowrap; }
+.capability-light::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: #777; }
+.capability-light.is-green::before { background: #238456; }
+.capability-light.is-yellow::before { background: #bc7807; }
+.capability-light.is-red::before { background: #bd3434; }
+.capability-legend { font-size: .8rem; color: var(--muted); }
+.capability-blocker { font-size: .85rem; color: var(--danger); }
 .discovery-status-compact { border-top: 1px solid var(--line); padding-block: 10px; }
 .discovery-status-compact > summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .discovery-status-compact p { margin: 5px 0; }

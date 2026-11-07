@@ -100,7 +100,8 @@ export function renderDynamicPost(model, {
   node
 }) {
   const post = (model.dynamicPosts || []).find(item => item.id === model.dynamicPostId);
-  const editable = !!post && ["pending_review", "approved", "rejected"].includes(post.status);
+  const terminalInPending = model.dynamicPostView !== "history" && ["published", "rejected", "invalidated"].includes(post?.status);
+  const editable = !!post && !terminalInPending && ["pending_review", "approved", "rejected"].includes(post.status);
   const imageInfo = post?.meme_id ? model.dynamicMemeCache.get(`${post.character_id}:${post.meme_id}`) : null;
   const unavailable = !!post?.meme_id && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
 
@@ -112,7 +113,8 @@ export function renderDynamicPost(model, {
     }
   }
   if ($("dynamic-post-text")) {
-    $("dynamic-post-text").disabled = !editable || model.dynamicPostPending;
+    $("dynamic-post-text").disabled = model.dynamicPostPending || (!editable && !model.dynamicPostDirty);
+    $("dynamic-post-text").readOnly = !editable;
     if (!model.dynamicPostDirty) $("dynamic-post-text").value = post?.content || "";
   }
   if ($("approve-dynamic")) $("approve-dynamic").disabled = !editable || model.dynamicPostPending;
@@ -129,6 +131,7 @@ export function renderDynamicPost(model, {
       button.disabled = !!model.dynamicPostPending;
     }
   }
+  for (const option of $("dynamic-post-views")?.querySelectorAll("input") || []) option.disabled = !!model.dynamicPostPending;
   if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !post?.meme_id;
   if (post?.meme_id) {
     if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = imageInfo?.asset?.title || post.meme_id;
@@ -164,10 +167,11 @@ export function renderDynamicPost(model, {
   }
 
   if ($("dynamic-post-receipt")) {
-    $("dynamic-post-receipt").textContent = JSON.stringify(publicSettings({ receipt: post?.receipt ?? null, error: post?.error ?? null }), null, 2);
+    $("dynamic-post-receipt").textContent = post ? JSON.stringify(publicSettings({ receipt: post.receipt ?? null, error: post.error ?? null }), null, 2) : "";
   }
   if ($("dynamic-post-note")) {
-    $("dynamic-post-note").textContent = !post ? "从列表选择动态，查看来源、决策与平台回执。" :
+    $("dynamic-post-note").textContent = model.dynamicPostDirty && !editable ? "原记录已处理或不在当前列表；本地修改已保留，可复制文字。" :
+      !post ? "从列表选择动态，查看来源、决策与平台回执。" :
       model.dynamicPostDirty ? "有未保存修改；审核通过后保存，再发布。" :
       post.error ? `操作未完成：${post.error}` :
       post.status === "publish_uncertain" ? "发布结果不确定，请核对平台回执；不会自动重发。" :
@@ -202,19 +206,21 @@ export function renderDynamicPosts(model, {
 }) {
   const body = $("dynamic-posts");
   if (!body) return;
-  if ($("dynamic-count")) $("dynamic-count").textContent = `${model.dynamicPosts?.length || 0} 条`;
-  if (!model.dynamicPosts || !model.dynamicPosts.length) {
+  const posts = (model.dynamicPosts || []).filter(post => ["published", "rejected", "invalidated"].includes(post.status) === (model.dynamicPostView === "history"));
+  if ($("dynamic-count")) $("dynamic-count").textContent = `${posts.length} 条`;
+  if (!posts.length) {
     empty(body, 3, "暂无动态。可先评估并生成一份待审核草稿。");
   } else {
     body.replaceChildren();
-    model.dynamicPosts.forEach(post => {
+    posts.forEach(post => {
       const row = node("tr", null, post.id === model.dynamicPostId ? "selected-row" : "");
       cell(row, localDateTime(post.created_at, display), `${post.character_id} · v${post.character_version}`);
       const button = node("button", post.content || "查看动态", "comment-link");
       button.onclick = () => {
-        if (model.dynamicPostDirty && post.id !== model.dynamicPostId && !confirm("动态有未保存修改。放弃修改并选择另一条？")) return;
-        if (post.id !== model.dynamicPostId) model.dynamicPostDirty = false;
+        if (model.dynamicPostDirty) model.dynamicDraftEdits?.set(model.dynamicPostId, $("dynamic-post-text").value);
         model.dynamicPostId = post.id;
+        model.dynamicPostDirty = model.dynamicDraftEdits?.has(post.id) || false;
+        if (model.dynamicPostDirty) $("dynamic-post-text").value = model.dynamicDraftEdits.get(post.id);
         renderDynamicPosts(model, {
           empty, cell, node, badge, setBadge, describe, display,
           dynamicContinuation, memePreview, publicSettings, refreshDynamicMemeInfoFn
@@ -391,6 +397,8 @@ export function initDynamicsModule(model, {
   dynamicDecisionContinuation,
   dynamicMemePicker,
 }) {
+  model.dynamicDraftEdits = new Map();
+  model.dynamicPostView = "pending";
   const doRenderPolicy = () => renderDynamicPolicy(model, describe, display);
 
   const doRenderPosts = () => renderDynamicPosts(model, {
@@ -464,41 +472,62 @@ export function initDynamicsModule(model, {
     }
   }
 
-  async function doRefreshDynamics() {
-    const [policy, posts, decisions, memories, summary] = await Promise.all([
-      api("/api/dynamics/policy"),
-      api("/api/dynamics/posts"),
-      api("/api/dynamics/decisions"),
-      api("/api/dynamics/memories?limit=100"),
-      api("/api/dynamics/memory-summary")
-    ]);
-    const first = !model.dynamicListsLoaded;
-    const credentialsChanged = model.dynamicPolicy?.credentials_configured !== policy.credentials_configured;
-    dynamicPolicyFromServer(policy, model, describe, display);
+  let refreshRequest = 0, refreshedAt = 0, backgroundPending = false;
+  async function doRefreshDynamics({ background = false } = {}) {
+    if (background && (backgroundPending || model.dynamicPostPending || model.dynamicSaving || model.dynamicEvaluating || Date.now() - refreshedAt < 8000)) return;
+    if (background) backgroundPending = true;
+    refreshedAt = Date.now();
+    const request = ++refreshRequest;
+    try {
+      const lightweight = background && model.dynamicListsLoaded;
+      let [policy, posts, decisions, memories, summary] = await Promise.all([
+        api("/api/dynamics/policy"),
+        api("/api/dynamics/posts"),
+        api("/api/dynamics/decisions"),
+        lightweight ? model.dynamicMemories : api("/api/dynamics/memories?limit=100"),
+        lightweight ? model.dynamicMemorySummary : api("/api/dynamics/memory-summary")
+      ]);
+      if (request !== refreshRequest) return;
+      if (lightweight && (JSON.stringify(model.dynamicPosts) !== JSON.stringify(list(posts)) || JSON.stringify(model.dynamicDecisions) !== JSON.stringify(list(decisions)))) {
+        [memories, summary] = await Promise.all([api("/api/dynamics/memories?limit=100"), api("/api/dynamics/memory-summary")]);
+        if (request !== refreshRequest) return;
+      }
+      const first = !model.dynamicListsLoaded;
+      const credentialsChanged = model.dynamicPolicy?.credentials_configured !== policy.credentials_configured;
+      dynamicPolicyFromServer(policy, model, describe, display);
 
-    if (first || JSON.stringify(model.dynamicPosts) !== JSON.stringify(list(posts))) {
-      model.dynamicPosts = list(posts);
-      doRenderPosts();
-    } else if (credentialsChanged) {
-      doRenderPost();
-    }
+      if (first || JSON.stringify(model.dynamicPosts) !== JSON.stringify(list(posts))) {
+        const selected = list(posts).find(post => post.id === model.dynamicPostId);
+        if (model.dynamicPostId != null && !model.dynamicPostDirty && (!selected || (model.dynamicPostView !== "history" && ["published", "rejected", "invalidated"].includes(selected.status)))) {
+          model.dynamicPostId = null;
+          model.dynamicMemeContext = null;
+          dynamicMemePicker?.close(true);
+        }
+        model.dynamicPosts = list(posts);
+        doRenderPosts();
+      } else if (credentialsChanged) {
+        doRenderPost();
+      }
 
-    if (first || JSON.stringify(model.dynamicDecisions) !== JSON.stringify(list(decisions))) {
-      model.dynamicDecisions = list(decisions);
-      doRenderDecisions();
-    }
+      if (first || JSON.stringify(model.dynamicDecisions) !== JSON.stringify(list(decisions))) {
+        model.dynamicDecisions = list(decisions);
+        doRenderDecisions();
+      }
 
-    if (!model.dynamicMemorySaving.size && (first || JSON.stringify(model.dynamicMemories) !== JSON.stringify(list(memories)))) {
-      model.dynamicMemories = list(memories);
-      doRenderMemories();
-    }
+      if (!model.dynamicMemorySaving.size && (first || JSON.stringify(model.dynamicMemories) !== JSON.stringify(list(memories)))) {
+        model.dynamicMemories = list(memories);
+        doRenderMemories();
+      }
 
-    if (JSON.stringify(model.dynamicMemorySummary) !== JSON.stringify(summary)) {
-      model.dynamicMemorySummary = summary;
-      doRenderSummary(summary);
+      if (JSON.stringify(model.dynamicMemorySummary) !== JSON.stringify(summary)) {
+        model.dynamicMemorySummary = summary;
+        doRenderSummary(summary);
+      }
+      model.dynamicListsLoaded = true;
+      await doRefreshDynamicMemeInfo(model.dynamicPosts.find(item => item.id === model.dynamicPostId));
+    } finally {
+      if (background) backgroundPending = false;
     }
-    model.dynamicListsLoaded = true;
-    await doRefreshDynamicMemeInfo(model.dynamicPosts.find(item => item.id === model.dynamicPostId));
   }
 
   async function doSaveDynamicPolicy() {
@@ -550,6 +579,8 @@ export function initDynamicsModule(model, {
         body: { action, text: $("dynamic-post-text")?.value }
       });
       model.dynamicPostDirty = false;
+      model.dynamicDraftEdits.delete(post.id);
+      if (action === "reject" && model.dynamicPostId === post.id) model.dynamicPostId = null;
       await doRefreshDynamics();
       if ($("dynamic-post-note")) {
         $("dynamic-post-note").textContent = action === "approve" ? "审核已保存，尚未手动发布。" : "动态已拒绝。";
@@ -575,6 +606,7 @@ export function initDynamicsModule(model, {
       });
       if (asset) model.dynamicMemeCache.set(`${post.character_id}:${asset.asset_id}`, { asset, at: Date.now() });
       model.dynamicPostDirty = false;
+      model.dynamicDraftEdits.delete(post.id);
       await doRefreshDynamics();
       notice(meme_id ? "已为动态附加1张图片，正文保留；请重新审核。" : "已移除动态配图，正文保留；请重新审核。");
     } finally {
@@ -584,6 +616,21 @@ export function initDynamicsModule(model, {
   }
 
   // Bind Listeners
+  $("dynamic-post-text")?.addEventListener("input", () => {
+    const post = model.dynamicPosts.find(item => item.id === model.dynamicPostId);
+    model.dynamicPostDirty = !!post && $("dynamic-post-text").value !== post.content;
+    if (model.dynamicPostDirty) model.dynamicDraftEdits.set(post.id, $("dynamic-post-text").value);
+    else model.dynamicDraftEdits.delete(model.dynamicPostId);
+    doRenderPost();
+  });
+  $("dynamic-post-views")?.addEventListener("change", event => {
+    if (model.dynamicPostPending) return;
+    if (model.dynamicPostDirty) model.dynamicDraftEdits.set(model.dynamicPostId, $("dynamic-post-text").value);
+    model.dynamicPostView = event.target.value;
+    model.dynamicPostId = null;
+    model.dynamicPostDirty = false;
+    doRenderPosts();
+  });
   $("dynamic-policy-form")?.addEventListener("input", () => {
     model.dynamicPolicyDirty = true;
     doRenderPolicy();
@@ -611,6 +658,14 @@ export function initDynamicsModule(model, {
         notice($("dynamic-policy-state").textContent);
       }
       await doRefreshDynamics();
+      if (result.post_id) {
+        if (model.dynamicPostDirty) model.dynamicDraftEdits.set(model.dynamicPostId, $("dynamic-post-text").value);
+        model.dynamicPostView = "pending";
+        model.dynamicPostId = result.post_id;
+        model.dynamicPostDirty = false;
+        for (const option of $("dynamic-post-views").querySelectorAll("input")) option.checked = option.value === "pending";
+        doRenderPosts();
+      }
     } catch (error) {
       if ($("dynamic-policy-state")) {
         $("dynamic-policy-state").textContent = `评估失败：${safeMessage(error.message)}`;
@@ -633,7 +688,14 @@ export function initDynamicsModule(model, {
     doRenderPost();
     try {
       const result = await api(`/api/dynamics/posts/${encodeURIComponent(post.id)}/publish`, { method: "POST" });
-      notice(`平台已返回发布回执：${JSON.stringify(result)}`);
+      if (result.status === "published") {
+        model.dynamicDraftEdits.delete(post.id);
+        if (model.dynamicPostId === post.id) {
+          model.dynamicPostId = null;
+          model.dynamicPostDirty = false;
+        }
+        notice("动态已发布，回执保留在历史中。");
+      }
       await doRefreshDynamics();
     } finally {
       model.dynamicPostPending = false;
@@ -661,5 +723,6 @@ export function initDynamicsModule(model, {
     renderDynamicPost: doRenderPost,
     renderDynamicPolicy: doRenderPolicy,
     selectDynamicMeme: doSelectDynamicMeme,
+    hasUnsaved: () => model.dynamicDraftEdits.size > 0,
   };
 }

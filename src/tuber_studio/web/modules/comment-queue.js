@@ -49,7 +49,7 @@ export function evidenceList(segments = []) {
   return result;
 }
 
-export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUpdated = () => {}) {
+export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraftUpdated = () => {}, onSelectionCleared = () => {} } = {}) {
   const list = $("queue-list"), detail = $("queue-detail"), feedback = $("queue-feedback");
   const filter = $("queue-view");
   const draftEdits = new Map();
@@ -62,6 +62,16 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
   function emptyDetail(text) {
     detailSignature = "";
     detail.replaceChildren(node("h2", "记录详情"), node("p", text, "hint"));
+  }
+
+  function clearProcessedSelection() {
+    selected = routeKey = null;
+    inferRouteView = false;
+    selectionCleared = true;
+    onSelectionCleared();
+    ++sourceVersion;
+    if (typeof history !== "undefined") history.replaceState(null, "", generation ? `#comments/review/task/${encodeURIComponent(generation.id)}` : `#comments/${view}`);
+    emptyDetail("本条已处理，可在「已执行与历史」中查看。请选择下一条记录。");
   }
 
   function renderRows(data) {
@@ -123,7 +133,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
     editor.rows = 5;
     editor.value = draftEdits.get(key) ?? row.text ?? "";
     editor.readOnly = !editable;
-    const field = node("label", status === "published" ? "回复正文" : "草稿正文");
+    const field = node("label", draftEdits.has(key) && commentFinished(row) ? "本地未保存修改" : status === "published" ? "回复正文" : "草稿正文");
     field.append(editor);
     detail.append(field);
     const actions = node("div", null, "actions");
@@ -163,12 +173,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
           if (clearEdits) draftEdits.delete(key);
           if (commentFinished(updated) && selected === key) {
             draftEdits.delete(key);
-            selected = routeKey = null;
-            inferRouteView = false;
-            selectionCleared = true;
-            ++sourceVersion;
-            if (typeof history !== "undefined") history.replaceState(null, "", generation ? `#comments/review/task/${encodeURIComponent(generation.id)}` : `#comments/${view}`);
-            emptyDetail("本条已处理，可在「已执行与历史」中查看。请选择下一条记录。");
+            clearProcessedSelection();
           }
           focusedKey = null;
           busy = false;
@@ -209,7 +214,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
       }
     }
     if (!editable && row.text) {
-      copy = action("复制", () => navigator.clipboard.writeText(row.text), null, "已复制回复。", false);
+      copy = action("复制", () => navigator.clipboard.writeText(editor.value), null, "已复制回复。", false);
     }
     if (status === "publish_uncertain" && !row.continuation) {
       message.textContent ||= "等待核对平台结果。此旧记录没有可恢复的核对任务。";
@@ -269,7 +274,17 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
       const previous = selected, previousRow = rows.find(row => keyOf(row) === previous);
       rows = data.items;
       const current = rows.find(row => keyOf(row) === previous);
-      selected = routeKey || keyOf(current || (!selectionCleared && rows[0]));
+      let departedDetail, keepLocalEdit = false;
+      if (previous && !current && view !== "history" && (!routeKey || routeKey === previous)) {
+        departedDetail = await api(`/api/comments/workbench/${previous}`);
+        if (request !== version || !active) return;
+        if (commentFinished(departedDetail)) {
+          onDraftUpdated(departedDetail, previous);
+          keepLocalEdit = draftEdits.has(previous);
+          if (!keepLocalEdit) clearProcessedSelection();
+        }
+      }
+      selected = routeKey || (keepLocalEdit ? previous : keyOf(current || (!selectionCleared && rows[0])));
       if (generation && !generation.selectedFirst && !selectionCleared && rows.length) {
         selected = keyOf(rows[0]);
         generation.selectedFirst = true;
@@ -288,7 +303,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
       if (!selected) emptyDetail(selectionCleared ? "本条已处理，可在「已执行与历史」中查看。请选择下一条记录。" : generation ? ["completed", "failed", "cancelled"].includes(data.task?.status) ? "本次任务已结束，未生成可审核的回复；请查看任务进度中的原因。" : "正在生成回复，完成后会在这里显示并自动选中。" : "选择一条记录查看来源和下一步操作。");
       else if (routedDetail || forceDetail || !detailSignature || previous !== selected || previousRow?.updated_at !== current?.updated_at || (routeKey && !current)) {
         const key = selected;
-        const row = routedDetail || await api(`/api/comments/workbench/${key}`);
+        const row = routedDetail || (key === previous ? departedDetail : null) || await api(`/api/comments/workbench/${key}`);
         if (request === version && active) renderDetail(key, row);
       }
     } catch (error) {
@@ -316,6 +331,12 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
   function open(nextView, nextKey = null) {
     active = true;
     selectionCleared = false;
+    if (nextView && nextView !== view) {
+      selected = null;
+      ++sourceVersion;
+      emptyDetail("选择一条记录查看来源和下一步操作。");
+      onSelectionCleared();
+    }
     if (nextView === "sources") generation = null;
     setView(nextView || view);
     routeKey = nextKey;
@@ -357,8 +378,15 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
     finally { button.disabled = false; }
   };
   $("queue-show-all").onclick = () => { generation = null; routeKey = null; selected = null; detailSignature = ""; return open("review"); };
-  $("queue-prev").onclick = () => { clearLinkedRecord(view); offset = Math.max(0, offset - pageSize); return refresh(); };
-  $("queue-next").onclick = () => { clearLinkedRecord(view); offset += pageSize; return refresh(); };
+  const turnPage = delta => {
+    clearLinkedRecord(view);
+    selected = null;
+    onSelectionCleared();
+    offset = Math.max(0, offset + delta * pageSize);
+    return refresh();
+  };
+  $("queue-prev").onclick = () => turnPage(-1);
+  $("queue-next").onclick = () => turnPage(1);
   emptyDetail("选择一条记录查看来源和下一步操作。");
   return {
     open, refresh: () => !busy && refresh(),
@@ -367,6 +395,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, onDraftUp
     async trackGeneration(id, commentIds) {
       generation = { id, commentIds, selectedFirst: false };
       routeKey = selected = null;
+      onSelectionCleared();
       detailSignature = "";
       offset = 0;
       if (typeof history !== "undefined") history.replaceState(null, "", `#comments/review/task/${encodeURIComponent(id)}`);

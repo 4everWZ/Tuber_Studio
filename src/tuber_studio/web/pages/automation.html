@@ -5,7 +5,9 @@
   </div>
   <section id="operation-overview" class="operation-overview">
     <p id="op-home-state" role="status">正在读取运营状态…</p>
-    <p id="op-permissions-summary" class="hint">正在读取当前允许的动作…</p>
+    <div id="op-permissions-summary" class="capability-strip" role="list" aria-label="各功能运行状态" aria-describedby="op-capability-legend" aria-live="polite">正在读取功能状态…</div>
+    <p id="op-capability-legend" class="capability-legend">绿：自动运行 · 黄：生成待审 · 灰：关闭 / 待启动 · 红：受阻</p>
+    <p id="op-capability-blocker" class="capability-blocker" role="status" hidden></p>
     <p id="op-active-rounds" class="hint" role="status"></p>
   </section>
   <section id="operation-videos">

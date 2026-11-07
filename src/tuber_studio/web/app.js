@@ -2,19 +2,19 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.13";
-import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.10";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.10";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.17";
+import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.17";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.15";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261107.10";
+import { MessagesPanel } from "./messages.js?v=20261107.17";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261107.10";
+} from "./modules/operations.js?v=20261107.17";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -22,10 +22,10 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261107.13";
+} from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261107.10";
+} from "./modules/dynamics.js?v=20261107.17";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";
@@ -33,13 +33,13 @@ import {
   renderLiveFeatures,
   renderControls,
   initLiveModule,
-} from "./modules/live.js?v=20261107.12";
+} from "./modules/live.js?v=20261107.15";
 
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
 } from "./modules/workspace-display.js";
 import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261107.10";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.12";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.15";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#automation";
@@ -111,11 +111,11 @@ document.addEventListener("workspace-issue", event => {
 });
 const discoveryPanel = initDiscoveryPanel(api);
 const refreshOperationsActivity = initOperationsActivity(api);
-const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status, (draft, key) => commentsModule?.draftUpdated(draft, key));
-const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
-$("daily-memory-card").addEventListener("toggle", event => {
-  if (model.authenticated && event.currentTarget.open) void dailyMemoryUI.refresh();
+const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status, {
+  onDraftUpdated: (draft, key) => commentsModule?.draftUpdated(draft, key),
+  onSelectionCleared: () => commentsModule?.clearCurrent(),
 });
+const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
 const interactiveGamesUI = new InteractiveGamesUI({ api, notify: notice });
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
   model.dynamicMemeCache.clear();
@@ -391,7 +391,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await interactiveGamesUI.refresh();
   } else if (model.page === "characters") {
     renderPersona(model);
-    if ($("daily-memory-card").open) await dailyMemoryUI.refresh();
+    await dailyMemoryUI.refresh();
   } else if (model.page === "overview") {
     await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
   } else if (model.page === "accounts") {
@@ -409,6 +409,8 @@ async function poll() {
     if (model.page === "automation") updates.push(refreshOperationsActivity());
     if (model.page === "live") updates.push(refreshLive());
     if (model.page === "comments") updates.push(commentQueue.refresh());
+    if (model.page === "messages") updates.push(messagesPanel.refresh({ background: true }));
+    if (model.page === "dynamics") updates.push(dynamicsModule?.refreshDynamics({ background: true }));
     if (model.page === "automation-records") updates.push(automationPanel.refresh({ background: true }));
     if (model.page === "issues" || model.page === "automation-records") updates.push(issueLog.refresh());
     await Promise.allSettled(updates);
@@ -622,7 +624,7 @@ if ($("refresh-operations")) {
 
 const changePage = initWorkspaceNavigation(model, loadWorkspacePage);
 window.addEventListener("beforeunload", event => {
-  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || inferenceNodePanel.dirty || voiceSettings.dirty || interactiveGamesUI.rulesDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || messagesPanel.hasUnsaved()) {
+  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || inferenceNodePanel.dirty || voiceSettings.dirty || interactiveGamesUI.rulesDirty || model.dynamicPolicyDirty || model.dynamicPostDirty || dynamicsModule?.hasUnsaved() || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }

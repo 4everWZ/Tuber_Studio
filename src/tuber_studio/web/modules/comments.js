@@ -176,6 +176,8 @@ export function renderComments(model, {
         check.checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id);
         updateCommentSelection(model);
         model.commentId = comment.id;
+        renderCommentSource(model, commentContinuation, setBadge, describe);
+        refreshThreadContextFn?.();
         onCommentSelected?.(comment);
       };
       cell(row, check);
@@ -253,6 +255,11 @@ export function initCommentsModule(model, {
   onCommentSelected,
 }) {
   const doRefreshThreadContext = () => refreshThreadContext(model, api, tokenCount, occupancyText);
+  const doClearCurrent = () => {
+    model.commentId = null;
+    renderCommentSource(model, commentContinuation, setBadge, describe);
+    for (const id of ["thread-context-state", "comment-context-state", "thread-rebuild-state"]) if ($(id)) $(id).textContent = "";
+  };
 
   const doRenderComments = () => renderComments(model, {
     api,
@@ -350,8 +357,14 @@ export function initCommentsModule(model, {
     $(id)?.addEventListener("change", () => { model.commentSourcePage = 0; return doRefreshComments(); });
   });
   $("filter-comments").onclick = () => busy($("filter-comments"), doRefreshComments);
-  $("source-prev").onclick = () => { model.commentSourcePage = Math.max(0, (model.commentSourcePage || 0) - 1); doRenderComments(); };
-  $("source-next").onclick = () => { model.commentSourcePage = (model.commentSourcePage || 0) + 1; doRenderComments(); };
+  const turnSourcePage = delta => {
+    model.commentSourcePage = Math.max(0, (model.commentSourcePage || 0) + delta);
+    doClearCurrent();
+    doRenderComments();
+    onCommentSelected?.(null);
+  };
+  $("source-prev").onclick = () => turnSourcePage(-1);
+  $("source-next").onclick = () => turnSourcePage(1);
 
   $("refresh-videos")?.addEventListener("click", () => busy($("refresh-videos"), async () => {
     const container = $("popular-videos");
@@ -385,6 +398,7 @@ export function initCommentsModule(model, {
   }));
 
   return {
+    clearCurrent: doClearCurrent,
     draftUpdated(draft, key) {
       if (!key.startsWith("comments/")) return;
       const comment = model.comments.find(item => String(item.draft?.id) === String(draft.id) || String(item.id) === String(draft.comment_id));

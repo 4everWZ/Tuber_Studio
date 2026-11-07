@@ -1,9 +1,11 @@
 import { $, safeMessage, notice } from "./core.js";
 import { initPermissionMatrix, renderPermissionStatus, saveMatrixSettings } from "./permission-matrix.js?v=20261107.12";
+import { renderOperationCapabilities } from "./operation-capabilities.js?v=20261107.17";
 
 let currentAutomationStatus = null;
 let statusRequest = 0;
 let statusRequestedAt = 0;
+let controlPending = false;
 
 export async function updatePermissionCapsule(api, accountPanel, { background = false } = {}) {
   const now = Date.now();
@@ -47,21 +49,9 @@ export function renderOperationsQuickBar(status) {
   $("op-save-quick-config").disabled = roundSettingsSaving;
 
   const policyEnabled = status.policy?.enabled === true;
-  const permissions = status.permissions || {};
-  const modeLabel = value => value === "auto" ? "自动回复" : value === "review" ? "生成草稿" : "关闭";
-  const labels = [
-    permissions.video_enabled ? "刷视频" : "",
-    permissions.top_level && permissions.top_level !== "off" ? `视频主评（${modeLabel(permissions.top_level)}）` : "",
-    permissions.replies && permissions.replies !== "off" ? `评论（${modeLabel(permissions.replies)}）` : "",
-    permissions.private_messages && permissions.private_messages !== "off" ? `私信（${modeLabel(permissions.private_messages)}）` : "",
-    permissions.mentions ? "处理提及" : "",
-    permissions.video_like && permissions.video_like !== "off" ? "点赞" : "",
-    permissions.video_fav && permissions.video_fav !== "off" ? "收藏" : "",
-    permissions.dynamics && permissions.dynamics !== "off" ? `动态（${modeLabel(permissions.dynamics)}）` : "",
-  ].filter(Boolean);
-  $("op-home-state").textContent = status.policy?.emergency ? "已紧急停止" : policyEnabled ? "自主运营中" : "自主运营已停止";
+  $("op-home-state").textContent = status.policy?.emergency ? "已紧急停止" : status.state === "stopping" ? "正在停止自主运营" : status.state === "blocked" ? "自主运营受阻" : policyEnabled ? "自主运营中" : "自主运营已停止";
   $("discovery-top-state").textContent = $("op-home-state").textContent;
-  $("op-permissions-summary").textContent = !status.permissions ? "允许动作状态待确认。" : labels.length ? `当前允许：${labels.join("、")}` : "当前没有允许的运营动作，请在设置中选择。";
+  renderOperationCapabilities(status);
   const activeRounds = status.active_rounds ?? (status.active_round ? [status.active_round] : []);
   const hasActiveRound = activeRounds.length > 0;
   const hasVideoRound = activeRounds.some(round => !round.config?.interaction_only);
@@ -70,7 +60,8 @@ export function renderOperationsQuickBar(status) {
   const toggleBtn = $("op-toggle-auto");
   if (toggleBtn) {
     toggleBtn.textContent = policyEnabled ? "停止自主运营" : "开始自主运营";
-    toggleBtn.disabled = emergency;
+    toggleBtn.disabled = emergency || controlPending;
+    toggleBtn.setAttribute("aria-busy", String(controlPending));
   }
   $("op-emergency").disabled = emergency;
   $("op-reset-stop").hidden = !emergency;
@@ -150,6 +141,9 @@ export function initOperationsModule(api, accountPanel) {
 
   if ($("op-toggle-auto")) {
     $("op-toggle-auto").onclick = async () => {
+      if (controlPending) return;
+      controlPending = true;
+      if (currentAutomationStatus) renderOperationsQuickBar(currentAutomationStatus);
       try {
         const isEnabled = currentAutomationStatus?.policy?.enabled === true;
         const target = !isEnabled;
@@ -158,6 +152,9 @@ export function initOperationsModule(api, accountPanel) {
         await updatePermissionCapsule(api, accountPanel);
       } catch (e) {
         notice(e.message, true);
+      } finally {
+        controlPending = false;
+        if (currentAutomationStatus) renderOperationsQuickBar(currentAutomationStatus);
       }
     };
   }

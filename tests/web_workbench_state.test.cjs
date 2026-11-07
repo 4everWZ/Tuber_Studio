@@ -172,3 +172,65 @@ test("retention settings save only days and preserve null for never clean", asyn
   assert.equal(model.retentionDirty, false);
   assert.equal(model.retentionPending, null);
 });
+
+test("private draft switches preserve edits by account and draft, while completed actions clear only their target", async t => {
+  const { get } = dom(t);
+  const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
+  const panel = Object.create(MessagesPanel.prototype);
+  Object.assign(panel, { value: { account_id: "900" }, selected: 1, dirty: true, edits: new Map(), $: get,
+    render() {}, closeImagePicker() {} });
+  get("[data-text]").value = "第一条未保存私信";
+  panel.selectDraft(2);
+  get("[data-text]").value = "第二条未保存私信";
+  panel.dirty = true;
+  panel.selectDraft(1);
+  assert.equal(get("[data-text]").value, "第一条未保存私信");
+  assert.equal(panel.dirty, true);
+  panel.applyDraftResult({ status: "published" }, 2);
+  assert.equal(panel.selected, 1);
+  assert.equal(panel.dirty, true);
+  panel.applyDraftResult({ status: "rejected" }, 1);
+  assert.equal(panel.selected, null);
+  assert.equal(panel.dirty, false);
+  assert.equal(panel.edits.size, 0);
+});
+
+test("an earlier private conversation response cannot overwrite a newer request for the same user", async t => {
+  const { get } = dom(t);
+  const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
+  const finish = [];
+  const panel = Object.create(MessagesPanel.prototype);
+  Object.assign(panel, { value: { account_id: "900" }, user: "bilibili|901", conversationRequest: 0, $: get,
+    api: () => new Promise(resolve => finish.push(resolve)) });
+  const old = panel.conversation(), latest = panel.conversation();
+  const response = content => ({ account_id: "900", relationship: {}, drafts: [], messages: [{ id: 1, content, sent_at: 0 }] });
+  finish[1](response("新响应"));
+  await latest;
+  finish[0](response("迟到旧响应"));
+  await old;
+  assert.equal(get("[data-inbox]").children[0].children[1].textContent, "新响应");
+});
+
+test("private background refresh clears externally completed selection but preserves unsaved local text", async t => {
+  const { get } = dom(t);
+  const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
+  for (const dirty of [false, true]) {
+    const panel = Object.create(MessagesPanel.prototype);
+    const value = { account_id: "900", policy: { enabled: true, credentials_configured: true }, drafts: [{ id: 1, status: "published", text: "服务器已发送正文" }] };
+    let calls = 0;
+    Object.assign(panel, { value: { ...value, drafts: [{ ...value.drafts[0], status: "approved" }] }, selected: 1, dirty,
+      draftView: "pending", refreshRequest: 0, edits: new Map(), $: get, memeCache: new Map(), continuation: { render() {} },
+      root: { closest: () => null, querySelectorAll: () => [] },
+      api: async () => { calls++; return value; }, render() { this.renderEditor(); }, async conversation() {}, closeImagePicker() {} });
+    get("[data-text]").value = dirty ? "本地未保存私信" : "服务器已发送正文";
+    await panel.refresh({ background: true });
+    assert.equal(panel.selected, dirty ? 1 : null);
+    assert.equal(get("[data-text]").value, dirty ? "本地未保存私信" : "");
+    if (dirty) {
+      assert.equal(get("[data-text]").readOnly, true);
+      assert.equal(get("[data-text]").disabled, false);
+    }
+    await panel.refresh({ background: true });
+    assert.equal(calls, 1);
+  }
+});

@@ -1,7 +1,7 @@
 "use strict";
 
 import { $ } from "./core.js";
-import { inferenceDisplay } from "./inference-status.js?v=20261107.08";
+import { inferenceDisplay } from "./inference-status.js?v=20261107.15";
 import { inferenceModeChanging, liveActionDisabled } from "./live-controls.js?v=20261107.12";
 
 export function liveEnabled(model) {

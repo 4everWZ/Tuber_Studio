@@ -140,6 +140,40 @@ test("publishing saves the current draft and a failed attempt remains retryable"
   assert.equal(detail.children[0].textContent, "平台已受理");
 });
 
+test("a selected comment completed in the background clears its detail while dirty local text remains recoverable", async t => {
+  const byId = setupDOM(t);
+  const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
+  for (const dirty of [false, true]) {
+    let status = "pending_review", cleared = 0;
+    const row = () => ({ id: "background", channel: "comments", source: "manual", status, text: "已保存原文", updated_at: status });
+    const queue = initCommentQueue(async url => url.includes("?view=") ?
+      { items: status === "pending_review" ? [row()] : [], total: status === "pending_review" ? 1 : 0, offset: 0 } : row(),
+    () => {}, () => null, { onSelectionCleared: () => { cleared++; } });
+    await queue.open("review", "comments/background");
+    const detail = byId("queue-detail");
+    if (dirty) {
+      const editor = detail.children.find(item => item.tagName === "LABEL").children[0];
+      editor.value = "尚未提交的本地修改";
+      editor.listeners.input();
+    }
+    status = "published";
+    await queue.refresh();
+    if (dirty) {
+      const field = detail.children.find(item => item.tagName === "LABEL");
+      assert.equal(field.textContent, "本地未保存修改");
+      assert.equal(field.children[0].value, "尚未提交的本地修改");
+      assert.equal(field.children[0].readOnly, true);
+      assert.equal(queue.hasUnsaved(), true);
+      assert.equal(cleared, 0);
+    } else {
+      assert.equal(detail.querySelectorAll("button").length, 0);
+      assert.match(detail.children[1].textContent, /本条已处理/);
+      assert.equal(cleared, 1);
+    }
+    queue.leave();
+  }
+});
+
 test("comments use ten compact records per page without loading browsing history", async t => {
   setupDOM(t);
   const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
@@ -183,6 +217,23 @@ test("source selection excludes completed records and never regenerates existing
   assert.deepEqual(model.comments.map(row => row.id), [1]);
   assert.equal(byId("comments").children[0].children[0].children[0].disabled, true);
   assert.equal(byId("select-comments").checked, false);
+});
+
+test("source pagination clears the previous page's detail and context while retaining batch checks", async t => {
+  const byId = setupDOM(t);
+  const { initCommentsModule } = await import("../src/tuber_studio/web/modules/comments.js");
+  const model = { comments: Array.from({ length: 12 }, (_, i) => sourceComment(i + 1)), commentId: 1,
+    selectedComments: new Set([1]), categorySaving: new Set() };
+  let selection = "old";
+  initCommentsModule(model, { ...sourceDependencies(), onCommentSelected: value => { selection = value; } });
+  byId("thread-context-state").textContent = "旧楼上下文";
+  byId("source-next").onclick();
+  assert.equal(model.commentSourcePage, 1);
+  assert.equal(model.commentId, null);
+  assert.equal(selection, null);
+  assert.deepEqual([...model.selectedComments], [1]);
+  assert.equal(byId("thread-context-state").textContent, "");
+  assert.match(byId("draft-source").textContent, /选择一条评论/);
 });
 
 test("accepted generation clears its selected sources while a failed request preserves them", async t => {
@@ -229,7 +280,7 @@ test("saving retains a reviewable draft and terminal actions clear selection and
       return { items, offset: 0, total: items.length };
     }
     return url.endsWith("draft-2") ? next : row;
-  }, () => {}, () => null, sources.draftUpdated);
+  }, () => {}, () => null, { onDraftUpdated: sources.draftUpdated });
   await queue.open("review", "comments/draft-1");
   let detail = byId("queue-detail");
   await detail.querySelectorAll("button").find(button => button.textContent === "保存").onclick();
@@ -309,6 +360,117 @@ test("unified activity distinguishes approved drafts, received messages and succ
   assert.match(byId("discovery-history-page").textContent, /共 1 条记录/);
 });
 
+test("activity updates preserve each stable record's expanded details", async t => {
+  const byId = setupDOM(t);
+  const { initOperationsActivity } = await import("../src/tuber_studio/web/modules/operations-activity.js");
+  let updated = 1;
+  const refresh = initOperationsActivity(async () => ({ day: "2026-11-07", page: 1, total: 1, pages: 1,
+    items: [{ id: "video/BVstable", kind: "video", bvid: "BVstable", updated_at: updated++ }] }));
+  await refresh();
+  const details = () => byId("discovery-activity-list").children[0].children.find(item => item.tagName === "DETAILS");
+  details().open = true;
+  await refresh();
+  assert.equal(details().open, true);
+  details().open = false;
+  await refresh();
+  assert.equal(details().open, false);
+});
+
+test("video main comment summaries distinguish actual receipts, drafts and model choices", async () => {
+  const { mainReplySummary } = await import("../src/tuber_studio/web/modules/operations-activity.js");
+  assert.equal(mainReplySummary({ main_replies: 0 }), "主评尚未决定");
+  assert.equal(mainReplySummary({ read_state: "comments_only" }), "只逛评论，未生成主评");
+  assert.equal(mainReplySummary({ main_decision: { action: "skip" } }), "本次不发主评");
+  assert.equal(mainReplySummary({ main_decision: { action: "reply_public" } }), "已决定主评，等待生成");
+  assert.equal(mainReplySummary({ replies: [{ kind: "top_level", status: "pending_review" }] }), "主评待审核");
+  assert.equal(mainReplySummary({ has_main_reply: true }), "已有主评");
+});
+
+test("filtering browser tasks clears a now unrelated right-hand inspector", t => {
+  const byId = setupDOM(t);
+  const Workbench = require("../src/tuber_studio/web/modules/operations-workbench.js");
+  const workbench = Object.create(Workbench.prototype);
+  Object.assign(workbench, { activeTab: "tasks", tasks: [{ id: "old", status: "completed" }, { id: "next", status: "checkpoint" }],
+    taskFilter: "", selectedTaskId: "old", taskPaginator: { currentPage: 3 }, container: { querySelector: query => byId(query) } });
+  let rendered = 0;
+  workbench.renderMasterList = () => {};
+  workbench.renderDetail = () => { rendered++; };
+  workbench.renderMasterSubbar();
+  const select = byId("#op-master-subbar").children[0];
+  select.value = "checkpoint";
+  select.onchange();
+  assert.equal(workbench.selectedTaskId, null);
+  assert.equal(workbench.taskFilter, "checkpoint");
+  assert.equal(workbench.taskPaginator.currentPage, 1);
+  assert.equal(rendered, 1);
+});
+
+test("dynamic text edits survive refresh, save the submitted text and clear only after rejection", async t => {
+  const byId = setupDOM(t);
+  const { initDynamicsModule } = await import("../src/tuber_studio/web/modules/dynamics.js");
+  const post = { id: 1, content: "原动态", status: "pending_review" };
+  const model = { dynamicPosts: [post], dynamicPostId: 1, dynamicMemeCache: new Map(), dynamicMemePending: new Set(), dynamicMemorySaving: new Set() };
+  const writes = [];
+  const module = initDynamicsModule(model, { ...sourceDependencies(async (url, options) => {
+    if (options) {
+      writes.push(options.body);
+      post.content = options.body.text;
+      post.status = options.body.action === "reject" ? "rejected" : "approved";
+      return post;
+    }
+    if (url === "/api/dynamics/policy") return { credentials_configured: true };
+    if (url === "/api/dynamics/posts") return [{ ...post }];
+    if (url === "/api/dynamics/memory-summary") return { entries: [] };
+    return [];
+  }), publicSettings: value => value, safeMessage: String, display: String, tokenCount: String });
+  byId("dynamic-post-text").value = "修改后的动态";
+  byId("dynamic-post-text").listeners.input();
+  await module.refreshDynamics();
+  assert.equal(byId("dynamic-post-text").value, "修改后的动态");
+  await byId("approve-dynamic").listeners.click();
+  assert.deepEqual(writes[0], { action: "approve", text: "修改后的动态" });
+  assert.equal(model.dynamicPostId, 1);
+  assert.equal(model.dynamicPostDirty, false);
+  await byId("reject-dynamic").listeners.click();
+  assert.equal(model.dynamicPostId, null);
+  assert.equal(byId("dynamic-post-text").value, "");
+  assert.equal(byId("dynamic-post-receipt").textContent, "");
+  assert.equal(byId("dynamic-posts").children.length, 0);
+});
+
+test("dynamic background refresh reconciles external terminal states and preserves local edits", async t => {
+  const byId = setupDOM(t);
+  const { initDynamicsModule } = await import("../src/tuber_studio/web/modules/dynamics.js");
+  for (const dirty of [false, true]) {
+    const serverPost = { id: 1, content: "后台已保存正文", status: "published" };
+    const model = { dynamicPosts: [{ ...serverPost, status: "approved" }], dynamicPostId: 1, dynamicPostDirty: dirty,
+      dynamicListsLoaded: true, dynamicDecisions: [], dynamicMemories: [], dynamicMemorySummary: { entries: [] },
+      dynamicMemeCache: new Map(), dynamicMemePending: new Set(), dynamicMemorySaving: new Set() };
+    byId("dynamic-post-text").value = dirty ? "本地尚未提交动态" : "后台已保存正文";
+    const calls = [];
+    const module = initDynamicsModule(model, { ...sourceDependencies(async url => {
+      calls.push(url);
+      if (url === "/api/dynamics/policy") return { credentials_configured: true };
+      if (url === "/api/dynamics/posts") return [{ ...serverPost }];
+      if (url === "/api/dynamics/memory-summary") return { entries: [] };
+      return [];
+    }), publicSettings: value => value, safeMessage: String, display: String, tokenCount: String });
+    await module.refreshDynamics({ background: true });
+    if (dirty) {
+      assert.equal(model.dynamicPostId, 1);
+      assert.equal(byId("dynamic-post-text").value, "本地尚未提交动态");
+      assert.equal(byId("dynamic-post-text").readOnly, true);
+      assert.equal(byId("dynamic-post-text").disabled, false);
+    } else {
+      assert.equal(model.dynamicPostId, null);
+      assert.equal(byId("dynamic-post-text").value, "");
+    }
+    const before = calls.length;
+    await module.refreshDynamics({ background: true });
+    assert.equal(calls.length, before, "current-page background calls are throttled");
+  }
+});
+
 test("clearing read alerts clears local and remote counts and stays clear after refresh", async t => {
   const byId = setupDOM(t);
   const { initIssueLog } = await import("../src/tuber_studio/web/modules/discovery-panel.js");
@@ -337,6 +499,16 @@ test("node connection and model load state are separate from stopped livestream 
   assert.match(inferenceDisplay(status, settings).text, /已连接.*模型未加载/);
   status.inference.error = "无法连接";
   assert.match(inferenceDisplay(status, settings).text, /连接异常/);
+});
+
+test("a cold node remains connected while the selected model sleeps", async () => {
+  const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
+  const state = inferenceDisplay({ inference: { state: "cold", error: null, active_provider: null,
+    selected_provider: "pet", providers: { pet: { running: false, is_sleeping: true } } } },
+  { inference_broker: { deployment: "remote" } });
+  assert.equal(state.connected, true);
+  assert.equal(state.loaded, false);
+  assert.equal(state.text, "Jetson 已连接 · 模型未加载");
 });
 
 test("new generation shows only this task and selects its first actual draft", async t => {
@@ -458,20 +630,87 @@ test("one parent start action uses saved permissions without enabling additional
   const byId = setupDOM(t);
   const { initOperationsModule, updatePermissionCapsule } = await import("../src/tuber_studio/web/modules/operations.js");
   const calls = [];
-  const status = { policy: { enabled: false }, settings: { discovery_enabled: false, reply_enabled: true }, permissions: { video_enabled: false, replies: "review", private_messages: "off", dynamics: "off" } };
+  const status = { policy: { enabled: false }, state: "off", settings: { discovery_enabled: false, reply_enabled: true }, permissions: { video_enabled: false, replies: "review", private_messages: "off", dynamics: "off" } };
   const api = async (path, options) => {
-    if (options) { calls.push([path, options.body]); assert.equal(path, "/api/automation/enable"); status.policy.enabled = options.body.enabled; }
+    if (options) { calls.push([path, options.body]); assert.equal(path, "/api/automation/enable"); status.policy.enabled = options.body.enabled; status.state = options.body.enabled ? "running" : "off"; }
     return status;
   };
   initOperationsModule(api, null);
   await updatePermissionCapsule(api, null);
   await byId("op-toggle-auto").onclick();
   assert.equal(byId("op-toggle-auto").textContent, "停止自主运营");
-  assert.match(byId("op-permissions-summary").textContent, /评论（生成草稿）/);
-  assert.doesNotMatch(byId("op-permissions-summary").textContent, /刷视频|私信|动态/);
+  const capabilities = Object.fromEntries(byId("op-permissions-summary").children.map(item => [item.dataset.capability, item]));
+  assert.equal(capabilities.comments.dataset.state, "yellow");
+  for (const key of ["videos", "message_reply", "dynamics"]) assert.equal(capabilities[key].dataset.state, "gray");
   assert.equal(status.settings.discovery_enabled, false);
   await byId("op-toggle-auto").onclick();
   assert.deepEqual(calls, [["/api/automation/enable", { enabled: true }], ["/api/automation/enable", { enabled: false }]]);
+});
+
+test("capability lamps separate saved permissions from actual runtime and private polling", async () => {
+  const { operationCapabilities } = await import("../src/tuber_studio/web/modules/operation-capabilities.js");
+  const permissions = { video_enabled: true, top_level: "auto", replies: "review", private_poll: false,
+    private_messages: "auto", dynamics: "review", video_like: "off", video_fav: "off" };
+  const off = operationCapabilities({ policy: { enabled: false }, state: "off", permissions });
+  assert.equal(off.length, 8);
+  assert.ok(off.every(item => item.color === "gray"));
+  assert.equal(off.find(item => item.id === "videos").state, "待启动");
+  assert.equal(off.find(item => item.id === "message_poll").state, "关闭");
+  const active = Object.fromEntries(operationCapabilities({ policy: { enabled: true }, state: "running", permissions })
+    .map(item => [item.id, item]));
+  for (const key of ["videos", "top_level", "message_reply"]) assert.equal(active[key].color, "green");
+  for (const key of ["comments", "dynamics"]) assert.equal(active[key].color, "yellow");
+  for (const key of ["message_poll", "like", "favorite"]) assert.equal(active[key].color, "gray");
+});
+
+test("capability blockers use reported parent state and do not turn historical errors into channel failures", async t => {
+  const byId = setupDOM(t);
+  const { operationCapabilities, renderOperationCapabilities } = await import("../src/tuber_studio/web/modules/operation-capabilities.js");
+  const status = { policy: { enabled: true }, state: "blocked", permissions: { video_enabled: true, private_poll: false, private_messages: "review" },
+    blockers: ["账号身份核验失败：本地测试原因"] };
+  const rows = operationCapabilities(status);
+  assert.equal(rows.find(item => item.id === "videos").color, "red");
+  assert.equal(rows.find(item => item.id === "message_poll").color, "gray");
+  assert.equal(rows.find(item => item.id === "message_reply").detail, status.blockers[0]);
+  renderOperationCapabilities(status);
+  assert.match(byId("op-capability-blocker").textContent, /账号身份核验失败/);
+  assert.equal(byId("op-permissions-summary").children[0].attributes.role, "listitem");
+  assert.match(byId("op-permissions-summary").children[0].attributes["aria-label"], /视频，受阻/);
+  assert.ok(operationCapabilities({ ...status, state: "running", blockers: [], last_error: "上轮旧错误" }).every(item => item.color !== "red"));
+});
+
+test("stopping parent state is consistent in the main label and capability strip", async t => {
+  const byId = setupDOM(t);
+  const { renderOperationsQuickBar } = await import("../src/tuber_studio/web/modules/operations.js");
+  renderOperationsQuickBar({ policy: { enabled: true }, state: "stopping", permissions: { video_enabled: true } });
+  assert.equal(byId("op-home-state").textContent, "正在停止自主运营");
+  assert.equal(byId("discovery-top-state").textContent, "正在停止自主运营");
+  assert.match(byId("op-permissions-summary").children[0].textContent, /停止中/);
+});
+
+test("parent start prevents duplicate submissions and releases its button after the saved state arrives", async t => {
+  const byId = setupDOM(t);
+  const { initOperationsModule, updatePermissionCapsule } = await import("../src/tuber_studio/web/modules/operations.js");
+  const status = { policy: { enabled: false }, settings: {}, permissions: {} };
+  let finish, writes = 0;
+  const api = async (url, options) => {
+    if (options) {
+      writes++;
+      await new Promise(resolve => { finish = resolve; });
+      status.policy.enabled = options.body.enabled;
+    }
+    return status;
+  };
+  initOperationsModule(api, null);
+  await updatePermissionCapsule(api, null);
+  const button = byId("op-toggle-auto");
+  const first = button.onclick(), duplicate = button.onclick();
+  assert.equal(writes, 1);
+  assert.equal(button.disabled, true);
+  finish();
+  await Promise.all([first, duplicate]);
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, "停止自主运营");
 });
 
 test("matrix uses the stored message policy and displays partial failure", async t => {
