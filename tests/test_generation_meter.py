@@ -100,6 +100,25 @@ async def test_native_every_actual_generation_uses_real_tokens_and_thinking_comp
         await provider.close()
 
 
+async def test_zero_round_resource_cap_keeps_metering_after_sixteen_actual_generations(settings, store):
+    repo, row = parent(store, calls=0)
+    requests = []
+
+    def respond(request):
+        if request.url.path == "/v1/chat/completions":
+            requests.append(request)
+        return native_response(request)
+
+    provider = await native(settings, respond)
+    try:
+        with GenerationMeter(repo, row["id"]):
+            for _ in range(20):
+                await provider.generate_json(MESSAGES, SCHEMA, max_tokens=32)
+        assert len(requests) == repo.round(row["id"])["budget"]["model_calls"] == 20
+    finally:
+        await provider.close()
+
+
 @pytest.mark.parametrize("failure", ["length", "json", "http"])
 async def test_failed_generation_keeps_reservation_and_exhausted_parent_blocks_next_http(
     settings, store, failure

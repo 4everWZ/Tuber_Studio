@@ -78,10 +78,10 @@ class BrowsingPolicy(StrictModel):
     inspect_limit: int = Field(default=4, ge=1, le=20)
     max_search_terms: int = Field(default=2, ge=1, le=20)
     max_pages: int = Field(default=2, ge=1, le=2)
-    max_reads: int = Field(default=64, ge=1, le=128)
-    max_model_calls: int = Field(default=16, ge=1, le=32)
-    max_input_tokens: int = Field(default=262144, ge=1024, le=1048576)
-    max_output_tokens: int = Field(default=32768, ge=2048, le=65536)
+    max_reads: int = Field(default=64, ge=0, le=128)
+    max_model_calls: int = Field(default=16, ge=0, le=1024)
+    max_input_tokens: int = Field(default=262144, ge=0, le=1048576)
+    max_output_tokens: int = Field(default=32768, ge=0, le=65536)
     decision_max_tokens: int = Field(default=8192, ge=512, le=65536)
     deadline_seconds: int = Field(default=1800, ge=10, le=1800)
     interval_seconds: int = Field(default=300, ge=60, le=86400)
@@ -138,6 +138,18 @@ class BrowsePlan(StrictModel):
     delay_seconds: int = Field(default=300, ge=60, le=86400)
 
 
+class CandidateBatchPlan(StrictModel):
+    videos: list[str] = Field(default_factory=list, max_length=20)
+    workers: int = Field(ge=1, le=8)
+
+    @field_validator("videos")
+    @classmethod
+    def distinct_videos(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError("批次中同一个视频只选择一次")
+        return value
+
+
 CONTENT_DECISION_INTENT_GLOSS = """
 这一步决定是否准备回复，后续再选择公开评论或私信。reason说明本次参与交流的意图：
 specific_detail：有可回应内容，共情、吐槽、轻互动、分享感受也算。
@@ -181,7 +193,7 @@ class ContentDecision(StrictModel):
 
 
 class ResponseDecision(StrictModel):
-    action: Literal["reply_public", "handoff_private", "skip", "wait"]
+    action: Literal["reply_public", "handoff_private", "skip", "wait", "read_comments", "watch_frames", "read_more"]
     text: str = ""
     reason: Literal[
         "specific_detail",
@@ -284,7 +296,7 @@ RESPONSE_REFERENCE_INSTRUCTION = (
 )
 
 
-def response_schema(evidence_ids, *, maximum=None, allow_handoff=True):
+def response_schema(evidence_ids, *, maximum=None, allow_handoff=True, video_actions=False):
     """Constrain source IDs and channel consistency before the model emits text."""
     reasons = {
         "reply_public": ["specific_detail", "light_interaction"],
@@ -292,6 +304,12 @@ def response_schema(evidence_ids, *, maximum=None, allow_handoff=True):
         "skip": ["no_interest", "insufficient_evidence", "spam"],
         "wait": ["cooldown", "insufficient_evidence"],
     }
+    if video_actions:
+        reasons.update({
+            "read_comments": ["specific_detail", "light_interaction"],
+            "watch_frames": ["insufficient_evidence"],
+            "read_more": ["insufficient_evidence"],
+        })
     branches = []
     for action, allowed_reasons in reasons.items():
         sending = action in {"reply_public", "handoff_private"}

@@ -30,6 +30,10 @@ class BrowsingRepository:
                 lease_until REAL DEFAULT 0,attempts INTEGER DEFAULT 0,input_version TEXT,material_key TEXT,
                 payload TEXT,error TEXT,created_at REAL,updated_at REAL);
             CREATE INDEX IF NOT EXISTS browsing_tasks_round ON browsing_tasks(round_id,status);
+            CREATE TABLE IF NOT EXISTS browsing_video_progress(
+                account_id TEXT NOT NULL,character_id TEXT NOT NULL,bvid TEXT NOT NULL,
+                material TEXT NOT NULL,decisions TEXT NOT NULL,updated_at REAL NOT NULL,
+                PRIMARY KEY(account_id,character_id,bvid));
             CREATE TABLE IF NOT EXISTS browsing_video_retries(
                 account_id TEXT NOT NULL,character_id TEXT NOT NULL,character_version INTEGER NOT NULL,
                 bvid TEXT NOT NULL,failures INTEGER NOT NULL,task_id TEXT NOT NULL,
@@ -144,10 +148,13 @@ class BrowsingRepository:
                 "output_tokens": config["max_output_tokens"],
                 "top_levels": config["top_level_limit"],
             }
+            # Resource caps may be disabled without disabling accounting. The
+            # top-level count keeps its separate 0 = no top-level posts meaning.
+            caps = {key: None if key != "top_levels" and value == 0 else value for key, value in caps.items()}
             try:
                 budget = reserve_counters(budget, caps, amounts)
             except GenerationBudgetExceeded as error:
-                if all(value <= caps[key] for key, value in amounts.items()):
+                if all(caps[key] is None or value <= caps[key] for key, value in amounts.items()):
                     raise BrowsingBudgetDeferred(str(error)) from None
                 raise
             self.store.db.execute(
@@ -232,6 +239,27 @@ class BrowsingRepository:
             (row["account_id"], row["character_id"], bvid, midnight),
         )["n"]
         return count >= limit
+
+    def content_progress(self, row, bvid):
+        value = self.store.one(
+            "SELECT material,decisions FROM browsing_video_progress "
+            "WHERE account_id=? AND character_id=? AND bvid=?",
+            (row["account_id"], row["character_id"], bvid),
+        )
+        return {key: json.loads(value[key]) for key in ("material", "decisions")} if value else None
+
+    def save_content_progress(self, row, material, decisions):
+        self.store.execute(
+            "INSERT OR REPLACE INTO browsing_video_progress VALUES(?,?,?,?,?,?)",
+            (
+                row["account_id"],
+                row["character_id"],
+                material["metadata"]["bvid"],
+                dump(material),
+                dump([decision.model_dump() for decision in decisions]),
+                time.time(),
+            ),
+        )
 
     def finish_video_attempt(self, row, candidate, task_id, failures):
         key = (*self.retry_scope(row), candidate["bvid"])

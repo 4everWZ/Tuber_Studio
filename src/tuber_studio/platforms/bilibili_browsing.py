@@ -631,6 +631,11 @@ class BrowsingAdapter(BilibiliAdapter):
 
     async def read_video_reply(self, target):
         """Read the actual video thread for replies selected during discovery."""
+        thread = await self.read_video_thread(target)
+        return {key: thread["source"][key] for key in ("author_uid", "text")}
+
+    async def read_video_thread(self, target):
+        """Refresh one discussion without moving the video's browsing cursor."""
         root, parent = str(target["root"]), str(target["parent"])
         data = await self._get(
             "/x/v2/reply/reply", {"oid": target["oid"], "type": 1, "root": root, "pn": 1, "ps": 20}
@@ -643,7 +648,16 @@ class BrowsingAdapter(BilibiliAdapter):
         source = next((row for row in items if row["comment_id"] == parent), None)
         if source is None:
             raise PlatformReadError("not_found", "当前楼未找到原评论")
-        return {"author_uid": source["platform_user_id"], "text": source["content"]}
+        return {
+            "target": dict(target),
+            "source": {
+                "comment_id": source["comment_id"],
+                "author_uid": source["platform_user_id"],
+                "author_name": source["display_name"],
+                "text": source["content"],
+            },
+            "items": items,
+        }
 
     async def _publish_target(self, target, text, before_send):
         if not self._sessdata or not self._csrf:

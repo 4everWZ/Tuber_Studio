@@ -180,6 +180,11 @@ class ControlledModel:
             self.calls.append((schema["title"], data))
             if schema["title"] == "BrowsePlan":
                 return {"action": "recommend", "keywords": [], "reason": "explore", "delay_seconds": 300}
+            if schema["title"] == "CandidateBatchPlan":
+                return {
+                    "videos": [item["bvid"] for item in data["candidates"][: data["max_videos"]]],
+                    "workers": data["max_workers"],
+                }
             if schema["title"] == "ContentDecision":
                 return {
                     "interest": self.interest,
@@ -240,7 +245,7 @@ async def finished(service, **args):
     return service.repo.round(result["id"])
 
 
-async def test_discovery_defers_round_budget_without_spending_a_retry(browsing):
+async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"max_model_calls": 1, "decision_max_tokens": 512})
     await browsing._current_account()
@@ -248,14 +253,16 @@ async def test_discovery_defers_round_budget_without_spending_a_retry(browsing):
     browsing.discovery.binding = browsing.discovery._binding()
 
     first = await finished(browsing, discovery_id="budget-test")
-    saved = browsing.repo.video_retry(first, BV)
-    assert saved and saved["failures"] == 0
-    assert [task["status"] for task in browsing.tasks(round_id=first["id"])] == ["checkpoint"]
-    assert [name for name, _ in browsing.runtime.llm.calls] == ["ContentDecision"]
-
-    second = await finished(browsing, discovery_id="budget-test")
-    assert not browsing.repo.video_retry(second, BV)
-    assert [name for name, _ in browsing.runtime.llm.calls] == ["ContentDecision", "ResponseDecision"]
+    assert not browsing.repo.video_retry(first, BV)
+    assert [task["status"] for task in browsing.tasks(round_id=first["id"])] == ["selected"], [
+        task["error"] for task in browsing.tasks(round_id=first["id"])
+    ]
+    assert first["config"]["max_model_calls"] == 0
+    assert first["budget"]["model_calls"] == 2
+    assert [name for name, _ in browsing.runtime.llm.calls] == [
+        "CandidateBatchPlan",
+        "ResponseDecision",
+    ]
     assert len(browsing.adapter.sent) == 1
 
 
@@ -1249,3 +1256,114 @@ async def test_autonomous_like_and_favorite_auto_publish(browsing):
     fav_intent = next(i for i in intents if i["kind"] == "video_fav")
     assert fav_intent["status"] == "published"
     assert fav_intent["auto_authorized"] == 1
+
+
+async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
+    videos = [BV, "BV1xx411c7mD", "BV17x411w7KC"]
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure(
+        {
+            "sources": ["specified"],
+            "watch_videos": videos,
+            "workers": 4,
+            "inspect_limit": 2,
+            "recent_sample_limit": 0,
+            "decision_max_tokens": 512,
+        }
+    )
+    original = browsing.runtime.llm.generate_json
+
+    async def choose(messages, schema, *, max_tokens):
+        if schema["title"] == "CandidateBatchPlan":
+            packet = model_packet(messages[-1]["content"])
+            assert [item["bvid"] for item in packet["candidates"]] == videos
+            return {"videos": list(reversed(videos[1:])), "workers": 1}
+        return await original(messages, schema, max_tokens=max_tokens)
+
+    browsing.runtime.llm.generate_json = choose
+    await browsing._current_account()
+    browsing.discovery.identity = "model-batch"
+    browsing.discovery.binding = browsing.discovery._binding()
+    row = await finished(browsing, discovery_id="model-batch")
+    assert row["metrics"]["batch_plan"] == {"videos": list(reversed(videos[1:])), "workers": 1}
+    assert row["metrics"]["workers"] == 1
+    assert list(dict.fromkeys(call[1] for call in browsing.adapter.calls if call[0] == "metadata")) == list(
+        reversed(videos[1:])
+    )
+    assert len(browsing.adapter.sent) == 2
+
+
+async def test_revisited_video_replies_to_new_comments_without_another_main_reply_across_versions(browsing):
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure(
+        {
+            "reply_enabled": True,
+            "max_replies_per_video": 0,
+            "recent_sample_limit": 0,
+            "decision_max_tokens": 512,
+            "recipient_cooldown_seconds": 0,
+        }
+    )
+    incoming = "501"
+
+    async def fetch(video, max_pages=1):
+        return {
+            "items": [
+                {
+                    "comment_id": incoming,
+                    "thread_id": incoming,
+                    "platform_user_id": "300",
+                    "display_name": "观众",
+                    "content": "这个盐水实验要准备什么？",
+                }
+            ]
+        }
+
+    async def read_reply(target):
+        return {"author_uid": "300", "text": "这个盐水实验要准备什么？"}
+
+    browsing.adapter.fetch = fetch
+    browsing.adapter.read_video_reply = read_reply
+    await browsing._current_account()
+    browsing.discovery.identity = "revisit-comments"
+    browsing.discovery.binding = browsing.discovery._binding()
+    await finished(browsing, discovery_id="revisit-comments")
+    browsing.store.save_character(browsing.runtime.character)
+    browsing.discovery.binding = browsing.discovery._binding()
+    for value in browsing.store.all("SELECT path FROM browsing_materials"):
+        from pathlib import Path
+
+        Path(value["path"]).unlink(missing_ok=True)
+    browsing.store.execute("DELETE FROM browsing_materials")
+    incoming = "502"
+    await finished(browsing, discovery_id="revisit-comments")
+    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "501", "502"]
+    assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
+    assert len([name for name, _ in browsing.runtime.llm.calls if name == "ResponseDecision"]) == 3
+    assert len([item for item in browsing.intents() if item["kind"] == "top_level"]) == 1
+    assert len([call for call in browsing.adapter.calls if call[0] == "subtitles"]) == 1
+    assert browsing.repo.content_progress({"account_id": "another", "character_id": "whale"}, BV) is None
+
+
+async def test_comment_scroll_keeps_latest_arrivals_and_advances_persisted_old_page(browsing):
+    await browsing._current_account()
+    calls = []
+
+    async def fetch(video, max_pages=1, *, start_page=1, newest=False):
+        calls.append((start_page, newest))
+        return {
+            "items": [{"comment_id": "new" if newest else str(start_page)}],
+            "next_page": None if start_page == 3 else start_page + 1,
+        }
+
+    browsing.adapter.fetch = fetch
+    row = {"preview": False, "account_id": "100", "character_id": "whale"}
+    first = await browsing.video_comment_context(row, BV)
+    assert browsing.store.get(f"browsing_comment_page:100:whale:{BV}") is None
+    browsing.commit_comment_context(first)
+    second = await browsing.video_comment_context(row, BV)
+    browsing.commit_comment_context(second)
+    assert [item["comment_id"] for item in first["items"]] == ["new", "1"]
+    assert [item["comment_id"] for item in second["items"]] == ["new", "2"]
+    assert calls == [(1, True), (1, False), (1, True), (2, False)]
+    assert browsing.store.get(f"browsing_comment_page:100:whale:{BV}") == 3

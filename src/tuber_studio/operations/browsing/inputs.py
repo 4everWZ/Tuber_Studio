@@ -494,3 +494,27 @@ def bind_content_decision(decision, aliases):
                 seen.add(source.id)
                 sources.append(source)
     return ResolvedContentDecision(wire, tuple(selected), tuple(sources))
+
+
+def restore_stored_content_decisions(material, values):
+    """Restore canonical source bindings, independently of the model's wire cap.
+
+    Stored results already contain original IDs, potentially many per model
+    citation block. Their invocation-local aliases cannot be reconstructed; only
+    sources present in the retained, exact material are admitted here.
+    """
+    sources = {source.id: source for source in ContentDecisionInput(material).sources.values()}
+    restored = []
+    for value in values:
+        references = value.get("evidence_ids")
+        if (
+            not isinstance(references, list)
+            or any(not isinstance(ref, str) or ref not in sources for ref in references)
+            or len(references) != len(set(references))
+            or value.get("worth_commenting")
+            and not references
+        ):
+            raise ValueError("已存内容判断缺少有效的原始材料引用")
+        fields = ContentDecision.model_validate(value | {"evidence_ids": []})
+        restored.append(ResolvedContentDecision(fields, (), tuple(sources[ref] for ref in references)))
+    return restored

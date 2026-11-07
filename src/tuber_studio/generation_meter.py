@@ -22,8 +22,18 @@ class BrowsingBudgetDeferred(GenerationBudgetExceeded):
 def reserve_counters(budget, caps, amounts):
     if any(key not in caps or type(value) is not int or value < 0 for key, value in amounts.items()):
         raise ValueError("无效子任务预算")
-    if any(budget[key] + value > caps[key] for key, value in amounts.items()):
-        raise GenerationBudgetExceeded("本轮资源预算耗尽，已完成结果保留")
+    exhausted = [
+        key for key, value in amounts.items() if caps[key] is not None and budget[key] + value > caps[key]
+    ]
+    if exhausted:
+        labels = {
+            "reads": "读取次数",
+            "model_calls": "模型调用次数",
+            "input_tokens": "输入 tokens",
+            "output_tokens": "输出 tokens",
+        }
+        detail = "、".join(f"{labels.get(key, key)} {budget[key]}/{caps[key]}" for key in exhausted)
+        raise GenerationBudgetExceeded(f"本轮资源预算耗尽（{detail}），已完成结果保留")
     return budget | {key: budget[key] + value for key, value in amounts.items()}
 
 

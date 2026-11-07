@@ -1,6 +1,7 @@
 """Coordinate browsing rounds, evidence preparation and scheduled work."""
 
 import asyncio
+import inspect
 import json
 import re
 import time
@@ -26,6 +27,7 @@ from .evidence import BrowsingEvidence, EvidenceUnavailable
 from .models import (
     BrowsePlan,
     BrowsingPolicy,
+    CandidateBatchPlan,
     browsing_filter_reason,
 )
 from .notifications import NotificationInbox
@@ -348,14 +350,14 @@ class BrowsingService:
             await asyncio.sleep(max(0, self.last_read + self.read_interval - time.monotonic()))
             self.last_read = time.monotonic()
 
-    async def _read(self, method, *args):
+    async def _read(self, method, *args, **kwargs):
         identity = read_round.get()
         config = self.repo.round(identity)["config"] if identity else self.policy()
         for attempt in range(config["read_retries"] + 1):
             try:
                 if not hasattr(self.adapter, "request_gate"):
                     await self._gate()
-                return await method(*args)
+                return await method(*args, **kwargs)
             except ValueError as error:
                 if getattr(error, "kind", None) != "network" or attempt >= config["read_retries"]:
                     raise
@@ -446,6 +448,14 @@ class BrowsingService:
             config = self.effective()
         if video_only:
             config = config | {"video_only": True}
+        if discovery_id or automatic:
+            # One fetched batch is the unit of work. Do not interrupt its agents
+            # with a second, hidden shared request/token allowance.
+            config = config | dict.fromkeys(
+                ("max_reads", "max_model_calls", "max_input_tokens", "max_output_tokens"), 0
+            )
+            if not notifications_only and not interaction_only:
+                config["autonomous_batch"] = True
         if video:
             config = config | {"sources": ["specified"], "watch_videos": [video], "force_read": True}
         elif automatic and "sources" not in self.store.get("browsing_policy", {}):
@@ -548,7 +558,10 @@ class BrowsingService:
                 ):
                     self.store.set("browsing_discovery_pending:" + row["account_id"], False)
                     candidates = await self._discover(row)
-                    semaphore = asyncio.Semaphore(row["config"]["workers"])
+                    metrics["workers"] = row["config"].get("batch_workers", row["config"]["workers"])
+                    semaphore = asyncio.Semaphore(
+                        row["config"].get("batch_workers", row["config"]["workers"])
+                    )
                     if discovery_only:
                         async with asyncio.TaskGroup() as group:
                             for candidate in candidates:
@@ -613,7 +626,7 @@ class BrowsingService:
         config = row["config"]
         retries = self.repo.retry_candidates(row) if config.get("discovery_publish") else []
         if len(retries) >= config["inspect_limit"]:
-            return retries
+            return await self._plan_batch(row, retries)
         try:
             return await self._discover_candidates(row, retries)
         except Exception as error:
@@ -702,7 +715,7 @@ class BrowsingService:
         selected = retries[: config["inspect_limit"]]
         selected_ids = {item["bvid"] for item in selected}
         for item in candidates:
-            if len(selected) >= config["inspect_limit"]:
+            if row["preview"] and len(selected) >= config["inspect_limit"]:
                 break
             if item["bvid"] in selected_ids or (
                 config.get("discovery_publish") and self.repo.video_retry(row, item["bvid"])
@@ -710,6 +723,13 @@ class BrowsingService:
                 continue
             reason = self.filter_reason(item, config)
             if reason:
+                prior_filter = self.store.one(
+                    "SELECT t.id FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
+                    "WHERE r.account_id=? AND r.character_id=? AND t.bvid=? AND t.status='skipped' AND t.error=? LIMIT 1",
+                    (row["account_id"], row["character_id"], item["bvid"], reason),
+                )
+                if prior_filter:
+                    continue
                 identity = self.repo.task(row["id"], item)
                 self.store.execute(
                     "UPDATE browsing_tasks SET status='skipped',error=? WHERE id=?", (reason, identity)
@@ -726,12 +746,83 @@ class BrowsingService:
                     time.time() - 21600,
                 ),
             )
-            if previous and not config.get("force_read"):
+            if previous and not config.get("force_read") and not config.get("reply_enabled"):
                 continue
             selected.append(item)
-            if len(selected) >= config["inspect_limit"]:
+            selected_ids.add(item["bvid"])
+            if row["preview"] and len(selected) >= config["inspect_limit"]:
                 break
-        return selected
+        return await self._plan_batch(row, selected)
+
+    async def _plan_batch(self, row, candidates):
+        if row["preview"] or not candidates:
+            return candidates[: row["config"]["inspect_limit"]]
+        config = row["config"]
+        plan = await self.decisions._model(
+            row,
+            CandidateBatchPlan,
+            {
+                "candidates": [
+                    {key: item.get(key) for key in ("bvid", "title", "owner", "duration", "sources")}
+                    | {
+                        "already_commented": bool(
+                            self.store.one(
+                                "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                                (
+                                    row["account_id"],
+                                    row["character_id"],
+                                    canonical_intent(
+                                        "bilibili", item["bvid"], "top-level", row["character_id"]
+                                    ),
+                                ),
+                            )
+                        )
+                    }
+                    for item in candidates
+                ],
+                "max_videos": config["inspect_limit"],
+                "max_workers": config["workers"],
+            },
+            "这一批视频已按BV号去重。按你的兴趣决定想看哪些和先后顺序，返回对应BV号；"
+            "可以少选或不选。workers是你想同时交给视频子Agent处理的数量，不超过max_workers。"
+            "already_commented表示已有视频主回复，不再重复发主回复，但可以继续翻评论、回复新留言。"
+            "子Agent会读取真实字幕和画面，再自行决定发言、回复评论或略过；这一批完成后再看下一批。",
+            max_tokens=min(config["decision_max_tokens"], 1024),
+        )
+        config["batch_workers"] = plan.workers
+        metrics = self.repo.round(row["id"])["metrics"] | {"batch_plan": plan.model_dump()}
+        self.store.execute(
+            "UPDATE browsing_rounds SET config=?,metrics=? WHERE id=?",
+            (dump(config), dump(metrics), row["id"]),
+        )
+        by_id = {item["bvid"]: item for item in candidates}
+        return [by_id[bvid] for bvid in plan.videos]
+
+    async def video_comment_context(self, row, bvid):
+        """Read new arrivals and advance through older pages independently."""
+        fetch = self.adapter.fetch
+        parameters = inspect.signature(fetch).parameters
+        if row["preview"] or "start_page" not in parameters:
+            return await self._read(fetch, bvid, 1)
+        cursor_key = f"browsing_comment_page:{row['account_id']}:{row['character_id']}:{bvid}"
+        page = max(1, int(self.store.get(cursor_key, 1)))
+        newest = await self._read(fetch, bvid, 1, newest=True) if "newest" in parameters else None
+        context = await self._read(fetch, bvid, 1, start_page=page)
+        items, seen = [], set()
+        for source in (newest, context):
+            for item in (source or {}).get("items", []):
+                identity = str(item.get("comment_id", ""))
+                if identity and identity not in seen:
+                    items.append(item)
+                    seen.add(identity)
+        return context | {
+            "items": items,
+            "_scroll_progress": {"key": cursor_key, "next_page": context.get("next_page") or 1},
+        }
+
+    def commit_comment_context(self, context):
+        if progress := (context or {}).get("_scroll_progress"):
+            self.store.set(progress["key"], progress["next_page"])
 
     async def _send_discovery_intent(self, identity, row):
         self.discovery.verify(row["config"]["discovery_id"])
@@ -881,13 +972,18 @@ class BrowsingService:
                 item = json.loads(
                     self.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"]
                 )
-                material_key, material = await self._prepare_evidence(
-                    item["bvid"],
-                    row["config"],
-                    task={"id": identity},
-                    deadline=row["deadline"],
-                    force=row["config"].get("force_read", False),
-                )
+                progress = self.repo.content_progress(row, item["bvid"])
+                if progress and not row["config"].get("force_read"):
+                    material_key, material = await self.evidence._store(progress["material"])
+                    self.evidence.hits += 1
+                else:
+                    material_key, material = await self._prepare_evidence(
+                        item["bvid"],
+                        row["config"],
+                        task={"id": identity},
+                        deadline=row["deadline"],
+                        force=row["config"].get("force_read", False),
+                    )
                 # Requirement: 无字幕的视频，暂时标记不刷视频，TBD等待后续接入ASR
                 has_subtitles = any(
                     isinstance(p, dict) and p.get("segments") for p in material.get("parts", [])
@@ -899,6 +995,8 @@ class BrowsingService:
                 reason = self.filter_reason(material["metadata"], row["config"])
                 if reason:
                     raise EvidenceUnavailable("filtered", reason)
+                if not progress or row["config"].get("force_read"):
+                    self.repo.save_content_progress(row, material, [])
                 self.repo.complete(
                     identity,
                     owner,
@@ -1203,6 +1301,20 @@ class BrowsingService:
         ):
             return
         thread = await self._read(self.adapter.read_public_thread, event)
+        target = thread["target"]
+        resource = target.get("bvid") or "dynamic:" + str(target["oid"])
+        root = str(target.get("root") or thread["source"]["comment_id"])
+        if root == "0":
+            root = str(thread["source"]["comment_id"])
+        scope = (str(row["account_id"]), row["character_id"], resource, root)
+        async with self.runtime.conversation_turn(scope) as waited:
+            if waited:
+                self._check_round(row)
+                thread = await self._read(self.adapter.read_public_thread, event)
+            return await self._event_unlocked(event_row, row, metrics, event, thread)
+
+    async def _event_unlocked(self, event_row, row, metrics, event, thread):
+        config = row["config"]
         source, target = thread["source"], dict(thread["target"])
         target["parent"] = str(source["comment_id"])
         if (

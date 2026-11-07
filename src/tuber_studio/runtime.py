@@ -71,6 +71,7 @@ class Runtime:
         self.retention_error = None
         self.generation_lock = asyncio.Lock()
         self.operation_turns = OperationTurns(self.generation_lock, self.operations_waiting)
+        self._conversation_turns = {}
         self.error = None
         self.cache = MediaCache(self)
         self.live.media.cache = self.cache
@@ -80,6 +81,27 @@ class Runtime:
     @property
     def character(self):
         return self.store.character()
+
+    @asynccontextmanager
+    async def conversation_turn(self, scope):
+        """Keep one discussion ordered while unrelated discussions can prepare.
+
+        The yielded flag tells a caller whether its prepared context waited for
+        another turn and therefore needs refreshing before generation.
+        """
+        entry = self._conversation_turns.get(scope)
+        if entry is None:
+            entry = {"lock": asyncio.Lock(), "users": 0}
+            self._conversation_turns[scope] = entry
+        entry["users"] += 1
+        waited = entry["users"] > 1
+        try:
+            async with entry["lock"]:
+                yield waited
+        finally:
+            entry["users"] -= 1
+            if not entry["users"]:
+                del self._conversation_turns[scope]
 
     @asynccontextmanager
     async def offline_generation(self, lane=None):

@@ -164,7 +164,14 @@ async def test_video_input_is_parsed_into_fixed_api_requests(adapter_factory, va
 
     adapter = await adapter_factory(handle)
     result = await adapter.fetch(value)
-    assert result == {"video_id": BV, "aid": AID, "title": "视频", "items": []}
+    assert result == {
+        "video_id": BV,
+        "aid": AID,
+        "title": "视频",
+        "items": [],
+        "has_more": False,
+        "next_page": None,
+    }
     assert len(requests) == 2
     assert all(request.method == "GET" for request in requests)
 
@@ -208,6 +215,37 @@ async def test_invalid_page_limits_are_rejected_before_network(adapter_factory, 
     with pytest.raises(ValueError):
         await adapter.fetch(BV, pages)
     assert requests == []
+
+
+@pytest.mark.parametrize("start_page", [0, -1, True, 1.5, "2"])
+async def test_invalid_start_page_is_rejected_before_network(adapter_factory, start_page):
+    def handle(request):
+        raise AssertionError("An invalid cursor must never reach HTTP")
+
+    adapter = await adapter_factory(handle)
+    with pytest.raises(ValueError, match="起始页"):
+        await adapter.fetch(BV, start_page=start_page)
+
+
+async def test_fetch_resumes_comment_scroll_from_the_saved_page(adapter_factory):
+    pages = []
+
+    def handle(request):
+        if request.url.path == "/x/web-interface/view":
+            return video_response()
+        page = int(request.url.params["pn"])
+        pages.append(page)
+        return httpx.Response(
+            200, json={"code": 0, "data": {"replies": [comment(page, 1001)], "page": {"count": 80}}}
+        )
+
+    adapter = await adapter_factory(handle)
+    first = await adapter.fetch(BV, start_page=3)
+    assert pages == [3]
+    assert first["next_page"] == 4 and first["has_more"]
+    last = await adapter.fetch(BV, start_page=first["next_page"])
+    assert pages == [3, 4]
+    assert last["next_page"] is None and not last["has_more"]
 
 
 async def test_pagination_deduplicates_comments_without_merging_same_nickname(adapter_factory):

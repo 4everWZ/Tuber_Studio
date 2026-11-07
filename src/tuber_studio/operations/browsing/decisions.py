@@ -15,6 +15,7 @@ from ...operation_text import (
     operation_character,
     operation_output_diagnostics,
 )
+from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
 from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
@@ -31,11 +32,13 @@ from .inputs import (
     compact_content_input,
     format_content_input,
     join_content_sources,
+    restore_stored_content_decisions,
 )
 from .models import (
     CONTENT_DECISION_INTENT_GLOSS,
     RESPONSE_INSTRUCTION,
     RESPONSE_REFERENCE_INSTRUCTION,
+    CandidateBatchPlan,
     ContentDecision,
     ResponseDecision,
     content_decision_schema,
@@ -112,7 +115,19 @@ class BrowsingDecisions:
             )
         elif schema is ResponseDecision:
             allowed = response_input.allowed_aliases
-            model_schema = response_schema(allowed, allow_handoff=data.get("kind") != "top_level")
+            model_schema = response_schema(
+                allowed,
+                allow_handoff=data.get("kind") != "top_level",
+                video_actions=data.get("video_actions", False),
+            )
+        elif schema is CandidateBatchPlan:
+            properties = model_schema["properties"]
+            properties["videos"]["items"] = {
+                "type": "string",
+                "enum": [item["bvid"] for item in data["candidates"]],
+            }
+            properties["videos"]["maxItems"] = data["max_videos"]
+            properties["workers"]["maximum"] = data["max_workers"]
         return character, messages, model_schema
 
     async def _model(
@@ -207,7 +222,15 @@ class BrowsingDecisions:
                 if response_input is not None
                 else schema.model_validate(result.model_dump() if hasattr(result, "model_dump") else result)
             )
-            if schema is ContentDecision:
+            if schema is CandidateBatchPlan:
+                allowed = {item["bvid"] for item in data["candidates"]}
+                if (
+                    not set(value.videos) <= allowed
+                    or len(value.videos) > data["max_videos"]
+                    or value.workers > data["max_workers"]
+                ):
+                    raise ValueError("批次计划须从本批候选选择视频，并遵守设置的并发上限")
+            elif schema is ContentDecision:
                 allowed = {segment["id"] for segment in data["segments"]}
                 if (
                     not set(value.evidence_ids) <= allowed
@@ -374,7 +397,9 @@ class BrowsingDecisions:
         presentation = self._content_presentation(material, row)
         output = row["config"]["decision_max_tokens"]
         context = self.browsing.settings.data["llm"]["context_tokens"]
-        available = min(context // 2, context * 95 // 100 - output, row["config"]["max_input_tokens"] // 2)
+        available = min(context // 2, context * 95 // 100 - output)
+        if row["config"]["max_input_tokens"]:
+            available = min(available, row["config"]["max_input_tokens"] // 2)
         if available <= 0:
             raise ContextWindowExceeded(
                 "显式输出预留已占满可用窗口；调整窗口或输出设置后可重读，原文保持完整"
@@ -517,10 +542,86 @@ class BrowsingDecisions:
         identity, material = result["id"], result["material"]
         heartbeat = result["heartbeat"]
         decisions, followup = [], {}
+        direct_response, context = None, None
         payload = {}
         try:
-            decisions = await self._content_decisions(material, row, metrics)
-            material, decisions = await self._followup_visual(result, row, metrics, decisions, followup)
+            progress = self.browsing.repo.content_progress(row, material["metadata"]["bvid"])
+            previous = (
+                self.browsing.store.one(
+                    "SELECT t.payload FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
+                    "WHERE r.account_id=? AND r.character_id=? AND t.material_key=? "
+                    "AND t.status IN ('selected','viewed_without_comment') ORDER BY t.updated_at DESC LIMIT 1",
+                    (row["account_id"], row["character_id"], result["material_key"]),
+                )
+                if not row["config"].get("force_read")
+                else None
+            )
+            saved_decisions = json.loads(previous["payload"]).get("decisions") if previous else None
+            if progress and not row["config"].get("force_read"):
+                saved_decisions = progress["decisions"]
+            if saved_decisions:
+                decisions = restore_stored_content_decisions(material, saved_decisions)
+            elif row["config"].get("discovery_publish") or row["config"].get("autonomous_batch"):
+                segments = self.browsing._segments(material)
+                references = {segment["id"] for segment in segments}
+                existing_top = self.browsing.store.one(
+                    "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                    (
+                        row["account_id"],
+                        row["character_id"],
+                        canonical_intent(
+                            "bilibili", material["metadata"]["bvid"], "top-level", row["character_id"]
+                        ),
+                    ),
+                )
+                if references and row["config"]["top_level_enabled"] and not existing_top:
+                    context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
+                    own_top = any(
+                        str(item.get("platform_user_id") or item.get("user_id")) == str(row["account_id"])
+                        and str(item.get("parent_comment_id") or "0") in {"0", str(item.get("comment_id"))}
+                        for item in context.get("items", [])
+                    )
+                    if not own_top:
+                        direct_response = await self._response(
+                            row, material, context, references, "top_level", metrics, video_actions=True
+                        )
+                action = direct_response.action if direct_response else "read_comments"
+                coverage = {"watch_frames": "visual", "read_more": "unread_part"}.get(action, "provided")
+                can_continue = action in {"reply_public", "read_comments", "watch_frames", "read_more"}
+                decisions = [
+                    ContentDecision(
+                        interest="like"
+                        if can_continue and coverage == "provided"
+                        else "need_more"
+                        if can_continue
+                        else "not_interested",
+                        worth_commenting=can_continue and coverage == "provided",
+                        reason="visual_required"
+                        if coverage == "visual"
+                        else "insufficient_evidence"
+                        if coverage == "unread_part"
+                        else "specific_detail"
+                        if can_continue
+                        else "no_interest",
+                        evidence_ids=(
+                            direct_response.evidence_ids
+                            if direct_response and direct_response.evidence_ids
+                            else list(references)[:8]
+                        ),
+                        coverage_required=coverage,
+                    )
+                ]
+                if coverage != "provided":
+                    if coverage == "visual":
+                        material, decisions = await self._followup_visual(
+                            result, row, metrics, decisions, followup
+                        )
+                    else:
+                        decisions = await self._content_decisions(material, row, metrics)
+                    direct_response = None
+            else:
+                decisions = await self._content_decisions(material, row, metrics)
+                material, decisions = await self._followup_visual(result, row, metrics, decisions, followup)
             actionable = [
                 d
                 for d in decisions
@@ -545,27 +646,25 @@ class BrowsingDecisions:
             }
             if followup:
                 payload["visual_followup"] = followup
+            self.browsing.repo.save_content_progress(row, material, decisions)
             bvid = material["metadata"]["bvid"]
             aid = str(material["metadata"]["aid"])
-            status = "viewed_without_comment"
+            status = "comments_checked" if saved_decisions else "viewed_without_comment"
             source_key = canonical_intent("bilibili", bvid, "top-level", row["character_id"])
             existing = self.browsing.store.one(
                 "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
                 (row["account_id"], row["character_id"], source_key),
             )
-            context = None
             chosen = {ref for d in actionable for ref in d.evidence_ids} if actionable else set()
+            if not chosen and row["config"].get("reply_enabled"):
+                chosen = {segment["id"] for segment in self.browsing._segments(material)}
 
             # Pre-fetch comments to verify if account already left a top-level comment on Bilibili
             need_comments = actionable and (
                 row["config"]["top_level_enabled"] or row["config"].get("reply_enabled", False)
             )
-            if need_comments and not existing:
-                context = await self.browsing._read(
-                    self.browsing.adapter.fetch,
-                    bvid,
-                    1,
-                )
+            if need_comments and not existing and context is None:
+                context = await self.browsing.video_comment_context(row, bvid)
 
             items_list = context.get("items", []) if isinstance(context, dict) else []
             has_own_top_level = any(
@@ -582,17 +681,16 @@ class BrowsingDecisions:
                 actionable
                 and row["config"]["top_level_enabled"]
                 and not already_commented
+                and (direct_response is None or direct_response.action == "reply_public")
                 and self.browsing.repo.round(row["id"])["budget"]["top_levels"]
                 < row["config"]["top_level_limit"]
             ):
                 self.browsing.repo.reserve_budget(row["id"], top_levels=1)
                 if context is None:
-                    context = await self.browsing._read(
-                        self.browsing.adapter.fetch,
-                        bvid,
-                        1,
-                    )
-                response = await self._response(row, material, context, chosen, "top_level", metrics)
+                    context = await self.browsing.video_comment_context(row, bvid)
+                response = direct_response or await self._response(
+                    row, material, context, chosen, "top_level", metrics
+                )
                 if response.action == "reply_public":
                     target = {
                         "type": 1,
@@ -678,131 +776,22 @@ class BrowsingDecisions:
 
             if row["config"].get("reply_enabled", False) and chosen:
                 if context is None:
-                    context = await self.browsing._read(
-                        self.browsing.adapter.fetch,
-                        material["metadata"]["bvid"],
-                        1,
-                    )
+                    context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
                 items = context.get("items", []) if isinstance(context, dict) else []
-                comments_by_id = {str(it.get("comment_id")): it for it in items if it.get("comment_id")}
-                threads_by_root = {}
-                for it in items:
-                    cid = str(it.get("comment_id"))
-                    rid = str(it.get("thread_id") or cid)
-                    threads_by_root.setdefault(rid, []).append(it)
-
                 for item in items:
                     if self.browsing.repo.video_reply_limit_reached(row, bvid):
                         break
-                    author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
-                    if not author_uid or author_uid == str(row["account_id"]):
-                        continue
-                    item_text = str(item.get("text") or item.get("content") or "")
-                    if category(item_text) == "spam" or len(item_text.strip()) < 2:
-                        continue
-                    comment_id = str(item["comment_id"])
-                    canonical = canonical_intent(
-                        "bilibili", material["metadata"]["bvid"], comment_id, row["character_id"]
+                    thread_intent = await self._reply_to_video_comment(
+                        row, material, result["material_key"], chosen, item, items, metrics
                     )
-                    if self.browsing.store.one(
-                        "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
-                        (row["account_id"], row["character_id"], canonical),
-                    ):
-                        continue
-                    root_id = str(item.get("thread_id") or comment_id)
-                    author_name = str(item.get("username") or item.get("display_name") or "")
-                    root_item = comments_by_id.get(root_id, item)
-                    root_author_name = str(root_item.get("username") or root_item.get("display_name") or "")
-                    root_text = str(root_item.get("text") or root_item.get("content") or "")
-
-                    parent_id = str(item.get("parent_comment_id") or root_id)
-                    parent_item = comments_by_id.get(parent_id) if parent_id != root_id else root_item
-                    parent_author_name = (
-                        str(parent_item.get("username") or parent_item.get("display_name") or "")
-                        if parent_item
-                        else ""
-                    )
-                    parent_text = (
-                        str(parent_item.get("text") or parent_item.get("content") or "")
-                        if parent_item
-                        else ""
-                    )
-
-                    timeline_items = threads_by_root.get(root_id, [item])
-                    thread_context = {
-                        "source": {
-                            "comment_id": comment_id,
-                            "author_uid": author_uid,
-                            "author_name": author_name,
-                            "text": item_text,
-                        },
-                        "target": {
-                            "type": 1,
-                            "oid": str(material["metadata"]["aid"]),
-                            "bvid": material["metadata"]["bvid"],
-                            "root": root_id,
-                            "parent": comment_id,
-                        },
-                        "root": {
-                            "comment_id": root_id,
-                            "author_name": root_author_name,
-                            "text": root_text,
-                        },
-                        "parent": {
-                            "comment_id": parent_id,
-                            "author_name": parent_author_name,
-                            "text": parent_text,
-                        }
-                        if comment_id != root_id
-                        else None,
-                        "timeline": [
-                            {
-                                "author_name": str(c.get("username") or c.get("display_name") or "观众"),
-                                "text": str(c.get("text") or c.get("content") or ""),
-                                "is_root": str(c.get("comment_id")) == root_id,
-                                "is_target": str(c.get("comment_id")) == comment_id,
-                            }
-                            for c in timeline_items[:8]
-                        ],
-                        "items": timeline_items,
-                    }
-                    thread_response = await self._response(
-                        row, material, thread_context, chosen, "reply_public", metrics
-                    )
-                    if thread_response.action == "reply_public" and thread_response.text:
-                        target = {
-                            "type": 1,
-                            "oid": str(material["metadata"]["aid"]),
-                            "bvid": material["metadata"]["bvid"],
-                            "root": root_id,
-                            "parent": comment_id,
-                            "recipient": author_uid,
-                            "recipient_name": author_name,
-                            "source_text": item_text,
-                        }
-                        thread_intent = self.browsing.publication._intent(
-                            row,
-                            "reply_public",
-                            target,
-                            thread_response,
-                            [result["material_key"]],
-                            thread_response.evidence_ids,
-                        )
-                        if not thread_intent:
-                            continue
-                        if "reply_intent_ids" not in payload:
-                            payload["reply_intent_ids"] = []
-                        payload["reply_intent_ids"].append(thread_intent["id"])
+                    if thread_intent:
+                        payload.setdefault("reply_intent_ids", []).append(thread_intent["id"])
                         status = "selected"
-                        if thread_intent["auto_authorized"]:
-                            if row["config"].get("discovery_publish"):
-                                await self.browsing._send_discovery_intent(thread_intent["id"], row)
-                            else:
-                                await self.browsing.publish(thread_intent["id"], automatic=True)
 
             self.browsing.repo.complete(
                 identity, result["owner"], result["generation"], status, payload, result["material_key"]
             )
+            self.browsing.commit_comment_context(context)
             metrics["viewed"] += 1
         except Exception as error:
             metrics["failures"] += 1
@@ -849,7 +838,137 @@ class BrowsingDecisions:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
 
-    async def _response(self, row, material, context, allowed, kind, metrics):
+    async def _reply_to_video_comment(self, row, material, material_key, chosen, item, items, metrics):
+        author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
+        item_text = str(item.get("text") or item.get("content") or "")
+        if (
+            not author_uid
+            or author_uid == str(row["account_id"])
+            or category(item_text) == "spam"
+            or len(item_text.strip()) < 2
+        ):
+            return None
+        comment_id = str(item["comment_id"])
+        root_id = str(item.get("thread_id") or comment_id)
+        bvid = material["metadata"]["bvid"]
+        canonical = canonical_intent("bilibili", bvid, comment_id, row["character_id"])
+        scope = (str(row["account_id"]), row["character_id"], bvid, root_id)
+        lane = operation_lane.set("reply")
+        try:
+            async with self.browsing.runtime.conversation_turn(scope) as waited:
+                self.browsing._check_round(row)
+                if self.browsing.repo.video_reply_limit_reached(row, bvid) or self.browsing.store.one(
+                    "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
+                    (row["account_id"], row["character_id"], canonical),
+                ):
+                    return None
+                if self.browsing.store.one(
+                    "SELECT d.id FROM drafts d JOIN comments c ON c.id=d.comment_id "
+                    "WHERE c.platform='bilibili' AND c.video_id=? AND c.comment_id=? AND d.character_id=?",
+                    (bvid, comment_id, row["character_id"]),
+                ):
+                    return None
+                target = {
+                    "type": 1,
+                    "oid": str(material["metadata"]["aid"]),
+                    "bvid": bvid,
+                    "root": root_id,
+                    "parent": comment_id,
+                }
+                if waited:
+                    read_thread = getattr(self.browsing.adapter, "read_video_thread", None)
+                    if read_thread is not None:
+                        fresh = await self.browsing._read(read_thread, target)
+                        source = fresh["source"]
+                        item = {
+                            **item,
+                            "content": source["text"],
+                            "text": source["text"],
+                            "platform_user_id": source["author_uid"],
+                            "user_id": source["author_uid"],
+                            "display_name": source.get("author_name", item.get("display_name", "")),
+                        }
+                        items = fresh["items"]
+                    elif hasattr(self.browsing.adapter, "read_video_reply"):
+                        source = await self.browsing._read(self.browsing.adapter.read_video_reply, target)
+                        item = {
+                            **item,
+                            "content": source["text"],
+                            "text": source["text"],
+                            "platform_user_id": source["author_uid"],
+                            "user_id": source["author_uid"],
+                        }
+                    author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
+                    item_text = str(item.get("text") or item.get("content") or "")
+                    if author_uid == str(row["account_id"]) or category(item_text) == "spam":
+                        return None
+                thread_context = self._video_comment_context(item, items, target)
+                thread_response = await self._response(
+                    row, material, thread_context, chosen, "reply_public", metrics
+                )
+                if thread_response.action != "reply_public" or not thread_response.text:
+                    return None
+                target.update(
+                    recipient=author_uid,
+                    recipient_name=thread_context["source"]["author_name"],
+                    source_text=item_text,
+                )
+                thread_intent = self.browsing.publication._intent(
+                    row, "reply_public", target, thread_response, [material_key], thread_response.evidence_ids
+                )
+                if not thread_intent:
+                    return None
+                if thread_intent["auto_authorized"]:
+                    if row["config"].get("discovery_publish"):
+                        await self.browsing._send_discovery_intent(thread_intent["id"], row)
+                    else:
+                        await self.browsing.publish(thread_intent["id"], automatic=True)
+                return thread_intent
+        finally:
+            operation_lane.reset(lane)
+
+    @staticmethod
+    def _video_comment_context(item, items, target):
+        comment_id, root_id = str(item["comment_id"]), target["root"]
+        comments_by_id = {str(it.get("comment_id")): it for it in items if it.get("comment_id")}
+        root_item = comments_by_id.get(root_id, item)
+        parent_id = str(item.get("parent_comment_id") or root_id)
+        parent_item = comments_by_id.get(parent_id, {}) if parent_id != root_id else root_item
+        timeline_items = [it for it in items if str(it.get("thread_id") or it.get("comment_id")) == root_id]
+        return {
+            "source": {
+                "comment_id": comment_id,
+                "author_uid": str(item.get("user_id") or item.get("platform_user_id") or ""),
+                "author_name": str(item.get("username") or item.get("display_name") or ""),
+                "text": str(item.get("text") or item.get("content") or ""),
+            },
+            "target": target,
+            "root": {
+                "comment_id": root_id,
+                "author_name": str(root_item.get("username") or root_item.get("display_name") or ""),
+                "text": str(root_item.get("text") or root_item.get("content") or ""),
+            },
+            "parent": {
+                "comment_id": parent_id,
+                "author_name": str(parent_item.get("username") or parent_item.get("display_name") or ""),
+                "text": str(parent_item.get("text") or parent_item.get("content") or ""),
+            }
+            if comment_id != root_id
+            else None,
+            "timeline": [
+                {
+                    "author_name": str(c.get("username") or c.get("display_name") or "观众"),
+                    "text": str(c.get("text") or c.get("content") or ""),
+                    "is_root": str(c.get("comment_id")) == root_id,
+                    "is_target": str(c.get("comment_id")) == comment_id,
+                }
+                for c in timeline_items[:8]
+            ],
+            "items": timeline_items,
+        }
+
+    async def _response(self, row, material, context, allowed, kind, metrics, *, video_actions=False):
+        context = {key: value for key, value in context.items() if key != "_scroll_progress"}
         if uid := (context.get("source") or {}).get("author_uid"):
             context = context | {
                 "confirmed_relationship": self.browsing.runtime.relationships.view(
@@ -872,6 +991,7 @@ class BrowsingDecisions:
             "thread": context,
             "recent_public_responses": recent,
             "coverage": material["coverage"] if material else "public_text",
+            **({"video_actions": True} if video_actions else {}),
         }
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
@@ -885,7 +1005,14 @@ class BrowsingDecisions:
             row,
             ResponseDecision,
             data,
-            RESPONSE_INSTRUCTION,
+            RESPONSE_INSTRUCTION
+            + (
+                " 这次可直接选择行动并给出正文，无需先做兴趣或渠道分类。"
+                "想继续翻评论选read_comments；想补看画面选watch_frames；想补读视频内容选read_more。"
+                "已有材料够用时直接reply_public并给出正文，也可skip或wait。"
+                if video_actions
+                else ""
+            ),
             metrics,
             diagnose=lambda value: (
                 self.repetition_reason(value.text, recent, context)

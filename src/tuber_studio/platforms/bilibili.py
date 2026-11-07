@@ -295,13 +295,16 @@ class BilibiliAdapter:
             "created_at": str(int(reply.get("ctime", 0))),
         }
 
-    async def fetch(self, video: str, max_pages: int = 1, *, newest=False) -> dict:
+    async def fetch(self, video: str, max_pages: int = 1, *, newest=False, start_page=1) -> dict:
         if type(max_pages) is not int or not 1 <= max_pages <= 10:
             raise ValueError("每次读取页数须为 1 到 10")
+        if type(start_page) is not int or start_page < 1:
+            raise ValueError("起始页须为正整数")
         info = await self._video(video)
         items, seen = [], set()
-        for page in range(1, max_pages + 1):
-            if page > 1:
+        next_page = None
+        for page in range(start_page, start_page + max_pages):
+            if page > start_page:
                 await asyncio.sleep(0.5)
             data = await self._get(
                 "/x/v2/reply",
@@ -340,13 +343,17 @@ class BilibiliAdapter:
             if not isinstance(page_info, dict):
                 raise ValueError("B 站评论分页数据无效")
             count = page_info.get("count")
-            if not replies or (isinstance(count, int) and page * 20 >= count):
+            has_more = bool(replies) and not (isinstance(count, int) and page * 20 >= count)
+            next_page = page + 1 if has_more else None
+            if not has_more:
                 break
         return {
             "video_id": info["bvid"],
             "items": items,
             "title": str(info.get("title", "")),
             "aid": info["aid"],
+            "has_more": next_page is not None,
+            "next_page": next_page,
         }
 
     async def publish(

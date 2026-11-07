@@ -479,6 +479,32 @@ async def test_notification_pages_account_scope_ids_and_same_second_events(adapt
         await adapter.notifications("like")
 
 
+async def test_video_discussion_refresh_reads_one_thread_without_notification_or_scroll_side_effects(
+    adapter_factory,
+):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.method == "GET" and request.url.path == "/x/v2/reply/reply"
+        assert dict(request.url.params) == {"oid": "123", "type": "1", "root": "100", "pn": "1", "ps": "20"}
+        return result({"root": comment(author=88), "replies": [comment(101, 7, 100, "新的讨论内容")]})
+
+    adapter = await adapter_factory(handle)
+    target = {"oid": "123", "bvid": BV, "type": 1, "root": "100", "parent": "101"}
+    thread = await adapter.read_video_thread(target)
+    assert thread["source"] == {
+        "comment_id": "101",
+        "author_uid": "7",
+        "author_name": "同名用户",
+        "text": "新的讨论内容",
+    }
+    assert [item["comment_id"] for item in thread["items"]] == ["100", "101"]
+    assert thread["target"] == target
+    assert await adapter.read_video_reply(target) == {"author_uid": "7", "text": "新的讨论内容"}
+    assert len(requests) == 2
+
+
 async def test_real_reply_source_must_match_actor_and_own_original_comment(adapter_factory):
     def handle(request):
         if request.url.path == "/x/web-interface/nav":

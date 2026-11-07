@@ -23,6 +23,7 @@ from tuber_studio.operations.browsing.inputs import (
     format_content_input,
     join_content_sources,
     persona_fingerprint,
+    restore_stored_content_decisions,
 )
 from tuber_studio.operations.browsing.models import (
     RESPONSE_INSTRUCTION,
@@ -359,6 +360,14 @@ def test_wider_classification_groups_expand_back_to_exact_individual_response_so
     }
     assert response.resolve(wire).evidence_ids == [selected[0]["id"], selected[-1]["id"]]
     assert value == source
+
+    restored = restore_stored_content_decisions(value, [bound.model_dump()])
+    assert restored[0].evidence_ids == bound.evidence_ids
+    assert restored[0].model_dump() == bound.model_dump()
+    assert len(restored[0].evidence_ids) > 8
+    assert restored[0].sources == bound.sources
+    with pytest.raises(ValueError, match="原始材料引用"):
+        restore_stored_content_decisions(value, [bound.model_dump() | {"evidence_ids": ["e1"]}])
 
 
 @pytest.mark.parametrize("second_start", [0.5, 3])
