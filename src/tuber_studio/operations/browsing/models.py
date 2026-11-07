@@ -1,5 +1,6 @@
 """Bounded browsing decisions and the optional video-evidence provider contract."""
 
+from copy import deepcopy
 from typing import Literal, Protocol
 
 from pydantic import Field, PrivateAttr, field_validator, model_validator
@@ -154,8 +155,7 @@ class BrowsePlan(StrictModel):
     delay_seconds: int = Field(default=300, ge=60, le=86400)
 
 
-class BatchCandidateChoice(StrictModel):
-    bvid: str
+class CandidateAction(StrictModel):
     action: Literal["watch", "comments", "skip", "later"]
     explanation: str = Field(min_length=1)
 
@@ -165,6 +165,20 @@ class BatchCandidateChoice(StrictModel):
         if not value.strip():
             raise ValueError("请说明这条候选行动的具体原因")
         return value.strip()
+
+
+class BatchCandidateChoice(CandidateAction):
+    bvid: str
+
+
+class PrioritizedCandidateChoice(CandidateAction):
+    priority: int = Field(strict=True)
+
+
+class KeyedCandidateBatchPlan(StrictModel):
+    workers: int = Field(ge=1, le=8)
+    explanation: str = ""
+    choices: dict[str, PrioritizedCandidateChoice] = Field(max_length=MAX_BATCH_CANDIDATES)
 
 
 class CandidateBatchPlan(StrictModel):
@@ -179,6 +193,62 @@ class CandidateBatchPlan(StrictModel):
         if len(value) != len(set(value)):
             raise ValueError("批次中同一个视频只选择一次")
         return value
+
+
+def candidate_batch_schema(candidates, max_workers):
+    schema = KeyedCandidateBatchPlan.model_json_schema()
+    schema["title"] = "CandidateBatchPlan"
+    choice_schema = schema.pop("$defs")["PrioritizedCandidateChoice"]
+    properties = {}
+    for candidate in candidates:
+        choice = deepcopy(choice_schema)
+        choice["properties"]["action"]["enum"] = candidate["available_actions"]
+        properties[candidate["bvid"]] = choice
+    schema["properties"]["choices"] = {
+        "type": "object", "properties": properties, "required": list(properties),
+        "additionalProperties": False,
+    }
+    schema["properties"]["workers"]["maximum"] = max_workers
+    return schema
+
+
+def candidate_batch_plan(value, candidates):
+    """Resolve model priorities into the existing canonical ordered plan."""
+    value = value.model_dump() if hasattr(value, "model_dump") else value
+    allowed = {item["bvid"] for item in candidates}
+    if isinstance(value, dict) and "videos" in value and isinstance(value.get("choices"), list):
+        # Completed continuation outputs use the public canonical representation.
+        plan = CandidateBatchPlan.model_validate(value)
+        ids = [choice.bvid for choice in plan.choices]
+        if len(ids) != len(set(ids)) or set(ids) != allowed:
+            raise ValueError("保存的批次计划须保留每个候选且恰好一次")
+        actions = {item["bvid"]: item["available_actions"] for item in candidates}
+        if any(choice.action not in actions[choice.bvid] for choice in plan.choices):
+            raise ValueError("保存的批次计划包含本轮未开放的行动")
+        if plan.videos != [choice.bvid for choice in plan.choices if choice.action in {"watch", "comments"}]:
+            raise ValueError("保存的批次执行索引与逐项行动不一致")
+        return plan
+    if not isinstance(value, dict) or not isinstance(value.get("choices"), dict):
+        raise ValueError("choices须按候选BV号作为唯一键，每项给出action、explanation和整数priority")
+    choices = value["choices"]
+    missing = [item["bvid"] for item in candidates if item["bvid"] not in choices]
+    unknown = [bvid for bvid in choices if bvid not in allowed]
+    if missing or unknown:
+        raise ValueError(f"每个候选须恰好一个去向；missing_bvids={missing}；unknown_bvids={unknown}")
+    # videos is the program's derived index. Older providers may still echo it.
+    wire = KeyedCandidateBatchPlan.model_validate({key: item for key, item in value.items() if key != "videos"})
+    for candidate in candidates:
+        if wire.choices[candidate["bvid"]].action not in candidate["available_actions"]:
+            raise ValueError("候选行动未开放：" + candidate["bvid"])
+    ordered = sorted(candidates, key=lambda item: -wire.choices[item["bvid"]].priority)
+    canonical = [
+        BatchCandidateChoice(bvid=item["bvid"], **wire.choices[item["bvid"]].model_dump(exclude={"priority"}))
+        for item in ordered
+    ]
+    return CandidateBatchPlan(
+        workers=wire.workers, explanation=wire.explanation, choices=canonical,
+        videos=[item.bvid for item in canonical if item.action in {"watch", "comments"}],
+    )
 
 
 CONTENT_DECISION_INTENT_GLOSS = """

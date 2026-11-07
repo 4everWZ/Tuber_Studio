@@ -42,6 +42,19 @@ def model_packet(source):
     return value
 
 
+def batch_plan_wire(choices, *, workers=1, explanation=""):
+    assert len({item["bvid"] for item in choices}) == len(choices)
+    return {
+        "workers": workers,
+        "explanation": explanation,
+        "choices": {
+            item["bvid"]: {key: value for key, value in item.items() if key != "bvid"}
+            | {"priority": len(choices) - index}
+            for index, item in enumerate(choices)
+        },
+    }
+
+
 class ControlledPlatform:
     def __init__(self):
         self.account = "100"
@@ -187,19 +200,16 @@ class ControlledModel:
             if schema["title"] == "BrowsePlan":
                 return {"action": "recommend", "keywords": [], "reason": "explore", "delay_seconds": 300}
             if schema["title"] == "CandidateBatchPlan":
-                return {
-                    "videos": [item["bvid"] for item in data["candidates"][: data["max_videos"]]],
-                    "workers": data["max_workers"],
-                    "explanation": "看看这批视频里各自的实验结果",
-                    "choices": [
+                return batch_plan_wire(
+                    [
                         {
                             "bvid": item["bvid"],
                             "action": "watch" if index < data["max_videos"] else "skip",
                             "explanation": f"想看看{item['title']}的具体过程",
                         }
                         for index, item in enumerate(data["candidates"])
-                    ],
-                }
+                    ], workers=data["max_workers"], explanation="看看这批视频里各自的实验结果",
+                )
             if schema["title"] == "ContentDecision":
                 return {
                     "interest": self.interest,
@@ -1356,18 +1366,20 @@ async def test_model_selects_batch_order_and_parallel_agent_count(browsing):
         if schema["title"] == "CandidateBatchPlan":
             packet = model_packet(messages[-1]["content"])
             assert [item["bvid"] for item in packet["candidates"]] == videos
-            return {"videos": list(reversed(videos[1:])), "workers": 1}
+            return batch_plan_wire([
+                {"bvid": bvid, "action": "watch" if bvid != BV else "skip", "explanation": "按兴趣安排这一条"}
+                for bvid in reversed(videos)
+            ])
         return await original(messages, schema, max_tokens=max_tokens)
 
     browsing.runtime.llm.generate_json = choose
     await browsing._current_account()
     row = await finished(browsing, automatic=True, video_only=True)
-    assert row["metrics"]["batch_plan"] == {
-        "videos": list(reversed(videos[1:])),
-        "workers": 1,
-        "choices": [],
-        "explanation": "",
-    }
+    plan = row["metrics"]["batch_plan"]
+    assert plan["videos"] == list(reversed(videos[1:]))
+    assert plan["workers"] == 1
+    assert [item["bvid"] for item in plan["choices"]] == list(reversed(videos))
+    assert [item["action"] for item in plan["choices"]] == ["watch", "watch", "skip"]
     assert row["metrics"]["workers"] == 1
     assert list(dict.fromkeys(call[1] for call in browsing.adapter.calls if call[0] == "metadata")) == list(
         reversed(videos[1:])

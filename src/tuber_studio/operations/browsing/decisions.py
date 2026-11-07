@@ -4,7 +4,6 @@ import asyncio
 import json
 import time
 import unicodedata
-from collections import Counter
 from difflib import SequenceMatcher
 
 from ...comments import category
@@ -47,6 +46,8 @@ from .models import (
     CandidateBatchPlan,
     ContentDecision,
     ResponseDecision,
+    candidate_batch_plan,
+    candidate_batch_schema,
     content_decision_schema,
     response_schema,
 )
@@ -178,26 +179,12 @@ class BrowsingDecisions:
                 allow_comments=data.get("allow_comments", True),
             )
         elif schema is CandidateBatchPlan:
-            properties = model_schema["properties"]
             allowed_videos = [item["bvid"] for item in data["candidates"]]
             if len(allowed_videos) > row["config"]["candidate_limit"] or len(set(allowed_videos)) != len(
                 allowed_videos
             ):
                 raise ValueError("批次模型输入须按BV号去重并限制在设置的候选数量内")
-            # The ordered choices are the model's one authoritative plan.
-            # videos is a derived execution index, not a second answer that can
-            # contradict those same choices and interrupt the entire batch.
-            properties.pop("videos", None)
-            model_schema["required"] = [
-                key for key in model_schema.get("required", []) if key != "videos"
-            ]
-            properties["workers"]["maximum"] = data["max_workers"]
-            if "choices" in properties:
-                choice = model_schema["$defs"]["BatchCandidateChoice"]
-                choice["properties"]["bvid"] = {"type": "string", "enum": allowed_videos}
-                choice["properties"]["action"]["enum"] = data["candidates"][0]["available_actions"]
-                properties["choices"].update(minItems=len(allowed_videos), maxItems=len(allowed_videos))
-                model_schema["required"] = list(dict.fromkeys(model_schema.get("required", []) + ["choices"]))
+            model_schema = candidate_batch_schema(data["candidates"], data["max_workers"])
         return character, messages, model_schema
 
     async def _model(
@@ -291,26 +278,12 @@ class BrowsingDecisions:
             value = (
                 response_input.validate_wire(result)
                 if response_input is not None
+                else candidate_batch_plan(result, data["candidates"])
+                if schema is CandidateBatchPlan
                 else schema.model_validate(result.model_dump() if hasattr(result, "model_dump") else result)
             )
             if schema is CandidateBatchPlan:
                 allowed = {item["bvid"] for item in data["candidates"]}
-                if value.choices or isinstance(result, dict) and "choices" in result:
-                    identities = [choice.bvid for choice in value.choices]
-                    counts = Counter(identities)
-                    invalid = {
-                        "duplicate_bvids": [bvid for bvid, count in counts.items() if count > 1],
-                        "missing_bvids": [item["bvid"] for item in data["candidates"] if item["bvid"] not in counts],
-                        "unknown_bvids": [bvid for bvid in counts if bvid not in allowed],
-                    }
-                    if any(invalid.values()):
-                        raise ValueError("每个候选须有且只有一个choices条目；校验结果：" + dump(invalid))
-                    actions = {item["bvid"]: item["available_actions"] for item in data["candidates"]}
-                    if any(choice.action not in actions[choice.bvid] for choice in value.choices):
-                        raise ValueError("本轮未开放评论区任务，请从候选available_actions选择行动")
-                    value.videos = [
-                        choice.bvid for choice in value.choices if choice.action in {"watch", "comments"}
-                    ]
                 if (
                     not set(value.videos) <= allowed
                     or len(value.videos) > data["max_videos"]
@@ -359,8 +332,8 @@ class BrowsingDecisions:
                 message = str(error)
             return {
                 "action": "revise",
-                "reason": "修订完整的有序choices，每个候选恰好一次。对重复冲突和漏项自行选择，"
-                "保留其余仍认可的行动与相对顺序。具体校验反馈：" + message,
+                "reason": "修订完整的choices对象，每个候选BV恰好一个键，每项给action、explanation和整数priority。"
+                "自行决定去向和priority，保留其余仍认可的行动与优先次序。具体校验反馈：" + message,
             }
 
         binding = {
@@ -387,7 +360,7 @@ class BrowsingDecisions:
         if response_input is not None:
             binding["input_format"] = response_input.FORMAT_VERSION
         elif schema is CandidateBatchPlan:
-            binding["input_format"] = "independent-candidate-actions-v3"
+            binding["input_format"] = "keyed-candidate-priorities-v4"
         if profile_revision is not None:
             binding["profile_revision"] = profile_revision
         if video_response:

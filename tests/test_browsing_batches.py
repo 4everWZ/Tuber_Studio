@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-from test_browsing import BV, authorize_automation, finished, model_packet
+from test_browsing import BV, authorize_automation, batch_plan_wire, finished, model_packet
 from test_browsing import browsing as browsing
 
 
@@ -48,18 +48,14 @@ async def test_later_search_batches_continue_to_other_pages_after_title_skips(br
     async def skip(messages, schema, *, max_tokens):
         if schema["title"] == "CandidateBatchPlan":
             candidates = model_packet(messages[-1]["content"])["candidates"]
-            return {
-                "videos": [],
-                "workers": 1,
-                "choices": [
+            return batch_plan_wire([
                     {
                         "bvid": item["bvid"],
                         "action": "skip",
                         "explanation": f"{item['title']}先不看，继续找其它内容",
                     }
                     for item in candidates
-                ],
-            }
+                ])
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.adapter, "discover", search)
@@ -204,19 +200,14 @@ async def test_title_skips_are_durable_and_do_not_create_watch_records(browsing,
     async def skip(messages, schema, *, max_tokens):
         if schema["title"] == "CandidateBatchPlan":
             packet = model_packet(messages[-1]["content"])
-            return {
-                "videos": [],
-                "workers": 1,
-                "explanation": "这批标题没有想看的内容。",
-                "choices": [
+            return batch_plan_wire([
                     {
                         "bvid": item["bvid"],
                         "action": "skip",
                         "explanation": "盐水实验标题刚讨论过，先看其它话题。",
                     }
                     for item in packet["candidates"]
-                ],
-            }
+                ], explanation="这批标题没有想看的内容。")
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)

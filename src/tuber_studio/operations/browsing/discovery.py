@@ -665,10 +665,12 @@ async def plan_batch(browsing, row, candidates):
         "workers是你想同时交给视频子Agent处理的数量，不超过max_workers。"
         "already_commented表示已有视频主回复，不再重复发主回复，但可以继续翻评论、回复新留言。"
         "watch_state区分new、started、reading、viewed和complete；只有fully_read=true才表示完整读过可用内容。"
-        "按想处理的先后顺序逐条给choices与具体理由，从available_actions选择："
+        "choices是以每个候选BV号为唯一键的对象，每项给action、具体explanation和整数priority。"
+        "priority越大越先处理；相同priority按本批候选原顺序处理，不要求每项优先级不同。"
+        "从available_actions选择："
         "watch观看视频，comments只逛评论区（未看过的视频也可以），skip略过，later暂后。"
         "explanation结合本条标题或讨论说明为什么选择该行动。"
-        "只需给出一份有序choices，程序据此安排任务，later留给后续批次。"
+        "全部候选各写一次，程序按你给的priority安排任务，later留给后续批次。"
         "观看任务读取真实字幕和画面；评论任务读取真实评论，不自动观看视频或生成主评。"
         "子Agent再自行决定发言、回复评论或略过；这一批完成后再看下一批。",
         max_tokens=config["decision_max_tokens"],

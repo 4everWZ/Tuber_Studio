@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import pytest
-from test_browsing import BV, finished, model_packet
+from test_browsing import BV, batch_plan_wire, finished, model_packet
 from test_browsing import browsing as browsing
 
 from tuber_studio.operation_turns import operation_lane
@@ -25,10 +25,10 @@ async def enable_comment_choices(browsing, monkeypatch, *, automatic=False):
         calls.append((schema["title"], operation_lane.get()))
         if schema["title"] == "CandidateBatchPlan":
             candidates = model_packet(messages[-1]["content"])["candidates"]
-            return {"workers": 1, "choices": [
+            return batch_plan_wire([
                 {"bvid": item["bvid"], "action": mode["action"], "explanation": "先看看评论里大家用了多少盐，再接着聊"}
                 for item in candidates
-            ]}
+            ])
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)

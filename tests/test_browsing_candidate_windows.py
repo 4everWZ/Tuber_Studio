@@ -2,12 +2,16 @@ import json
 
 import pytest
 from pydantic import ValidationError
-from test_browsing import BV, finished, model_packet
+from test_browsing import BV, batch_plan_wire, finished, model_packet
 from test_browsing import browsing as browsing
 from test_browsing_batches import authorize
 
 from tuber_studio.operation_continuations import content_hash
-from tuber_studio.operations.browsing.models import BatchCandidateChoice
+from tuber_studio.operations.browsing.models import (
+    BatchCandidateChoice,
+    candidate_batch_plan,
+    candidate_batch_schema,
+)
 
 
 def candidate(number):
@@ -19,6 +23,55 @@ def test_candidate_action_requires_a_nonblank_explanation():
         BatchCandidateChoice(bvid=BV, action="comments", explanation=" \n\t ")
     choice = BatchCandidateChoice(bvid=BV, action="comments", explanation=" 想看看大家怎么讨论盐水实验 ")
     assert choice.explanation == "想看看大家怎么讨论盐水实验"
+
+
+def test_keyed_plan_requires_all_twenty_sources_and_tied_priorities_use_candidate_order():
+    from tuber_studio.inference_validation import _local_schema
+
+    candidates = [candidate(number) | {"available_actions": ["watch", "comments", "skip", "later"]} for number in range(1, 21)]
+    schema = candidate_batch_schema(candidates, 4)
+    _local_schema(schema)
+    choices = schema["properties"]["choices"]
+    assert choices["required"] == [item["bvid"] for item in candidates]
+    assert set(choices["properties"]) == set(choices["required"])
+    assert choices["additionalProperties"] is False
+    assert all(set(item["required"]) == {"action", "explanation", "priority"} for item in choices["properties"].values())
+    assert all(item["additionalProperties"] is False for item in choices["properties"].values())
+    wire = {
+        "workers": 3,
+        "choices": {
+            item["bvid"]: {"action": "watch", "explanation": item["title"] + "想看看", "priority": -10}
+            for item in reversed(candidates)
+        },
+    }
+    wire["choices"][candidates[-1]["bvid"]]["priority"] = 4
+    plan = candidate_batch_plan(wire, candidates)
+    assert plan.workers == 3
+    assert plan.videos == [candidates[-1]["bvid"], *[item["bvid"] for item in candidates[:-1]]]
+    assert [item.bvid for item in plan.choices] == plan.videos
+    assert all(item.action == "watch" and item.explanation for item in plan.choices)
+    assert candidate_batch_plan(plan.model_dump(), candidates) == plan
+
+
+@pytest.mark.parametrize("priority", [True, 1.5, "4"])
+def test_candidate_priority_is_an_integer_without_silent_conversion(priority):
+    candidates = [candidate(1) | {"available_actions": ["watch", "skip"]}]
+    with pytest.raises(ValidationError):
+        candidate_batch_plan({"workers": 1, "choices": {
+            candidates[0]["bvid"]: {"action": "watch", "explanation": "想看看这条", "priority": priority},
+        }}, candidates)
+
+
+def test_canonical_history_remains_readable_but_cannot_bypass_current_actions():
+    from tuber_studio.operations.browsing.models import CandidateBatchPlan
+
+    historical = {
+        "videos": [BV], "workers": 1,
+        "choices": [{"bvid": BV, "action": "comments", "explanation": "想看看讨论"}],
+    }
+    assert CandidateBatchPlan.model_validate(historical).videos == [BV]
+    with pytest.raises(ValueError, match="未开放"):
+        candidate_batch_plan(historical, [{"bvid": BV, "available_actions": ["watch", "skip"]}])
 
 
 @pytest.mark.parametrize(("limit", "source_mode"), [(20, "retry"), (3, "retry"), (20, "multiple")])
@@ -49,19 +102,18 @@ async def test_overflow_from_retries_or_multiple_sources_is_bounded_and_carried_
         packet = model_packet(messages[-1]["content"])
         entries = packet["candidates"]
         assert len(entries) <= limit
-        assert schema["properties"]["choices"]["minItems"] == len(entries)
-        assert schema["properties"]["choices"]["maxItems"] == len(entries)
+        wire_choices = schema["properties"]["choices"]
+        assert wire_choices["type"] == "object"
+        assert wire_choices["required"] == [item["bvid"] for item in entries]
+        assert set(wire_choices["properties"]) == set(wire_choices["required"])
+        assert wire_choices["additionalProperties"] is False
         assert "videos" not in schema["properties"]
         assert len({item["bvid"] for item in entries}) == len(entries)
         batches.append([item["bvid"] for item in entries])
-        return {
-            "videos": [],
-            "workers": 1,
-            "choices": [
+        return batch_plan_wire([
                 {"bvid": item["bvid"], "action": "skip", "explanation": item["title"] + "本次先略过"}
                 for item in entries
-            ],
-        }
+            ])
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", skip)
@@ -118,14 +170,10 @@ async def test_resuming_a_completed_retrieval_with_21_raw_candidates_uses_a_fres
     async def choose(messages, schema, *, max_tokens):
         entries = model_packet(messages[-1]["content"])["candidates"]
         assert len(entries) == 20
-        return {
-            "videos": [],
-            "workers": 1,
-            "choices": [
+        return batch_plan_wire([
                 {"bvid": item["bvid"], "action": "skip", "explanation": "这一条已经看过标题，先略过"}
                 for item in entries
-            ],
-        }
+            ])
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
     assert await browsing._discover(row) == []
@@ -154,14 +202,11 @@ async def test_ordered_choices_are_the_single_plan_even_if_a_provider_adds_a_sta
         assert "videos" not in schema["properties"]
         entries = model_packet(messages[-1]["content"])["candidates"]
         assert all("comments" in item["available_actions"] for item in entries)
-        result = {
-            "workers": 1,
-            "choices": [
+        result = batch_plan_wire([
                 {"bvid": second["bvid"], "action": "comments", "explanation": "想看看实验下的讨论"},
                 {"bvid": BV, "action": "watch", "explanation": "想看实验的具体过程"},
                 {"bvid": skipped["bvid"], "action": "skip", "explanation": "这次想先看实验话题"},
-            ],
-        }
+            ])
         if redundant_videos is not None:
             result["videos"] = redundant_videos
         return result
@@ -186,8 +231,8 @@ async def test_disabled_comments_are_absent_from_the_plan_schema_and_candidate_a
     async def choose(messages, schema, *, max_tokens):
         item = model_packet(messages[-1]["content"])["candidates"][0]
         assert "comments" not in item["available_actions"]
-        assert "comments" not in schema["$defs"]["BatchCandidateChoice"]["properties"]["action"]["enum"]
-        return {"workers": 1, "choices": [{"bvid": BV, "action": "skip", "explanation": "先略过这个标题"}]}
+        assert "comments" not in schema["properties"]["choices"]["properties"][BV]["properties"]["action"]["enum"]
+        return batch_plan_wire([{"bvid": BV, "action": "skip", "explanation": "先略过这个标题"}])
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
     assert await browsing._plan_batch(row, [{"bvid": BV, "title": "实验"}]) == []
@@ -230,7 +275,7 @@ async def test_old_plan_checkpoint_does_not_retrap_the_saved_batch_or_restart_re
 
     async def choose(messages, schema, *, max_tokens):
         generated.append(schema["title"])
-        return {"workers": 1, "choices": [{"bvid": BV, "action": "comments", "explanation": "想聊聊楼里的讨论"}]}
+        return batch_plan_wire([{"bvid": BV, "action": "comments", "explanation": "想聊聊楼里的讨论"}])
 
     monkeypatch.setattr(browsing.adapter, "discover", no_retrieval)
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
@@ -256,7 +301,7 @@ async def planner_round(browsing):
 
 @pytest.mark.parametrize(
     ("invalid_kind", "resume_old_checkpoint"),
-    [("duplicate", False), ("duplicate", True), ("missing", False), ("unknown", False)],
+    [("legacy_duplicate", False), ("missing", True), ("missing", False), ("unknown", False)],
 )
 async def test_candidate_plan_repairs_structure_once_with_full_sources_and_keeps_model_order(
     browsing, monkeypatch, planner_round, invalid_kind, resume_old_checkpoint,
@@ -271,19 +316,20 @@ async def test_candidate_plan_repairs_structure_once_with_full_sources_and_keeps
         {"bvid": item["bvid"], "action": "watch" if index == 0 else "skip", "explanation": item["title"] + "本次选择"}
         for index, item in enumerate(candidates)
     ]
-    invalid = {"workers": 1, "choices": deepcopy(choices)}
-    if invalid_kind == "missing":
-        invalid["choices"].pop()
+    invalid = batch_plan_wire(choices)
+    if invalid_kind == "legacy_duplicate":
+        invalid = {"workers": 1, "choices": deepcopy(choices)}
+        invalid["choices"][-1]["bvid"] = candidates[0]["bvid"]
     else:
-        invalid["choices"][-1]["bvid"] = candidates[0]["bvid"] if invalid_kind == "duplicate" else candidate(999)["bvid"]
-    corrected = {
-        "workers": 2,
-        "choices": [
+        last = invalid["choices"].pop(candidates[-1]["bvid"])
+        if invalid_kind == "unknown":
+            invalid["choices"][candidate(999)["bvid"]] = last
+    corrected_choices = [
             choices[-1] | {"action": "watch", "explanation": "我想先看最后这条"},
             choices[0],
             *choices[1:-1],
-        ],
-    }
+        ]
+    corrected = batch_plan_wire(corrected_choices, workers=2)
     calls = []
 
     async def generate(messages, schema, *, max_tokens):
@@ -297,9 +343,10 @@ async def test_candidate_plan_repairs_structure_once_with_full_sources_and_keeps
             repair_record = next(message["content"] for message in messages if "以下为任务记录数据：" in message["content"])
             assert json.loads(repair_record.split("以下为任务记录数据：", 1)[1])["original_output"] == json.dumps(invalid, ensure_ascii=False)
             feedback = messages[-1]["content"]
-            assert candidates[-1]["bvid"] in feedback and "missing_bvids" in feedback
-            if invalid_kind == "duplicate":
-                assert candidates[0]["bvid"] in feedback and "duplicate_bvids" in feedback
+            if invalid_kind == "legacy_duplicate":
+                assert "唯一键" in feedback
+            else:
+                assert candidates[-1]["bvid"] in feedback and "missing_bvids" in feedback
             if invalid_kind == "unknown":
                 assert candidate(999)["bvid"] in feedback and "unknown_bvids" in feedback
         result = invalid if len(calls) == 1 else corrected
@@ -331,7 +378,7 @@ async def test_candidate_plan_repairs_structure_once_with_full_sources_and_keeps
     assert len(calls) == 2
     assert [item["bvid"] for item in selected] == [candidates[-1]["bvid"], candidates[0]["bvid"]]
     plan = browsing.repo.batches.get(row)["plan"]
-    assert plan["choices"] == corrected["choices"]
+    assert plan["choices"] == corrected_choices
     assert plan["workers"] == corrected["workers"]
     saved = coordinator.get(browsing.store.one("SELECT id FROM operation_continuations")["id"])
     assert saved["state"] == "completed" and saved["limits"]["max_recoveries"] == 1
@@ -346,13 +393,9 @@ async def test_candidate_plan_second_invalid_result_checkpoints_without_dropping
     from tuber_studio.operation_generation import GenerationDeferred
 
     row, candidates = planner_round
-    invalid = {
-        "workers": 1,
-        "choices": [
-            {"bvid": candidates[0]["bvid"], "action": "watch", "explanation": "我仍想看看这一条"},
-            {"bvid": candidates[0]["bvid"], "action": "skip", "explanation": "重复条目尚未修正"},
-        ],
-    }
+    invalid = batch_plan_wire([
+        {"bvid": candidates[0]["bvid"], "action": "watch", "explanation": "我仍想看看这一条"},
+    ])
     calls = []
 
     async def generate(messages, schema, *, max_tokens):
@@ -366,8 +409,54 @@ async def test_candidate_plan_second_invalid_result_checkpoints_without_dropping
     assert calls == ["CandidateBatchPlan", "CandidateBatchPlan"]
     saved = error.value.continuation
     assert saved["state"] == "checkpoint"
-    assert "duplicate_bvids" in saved["feedback"]["message"]
     assert "missing_bvids" in saved["feedback"]["message"]
     assert browsing.repo.batches.get(row)["plan"] is None
     assert not browsing.store.all("SELECT * FROM browsing_tasks")
+    assert not browsing.adapter.sent
+
+
+async def test_keyed_wire_version_replans_the_same_candidates_without_reusing_an_old_list_checkpoint(
+    browsing, monkeypatch, planner_round,
+):
+    from tuber_studio.operation_generation import GenerationDeferred
+    from tuber_studio.operations.browsing import decisions
+
+    row, candidates = planner_round
+    choices = [
+        {"bvid": item["bvid"], "action": "skip", "explanation": item["title"] + "本次略过"}
+        for item in candidates
+    ]
+    legacy = {"workers": 1, "choices": [*choices[:-1], choices[0]]}
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens):
+        calls.append(schema)
+        result = legacy if len(calls) == 1 else batch_plan_wire(choices)
+        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
+        return result
+
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    original = decisions.generate_with_recovery
+
+    async def old_wire_checkpoint(*args, **kwargs):
+        kwargs["binding"] = kwargs["binding"] | {"input_format": "independent-candidate-actions-v3"}
+        kwargs["identity"] = content_hash(kwargs["binding"])
+        kwargs["max_recoveries"] = 0
+        return await original(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(decisions, "generate_with_recovery", old_wire_checkpoint)
+        with pytest.raises(GenerationDeferred) as error:
+            await browsing._plan_batch(row, candidates)
+    old_id = error.value.continuation["id"]
+    assert await browsing._plan_batch(row, candidates) == []
+    assert len(calls) == 2
+    old = browsing.runtime.continuations.get(old_id)
+    assert old["state"] == "checkpoint"
+    assert old["original_output"] == json.dumps(legacy, ensure_ascii=False)
+    records = browsing.store.all("SELECT id,binding,state FROM operation_continuations")
+    current = next(record for record in records if record["id"] != old_id)
+    assert json.loads(current["binding"])["input_format"] == "keyed-candidate-priorities-v4"
+    assert current["state"] == "completed"
+    assert browsing.repo.batches.get(row)["plan"]["choices"] == choices
     assert not browsing.adapter.sent

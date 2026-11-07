@@ -225,11 +225,11 @@ async def isolated_output_limit_provider(browsing, action, *, comments=False, ne
                 if title == "CandidateBatchPlan":
                     source = next(m["content"] for m in body["messages"] if m["role"] == "user")
                     candidates = model_packet(source)["candidates"]
-                    value = {"workers": 1, "choices": [
-                        {"bvid": item["bvid"], "action": "comments" if comments else "watch",
-                         "explanation": "想接着聊盐水里鸡蛋浮起来的实验"}
+                    value = {"workers": 1, "choices": {
+                        item["bvid"]: {"action": "comments" if comments else "watch",
+                         "explanation": "想接着聊盐水里鸡蛋浮起来的实验", "priority": 0}
                         for item in candidates
-                    ]}
+                    }}
                     finish = "stop"
                 else:
                     assert title == "ResponseDecision"

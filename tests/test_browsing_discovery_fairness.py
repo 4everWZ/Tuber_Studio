@@ -1,8 +1,8 @@
 import json
 
 import pytest
+from test_browsing import batch_plan_wire, finished, model_packet
 from test_browsing import browsing as browsing
-from test_browsing import finished, model_packet
 from test_browsing_batches import authorize
 from test_browsing_candidate_windows import candidate
 
@@ -38,17 +38,14 @@ def planning_model(windows, old_ids=()):
         assert schema["title"] == "CandidateBatchPlan"
         entries = model_packet(messages[-1]["content"])["candidates"]
         windows.append(entries)
-        return {
-            "workers": 1,
-            "choices": [
+        return batch_plan_wire([
                 {
                     "bvid": item["bvid"],
                     "action": "later" if item["bvid"] in old_ids else "skip",
                     "explanation": "本条稍后再看" if item["bvid"] in old_ids else "这个新标题暂不想看",
                 }
                 for item in entries
-            ],
-        }
+            ])
 
     return generate
 
