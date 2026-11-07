@@ -33,14 +33,31 @@ def material_proof(row, runtime):
     if material.get("metadata", {}).get("bvid") != row["bvid"] or not (decisions or main):
         return None
     cids = {str(part["cid"]) for part in material["metadata"].get("parts", []) if part.get("cid")}
-    parts = [part for part in material.get("parts", []) if part.get("bvid") == row["bvid"]
+    # CC tracks carry bvid themselves; visual parts inherit the verified parent
+    # video's identity and bind the actual sampled frames by cid and frame ID.
+    parts = [part for part in material.get("parts", [])
+             if (part.get("bvid") == row["bvid"] or part.get("visual") and "bvid" not in part)
              and str(part.get("cid")) in cids and part.get("segments")]
     segments = [segment for part in parts for segment in part["segments"]
                 if isinstance(segment.get("text"), str) and segment["text"].strip() and segment.get("id")]
     if not segments or not material.get("source_version"):
         return None
+    frames = {frame["id"]: frame for frame in material.get("visual_frames", [])
+              if frame.get("id") and str(frame.get("cid")) in cids and frame.get("image_base64")}
+    observed = {evidence["id"] for part in parts if part.get("visual")
+                for evidence in part.get("frame_evidence", [])
+                if evidence.get("id") in frames
+                and any(segment.get("id") == "frame:" + evidence["id"] for segment in part["segments"])
+                and evidence.get("content_hash")
+                and evidence.get("content_hash") == frames[evidence["id"]].get("content_hash")
+                and evidence.get("actual_time") == frames[evidence["id"]].get("actual_time")
+                and str(evidence.get("cid")) == str(frames[evidence["id"]].get("cid"))}
+    subtitles = sum(len(part["segments"]) for part in parts if not part.get("visual"))
+    if not subtitles and not observed:
+        return None
     return {"bvid": row["bvid"], "material_key": row["material_key"], "read_state": row["read_state"],
             "source_parts": len(parts), "source_segments": len(segments), "cids": sorted(cids),
+            "subtitle_segments": subtitles, "observed_frames": len(observed),
             "coverage": material.get("coverage"), "fully_read_available_material": row["read_state"] == "complete"}
 
 

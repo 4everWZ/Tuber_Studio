@@ -33,3 +33,18 @@ def test_review_rejects_titles_starts_unconsumed_caches_and_other_video_sources(
     assert material_proof(row | {"bvid": "another-video"}, tmp_path) is None
     path.write_text(json.dumps(value | {"parts": []}), encoding="utf-8")
     assert material_proof(row, tmp_path) is None
+
+
+def test_review_counts_real_sampled_visual_without_calling_it_subtitles(tmp_path):
+    path, row, value = fixture_material(tmp_path)
+    frame = {"id": "first", "cid": "123", "actual_time": 2, "content_hash": "image-content"}
+    value["parts"] = [{"cid": "123", "visual": True, "frame_evidence": [frame],
+                       "segments": [{"id": "frame:first", "start": 2, "end": 2, "text": "鸡蛋浮在水面"}]}]
+    value["visual_frames"] = [frame | {"image_base64": "retained-image"}]
+    value["coverage"] = "sampled_visual"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    proof = material_proof(row, tmp_path)
+    assert proof["observed_frames"] == 1 and proof["subtitle_segments"] == 0
+    value["visual_frames"][0]["content_hash"] = "another-image"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    assert material_proof(row, tmp_path) is None
