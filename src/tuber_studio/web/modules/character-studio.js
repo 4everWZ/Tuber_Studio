@@ -37,9 +37,9 @@ export function syncCharacterJsonToVisual(character) {
   if ($("oc-background")) $("oc-background").value = character.core?.background || "";
   if ($("oc-traits")) {
     const traits = character.core?.traits;
-    $("oc-traits").value = Array.isArray(traits) ? traits.join("、") : (traits || "");
+    $("oc-traits").value = Array.isArray(traits) ? traits.join("\n") : (traits || "");
   }
-  if ($("oc-min-chars")) $("oc-min-chars").value = character.style?.min_chars ?? 15;
+  if ($("oc-min-chars")) $("oc-min-chars").value = character.style?.min_chars ?? 1;
   if ($("oc-max-chars")) $("oc-max-chars").value = character.style?.max_chars ?? 60;
   if ($("oc-catchphrases")) {
     const cp = character.style?.catchphrases;
@@ -53,36 +53,33 @@ export function syncCharacterJsonToVisual(character) {
   if ($("oc-avatar-manifest")) $("oc-avatar-manifest").value = character.avatar_manifest || "";
 }
 
-export function syncVisualToCharacterJson(model) {
-  let charObj;
-  try {
-    charObj = editableCard(JSON.parse($("character-editor").value));
-  } catch {
-    charObj = editableCard(model.character || {});
-  }
+export function syncVisualToCharacterJson(model, changedId) {
+  const charObj = editableCard(JSON.parse($("character-editor").value));
+  const changed = id => !changedId || changedId === id;
 
   charObj.core = charObj.core || {};
-  if ($("oc-identity")) charObj.core.identity = $("oc-identity").value.trim();
-  if ($("oc-background")) charObj.core.background = $("oc-background").value.trim();
-  if ($("oc-traits")) {
-    charObj.core.traits = $("oc-traits").value.split(/[、,，\n]+/).map(s => s.trim()).filter(Boolean);
+  if (changed("oc-identity")) charObj.core.identity = $("oc-identity").value.trim();
+  if (changed("oc-background")) charObj.core.background = $("oc-background").value.trim();
+  if (changed("oc-traits")) {
+    charObj.core.traits = $("oc-traits").value.split("\n").map(s => s.trim()).filter(Boolean);
   }
 
   charObj.style = charObj.style || {};
-  if ($("oc-min-chars")) charObj.style.min_chars = Number($("oc-min-chars").value) || 15;
-  if ($("oc-max-chars")) charObj.style.max_chars = Number($("oc-max-chars").value) || 60;
-  if ($("oc-catchphrases")) {
+  if (changed("oc-min-chars")) charObj.style.min_chars = Number($("oc-min-chars").value);
+  if (changed("oc-max-chars")) charObj.style.max_chars = Number($("oc-max-chars").value);
+  if (changed("oc-catchphrases")) {
     charObj.style.catchphrases = $("oc-catchphrases").value.split("\n").map(s => s.trim()).filter(Boolean);
   }
-  if ($("oc-instructions")) {
-    charObj.style.instructions = $("oc-instructions").value.split("\n").map(s => s.trim()).filter(Boolean);
+  if (changed("oc-instructions")) {
+    const value = $("oc-instructions").value.trim();
+    charObj.style.instructions = Array.isArray(charObj.style.instructions) ?
+      value.split("\n").map(s => s.trim()).filter(Boolean) : value;
   }
 
-  if ($("oc-voice-profile")) charObj.voice_profile = $("oc-voice-profile").value.trim();
-  if ($("oc-avatar-manifest")?.value.trim()) {
-    charObj.avatar_manifest = $("oc-avatar-manifest").value.trim();
-  } else {
-    delete charObj.avatar_manifest;
+  if (changed("oc-voice-profile")) charObj.voice_profile = $("oc-voice-profile").value.trim();
+  if (changed("oc-avatar-manifest")) {
+    if ($("oc-avatar-manifest").value.trim()) charObj.avatar_manifest = $("oc-avatar-manifest").value.trim();
+    else delete charObj.avatar_manifest;
   }
 
   $("character-editor").value = JSON.stringify(charObj, null, 2);
@@ -175,13 +172,31 @@ export function initCharacterStudioUI(model, {
   $("persona-mode-action").addEventListener("click", () => {
     document.querySelector('[data-inference-mode="text"]').click();
   });
-  document.querySelectorAll(".oc-tab-btn").forEach(btn => {
+  const tabs = [...document.querySelectorAll(".oc-tab-btn")];
+  tabs.forEach((btn, index) => {
     btn.addEventListener("click", () => {
       const targetId = btn.dataset.tab;
-      document.querySelectorAll(".oc-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+      if (targetId !== "tab-oc-json" && model.character) {
+        try { syncCharacterJsonToVisual(JSON.parse($("character-editor").value)); }
+        catch { notice("请先修正高级 JSON 的格式，再切换到可视化编辑。", true); return; }
+      }
+      tabs.forEach(tab => {
+        tab.classList.toggle("active", tab === btn);
+        tab.setAttribute("aria-selected", String(tab === btn));
+        tab.tabIndex = tab === btn ? 0 : -1;
+      });
       document.querySelectorAll(".oc-tab-content").forEach(content => {
+        content.hidden = content.id !== targetId;
         content.classList.toggle("active", content.id === targetId);
       });
+    });
+    btn.addEventListener("keydown", event => {
+      const offset = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+      if (!offset) return;
+      event.preventDefault();
+      const next = tabs[(index + offset + tabs.length) % tabs.length];
+      next.focus();
+      next.click();
     });
   });
 
@@ -193,8 +208,8 @@ export function initCharacterStudioUI(model, {
   visualIds.forEach(id => {
     const el = $(id);
     if (el) {
-      el.addEventListener("input", () => syncVisualToCharacterJson(model));
-      el.addEventListener("change", () => syncVisualToCharacterJson(model));
+      el.addEventListener("input", () => syncVisualToCharacterJson(model, id));
+      el.addEventListener("change", () => syncVisualToCharacterJson(model, id));
     }
   });
 

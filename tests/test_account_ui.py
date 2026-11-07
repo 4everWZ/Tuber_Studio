@@ -24,7 +24,10 @@ def test_workbench_serves_page_fragments_in_the_shell(settings):
         assert page.count(f'id="{identity}"') == 1
 
 
-@pytest.mark.parametrize("script", ["account_ui.test.cjs", "web_api.test.cjs", "web_operations.test.cjs"])
+@pytest.mark.parametrize(
+    "script",
+    ["account_ui.test.cjs", "web_api.test.cjs", "web_operations.test.cjs", "web_character_studio.test.cjs"],
+)
 def test_shared_web_clients(script):
     node = shutil.which("node")
     if not node:

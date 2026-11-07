@@ -59,15 +59,15 @@
       </div>
 
       <!-- OC Tabs 选项卡 -->
-      <div class="oc-tab-nav win-property-tabs">
-        <button type="button" class="oc-tab-btn active prop-tab" data-tab="tab-oc-persona">核心人设与性格</button>
-        <button type="button" class="oc-tab-btn prop-tab" data-tab="tab-oc-style">说话风格与短句示范</button>
-        <button type="button" class="oc-tab-btn prop-tab" data-tab="tab-oc-assets">音色与形象绑定</button>
-        <button type="button" class="oc-tab-btn prop-tab" data-tab="tab-oc-json">高级 JSON 源码</button>
+      <div class="oc-tab-nav win-property-tabs" role="tablist" aria-label="角色卡编辑栏目">
+        <button type="button" class="oc-tab-btn active prop-tab" id="oc-tab-persona" role="tab" aria-selected="true" aria-controls="tab-oc-persona" data-tab="tab-oc-persona">核心人设与性格</button>
+        <button type="button" class="oc-tab-btn prop-tab" id="oc-tab-style" role="tab" aria-selected="false" aria-controls="tab-oc-style" tabindex="-1" data-tab="tab-oc-style">说话风格与短句示范</button>
+        <button type="button" class="oc-tab-btn prop-tab" id="oc-tab-assets" role="tab" aria-selected="false" aria-controls="tab-oc-assets" tabindex="-1" data-tab="tab-oc-assets">音色与形象绑定</button>
+        <button type="button" class="oc-tab-btn prop-tab" id="oc-tab-json" role="tab" aria-selected="false" aria-controls="tab-oc-json" tabindex="-1" data-tab="tab-oc-json">高级 JSON 源码</button>
       </div>
 
       <!-- Tab 1: 核心设定 -->
-      <div class="oc-tab-content active" id="tab-oc-persona" style="margin-top:12px;">
+      <div class="oc-tab-content active" id="tab-oc-persona" role="tabpanel" aria-labelledby="oc-tab-persona" style="margin-top:12px;">
         <label>核心身份与世界观 (Identity)
           <textarea id="oc-identity" class="code-editor" rows="4"></textarea>
         </label>
@@ -80,7 +80,7 @@
       </div>
 
       <!-- Tab 2: 风格与台词规范 -->
-      <div class="oc-tab-content" id="tab-oc-style" style="margin-top:12px;">
+      <div class="oc-tab-content" id="tab-oc-style" role="tabpanel" aria-labelledby="oc-tab-style" hidden style="margin-top:12px;">
         <div class="form-grid">
           <label>单句台词最短字数 (min_chars)
             <input id="oc-min-chars" type="number" min="1" max="120" value="1">
@@ -89,8 +89,8 @@
             <input id="oc-max-chars" type="number" min="1" max="120" value="60">
           </label>
         </div>
-        <label style="margin-top:10px;">口头禅 (Catchphrases，逗号分隔)
-          <input id="oc-catchphrases" placeholder="什么嘛, 再来一碗白饭, 本鱼, 鱼鱼">
+        <label style="margin-top:10px;">口头禅 (Catchphrases，每行一条)
+          <textarea id="oc-catchphrases" rows="3" placeholder="什么嘛&#10;再来一碗白饭&#10;本鱼"></textarea>
         </label>
         <label style="margin-top:10px;">表达规范与去AI味指导语 (Instructions)
           <textarea id="oc-instructions" class="code-editor" rows="4"></textarea>
@@ -98,7 +98,7 @@
       </div>
 
       <!-- Tab 3: 音色与素材 -->
-      <div class="oc-tab-content" id="tab-oc-assets" style="margin-top:12px;">
+      <div class="oc-tab-content" id="tab-oc-assets" role="tabpanel" aria-labelledby="oc-tab-assets" hidden style="margin-top:12px;">
         <div class="form-grid">
           <label>绑定默认音色 (Voice Profile)
             <input id="oc-voice-profile" placeholder="whale_sovits_v2">
@@ -110,7 +110,7 @@
       </div>
 
       <!-- Tab 4: JSON 源码 -->
-      <div class="oc-tab-content" id="tab-oc-json" style="margin-top:12px;">
+      <div class="oc-tab-content" id="tab-oc-json" role="tabpanel" aria-labelledby="oc-tab-json" hidden style="margin-top:12px;">
         <form id="character-form">
           <label>角色卡完整底层 JSON
             <textarea id="character-editor" class="code-editor" rows="18" spellcheck="false" disabled aria-describedby="character-help"></textarea>
@@ -120,7 +120,7 @@
       </div>
 
       <div class="actions" style="margin-top:14px;">
-        <button id="save-character" class="primary win-btn" disabled>保存角色为新版本</button>
+        <button id="save-character" type="submit" form="character-form" class="primary win-btn" disabled>保存角色为新版本</button>
         <button id="reset-character" type="button" class="win-btn" disabled>放弃未保存修改</button>
         <span id="character-dirty" class="hint"></span>
       </div>

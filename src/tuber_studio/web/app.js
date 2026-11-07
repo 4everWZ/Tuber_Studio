@@ -17,7 +17,7 @@ import {
 import {
   renderPersona,
   initCharacterStudioUI,
-} from "./modules/character-studio.js?v=20261105.27";
+} from "./modules/character-studio.js?v=20261107.05";
 import {
   selectedThread,
   initCommentsModule,
@@ -212,9 +212,11 @@ async function enterWorkspace() {
   await Promise.all([
     loadVoices(),
     loadAssets(),
-    characterStudio?.loadCharacters(),
     accountPanel.activate(),
-    api("/api/status").then(renderStatus)
+    api("/api/status").then(async status => {
+      renderStatus(status);
+      await characterStudio?.loadCharacters();
+    })
   ]);
   model.authenticated = true;
   $("login").hidden = true;

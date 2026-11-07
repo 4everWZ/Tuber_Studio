@@ -392,6 +392,12 @@ tr:hover td {
   min-height: 320px;
 }
 
+.oc-tab-content textarea:not(#character-editor) {
+  min-height: 0;
+  font: inherit;
+  line-height: 1.65;
+}
+
 .code-small {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
