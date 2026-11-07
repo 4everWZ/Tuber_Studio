@@ -1,137 +1,19 @@
 <section data-section="accounts" class="win-page-view" hidden>
   <div class="win-property-tabs">
     <a href="#settings" class="prop-tab">推理与模型</a>
-    <a href="#accounts" class="prop-tab active" aria-current="page">账号与权限矩阵</a>
+    <a href="#accounts" class="prop-tab active" aria-current="page">账号</a>
     <a href="#overview" class="prop-tab">存储与维护</a>
     <a href="#issues" class="prop-tab">告警与诊断</a>
   </div>
 
   <div class="page-heading win-heading">
-    <h1>Bilibili 账号与三维权限矩阵</h1>
+    <h1>Bilibili 账号</h1>
     <button id="logout" type="button" class="win-btn danger">退出登录工作台</button>
   </div>
 
   <div id="global-bilibili-account" class="global-bilibili-account"></div>
   <div id="account-settings" data-workspace-anchor style="margin-top:14px;"></div>
 
-  <!-- 指定视频基础策略 -->
-  <div class="win-group-box" id="comment-base-settings" data-workspace-anchor style="margin-top:16px;">
-    <div class="win-group-title">指定视频评论监控基础策略</div>
-    <p class="hint">为已有指定视频保留的基础运营策略。全自动视频选题请前往<a href="#automation">自动刷视频</a>。</p>
-    <form id="comment-policy-form" style="margin-top:10px;">
-      <p id="comment-policy-overlay" class="feature-note" hidden><span id="comment-policy-overlay-text"></span></p>
-      <div class="actions win-checks-bar">
-        <label class="check-field"><input id="auto-browse" type="checkbox"> 定期读取指定视频评论</label>
-        <label class="check-field"><input id="auto-reply" type="checkbox"> 授权自动提交回复</label>
-        <span id="reply-mode" class="badge"></span>
-      </div>
-      <label style="margin-top:10px;">监控指定 BV 号（每行一个）
-        <textarea id="watch-videos" rows="2" placeholder="BV1..."></textarea>
-      </label>
-      <div class="form-grid" style="margin-top:10px;">
-        <label>读取轮询间隔（秒）<input id="browse-interval" type="number" required></label>
-          <label>每小时发布上限<input id="replies-hour" type="number" min="0" max="30" required><small class="hint">0 为不限额</small></label>
-          <label>每天发布上限<input id="replies-day" type="number" min="0" max="200" required><small class="hint">0 为不限额</small></label>
-      </div>
-      <div class="actions" style="margin-top:12px;">
-        <button type="submit" class="win-btn primary">保存基础策略</button>
-        <button id="stop-auto-reply" type="button" class="win-btn">停止自动回复</button>
-      </div>
-      <p id="comment-policy-base-note" class="hint" role="status"></p>
-    </form>
-  </div>
+  <p id="comment-base-settings" data-workspace-anchor class="hint">视频来源、监控频率和回复数量统一在<a href="#automation-settings">运营设置</a>中配置。</p>
 
-  <!-- 三维权限矩阵 -->
-  <article class="win-group-box" id="operations-permission-matrix" data-workspace-anchor style="margin-top:16px;">
-    <div class="panel-heading">
-      <div class="win-group-title" style="margin:0;">全渠道自动化控制与动作放行矩阵</div>
-      <span id="matrix-capsule-badge" class="badge">草稿审核态</span>
-    </div>
-    <p class="hint">集中管理社区运营、私信与动态的行为授权、放行级别与安全熔断阈值。修改后即时联动各工作台。</p>
-    <div id="matrix-visual-status" class="hint" style="margin: 8px 0; padding: 6px 12px; border-radius: 6px; background: #f1f5f9; font-size: 12px;" hidden></div>
-
-    <fieldset class="matrix-group">
-      <legend>一、平台凭证与写入权有效性</legend>
-      <div class="matrix-credentials-status">
-        <div class="matrix-status-item">
-          <span>B站登录凭证 (SESSDATA)：</span>
-          <strong id="matrix-sessdata-status" class="status-tag">待读取</strong>
-        </div>
-        <div class="matrix-status-item">
-          <span>CSRF 写入权 (bili_jct)：</span>
-          <strong id="matrix-csrf-status" class="status-tag">待读取</strong>
-        </div>
-        <div class="matrix-actions">
-          <a href="#account-settings" class="button quiet">配置或刷新账号凭证 ↑</a>
-        </div>
-      </div>
-    </fieldset>
-
-    <fieldset class="matrix-group">
-      <legend>二、行为动作放行级别 (三级阶梯控制)</legend>
-      <div class="matrix-action-grid">
-        <div class="matrix-action-card">
-          <h3>视频看完自发主评</h3>
-          <p class="hint">视频理解完成后，以角色第一人称发布置顶主评</p>
-          <div class="matrix-radio-group">
-            <label><input type="radio" name="matrix_top_level" value="0"> 禁止</label>
-            <label><input type="radio" name="matrix_top_level" value="1" checked> 存为草稿 (需人工审核)</label>
-            <label><input type="radio" name="matrix_top_level" value="2"> 自动发布</label>
-          </div>
-        </div>
-        <div class="matrix-action-card">
-          <h3>评论区跟帖回复</h3>
-          <p class="hint">进入评论区筛选有价值评论，自主决定是否跟帖</p>
-          <div class="matrix-radio-group">
-            <label><input type="radio" name="matrix_reply" value="0"> 禁止</label>
-            <label><input type="radio" name="matrix_reply" value="1" checked> 存为草稿 (需人工审核)</label>
-            <label><input type="radio" name="matrix_reply" value="2"> 自动发布</label>
-          </div>
-        </div>
-        <div class="matrix-action-card">
-          <h3>私信沟通与移交</h3>
-          <p class="hint">观众主动私信或评论区深聊转私信</p>
-          <div class="matrix-radio-group">
-            <label><input type="radio" name="matrix_dm" value="0"> 禁止</label>
-            <label><input type="radio" name="matrix_dm" value="1" checked> 存为草稿 (需人工审核)</label>
-            <label><input type="radio" name="matrix_dm" value="2"> 自动发布</label>
-          </div>
-        </div>
-        <div class="matrix-action-card">
-          <h3>视频自主点赞 (Like)</h3>
-          <p class="hint">大肥鱼刷完视频后，根据内容看点与角色兴趣自主决策点赞</p>
-          <div class="matrix-radio-group">
-            <label><input type="radio" name="matrix_video_like" value="0"> 禁止</label>
-            <label><input type="radio" name="matrix_video_like" value="1" checked> 存为记录 (需审核)</label>
-            <label><input type="radio" name="matrix_video_like" value="2"> 自动点赞</label>
-          </div>
-        </div>
-        <div class="matrix-action-card">
-          <h3>视频自主收藏 (Favorite)</h3>
-          <p class="hint">对高质量、值得回看或深度共鸣的视频自主加入默认收藏夹</p>
-          <div class="matrix-radio-group">
-            <label><input type="radio" name="matrix_video_fav" value="0"> 禁止</label>
-            <label><input type="radio" name="matrix_video_fav" value="1" checked> 存为记录 (需审核)</label>
-            <label><input type="radio" name="matrix_video_fav" value="2"> 自动收藏</label>
-          </div>
-        </div>
-      </div>
-    </fieldset>
-
-    <fieldset class="matrix-group">
-      <legend>三、平台失败处理</legend>
-      <div class="form-grid">
-        <label class="check-field" style="grid-column: 1 / -1;">
-          <input id="matrix-auto-downgrade" type="checkbox" checked>
-          遇到连续平台报错自动降级为“仅草稿待核对”
-        </label>
-      </div>
-      <p class="hint"><a href="#operation-round-settings">设置发布配额与轮次调度</a></p>
-    </fieldset>
-
-    <div class="actions" style="margin-top:14px;">
-      <button id="matrix-save" type="button" class="primary win-btn">保存权限矩阵配置</button>
-      <span id="matrix-save-feedback" class="hint" role="status"></span>
-    </div>
-  </article>
 </section>

@@ -1,8 +1,9 @@
 import { $ } from "./core.js";
 import { renderPersona } from "./character-studio.js?v=20261105.27";
-import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261105.30";
+import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261107.08";
 import { renderVoicePreview } from "./voices.js";
 import { describe, label, occupancyText, setBadge, tokenCount } from "./workspace-display.js";
+import { inferenceDisplay } from "./inference-status.js?v=20261107.08";
 
 export function renderWorkspaceStatus(model, status) {
   model.status = status;
@@ -29,7 +30,7 @@ export function renderWorkspaceStatus(model, status) {
   // Keep the workspace status bar aligned with the live panel.
   if ($("sb-status-mode")) $("sb-status-mode").textContent = status.mode === "live" ? "直播模式" : "运营模式";
   if ($("sb-status-char")) $("sb-status-char").textContent = `${status.character?.name || "大肥鱼"} v${status.character?.version ?? 1}`;
-  if ($("sb-status-engine")) $("sb-status-engine").textContent = status.providers?.llm ? `${status.providers.llm} (${label(status.state)})` : "就绪";
+  if ($("sb-status-engine")) $("sb-status-engine").textContent = `${inferenceDisplay(status, model.settings).text} · 直播${label(status.state)}`;
 }
 
 export function refreshWorkspaceClock() {

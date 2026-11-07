@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tuber Studio · 控制台</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=20261107.06">
+  <link rel="stylesheet" href="/static/app.css?v=20261107.10">
   <link rel="stylesheet" href="/static/account.css">
   <link rel="stylesheet" href="/static/continuation.css">
   <link rel="stylesheet" href="/static/memes.css">
@@ -38,31 +38,7 @@
       </div>
 
       <nav class="explorer-nav" aria-label="工作区导航">
-        <div class="tree-group">
-          <div class="tree-group-header">
-            <span class="tree-title">社区运营</span>
-          </div>
-          <div class="tree-group-items">
-            <a href="#automation" data-page="automation" class="tree-node">
-              <span class="node-text">自动刷视频</span>
-            </a>
-            <a href="#comments" data-page="comments" class="tree-node">
-              <span class="node-text">评论与草稿</span>
-            </a>
-            <a href="#messages" data-page="messages" class="tree-node">
-              <span class="node-text">私信</span>
-            </a>
-            <a href="#dynamics" data-page="dynamics" class="tree-node">
-              <span class="node-text">动态</span>
-            </a>
-            <a href="#automation-records" data-page="automation-records" class="tree-node">
-              <span class="node-text">运行与发布记录</span>
-            </a>
-            <a href="#automation-settings" data-page="automation-settings" class="tree-node">
-              <span class="node-text">运营设置</span>
-            </a>
-          </div>
-        </div>
+        <a href="#automation" data-page="automation" data-parent-page="operations" class="tree-node"><span class="node-text">自主运营</span></a>
 
         <div class="tree-group">
           <div class="tree-group-header">
@@ -110,7 +86,7 @@
               <span class="node-text">推理端点与模型</span>
             </a>
             <a href="#accounts" data-page="accounts" class="tree-node">
-              <span class="node-text">账号与权限矩阵</span>
+              <span class="node-text">账号与登录</span>
             </a>
             <a href="#overview" data-page="overview" class="tree-node">
               <span class="node-text">存储与维护</span>
@@ -175,6 +151,14 @@
       <div id="notice" class="notice win-notice" role="status" hidden></div>
 
       <main class="content win-content">
+        <nav id="operations-navigation" class="win-property-tabs" aria-label="自主运营" hidden>
+          <a href="#automation" data-operations-tab="overview" class="prop-tab">活动</a>
+          <a href="#comments" data-operations-tab="comments" class="prop-tab">评论处理</a>
+          <a href="#messages" data-operations-tab="messages" class="prop-tab">私信</a>
+          <a href="#dynamics" data-operations-tab="dynamics" class="prop-tab">动态</a>
+          <a href="#automation-settings" data-operations-tab="automation-settings" class="prop-tab">运营设置</a>
+        </nav>
+
 
         <!-- page: automation -->
 
@@ -231,7 +215,7 @@
     </div>
   </div>
 
-  <script src="/static/modules/formatters.js?v=20261107.07" defer></script>
+  <script src="/static/modules/formatters.js?v=20261107.10" defer></script>
   <script src="/static/modules/pagination.js?v=20261105.30" defer></script>
   <script src="/static/modules/operations-workbench.js?v=20261107.07" defer></script>
   <script src="/static/cache-panel.js" defer></script>
@@ -241,6 +225,6 @@
   <script src="/static/account.js?v=20261107.02" defer></script>
   <script src="/static/daily-memory.js" defer></script>
   <script src="/static/interactive-games.js" defer></script>
-  <script type="module" src="/static/app.js?v=20261107.07"></script>
+  <script type="module" src="/static/app.js?v=20261107.10"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ export class MessagesPanel {
   constructor(root,api,notify,openProfile) {
     this.root=root;this.api=api;this.notify=notify;this.value=null;this.selected=null;this.user=null;this.dirty=false;this.policyDirty=false;this.busy=false;
     this.unsavedByAccount=new Map();this.refreshRequest=0;this.memeCache=new Map();this.pickerContext=null;
-    root.innerHTML=`<div class="page-heading"><div><p class="eyebrow">PRIVATE MESSAGES</p><h1>私信工作台</h1></div><div class="actions"><button data-sync>读取最新私信</button><button data-refresh>刷新</button><button data-stop class="danger">停止自动收发</button></div></div>
+    root.innerHTML=`<div class="page-heading"><div><p class="eyebrow">PRIVATE MESSAGES</p><h1>私信工作台</h1></div><div class="actions"><button data-sync>读取最新私信</button><button data-refresh>刷新</button><a href="#message-policy-settings">私信设置 →</a></div></div>
       <p class="hint">回复对方主动发来的私信；模型也可根据评论上下文选择转入私信。收件人绑定原消息作者，不能由模型改成其他用户。同一OC与平台用户共享好感度，评论与私信正文各自保留。</p>
       <p data-override class="feature-note" hidden><span data-override-text></span> <a href="#automation">自主浏览与互动 →</a></p>
       <details class="panel"><summary>私信策略与发送限额</summary><form data-policy><div class="checks"><label><input type="checkbox" name="enabled">启用私信</label><label><input type="checkbox" name="auto_poll">自动读取来信</label><label><input type="checkbox" name="auto_send">自动发送有来源触发的回复</label><label><input type="checkbox" name="allow_comment_handoff">允许模型把评论讨论转入私信</label></div><div class="fields"><label>读取间隔（秒）<input name="poll_interval_seconds" type="number" min="20" max="86400"></label><label>每小时最多发送<input name="max_per_hour" type="number" min="0" max="30" required></label><label>每天最多发送<input name="max_per_day" type="number" min="0" max="200" required></label><label>同用户冷却（秒）<input name="recipient_cooldown_seconds" type="number" min="10" max="86400"></label><label>渠道判断输出额度（tokens，含思考）<input name="channel_max_tokens" type="number" min="256" max="65536"></label></div><button type="submit">保存私信策略</button><p class="hint">发送限额填 0 表示不限。默认人工审核，不自动收发。自动读取只为启用后新收到的来信准备回复，不追发历史私信；自动发送可关闭，手工生成仍先审核。渠道判断默认2048 tokens，沿用模型思考设置；正常回复额度不变。B站账号凭证在设置页统一管理。允许表情包时，仅简单情绪回复可选择图片；知识问答与引用仍使用文字。</p></form></details>
@@ -43,8 +43,7 @@ export class MessagesPanel {
     clear.onclick=()=>this.chooseMeme(null).catch(error=>{this.$('[data-error]').textContent=error.message;});
     this.$('[data-refresh]').onclick=()=>this.refresh();
     this.$('[data-sync]').onclick=()=>this.action(async()=>{const result=await api('/api/messages/sync',{method:'POST'});notify(`读取完成，新增 ${result.imported} 条私信${result.errors.length?'，部分会话读取失败':''}`);await this.refresh();});
-    this.$('[data-stop]').disabled=true;this.$('[data-sync]').disabled=true;this.$('[data-policy] button').disabled=true;
-    this.$('[data-stop]').onclick=async()=>{if(this.value?.policy.automation_override){location.hash='automation';notify('自动化正在覆盖私信开关，请在工作区关闭总开关或紧急停止所有自动收发。');return;}await this.action(async()=>{await this.savePolicy({...this.settings(),auto_poll:false,auto_send:false});notify('基础自动收发已停止，草稿保留。');});};
+    this.$('[data-sync]').disabled=true;this.$('[data-policy] button').disabled=true;
     this.$('[data-policy]').oninput=()=>{this.policyDirty=true;this.$('[data-status]').textContent='策略有未保存修改。';};
     this.$('[data-policy]').onsubmit=event=>{event.preventDefault();this.action(async()=>{const value={};for(const input of this.$('[data-policy]').querySelectorAll('input'))value[input.name]=input.type==='checkbox'?input.checked:Number(input.value);await this.savePolicy(value);});};
     this.$('[data-users]').onchange=()=>{this.user=this.$('[data-users]').value;this.selected=null;this.dirty=false;this.render();this.conversation();};
@@ -54,6 +53,13 @@ export class MessagesPanel {
     this.$('[data-send]').onclick=()=>this.action(async()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);if(!row)return;try{if(row.message_kind==='image')await api(`/api/messages/drafts/${row.id}/review`,{method:'POST',body:{action:'approve'}});await api(`/api/messages/drafts/${row.id}/send`,{method:'POST'});notify(row.message_kind==='image'?'单张图片已发送，平台回执已保存。':'私信已发送，平台回执已保存。');}finally{await this.refresh();}});
     this.$('[data-retry]').onclick=()=>this.action(async()=>{await api(`/api/messages/drafts/${this.selected}/retry`,{method:'POST'});await this.refresh();});
     this.renderEditor();
+  }
+  mountSettings(container){
+    if(!container)return;
+    this.policyRoot=this.$('[data-policy]').closest('details');
+    this.policyRoot.open=true;
+    container.append(this.policyRoot);
+    this.$=selector=>this.root.querySelector(selector)||this.policyRoot.querySelector(selector);
   }
   settings(){const value={},base=this.value.policy.base||this.value.policy;for(const name of ['enabled','auto_poll','auto_send','allow_comment_handoff','use_memes','poll_interval_seconds','max_per_hour','max_per_day','recipient_cooldown_seconds','channel_max_tokens'])value[name]=base[name];return value;}
   closeImagePicker(){this.pickerContext=null;this.memePicker.close(true);}
@@ -91,8 +97,8 @@ export class MessagesPanel {
       this.value=value;this.render();await this.conversation();
     }catch(error){if(request===this.refreshRequest)this.$('[data-error]').textContent=error.message;}
   }
-  render(){const p=this.value.policy,base=p.base||p;this.$('[data-stop]').disabled=!!p.emergency;this.$('[data-stop]').textContent=p.emergency?'紧急停止已生效':p.automation_override?'前往自动化紧急停止':'停止基础自动收发';this.$('[data-sync]').disabled=!p.enabled;this.$('[data-policy] button').disabled=false;this.$('[data-status]').textContent=`${this.value.account_id?'当前账号 '+this.value.account_id:'当前账号尚未核验'} · ${p.enabled?'私信已启用':'私信已关闭'} · ${p.auto_poll?'自动读取':'手动读取'} · ${p.auto_send?'已配置自动发送':'人工审核'}${!p.credentials_configured?' · 尚未配置账号凭证':''}${this.policyDirty?' · 基础策略有未保存修改':''}`;if(p.last_error)this.$('[data-error]').textContent=p.last_error;
-    this.$('[data-override]').hidden=!p.automation_override&&!p.emergency;this.$('[data-override-text]').textContent=p.emergency?'紧急停止已生效，所有自动收发被阻止。这里编辑个人基础设置；解除紧停前不会恢复自动业务。':'自动化覆盖正在生效。这里编辑个人基础设置，被覆盖项目关闭自动化后生效；立即停止请前往自动化工作区。';
+  render(){const p=this.value.policy,base=p.base||p;this.$('[data-sync]').disabled=!p.enabled;this.$('[data-policy] button').disabled=false;this.$('[data-status]').textContent=`${this.value.account_id?'当前账号 '+this.value.account_id:'当前账号尚未核验'} · ${p.enabled?'私信已启用':'私信已关闭'} · ${p.auto_poll?'自动读取':'手动读取'} · ${p.auto_send?'已配置自动发送':'人工审核'}${!p.credentials_configured?' · 尚未配置账号凭证':''}${this.policyDirty?' · 基础策略有未保存修改':''}`;if(p.last_error)this.$('[data-error]').textContent=p.last_error;
+    this.$('[data-override]').hidden=!p.automation_override&&!p.emergency;this.$('[data-override-text]').textContent=p.emergency?'紧急停止已生效，所有自动收发被阻止。这里编辑个人基础设置；解除紧停前不会恢复自动业务。':'自主运营正在运行，按已保存的私信权限处理。设置保存后生效；统一停止请回到活动页。';
     if(!this.policyDirty)for(const input of this.$('[data-policy]').querySelectorAll('input')){if(input.type==='checkbox')input.checked=base[input.name];else input.value=base[input.name];}
     const select=this.$('[data-users]');const userSignature=JSON.stringify(this.value.users.map(user=>[user.platform,user.platform_user_id,user.display_name]));if(userSignature!==this.userSignature){this.userSignature=userSignature;select.replaceChildren(this.element('option','选择用户'));select.firstChild.value='';for(const user of this.value.users){const option=this.element('option',`${user.display_name||'用户'} · ${user.platform_user_id}`);option.value=`${user.platform}|${user.platform_user_id}`;select.append(option);}}select.value=this.user||'';
     const drafts=this.value.drafts.filter(row=>!this.user||`${row.platform}|${row.platform_user_id}`===this.user);

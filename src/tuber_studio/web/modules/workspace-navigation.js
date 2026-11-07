@@ -40,7 +40,7 @@ export function initWorkspaceNavigation(model, loadPage) {
     const page = anchor?.closest("[data-section]")?.dataset.section ||
       (root === "automation" && routeKind === "round" ? "automation-records" : root);
     const pages = {
-      comments: "评论与草稿", automation: "自动刷视频", messages: "私信", dynamics: "动态",
+      comments: "评论与草稿", automation: "自主运营", messages: "私信", dynamics: "动态",
       "automation-records": "运行记录", "automation-settings": "刷视频与运营设置", issues: "告警与错误",
       live: "直播控制", "live-scene": "场景编排", "live-music": "曲库与点歌",
       "live-interaction": "互动与游戏",
@@ -54,8 +54,16 @@ export function initWorkspaceNavigation(model, loadPage) {
       section.hidden = section.dataset.section !== model.page;
     });
     document.querySelectorAll("[data-page]").forEach(link => {
-      const active = link.dataset.page === model.page;
+      const active = link.dataset.parentPage === "operations" ? ["automation", "comments", "messages", "dynamics", "automation-records", "automation-settings"].includes(model.page) : link.dataset.page === model.page;
       link.classList.toggle("selected", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+    $("operations-navigation").hidden = !["automation", "comments", "messages", "dynamics", "automation-records", "automation-settings"].includes(model.page);
+    const selectedOperation = model.page === "automation" ? "overview" : model.page === "automation-records" ? "overview" : model.page;
+    document.querySelectorAll("[data-operations-tab]").forEach(link => {
+      const active = link.dataset.operationsTab === selectedOperation;
+      link.classList.toggle("active", active);
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     });

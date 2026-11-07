@@ -197,9 +197,9 @@ p { margin-block: .55em 1em; }
 .win-content {
   flex: 1;
   width: 100%;
-  max-width: 1320px;
+  max-width: none;
   margin-inline: auto;
-  padding: clamp(18px, 3.2vw, 44px) clamp(16px, 4vw, 56px);
+  padding: clamp(18px, 2.6vw, 36px) clamp(16px, 2.5vw, 36px);
   min-width: 0;
 }
 .page-heading, .win-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 24px; }
@@ -579,28 +579,59 @@ tr:hover td {
 .login-panel button { width: 100%; margin-top: 8px; }
 .login-panel .error-text:empty { display: none; }
 [data-workspace-anchor] { scroll-margin-top: 120px; }
-.win-activity-scroll { max-height: 34rem; overflow: auto; }
 .queue-toolbar { flex-wrap: wrap; justify-content: space-between; }
 .queue-status-options { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; border: 0; margin: 0; padding: 0; }
 .queue-status-options legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 .queue-status-options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 500; }
 .queue-status-options input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
 .queue-status-options input:checked + span { color: var(--accent); font-weight: 650; }
-#queue-list { max-height: clamp(14rem, 42vh, 26rem); overflow: auto; }
+#queue-list { overflow: visible; }
 #queue-list .queue-row { gap: 3px; padding-block: 8px; }
 #queue-list .queue-row strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: .93rem; font-weight: 550; line-height: 1.45; }
 #queue-list .queue-row > .hint { font-size: .8rem; }
-.queue-inline-activity { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
-.queue-inline-activity .panel-heading { gap: 8px; }
-.queue-inline-activity h2 { font-size: .95rem; }
-.queue-inline-activity .panel-heading a { font-size: .8rem; }
-.queue-inline-activity .win-activity-scroll { max-height: 17rem; }
-.queue-inline-activity .discovery-activity-row > summary { grid-template-columns: auto auto minmax(0, 1fr); gap: 3px 6px; }
-.queue-inline-activity .discovery-activity-row time { display: none; }
-.queue-inline-activity .discovery-activity-row summary strong { font-size: .88rem; font-weight: 550; }
-.queue-inline-activity .discovery-excerpt { grid-column: 3; font-size: .8rem; }
-.queue-inline-activity .activity-replies .discovery-excerpt { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.activity-scheduling > summary { color: var(--muted); font-size: .82rem; cursor: pointer; padding-block: 8px; }
+.history-day-label { display: inline-flex; gap: 8px; align-items: center; margin: 0; }
+.history-day-label input { width: auto; }
+.daily-video-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 5px 20px; padding-block: 12px; border-top: 1px solid var(--line); }
+.daily-video-heading { display: flex; gap: 8px; align-items: start; }
+.daily-video-heading > a { flex: 1; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.daily-video-heading .badge { flex-shrink: 0; }
+.daily-video-reason { grid-column: 1; margin: 0; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.daily-video-replies { grid-column: 2; grid-row: 1 / span 2; }
+.daily-reply-row + .daily-reply-row { margin-top: 12px; }
+.daily-reply-row p { margin: 3px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+.daily-video-details { grid-column: 1 / -1; font-size: .85rem; }
+.daily-video-details > summary { color: var(--muted); cursor: pointer; }
+.history-pagination { justify-content: center; margin-top: 18px; }
+#discovery-history-feedback:empty { display: none; }
+.comment-input-panel, .comment-context-details, .comment-task-details { padding-block: 10px; border-block-start: 1px solid var(--line); margin-bottom: 14px; }
+.comment-input-panel > summary, .comment-context-details > summary, .comment-task-details > summary { cursor: pointer; font-weight: 600; }
+.comment-input-panel .fetch-row { margin-top: 10px; }
+.comment-import-panel { margin-top: 10px; }
+.comment-import-panel > summary, .comment-source-filters > summary { cursor: pointer; color: var(--muted); }
+.comment-source-filters { margin-block: 10px; }
+.comment-selection-actions { margin-bottom: 10px; }
+.comment-source-table { table-layout: fixed; }
+.comment-source-table th:first-child { width: 28px; }
+.comment-source-table th:nth-child(2) { width: 50%; }
+.comment-source-table th:nth-child(3) { width: 95px; }
+.comment-source-table td, .comment-source-table th { padding: 7px 4px; overflow-wrap: anywhere; }
+.comment-source-table .comment-link { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.comment-source-table .category-select { padding: 4px; min-height: 30px; font-size: .8rem; }
+.comment-source-table .cell-sub { font-size: .75rem; }
+.operation-overview { padding-block: 4px 12px; }
+.operation-overview p { margin: 4px 0; }
+.discovery-status-compact { border-top: 1px solid var(--line); padding-block: 10px; }
+.discovery-status-compact > summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.discovery-status-compact p { margin: 5px 0; }
+.activity-kind-options { display: flex; gap: 5px; flex-wrap: wrap; margin-block: 10px; }
+.activity-kind-options button { background: transparent; border-color: transparent; padding: 5px 12px; }
+.activity-kind-options button[aria-pressed="true"] { background: var(--soft); border-color: var(--line); }
+.daily-video-heading > strong { flex: 1; }
+.daily-video-replies > p { margin: 0; }
+@media (max-width: 760px) {
+  .daily-video-row { grid-template-columns: minmax(0, 1fr); }
+  .daily-video-replies { grid-column: 1; grid-row: auto; }
+}
 .fetch-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(6rem, auto) auto; gap: 10px; align-items: end; }
 .fetch-row > label { margin-top: 0; }
 .video-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 8px; margin-top: 12px; }

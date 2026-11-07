@@ -8,8 +8,10 @@ function setupDOM(t) {
   function element(tag = "div") {
     return {
       tagName: tag.toUpperCase(),
+      value: "",
       children: [],
       dataset: {},
+      classList: { toggle() {} },
       listeners: {},
       style: {},
       append(...children) { this.children.push(...children); },
@@ -70,19 +72,19 @@ test("a published browsing comment opens in the shared history, including legacy
   await queue.open(null, "browsing/auto-reply");
   assert.deepEqual(calls.splice(0), [
     "/api/comments/workbench/browsing/auto-reply",
-    "/api/comments/workbench?view=history&limit=30&offset=0",
+    "/api/comments/workbench?view=history&limit=10&offset=0",
   ]);
   assert.equal(byId("queue-view").value, "history");
   assert.equal(byId("queue-list").children[0].href, "#comments/history/browsing/auto-reply");
   assert.equal(byId("queue-detail").children[0].textContent, "平台已受理");
 
   await queue.open("review");
-  assert.deepEqual(calls.splice(0), ["/api/comments/workbench?view=review&limit=30&offset=0"]);
+  assert.deepEqual(calls.splice(0), ["/api/comments/workbench?view=review&limit=10&offset=0"]);
   assert.equal(byId("queue-list").children.length, 0);
 
   await queue.open("history", "browsing/auto-reply");
   assert.deepEqual(calls, [
-    "/api/comments/workbench?view=history&limit=30&offset=0",
+    "/api/comments/workbench?view=history&limit=10&offset=0",
     "/api/comments/workbench/browsing/auto-reply",
   ]);
 });
@@ -127,44 +129,161 @@ test("publishing saves the current draft and a failed attempt remains retryable"
   assert.equal(detail.children[0].textContent, "平台已受理");
 });
 
-test("browsing activity stays visible beside drafts without another view switch", async t => {
-  const byId = setupDOM(t);
+test("comments use ten compact records per page without loading browsing history", async t => {
+  setupDOM(t);
   const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
-  let activityLoads = 0;
-  const queue = initCommentQueue(async () => ({ items: [], total: 0, offset: 0 }), () => {}, () => null,
-    async () => { activityLoads++; });
+  const calls = [];
+  const queue = initCommentQueue(async path => { calls.push(path); return { items: [], total: 0, offset: 0 }; }, () => {}, () => null);
   await queue.open("review");
-  assert.equal(byId("queue-records").hidden, false);
-  assert.equal(byId("queue-activity").hidden, false);
-  assert.equal(byId("queue-view").value, "review");
-  await queue.open("activity");
-  assert.equal(byId("queue-view").value, "review");
-  assert.equal(activityLoads, 2);
+  assert.deepEqual(calls, ["/api/comments/workbench?view=review&limit=10&offset=0"]);
 });
 
-test("activity shows the recipient, reply and outcome while scheduling stays collapsed", async t => {
+test("daily operational activity shows video replies with date and page navigation", async t => {
   const byId = setupDOM(t);
-  const { initDiscoveryActivity } = await import("../src/tuber_studio/web/modules/discovery-panel.js");
-  const refresh = initDiscoveryActivity(async () => ({
-    scope: ["account", "whale", 3],
-    activity: [
-      { id: "task", kind: "task", title: "取材中的视频", status: "retry_wait", updated_at: 100, reason: "round_budget" },
-      { id: "failure", kind: "failure", bvid: "BVexample", status: "recovered", occurrences: 3, updated_at: 100, reason: "上游服务超时" },
-      { id: "reply", kind: "reply_public", title: "视频标题", recipient_name: "小明", status: "published", excerpt: "白饭记得趁热吃。", updated_at: 100 },
-    ],
-  }));
+  const { initOperationsActivity } = await import("../src/tuber_studio/web/modules/operations-activity.js");
+  const calls = [];
+  const refresh = initOperationsActivity(async path => {
+    calls.push(path);
+    const query = new URLSearchParams(path.split("?")[1]);
+    return { day: query.get("day") || "2026-11-07", page: Number(query.get("page")), total: 11, pages: 2,
+      counts: { videos: 11, watched: 8, fully_read: 2, partial: 6, replied: 1, replies: 1, failed: 0 },
+      items: [{ id: "video/BVexample", bvid: "BVexample", title: "真实视频标题", read_state: "viewed", fully_read: false, status: "published",
+        reason: "这段饭锅的镜头让我想提醒饭要趁热吃。", replies: [{ id: "reply", kind: "reply_public", recipient_name: "小明", status: "published", text: "白饭记得趁热吃。" }] }],
+    };
+  });
+  refresh.setKind("videos");
   await refresh();
-  const [empty, replies, scheduling] = byId("discovery-activity-list").children;
-  assert.equal(empty.hidden, true);
-  assert.equal(replies.children.length, 1);
-  const [badge, title, , excerpt] = replies.children[0].children[0].children;
-  assert.equal(title.textContent, "回复 小明");
-  assert.equal(excerpt.textContent, "白饭记得趁热吃。");
-  assert.equal(badge.textContent, "已发送");
-  assert.ok(!scheduling.open);
-  assert.equal(scheduling.children[0].textContent, "调度详情（2）");
-  assert.equal(scheduling.children[1].children.length, 2);
-  assert.equal(scheduling.children[1].children[1].children[0].children[0].textContent, "已恢复 ×3");
+  assert.match(calls[0], /page=1&page_size=10/);
+  const row = byId("discovery-activity-list").children[0];
+  assert.equal(row.children[0].children[0].textContent, "真实视频标题");
+  assert.equal(row.children[0].children[1].textContent, "已看过");
+  const reply = row.children[2].children[1];
+  assert.equal(reply.children[0].textContent, "回复 小明 · 已发送");
+  assert.equal(reply.children[1].textContent, "白饭记得趁热吃。");
+  assert.match(byId("discovery-history-counts").textContent, /视频 11/);
+  await byId("discovery-history-next").onclick();
+  assert.match(calls[1], /page=2/);
+  byId("discovery-history-day").value = "2026-11-06";
+  await byId("discovery-history-day").listeners.change();
+  assert.match(calls[2], /page=1.*day=2026-11-06/);
+});
+
+test("unified activity distinguishes approved drafts, received messages and successful sends", async t => {
+  const byId = setupDOM(t);
+  const { initOperationsActivity } = await import("../src/tuber_studio/web/modules/operations-activity.js");
+  const calls = [];
+  const refresh = initOperationsActivity(async path => {
+    calls.push(path);
+    const items = [
+      { id: "v", kind: "video", title: "看过的视频", bvid: "BVx", read_state: "viewed", has_main_reply: true, main_replies: 0 },
+      { id: "c", kind: "comment", title: "回复 小蓝", text: "等待审核的正文", status: "pending_review" },
+      { id: "m", kind: "message", direction: "incoming", title: "收到 小明 的私信", text: "你好", status: "received" },
+      { id: "d", kind: "dynamic", title: "动态", text: "已发送动态正文", status: "published" },
+    ];
+    const filtered = path.includes("kind=messages") ? items.filter(item => item.kind === "message") : items;
+    return { day: "2026-11-07", page: 1, total: filtered.length, pages: 1, counts: { total: 4, sent: 1, pending: 2 }, items: filtered };
+  });
+  await refresh();
+  assert.match(calls[0], /\/api\/automation\/activity\?.*kind=all/);
+  const rows = byId("discovery-activity-list").children;
+  assert.equal(rows[0].children[1].children[0].textContent, "已有主评");
+  assert.equal(rows[1].children[0].children[1].textContent, "待审核");
+  assert.equal(rows[2].children[0].children[1].textContent, "收到来信");
+  assert.equal(rows[3].children[0].children[1].textContent, "已发送");
+  refresh.setKind("messages");
+  await refresh();
+  assert.match(calls[1], /kind=messages/);
+  assert.match(byId("discovery-history-counts").textContent, /当日总计 4/);
+  assert.match(byId("discovery-history-page").textContent, /共 1 条记录/);
+});
+
+test("clearing read alerts clears local and remote counts and stays clear after refresh", async t => {
+  const byId = setupDOM(t);
+  const { initIssueLog } = await import("../src/tuber_studio/web/modules/discovery-panel.js");
+  let cleared = false;
+  const issues = initIssueLog(async (path, options) => {
+    if (options) { assert.equal(path, "/api/automation/issues/clear"); assert.equal(options.method, "POST"); cleared = true; return { records: { issues: [], sent: [] } }; }
+    return { issues: cleared ? [] : [{ error: "网络中断", status: "retry_wait", updated_at: 100 }], sent: [] };
+  }, () => "issues");
+  issues.record("本地测试告警", "#automation");
+  await issues.refresh();
+  assert.match(byId("workspace-issues").textContent, /2/);
+  await byId("clear-workspace-issues").onclick({ currentTarget: byId("clear-workspace-issues") });
+  assert.equal(byId("workspace-issues").textContent, "告警与错误");
+  await issues.refresh();
+  assert.equal(byId("workspace-issues").textContent, "告警与错误");
+});
+
+test("node connection and model load state are separate from stopped livestream state", async () => {
+  const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
+  const settings = { inference_broker: { deployment: "remote" } };
+  const status = { state: "stopped", inference: { state: "active", active_provider: "pet", providers: { pet: { running: true, is_sleeping: false } } } };
+  assert.match(inferenceDisplay(status, settings).text, /Jetson 已连接.*模型已加载/);
+  assert.doesNotMatch(inferenceDisplay(status, settings).text, /已停止/);
+  status.inference.state = "idle";
+  status.inference.providers.pet.running = false;
+  assert.match(inferenceDisplay(status, settings).text, /已连接.*模型未加载/);
+  status.inference.error = "无法连接";
+  assert.match(inferenceDisplay(status, settings).text, /连接异常/);
+});
+
+test("new generation shows only this task and selects its first actual draft", async t => {
+  const byId = setupDOM(t);
+  const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
+  let ready = false;
+  const old = { id: "old", channel: "comments", status: "pending_review", source: "manual", text: "旧草稿" };
+  const fresh = { id: "fresh", channel: "comments", status: "pending_review", source: "manual", text: "本次生成的新回复" };
+  const calls = [];
+  const queue = initCommentQueue(async path => {
+    calls.push(path);
+    if (path.includes("?view=")) {
+      const scoped = path.includes("task_id=new-task");
+      const items = scoped ? ready ? [fresh] : [] : [old];
+      return { items, offset: 0, total: items.length, ...(scoped ? { task: { id: "new-task", status: ready ? "completed" : "running", total: 1, done: ready ? 1 : 0 } } : {}) };
+    }
+    return path.endsWith("fresh") ? fresh : old;
+  }, () => {}, () => null);
+  await queue.open("review");
+  await queue.trackGeneration("new-task", [123]);
+  assert.match(calls.at(-1), /task_id=new-task&comment_ids=123/);
+  assert.equal(byId("queue-list").children.length, 0);
+  ready = true;
+  await queue.refresh();
+  assert.equal(byId("queue-list").children[0].dataset.queueKey, "comments/fresh");
+  assert.equal(byId("queue-detail").children.find(child => child.tagName === "LABEL").children[0].value, "本次生成的新回复");
+});
+
+test("JSON import is a single write and opens the imported scope without mandatory preview", async t => {
+  const byId = setupDOM(t);
+  const { initMaintenanceModule } = await import("../src/tuber_studio/web/modules/maintenance.js");
+  byId("import-video").value = "import-one-step";
+  byId("import-comments").value = JSON.stringify([{ comment_id: "1", content: "白饭呢？" }]);
+  const pending = [], calls = [], scopes = [];
+  initMaintenanceModule({}, {
+    api: async (path, options) => { calls.push([path, options]); return { imported: 1, video_id: "import-one-step" }; },
+    busy: (_, action) => { const work = action(); pending.push(work); return work; }, notice() {}, onCommentsImported: value => scopes.push(value),
+  });
+  byId("import-comments-form").listeners.submit({ preventDefault() {}, submitter: byId("submit-import") });
+  await Promise.all(pending);
+  assert.deepEqual(calls.map(([path]) => path), ["/api/comments/import"]);
+  assert.deepEqual(scopes, ["import-one-step"]);
+});
+
+test("reading comments sends the video and page count and selects the returned video scope", async t => {
+  const byId = setupDOM(t);
+  const { initCommentsModule } = await import("../src/tuber_studio/web/modules/comments.js");
+  byId("comment-video").value = "https://www.bilibili.com/video/BVexample";
+  byId("comment-pages").value = "3";
+  const calls = [], pending = [], scopes = [];
+  initCommentsModule({}, {
+    api: async (path, options) => { calls.push([path, options.body]); return { video_id: "BVexample", count: 3 }; },
+    busy: (_, action) => { const work = action(); pending.push(work); return work; },
+    onScopeChanged: value => scopes.push(value),
+  });
+  byId("fetch-comments-form").listeners.submit({ preventDefault() {}, submitter: byId("submit-fetch") });
+  await Promise.all(pending);
+  assert.deepEqual(calls, [["/api/comments/fetch", { video: "https://www.bilibili.com/video/BVexample", max_pages: 3 }]]);
+  assert.deepEqual(scopes, ["BVexample"]);
 });
 
 test("task reasons preserve specific model explanations and separate scheduler state", () => {
@@ -223,55 +342,24 @@ test("round settings preserve unlimited quotas and matrix saves leave them intac
   assert.equal(messageSave[1].body.auto_send, false);
 });
 
-test("both discovery buttons share state while full-channel operations are enabled", async t => {
+test("one parent start action uses saved permissions without enabling additional channels", async t => {
   const byId = setupDOM(t);
-  const { initDiscoveryPanel } = await import("../src/tuber_studio/web/modules/discovery-panel.js");
-  const { renderOperationsQuickBar } = await import("../src/tuber_studio/web/modules/operations.js");
-  const video = { id: "video", config: { discovery_id: "current" } };
-  const inbox = { id: "inbox", config: { interaction_only: true } };
-  const data = {
-    enabled: false, state: "off", overlay_enabled: true,
-    source: { mode: "recommend", keywords: [], watch_videos: [] },
-  };
+  const { initOperationsModule, updatePermissionCapsule } = await import("../src/tuber_studio/web/modules/operations.js");
   const calls = [];
-  const discovery = initDiscoveryPanel(async (path, options) => {
-    assert.equal(path, "/api/automation/discovery");
-    if (options) {
-      calls.push(options);
-      data.enabled = options.body.enabled;
-      data.state = data.enabled ? "running" : "off";
-    }
-    return data;
-  });
-  await discovery.refresh();
-  const home = byId("discovery-toggle");
-  const settings = byId("discovery-toggle-settings");
-  assert.equal(home.disabled, false);
-  assert.equal(settings.disabled, false);
-  await settings.onclick({ currentTarget: settings });
-  assert.equal(home.textContent, "停止自动刷视频");
-  assert.equal(settings.textContent, home.textContent);
-  assert.equal(byId("discovery-settings-state").textContent, byId("discovery-state").textContent);
-
-  const status = { policy: { enabled: false }, discovery: { enabled: true }, active_rounds: [video, inbox] };
-  renderOperationsQuickBar(status);
-  assert.equal(byId("op-toggle-auto").disabled, false);
-  assert.equal(byId("op-stop-round").disabled, false);
-  assert.equal(byId("op-preview-round").disabled, true);
-  assert.match(byId("op-active-rounds").textContent, /刷视频.*互动收件箱/);
-  renderOperationsQuickBar({ ...status, active_rounds: [inbox] });
-  assert.equal(byId("op-stop-round").disabled, false);
-  assert.equal(byId("op-preview-round").disabled, false);
-
-  await home.onclick({ currentTarget: home });
-  assert.equal(settings.textContent, "开始自动刷视频");
-  assert.deepEqual(calls, [
-    { method: "PUT", body: { enabled: true } },
-    { method: "PUT", body: { enabled: false } },
-  ]);
-  data.daily_watch = { started: 10, limit: 10, remaining: 0 };
-  await discovery.refresh();
-  assert.match(byId("discovery-result").textContent, /今日观看次数已用完，继续处理评论/);
+  const status = { policy: { enabled: false }, settings: { discovery_enabled: false, reply_enabled: true }, permissions: { video_enabled: false, replies: "review", private_messages: "off", dynamics: "off" } };
+  const api = async (path, options) => {
+    if (options) { calls.push([path, options.body]); assert.equal(path, "/api/automation/enable"); status.policy.enabled = options.body.enabled; }
+    return status;
+  };
+  initOperationsModule(api, null);
+  await updatePermissionCapsule(api, null);
+  await byId("op-toggle-auto").onclick();
+  assert.equal(byId("op-toggle-auto").textContent, "停止自主运营");
+  assert.match(byId("op-permissions-summary").textContent, /评论（生成草稿）/);
+  assert.doesNotMatch(byId("op-permissions-summary").textContent, /刷视频|私信|动态/);
+  assert.equal(status.settings.discovery_enabled, false);
+  await byId("op-toggle-auto").onclick();
+  assert.deepEqual(calls, [["/api/automation/enable", { enabled: true }], ["/api/automation/enable", { enabled: false }]]);
 });
 
 test("matrix uses the stored message policy and displays partial failure", async t => {
@@ -288,6 +376,15 @@ test("matrix uses the stored message policy and displays partial failure", async
   };
   await savePermissionMatrix(api, null);
   assert.equal(byId("matrix-save-feedback").textContent, "运营设置已保存，私信设置保存失败：写入失败");
+});
+
+test("sending readiness reports actual blockers without inventing an approval gate", async t => {
+  const byId = setupDOM(t);
+  const { renderPermissionStatus } = await import("../src/tuber_studio/web/modules/permission-matrix.js");
+  renderPermissionStatus({ settings: { top_level_enabled: true, top_level_auto_publish: true }, automatic_sending_ready: false,
+    blockers: ["模型不可用：连接失败"] }, { configured: { sessdata: true, csrf: true }, state: "logged_in", profile: { uid: "test" } });
+  assert.match(byId("automatic-sending-state").textContent, /模型不可用：连接失败/);
+  assert.doesNotMatch(byId("automatic-sending-state").textContent, /语义|验收|需审核/);
 });
 
 test("matrix enables private messages when selecting automatic handoff without enabling polling", async t => {

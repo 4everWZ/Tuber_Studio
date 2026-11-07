@@ -1,32 +1,11 @@
 <section data-section="automation-settings" class="win-page-view" hidden>
-  <div class="win-property-tabs">
-    <a href="#automation" class="prop-tab">自动刷视频</a>
-    <a href="#automation-records" class="prop-tab">运行与发布记录</a>
-    <a href="#automation-settings" class="prop-tab active" aria-current="page">运营设置</a>
-  </div>
   <div class="page-heading win-heading">
-    <h1>刷视频与运营设置</h1>
+    <h1>运营设置</h1>
     <a href="#automation" class="button quiet">← 返回控制台</a>
   </div>
 
   <section class="win-group-box automation-settings" id="operations-controls" data-workspace-anchor>
     <h2 class="win-group-title">运营控制</h2>
-    <div class="operation-mode-grid">
-      <div class="win-subgroup-box">
-        <h3 class="win-subgroup-title">自动刷视频</h3>
-        <p class="hint">按所选来源发现视频并处理互动。</p>
-        <div class="actions">
-          <button id="discovery-toggle-settings" type="button" class="win-btn" disabled>开始自动刷视频</button>
-          <span id="discovery-settings-state" class="badge" role="status">读取中</span>
-        </div>
-      </div>
-      <div class="win-subgroup-box">
-        <h3 class="win-subgroup-title">全渠道自主运营</h3>
-        <p class="hint">处理评论、通知、私信和视频任务。</p>
-        <button id="op-toggle-auto" type="button" class="win-btn" disabled>开启全渠道自主运营</button>
-      </div>
-    </div>
-    <p id="op-active-rounds" class="hint" role="status"></p>
     <div class="actions operation-round-actions">
       <button id="op-preview-round" type="button" class="win-btn" disabled>只读单轮预览</button>
       <button id="op-stop-round" type="button" class="win-btn" disabled>停止当前轮次</button>
@@ -69,7 +48,7 @@
 
   <div class="win-group-box automation-settings" id="operation-round-settings" data-workspace-anchor style="margin-top:16px;">
     <h2 class="win-group-title">共享轮次参数</h2>
-    <p class="hint">自动刷视频、只读预览和全渠道运营共用这些设置。</p>
+    <p class="hint">自主运营与只读预览共用这些设置。</p>
     <form id="op-round-settings" class="operation-settings-form">
       <fieldset class="settings-form-group">
         <legend>观看与回复数量</legend>
@@ -138,4 +117,128 @@
     <div class="win-group-title">异常运营任务的恢复与重试策略</div>
     <div id="operations-recovery-settings"></div>
   </div>
+  <!-- 三维权限矩阵 -->
+  <article class="win-group-box" id="operations-permission-matrix" data-workspace-anchor style="margin-top:16px;">
+    <div class="panel-heading">
+      <div class="win-group-title" style="margin:0;">允许的动作与审核方式</div>
+      <span id="matrix-capsule-badge" class="badge">草稿审核态</span>
+    </div>
+    <p class="hint">集中管理社区运营、私信与动态的行为授权、放行级别与安全熔断阈值。修改后即时联动各工作台。</p>
+    <div id="matrix-visual-status" class="hint" style="margin: 8px 0; padding: 6px 12px; border-radius: 6px; background: #f1f5f9; font-size: 12px;" hidden></div>
+
+    <label class="check-field matrix-video-setting"><input id="matrix-video-enabled" type="checkbox"> 允许刷视频</label>
+    <fieldset class="matrix-group">
+      <legend>一、平台凭证与写入权有效性</legend>
+      <div class="matrix-credentials-status">
+        <div class="matrix-status-item">
+          <span>B站登录凭证 (SESSDATA)：</span>
+          <strong id="matrix-sessdata-status" class="status-tag">待读取</strong>
+        </div>
+        <div class="matrix-status-item">
+          <span>CSRF 写入权 (bili_jct)：</span>
+          <strong id="matrix-csrf-status" class="status-tag">待读取</strong>
+        </div>
+        <div class="matrix-actions">
+          <a href="#account-settings" class="button quiet">配置或刷新账号凭证 ↑</a>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="matrix-group">
+      <legend>二、行为动作放行级别 (三级阶梯控制)</legend>
+      <div class="matrix-action-grid">
+        <div class="matrix-action-card">
+          <h3>视频看完自发主评</h3>
+          <p class="hint">视频理解完成后，以角色第一人称发布置顶主评</p>
+          <div class="matrix-radio-group">
+            <label><input type="radio" name="matrix_top_level" value="0"> 禁止</label>
+            <label><input type="radio" name="matrix_top_level" value="1" checked> 存为草稿 (需人工审核)</label>
+            <label><input type="radio" name="matrix_top_level" value="2"> 自动发布</label>
+          </div>
+        </div>
+        <div class="matrix-action-card">
+          <h3>评论区跟帖回复</h3>
+          <p class="hint">进入评论区筛选有价值评论，自主决定是否跟帖</p>
+          <div class="matrix-radio-group">
+            <label><input type="radio" name="matrix_reply" value="0"> 禁止</label>
+            <label><input type="radio" name="matrix_reply" value="1" checked> 存为草稿 (需人工审核)</label>
+            <label><input type="radio" name="matrix_reply" value="2"> 自动发布</label>
+          </div>
+        </div>
+        <div class="matrix-action-card">
+          <h3>私信沟通与移交</h3>
+          <p class="hint">观众主动私信或评论区深聊转私信</p>
+          <div class="matrix-radio-group">
+            <label><input type="radio" name="matrix_dm" value="0"> 禁止</label>
+            <label><input type="radio" name="matrix_dm" value="1" checked> 存为草稿 (需人工审核)</label>
+            <label><input type="radio" name="matrix_dm" value="2"> 自动发布</label>
+          </div>
+        </div>
+        <div class="matrix-action-card">
+          <h3>视频自主点赞 (Like)</h3>
+          <p class="hint">大肥鱼刷完视频后，根据内容看点与角色兴趣自主决策点赞</p>
+          <div class="matrix-radio-group">
+            <label><input type="radio" name="matrix_video_like" value="0"> 禁止</label>
+            <label><input type="radio" name="matrix_video_like" value="1" checked> 存为记录 (需审核)</label>
+            <label><input type="radio" name="matrix_video_like" value="2"> 自动点赞</label>
+          </div>
+        </div>
+        <div class="matrix-action-card">
+          <h3>视频自主收藏 (Favorite)</h3>
+          <p class="hint">对高质量、值得回看或深度共鸣的视频自主加入默认收藏夹</p>
+          <div class="matrix-radio-group">
+            <label><input type="radio" name="matrix_video_fav" value="0"> 禁止</label>
+            <label><input type="radio" name="matrix_video_fav" value="1" checked> 存为记录 (需审核)</label>
+            <label><input type="radio" name="matrix_video_fav" value="2"> 自动收藏</label>
+          </div>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="matrix-group">
+      <legend>三、平台失败处理</legend>
+      <div class="form-grid">
+        <label class="check-field" style="grid-column: 1 / -1;">
+          <input id="matrix-auto-downgrade" type="checkbox" checked>
+          遇到连续平台报错自动降级为“仅草稿待核对”
+        </label>
+      </div>
+      <p class="hint"><a href="#operation-round-settings">设置发布配额与轮次调度</a></p>
+    </fieldset>
+
+    <div class="actions" style="margin-top:14px;">
+      <button id="matrix-save" type="button" class="primary win-btn">保存权限矩阵配置</button>
+      <span id="matrix-save-feedback" class="hint" role="status"></span>
+    </div>
+  </article>
+  <!-- 运营策略 GroupBox -->
+  <div class="win-group-box" id="dynamic-policy-settings" data-workspace-anchor>
+    <div class="panel-heading">
+      <div class="win-group-title" style="margin:0;">动态生成策略与发布频次</div>
+      <span id="dynamic-mode" class="badge">正在读取</span>
+    </div>
+    <form id="dynamic-policy-form">
+      <fieldset id="dynamic-policy-fields" class="provider-fields" disabled>
+        <div class="policy-checks win-checks-bar">
+          <label><input id="dynamic-enabled" type="checkbox"> 允许动态</label>
+          <label><input id="dynamic-auto-publish" type="checkbox" checked> 自动发布（关闭则存为草稿待人工审核）</label>
+          <label><input id="dynamic-use-memes" type="checkbox"> 允许模型为动态附加 1 张专属表情包</label>
+        </div>
+        <div class="form-grid" style="margin-top:12px;">
+          <label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="300" max="86400" step="1" value="1800" required></label>
+          <label>最短发布间隔（秒）<input id="dynamic-min-post-interval" type="number" min="21600" max="604800" step="1" value="21600" required></label>
+          <label>24 小时最大尝试次数<input id="dynamic-max-posts" type="number" min="1" max="2" step="1" value="2" required></label>
+          <label>运营记忆摘要预算 (tokens)<input id="dynamic-memory-summary-max" type="number" min="256" max="4096" step="1" value="2048" required></label>
+        </div>
+      </fieldset>
+      <div class="actions" style="margin-top:14px;">
+        <button id="save-dynamic-policy" type="submit" class="primary win-btn" disabled>保存动态设置</button>
+        <a href="#accounts" class="inline-link">配置 B站共用账号 →</a>
+      </div>
+    </form>
+    <p id="dynamic-policy-state" class="hint" role="status"></p>
+    <dl id="dynamic-policy-status" class="description-list"></dl>
+  </div>
+
+<section id="message-policy-settings" data-workspace-anchor></section>
 </section>

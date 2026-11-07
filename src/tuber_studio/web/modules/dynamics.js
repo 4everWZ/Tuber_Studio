@@ -19,9 +19,9 @@ export function boundedInteger(id, title, minimum, maximum) {
 
 export function renderDynamicPolicy(model, describe, display) {
   const policy = model.dynamicPolicy;
+  const saved = policy?.base || policy;
   if ($("dynamic-policy-fields")) $("dynamic-policy-fields").disabled = !policy || model.dynamicSaving;
   if ($("save-dynamic-policy")) $("save-dynamic-policy").disabled = !policy || model.dynamicSaving || !model.dynamicPolicyDirty;
-  if ($("stop-dynamics")) $("stop-dynamics").disabled = !policy?.enabled || model.dynamicSaving;
   if ($("evaluate-dynamics")) {
     $("evaluate-dynamics").disabled = !policy || model.dynamicEvaluating || model.dynamicSaving;
     $("evaluate-dynamics").setAttribute("aria-busy", String(model.dynamicEvaluating));
@@ -30,8 +30,8 @@ export function renderDynamicPolicy(model, describe, display) {
   if (!policy) return;
 
   if ($("dynamic-mode")) {
-    $("dynamic-mode").textContent = !policy.enabled ? "运营已停止" : policy.auto_publish ? "运营中 · 已配置自动发布" : "运营中 · 人工审核";
-    $("dynamic-mode").className = `badge ${policy.enabled ? "active" : ""}`;
+    $("dynamic-mode").textContent = !saved.enabled ? "未允许动态" : saved.auto_publish ? "已允许动态 · 自动发布" : "已允许动态 · 人工审核";
+    $("dynamic-mode").className = `badge ${saved.enabled ? "active" : ""}`;
   }
   const character = model.status?.character;
   if ($("dynamic-policy-status")) {
@@ -48,14 +48,15 @@ export function renderDynamicPolicy(model, describe, display) {
 
 export function dynamicPolicyFromServer(policy, model, describe, display) {
   model.dynamicPolicy = policy;
+  const saved = policy.base || policy;
   if (!model.dynamicPolicyDirty) {
-    if ($("dynamic-enabled")) $("dynamic-enabled").checked = !!policy.enabled;
-    if ($("dynamic-auto-publish")) $("dynamic-auto-publish").checked = policy.auto_publish !== false;
-    if ($("dynamic-use-memes")) $("dynamic-use-memes").checked = !!policy.use_memes;
-    if ($("dynamic-evaluate-interval")) $("dynamic-evaluate-interval").value = policy.evaluate_interval_seconds ?? 1800;
-    if ($("dynamic-min-post-interval")) $("dynamic-min-post-interval").value = policy.min_post_interval_seconds ?? 21600;
-    if ($("dynamic-max-posts")) $("dynamic-max-posts").value = policy.max_posts_per_day ?? 2;
-    if ($("dynamic-memory-summary-max")) $("dynamic-memory-summary-max").value = policy.memory_summary_max_tokens ?? 2048;
+    if ($("dynamic-enabled")) $("dynamic-enabled").checked = !!saved.enabled;
+    if ($("dynamic-auto-publish")) $("dynamic-auto-publish").checked = saved.auto_publish !== false;
+    if ($("dynamic-use-memes")) $("dynamic-use-memes").checked = !!saved.use_memes;
+    if ($("dynamic-evaluate-interval")) $("dynamic-evaluate-interval").value = saved.evaluate_interval_seconds ?? 1800;
+    if ($("dynamic-min-post-interval")) $("dynamic-min-post-interval").value = saved.min_post_interval_seconds ?? 21600;
+    if ($("dynamic-max-posts")) $("dynamic-max-posts").value = saved.max_posts_per_day ?? 2;
+    if ($("dynamic-memory-summary-max")) $("dynamic-memory-summary-max").value = saved.memory_summary_max_tokens ?? 2048;
   }
   renderDynamicPolicy(model, describe, display);
 }
@@ -500,9 +501,9 @@ export function initDynamicsModule(model, {
     await doRefreshDynamicMemeInfo(model.dynamicPosts.find(item => item.id === model.dynamicPostId));
   }
 
-  async function doSaveDynamicPolicy(stop = false) {
+  async function doSaveDynamicPolicy() {
     if (model.dynamicSaving) return;
-    const payload = stop ? { enabled: false } : {
+    const payload = {
       enabled: $("dynamic-enabled")?.checked,
       auto_publish: $("dynamic-auto-publish")?.checked,
       use_memes: $("dynamic-use-memes")?.checked,
@@ -515,19 +516,15 @@ export function initDynamicsModule(model, {
     doRenderPolicy();
     try {
       const policy = await api("/api/dynamics/policy", { method: "PUT", body: payload });
-      if (stop) {
-        if ($("dynamic-enabled")) $("dynamic-enabled").checked = false;
-      } else {
-        model.dynamicPolicyDirty = false;
-      }
+      model.dynamicPolicyDirty = false;
       dynamicPolicyFromServer(policy, model, describe, display);
       if ($("dynamic-policy-state")) {
         $("dynamic-policy-state").classList.remove("error-text");
-        $("dynamic-policy-state").textContent = !policy.enabled ?
-          "动态运营已停止；已发布请求以平台回执为准。" :
-          policy.auto_publish ?
-          "运营已开启，后台评估可直接发布；手动评估仍只生成草稿。" :
-          "运营已开启，所有新动态保留人工审核。";
+        $("dynamic-policy-state").textContent = !(policy.base || policy).enabled ?
+          "已关闭动态权限。" :
+          (policy.base || policy).auto_publish ?
+          "已允许自动发布动态，开始自主运营后生效。" :
+          "已允许生成动态草稿，开始自主运营后生效。";
         notice($("dynamic-policy-state").textContent);
       }
     } catch (error) {
@@ -599,7 +596,6 @@ export function initDynamicsModule(model, {
     event.preventDefault();
     busy($("save-dynamic-policy"), () => doSaveDynamicPolicy());
   });
-  $("stop-dynamics")?.addEventListener("click", () => busy($("stop-dynamics"), () => doSaveDynamicPolicy(true)));
   $("refresh-dynamics")?.addEventListener("click", () => busy($("refresh-dynamics"), doRefreshDynamics));
 
   $("evaluate-dynamics")?.addEventListener("click", () => busy($("evaluate-dynamics"), async () => {
@@ -659,6 +655,7 @@ export function initDynamicsModule(model, {
   }));
 
   return {
+    refreshPolicy: async () => dynamicPolicyFromServer(await api("/api/dynamics/policy"), model, describe, display),
     refreshDynamics: doRefreshDynamics,
     renderDynamicPosts: doRenderPosts,
     renderDynamicPost: doRenderPost,

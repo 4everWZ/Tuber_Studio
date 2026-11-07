@@ -2,18 +2,19 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.06";
-import { initDiscoveryActivity, initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.07";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.10";
+import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.10";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.10";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.01";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261107.03";
+import { MessagesPanel } from "./messages.js?v=20261107.10";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261107.07";
+} from "./modules/operations.js?v=20261107.10";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -21,24 +22,24 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261107.03";
+} from "./modules/comments.js?v=20261107.10";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261105.29";
+} from "./modules/dynamics.js?v=20261107.10";
 import {
   initMaintenanceModule,
-} from "./modules/maintenance.js?v=20261105.26";
+} from "./modules/maintenance.js?v=20261107.10";
 import {
   renderLiveFeatures,
   renderControls,
   initLiveModule,
-} from "./modules/live.js?v=20261105.30";
+} from "./modules/live.js?v=20261107.08";
 
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
 } from "./modules/workspace-display.js";
-import { initWorkspaceNavigation } from "./modules/workspace-navigation.js";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js";
+import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261107.10";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.08";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#automation";
@@ -56,7 +57,6 @@ const model = {
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, policy: null,
-  commentPolicyDirty: false,
   importPreviewSignature: null, categorySaving: new Set(),
   modeSwitch: null, modeResult: null,
   threadContextPending: null,
@@ -101,6 +101,7 @@ const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope 
   const characterId = model.status?.character?.id;
   if (characterId) userMemoryEditor.open({ ...scope, characterId });
 });
+messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 automationPanel.onStatus = renderOperationsQuickBar;
 const issueLog = initIssueLog(api, () => model.page);
@@ -109,8 +110,8 @@ document.addEventListener("workspace-issue", event => {
   issueLog.record(event.detail);
 });
 const discoveryPanel = initDiscoveryPanel(api);
-const refreshDiscoveryActivity = initDiscoveryActivity(api);
-const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status, refreshDiscoveryActivity);
+const refreshOperationsActivity = initOperationsActivity(api);
+const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status);
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
 $("daily-memory-card").addEventListener("toggle", event => {
   if (model.authenticated && event.currentTarget.open) void dailyMemoryUI.refresh();
@@ -152,6 +153,17 @@ const dynamicMemePicker = new MemePicker(api, (id, asset) => dynamicsModule?.sel
   description: "只显示此动态所属角色已启用且可用的图片。最多附加1张，保留原正文；修改配图后需要重新审核。"
 });
 
+async function showCommentSources(videoId) {
+  $("filter-video").value = videoId;
+  for (const id of ["filter-thread", "filter-category", "filter-status"]) $(id).value = "";
+  model.selectedComments.clear();
+  model.commentId = null;
+  model.commentSourcePage = 0;
+  await commentQueue.open("sources");
+  $("comment-import").open = false;
+  $("queue-records").scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
 async function busy(button, action) {
   if (!button) return action();
   const wasDisabled = button.disabled;
@@ -167,10 +179,9 @@ async function busy(button, action) {
     button.removeAttribute("aria-busy");
     if (model.status) renderControls(model);
     if (model.status?.context) renderContext(model.status.context);
-    if (button.id === "submit-import") button.disabled = !model.importPreviewSignature;
     if (button.id === "preview-submit") renderVoicePreview(model);
     if (["approve-dynamic", "reject-dynamic", "publish-dynamic"].includes(button.id)) dynamicsModule?.renderDynamicPost();
-    if (["save-dynamic-policy", "stop-dynamics", "evaluate-dynamics"].includes(button.id)) dynamicsModule?.renderDynamicPolicy();
+    if (["save-dynamic-policy", "evaluate-dynamics"].includes(button.id)) dynamicsModule?.renderDynamicPolicy();
   }
 }
 
@@ -348,17 +359,20 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   if (model.page !== "comments") commentQueue.leave();
   if (!model.authenticated) return;
   if (model.page === "comments") {
+    if (routeKind === "activity") { location.hash = "automation"; return; }
     const queueView = commentQueueViews.includes(routeKind) ? routeKind : null;
     const [channel, identity] = queueView ? [routeId, taskId] : [routeKind, routeId];
     const validKey = ["comments", "browsing", "jobs"].includes(channel) && /^[\w-]+$/.test(identity || "");
-    await commentQueue.open(anchor ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
+    if (routeKind === "review" && routeId === "task" && /^[\w-]+$/.test(taskId || "")) await commentQueue.trackGeneration(taskId);
+    else await commentQueue.open(anchor || routeKind === "sources" ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
   } else if (model.page === "automation") {
-    await discoveryPanel.refresh();
+    if (routeKind === "video") { history.replaceState(null, "", "#automation"); refreshOperationsActivity.setKind("videos"); }
+    await Promise.allSettled([updatePermissionCapsule(), discoveryPanel.refresh(), refreshOperationsActivity()]);
   } else if (model.page === "automation-records") {
     const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
     await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
   } else if (model.page === "automation-settings") {
-    await Promise.allSettled([discoveryPanel.refresh(), updatePermissionCapsule(), automationPanel.loadRecovery()]);
+    await Promise.allSettled([discoveryPanel.refresh(), updatePermissionCapsule(), automationPanel.loadRecovery(), dynamicsModule?.refreshPolicy(), messagesPanel.refresh()]);
   } else if (model.page === "issues") {
     issueLog.render();
     await issueLog.refresh();
@@ -392,8 +406,9 @@ async function poll() {
   model.polling = true;
   try {
     const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh()];
+    if (model.page === "automation") updates.push(updatePermissionCapsule({ background: true }), refreshOperationsActivity());
     if (model.page === "live") updates.push(refreshLive());
-    if (model.page === "comments") updates.push(commentQueue.isSources() ? refreshComments() : commentQueue.refresh());
+    if (model.page === "comments") updates.push(commentQueue.refresh());
     if (model.page === "automation-settings") updates.push(updatePermissionCapsule({ background: true }));
     if (model.page === "automation-records") updates.push(automationPanel.refresh({ background: true }));
     if (model.page === "issues" || model.page === "automation-records") updates.push(issueLog.refresh());
@@ -434,6 +449,9 @@ commentsModule = initCommentsModule(model, {
   commentContinuation,
   setBadge,
   describe,
+  onScopeChanged: showCommentSources,
+  onDraftsRequested: (taskId, ids) => commentQueue.trackGeneration(taskId, ids),
+  onCommentSelected: comment => commentQueue.showComment(comment),
 });
 
 dynamicsModule = initDynamicsModule(model, {
@@ -468,6 +486,7 @@ maintenanceModule = initMaintenanceModule(model, {
   describe,
   dateTime,
   refreshCommentsFn: refreshComments,
+  onCommentsImported: showCommentSources,
 });
 
 liveModule = initLiveModule(model, {
@@ -608,7 +627,7 @@ if ($("refresh-operations")) {
 
 const changePage = initWorkspaceNavigation(model, loadWorkspacePage);
 window.addEventListener("beforeunload", event => {
-  if (commentQueue.hasUnsaved() || model.characterDirty || model.commentPolicyDirty || inferenceProviders.dirty || voiceSettings.dirty || model.dynamicPolicyDirty || model.dynamicPostDirty || messagesPanel.hasUnsaved()) {
+  if (commentQueue.hasUnsaved() || model.characterDirty || inferenceProviders.dirty || voiceSettings.dirty || model.dynamicPolicyDirty || model.dynamicPostDirty || messagesPanel.hasUnsaved()) {
     event.preventDefault();
     event.returnValue = "";
   }

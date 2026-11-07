@@ -1,161 +1,77 @@
 <section data-section="comments" class="win-page-view" hidden>
   <div class="page-heading win-heading">
-    <div class="heading-title-box">
-      <h1>评论处理与草稿审核</h1>
-      <span class="hint">统一查看评论草稿、发布结果与刷视频活动</span>
-    </div>
-    <button type="button" id="open-manual-comments" class="win-btn">评论来源与手动取材</button>
+    <h1>评论与草稿</h1>
   </div>
 
+  <details id="comment-sources" class="comment-input-panel" open>
+    <summary>读取或导入评论</summary>
+    <div id="comment-acquisition" data-workspace-anchor>
+      <form id="fetch-comments-form" class="fetch-row">
+        <label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或视频链接" required></label>
+        <label>读取页数<select id="comment-pages"><option value="1">1 页</option><option value="2">2 页</option><option value="3">3 页</option><option value="5">5 页</option></select></label>
+        <button class="primary" type="submit">读取评论</button>
+      </form>
+      <p id="fetch-state" class="hint" role="status"></p>
+      <div class="actions"><button id="refresh-videos" type="button">热门视频</button><span id="comment-fetch-mode" class="hint"></span></div>
+      <div id="popular-videos" class="video-list" hidden></div>
+      <details id="comment-import" class="comment-import-panel" data-workspace-anchor>
+        <summary>导入 JSON / CSV</summary>
+        <form id="import-comments-form">
+          <label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label>
+          <label>评论数据<textarea id="import-comments" class="compact-editor" rows="4" placeholder='[{"comment_id":"1","display_name":"观众","content":"今天吃白饭了吗？"}]' required></textarea></label>
+          <div class="actions">
+            <button id="submit-import" class="primary" type="submit">导入评论</button>
+            <button id="preview-import" type="button">预览</button>
+            <span id="import-preview-state" class="hint" role="status"></span>
+          </div>
+          <div id="import-preview" class="table-scroll" hidden>
+            <table><thead><tr><th>评论 ID</th><th>楼 ID</th><th>父评论</th><th>用户</th><th>内容</th><th>点赞</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table>
+          </div>
+        </form>
+      </details>
+    </div>
+  </details>
+
   <section id="comment-queue">
-    <div class="queue-toolbar win-filter-bar">
+    <div class="queue-toolbar">
       <fieldset id="queue-status-options" class="queue-status-options">
-        <legend>处理状态</legend>
-        <input id="queue-view" type="hidden" value="review">
+        <legend>评论处理</legend><input id="queue-view" type="hidden" value="review">
+        <label><input type="radio" name="queue-status" value="sources"><span>选择评论</span></label>
         <label><input type="radio" name="queue-status" value="review" checked><span>待审核</span></label>
         <label><input type="radio" name="queue-status" value="verify"><span>待核对</span></label>
         <label><input type="radio" name="queue-status" value="processing"><span>处理中</span></label>
         <label><input type="radio" name="queue-status" value="history"><span>已执行与历史</span></label>
       </fieldset>
-      <button id="refresh-queue" type="button" class="win-btn">刷新</button>
+      <div class="actions"><button id="queue-show-all" type="button" hidden>全部草稿</button><button id="refresh-queue" type="button">刷新</button></div>
     </div>
     <p id="queue-feedback" class="hint" role="status"></p>
-    <div id="queue-records" class="review-layout win-split-pane" style="margin-top:12px;">
+    <div id="queue-records" class="review-layout win-split-pane">
       <article class="win-group-box">
-        <div class="win-group-title">公开评论记录</div>
-        <div id="queue-list" class="win-table-container"></div>
-        <div class="actions queue-pagination" style="margin-top:12px;">
-          <button id="queue-prev" type="button" class="win-btn" disabled>上一页</button>
-          <button id="queue-next" type="button" class="win-btn" disabled>下一页</button>
-          <span id="queue-count-label" class="hint"></span>
+        <div class="panel-heading"><h2 id="queue-list-title">评论草稿</h2><span id="selected-comment-count" class="hint"></span></div>
+        <div id="comment-source-records" hidden>
+          <div class="actions comment-selection-actions"><button id="generate-drafts" class="primary" type="button" disabled>生成选中评论的回复</button><span id="comment-count" class="hint"></span></div>
+          <details class="comment-source-filters"><summary>筛选评论</summary>
+            <div class="form-grid"><label>视频<input id="filter-video" placeholder="全部视频"></label><label>楼 ID<input id="filter-thread" placeholder="全部楼"></label>
+              <label>类别<select id="filter-category"><option value="">全部</option><option value="question">问题</option><option value="suggestion">建议</option><option value="interaction">互动</option><option value="spam">垃圾</option><option value="general">一般</option></select></label>
+              <label>草稿状态<select id="filter-status"><option value="">全部</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label>
+            </div><div class="actions"><button id="filter-comments" type="button">筛选</button><button id="analyze-comments" type="button">归类</button></div>
+          </details>
+          <table class="comment-source-table"><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页评论"></th><th>评论</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table>
+          <div class="actions queue-pagination"><button id="source-prev" type="button">上一页</button><span id="source-page" class="hint"></span><button id="source-next" type="button">下一页</button></div>
         </div>
-        <section id="queue-activity" class="discovery-activity queue-inline-activity">
-          <div class="panel-heading">
-            <h2>刷视频活动</h2>
-            <a href="#automation-records">运行记录 →</a>
-          </div>
-          <div id="discovery-activity-list" class="win-activity-scroll"><p class="hint">正在读取最近活动…</p></div>
-        </section>
+        <div id="queue-list"></div>
+        <div class="actions queue-pagination"><button id="queue-prev" type="button" disabled>上一页</button><button id="queue-next" type="button" disabled>下一页</button><span id="queue-count-label" class="hint"></span></div>
       </article>
       <article class="win-group-box review-detail draft-panel" id="queue-detail" aria-label="记录详情"></article>
     </div>
   </section>
 
-  <!-- 手动取材与高级楼层控制 -->
-  <div id="comment-sources" hidden style="margin-top:16px;">
-    <div class="win-group-box" id="comment-acquisition" data-workspace-anchor>
-      <div class="panel-heading">
-        <div class="win-group-title" style="margin:0;">视频评论手动取材</div>
-        <span id="comment-fetch-mode" class="badge">公开读取 · 人工审核</span>
-      </div>
-      <form id="fetch-comments-form" class="fetch-row" style="margin-top:10px;">
-        <label>视频 BV 号或链接<input id="comment-video" placeholder="BV… 或 https://www.bilibili.com/video/BV…" required></label>
-        <label>最多读取页数
-          <select id="comment-pages">
-            <option value="1">1 页</option>
-            <option value="2">2 页</option>
-            <option value="3">3 页</option>
-            <option value="5">5 页</option>
-          </select>
-        </label>
-        <button class="primary win-btn" type="submit">读取评论</button>
-      </form>
-      <p id="fetch-state" class="hint" role="status">公开接口可能因平台限制而不可用；可保留视频信息并改用文件导入。</p>
-      <button id="refresh-videos" type="button" class="win-btn" style="margin-top:8px;">浏览热门视频列表</button>
-      <div id="popular-videos" class="video-list" hidden></div>
-
-      <div class="win-subgroup-box" id="comment-import" data-workspace-anchor style="margin-top:16px;">
-        <div class="win-subgroup-title">导入已有 JSON / CSV 评论批次</div>
-        <form id="import-comments-form">
-          <label>视频标识<input id="import-video" placeholder="BV… 或 import-开头的本地批次" required></label>
-          <label>评论 JSON 数组或 CSV<textarea id="import-comments" class="code-editor compact-editor" rows="5" placeholder='[{"comment_id":"1","platform_user_id":"u1","display_name":"观众","content":"大肥鱼今天什么时候开播？"}]' required></textarea></label>
-          <p class="hint">JSON 字段：comment_id、platform_user_id、display_name、content；CSV 使用同名表头。</p>
-
-          <div class="actions import-actions">
-            <button id="preview-import" type="button" class="win-btn">预览导入</button>
-            <button id="submit-import" class="primary win-btn" type="submit" disabled>导入评论</button>
-            <span id="import-preview-state" class="hint" role="status">先预览规范化数据，再提交导入。</span>
-          </div>
-          <div id="import-preview" class="table-scroll import-preview" hidden>
-            <table><thead><tr><th>评论 ID</th><th>楼ID</th><th>父评论ID</th><th>观众 ID / 昵称</th><th>内容</th><th>点赞数</th><th>时间</th></tr></thead><tbody id="import-preview-rows"></tbody></table>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- 评论筛选与生成工具条 -->
-    <div class="comment-toolbar win-filter-bar" style="margin-top:16px;">
-      <label>视频筛选<input id="filter-video" placeholder="全部视频"></label>
-      <label>楼ID筛选<input id="filter-thread" placeholder="全部楼"></label>
-      <label>类别
-        <select id="filter-category">
-          <option value="">全部类别</option>
-          <option value="question">问题</option>
-          <option value="suggestion">建议 / 反馈</option>
-          <option value="interaction">适合互动</option>
-          <option value="spam">垃圾</option>
-          <option value="general">一般评论</option>
-        </select>
-      </label>
-      <label>草稿状态
-        <select id="filter-status">
-          <option value="">全部状态</option>
-          <option value="pending_review">待审核</option>
-          <option value="approved">已审核</option>
-          <option value="rejected">已拒绝</option>
-          <option value="copied">已复制</option>
-          <option value="published">已发布</option>
-        </select>
-      </label>
-      <button id="filter-comments" class="win-btn">执行筛选</button>
-      <button id="analyze-comments" class="win-btn">智能归类</button>
-      <button id="generate-drafts" class="primary win-btn">为选中评论生成草稿</button>
-    </div>
-
-    <div class="comment-layout win-split-pane" id="comment-review" data-workspace-anchor style="margin-top:12px;">
-      <article class="win-group-box">
-        <div class="panel-heading">
-          <div class="win-group-title" style="margin:0;">评论列表 <span id="comment-count" class="muted"></span></div>
-          <span id="selected-comment-count" class="hint">已选 0 条</span>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页全部评论"></th><th>评论 / 用户 / 楼</th><th>类别</th><th>草稿状态</th></tr></thead>
-            <tbody id="comments"></tbody>
-          </table>
-        </div>
-      </article>
-      <article class="win-group-box draft-panel">
-        <div class="panel-heading">
-          <div class="win-group-title" style="margin:0;">评论详情</div>
-          <span id="draft-status" class="badge">选择评论</span>
-        </div>
-        <p id="draft-source" class="quoted-text">选择一条评论，查看原文和所在楼。</p>
-        <dl id="draft-meta" class="description-list"></dl>
-        <button id="open-comment-memory" type="button" hidden class="win-btn">用户档案</button>
-        <a id="open-comment-draft" href="#comments" hidden class="win-link-btn">到待办处理草稿</a>
-        <section id="comment-continuation" hidden></section>
-        <div class="win-subgroup-box" style="margin-top:12px;">
-          <div class="win-subgroup-title">当前楼上下文与压缩</div>
-          <p id="comment-context-state" class="hint">上下文能力待验证。</p>
-          <p id="thread-context-state" class="hint">选择评论或筛选单楼，查看该楼上下文。</p>
-          <div class="actions" style="margin-top:8px;">
-            <button id="compact-comments" type="button" class="win-btn">压缩当前楼</button>
-            <button id="rebuild-comments" type="button" class="win-btn" aria-describedby="thread-rebuild-state">重建上下文</button>
-          </div>
-          <p id="thread-rebuild-state" class="hint" role="status">从本地现存原文重建，保留已有非空上下文。</p>
-        </div>
-      </article>
-    </div>
-
-    <article class="win-group-box" style="margin-top:16px;">
-      <div class="panel-heading">
-        <div class="win-group-title" style="margin:0;">后台生成任务队列</div>
-        <span class="hint">任务在后台执行，错误状态实时反馈</span>
-      </div>
-      <div class="table-scroll">
-        <table><thead><tr><th>任务</th><th>状态</th><th>进度 / 结果</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table>
-      </div>
-    </article>
-  </div>
+  <details id="comment-review" class="comment-context-details" data-workspace-anchor>
+    <summary>所选评论上下文</summary>
+    <span id="draft-status" class="badge"></span><p id="draft-source" class="quoted-text"></p><dl id="draft-meta" class="description-list"></dl>
+    <button id="open-comment-memory" type="button" hidden>用户档案</button><a id="open-comment-draft" href="#comments" hidden>查看草稿</a><section id="comment-continuation" hidden></section>
+    <p id="comment-context-state" class="hint"></p><p id="thread-context-state" class="hint"></p>
+    <div class="actions"><button id="compact-comments" type="button">压缩当前楼</button><button id="rebuild-comments" type="button">重建上下文</button></div><p id="thread-rebuild-state" class="hint" role="status"></p>
+  </details>
+  <details class="comment-task-details"><summary>生成任务进度</summary><table><thead><tr><th>任务</th><th>状态</th><th>进度</th><th>原因</th></tr></thead><tbody id="comment-tasks"></tbody></table></details>
 </section>

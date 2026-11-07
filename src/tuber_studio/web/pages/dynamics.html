@@ -6,38 +6,8 @@
     </div>
     <div class="actions">
       <button id="refresh-dynamics" type="button" class="win-btn">刷新数据</button>
-      <button id="stop-dynamics" type="button" class="danger" disabled>停止动态运营</button>
+      <button id="evaluate-dynamics" type="button" disabled>生成动态草稿</button><a href="#dynamic-policy-settings">动态权限设置 →</a>
     </div>
-  </div>
-
-  <!-- 运营策略 GroupBox -->
-  <div class="win-group-box">
-    <div class="panel-heading">
-      <div class="win-group-title" style="margin:0;">动态生成策略与发布频次</div>
-      <span id="dynamic-mode" class="badge">正在读取</span>
-    </div>
-    <form id="dynamic-policy-form">
-      <fieldset id="dynamic-policy-fields" class="provider-fields" disabled>
-        <div class="policy-checks win-checks-bar">
-          <label><input id="dynamic-enabled" type="checkbox"> 开启动态运营</label>
-          <label><input id="dynamic-auto-publish" type="checkbox" checked> 自动发布（关闭则存为草稿待人工审核）</label>
-          <label><input id="dynamic-use-memes" type="checkbox"> 允许模型为动态附加 1 张专属表情包</label>
-        </div>
-        <div class="form-grid" style="margin-top:12px;">
-          <label>评估间隔（秒）<input id="dynamic-evaluate-interval" type="number" min="300" max="86400" step="1" value="1800" required></label>
-          <label>最短发布间隔（秒）<input id="dynamic-min-post-interval" type="number" min="21600" max="604800" step="1" value="21600" required></label>
-          <label>24 小时最大尝试次数<input id="dynamic-max-posts" type="number" min="1" max="2" step="1" value="2" required></label>
-          <label>运营记忆摘要预算 (tokens)<input id="dynamic-memory-summary-max" type="number" min="256" max="4096" step="1" value="2048" required></label>
-        </div>
-      </fieldset>
-      <div class="actions" style="margin-top:14px;">
-        <button id="save-dynamic-policy" type="submit" class="primary win-btn" disabled>保存运营策略</button>
-        <button id="evaluate-dynamics" type="button" class="win-btn" disabled>立即评估并生成草稿</button>
-        <a href="#accounts" class="inline-link">配置 B站共用账号 →</a>
-      </div>
-    </form>
-    <p id="dynamic-policy-state" class="hint" role="status"></p>
-    <dl id="dynamic-policy-status" class="description-list"></dl>
   </div>
 
   <!-- 双栏布局：动态记录与编辑器 -->

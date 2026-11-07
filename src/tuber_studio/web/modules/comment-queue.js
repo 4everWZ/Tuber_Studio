@@ -1,18 +1,18 @@
 import { $, node } from "./core.js";
 
-const pageSize = 30;
+const pageSize = 10;
 const sources = { manual: "手动", interaction: "公开互动", discovery: "自主浏览" };
 const statuses = {
   pending_review: "待审核", approved: "已审核 · 待提交", publish_uncertain: "待核对",
   publishing: "提交中", published: "平台已受理", rejected: "已拒绝", copied: "已复制",
-  private_handoff: "已转私信", queued: "排队中", running: "处理中", completed: "已完成",
+  private_handoff: "已转私信", pending: "排队中", queued: "排队中", running: "处理中", completed: "已完成",
   failed: "失败", partial: "部分完成", cancelled: "已取消",
 };
 export const commentQueueViews = ["review", "verify", "processing", "history", "activity"];
 const queueViewForStatus = status => {
   if (["pending_review", "approved"].includes(status)) return "review";
   if (status === "publish_uncertain") return "verify";
-  if (["queued", "running", "publishing"].includes(status)) return "processing";
+  if (["pending", "queued", "running", "publishing"].includes(status)) return "processing";
   return "history";
 };
 const keyOf = row => row && `${row.channel}/${row.id}`;
@@ -48,12 +48,14 @@ export function evidenceList(segments = []) {
   return result;
 }
 
-export function initCommentQueue(api, refreshSources, discoveryStatus, refreshActivity = async () => {}) {
+export function initCommentQueue(api, refreshSources, discoveryStatus) {
   const list = $("queue-list"), detail = $("queue-detail"), feedback = $("queue-feedback");
-  const filter = $("queue-view"), sourcesButton = $("open-manual-comments");
+  const filter = $("queue-view");
   const draftEdits = new Map();
   let view = "review", offset = 0, routeKey = null, inferRouteView = false, selected = null, version = 0;
   let rows = [], listSignature = "", detailSignature = "", active = false, busy = false, loaded = false, focusedKey = null;
+  let generation = null;
+  let sourceVersion = 0;
 
   function emptyDetail(text) {
     detailSignature = "";
@@ -221,7 +223,15 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, refreshAc
   }
 
   async function refresh(forceDetail = false) {
-    if (!active || view === "sources") return;
+    if (!active) return;
+    if (view === "sources") {
+      await refreshSources();
+      if (forceDetail && selected) {
+        const row = await api(`/api/comments/workbench/${selected}`);
+        renderDetail(selected, row);
+      }
+      return;
+    }
     const request = ++version;
     if (!loaded) feedback.textContent = "正在读取评论记录…";
     try {
@@ -232,25 +242,37 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, refreshAc
         setView(queueViewForStatus(routedDetail.status));
         inferRouteView = false;
       }
-      const [data] = await Promise.all([
-        api(`/api/comments/workbench?view=${view}&limit=${pageSize}&offset=${offset}`),
-        refreshActivity(),
-      ]);
+      const scope = generation ? `&task_id=${encodeURIComponent(generation.id)}${generation.commentIds?.length ? `&comment_ids=${generation.commentIds.join(",")}` : ""}` : "";
+      const data = await api(`/api/comments/workbench?view=${view}&limit=${pageSize}&offset=${offset}${scope}`);
       if (request !== version || !active) return;
+      if (generation && !data.items.length && data.task?.status === "completed" && data.task.existing_drafts?.length) {
+        data.items = data.task.existing_drafts;
+        data.total = data.items.length;
+        data.offset = 0;
+        generation.existing = true;
+      }
       loaded = true;
       offset = data.offset;
       const previous = selected, previousRow = rows.find(row => keyOf(row) === previous);
       rows = data.items;
       const current = rows.find(row => keyOf(row) === previous);
       selected = routeKey || keyOf(current || rows[0]);
+      if (generation && !generation.selectedFirst && rows.length) {
+        selected = keyOf(rows[0]);
+        generation.selectedFirst = true;
+      }
       renderRows(data);
       feedback.replaceChildren();
-      if (!data.total) {
+      if (generation) {
+        const task = data.task;
+        feedback.textContent = generation.existing ? "所选评论已有草稿，已打开原草稿。" : task ? `本次生成：${task.done || 0} / ${task.total || 0}${task.errors ? ` · ${task.errors} 条未完成` : ""} · ${statuses[task.status] || task.status}${task.error ? ` · ${task.error}` : ""}` : "正在读取本次生成结果…";
+      }
+      if (!data.total && !generation) {
         const discovery = discoveryStatus();
         const idle = view === "review" && discovery?.state === "off" && !discovery?.overlay_enabled;
         feedback.append("此视图暂无记录。", link(idle ? " 前往开始自动刷视频" : " 查看自动刷视频状态", "#automation"));
       }
-      if (!selected) emptyDetail("选择一条记录查看来源和下一步操作。");
+      if (!selected) emptyDetail(generation ? ["completed", "failed", "cancelled"].includes(data.task?.status) ? "本次任务已结束，未生成可审核的回复；请查看任务进度中的原因。" : "正在生成回复，完成后会在这里显示并自动选中。" : "选择一条记录查看来源和下一步操作。");
       else if (routedDetail || forceDetail || !detailSignature || previous !== selected || previousRow?.updated_at !== current?.updated_at || (routeKey && !current)) {
         const key = selected;
         const row = routedDetail || await api(`/api/comments/workbench/${key}`);
@@ -266,23 +288,31 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, refreshAc
     if (nextView === "activity") nextView = "review";
     if (view !== nextView) offset = 0;
     view = nextView;
-    if (view !== "sources") filter.value = view;
+    filter.value = view;
     for (const option of $("queue-status-options").querySelectorAll('input[name="queue-status"]')) {
       option.checked = option.value === view;
     }
     $("queue-records").hidden = false;
-    $("queue-activity").hidden = false;
+    $("comment-source-records").hidden = view !== "sources";
+    $("queue-list").hidden = view === "sources";
+    $("queue-list-title").textContent = view === "sources" ? "选择要回复的评论" : generation ? "本次生成的回复" : "评论草稿";
+    $("queue-show-all").hidden = !generation;
+    if (view === "sources") $("queue-prev").parentElement.hidden = true;
   }
 
   function open(nextView, nextKey = null) {
     active = true;
-    setView(nextView || (view === "sources" ? filter.value : view));
+    if (nextView === "sources") generation = null;
+    setView(nextView || view);
     routeKey = nextKey;
     inferRouteView = Boolean(routeKey && !nextView);
-    $("comment-sources").hidden = view !== "sources";
-    $("comment-queue").hidden = view === "sources";
-    sourcesButton.textContent = view === "sources" ? "返回草稿待办" : "评论来源与手动取材";
-    if (view === "sources") return refreshSources();
+    $("comment-sources").hidden = false;
+    $("comment-queue").hidden = false;
+    if (view === "sources") {
+      $("comment-sources").open = true;
+      feedback.textContent = "勾选评论后生成回复，生成结果会直接显示在右侧。";
+      return refresh();
+    }
     if (routeKey && routeKey !== selected) emptyDetail("正在读取记录…");
     return refresh();
   }
@@ -295,6 +325,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, refreshAc
   }
 
   filter.onchange = () => {
+    generation = null;
     offset = 0;
     clearLinkedRecord(filter.value);
     return open(filter.value);
@@ -311,13 +342,35 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, refreshAc
     try { await refresh(true); }
     finally { button.disabled = false; }
   };
-  sourcesButton.onclick = () => { location.hash = view === "sources" ? "comments" : "comment-acquisition"; };
+  $("queue-show-all").onclick = () => { generation = null; routeKey = null; selected = null; detailSignature = ""; return open("review"); };
   $("queue-prev").onclick = () => { clearLinkedRecord(view); offset = Math.max(0, offset - pageSize); return refresh(); };
   $("queue-next").onclick = () => { clearLinkedRecord(view); offset += pageSize; return refresh(); };
   emptyDetail("选择一条记录查看来源和下一步操作。");
   return {
-    open, refresh: () => !busy && refresh(), isSources: () => active && view === "sources",
+    open, refresh: () => !busy && refresh(),
     leave() { active = false; ++version; },
     hasUnsaved: () => draftEdits.size > 0,
+    async trackGeneration(id, commentIds) {
+      generation = { id, commentIds, selectedFirst: false };
+      routeKey = selected = null;
+      detailSignature = "";
+      offset = 0;
+      if (typeof history !== "undefined") history.replaceState(null, "", `#comments/review/task/${encodeURIComponent(id)}`);
+      await open("review");
+      $("queue-records").scrollIntoView?.({ block: "start", behavior: "smooth" });
+    },
+    async showComment(comment) {
+      const request = ++sourceVersion;
+      if (view !== "sources" || !comment) return;
+      if (!comment.draft) {
+        selected = null;
+        detailSignature = "";
+        detail.replaceChildren(node("h2", comment.display_name || "匿名观众"), node("blockquote", comment.content, "quoted-text"), node("p", "勾选这条评论并生成回复，即可在这里直接审核。", "hint"));
+        return;
+      }
+      const key = `comments/${comment.draft.id}`;
+      try { const row = await api(`/api/comments/workbench/${key}`); if (view === "sources" && request === sourceVersion) { selected = key; renderDetail(key, row); } }
+      catch (error) { feedback.textContent = error.message; }
+    },
   };
 }

@@ -51,8 +51,8 @@ function calculatePermissionTier(status, account, hasCsrf) {
       return {
         tier: "draft",
         icon: "📝",
-        text: "权限：已配置自动放行 · 当前待审核",
-        badgeText: "已配置自动放行 · 模型验收待完成"
+        text: "权限：已配置自动放行 · 等待连接就绪",
+        badgeText: "等待账号或模型连接"
       };
     }
     if (!status.policy?.enabled || status.state !== "running") {
@@ -105,6 +105,7 @@ function getOptimisticSettingsFromDOM() {
   const autoDowngrade = !!$("matrix-auto-downgrade")?.checked;
 
   return {
+    discovery_enabled: $("matrix-video-enabled")?.checked === true,
     top_level_enabled: topVal !== "0",
     top_level_auto_publish: topVal === "2",
     reply_enabled: replyVal !== "0",
@@ -135,6 +136,7 @@ function renderPermissionMatrix(status) {
   if (matrixEl && matrixEl.contains(document.activeElement)) return;
 
   const settings = status.settings || {};
+  if (document.activeElement !== $("matrix-video-enabled")) $("matrix-video-enabled").checked = settings.discovery_enabled !== false;
 
   // 1. Top level
   const topLevelVal = !settings.top_level_enabled ? "0" : settings.top_level_auto_publish ? "2" : "1";
@@ -174,8 +176,10 @@ export function renderPermissionStatus(status, account) {
   applyPermissionTierUI(tierInfo);
   const sendingState = $("automatic-sending-state");
   sendingState.hidden = !hasAutomaticRules(status.settings || {}) || status.automatic_sending_ready !== false;
-  sendingState.textContent = sendingState.hidden ? "" :
-    "当前模型与角色组合缺少有效的语义验收，全渠道运营生成的草稿仍需审核。只读预览也会保留草稿。";
+  const blockers = (status.blockers || []).map(value => typeof value === "string" ? value : value.message).filter(Boolean);
+  const credentialsConfigured = account ? hasSessdata && hasCsrf : status.effective?.comments?.credentials_configured;
+  sendingState.textContent = sendingState.hidden ? "" : blockers.length ? `尚未就绪：${blockers.join("；")}` :
+    credentialsConfigured === false ? "请在账号设置中补全登录和写入凭据。" : "等待当前账号和模型连接状态更新。";
 
   // Matrix Credentials state
   const sessdataEl = $("matrix-sessdata-status");

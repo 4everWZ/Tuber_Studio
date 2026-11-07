@@ -2,6 +2,9 @@
 
 import { $ } from "./core.js";
 
+const sourcePageSize = 10;
+const visibleComments = model => (model.comments || []).slice((model.commentSourcePage || 0) * sourcePageSize, ((model.commentSourcePage || 0) + 1) * sourcePageSize);
+
 export function commentQuery() {
   const params = new URLSearchParams();
   [["video_id", "filter-video"], ["thread_id", "filter-thread"], ["category", "filter-category"], ["status", "filter-status"]].forEach(([key, id]) => {
@@ -53,10 +56,12 @@ export function updateCommentSelection(model) {
   if ($("selected-comment-count")) {
     $("selected-comment-count").textContent = `已选 ${model.selectedComments.size} 条`;
   }
-  const selected = (model.comments || []).filter(comment => model.selectedComments.has(comment.id)).length;
+  const page = visibleComments(model);
+  const selected = page.filter(comment => model.selectedComments.has(comment.id)).length;
+  if ($("generate-drafts")?.getAttribute("aria-busy") !== "true") $("generate-drafts").disabled = !model.selectedComments.size;
   if ($("select-comments")) {
-    $("select-comments").checked = !!model.comments?.length && selected === model.comments.length;
-    $("select-comments").indeterminate = selected > 0 && selected < model.comments.length;
+    $("select-comments").checked = !!page.length && selected === page.length;
+    $("select-comments").indeterminate = selected > 0 && selected < page.length;
   }
 }
 
@@ -137,10 +142,16 @@ export function renderComments(model, {
   describe,
   refreshThreadContextFn,
   refreshCommentsFn,
+  onCommentSelected,
 }) {
   const tbody = $("comments");
   if (!tbody) return;
   if ($("comment-count")) $("comment-count").textContent = `(${model.comments?.length || 0})`;
+  const total = model.comments?.length || 0;
+  model.commentSourcePage = Math.min(model.commentSourcePage || 0, Math.max(0, Math.ceil(total / sourcePageSize) - 1));
+  $("source-prev").disabled = !model.commentSourcePage;
+  $("source-next").disabled = (model.commentSourcePage + 1) * sourcePageSize >= total;
+  $("source-page").textContent = `第 ${model.commentSourcePage + 1} / ${Math.max(1, Math.ceil(total / sourcePageSize))} 页`;
   if (model.categorySaving.size || document.activeElement?.matches("#comments .category-select")) {
     updateCommentSelection(model);
     renderCommentSource(model, commentContinuation, setBadge, describe);
@@ -150,7 +161,7 @@ export function renderComments(model, {
     empty(tbody, 4, "暂无匹配评论。读取视频或导入已有评论后开始。");
   } else {
     tbody.replaceChildren();
-    model.comments.forEach(comment => {
+    visibleComments(model).forEach(comment => {
       const row = node("tr", null, comment.id === model.commentId ? "selected-row" : "");
       const check = document.createElement("input");
       check.type = "checkbox";
@@ -159,18 +170,21 @@ export function renderComments(model, {
       check.onchange = () => {
         check.checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id);
         updateCommentSelection(model);
+        model.commentId = comment.id;
+        onCommentSelected?.(comment);
       };
       cell(row, check);
 
-      const text = node("button", comment.content, "comment-link");
+      const text = node("button", comment.content.length > 80 ? comment.content.slice(0, 80) + "…" : comment.content, "comment-link");
       text.onclick = () => {
         model.commentId = comment.id;
         if ($("compact-video-id")) $("compact-video-id").value = comment.video_id;
         if ($("compact-thread-id")) $("compact-thread-id").value = comment.thread_id || comment.comment_id;
         renderComments(model, {
           api, cell, node, label, badge, empty, busy, notice,
-          commentContinuation, setBadge, describe, refreshThreadContextFn, refreshCommentsFn
+          commentContinuation, setBadge, describe, refreshThreadContextFn, refreshCommentsFn, onCommentSelected
         });
+        onCommentSelected?.(comment);
         if (refreshThreadContextFn) refreshThreadContextFn();
       };
 
@@ -210,39 +224,7 @@ export function renderComments(model, {
 
 export function renderCommentPolicy(policy, model, commentContinuation, setBadge, describe) {
   model.policy = policy;
-  const base = policy.base || policy;
-  if (!model.commentPolicyDirty) {
-    if ($("auto-browse")) $("auto-browse").checked = !!base.auto_browse;
-    if ($("auto-reply")) $("auto-reply").checked = !!base.auto_reply;
-    if ($("watch-videos")) $("watch-videos").value = (base.watch_videos || []).join("\n");
-    if ($("browse-interval")) $("browse-interval").value = base.browse_interval_seconds || 300;
-    if ($("replies-hour")) $("replies-hour").value = base.max_replies_per_hour ?? 5;
-    if ($("replies-day")) $("replies-day").value = base.max_replies_per_day ?? 20;
-  }
-  if ($("reply-mode")) {
-    $("reply-mode").textContent = policy.auto_reply ? "已配置自动回复" : "人工审核";
-    $("reply-mode").className = `badge ${policy.auto_reply ? "active" : ""}`;
-  }
-  if ($("comment-fetch-mode")) {
-    $("comment-fetch-mode").textContent = policy.auto_reply ? "公开读取 · 已配置自动回复" : "公开读取 · 人工审核";
-  }
-  if ($("comment-policy-overlay")) $("comment-policy-overlay").hidden = !policy.automation_override && !policy.emergency;
-  if ($("comment-policy-overlay-text")) {
-    $("comment-policy-overlay-text").textContent = policy.emergency ?
-      "紧急停止已生效，所有自动收发被阻止。这里编辑个人基础设置；解除紧停前不会恢复自动业务。" :
-      "自动化覆盖正在生效。这里编辑个人基础设置，被覆盖项目关闭自动化后生效；立即停止请前往自动化工作区。";
-  }
-  if ($("comment-policy-base-note")) {
-    $("comment-policy-base-note").textContent = model.commentPolicyDirty ?
-      "有未保存的基础设置。" :
-      policy.automation_override ?
-      "保存个人基础设置；被覆盖项目关闭自动化后生效。" :
-      "默认人工审核。开启基础自动回复后，新草稿按来源和额度校验处理。";
-  }
-  if ($("stop-auto-reply")) {
-    $("stop-auto-reply").textContent = policy.emergency ? "紧急停止已生效" : policy.automation_override ? "前往自动化紧急停止" : "停止基础自动回复";
-    $("stop-auto-reply").disabled = !!policy.emergency;
-  }
+  if ($("comment-fetch-mode")) $("comment-fetch-mode").textContent = "公开评论";
   renderCommentSource(model, commentContinuation, setBadge, describe);
 }
 
@@ -261,6 +243,9 @@ export function initCommentsModule(model, {
   commentContinuation,
   setBadge,
   describe,
+  onScopeChanged,
+  onDraftsRequested,
+  onCommentSelected,
 }) {
   const doRefreshThreadContext = () => refreshThreadContext(model, api, tokenCount, occupancyText);
 
@@ -278,6 +263,7 @@ export function initCommentsModule(model, {
     describe,
     refreshThreadContextFn: doRefreshThreadContext,
     refreshCommentsFn: doRefreshComments,
+    onCommentSelected,
   });
 
   let commentsRequest = 0;
@@ -290,7 +276,10 @@ export function initCommentsModule(model, {
     ]);
     if (request !== commentsRequest || query !== commentQuery()) return;
     model.comments = list(comments);
+    const changedSelection = !model.comments.some(item => item.id === model.commentId);
+    if (changedSelection) model.commentId = model.comments[0]?.id ?? null;
     doRenderComments();
+    if (changedSelection) await onCommentSelected?.(model.comments[0]);
     renderCommentTasks(list(tasks), { node, cell, badge, empty });
     await doRefreshThreadContext();
   };
@@ -308,14 +297,10 @@ export function initCommentsModule(model, {
       if ($("popular-videos")) $("popular-videos").hidden = true;
       if ($("refresh-videos")) $("refresh-videos").textContent = "逛逛热门视频";
       try {
-        const payload = {
-          video_id: $("comment-video")?.value.trim() || undefined,
-          thread_id: $("comment-thread")?.value.trim() || undefined,
-          limit: Number($("comment-limit")?.value) || 20,
-        };
+        const payload = { video: $("comment-video").value.trim(), max_pages: Number($("comment-pages").value) || 1 };
         const result = await api("/api/comments/fetch", { method: "POST", body: payload });
-        if ($("fetch-state")) $("fetch-state").textContent = `读取成功：获取到 ${result.count || 0} 条公开评论。`;
-        await doRefreshComments();
+        if ($("fetch-state")) $("fetch-state").textContent = `已读取 ${result.count ?? result.imported ?? 0} 条评论，勾选后即可生成回复。`;
+        await onScopeChanged?.(result.video_id || payload.video);
       } catch (err) {
         if ($("fetch-state")) $("fetch-state").textContent = `读取失败：${err.message}`;
         throw err;
@@ -334,60 +319,25 @@ export function initCommentsModule(model, {
 
   $("generate-drafts")?.addEventListener("click", () => busy($("generate-drafts"), async () => {
     if (!model.selectedComments.size) throw new Error("请先选择评论");
-    await api("/api/comments/drafts", { method: "POST", body: { comment_ids: [...model.selectedComments] } });
-    notice("生成任务已加入队列，可在下方查看进度。");
-    await doRefreshComments();
+    const ids = [...model.selectedComments];
+    const result = await api("/api/comments/drafts", { method: "POST", body: { comment_ids: ids } });
+    await onDraftsRequested?.(result.task_id, ids);
   }));
 
   $("select-comments")?.addEventListener("change", () => {
-    model.comments?.forEach(comment => {
+    visibleComments(model).forEach(comment => {
       $("select-comments").checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id);
     });
     doRenderComments();
   });
 
-  $("comment-policy-form")?.addEventListener("submit", event => {
-    event.preventDefault();
-    busy(event.submitter, async () => {
-      const payload = {
-        auto_browse: $("auto-browse")?.checked,
-        auto_reply: $("auto-reply")?.checked,
-        watch_videos: $("watch-videos")?.value.split(/[\s,，]+/).filter(Boolean),
-        browse_interval_seconds: Number($("browse-interval")?.value),
-        max_replies_per_hour: Number($("replies-hour")?.value),
-        max_replies_per_day: Number($("replies-day")?.value)
-      };
-      if (payload.auto_reply && !(model.policy?.base || model.policy)?.auto_reply &&
-          !confirm("开启指定视频的自动回复？新回复将按现有账号与额度规则尝试提交。")) return;
-      await api("/api/comments/policy", { method: "PUT", body: payload });
-      model.commentPolicyDirty = false;
-      await doLoadPolicy();
-      notice(model.policy.automation_override ? "个人基础设置已保存；被覆盖项目关闭自动化后生效。" : "回复基础设置已保存，请以当前生效状态为准。");
-    });
-  });
-
-  $("stop-auto-reply")?.addEventListener("click", () => busy($("stop-auto-reply"), async () => {
-    if (model.policy?.automation_override) {
-      location.hash = "automation";
-      notice("自动化正在覆盖此开关，请在工作区停止本轮、关闭总开关或紧急停止所有自动收发。");
-      return;
-    }
-    await api("/api/comments/policy", { method: "PUT", body: { auto_reply: false } });
-    await doLoadPolicy();
-    notice("基础自动回复已停止。已提交给平台的请求以回执为准。");
-  }));
-
-  $("comment-policy-form")?.addEventListener("input", () => {
-    model.commentPolicyDirty = true;
-    if ($("comment-policy-base-note")) {
-      $("comment-policy-base-note").textContent = "有未保存的基础设置；自动化覆盖项目关闭总开关后生效。";
-    }
-  });
-
   $("refresh-comments")?.addEventListener("click", () => busy($("refresh-comments"), doRefreshComments));
   ["filter-video", "filter-thread", "filter-category", "filter-status"].forEach(id => {
-    $(id)?.addEventListener("change", () => doRefreshComments());
+    $(id)?.addEventListener("change", () => { model.commentSourcePage = 0; return doRefreshComments(); });
   });
+  $("filter-comments").onclick = () => busy($("filter-comments"), doRefreshComments);
+  $("source-prev").onclick = () => { model.commentSourcePage = Math.max(0, (model.commentSourcePage || 0) - 1); doRenderComments(); };
+  $("source-next").onclick = () => { model.commentSourcePage = (model.commentSourcePage || 0) + 1; doRenderComments(); };
 
   $("refresh-videos")?.addEventListener("click", () => busy($("refresh-videos"), async () => {
     const container = $("popular-videos");

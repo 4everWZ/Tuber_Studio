@@ -1,6 +1,7 @@
 "use strict";
 
 import { $ } from "./core.js";
+import { inferenceDisplay } from "./inference-status.js?v=20261107.08";
 
 export function liveEnabled(model) {
   return model.settings?.features?.live_enabled === true;
@@ -80,16 +81,10 @@ export function renderControls(model) {
 
 export function renderServiceStatusCapsule(status, settings) {
   const capsule = $("service-status-capsule");
-  const inference = status.inference || {};
-  const online = inference.error ? false : ["active", "idle"].includes(inference.state) ? true : undefined;
+  const state = inferenceDisplay(status, settings);
+  const online = state.connected;
   capsule.className = `service-status-capsule ${online === false ? "offline" : online ? "online" : ""}`;
-  const modelName = inference.state === "active" ?
-    (status.persona?.source === "fine_tuned" ? "大肥鱼" : inference.model) : "";
-  const source = settings?.inference_broker?.deployment === "remote" ? "Jetson" : "推理";
-  capsule.querySelector(".status-text").textContent =
-    online === true ? [source + " 已连接", modelName].filter(Boolean).join(" · ") :
-    online === false ? source + " 连接异常" :
-    settings?.inference_broker?.enabled ? "推理状态待确认" : "推理节点未连接";
+  capsule.querySelector(".status-text").textContent = state.text;
 }
 
 export async function refreshLive({ api, list, node, cell, time, label, badge, empty }) {

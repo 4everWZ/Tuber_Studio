@@ -105,8 +105,10 @@
         return { label: "已检查评论", className: "status-slate", priority: 8 };
       case "paused":
         return { label: "已暂停，进度保留", className: "status-slate", priority: 9 };
+      case "later":
+        return { label: "稍后处理", className: "status-slate", priority: 9 };
       case "deferred_daily":
-        return { label: "今日观看已用完", className: "status-slate", priority: 9 };
+        return { label: "等待可用名额", className: "status-slate", priority: 9 };
       case "recovered":
         return { label: "已恢复", className: "status-slate", priority: 10 };
       case "checkpoint":
@@ -138,6 +140,7 @@
       "round_budget": "达到本轮资源上限，进度已保存，下一轮继续",
       "daily_watch_limit": "今日观看次数已用完，继续处理评论",
       "daily_reply_limit": "该视频今日回复数已用完，草稿保留到次日",
+      "send_limit": "等待发送名额",
     };
     return map[reason] || reason;
   }
@@ -146,7 +149,7 @@
     const payload = task.payload || {};
     const rawReason = task.reason || payload.reason;
     const scheduling = task.retry_kind || payload.retry_kind ||
-      (["round_budget", "queued", "waiting", "checkpoint", "paused", "next_batch", "daily_watch_limit", "daily_reply_limit"].includes(rawReason) ? rawReason : null);
+      (["round_budget", "queued", "waiting", "checkpoint", "paused", "next_batch", "daily_watch_limit", "daily_reply_limit", "send_limit"].includes(rawReason) ? rawReason : null);
     const decisions = task.decisions || payload.decisions || [];
     const reasons = [task.explanation, task.reason, payload.explanation, payload.reason,
       ...decisions.map(value => value.explanation || value.reason)]
@@ -171,7 +174,7 @@
       queued: "任务已排队，尚未开始读取内容。", running: "任务正在处理，内容判断尚未完成。",
       cancelled: "任务已停止；此历史记录未保存内容判断。", selected: "已生成回应；此历史记录未保存具体原因。",
       viewed_without_comment: "已看过且未生成回复；此历史记录未保存具体原因。",
-      comments_checked: "已检查这条视频的新增评论。", deferred_daily: "程序进度：今日观看次数已用完，继续处理评论。",
+      comments_checked: "已检查这条视频的新增评论。", deferred_daily: "程序进度：等待可用名额，当前进度已保留。",
     };
     return stages[task.status] || "此历史记录未保存具体原因，可查看来源与处理详情。";
   }

@@ -143,9 +143,8 @@ export function readImportPayload() {
 
 export function invalidateImportPreview(model) {
   model.importPreviewSignature = null;
-  if ($("submit-import")) $("submit-import").disabled = true;
   if ($("import-preview")) $("import-preview").hidden = true;
-  if ($("import-preview-state")) $("import-preview-state").textContent = "输入已变更，请重新预览。";
+  if ($("import-preview-state")) $("import-preview-state").textContent = "";
 }
 
 export function initMaintenanceModule(model, {
@@ -158,6 +157,7 @@ export function initMaintenanceModule(model, {
   describe,
   dateTime,
   refreshCommentsFn,
+  onCommentsImported,
 }) {
   const doLoadRetention = () => loadRetention(model, { api, describe, dateTime });
 
@@ -253,7 +253,9 @@ export function initMaintenanceModule(model, {
       if (tbody) {
         tbody.replaceChildren();
         if (!items.length) {
-          tbody.append(node("tr", null, "").append(node("td", "没有可预览的数据。")));
+          const row = node("tr");
+          cell(row, "没有可预览的数据。");
+          tbody.append(row);
         } else {
           items.slice(0, 10).forEach(item => {
             const row = node("tr");
@@ -273,7 +275,6 @@ export function initMaintenanceModule(model, {
         $("import-preview-state").textContent = `共 ${result.total ?? items.length} 条，预览前 ${Math.min(items.length, 10)} 条；尚未写入。`;
       }
       model.importPreviewSignature = signature;
-      if ($("submit-import")) $("submit-import").disabled = !items.length;
     } catch (error) {
       if ($("import-preview-state")) $("import-preview-state").textContent = `预览失败：${error.message}`;
       throw error;
@@ -284,18 +285,15 @@ export function initMaintenanceModule(model, {
     event.preventDefault();
     busy(event.submitter || $("submit-import"), async () => {
       const payload = readImportPayload();
-      if (!model.importPreviewSignature || JSON.stringify(payload) !== model.importPreviewSignature) {
-        throw new Error("请先预览当前数据，再提交导入");
-      }
       const result = await api("/api/comments/import", { method: "POST", body: payload });
       model.importPreviewSignature = null;
-      if ($("submit-import")) $("submit-import").disabled = true;
       if ($("import-preview-state")) {
-        $("import-preview-state").textContent = `已导入 ${result.imported ?? 0} 条${result.duplicates != null ? `，重复 ${result.duplicates} 条` : ""}。修改数据后可再次预览。`;
+        $("import-preview-state").textContent = `已导入 ${result.imported ?? 0} 条${result.duplicates != null ? `，已有 ${result.duplicates} 条` : ""}。勾选评论即可生成回复。`;
       }
       if ($("filter-video")) $("filter-video").value = result.video_id || payload.video_id;
       notice(`导入 ${result.imported ?? 0} 条评论。`);
-      if (typeof refreshCommentsFn === "function") await refreshCommentsFn();
+      if (onCommentsImported) await onCommentsImported(result.video_id || payload.video_id);
+      else if (typeof refreshCommentsFn === "function") await refreshCommentsFn();
     });
   });
 
