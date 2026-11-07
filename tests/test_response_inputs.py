@@ -95,6 +95,36 @@ def test_missing_account_or_parent_identity_stays_unknown_despite_matching_names
     assert data == {"thread": {"source": {"author_uid": "200", "author_name": "大肥鱼", "text": "@大肥鱼"}}}
 
 
+@pytest.mark.parametrize("uploader,expected", [("100", "self"), ("200", "other"), (None, "unknown")])
+def test_video_uploader_relation_uses_verified_uid_not_the_oc_name(uploader, expected):
+    bound = bind_response_actors({"video_source": {"owner_uid": uploader, "owner": "大肥鱼"}}, {"account_uid": "100"})
+    assert bound["video_source"]["uploader_relation_to_self"] == expected
+
+
+async def test_video_main_reply_uses_video_material_without_unrelated_comment_floors(browsing):
+    from test_browsing import model_packet
+
+    row = await prepared_row(browsing)
+    source_id = "11:track:0"
+    material = {"metadata": {"bvid": "BV1d8pU6xEZX", "aid": 42, "title": "盐水实验", "owner_uid": "200", "owner": "盐水实验室", "parts": [{"cid": "11"}]},
+                "coverage": "all_available_cc", "parts": [{"cid": "11", "segments": [{"id": source_id, "text": "加盐后鸡蛋浮起来了。", "start": 0, "end": 3}]}]}
+    context = {"source": {"comment_id": "99", "author_uid": "300", "text": "另一楼的私聊口号与未发送台词"},
+               "target": {"bvid": "BV1d8pU6xEZX", "oid": "42"}, "items": [{"content": "另一楼的私聊口号与未发送台词"}]}
+    captured = []
+
+    async def generate(messages, schema, *, max_tokens):
+        captured.append(model_packet(messages[-1]["content"]))
+        return ResponseDecision(action="reply_public", reason="specific_detail", explanation="想聊鸡蛋浮起来的细节", text="盐水还能托住鸡蛋，鱼鱼想试试。", evidence_ids=["r1"], video_preference="like", preference_reason="这个实验挺有意思").model_dump()
+
+    browsing.runtime.llm.generate_json = generate
+    result = await browsing.decisions._response(row, material, context, {source_id}, "top_level", {"lock_wait_seconds": 0}, video_actions=True)
+    assert "另一楼的私聊口号" not in json.dumps(captured, ensure_ascii=False)
+    assert captured[0]["video_source"]["title"] == "盐水实验"
+    assert captured[0]["video_source"]["uploader_relation_to_self"] == "other"
+    assert "reply_target" not in captured[0] and "source" not in captured[0]["thread"]
+    assert result.evidence_ids == [source_id] and not browsing.adapter.sent
+
+
 async def test_live_response_packet_binds_current_account_before_reference_formatting(browsing):
     from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, signature
 
@@ -409,7 +439,9 @@ async def test_wire_error_is_recoverable_and_normalization_happens_only_at_final
             assert (
                 "[r1|" in messages[2]["content"] and data["evidence"][0]["id"] not in messages[2]["content"]
             )
-            assert all(b["properties"]["evidence_ids"]["items"]["enum"] == ["r1"] for b in schema["oneOf"])
+            assert schema["$defs"]["evidence_id"]["enum"] == ["r1"]
+            assert all(b["properties"]["evidence_ids"]["items"] == {"$ref": "#/$defs/evidence_id"}
+                       for b in schema["oneOf"])
     saved = browsing.store.one("SELECT id FROM operation_continuations WHERE channel='generation.browsing'")
     episode = browsing.runtime.continuations.get(saved["id"])
     assert episode["binding"]["input_format"] == ResponseDecisionInput.FORMAT_VERSION

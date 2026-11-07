@@ -215,7 +215,7 @@ async def test_same_twelve_cases_use_real_native_provider_json_with_isolated_ove
                     decision = {
                         "reason": "explicit_private_request",
                         "action": "handoff_private",
-                        "evidence_ids": props["evidence_ids"]["items"]["enum"][:1],
+                        "evidence_ids": payload["response_format"]["schema"]["$defs"]["evidence_id"]["enum"][:1],
                         "text": "保留模型的原始渠道选择。",
                     }
                     break

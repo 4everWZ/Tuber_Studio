@@ -336,7 +336,7 @@ class BrowsingDecisions:
                     raise ValueError("公开回复渠道与理由不一致")
                 if value.action == "handoff_private" and (
                     data.get("kind") == "top_level"
-                    or value.reason not in {"private_details", "user_requested", "long_followup"}
+                    or value.reason != "user_requested"
                 ):
                     raise ValueError("私信渠道与来源／理由不一致")
             return value
@@ -1254,7 +1254,8 @@ class BrowsingDecisions:
         data = {
             "kind": kind,
             "evidence": segments,
-            "thread": context,
+            "thread": {} if kind == "top_level" else context,
+            **({"video_source": self._metadata_summary(material["metadata"])} if material else {}),
             "coverage": material["coverage"] if material else "public_text",
             **({"video_actions": True} if video_actions else {}),
             **(
@@ -1268,7 +1269,7 @@ class BrowsingDecisions:
         }
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
-        if context.get("source") and context.get("target"):
+        if kind != "top_level" and context.get("source") and context.get("target"):
             target = context["target"]
             # The current comment remains a real response source even when
             # video subtitles/frames are available as additional background.

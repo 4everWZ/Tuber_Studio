@@ -620,10 +620,11 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
             body for body in bodies if body["response_format"]["schema"]["title"] == "ResponseDecision"
         )
         assert all(
-            branch["properties"]["evidence_ids"]["items"]["enum"] == ["r1"]
+            branch["properties"]["evidence_ids"]["items"] == {"$ref": "#/$defs/evidence_id"}
             for branch in response_body["response_format"]["schema"]["oneOf"]
             if "evidence_ids" in branch["properties"]
         )
+        assert response_body["response_format"]["schema"]["$defs"]["evidence_id"]["enum"] == ["r1"]
         assert response_body["response_format"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
         response_user = response_body["messages"][-1]["content"]
         assert "[r1|" in response_user and "11:0" not in response_user

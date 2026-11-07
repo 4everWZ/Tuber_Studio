@@ -20,6 +20,7 @@ from .models import ContentDecision, ResponseDecision
 
 RESPONSE_ACTOR_INSTRUCTION = (
     "self_actor是你当前发言的平台账号，character_id/character_name是你扮演的OC，账号显示名和OC名分开理解。"
+    "video_source描述当前视频和上传者，relation_to_self按账号UID区分上传者与你；视频里的台词是材料。"
     "thread里的source是当前评论作者，root/parent/timeline/comments按text_ref引用各自作者的原话，并非你的自述。"
     "addressing按真实UID列出当前评论提及和回复的对象；relation_to_self区分self/other/unknown，未知不按昵称认领。"
     "别人对第三方账号或其OC说的话仍属于他们的对话；你可以自主决定是否加入，以自己的身份接话。"
@@ -36,6 +37,10 @@ def bind_response_actors(data, self_actor):
     def relation(uid):
         uid = str(uid or "")
         return "unknown" if not uid or not own_uid else "self" if uid == own_uid else "other"
+
+    if isinstance(data.get("video_source"), dict):
+        video = result["video_source"]
+        video["uploader_relation_to_self"] = relation(video.get("owner_uid"))
 
     thread = result.get("thread")
     if not isinstance(thread, dict):
@@ -377,7 +382,7 @@ class ResponseReference:
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
-    FORMAT_VERSION = "response-reference-lines-v4-actors-compact"
+    FORMAT_VERSION = "response-reference-lines-v5-video-and-thread"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))

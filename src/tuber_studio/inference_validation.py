@@ -27,6 +27,9 @@ GENERATION_FIELDS = {
     "repeat_penalty",
     "presence_penalty",
     "frequency_penalty",
+    "dry_multiplier",
+    "dry_allowed_length",
+    "dry_penalty_last_n",
     "stop",
     "ignore_eos",
 }
@@ -120,6 +123,13 @@ def validate_llm_request(path, body, *, context_tokens=131072):
     for key in ("max_tokens", "n_predict"):
         if key in body and (type(body[key]) is not int or not 1 <= body[key] <= context_tokens):
             raise ValueError("Output token budget must fit the configured context window")
+    if "dry_multiplier" in body:
+        value = body["dry_multiplier"]
+        if type(value) not in (int, float) or value < 0:
+            raise ValueError("DRY multiplier must be a nonnegative number")
+    for key, minimum in (("dry_allowed_length", 0), ("dry_penalty_last_n", -1)):
+        if key in body and (type(body[key]) is not int or not minimum <= body[key] <= context_tokens):
+            raise ValueError(f"{key} must be an integer from {minimum} to the configured context window")
     _finite_numbers(body)
 
 

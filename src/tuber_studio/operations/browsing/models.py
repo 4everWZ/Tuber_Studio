@@ -336,12 +336,12 @@ RESPONSE_INSTRUCTION = (
     "或有真实约定且已完成时，与当前作者私聊（handoff_private）。"
     "主动私聊须有指向我方账号的真实邀请或约定，contact_purpose说明具体交流事项；"
     "contact_trigger用invitation表示现在邀请私聊，agreement表示办完约定事项后联系。"
-    "有兴趣、长篇跟进、历史聊过或@别人不构成主动私聊依据，普通话题继续公开。"
+    "有兴趣、长篇跟进、历史聊过或@别人不构成主动私聊依据，普通话题继续在楼里聊。"
+    "reply_public的正文接当前公开话题，不把普通交流引向私聊。"
     "根据当前问题、楼内上下文及提供的内容作答；需要更多信息时，可以自然追问。"
     "在楼中楼互动时，结合楼首话题与上下文，你可以自然@其他人或呼应楼内大家的讨论。"
     "想略过这次交流选skip，准备稍后接话选wait。"
-    "公开回应理由用specific_detail/light_interaction；私聊理由分别为private_details、"
-    "user_requested（对方希望私聊）、long_followup（适合单独展开的持续讨论）。"
+    "公开回应理由用specific_detail/light_interaction；真实邀请或完成约定后的私聊理由用user_requested。"
 )
 
 RESPONSE_REFERENCE_INSTRUCTION = (
@@ -362,7 +362,7 @@ def response_schema(
     """Constrain source IDs and channel consistency before the model emits text."""
     reasons = {
         "reply_public": ["specific_detail", "light_interaction"],
-        "handoff_private": ["private_details", "user_requested", "long_followup"],
+        "handoff_private": ["user_requested"],
         "skip": ["no_interest", "insufficient_evidence", "spam"],
         "wait": ["cooldown", "insufficient_evidence"],
     }
@@ -408,7 +408,7 @@ def response_schema(
                         "type": "array",
                         "minItems": 1 if sending else 0,
                         "maxItems": 8,
-                        "items": {"type": "string", "enum": sorted(evidence_ids)}
+                        "items": {"$ref": "#/$defs/evidence_id"}
                         if evidence_ids
                         else {"type": "string"},
                     },
@@ -424,7 +424,12 @@ def response_schema(
                 + (["video_preference", "preference_reason"] if video_actions else []),
             }
         )
-    return {"title": "ResponseDecision", "type": "object", "oneOf": branches}
+    schema = {"title": "ResponseDecision", "type": "object", "oneOf": branches}
+    if evidence_ids:
+        # Every branch uses the same invocation-local source set. Share it so
+        # a long real transcript does not duplicate hundreds of IDs per action.
+        schema["$defs"] = {"evidence_id": {"type": "string", "enum": sorted(evidence_ids)}}
+    return schema
 
 
 class VideoEvidenceProvider(Protocol):

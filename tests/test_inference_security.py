@@ -56,6 +56,61 @@ def test_plain_text_can_discuss_commands_paths_and_tools_without_executing_them(
     assert body["messages"][0]["content"] == text
 
 
+@pytest.mark.parametrize("path", ["v1/chat/completions", "completion"])
+def test_native_video_dry_sampling_passes_with_the_same_response_schema(path):
+    from copy import deepcopy
+
+    from tuber_studio.operations.browsing.models import response_schema
+
+    body = {
+        "messages": [{"role": "user", "content": "按材料接话"}],
+        "max_tokens": 1024,
+        "response_format": {
+            "type": "json_object",
+            "schema": response_schema({"r1"}, allow_handoff=False, video_actions=True),
+        },
+    }
+    if path == "completion":
+        body["prompt"] = body.pop("messages")[0]["content"]
+    validate_llm_request(path, body)
+    body.update(dry_multiplier=0.8, dry_allowed_length=5, dry_penalty_last_n=512)
+    before = deepcopy(body)
+    validate_llm_request(path, body)
+    assert body == before
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("dry_multiplier", True),
+        ("dry_multiplier", "0.8"),
+        ("dry_multiplier", -0.1),
+        ("dry_multiplier", math.nan),
+        ("dry_multiplier", math.inf),
+        ("dry_allowed_length", True),
+        ("dry_allowed_length", 1.5),
+        ("dry_allowed_length", -1),
+        ("dry_allowed_length", 4097),
+        ("dry_penalty_last_n", True),
+        ("dry_penalty_last_n", "512"),
+        ("dry_penalty_last_n", -2),
+        ("dry_penalty_last_n", 4097),
+    ],
+)
+def test_native_dry_sampling_validates_numeric_values(field, value):
+    with pytest.raises(ValueError):
+        validate_llm_request("v1/chat/completions", {field: value}, context_tokens=4096)
+
+
+@pytest.mark.parametrize("last_n", [-1, 0, 4096])
+def test_dry_sampling_accepts_full_window_and_disabled_boundaries(last_n):
+    validate_llm_request(
+        "completion",
+        {"prompt": "hello", "dry_multiplier": 0, "dry_allowed_length": 0, "dry_penalty_last_n": last_n},
+        context_tokens=4096,
+    )
+
+
 def test_native_capacity_probe_and_tokenization_stay_data_only():
     validate_llm_request(
         "completion",
