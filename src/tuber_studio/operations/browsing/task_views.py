@@ -89,7 +89,14 @@ def tasks(browsing, status=None, *, round_id=None, task_id=None):
             and record["created_at"] < browsing.store.get("browsing_history_visible_since", 0)
         ):
             continue
-        task = dict(browsing.repo.decode(record), **json.loads(record["payload"]))
+        payload = json.loads(record["payload"])
+        if resolution := payload.get("generation_resolution"):
+            payload["generation_resolution"] = public_resolution(browsing, resolution, record["id"])
+        if resolutions := payload.get("repetition_decisions"):
+            payload["repetition_decisions"] = [
+                public_resolution(browsing, resolution, record["id"]) for resolution in resolutions
+            ]
+        task = browsing.repo.decode(record) | {"payload": payload} | payload
         continuation_id = task.get("generation_continuation_id")
         task["continuation"] = generation_view(browsing.runtime, continuation_id, "browsing", task["id"])
         if task["continuation"] and task["continuation"].get("output_visibility") in {
@@ -118,6 +125,18 @@ def tasks(browsing, status=None, *, round_id=None, task_id=None):
         result.append(task)
     result.extend(selection_tasks(browsing.store, status=status, round_id=round_id, task_id=task_id))
     return sorted(result, key=lambda item: item["updated_at"], reverse=True)[:100]
+
+
+def public_resolution(browsing, resolution, task_id):
+    view = generation_view(browsing.runtime, resolution.get("continuation_id"), "browsing", task_id)
+    if view and view.get("output_visibility") in {"private", "unresolved"}:
+        return {
+            "continuation_id": resolution["continuation_id"],
+            "state": resolution["state"],
+            "continuation": view,
+            **({"comment_id": resolution["comment_id"]} if "comment_id" in resolution else {}),
+        }
+    return resolution
 
 
 def rounds(browsing):

@@ -9,8 +9,8 @@ from difflib import SequenceMatcher
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
-from ...operation_continuations import ContinuationCheckpoint, content_hash
-from ...operation_generation import generate_with_recovery
+from ...operation_continuations import ContinuationCheckpoint, content_hash, deferred_generation_decision
+from ...operation_generation import GenerationDeferred, generate_with_recovery
 from ...operation_text import (
     operation_character,
     operation_output_diagnostics,
@@ -21,7 +21,7 @@ from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from ...publication_errors import SendLimitReached
 from ...store import dump
-from .comment_reader import CommentProgress, evaluate_comment_visit
+from .comment_reader import CommentProgress, evaluate_comment_visit, handoff_comment
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
@@ -151,7 +151,8 @@ class BrowsingDecisions:
             allowed = response_input.allowed_aliases
             model_schema = response_schema(
                 allowed,
-                allow_handoff=data.get("kind") != "top_level",
+                allow_handoff=data.get("kind") != "top_level"
+                and row["config"].get("comment_handoff_enabled", False),
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
                 allow_comments=data.get("allow_comments", True),
@@ -356,10 +357,24 @@ class BrowsingDecisions:
                 messages[1] = messages[1] | {
                     "content": messages[1]["content"] + "\n上次运行反馈（数据）：" + dump(retry["error"])
                 }
+        identity = content_hash(binding)
+        deferred = (
+            self.browsing.store.one(
+                "SELECT id FROM operation_continuations WHERE channel='generation.browsing' "
+                "AND entity_id=? AND state='waiting' AND parent_round_id<>?",
+                (identity, row["id"]),
+            )
+            if autonomous and schema is ResponseDecision else None
+        )
+        reconsider = bool(
+            deferred and self._generation_resolution(
+                GenerationDeferred(self.browsing.runtime.continuations.get(deferred["id"]))
+            )
+        )
         value, _ = await generate_with_recovery(
             self.browsing.runtime,
             channel="generation.browsing",
-            identity=content_hash(binding),
+            identity=identity,
             binding=binding,
             character=character,
             messages=messages,
@@ -375,6 +390,7 @@ class BrowsingDecisions:
                 "source": response_input.format() if response_input is not None else data,
             },
             reuse_completed=generation_resume.get() or bool(autonomous and retry and retry["resume"]),
+            restart_deferred=reconsider,
             max_recoveries=(1 if schema is ResponseDecision or retry and retry["failures"] else 0)
             if autonomous
             else None,
@@ -969,11 +985,15 @@ class BrowsingDecisions:
                 result["material_key"],
             )
         except Exception as error:
-            if resolution := self._repetition_resolution(error):
+            if resolution := self._generation_resolution(error):
                 self.browsing.repo.save_content_progress(row, material, decisions)
-                model_reason = resolution["decision"].get("reason") or resolution["feedback"]["message"]
-                skipped = ResponseDecision(action="skip", reason="spam", explanation=model_reason)
-                self.browsing.repo.save_main_decision(row, material["metadata"]["bvid"], skipped)
+                model_reason = resolution["decision"]["reason"].strip()
+                deferred = ResponseDecision(
+                    action="wait" if resolution["decision"]["action"] == "wait" else "skip",
+                    reason="insufficient_evidence",
+                    explanation=model_reason,
+                )
+                self.browsing.repo.save_main_decision(row, material["metadata"]["bvid"], deferred)
                 self.browsing.repo.complete(
                     identity,
                     result["owner"],
@@ -1051,35 +1071,17 @@ class BrowsingDecisions:
             await asyncio.gather(heartbeat, return_exceptions=True)
 
     @staticmethod
-    def _repetition_resolution(error):
+    def _generation_resolution(error):
         continuation = getattr(error, "continuation", None)
-        if (
-            not isinstance(error, ContinuationCheckpoint)
-            or not continuation
-            or continuation.get("state") not in {"waiting", "abandoned"}
-        ):
+        if not isinstance(error, ContinuationCheckpoint):
             return None
-        feedback = continuation.get("feedback") or {}
-        if feedback.get("kind") != "style_diagnostic" or not any(
-            word in feedback.get("message", "") for word in ("重复", "复读")
-        ):
-            return None
-        decision = next(
-            (
-                step.get("output") or {"action": step["action"]}
-                for step in reversed(continuation.get("revisions", []))
-                if step.get("phase") == "decision"
-                and step.get("status") == "completed"
-                and step.get("action") in {"wait", "abandon"}
-            ),
-            None,
-        )
+        decision = deferred_generation_decision(continuation)
         if decision is None:
             return None
         return {
             "continuation_id": continuation["id"],
             "state": continuation["state"],
-            "feedback": feedback,
+            "feedback": continuation["feedback"],
             "original_candidate": continuation.get("original_output"),
             "current_candidate": continuation.get("current_output"),
             "decision": decision,
@@ -1160,25 +1162,29 @@ class BrowsingDecisions:
                             chosen if material else {"public:" + comment_id}, "reply_public", metrics
                         )
                     except Exception as error:
-                        resolution = self._repetition_resolution(error)
+                        resolution = self._generation_resolution(error)
                         if resolution is None:
                             raise
                         if diagnostics is not None:
                             diagnostics.append(resolution | {"comment_id": source["comment_id"]})
-                        model_reason = (
-                            resolution["decision"].get("reason") or resolution["feedback"]["message"]
-                        )
+                        model_reason = resolution["decision"]["reason"].strip()
                         thread_response = ResponseDecision(
-                            action="skip", reason="spam", explanation=model_reason
+                            action="wait" if resolution["decision"]["action"] == "wait" else "skip",
+                            reason="insufficient_evidence", explanation=model_reason
                         )
                     self.comment_progress.save(row, bvid, source, thread_response)
-                if thread_response.action != "reply_public" or not thread_response.text:
+                if thread_response.action not in {"reply_public", "handoff_private"} or not thread_response.text:
                     return None
                 target.update(
                     recipient=author_uid,
                     recipient_name=thread_context["source"]["author_name"],
                     source_text=item_text,
                 )
+                if thread_response.action == "handoff_private":
+                    return await handoff_comment(
+                        self.browsing, row, thread_response, target, thread_context, material,
+                        [material_key] if material_key else [], created_at=item.get("created_at", ""),
+                    )
                 thread_intent = self.browsing.publication._intent(
                     row, "reply_public", target, thread_response,
                     [material_key] if material_key else [], thread_response.evidence_ids
@@ -1247,14 +1253,17 @@ class BrowsingDecisions:
             )
         recent = self.browsing.store.all(
             "SELECT text FROM browsing_intents WHERE status='published' AND account_id=? AND character_id=? "
-            "AND kind IN ('top_level','reply_public') ORDER BY updated_at DESC LIMIT ?",
-            (row["account_id"], row["character_id"], row["config"]["recent_sample_limit"]),
+            "AND kind IN ('top_level','reply_public') AND updated_at>=? ORDER BY updated_at DESC LIMIT ?",
+            (
+                row["account_id"], row["character_id"],
+                self.browsing.store.get("browsing_history_visible_since", 0),
+                row["config"]["recent_sample_limit"],
+            ),
         )
         data = {
             "kind": kind,
             "evidence": segments,
             "thread": context,
-            "recent_public_responses": recent,
             "coverage": material["coverage"] if material else "public_text",
             **({"video_actions": True} if video_actions else {}),
             **(

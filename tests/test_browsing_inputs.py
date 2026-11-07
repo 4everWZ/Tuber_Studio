@@ -482,7 +482,7 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
     settings = browsing.settings.data
     settings["llm"].update(kind="llama_cpp", model=GROUNDED_DAFEIYU_MODEL)
     character = browsing.runtime.character
-    row = {"character_id": character["id"], "character_version": character["version"]}
+    row = {"character_id": character["id"], "character_version": character["version"], "config": {}}
     event = {"event_id": "m1", "text": "刚才画面里发生了什么？"}
     for mode in ("live", "comment_draft", "direct_message"):
         messages = build_messages(character, event, {}, mode, settings=settings)

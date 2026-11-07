@@ -252,13 +252,16 @@ class BrowsingBatches:
         item = self.store.one("SELECT * FROM browsing_batch_items WHERE task_id=?", (task_id,))
         if not item:
             return
-        state = (
-            "completed"
-            if status in {"selected", "viewed_without_comment", "comments_checked", "skipped"}
-            else "paused"
-        )
-        if status == "deferred_daily":
+        if status == "discovered":
+            state = "selected"
+        elif status in {"claimed", "preparing", "evidence_ready"}:
+            state = "running"
+        elif status in {"selected", "viewed_without_comment", "comments_checked", "skipped"}:
+            state = "completed"
+        elif status == "deferred_daily":
             state = "daily_wait"
+        else:
+            state = "paused"
         current = json.loads(item["payload"])
         if payload:
             current |= payload
@@ -284,6 +287,11 @@ class BrowsingBatches:
         )["n"]
         batch = self.get(row)
         state = "paused" if remaining or batch["plan"] is None else "completed"
+        if state == "paused":
+            self.store.execute(
+                "UPDATE browsing_batch_items SET status='paused' WHERE batch_id=? AND status='running'",
+                (identity,),
+            )
         self.store.execute(
             "UPDATE browsing_batches SET state=?,updated_at=? WHERE id=?", (state, time.time(), identity)
         )
@@ -394,7 +402,7 @@ async def execute(browsing, row, notifications_only):
         metrics["cache_hits"] = browsing.evidence.hits - metrics.pop("cache_hits_before")
         metrics["merged_reads"] = browsing.evidence.merged - metrics.pop("merged_before")
         metrics["peak_rss_bytes"] = max(metrics["peak_rss_bytes"], psutil.Process().memory_info().rss)
-        metrics.update(browsing.repo.round(identity)["metrics"])
+        metrics = browsing.repo.round(identity)["metrics"] | metrics
         browsing.repo.finish_round(identity, status, metrics, round_error)
         operation_lane.reset(lane)
         read_round.reset(token)

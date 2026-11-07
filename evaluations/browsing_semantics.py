@@ -241,7 +241,9 @@ def evaluation_settings(args):
     settings._validate()
     if getattr(args, "inference_key_file", None):
         settings.inference_token = args.inference_key_file.read_text(encoding="utf-8-sig").strip()
-    policy_values = {}
+    # This isolated evaluation studies both public and private action choices;
+    # it never grants delivery permission or contacts a real platform.
+    policy_values = {"comment_handoff_enabled": True}
     if getattr(args, "decision_max_tokens", None) is not None:
         policy_values["decision_max_tokens"] = args.decision_max_tokens
         explicit["decision_max_tokens"] = args.decision_max_tokens

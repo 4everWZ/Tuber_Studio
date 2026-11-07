@@ -637,6 +637,11 @@ class BrowsingService:
                 "public_text"
             ):
                 raise ValueError("公开移交原文已变化或撤销")
+        elif thread := value.get("public_source_thread"):
+            source, target = thread["source"], thread["target"]
+            fresh = await self._read(self.adapter.read_video_reply, target)
+            if fresh["text"] != source["text"] or str(fresh["author_uid"]) != str(source["author_uid"]):
+                raise ValueError("公开移交原文已变化或撤销")
         keys = value.get("material_keys", [])
         refresh = False
         for key in keys:

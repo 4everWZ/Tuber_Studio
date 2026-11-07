@@ -313,8 +313,9 @@ class BackgroundDiscovery:
 
     def failures(self, scope):
         rows = self.browsing.store.all(
-            """SELECT f.*,b.round_id FROM browsing_batch_failures f
+            """SELECT f.*,b.round_id,i.task_id FROM browsing_batch_failures f
                JOIN browsing_batches b ON b.id=f.batch_id JOIN browsing_rounds r ON r.id=b.round_id
+               LEFT JOIN browsing_batch_items i ON i.batch_id=f.batch_id AND i.bvid=f.bvid
                WHERE r.account_id=? AND r.character_id=? AND r.character_version=?
                  AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)
                  AND f.updated_at>=?
@@ -342,6 +343,8 @@ class BackgroundDiscovery:
                 grouped[key] = {
                     "id": f"failure-{row['bvid']}-{row['signature'][:16]}",
                     "round_id": row["round_id"],
+                    "href": f"#automation/round/{row['round_id']}"
+                    + (f"/{row['task_id']}" if row["task_id"] else ""),
                     "bvid": row["bvid"],
                     "kind": "failure",
                     "status": "recovered" if recovered else "retry_wait",

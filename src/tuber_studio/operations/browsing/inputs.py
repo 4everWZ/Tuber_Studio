@@ -245,7 +245,7 @@ class ResponseReference:
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
-    FORMAT_VERSION = "response-reference-lines-v1"
+    FORMAT_VERSION = "response-reference-lines-v2"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))
@@ -294,7 +294,13 @@ class ResponseDecisionInput:
         for ref in refs:
             segment = ref.source()
             if segment is None:
-                lines.append(f"[{ref.alias}] 当前公开来源（原文见thread）")
+                source = (data.get("thread") or {}).get("source") or {}
+                if ref.canonical_id == "public:" + str(source.get("comment_id")) and isinstance(
+                    source.get("text"), str
+                ):
+                    lines.append(f"[{ref.alias}] 当前评论原文：\n{source['text']}")
+                else:
+                    lines.append(f"[{ref.alias}] 当前公开来源（原文见thread）")
                 continue
             cid = segment.get("cid")
             if cid is not None and cid != previous_source:

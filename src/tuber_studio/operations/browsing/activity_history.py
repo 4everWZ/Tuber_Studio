@@ -137,6 +137,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
                 "sources": [],
                 "_result_at": 0,
                 "_result_status": None,
+                "_comments_read": False,
             }
         result = entries[bvid]
         if value >= result["updated_at"]:
@@ -173,6 +174,8 @@ def _video_data(browsing, *, day=None, visible_since=None):
         result["task_id"] = item["id"]
         result["title"] = item["title"] or result["title"]
         result["sources"] = _json(item["sources"], []) or result["sources"]
+        if item["task_kind"] == "comment_visit" and item["status"] in _SUCCESS:
+            result["_comments_read"] = True
         if item["updated_at"] >= result["_result_at"]:
             result.update(
                 _result_at=item["updated_at"],
@@ -264,7 +267,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
                 )
                 if key in decision
             }
-            if result["watched"] and decision.get("explanation") and not result["reason"]:
+            if result["watched"] and decision.get("explanation"):
                 result["reason"] = decision["explanation"]
             if (
                 decision.get("action") == "skip"
@@ -275,8 +278,10 @@ def _video_data(browsing, *, day=None, visible_since=None):
                 result["status"] = "skipped"
         elif result["watched"]:
             result["read_state"] = "viewed"
+        elif result["_comments_read"]:
+            result["read_state"] = "comments_only"
         result["replies"].sort(key=lambda reply: (reply["updated_at"], reply["id"]))
-        del result["_result_at"], result["_result_status"]
+        del result["_result_at"], result["_result_status"], result["_comments_read"]
 
     items = sorted(entries.values(), key=lambda item: (-item["updated_at"], item["bvid"]))
     counts = {

@@ -182,6 +182,30 @@ def test_skip_reasons_and_failures_are_paged_without_inventing_queue_judgments(s
     assert second["items"][0]["status"] == "skipped"
 
 
+def test_comment_only_result_explains_what_was_read_without_counting_a_video_watch(service):
+    at = stamp("2026-11-07T04:00:00+00:00")
+    row = round_row(service)
+    task(service, row, "comments", at, kind="comment_visit", status="comments_checked")
+    reply(service, row, "reply-from-comments", at + 1)
+    result = history(service, day="2026-11-07")
+    assert result["items"][0]["read_state"] == "comments_only"
+    assert not result["items"][0]["watched"]
+    assert result["counts"]["watched"] == 0 and result["counts"]["replies"] == 1
+
+
+def test_video_activity_shows_the_final_viewing_reason_instead_of_initial_title_interest(service):
+    at = stamp("2026-11-07T04:00:00+00:00")
+    row = round_row(service)
+    identity = task(service, row, "watched", at, explanation="标题挺有意思，想看看实验")
+    service.repo.quotas.start_watch(identity, "100", "whale", BV, 0, now=at)
+    material = {"metadata": {"bvid": BV, "title": "盐水实验"}, "coverage": "all_available_cc"}
+    service.repo.save_content_progress(row, material, [])
+    reason = "盐水比例已经讲清楚了，这次看完没有想补充的话"
+    service.repo.save_main_decision(row, BV, {"action": "finish", "explanation": reason})
+    result = history(service, day="2026-11-07")
+    assert result["items"][0]["reason"] == reason
+
+
 def test_archiving_hides_old_events_without_removing_real_receipts(service):
     at = stamp("2026-11-07T04:00:00+00:00")
     row = round_row(service)

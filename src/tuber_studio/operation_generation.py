@@ -88,6 +88,7 @@ async def generate_with_recovery(
     reuse_completed=False,
     max_recoveries=None,
     allow_web_fetch=False,
+    restart_deferred=False,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     coordinator = coordinator_for(runtime, runtime.store, runtime.operations)
@@ -108,13 +109,24 @@ async def generate_with_recovery(
             raw = getattr(runtime.llm, "last_content", None)
             raise GenerationFeedback(str(error), original_output=raw if raw is not None else value) from None
 
-    run_initial = row is None or row["state"] in {"completed", "abandoned"}
+    # Browsing may reconsider an explicitly deferred comment in a later batch.
+    # A restart of the same batch keeps its existing continuation instead.
+    reconsider = bool(
+        restart_deferred and row and row["state"] == "waiting"
+        and parent_round_id and row["parent_round_id"] != parent_round_id
+    )
+    run_initial = row is None or row["state"] in {"completed", "abandoned"} or reconsider
     resume_initial = bool(
         row
-        and row["state"] == "checkpoint"
-        and row["feedback"].get("kind") == "round_budget"
-        and row["feedback"].get("initial")
-        and parent_round_id != row["parent_round_id"]
+        and (
+            row["state"] == "checkpoint"
+            and row["feedback"].get("kind") == "round_budget"
+            and row["feedback"].get("initial")
+            and parent_round_id != row["parent_round_id"]
+            or row["state"] == "cancelled"
+            and row["original_output"] is None
+            and row["current_output"] is None
+        )
     )
     if row is None:
         row = coordinator.begin(
@@ -133,6 +145,7 @@ async def generate_with_recovery(
             parent_round_id=parent_round_id,
             deadline=deadline,
             budget_limits=limits,
+            restart_deferred=reconsider,
         )
     elif row["can_resume"] and row["state"] != "needs_reconciliation":
         row = coordinator.resume(

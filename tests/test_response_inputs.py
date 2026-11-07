@@ -113,6 +113,19 @@ def test_public_text_reference_is_bound_without_inventing_video_segments():
         view.resolve(reply([]))
 
 
+def test_current_comment_text_is_readable_at_its_reference_without_losing_thread_context():
+    source = {"comment_id": "322901117856", "author_uid": "200", "text": "钱给够能肘赢360吗？\n  原来的空白也保留。"}
+    data = {"kind": "reply_public", "evidence": [], "thread": {"source": source, "root": source},
+            "allowed_evidence_ids": ["public:" + source["comment_id"]], "coverage": "public_text"}
+    before = copy.deepcopy(data)
+    view = ResponseDecisionInput(data)
+    header, body = view.format().split("\n\n所选材料：\n", 1)
+    assert body == "[r1] 当前评论原文：\n" + source["text"]
+    assert json.loads(header)["thread"] == before["thread"]
+    assert data == before and view.references[0].source() is None
+    assert view.resolve(reply(["r1"])).evidence_ids == ["public:" + source["comment_id"]]
+
+
 @pytest.mark.parametrize("change", [{"start": -1}, {"end": False}, {"start": 9, "end": 1}, {"text": None}])
 def test_invalid_source_records_are_rejected_before_model_generation(change):
     data = packet()
@@ -188,6 +201,7 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
     )
     first_capacity = browsing.decisions._capacity_signature(row["config"])
+    first_format = ResponseDecisionInput.FORMAT_VERSION
     monkeypatch.setattr(ResponseDecisionInput, "FORMAT_VERSION", "test-response-v2")
     assert browsing.decisions._capacity_signature(row["config"]) != first_capacity
     token = generation_resume.set(True)
@@ -205,7 +219,7 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         )
     ]
     assert {r["binding"]["input_format"] for r in episodes} == {
-        "response-reference-lines-v1",
+        first_format,
         "test-response-v2",
     }
     assert all(r["current_output"]["evidence_ids"] == ["r1"] for r in episodes)

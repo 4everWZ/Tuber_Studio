@@ -292,6 +292,62 @@ async def test_successful_admission_can_be_restored_with_matching_actual_node_id
     assert fresh.capabilities()["admitted"] and fresh._admission["configuration"] == provider.identity()
 
 
+@pytest.mark.parametrize("field", ["model_revision", "projector_revision", "runtime_profile"])
+async def test_restore_rejects_proof_for_a_different_provider_configuration(visual_runtime, field):
+    runtime, _, state = visual_runtime
+    await video_vision_service.probe_visual(runtime)
+    config = runtime.settings.data["video_vision"] | {field: "new-deployed-model"}
+    fresh = ApiVideoEvidenceProvider(runtime, config, api_key=runtime.settings.inference_token)
+    runtime.browsing.visual_provider = fresh
+    request_count = len(state["requests"])
+
+    await video_vision_service.restore_admission(runtime)
+
+    assert not fresh.capabilities()["admitted"]
+    assert fresh._probe is None and fresh._admission is None
+    assert len(state["requests"]) == request_count
+
+
+@pytest.mark.parametrize("field", ["model_path", "build_info", "context_tokens"])
+async def test_restore_rejects_changed_normalized_service_properties(visual_runtime, field):
+    runtime, provider, state = visual_runtime
+    await video_vision_service.probe_visual(runtime)
+    expected, original = provider._probe["properties"], state["http_handler"]
+    changes = {
+        "model_path": "/runtime/models/authentic-dora/model.gguf",
+        "build_info": "new-engine-build",
+        "context_tokens": expected["context_tokens"] + 4096,
+    }
+    current = expected | {field: changes[field]}
+
+    async def changed_properties(request):
+        if request.url.path.endswith("/props"):
+            return httpx.Response(
+                200,
+                json={
+                    "model_alias": current["model_alias"],
+                    "default_generation_settings": {"n_ctx": current["context_tokens"]},
+                    "modalities": current["modalities"],
+                    "model_path": current["model_path"],
+                    "build_info": current["build_info"],
+                },
+            )
+        return await original(request)
+
+    state["http_handler"] = changed_properties
+    fresh = ApiVideoEvidenceProvider(
+        runtime, runtime.settings.data["video_vision"], api_key=runtime.settings.inference_token
+    )
+    runtime.browsing.visual_provider = fresh
+    request_count = len(state["requests"])
+
+    await video_vision_service.restore_admission(runtime)
+
+    assert not fresh.capabilities()["admitted"]
+    assert fresh._probe is None and fresh._admission is None
+    assert all(request.method == "GET" for request in state["requests"][request_count:])
+
+
 async def test_inflight_restore_cannot_revive_proof_invalidated_by_a_new_failed_probe(
     visual_runtime, monkeypatch
 ):

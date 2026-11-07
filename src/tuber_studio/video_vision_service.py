@@ -189,7 +189,7 @@ async def restore_admission(runtime):
     value = json.loads(snapshot)
     proof = value.get("proof", {})
     configuration = provider.identity()
-    if proof.get("passed") is not True:
+    if proof.get("passed") is not True or proof.get("configuration") != configuration:
         return
     capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=15)
     key = (
@@ -200,6 +200,8 @@ async def restore_admission(runtime):
         return
     current = await provider._runtime_properties()
     if not isinstance(current, dict) or current.get("context_tokens", 0) < provider.config.context_tokens:
+        return
+    if current != value.get("probe", {}).get("properties"):
         return
     if (
         not owner.current(runtime)

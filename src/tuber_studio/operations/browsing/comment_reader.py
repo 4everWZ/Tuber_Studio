@@ -146,6 +146,52 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
         await asyncio.gather(result["heartbeat"], return_exceptions=True)
 
 
+async def handoff_comment(browsing, row, reply, target, thread, material, keys, *, event=None, created_at=""):
+    """One private handoff path for verified notifications and video discussions."""
+    policy = browsing.messages.policy()
+    if not (row["config"]["comment_handoff_enabled"] and policy["enabled"] and policy["allow_comment_handoff"]):
+        raise ValueError("评论转私信未授权")
+    source = thread["source"]
+    resource = target.get("bvid") or "dynamic:" + str(target["oid"])
+    if str(source["comment_id"]) != str(target["parent"]) or str(source["author_uid"]) != str(target["recipient"]):
+        raise ValueError("私信移交的评论与收件人不一致")
+    intent = browsing.publication._intent(row, "private_handoff", target, reply, keys, reply.evidence_ids)
+    if not intent or intent["kind"] != "private_handoff":
+        return None
+    browsing.store.execute(
+        "INSERT OR IGNORE INTO comments(platform,video_id,comment_id,thread_id,parent_comment_id,platform_user_id,display_name,content,category,created_at,imported_at) VALUES('bilibili',?,?,?,?,?,?,?,'interaction',?,?)",
+        (resource, str(source["comment_id"]), str(target["root"]), str(target["parent"]),
+         str(source["author_uid"]), source.get("author_name") or (event or {}).get("sender_name", ""),
+         source["text"], str((event or {}).get("timestamp", created_at) or ""), time.time()),
+    )
+    comment = browsing.store.one(
+        "SELECT * FROM comments WHERE platform='bilibili' AND video_id=? AND comment_id=?",
+        (resource, str(source["comment_id"])),
+    )
+    if comment["content"] != source["text"] or str(comment["platform_user_id"]) != str(source["author_uid"]):
+        raise ValueError("已导入评论的原文或作者与当前来源不一致")
+    evidence = browsing.evidence_payload(keys, browsing._segments(material) if material else [])
+    # The fallback is the real public comment, not a claim that its video was watched.
+    public_thread = thread | {"target": target}
+    if event is None:
+        public_thread["public_text"] = thread.get("public_text") or source["text"]
+    evidence.update(public_source_thread=public_thread, origin_round_id=row["id"])
+    if event is not None:
+        evidence["source_event"] = event
+    automatic = bool(intent["auto_authorized"] and policy["auto_send"])
+    dm_id = browsing.messages.enqueue(
+        "comment", comment["id"], automatic=automatic, reason=reply.reason,
+        character=browsing.store.character(row["character_id"], row["character_version"]),
+        account_id=row["account_id"], video_evidence=evidence, schedule=False,
+    )
+    browsing.store.execute(
+        "UPDATE browsing_intents SET reason=? WHERE id=?",
+        ("已移交私信草稿 #" + str(dm_id), intent["id"]),
+    )
+    await browsing.messages._generate(dm_id, automatic=automatic)
+    return browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],)))
+
+
 async def run_interactions(browsing, row, metrics):
     if hasattr(browsing.adapter, "own_uploads") and row["config"]["reply_enabled"]:
         try:
@@ -419,48 +465,7 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         return
     target.update(recipient=str(source["author_uid"]), source_text=source["text"], source_event=event)
     if reply.action == "handoff_private":
-        if not config["comment_handoff_enabled"]:
-            raise ValueError("评论转私信未授权")
-        intent = browsing.publication._intent(row, "private_handoff", target, reply, keys, reply.evidence_ids)
-        # Only normalized, freshly verified platform messages reach this
-        # internal import. The operator CSV API keeps its original grammar.
-        browsing.store.execute(
-            "INSERT OR IGNORE INTO comments(platform,video_id,comment_id,thread_id,parent_comment_id,platform_user_id,display_name,content,category,created_at,imported_at) VALUES('bilibili',?,?,?,?,?,?,?,'interaction',?,?)",
-            (
-                resource,
-                str(source["comment_id"]),
-                str(target["root"]),
-                str(target["parent"]),
-                str(source["author_uid"]),
-                event.get("sender_name", ""),
-                source["text"],
-                str(event["timestamp"]),
-                time.time(),
-            ),
-        )
-        comment = browsing.store.one(
-            "SELECT * FROM comments WHERE video_id=? AND comment_id=?",
-            (resource, str(source["comment_id"])),
-        )
-        evidence = browsing.evidence_payload(keys, browsing._segments(material) if material else [])
-        evidence["public_source_thread"] = thread
-        evidence["source_event"] = event
-        evidence["origin_round_id"] = row["id"]
-        dm_id = browsing.messages.enqueue(
-            "comment",
-            comment["id"],
-            automatic=bool(intent["auto_authorized"]),
-            reason=reply.reason,
-            character=browsing.runtime.character,
-            account_id=row["account_id"],
-            video_evidence=evidence,
-            schedule=False,
-        )
-        browsing.store.execute(
-            "UPDATE browsing_intents SET reason=? WHERE id=?",
-            ("已移交私信草稿 #" + str(dm_id), intent["id"]),
-        )
-        await browsing.messages._generate(dm_id, automatic=bool(intent["auto_authorized"]))
+        intent = await handoff_comment(browsing, row, reply, target, thread, material, keys, event=event)
     else:
         intent = browsing.publication._intent(row, "reply_public", target, reply, keys, reply.evidence_ids)
         if not intent:

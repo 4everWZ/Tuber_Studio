@@ -1,9 +1,28 @@
 import asyncio
+import re
 import socket
 
 import httpx
+import pytest
+from pydantic import ValidationError
 
 from tuber_studio import web_fetch
+
+
+def test_fetch_wire_and_backend_share_the_same_bounded_single_url_field():
+    pattern = web_fetch.WEB_FETCH_SCHEMA["properties"]["web_fetch"]["pattern"]
+    longest = "https://example.org/" + "x" * (web_fetch.MAX_URL - len("https://example.org/"))
+    assert re.fullmatch(pattern, longest)
+    assert web_fetch.WebFetchRequest(web_fetch=longest).web_fetch == longest
+    runaway = "https://example.org/#" + ",https://example.org/#section=1-10" * 300
+    assert not re.fullmatch(pattern, runaway)
+    with pytest.raises(ValidationError):
+        web_fetch.WebFetchRequest(web_fetch=runaway)
+    assert not re.fullmatch(pattern, "https://example.org/ https://other.org/")
+    # The deployed native parser silently drops grammars with any individual
+    # finite repeat above 2000; a single {1,2040} is therefore not equivalent
+    # in deployment even though Python's regex engine accepts it.
+    assert all(int(high) <= 2000 for _, high in re.findall(r"\{(\d+),(\d+)\}", pattern))
 
 
 async def test_public_fetch_pins_address_and_rejects_private_redirect(monkeypatch):

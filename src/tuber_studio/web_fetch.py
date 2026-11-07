@@ -13,6 +13,10 @@ FETCH_TIMEOUT = 3.0
 MAX_DOWNLOAD = 128 * 1024
 MAX_EXCERPT = 720
 MAX_URL = 2048
+_URL_PART = (MAX_URL - len("https://")) // 2
+HTTPS_URL_PATTERN = (
+    rf'^https://[^"\\ \t\r\n]{{1,{_URL_PART}}}[^"\\ \t\r\n]{{0,{_URL_PART}}}$'
+)
 REDIRECTS = {301, 302, 303, 307, 308}
 HIDDEN_TAGS = {"script", "style", "noscript", "template", "svg", "nav", "header", "footer"}
 WEB_FETCH_INSTRUCTION = (
@@ -24,13 +28,16 @@ WEB_FETCH_INSTRUCTION = (
 class WebFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    web_fetch: str = Field(min_length=1, max_length=MAX_URL)
+    web_fetch: str = Field(min_length=1, max_length=MAX_URL, pattern=HTTPS_URL_PATTERN)
 
 
 WEB_FETCH_SCHEMA = WebFetchRequest.model_json_schema()
-# The backend validates URL length before I/O. Avoid a large bounded-repeat
-# expansion in local response grammars.
-WEB_FETCH_SCHEMA["properties"]["web_fetch"] = {"type": "string", "pattern": r'^https://[^"\\ \t\r\n]+$'}
+# Put the existing URL resource limit in the native pattern itself. An
+# unbounded pattern lets a small model enumerate links until the reply budget
+# is exhausted, before the post-generation length validator can run.
+# Split the bound: the deployed native engine rejects single finite repeats
+# above 2000 and can otherwise fall back to unconstrained generation.
+WEB_FETCH_SCHEMA["properties"]["web_fetch"] = {"type": "string", "pattern": HTTPS_URL_PATTERN}
 
 
 def source_url(value):

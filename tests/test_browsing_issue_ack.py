@@ -1,5 +1,6 @@
 import time
 
+from test_browsing import BV
 from test_browsing import browsing as browsing
 
 from tuber_studio.operations.browsing.issues import clear_issues
@@ -64,3 +65,24 @@ async def test_acknowledgement_counts_restart_with_the_new_version_window(browsi
     add_error(browsing, "new-second", clock[0])
     add_error(browsing, "new-third", clock[0])
     assert browsing.discovery.records()["issues"][0]["occurrences"] == 2
+
+
+async def test_aggregated_failure_links_to_its_real_task_instead_of_its_display_identity(browsing):
+    browsing.discovery.remember_account("100")
+    row, _ = browsing.repo.create_round(
+        "100", browsing.runtime.character, browsing.policy() | {"autonomous_batch": True}, 0, False,
+    )
+    browsing.repo.batches.ensure(row)
+    candidate = {"bvid": BV, "title": "盐水实验"}
+    browsing.repo.batches.merge(row, [candidate])
+    task_id = browsing.repo.task(row["id"], candidate)
+    browsing.repo.batches.outcome(task_id, "checkpoint", "正文与近期发言重复")
+    issue = browsing.discovery.records()["issues"][0]
+    assert issue["id"].startswith("failure-")
+    assert issue["href"] == f"#automation/round/{row['id']}/{task_id}"
+    assert browsing.tasks(task_id=task_id)[0]["bvid"] == BV
+    # Old imported failures can have no retained task. Link to their round,
+    # rather than constructing a nonexistent synthetic task destination.
+    browsing.store.execute("UPDATE browsing_batch_items SET task_id=NULL WHERE batch_id=?", (row["config"]["batch_id"],))
+    issue = browsing.discovery.records()["issues"][0]
+    assert issue["href"] == f"#automation/round/{row['id']}"

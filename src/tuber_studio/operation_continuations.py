@@ -138,6 +138,32 @@ def visible_payload(value):
     return value.model_dump() if hasattr(value, "model_dump") else value
 
 
+def deferred_generation_decision(row):
+    """Return an explicit model deferral after repetition or output exhaustion."""
+    if not row or row.get("state") not in {"waiting", "abandoned"}:
+        return None
+    feedback = row.get("feedback") or {}
+    repeated = feedback.get("kind") == "style_diagnostic" and any(
+        word in feedback.get("message", "") for word in ("重复", "复读")
+    )
+    if not repeated and feedback.get("kind") != "output_limit":
+        return None
+    step = next(
+        (step for step in reversed(row.get("revisions", []))
+         if step.get("phase") == "decision" and step.get("status") == "completed"),
+        None,
+    )
+    decision = step.get("output") if step else None
+    if (
+        not isinstance(decision, dict)
+        or decision.get("action") not in {"wait", "abandon"}
+        or not isinstance(decision.get("reason"), str)
+        or not decision["reason"].strip()
+    ):
+        return None
+    return decision
+
+
 class ContinuationCoordinator:
     def __init__(self, store, operations, *, parent_repository=None):
         self.store, self.operations, self.parent_repository = store, operations, parent_repository
@@ -711,7 +737,8 @@ class ContinuationCoordinator:
         )
 
     def restart_generation(
-        self, identity, *, binding, parent_round_id=None, deadline=None, budget_limits=None
+        self, identity, *, binding, parent_round_id=None, deadline=None, budget_limits=None,
+        restart_deferred=False,
     ):
         return self._new_episode(
             identity,
@@ -720,10 +747,12 @@ class ContinuationCoordinator:
             deadline=deadline,
             budget_limits=budget_limits,
             restart_generation=True,
+            restart_deferred=restart_deferred,
         )
 
     def _new_episode(
-        self, identity, *, binding, parent_round_id, deadline, budget_limits, restart_generation=False
+        self, identity, *, binding, parent_round_id, deadline, budget_limits, restart_generation=False,
+        restart_deferred=False,
     ):
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
@@ -733,10 +762,14 @@ class ContinuationCoordinator:
             if row["owner"] and (row["lease_until"] or 0) > time.time():
                 raise ValueError("恢复任务仍在处理")
             if restart_generation:
-                if row["binding"].get("task") != "generation" or row["state"] not in {
-                    "completed",
-                    "abandoned",
-                }:
+                reconsider = (
+                    restart_deferred and row["state"] == "waiting"
+                    and parent_round_id and row["parent_round_id"] != parent_round_id
+                    and deferred_generation_decision(row) is not None
+                )
+                if row["binding"].get("task") != "generation" or not (
+                    row["state"] in {"completed", "abandoned"} or reconsider
+                ):
                     raise ValueError("只有新的生成请求可以重新开始已完成的生成任务")
             elif not row["can_resume"] or row["state"] == "needs_reconciliation":
                 raise ValueError("当前恢复任务不可继续生成；未知发送须先核对平台")
