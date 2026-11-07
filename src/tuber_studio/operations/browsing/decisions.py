@@ -9,6 +9,7 @@ from difflib import SequenceMatcher
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
+from ...message_outreach import invitation_possibility
 from ...operation_continuations import ContinuationCheckpoint, content_hash, deferred_generation_decision
 from ...operation_generation import GenerationDeferred, generate_with_recovery
 from ...operation_identity import captured_identity
@@ -101,12 +102,23 @@ class BrowsingDecisions:
         bound = bind_response_actors(data, actor)
         thread = bound.get("thread") or {}
         target, source = thread.get("target") or {}, thread.get("source") or {}
+        video = bound.get("video_source") or {}
+        if target.get("bvid") and target["bvid"] == video.get("bvid") and video.get("owner_uid"):
+            thread["resource_author_uid"] = str(video["owner_uid"])
         root_id = (thread.get("addressing") or {}).get("source_root_comment_id") or target.get("root")
         if target.get("bvid") and (root_id or source.get("comment_id")):
             bound["own_public_experiences"] = self.browsing.runtime.daily_memory.context(
                 character, video_id=target["bvid"], thread_id=root_id, comment_id=source.get("comment_id")
             )
         return bound
+
+    @staticmethod
+    def _handoff_allowed(row, data):
+        if data.get("kind") == "top_level" or not row["config"].get("comment_handoff_enabled", False):
+            return False
+        thread = data.get("thread") or {}
+        recipient = (thread.get("target") or {}).get("recipient") or (thread.get("source") or {}).get("author_uid")
+        return invitation_possibility(thread, row.get("account_id"), recipient) != "impossible"
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
@@ -172,8 +184,7 @@ class BrowsingDecisions:
             allowed = response_input.allowed_aliases
             model_schema = response_schema(
                 allowed,
-                allow_handoff=data.get("kind") != "top_level"
-                and row["config"].get("comment_handoff_enabled", False),
+                allow_handoff=self._handoff_allowed(row, data),
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
                 allow_comments=data.get("allow_comments", True),
@@ -271,10 +282,19 @@ class BrowsingDecisions:
 
         async def invoke(packet, *, web_fetch=None):
             if web_fetch is not None:
-                return await web_fetch.complete(packet, model_schema, invoke_model)
+                result = await web_fetch.complete(packet, model_schema, invoke_model)
+                if response_input is not None and web_fetch.receipt is not None:
+                    response_input.include_web_fetch_receipt(web_fetch.receipt)
+                return result
             return await invoke_model(packet, model_schema)
 
         def validate(result):
+            if response_input is not None:
+                saved = self.browsing.runtime.continuations.find("generation.browsing", identity)
+                if saved:
+                    for step in saved["revisions"]:
+                        if step["phase"] == "web_fetch" and step["status"] == "ok" and step["context"]:
+                            response_input.include_web_fetch_receipt(step["context"])
             value = (
                 response_input.validate_wire(result)
                 if response_input is not None
@@ -315,7 +335,7 @@ class BrowsingDecisions:
                 }:
                     raise ValueError("公开回复渠道与理由不一致")
                 if value.action == "handoff_private" and (
-                    data.get("kind") == "top_level"
+                    not self._handoff_allowed(row, data)
                     or value.reason != "user_requested"
                 ):
                     raise ValueError("私信渠道与来源／理由不一致")
@@ -411,6 +431,7 @@ class BrowsingDecisions:
             },
             reuse_completed=generation_resume.get() or bool(autonomous and retry and retry["resume"]),
             restart_deferred=reconsider,
+            restart_incomplete_deferred=bool(schema is ResponseDecision and data.get("video_actions")),
             max_recoveries=recovery_limit,
             recovery_decision=repair_candidate_plan if schema is CandidateBatchPlan else None,
             diagnose=diagnose,
@@ -1009,15 +1030,44 @@ class BrowsingDecisions:
                 result["material_key"],
             )
         except Exception as error:
-            if resolution := self._generation_resolution(error):
+            resolution = self._generation_resolution(error)
+            if resolution:
+                progress = self.browsing.repo.content_progress(row, material["metadata"]["bvid"])
+                previous_judgment = (progress or {}).get("main_decision") or {}
+                if not previous_judgment and resolution["feedback"].get("kind") == "style_diagnostic":
+                    # Style feedback may hold a complete, source-validated
+                    # answer. Its opinion can survive while its body is held.
+                    for candidate in (resolution["current_candidate"], resolution["original_candidate"]):
+                        try:
+                            candidate = json.loads(candidate) if isinstance(candidate, str) else candidate
+                            previous_judgment = ResponseDecision.model_validate(candidate).model_dump()
+                        except (ValueError, TypeError):
+                            continue
+                        if previous_judgment.get("video_preference") and previous_judgment.get("preference_reason", "").strip():
+                            break
+                if not (
+                    previous_judgment.get("video_preference") in {"like", "neutral", "not_interested"}
+                    and str(previous_judgment.get("preference_reason") or "").strip()
+                ):
+                    # A recovery decision to wait/abandon is not a completed
+                    # viewing judgment. Keep material and the recovery audit,
+                    # leaving the original viewing task resumable.
+                    self.browsing.repo.save_content_progress(row, material, decisions)
+                    payload["generation_resolution"] = resolution
+                    resolution = None
+            if resolution:
                 self.browsing.repo.save_content_progress(row, material, decisions)
                 model_reason = resolution["decision"]["reason"].strip()
-                deferred = ResponseDecision(
-                    action="wait" if resolution["decision"]["action"] == "wait" else "skip",
-                    reason="insufficient_evidence",
-                    explanation=model_reason,
+                self.browsing.repo.save_main_decision(
+                    row, material["metadata"]["bvid"],
+                    ResponseDecision(
+                        action="wait" if resolution["decision"]["action"] == "wait" else "skip",
+                        reason="insufficient_evidence",
+                        explanation=previous_judgment.get("explanation") or previous_judgment["preference_reason"],
+                        video_preference=previous_judgment["video_preference"],
+                        preference_reason=previous_judgment["preference_reason"],
+                    ),
                 )
-                self.browsing.repo.save_main_decision(row, material["metadata"]["bvid"], deferred)
                 self.browsing.repo.complete(
                     identity,
                     result["owner"],
@@ -1177,6 +1227,8 @@ class BrowsingDecisions:
                     if author_uid == str(row["account_id"]) or category(item_text) == "spam":
                         return None
                 thread_context = self._video_comment_context(item, items, target)
+                if metadata and metadata.get("owner_uid"):
+                    thread_context["resource_author_uid"] = str(metadata["owner_uid"])
                 source = thread_context["source"]
                 thread_response = self.comment_progress.get(row, bvid, source)
                 if thread_response is None:

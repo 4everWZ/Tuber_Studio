@@ -10,6 +10,7 @@ from .operation_continuations import (
     GenerationFeedback,
     content_hash,
     continuation_messages,
+    deferred_generation_decision,
 )
 from .operation_feedback import FeedbackModel, coordinator_for, episode_limits
 from .operation_identity import captured_identity, identity_messages, runtime_identity
@@ -92,6 +93,7 @@ async def generate_with_recovery(
     allow_web_fetch=False,
     restart_deferred=False,
     recovery_decision=None,
+    restart_incomplete_deferred=False,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     actor = captured_identity(messages) or runtime_identity(runtime, character, binding.get("account_id"))
@@ -132,6 +134,10 @@ async def generate_with_recovery(
             or row["state"] == "cancelled"
             and row["original_output"] is None
             and row["current_output"] is None
+            or restart_incomplete_deferred
+            and row["state"] == "waiting"
+            and row["feedback"].get("kind") in {"validation_error", "output_limit"}
+            and deferred_generation_decision(row) is not None
         )
     )
     if row is None:

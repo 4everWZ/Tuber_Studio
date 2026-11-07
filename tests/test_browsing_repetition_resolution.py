@@ -92,6 +92,10 @@ async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_
     assert browsing.repo.content_progress(completed, next_video)["main_decision"]["action"] == (
         "wait" if action == "wait" else "skip"
     )
+    saved = browsing.repo.content_progress(completed, next_video)["main_decision"]
+    assert saved["video_preference"] == resolution["original_candidate"]["video_preference"]
+    assert saved["preference_reason"] == resolution["original_candidate"]["preference_reason"]
+    assert saved["text"] == ""
     assert browsing.repo.batches.get(completed)["state"] == "completed"
 
     async def comments(video, max_pages=1):
@@ -282,6 +286,22 @@ async def test_output_limit_explicit_model_choice_finishes_this_batch_and_wait_c
     original, provider, calls = await isolated_output_limit_provider(browsing, action, comments=comments)
     try:
         first = await finished(browsing, automatic=True, video_only=True)
+        if not comments:
+            assert first["status"] == "paused", first
+            saved = browsing.repo.content_progress(first, BV)
+            assert saved["material"]["metadata"]["bvid"] == BV
+            assert saved["main_decision"] is None
+            task = browsing.store.one("SELECT * FROM browsing_tasks WHERE status='checkpoint'")
+            assert json.loads(task["payload"])["generation_resolution"]["decision"]["action"] == action
+            assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
+            assert calls == ["CandidateBatchPlan", "ResponseDecision", "feedback"]
+            assert not browsing.intents() and not browsing.adapter.sent
+            if action == "wait":
+                resumed = await finished(browsing, automatic=True, video_only=True)
+                assert resumed["status"] == "completed", resumed
+                assert browsing.repo.content_progress(resumed, BV)["main_decision"]["video_preference"] == "neutral"
+                assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
+            return
         assert first["status"] == "completed", first
         assert first["metrics"]["failures"] == 0
         assert browsing.repo.batches.get(first)["state"] == "completed"
@@ -304,12 +324,6 @@ async def test_output_limit_explicit_model_choice_finishes_this_batch_and_wait_c
             third = await finished(browsing, automatic=True, video_only=True)
             assert third["status"] == "completed"
             assert len(browsing.adapter.sent) == int(action == "wait")
-        else:
-            saved = browsing.repo.content_progress(first, BV)["main_decision"]
-            assert saved["action"] == ("wait" if action == "wait" else "skip")
-            assert saved["explanation"] == "现在先停在这里，下一次再接着聊"
-            assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
-            assert saved["video_preference"] is None
     finally:
         await provider.close()
         browsing.runtime.llm = original

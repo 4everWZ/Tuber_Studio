@@ -333,6 +333,11 @@ class ResponseDecision(StrictModel):
         return validate_operation_text(value) if value else value
 
 
+# Internal explanations are short task metadata; prose keeps its own configured
+# request output budget. Bound open JSON strings before decoding can loop in one.
+MAX_DECISION_REASON_CHARACTERS = 1024
+
+
 class VideoEngagementDecision(StrictModel):
     should_like: bool = False
     like_reason: str = ""
@@ -463,15 +468,15 @@ def response_schema(
                                 "type": "string",
                                 "enum": ["like", "not_interested", "neutral"],
                             },
-                            "preference_reason": {"type": "string", "minLength": 1},
+                            "preference_reason": {"type": "string", "minLength": 1, "maxLength": MAX_DECISION_REASON_CHARACTERS},
                         }
                         if video_actions
                         else {}
                     ),
                     "reason": {"type": "string", "enum": allowed_reasons},
-                    "explanation": {"type": "string", "minLength": 1},
+                    "explanation": {"type": "string", "minLength": 1, "maxLength": MAX_DECISION_REASON_CHARACTERS},
                     "action": {"type": "string", "enum": [action]},
-                    **({"contact_purpose": {"type": "string", "minLength": 1},
+                    **({"contact_purpose": {"type": "string", "minLength": 1, "maxLength": MAX_DECISION_REASON_CHARACTERS},
                         "contact_trigger": {"type": "string", "enum": ["invitation", "agreement"]}}
                        if action == "handoff_private" else {}),
                     "evidence_ids": {

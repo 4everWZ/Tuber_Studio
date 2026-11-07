@@ -30,16 +30,55 @@ def outreach_sources(thread):
     if not isinstance(thread, dict):
         return []
     rows = []
-    for row in [thread.get("source"), thread.get("root"), thread.get("parent"), *thread.get("timeline", [])]:
-        if not isinstance(row, dict) or not row.get("comment_id") or not row.get("text"):
+    addressing = thread.get("addressing") or {}
+    for row in [thread.get("source"), thread.get("root"), thread.get("parent"), *thread.get("timeline", []), *thread.get("items", [])]:
+        if not isinstance(row, dict) or not row.get("comment_id") or not (row.get("text") or row.get("content")):
             continue
-        value = dict(row)
+        value = dict(row) | {"comment_id": str(row["comment_id"]),
+            "text": row.get("text") or row.get("content"),
+            "author_uid": str(row.get("author_uid") or row.get("platform_user_id") or row.get("user_id") or ""),
+            "_parent_known": "parent_comment_id" in row, "_mentions_known": "mentions" in row}
         if str(value["comment_id"]) == str((thread.get("source") or {}).get("comment_id")):
-            value["mentions"] = thread.get("addressing", {}).get("source_mentions", value.get("mentions", []))
-            value["parent_comment_id"] = thread.get("addressing", {}).get("source_parent_comment_id")
-        if not any(str(previous["comment_id"]) == str(value["comment_id"]) for previous in rows):
+            value["mentions"] = addressing.get("source_mentions", value.get("mentions", []))
+            value["_mentions_known"] = "source_mentions" in addressing or value["_mentions_known"]
+            if "source_parent_comment_id" in addressing:
+                value["parent_comment_id"] = addressing["source_parent_comment_id"]
+                value["_parent_known"] = True
+        previous = next((previous for previous in rows if previous["comment_id"] == value["comment_id"]), None)
+        if previous is None:
             rows.append(value)
+        elif not previous["_parent_known"] and value["_parent_known"]:
+            previous["parent_comment_id"], previous["_parent_known"] = value.get("parent_comment_id"), True
+        if previous is not None and not previous["_mentions_known"] and value["_mentions_known"]:
+            previous["mentions"], previous["_mentions_known"] = value.get("mentions", []), True
     return rows
+
+
+def _source_addressing(source, sources, actor_uid, owner_uid):
+    mentions = source.get("mentions") or []
+    known = {str(person.get("uid")) for person in mentions if person.get("uid") not in (None, "", "0", 0)}
+    if actor_uid in known:
+        return "possible"
+    if mentions:
+        return "unresolved" if any(person.get("uid") in (None, "", "0", 0) for person in mentions) else "impossible"
+    parent_id = source.get("parent_comment_id")
+    parent = next((row for row in sources if row["comment_id"] == str(parent_id)), {})
+    if str(parent.get("author_uid") or "") == actor_uid or owner_uid == actor_uid:
+        return "possible"
+    parent_known = bool(parent.get("author_uid")) if parent_id not in (None, "", "0", 0) else source["_parent_known"]
+    return "impossible" if parent_known and owner_uid and source["_mentions_known"] else "unresolved"
+
+
+def invitation_possibility(thread, actor_uid, recipient_uid):
+    """Necessary identity relation only; `possible` is not an invitation verdict."""
+    if not isinstance(thread, dict) or not actor_uid or not recipient_uid:
+        return "unresolved"
+    sources = outreach_sources(thread)
+    candidates = [row for row in sources if row["author_uid"] == str(recipient_uid)]
+    if not candidates:
+        return "impossible" if sources and all(row["author_uid"] for row in sources) else "unresolved"
+    states = {_source_addressing(row, sources, str(actor_uid), str(thread.get("resource_author_uid") or "")) for row in candidates}
+    return "possible" if "possible" in states else "unresolved" if "unresolved" in states else "impossible"
 
 
 def invitation_anchor(assessment, draft, thread):
@@ -54,13 +93,7 @@ def invitation_anchor(assessment, draft, thread):
         or not assessment.invitation_quote.strip() or assessment.invitation_quote not in source["text"]
     ):
         return None
-    mentions = {str(person.get("uid")) for person in source.get("mentions", [])}
-    parent_id = source.get("parent_comment_id")
-    parent = next((row for row in sources if str(row["comment_id"]) == str(parent_id)), None)
-    addressed = actor in mentions or parent and str(parent.get("author_uid")) == actor
-    addressed = addressed or str(thread.get("resource_author_uid") or "") == actor
-    # A real @ to another account does not invite this account to DM.
-    if mentions and actor not in mentions or not addressed:
+    if _source_addressing(source, sources, actor, str(thread.get("resource_author_uid") or "")) != "possible":
         return None
     return source
 
@@ -105,6 +138,14 @@ async def assess_outreach(runtime, draft, event, history, completion_evidence):
         {key: thread[key] for key in ("source", "root", "parent", "timeline", "addressing", "resource_author_uid") if key in thread}
         if isinstance(thread, dict) else thread
     )
+    if isinstance(review_thread, dict):
+        sources = outreach_sources(thread)
+        candidates = [row for row in sources if row["author_uid"] == str(draft["platform_user_id"])]
+        parent_ids = {str(row.get("parent_comment_id")) for row in candidates if row.get("parent_comment_id")}
+        # Match the validator's full supplied candidate set, including invitations
+        # beyond the presentation's short timeline, without adding private history.
+        review_thread["items"] = [{key: row[key] for key in ("comment_id", "author_uid", "author_name", "text", "parent_comment_id", "mentions") if key in row}
+            for row in sources if row in candidates or row["comment_id"] in parent_ids]
     data = {
         "self_account_uid": draft["account_id"], "recipient_uid": draft["platform_user_id"],
         "public_thread": review_thread, "purpose": draft.get("purpose") or "",

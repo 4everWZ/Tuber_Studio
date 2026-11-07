@@ -2,6 +2,7 @@ import pytest
 from test_browsing import BV, finished
 from test_browsing import browsing as browsing
 
+from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
 from tuber_studio.operations.browsing.models import response_schema
 
 
@@ -37,3 +38,18 @@ def test_video_preference_is_independent_of_permission_to_reply():
     actions = {branch["properties"]["action"]["enum"][0] for branch in wire["oneOf"]}
     assert "finish" in actions and not {"reply_public", "read_comments", "handoff_private"} & actions
     assert all("preference_reason" in branch["required"] for branch in wire["oneOf"])
+
+
+def test_internal_reasons_are_bounded_without_limiting_reply_prose():
+    wire = response_schema(["r1"], video_actions=True)
+    for branch in wire["oneOf"]:
+        for field in ("explanation", "preference_reason"):
+            assert branch["properties"][field]["maxLength"] == 1024
+        if branch["properties"]["action"]["enum"] == ["reply_public"]:
+            assert "maxLength" not in branch["properties"]["text"]
+    packet = ResponseDecisionInput({"evidence": [{"id": "subtitle", "text": "盐水鸡蛋实验"}]})
+    response = {"action": "reply_public", "reason": "specific_detail", "text": "正常正文" * 300,
+                "explanation": "看清了鸡蛋浮起来", "evidence_ids": ["r1"]}
+    assert packet.validate_wire(response).text == response["text"]
+    with pytest.raises(ValueError, match="explanation.*最多1024"):
+        packet.validate_wire(response | {"explanation": "白" * 1025})

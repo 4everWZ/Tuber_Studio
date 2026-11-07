@@ -91,3 +91,118 @@ async def test_browsing_alias_format_feedback_revises_without_publishing(browsin
     assert result.text == corrected and result.evidence_ids == ["public:42"]
     assert calls == ["ResponseDecision", "ContinuationDecision", "ResponseDecision"]
     assert not browsing.intents() and not browsing.adapter.sent
+
+
+@pytest.mark.parametrize("literal_field", ["excerpt", "title", "url"])
+@pytest.mark.parametrize("resume", [False, True])
+async def test_real_web_product_literal_survives_completed_reuse_and_checkpoint_resume(
+    browsing, monkeypatch, literal_field, resume,
+):
+    import json
+
+    from tuber_studio import web_fetch
+    from tuber_studio.operation_generation import GenerationDeferred
+    from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+    from tuber_studio.operations.browsing.round_context import generation_resume
+
+    await browsing.preflight()
+    browsing.runtime.llm.supports_operation_web_fetch = True
+    row, _ = browsing.repo.create_round(
+        browsing.account, browsing.runtime.character,
+        browsing.configured() | {"autonomous_batch": True, "decision_max_tokens": 512}, 0, True,
+    )
+    data = {"kind": "reply_public", "evidence": [
+        {"id": f"source:{number}", "text": "真实字幕片段"} for number in range(84)
+    ], "thread": {}}
+    calls, fetched = [], []
+    resumed = False
+
+    async def fetch(url):
+        fetched.append(url)
+        page = {"url": url, "title": "产品资料", "excerpt": "真实网页摘录"}
+        page[literal_field] = "https://example.org/R84" if literal_field == "url" else "R84是一款键盘。"
+        return page
+
+    async def generate(messages, schema, *, max_tokens):
+        calls.append(schema["title"])
+        if schema["title"] == "ContinuationDecision":
+            result = {"action": "revise" if resumed else "wait", "reason": "继续核对引用", "read": ""}
+        elif not fetched:
+            result = {"web_fetch": "https://example.org/product"}
+        else:
+            result = response("R84这款键盘我也想看看。")
+            if resume and not resumed:
+                result["evidence_ids"] = ["r999"]
+        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
+        return result
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+
+    async def run():
+        return await browsing.decisions._model(row, ResponseDecision, data, RESPONSE_INSTRUCTION)
+
+    if resume:
+        with pytest.raises(GenerationDeferred):
+            await run()
+        resumed = True
+        result = await run()
+    else:
+        result = await run()
+        call_count = len(calls)
+        token = generation_resume.set(True)
+        try:
+            assert (await run()).text == result.text
+        finally:
+            generation_resume.reset(token)
+        assert len(calls) == call_count
+    assert result.text == "R84这款键盘我也想看看。" and result.evidence_ids == ["source:0"]
+    assert fetched == ["https://example.org/product"]
+    steps = browsing.store.all("SELECT context FROM operation_continuation_steps WHERE phase='web_fetch' AND status='ok'")
+    receipt = json.loads(steps[0]["context"])
+    assert receipt["source_alias_literals"] == ["r84"] and "excerpt" not in receipt
+    assert not browsing.intents() and not browsing.adapter.sent
+
+
+async def test_failed_fetch_and_assistant_selected_product_url_do_not_exempt_alias(browsing, monkeypatch):
+    import json
+
+    from tuber_studio import web_fetch
+    from tuber_studio.operation_generation import GenerationDeferred
+    from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
+
+    await browsing.preflight()
+    browsing.runtime.llm.supports_operation_web_fetch = True
+    row, _ = browsing.repo.create_round(
+        browsing.account, browsing.runtime.character,
+        browsing.configured() | {"autonomous_batch": True, "decision_max_tokens": 512}, 0, True,
+    )
+    calls = []
+
+    async def fetch(url):
+        raise TimeoutError
+
+    async def generate(messages, schema, *, max_tokens):
+        calls.append(schema["title"])
+        if schema["title"] == "ContinuationDecision":
+            assert "内部来源短编号" in "\n".join(message["content"] for message in messages)
+            result = {"action": "wait", "reason": "网页未读到，先保留任务", "read": ""}
+        elif len(calls) == 1:
+            result = {"web_fetch": "https://example.org/R84"}
+        else:
+            result = response("R84这款键盘我也想看看。")
+        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
+        return result
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    with pytest.raises(GenerationDeferred):
+        await browsing.decisions._model(
+            row, ResponseDecision,
+            {"kind": "reply_public", "evidence": [
+                {"id": f"source:{number}", "text": "真实字幕片段"} for number in range(84)
+            ], "thread": {}}, RESPONSE_INSTRUCTION,
+        )
+    step = browsing.store.one("SELECT context FROM operation_continuation_steps WHERE phase='web_fetch'")
+    assert "source_alias_literals" not in json.loads(step["context"])
+    assert not browsing.intents() and not browsing.adapter.sent

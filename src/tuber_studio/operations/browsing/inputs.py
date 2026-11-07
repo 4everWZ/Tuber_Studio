@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...operation_text import source_alias_literals
 from ...subtitle_presentation import (
     CitationBlock,
     SourcePart,
@@ -16,7 +17,7 @@ from ...subtitle_presentation import (
     render_blocks,
     validate_time,
 )
-from .models import ContentDecision, ResponseDecision
+from .models import MAX_DECISION_REASON_CHARACTERS, ContentDecision, ResponseDecision
 
 RESPONSE_ACTOR_INSTRUCTION = (
     "self_actor是你当前发言的平台账号，character_id/character_name是你扮演的OC，账号显示名和OC名分开理解。"
@@ -379,7 +380,6 @@ class ResponseReference:
         return json.loads(self.source_json) if self.source_json is not None else None
 
 
-_RESPONSE_ALIAS_TOKEN = re.compile(r"(?<![A-Za-z0-9_])r[1-9][0-9]*(?![A-Za-z0-9_])", re.IGNORECASE)
 _SOURCE_TEXT_FIELDS = {"text", "title", "description", "content", "public_text", "source_text", "quote", "url", "desc"}
 
 
@@ -392,7 +392,7 @@ def _source_alias_literals(data):
                 if key in {"self_actor", "recent_public_responses", "source_identity"}:
                     continue
                 if key in _SOURCE_TEXT_FIELDS and isinstance(child, str):
-                    aliases.update(token.casefold() for token in _RESPONSE_ALIAS_TOKEN.findall(child))
+                    aliases.update(source_alias_literals(child))
                 elif isinstance(child, (dict, list)):
                     pending.append(child)
         elif isinstance(value, list):
@@ -403,7 +403,7 @@ def _source_alias_literals(data):
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
-    FORMAT_VERSION = "response-reference-lines-v5-video-and-thread"
+    FORMAT_VERSION = "response-reference-lines-v6-bounded-reasons"
 
     def __init__(self, data):
         self._source_alias_literals = _source_alias_literals(data)
@@ -501,14 +501,27 @@ class ResponseDecisionInput:
     def format(self):
         return self._presentation
 
+    def include_web_fetch_receipt(self, receipt):
+        if receipt.get("status") != "ok":
+            return
+        for key in ("url", "title"):
+            if isinstance(receipt.get(key), str):
+                self._source_alias_literals.update(source_alias_literals(receipt[key]))
+        for literal in receipt.get("source_alias_literals", []):
+            if isinstance(literal, str):
+                self._source_alias_literals.update(source_alias_literals(literal))
+
     def validate_wire(self, value):
         value = ResponseDecision.model_validate(value.model_dump() if hasattr(value, "model_dump") else value)
+        for field in ("explanation", "preference_reason", "contact_purpose"):
+            if len(getattr(value, field)) > MAX_DECISION_REASON_CHARACTERS:
+                raise ValueError(f"{field}须概括具体原因，单次最多{MAX_DECISION_REASON_CHARACTERS}字符")
         if not set(value.evidence_ids) <= self.allowed_aliases:
             raise ValueError("回应引用不属于本次短编号")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
         leaked = (
-            {token.casefold() for token in _RESPONSE_ALIAS_TOKEN.findall(value.text)}
+            source_alias_literals(value.text)
             & self.allowed_aliases
         ) - self._source_alias_literals
         if leaked:
