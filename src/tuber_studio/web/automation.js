@@ -12,7 +12,6 @@ class AutomationPanel {
     this.api = api;
     this.notify = notify;
 
-    this.value = null;
     this.tasks = [];
     this.rounds = [];
     this.intents = [];
@@ -72,7 +71,6 @@ class AutomationPanel {
     const round = this.roundId;
     try {
       const results = await Promise.allSettled([
-        this.api("/api/automation"),
         this.api(round ? `/api/automation/tasks?round_id=${encodeURIComponent(round)}` : "/api/automation/tasks"),
         this.api("/api/automation/rounds"),
         this.api("/api/automation/intents"),
@@ -80,17 +78,13 @@ class AutomationPanel {
       ]);
 
       if (round !== this.roundId || this.root.closest("[hidden]")) return;
-      if (results[0].status === "fulfilled") {
-        this.value = results[0].value;
-        this.onStatus?.(this.value);
+      if (results[0].status === "fulfilled") this.tasks = this.array(results[0].value);
+      if (results[1].status === "fulfilled") this.rounds = this.array(results[1].value);
+      if (results[2].status === "fulfilled") {
+        this.intents = this.array(results[2].value).filter(row => ["video_like", "video_fav"].includes(row.kind));
       }
-      if (results[1].status === "fulfilled") this.tasks = this.array(results[1].value);
-      if (results[2].status === "fulfilled") this.rounds = this.array(results[2].value);
       if (results[3].status === "fulfilled") {
-        this.intents = this.array(results[3].value).filter(row => ["video_like", "video_fav"].includes(row.kind));
-      }
-      if (results[4].status === "fulfilled") {
-        const inboxData = results[4].value;
+        const inboxData = results[3].value;
         this.inbox = Array.isArray(inboxData) ? inboxData : (inboxData?.items || []);
       }
 

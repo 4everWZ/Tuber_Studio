@@ -3,7 +3,7 @@
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.21";
-import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.21";
+import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.23";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.20";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
@@ -12,7 +12,6 @@ import { MessagesPanel } from "./messages.js?v=20261107.20";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
-  renderOperationsQuickBar,
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261107.17";
 import {
@@ -37,7 +36,7 @@ import {
 
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
-} from "./modules/workspace-display.js";
+} from "./modules/workspace-display.js?v=20261107.23";
 import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261107.22";
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.15";
 
@@ -103,7 +102,6 @@ const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope 
 });
 messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
-automationPanel.onStatus = renderOperationsQuickBar;
 const issueLog = initIssueLog(api, () => model.page);
 document.addEventListener("workspace-issue", event => {
   event.preventDefault();
@@ -370,7 +368,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await Promise.allSettled([updatePermissionCapsule(), discoveryPanel.refresh(), refreshOperationsActivity()]);
   } else if (model.page === "automation-records") {
     const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
-    await Promise.allSettled([automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
+    await Promise.allSettled([updatePermissionCapsule(), automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
   } else if (model.page === "automation-settings") {
     await Promise.allSettled([discoveryPanel.refresh(), updatePermissionCapsule(), automationPanel.loadRecovery(), dynamicsModule?.refreshPolicy(), messagesPanel.refresh()]);
   } else if (model.page === "issues") {

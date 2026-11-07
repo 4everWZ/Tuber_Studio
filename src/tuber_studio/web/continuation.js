@@ -29,7 +29,7 @@ class OperationContinuationView {
     return element;
   }
   label(state) {
-    return {pending:"等待处理", deciding:"Agent 处理中", awaiting_review:"等待审核", waiting:"等待下一步", needs_material:"等待补充材料", checkpoint:"进度已保存", needs_reconciliation:"发送结果待核对", completed:"处理完成", abandoned:"已暂缓", cancelled:"已取消"}[state] || state || "状态未返回";
+    return {pending:"等待处理", deciding:"Agent 处理中", awaiting_review:"等待审核", invalid:"生成无效", deferred:"本次已暂缓", waiting:"等待下一步", needs_material:"等待补充材料", checkpoint:"进度已保存", needs_reconciliation:"发送结果待核对", completed:"处理完成", abandoned:"已暂缓", cancelled:"已取消"}[state] || state || "状态未返回";
   }
   body(value) {
     if (typeof value === "string") return value;
@@ -75,7 +75,7 @@ class OperationContinuationView {
       this.signature = null;
       return;
     }
-    this.$("[data-continuation-summary]").textContent = `本轮恢复 ${value.recoveries ?? "—"} / ${value.max_recoveries ?? "—"} 次 · 累计 ${value.total_recoveries ?? value.recoveries ?? "—"} 次`;
+    this.$("[data-continuation-summary]").textContent = generation ? `生成状态：${this.label(value.state)}` : `本轮恢复 ${value.recoveries ?? "—"} / ${value.max_recoveries ?? "—"} 次 · 累计 ${value.total_recoveries ?? value.recoveries ?? "—"} 次`;
     const feedback = this.feedback(value.feedback), trigger = this.feedback(value.trigger_feedback);
     const feedbackText = feedback === trigger || !trigger ? feedback : `${trigger}\n当前：${feedback || this.label(value.state)}`;
     this.$("[data-continuation-feedback]").textContent = value.state === "completed" && feedbackText ? `此前反馈：${feedbackText}` : feedbackText;
@@ -89,12 +89,16 @@ class OperationContinuationView {
     const reconciling = value.state === "needs_reconciliation" || entityStatus === "publish_uncertain";
     this.$("[data-continuation-note]").textContent = dirty ? reconciling ? "核对将读取平台结果，保留本地编辑。" : "有未保存修改，保存后再继续处理。" : reconciling ? "平台结果尚待确认。" : value.state === "pending" ? "等待 Agent 处理，后续反馈会保留在下方。" : value.state === "deciding" ? "Agent 正在处理，修订与平台反馈会保留在下方。" : value.state === "checkpoint" ? "进度已保存，可在后续授权轮继续。" : "";
     if (awaitingRound && !dirty) this.$("[data-continuation-note]").textContent = "达到本轮资源上限，进度已保存，下一轮继续；可在运营设置调整。";
+    if (generation && !dirty) {
+      const notes = {invalid:"本次未形成有效完整候选，原始输出仅保留供检查。", awaiting_review:"完整候选及正文诊断已保留，等待人工审核。", deferred:"模型已决定暂缓本次行动。"};
+      if (notes[value.state]) this.$("[data-continuation-note]").textContent = notes[value.state];
+    }
     if (this.resumeError?.key === this.key && this.resumeError.state === value.state) this.$("[data-continuation-note]").textContent = this.resumeError.message;
     if (generation && !validTarget) this.$("[data-continuation-note]").textContent = value.can_resume ? "生成恢复入口尚未返回，请刷新后继续。" : "此记录保留供查看。";
     const resume = this.$("[data-continuation-resume]");
     resume.hidden = !value.can_resume || reconciling;
     resume.disabled = this.pending || dirty || !value.can_resume || reconciling || localId == null;
-    resume.textContent = this.pending ? "正在继续…" : "继续处理";
+    resume.textContent = this.pending ? "正在继续…" : generation && ["invalid", "awaiting_review", "deferred"].includes(value.state) ? "重新生成" : "继续处理";
     const reconcile = this.$("[data-continuation-reconcile]");
     reconcile.hidden = !reconciling;
     reconcile.disabled = this.pending;
@@ -146,9 +150,9 @@ class OperationContinuationView {
 class OperationRecoveryPolicyView {
   constructor(root, api, notify) {
     this.root = root; this.api = api; this.notify = notify; this.dirty = false; this.pending = false; this.loaded = false;
-    root.innerHTML = `<h3>反馈后的继续处理</h3><form data-recovery-policy class="actions"><label>每轮恢复次数<input name="max_recoveries" type="number" min="0" max="64" step="1" required disabled></label><button type="submit" disabled>保存恢复额度</button><button type="button" data-recovery-refresh>重新读取</button></form><p class="hint">评论、私信、动态与浏览共用。0 表示关闭自动恢复，已保存进度仍保留。</p><p data-recovery-state class="hint" role="status"></p>`;
+    root.innerHTML = `<form data-recovery-policy class="actions"><label>最多修订次数<input name="max_recoveries" type="number" min="0" max="64" step="1" required disabled></label><button type="submit" disabled>保存修订次数</button><button type="button" data-recovery-refresh>重新读取</button></form><p class="hint">仅用于平台明确拒绝后的正文修订；0 表示关闭自动修订，现有处理记录保留。</p><p data-recovery-state class="hint" role="status"></p>`;
     this.$ = selector => root.querySelector(selector);
-    this.$("input").oninput = () => {this.dirty = true; this.$("[data-recovery-state]").textContent = "恢复额度有未保存修改。";};
+    this.$("input").oninput = () => {this.dirty = true; this.$("[data-recovery-state]").textContent = "修订次数有未保存修改。";};
     this.$("[data-recovery-refresh]").onclick = () => this.load();
     this.$("form").onsubmit = event => {event.preventDefault(); this.save();};
   }
@@ -162,10 +166,10 @@ class OperationRecoveryPolicyView {
     this.pending = true; this.controls();
     try {
       const result = await this.api("/api/operations/recovery-policy");
-      if (!Number.isInteger(result.max_recoveries) || result.max_recoveries < 0 || result.max_recoveries > 64) throw new Error("恢复额度返回值无效，请重新读取。");
+      if (!Number.isInteger(result.max_recoveries) || result.max_recoveries < 0 || result.max_recoveries > 64) throw new Error("修订次数返回值无效，请重新读取。");
       this.loaded = true;
       if (!this.dirty) this.$("input").value = result.max_recoveries;
-      this.$("[data-recovery-state]").textContent = this.dirty ? "已读取当前设置，保留未保存修改。" : `已保存：每轮 ${result.max_recoveries} 次。`;
+      this.$("[data-recovery-state]").textContent = this.dirty ? "已读取当前设置，保留未保存修改。" : `已保存：最多修订 ${result.max_recoveries} 次。`;
     } catch (error) {this.$("[data-recovery-state]").textContent = `读取失败：${error.message}`;}
     finally {this.pending = false; this.controls();}
   }
@@ -177,7 +181,7 @@ class OperationRecoveryPolicyView {
     try {
       const result = await this.api("/api/operations/recovery-policy", {method:"PUT", body:{max_recoveries:count}});
       if (result.max_recoveries !== count) throw new Error("保存结果未确认，请重新读取设置。");
-      this.dirty = false; this.$("[data-recovery-state]").textContent = count ? `已保存：每轮最多恢复 ${count} 次。` : "已关闭自动恢复，现有检查点保留。";
+      this.dirty = false; this.$("[data-recovery-state]").textContent = count ? `已保存：最多修订 ${count} 次。` : "已关闭自动修订，现有处理记录保留。";
     } catch (error) {this.notify(error.message); this.$("[data-recovery-state]").textContent = error.message;}
     finally {this.pending = false; this.controls();}
   }

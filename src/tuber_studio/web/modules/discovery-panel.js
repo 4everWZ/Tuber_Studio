@@ -6,7 +6,7 @@ const states = {
   judging: "正在判断与写稿", publishing: "正在发送", reconciling: "正在查询原回执", finishing: "正在结束本轮",
   waiting: "轮间等待", blocked: "需要处理", stopping: "正在停止", emergency: "已紧急停止",
 };
-const roundStates = { completed: "已完成", partial: "部分完成", failed: "未完成", cancelled: "已停止", paused: "已暂停，进度保留", deferred_daily: "今日观看次数已用完" };
+const roundStates = { completed: "已完成", partial: "部分完成", failed: "未完成", invalid: "输出无效，诊断已保存", cancelled: "已停止", paused: "已暂停，进度保留", deferred_daily: "今日观看次数已用完" };
 const time = seconds => new Date(seconds * 1000).toLocaleString("zh-CN");
 
 function link(label, href) {

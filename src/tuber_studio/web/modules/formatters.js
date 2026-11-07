@@ -97,6 +97,12 @@
         return { label: "⚪ 已停止", className: "status-slate", priority: 12 };
       case "failed":
         return { label: "🔴 发生异常", className: "status-danger", priority: 13 };
+      case "invalid":
+        return { label: "生成无效", className: "status-danger", priority: 13 };
+      case "awaiting_review":
+        return { label: "候选待人工审核", className: "status-amber", priority: 1 };
+      case "deferred":
+        return { label: "本次已暂缓", className: "status-slate", priority: 9 };
       case "selected":
         return { label: "✨ 已生成互动", className: "status-blue", priority: 2 };
       case "viewed_without_comment":
@@ -175,6 +181,9 @@
       cancelled: "任务已停止；此历史记录未保存内容判断。", selected: "已生成回应；此历史记录未保存具体原因。",
       viewed_without_comment: "已看过且未生成回复；此历史记录未保存具体原因。",
       comments_checked: "已检查这条视频的新增评论。", deferred_daily: "程序进度：等待可用名额，当前进度已保留。",
+      invalid: "本次生成未形成有效完整候选；原始输出保留供检查。",
+      awaiting_review: "完整候选已保留，存在正文诊断，等待人工审核。",
+      deferred: "模型已决定暂缓本次行动。",
     };
     return stages[task.status] || "此历史记录未保存具体原因，可查看来源与处理详情。";
   }

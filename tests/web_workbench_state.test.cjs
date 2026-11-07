@@ -42,6 +42,44 @@ test("continuation displays zero token and call caps as unlimited without changi
   assert.match(get("[data-continuation-summary]").textContent, /恢复 0 \/ 0 次/);
 });
 
+test("terminal generation states show audit outcomes and require backend permission for explicit regeneration", async t => {
+  const { get, document } = dom(t);
+  const View = classic("continuation.js", "OperationContinuationView", document);
+  const view = Object.create(View.prototype);
+  Object.assign(view, { root: get("root"), $: get, element: () => get("element") });
+  const formatters = require("../src/tuber_studio/web/modules/formatters.js");
+  const { label } = await import("../src/tuber_studio/web/modules/workspace-display.js");
+  for (const state of ["invalid", "awaiting_review", "deferred"]) {
+    assert.notEqual(formatters.humanizeStatus(state).label, state);
+    assert.notEqual(label(state), state);
+    const value = { id: state, phase: "generation", state, can_resume: false, revisions: [],
+      resume_target: { channel: "comments", local_id: "generation:one" } };
+    view.render(value, { channel: "comments", localId: 1 });
+    assert.equal(get("[data-continuation-resume]").hidden, true);
+    assert.doesNotMatch(get("[data-continuation-summary]").textContent, /恢复|累计/);
+    assert.doesNotMatch(get("[data-continuation-note]").textContent, /Agent 正在|下一轮继续/);
+    view.render({ ...value, can_resume: true }, { channel: "comments", localId: 1 });
+    assert.equal(get("[data-continuation-resume]").hidden, false);
+    assert.equal(get("[data-continuation-resume]").disabled, false);
+    assert.equal(get("[data-continuation-resume]").textContent, "重新生成");
+  }
+  assert.match(formatters.humanizeTaskReason({ status: "invalid" }), /未形成有效完整候选/);
+  assert.match(formatters.humanizeTaskReason({ status: "awaiting_review" }), /等待人工审核/);
+});
+
+test("record refresh reads record collections while parent status stays with the workspace coordinator", async t => {
+  const { document } = dom(t);
+  const Panel = classic("automation.js", "AutomationPanel", document);
+  const panel = Object.create(Panel.prototype), calls = [];
+  Object.assign(panel, { root: { closest: () => null }, roundId: "one", tasks: [], rounds: [], intents: [], inbox: [],
+    api: async url => { calls.push(url); return url.includes("intents") ? [{kind:"reply_public"},{kind:"video_like"}] : []; },
+    workbench: { updateData(data) { assert.equal(data.intents.length, 1); } } });
+  await panel.refresh();
+  assert.equal(calls.length, 4);
+  assert.ok(!calls.includes("/api/automation"));
+  assert.ok(calls.includes("/api/automation/tasks?round_id=one"));
+});
+
 test("interactive controls bind once and preserve zero thresholds and unsaved rules", async t => {
   const { get, document, listeners } = dom(t);
   const UI = classic("interactive-games.js", "window.InteractiveGamesUI", document);
