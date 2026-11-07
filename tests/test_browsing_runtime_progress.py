@@ -54,9 +54,14 @@ async def test_prepared_task_stays_running_until_real_pause_then_resumes_same_ba
     assert browsing.store.one(
         "SELECT status FROM browsing_batch_items WHERE batch_id=? AND bvid=?",
         (restored["config"]["batch_id"], BV),
-    )["status"] == "completed"
+    )["status"] == "selected"
     assert browsing.store.one("SELECT id FROM browsing_tasks WHERE id=?", (task["id"],))
     assert browsing.repo.batches.get(restored)["state"] == "completed"
+    assert (await finished(browsing, automatic=True, interaction_only=True))["status"] == "completed"
+    assert browsing.store.one(
+        "SELECT status FROM browsing_batch_items WHERE batch_id=? AND bvid=?",
+        (restored["config"]["batch_id"], BV),
+    )["status"] == "completed"
     assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
 
 

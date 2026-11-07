@@ -313,10 +313,8 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
 
     first = await finished(browsing, automatic=True, video_only=True)
     assert not browsing.repo.video_retry(first, BV)
-    assert {task["status"] for task in browsing.tasks(round_id=first["id"])} == {
-        "selected",
-        "comments_checked",
-    }, [task["error"] for task in browsing.tasks(round_id=first["id"])]
+    assert {task["status"] for task in browsing.tasks(round_id=first["id"])} == {"selected"}
+    assert any(task.get("phase") == "comment_queue" for task in browsing.tasks(round_id=first["id"]))
     assert first["config"]["max_model_calls"] == 0
     assert first["budget"]["model_calls"] == 2
     assert [name for name, _ in browsing.runtime.llm.calls] == [
@@ -324,6 +322,9 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
         "ResponseDecision",
     ]
     assert len(browsing.adapter.sent) == 1
+    replies = await finished(browsing, automatic=True, interaction_only=True)
+    assert replies["status"] == "completed"
+    assert {task["status"] for task in browsing.tasks(round_id=replies["id"])} == {"comments_checked"}
 
 
 async def test_video_preview_leaves_authorized_inbox_to_its_own_round(browsing, monkeypatch):
@@ -553,7 +554,8 @@ async def test_background_discovery_publishes_top_level_and_thread_replies(brows
     assert {row["bvid"] for row in browsing.tasks() if row["status"] == "selected"} == {BV, second_video}
     assert all(row["status"] == "published" and row["auto_authorized"] for row in browsing.intents())
     assert not browsing.operations.policy()["enabled"]
-    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "502", "0"]
+    assert sorted(target["parent"] for target, _ in browsing.adapter.sent) == ["0", "0", "502"]
+    assert browsing.adapter.sent[0][0]["parent"] == "0"
     assert browsing.discovery.status()["state"] == "off"
     activity = browsing.discovery.records(recent=True)["activity"]
     assert {item["kind"] for item in activity if item["status"] == "published"} == {
@@ -1420,6 +1422,7 @@ async def test_revisited_video_replies_to_new_comments_without_another_main_repl
     browsing.adapter.read_video_reply = read_reply
     await browsing._current_account()
     await finished(browsing, automatic=True, video_only=True)
+    await finished(browsing, automatic=True, interaction_only=True)
     browsing.store.save_character(browsing.runtime.character)
     for value in browsing.store.all("SELECT path FROM browsing_materials"):
         from pathlib import Path
@@ -1431,6 +1434,7 @@ async def test_revisited_video_replies_to_new_comments_without_another_main_repl
         {"enabled": True}, account_id="100", character=browsing.runtime.character
     )
     await finished(browsing, automatic=True, video_only=True)
+    await finished(browsing, automatic=True, interaction_only=True)
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "501", "502"]
     assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
     assert len([name for name, _ in browsing.runtime.llm.calls if name == "ResponseDecision"]) == 3

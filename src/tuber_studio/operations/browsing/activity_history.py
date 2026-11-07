@@ -10,6 +10,10 @@ from ...message_outreach import contact_state
 from .quotas import publication_time
 
 _AUTO = "r.preview=0 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)"
+_QUEUED_REPLY = (
+    "r.preview=0 AND EXISTS(SELECT 1 FROM browsing_tasks q WHERE q.round_id=i.round_id "
+    "AND q.bvid=json_extract(i.target,'$.bvid') AND json_type(q.payload,'$.comment_batch_ids')='array')"
+)
 _TASK_RESULT = "(t.status NOT IN ('discovered','claimed','preparing','cancelled','queued','paused') OR t.material_key IS NOT NULL)"
 _SUCCESS = {"selected", "viewed_without_comment", "comments_checked"}
 _REASONS = {
@@ -72,7 +76,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
         "json_extract(t.payload,'$.reason') AS decision_reason,json_extract(t.payload,'$.sources') AS sources "
         "FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
         "WHERE r.account_id=? AND r.character_id=? AND "
-        + _AUTO
+        + "(" + _AUTO + " OR (r.preview=0 AND json_type(t.payload,'$.comment_batch_ids')='array'))"
         + " AND "
         + _TASK_RESULT
         + " AND t.updated_at>=?",
@@ -91,7 +95,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
     )
     intents = store.all(
         "SELECT i.id,i.kind,i.status,i.text,i.error,i.receipt,i.reason,i.target,i.updated_at,i.round_id,"
-        "CASE WHEN " + _AUTO + " THEN 1 ELSE 0 END AS automatic_video "
+        "CASE WHEN (" + _AUTO + " OR (" + _QUEUED_REPLY + ")) THEN 1 ELSE 0 END AS automatic_video "
         "FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id "
         "WHERE i.account_id=? AND i.character_id=? AND i.kind IN ('top_level','reply_public')",
         scope,
@@ -161,7 +165,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
         result["status"] = {
             "skip": "skipped",
             "later": "later",
-            "comments": "comments_checked",
+            "comments": "comments_checked" if item["status"] == "completed" else item["status"],
             "watch": "selected",
         }.get(choice.get("action"), "selected")
         result["_result_at"] = item["decided_at"]

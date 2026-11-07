@@ -133,7 +133,7 @@ class BrowsingRepository:
                     "SELECT r.* FROM browsing_rounds r JOIN browsing_batches b ON b.round_id=r.id "
                     "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
                     "AND r.status IN ('paused','failed','partial','completed') AND (b.state<>'completed' OR "
-                    "EXISTS(SELECT 1 FROM browsing_batch_items i WHERE i.batch_id=b.id AND i.status='daily_wait' "
+                    "EXISTS(SELECT 1 FROM browsing_batch_items i WHERE i.batch_id=b.id AND i.kind<>'comment_visit' AND i.status='daily_wait' "
                     "AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
                     "AND json_extract(r.config,'$.autonomous_batch')=1 "
                     "AND COALESCE(json_extract(r.config,'$.discovery_publish'),0)=0 "
@@ -272,6 +272,7 @@ class BrowsingRepository:
                 "sources",
                 "task_kind",
                 "selection",
+                "comment_batch_ids",
             )
             if key in candidate
         }

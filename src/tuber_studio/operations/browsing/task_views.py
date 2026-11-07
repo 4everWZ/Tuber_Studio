@@ -14,7 +14,9 @@ def selection_tasks(store, *, status=None, round_id=None, task_id=None):
         "SELECT i.*,b.round_id,b.updated_at,r.account_id,r.character_id,r.character_version,r.created_at "
         "FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id "
         "JOIN browsing_rounds r ON r.id=b.round_id "
-        "WHERE i.task_id IS NULL AND i.status IN ('skipped','later') ORDER BY b.updated_at DESC LIMIT 100"
+        "WHERE i.task_id IS NULL AND (i.status IN ('skipped','later') OR "
+        "(i.kind='comment_visit' AND i.status IN ('selected','paused','failed','daily_wait'))) "
+        "ORDER BY b.updated_at DESC LIMIT 100"
     ):
         if (
             round_id is None
@@ -51,6 +53,7 @@ def selection_tasks(store, *, status=None, round_id=None, task_id=None):
                 "round_id": row["round_id"],
                 "bvid": row["bvid"],
                 "status": row["status"],
+                "error": row["error"],
                 "account_id": row["account_id"],
                 "character_id": row["character_id"],
                 "character_version": row["character_version"],
@@ -58,8 +61,9 @@ def selection_tasks(store, *, status=None, round_id=None, task_id=None):
                 "updated_at": row["updated_at"],
                 "autonomous": True,
                 "cache_status": "not_prepared",
-                "phase": "title_selection",
-                "reason": choice.get("explanation") or "本批标题筛选已保存，未开始观看",
+                "task_kind": row["kind"],
+                "phase": "comment_queue" if row["kind"] == "comment_visit" else "title_selection",
+                "reason": choice.get("explanation") or ("评论回访已排队" if row["kind"] == "comment_visit" else "本批标题筛选已保存，未开始观看"),
             }
         )
     return items
@@ -75,7 +79,7 @@ def tasks(browsing, status=None, *, round_id=None, task_id=None):
     args = tuple(value for _, value in filters)
     rows = browsing.store.all(
         "SELECT t.*,r.account_id,r.character_id,r.character_version,"
-        "(COALESCE(json_extract(r.config,'$.autonomous_batch'),0) OR "
+        "(json_type(t.payload,'$.comment_batch_ids')='array' OR COALESCE(json_extract(r.config,'$.autonomous_batch'),0) OR "
         "COALESCE(json_extract(r.config,'$.discovery_publish'),0)) AS autonomous "
         "FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id"
         + where

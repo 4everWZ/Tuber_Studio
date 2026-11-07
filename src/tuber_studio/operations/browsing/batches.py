@@ -217,9 +217,9 @@ class BrowsingBatches:
             ),
         )
 
-    def task(self, row, bvid, task_id):
-        identity = row["config"].get("batch_id")
-        if identity:
+    def task(self, row, bvid, task_id, *, batch_ids=None):
+        identities = batch_ids if batch_ids is not None else [row["config"].get("batch_id")]
+        for identity in filter(None, identities):
             self.store.execute(
                 "UPDATE browsing_batch_items SET task_id=?,status='running' WHERE batch_id=? AND bvid=?",
                 (task_id, identity, bvid),
@@ -239,6 +239,31 @@ class BrowsingBatches:
         )
         return candidate
 
+    def pending_comment_visits(self, row):
+        """Read a bounded reply-lane snapshot; original items remain the durable queue."""
+        items = self.store.all(
+            "SELECT i.* FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id "
+            "JOIN browsing_rounds r ON r.id=b.round_id "
+            "LEFT JOIN browsing_tasks t ON t.id=i.task_id "
+            "LEFT JOIN browsing_rounds owner ON owner.id=t.round_id "
+            "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
+            "AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=? "
+            "AND r.preview=? AND i.kind='comment_visit' "
+            "AND (i.status IN ('selected','running','paused','failed') OR "
+            "(i.status='daily_wait' AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
+            "AND (owner.id IS NULL OR owner.status NOT IN ('queued','running')) "
+            "ORDER BY b.created_at,i.position,i.bvid",
+            (row["account_id"], row["character_id"], row["character_version"],
+             row["config"].get("review_session_id", ""), int(row["preview"]), time.time()),
+        )
+        candidates = {}
+        for item in items:
+            candidate = candidates.setdefault(item["bvid"], json.loads(item["payload"]) | {
+                "task_kind": "comment_visit", "comment_batch_ids": [],
+            })
+            candidate["comment_batch_ids"].append(item["batch_id"])
+        return list(candidates.values())[:row["config"]["workers"]]
+
     def waiting_until(self, row, bvid):
         value = self.store.one(
             "SELECT MAX(json_extract(i.payload,'$.next_at')) AS next_at FROM browsing_batch_items i "
@@ -249,9 +274,11 @@ class BrowsingBatches:
         return value["next_at"] if value and value["next_at"] and value["next_at"] > time.time() else None
 
     def outcome(self, task_id, status, error=None, payload=None):
-        item = self.store.one("SELECT * FROM browsing_batch_items WHERE task_id=?", (task_id,))
-        if not item:
-            return
+        items = self.store.all("SELECT * FROM browsing_batch_items WHERE task_id=?", (task_id,))
+        for item in items:
+            self._item_outcome(item, task_id, status, error, payload)
+
+    def _item_outcome(self, item, task_id, status, error, payload):
         if status == "discovered":
             state = "selected"
         elif status in {"claimed", "preparing", "evidence_ready"}:
@@ -266,8 +293,8 @@ class BrowsingBatches:
         if payload:
             current |= payload
         self.store.execute(
-            "UPDATE browsing_batch_items SET status=?,error=?,payload=? WHERE task_id=?",
-            (state, error, dump(current), task_id),
+            "UPDATE browsing_batch_items SET status=?,error=?,payload=? WHERE batch_id=? AND bvid=?",
+            (state, error, dump(current), item["batch_id"], item["bvid"]),
         )
         if error:
             signature = hashlib.sha256(error.encode()).hexdigest()
@@ -282,7 +309,8 @@ class BrowsingBatches:
         if not identity:
             return False
         remaining = self.store.one(
-            "SELECT COUNT(*) AS n FROM browsing_batch_items WHERE batch_id=? AND status NOT IN ('completed','skipped','later','daily_wait')",
+            "SELECT COUNT(*) AS n FROM browsing_batch_items WHERE batch_id=? AND kind<>'comment_visit' "
+            "AND status NOT IN ('completed','skipped','later','daily_wait')",
             (identity,),
         )["n"]
         batch = self.get(row)
@@ -344,10 +372,12 @@ async def execute(browsing, row, notifications_only):
                 if row["config"].get("autonomous_batch"):
                     async with asyncio.TaskGroup() as group:
                         for candidate in candidates:
+                            if candidate.get("task_kind") == "comment_visit":
+                                browsing.interactions_changed.set()
+                                continue
                             group.create_task(
                                 browsing._process_discovery_video(row, candidate, metrics, semaphore)
                             )
-                    await browsing._finish_comment_visits(row)
                     status = "partial" if metrics["failures"] else "completed"
                     return
                 tasks = [browsing.repo.task(identity, c) for c in candidates]
@@ -371,7 +401,6 @@ async def execute(browsing, row, notifications_only):
                             operation_lane.reset(result_lane)
                 if poll_interactions:
                     await browsing._process_events(row, metrics)
-                await browsing._finish_comment_visits(row)
             status = "partial" if metrics["failures"] else "completed"
     except (asyncio.CancelledError, Exception) as error:
         stopping = not row["preview"] and not browsing.operations.policy()["enabled"]
@@ -385,11 +414,6 @@ async def execute(browsing, row, notifications_only):
             (task_error, identity),
         )
     finally:
-        children = browsing.comment_children.pop(identity, set())
-        for child in children:
-            if not child.done():
-                child.cancel()
-        await asyncio.gather(*children, return_exceptions=True)
         browsing.comment_windows.pop(identity, None)
         sampler.cancel()
         await asyncio.gather(sampler, return_exceptions=True)
@@ -404,6 +428,8 @@ async def execute(browsing, row, notifications_only):
         metrics["peak_rss_bytes"] = max(metrics["peak_rss_bytes"], psutil.Process().memory_info().rss)
         metrics = browsing.repo.round(identity)["metrics"] | metrics
         browsing.repo.finish_round(identity, status, metrics, round_error)
+        if row["config"].get("batch_id"):
+            browsing.interactions_changed.set()
         operation_lane.reset(lane)
         read_round.reset(token)
 
@@ -458,45 +484,45 @@ async def process_discovery_video(browsing, row, candidate, metrics, semaphore):
 async def defer_comment_visit(browsing, row, bvid, metrics):
     if not row["config"].get("batch_id"):
         return
-    key = (row["account_id"], row["character_id"], bvid)
-    existing = browsing.comment_active.get(key)
-    if existing and not existing.done():
-        return
     candidate = browsing.repo.batches.comment_visit(row, bvid)
-    if not candidate:
+    if candidate:
+        browsing.interactions_changed.set()
+
+
+async def process_comment_visits(browsing, row, metrics):
+    if not row["config"]["reply_enabled"]:
         return
-    task = asyncio.create_task(
-        browsing._process_discovery_video(row, candidate, metrics, asyncio.Semaphore(1))
-    )
-    browsing.comment_active[key] = task
-    browsing.comment_children.setdefault(row["id"], set()).add(task)
-    task.add_done_callback(
-        lambda done: (
-            browsing.comment_active.pop(key, None) if browsing.comment_active.get(key) is done else None
-        )
-    )
+    async def visit(candidate, key):
+        try:
+            await browsing._process_discovery_video(row, candidate, metrics, asyncio.Semaphore(1))
+        finally:
+            browsing.comment_active.pop(key, None)
 
-
-async def finish_comment_visits(browsing, row):
-    children = browsing.comment_children.get(row["id"], set())
-    if children:
-        await asyncio.gather(*children)
+    async with asyncio.TaskGroup() as group:
+        for candidate in browsing.repo.batches.pending_comment_visits(row):
+            key = (row["account_id"], row["character_id"], row["character_version"],
+                   row["config"].get("review_session_id", ""), candidate["bvid"])
+            if key not in browsing.comment_active:
+                browsing.comment_active[key] = group.create_task(visit(candidate, key))
 
 
 async def run_discovery_video(browsing, row, candidate, metrics):
     bvid = candidate["bvid"]
-    saved = browsing.repo.video_retry(row, bvid)
+    comment_batch_ids = candidate.get("comment_batch_ids")
+    saved = None if comment_batch_ids else browsing.repo.video_retry(row, bvid)
     failures = saved["failures"] if saved else 0
     error = saved["error"] if saved else None
     while failures < 3:
         browsing._check_round(row)
         identity = browsing.repo.task(row["id"], candidate)
+        if comment_batch_ids:
+            browsing.repo.batches.task(row, bvid, identity, batch_ids=comment_batch_ids)
         token = discovery_retry.set(
             {"bvid": bvid, "failures": failures, "error": error, "resume": bool(saved or failures)}
         )
         try:
             try:
-                if failures or saved or row["config"].get("batch_id"):
+                if failures or saved or row["config"].get("batch_id") or comment_batch_ids:
                     await browsing._resume_batch_publications(row, bvid)
             except (DailyReplyLimitReached, SendLimitReached) as failure:
                 payload = json.loads(
@@ -520,7 +546,10 @@ async def run_discovery_video(browsing, row, candidate, metrics):
                     "UPDATE browsing_tasks SET status='checkpoint',error=? WHERE id=?",
                     (public_error(failure), identity),
                 )
-                browsing.repo.defer_video(row, bvid, identity, failures)
+                if comment_batch_ids:
+                    browsing.repo.batches.outcome(identity, "checkpoint")
+                else:
+                    browsing.repo.defer_video(row, bvid, identity, failures)
                 return
             except Exception as failure:
                 metrics["failures"] += 1
@@ -538,6 +567,10 @@ async def run_discovery_video(browsing, row, candidate, metrics):
         task = browsing.store.one("SELECT status,error,payload FROM browsing_tasks WHERE id=?", (identity,))
         payload = json.loads(task["payload"])
         reason = payload.get("reason")
+        if comment_batch_ids:
+            # A deferred reply remains on its original queue, never the watch retry registry.
+            browsing.repo.batches.outcome(identity, task["status"], task["error"], payload)
+            return
         if payload.get("retry_kind") == "round_budget":
             browsing.repo.defer_video(row, bvid, identity, failures)
             return

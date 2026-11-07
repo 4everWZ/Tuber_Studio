@@ -40,7 +40,6 @@ class BrowsingService:
         self.evidence = BrowsingEvidence(runtime, self.adapter, self._read, visual)
         self.notifications = NotificationInbox(store, self._read, self.adapter)
         self.active = {}
-        self.comment_children = {}
         self.comment_active = {}
         self.comment_windows = {}
         self.loop = self.poller = None
@@ -603,9 +602,6 @@ class BrowsingService:
     async def defer_comment_visit(self, row, bvid, metrics):
         return await batches_tasks.defer_comment_visit(self, row, bvid, metrics)
 
-    async def _finish_comment_visits(self, row):
-        return await batches_tasks.finish_comment_visits(self, row)
-
     async def _run_discovery_video(self, row, candidate, metrics):
         return await batches_tasks.run_discovery_video(self, row, candidate, metrics)
 
@@ -769,7 +765,8 @@ class BrowsingService:
         )
 
     async def _run_interactions(self, row, metrics):
-        return await comment_reader_tasks.run_interactions(self, row, metrics)
+        await comment_reader_tasks.run_interactions(self, row, metrics)
+        await batches_tasks.process_comment_visits(self, row, metrics)
 
     async def _collect_own_comments(self, row):
         return await comment_reader_tasks.collect_own_comments(self, row)

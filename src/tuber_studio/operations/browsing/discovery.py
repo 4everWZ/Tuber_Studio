@@ -274,7 +274,9 @@ class BackgroundDiscovery:
             """SELECT i.id,i.kind,i.updated_at,i.text,json_extract(i.receipt,'$.rpid') AS receipt_id,
                       json_extract(i.target,'$.bvid') AS bvid
                FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id
-               WHERE (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1) AND i.status='published'
+               WHERE (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1
+                 OR EXISTS(SELECT 1 FROM browsing_tasks q WHERE q.round_id=i.round_id
+                   AND q.bvid=json_extract(i.target,'$.bvid') AND json_type(q.payload,'$.comment_batch_ids')='array')) AND i.status='published'
                AND r.account_id=? AND r.character_id=? AND r.character_version=?
                ORDER BY i.updated_at DESC LIMIT 30""",
             scope,
@@ -370,8 +372,8 @@ class BackgroundDiscovery:
     def activity(self, scope):
         activity = self.browsing.store.all(
             """WITH rounds AS (
-                   SELECT id FROM browsing_rounds WHERE account_id=? AND character_id=? AND character_version=?
-                   AND (json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1)
+                   SELECT id,(json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1) AS video_batch
+                   FROM browsing_rounds WHERE account_id=? AND character_id=? AND character_version=?
                ), tasks AS (
                    SELECT t.id,t.round_id,t.bvid,t.status,t.updated_at,t.created_at,
                           COALESCE(json_extract(t.payload,'$.metadata.title'),json_extract(t.payload,'$.title')) AS title,
@@ -382,6 +384,7 @@ class BackgroundDiscovery:
                           json_extract(t.payload,'$.retry_kind') AS retry_kind,
                           json_extract(t.payload,'$.consecutive_failures') AS failures
                    FROM browsing_tasks t JOIN rounds r ON r.id=t.round_id
+                   WHERE r.video_batch OR json_type(t.payload,'$.comment_batch_ids')='array'
                ), activity AS (
                SELECT t.id,t.round_id,t.bvid,t.title,t.status,t.updated_at,
                       'task' AS kind,NULL AS excerpt,t.reason,t.failures,NULL AS recipient_name,t.retry_kind
@@ -396,6 +399,7 @@ class BackgroundDiscovery:
                       json_extract(i.target,'$.recipient_name'),NULL
                FROM browsing_intents i JOIN rounds r ON r.id=i.round_id
                WHERE i.kind IN ('top_level','reply_public') AND i.status IN ('published','publish_uncertain','automatic_skipped')
+                 AND (r.video_batch OR EXISTS(SELECT 1 FROM tasks q WHERE q.round_id=i.round_id AND q.bvid=json_extract(i.target,'$.bvid')))
                ), ranked AS (
                    SELECT *,ROW_NUMBER() OVER (PARTITION BY (kind='task') ORDER BY updated_at DESC,id DESC) AS position
                    FROM activity
