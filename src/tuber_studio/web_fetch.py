@@ -9,8 +9,6 @@ from html.parser import HTMLParser
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from .operation_text import source_alias_literals
-
 FETCH_TIMEOUT = 3.0
 MAX_DOWNLOAD = 128 * 1024
 MAX_EXCERPT = 720
@@ -77,10 +75,6 @@ class OperationWebFetch:
             self.receipt = {k: v for k, v in result.items() if k != "excerpt"} | {
                 "elapsed_ms": round((time.monotonic() - started) * 1000)
             }
-            if result["status"] == "ok":
-                self.receipt["source_alias_literals"] = sorted(set().union(*(
-                    source_alias_literals(result.get(key) or "") for key in ("url", "title", "excerpt")
-                )))
             self.guard()
             if result["status"] == "ok":
                 excerpt = result["excerpt"].replace("<", "\\u003c").replace(">", "\\u003e")

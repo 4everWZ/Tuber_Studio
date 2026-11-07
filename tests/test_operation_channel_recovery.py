@@ -7,7 +7,7 @@ import pytest
 from test_direct_messages import messages as messages
 from test_operation_generation import model_for
 
-from tuber_studio.operation_generation import GenerationDeferred
+from tuber_studio.operation_generation import GenerationInvalid
 
 
 def source_for(messages):
@@ -35,7 +35,7 @@ async def classify(messages, source, event):
         )
 
 
-async def test_classifier_repairs_schema_and_reuses_decision_before_context_prepare(messages, monkeypatch):
+async def test_invalid_classifier_requires_explicit_resume_and_reuses_completed_decision(messages, monkeypatch):
     requests, generated, _ = await model_for(
         messages.runtime,
         messages.settings,
@@ -44,21 +44,35 @@ async def test_classifier_repairs_schema_and_reuses_decision_before_context_prep
     )
     messages.runtime.context.provider = messages.runtime.llm
     source, event = source_for(messages)
+    with pytest.raises(GenerationInvalid) as captured:
+        await classify(messages, source, event)
+    coordinator = messages.runtime.continuations
+    saved = coordinator.get(captured.value.continuation["id"])
+    assert saved["state"] == "invalid" and saved["current_output"] is None
+    assert len(generated) == 1
+    count = len(requests)
+    with pytest.raises(GenerationInvalid):
+        await classify(messages, source, event)
+    assert len(requests) == count
+    coordinator.resume(saved["id"], binding=saved["binding"])
     assert await classify(messages, source, event) is None
-    assert len(generated) == 2 and len(requests) == 7  # context count, then three count/generation pairs
+    updated = coordinator.get(saved["id"])
+    assert updated["state"] == "completed" and updated["episode"] != saved["episode"]
+    assert len(generated) == 2
     assert all(request["chat_template_kwargs"]["enable_thinking"] is True for request in requests)
     assert all(request["max_tokens"] in {1, messages.policy()["channel_max_tokens"]} for request in requests)
-    assert "回复渠道与理由分类不一致" in json.dumps(requests, ensure_ascii=False)
+    assert "回复渠道与理由分类不一致" in json.dumps(saved, ensure_ascii=False)
 
     async def no_prepare(*args, **kwargs):
         raise AssertionError("completed classification must precede context preparation")
 
     monkeypatch.setattr(messages.runtime.context, "prepare", no_prepare)
-    assert await classify(messages, source, event) is None and len(requests) == 7
+    count = len(requests)
+    assert await classify(messages, source, event) is None and len(requests) == count
     assert not messages.store.all("SELECT * FROM dm_drafts") and not messages.adapter.sent
 
 
-async def test_classifier_length_checkpoint_uses_comment_resume_source_and_no_duplicate_private_handoff(
+async def test_classifier_length_invalid_keeps_comment_source_and_explicit_resume_is_idempotent(
     messages, monkeypatch
 ):
     requests, generated, _ = await model_for(
@@ -71,10 +85,10 @@ async def test_classifier_length_checkpoint_uses_comment_resume_source_and_no_du
     )
     messages.runtime.context.provider = messages.runtime.llm
     source, event = source_for(messages)
-    with pytest.raises(GenerationDeferred) as captured:
+    with pytest.raises(GenerationInvalid) as captured:
         await classify(messages, source, event)
     saved = messages.runtime.continuations.get(captured.value.continuation["id"])
-    assert saved["state"] == "waiting" and len(generated) == 1
+    assert saved["state"] == "invalid" and len(generated) == 1
     assert not messages.store.all("SELECT * FROM dm_drafts")
     assert any(
         step["phase"] == "source_view"
@@ -95,14 +109,22 @@ async def test_classifier_length_checkpoint_uses_comment_resume_source_and_no_du
         decision="revise",
     )
     messages.runtime.context.provider = messages.runtime.llm
+    with pytest.raises(GenerationInvalid):
+        await classify(messages, source, event)
+    assert not resumed_generated
+    messages.runtime.continuations.resume(saved["id"], binding=saved["binding"])
     first = await classify(messages, source, event)
     assert first and await classify(messages, source, event) == first
     assert len(messages.store.all("SELECT * FROM dm_drafts")) == 1 and not messages.adapter.sent
     assert len(generated) == 1 and len(resumed_generated) == 1 and saved["original_output"] is not None
-    assert len(requests) == 5 and len(resumed_requests) == 5
+    updated = messages.runtime.continuations.get(saved["id"])
+    assert updated["state"] == "completed" and updated["episode"] != saved["episode"]
+    assert len(requests) == 3 and len(resumed_requests) == 3
+    draft = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (first,))
+    assert draft["source_id"] == source["id"] and draft["platform_user_id"] == "123"
 
 
-async def test_failed_classifier_checkpoint_is_exposed_and_resumable_via_original_comment(messages):
+async def test_invalid_classifier_resumes_via_original_comment_and_generates_public_review_draft(messages):
     requests, _, _ = await model_for(
         messages.runtime,
         messages.settings,
@@ -112,12 +134,22 @@ async def test_failed_classifier_checkpoint_is_exposed_and_resumable_via_origina
     )
     messages.runtime.context.provider = messages.runtime.llm
     source, _ = source_for(messages)
-    with pytest.raises(GenerationDeferred):
+    with pytest.raises(GenerationInvalid):
         await asyncio.wait_for(
             messages.comments._process_comment(source, messages.runtime.character, False), 3
         )
     saved = messages.store.one("SELECT * FROM comments WHERE id=?", (source["id"],))
     assert saved["generation_continuation_id"]
+    coordinator = messages.runtime.continuations
+    before = coordinator.get(saved["generation_continuation_id"])
+    assert before["state"] == "invalid"
+    fresh_requests, fresh_generated, _ = await model_for(
+        messages.runtime,
+        messages.settings,
+        first={"channel": "comment", "reason": "public_topic"},
+        corrected={"spoken_text": "先在这层继续聊刚才那件事吧。", "reply_to": [messages.comments._comment_event(source)["event_id"]]},
+    )
+    messages.runtime.context.provider = messages.runtime.llm
     count = len(requests)
     queued = await messages.comments.resume_continuation(
         "generation:" + str(source["id"]), saved["generation_continuation_id"]
@@ -126,6 +158,17 @@ async def test_failed_classifier_checkpoint_is_exposed_and_resumable_via_origina
         queued["status"] == "pending" and queued["continuation"]["id"] == saved["generation_continuation_id"]
     )
     assert len(requests) == count and not messages.store.all("SELECT * FROM dm_drafts")
+    messages.comments.worker = asyncio.create_task(messages.comments._worker())
+    await asyncio.wait_for(messages.comments.queue.join(), 3)
+    task = messages.store.one("SELECT * FROM comment_tasks WHERE id=?", (queued["task_id"],))
+    assert task["status"] == "completed", task
+    draft = messages.store.one("SELECT * FROM drafts WHERE comment_id=?", (source["id"],))
+    assert draft["status"] == "pending_review" and draft["text"] == "先在这层继续聊刚才那件事吧。"
+    assert draft["comment_id"] == source["id"] and draft["receipt"] is None
+    after = coordinator.get(saved["generation_continuation_id"])
+    assert after["state"] == "completed" and after["episode"] != before["episode"]
+    assert len(fresh_generated) == 2 and fresh_requests
+    assert not messages.store.all("SELECT * FROM dm_drafts") and not messages.adapter.sent
 
 
 async def test_classifier_cannot_rebind_recipient_after_await(messages, monkeypatch):

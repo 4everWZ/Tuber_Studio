@@ -1,8 +1,7 @@
-"""Real HTTP-provider feedback repairs machine fields, preserving free OC prose."""
+"""Single generation attempts retain invalid output and validated review candidates."""
 
 import asyncio
 import json
-from contextlib import nullcontext
 
 import httpx
 import pytest
@@ -11,7 +10,7 @@ from tuber_studio import web_fetch
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.models import OperationReply
-from tuber_studio.operation_generation import GenerationDeferred, generate_with_recovery
+from tuber_studio.operation_generation import GenerationInvalid, generate_with_recovery
 from tuber_studio.operation_text import operation_output_diagnostics
 from tuber_studio.operations.browsing.models import BrowsingPolicy, ResponseDecision
 
@@ -133,6 +132,7 @@ async def generate(runtime, *, diagnose=None, parent=None):
                 channel="test-generation",
                 identity="one-source",
                 binding={
+                    "task": "generation",
                     "account_id": "100",
                     "character": {"id": runtime.character["id"], "version": runtime.character["version"]},
                     "source": {"event_id": "source-event"},
@@ -144,110 +144,98 @@ async def generate(runtime, *, diagnose=None, parent=None):
                 max_tokens=8192,
                 guard=lambda: True,
                 diagnose=diagnose,
-                generation_context=nullcontext,
                 parent_round_id=parent,
             ),
             timeout=2,
         )
 
 
-async def test_invalid_reply_target_is_returned_to_agent_then_repaired(runtime, settings):
+async def test_invalid_reply_target_terminates_once_and_keeps_bound_original(runtime, settings):
     first = {"spoken_text": "本鱼听到了。", "reply_to": ["outside-event"]}
-    requests, generated, corrected = await model_for(runtime, settings, first=first)
-    reply, continuation = await generate(runtime)
-    assert reply.spoken_text == corrected["spoken_text"] and reply.reply_to == ["source-event"]
+    requests, generated, _ = await model_for(runtime, settings, first=first)
+    with pytest.raises(GenerationInvalid):
+        await generate(runtime)
     row = runtime.continuations.find("test-generation", "one-source")
-    original = (
-        json.loads(row["original_output"])
-        if isinstance(row["original_output"], str)
-        else row["original_output"]
-    )
+    original = json.loads(row["original_output"]) if isinstance(row["original_output"], str) else row["original_output"]
     assert original == first and row["binding"]["source"]["event_id"] == "source-event"
-    assert row["state"] == "completed" and row["recoveries"] == 1 and continuation
-    assert len(generated) == 2 and len(requests) == 6
-    retry_messages = [message["content"] for body in requests[2:] for message in body["messages"]]
-    assert any("outside-event" in text and "reply_to" in text for text in retry_messages)
-    assert row["budget"] == {"model_calls": 6, "input_tokens": 1200, "output_tokens": 63}
+    assert row["state"] == "invalid" and row["recoveries"] == 0 and row["can_resume"]
+    assert len(generated) == 1 and len(requests) == 2
+    with pytest.raises(GenerationInvalid):
+        await generate(runtime)
+    assert len(requests) == 2
+    assert row["budget"] == {"model_calls": 2, "input_tokens": 400, "output_tokens": 21}
     assert all(body["chat_template_kwargs"]["enable_thinking"] is True for body in requests)
 
 
-async def test_parseable_length_result_is_not_adopted_as_a_finished_reply(runtime, settings):
+async def test_parseable_length_result_is_invalid_without_a_repair_call(runtime, settings):
     first = {"spoken_text": "本鱼想把这锅白饭的故事慢慢讲给你听。", "reply_to": ["source-event"]}
-    requests, generated, corrected = await model_for(runtime, settings, first=first, first_finish="length")
-    reply, _ = await generate(runtime)
-    row = runtime.continuations.find("test-generation", "one-source")
-    assert reply.spoken_text == corrected["spoken_text"] and len(generated) == 2
-    assert json.loads(row["original_output"])["spoken_text"] == first["spoken_text"]
-    assert any(
-        "finish_reason=length" in message["content"] for body in requests[2:] for message in body["messages"]
-    )
-
-
-async def test_two_output_limits_checkpoint_even_when_the_partial_text_changes(runtime, settings):
-    first = {"spoken_text": "刚蒸好的那锅饭……", "reply_to": ["source-event"]}
-    _, generated, corrected = await model_for(
-        runtime, settings, first=first, first_finish="length", corrected_finish="length"
-    )
-    with pytest.raises(GenerationDeferred, match="修订后仍无进展") as failure:
+    requests, generated, _ = await model_for(runtime, settings, first=first, first_finish="length")
+    with pytest.raises(GenerationInvalid) as failure:
         await generate(runtime)
     row = runtime.continuations.find("test-generation", "one-source")
-    assert generated == [first, corrected]
-    assert row["state"] == "checkpoint" and row["recoveries"] == 1 and row["current_output"] is None
+    assert len(generated) == 1 and len(requests) == 2
+    assert json.loads(row["original_output"])["spoken_text"] == first["spoken_text"]
+    assert row["current_output"] is None and row["state"] == "invalid"
     assert failure.value.continuation["feedback"]["kind"] == "output_limit"
 
 
-async def test_revision_that_repeats_the_same_loop_checkpoints(runtime, settings):
+async def test_only_explicit_resume_starts_one_new_episode_after_invalid(runtime, settings):
+    first = {"spoken_text": "刚蒸好的那锅饭……", "reply_to": ["source-event"]}
+    requests, generated, corrected = await model_for(runtime, settings, first=first, first_finish="length")
+    with pytest.raises(GenerationInvalid):
+        await generate(runtime)
+    original = runtime.continuations.find("test-generation", "one-source")
+    with pytest.raises(GenerationInvalid):
+        await generate(runtime)
+    assert len(generated) == 1
+    runtime.continuations.resume(original["id"], binding=original["binding"])
+    reply, _ = await generate(runtime)
+    row = runtime.continuations.find("test-generation", "one-source")
+    assert reply.spoken_text == corrected["spoken_text"] and generated == [first, corrected]
+    assert row["state"] == "completed" and row["episode"] != original["episode"]
+    assert len(row["revisions"]) > len(original["revisions"]) and len(requests) == 3
+    assert not any(step["phase"] == "decision" for step in row["revisions"])
+
+
+async def test_repetitive_valid_reply_is_retained_for_review_without_model_revision(runtime, settings):
     text = "选默认配置，选默认配置，选默认配置。"
     repeated = {"spoken_text": text, "reply_to": ["source-event"]}
-    _, generated, _ = await model_for(runtime, settings, first=repeated, corrected=repeated)
+    requests, generated, _ = await model_for(runtime, settings, first=repeated, corrected=repeated)
 
     def diagnose(value):
-        return (
-            "正文出现连续短语循环"
-            if operation_output_diagnostics(value.spoken_text)["needs_review"]
-            else None
-        )
+        return "正文出现连续短语循环" if operation_output_diagnostics(value.spoken_text)["needs_review"] else None
 
-    with pytest.raises(GenerationDeferred, match="修订后仍无进展"):
-        await generate(runtime, diagnose=diagnose)
+    reply, continuation = await generate(runtime, diagnose=diagnose)
     row = runtime.continuations.find("test-generation", "one-source")
-    assert generated == [repeated, repeated]
-    assert row["state"] == "checkpoint" and row["recoveries"] == 1
-    assert row["current_output"]["spoken_text"] == text
+    assert reply.spoken_text == text and generated == [repeated] and len(requests) == 2
+    assert row["state"] == continuation["state"] == "awaiting_review" and not row["can_resume"]
+    assert row["current_output"]["spoken_text"] == text and row["recoveries"] == 0
+    await generate(runtime, diagnose=diagnose)
+    assert len(requests) == 2
 
 
-async def test_agent_may_keep_valid_intentional_style_without_regenerating(runtime, settings):
+async def test_complete_intentional_style_stays_reviewable_without_an_agent_keep_call(runtime, settings):
     assert operation_output_diagnostics("鱼鱼、本鱼、鲸鱼——都听到啦。")["needs_review"] is False
     chorus = "海面把月光轻轻摇进碗里，鱼鱼守着暖呼呼的小屋，等晚归的朋友一起把今天的故事讲完。" * 3
     first = {"spoken_text": "\n".join([chorus] * 40), "reply_to": ["source-event"]}
     requests, generated, _ = await model_for(runtime, settings, first=first, decision="keep")
-
-    def diagnose(value):
-        return (
-            "长段重复，确认是否为有意的叙事反复"
-            if operation_output_diagnostics(value.spoken_text)["needs_review"]
-            else None
-        )
-
-    reply, _ = await generate(runtime, diagnose=diagnose)
-    assert reply.spoken_text == first["spoken_text"] and len(generated) == 1 and len(requests) == 4
+    reply, _ = await generate(runtime, diagnose=lambda value: "长段重复，保留人工审核")
+    assert reply.spoken_text == first["spoken_text"] and len(generated) == 1 and len(requests) == 2
     row = runtime.continuations.find("test-generation", "one-source")
-    assert row["state"] == "completed" and row["trigger_feedback"]["kind"] == "style_diagnostic"
-    assert any(step["action"] == "keep" for step in row["revisions"])
+    assert row["state"] == "awaiting_review" and row["trigger_feedback"]["kind"] == "style_diagnostic"
+    assert not any(step["phase"] == "decision" for step in row["revisions"])
 
 
-async def test_parent_meter_counts_actual_probe_and_generation_once(runtime, settings):
-    requests, _, _ = await model_for(
-        runtime, settings, first={"spoken_text": "本鱼接住。", "reply_to": ["wrong"]}
-    )
+async def test_parent_meter_counts_one_probe_and_one_invalid_generation(runtime, settings):
+    requests, _, _ = await model_for(runtime, settings, first={"spoken_text": "本鱼接住。", "reply_to": ["wrong"]})
     config = BrowsingPolicy(max_model_calls=6, max_input_tokens=1048576, max_output_tokens=65536).model_dump()
     parent, _ = runtime.browsing_repository.create_round("100", runtime.character, config, 0, True)
     with GenerationMeter(runtime.browsing_repository, parent["id"]):
-        reply, _ = await generate(runtime, parent=parent["id"])
-    assert reply.reply_to == ["source-event"]
+        with pytest.raises(GenerationInvalid):
+            await generate(runtime, parent=parent["id"])
     saved = runtime.browsing_repository.round(parent["id"])
-    assert saved["budget"]["model_calls"] == len(requests) == 6
-    assert saved["budget"]["input_tokens"] == 1200 and saved["budget"]["output_tokens"] == 63
+    assert {key: saved["budget"][key] for key in ("model_calls", "input_tokens", "output_tokens")} == {"model_calls": 2, "input_tokens": 400, "output_tokens": 21}
+    assert len(requests) == 2
     row = runtime.continuations.find("test-generation", "one-source")
     own = runtime.store.one("SELECT budget FROM operation_continuation_budgets WHERE id=?", (row["id"],))
     assert json.loads(own["budget"])["model_calls"] == 0
@@ -262,21 +250,42 @@ async def test_transport_failure_preserves_checkpoint_without_rewrite_attempt(ru
     row = runtime.continuations.find("test-generation", "one-source")
     assert row["state"] == "checkpoint" and row["current_output"] is None
     assert not generated and len(requests) == 2
+    _, regenerated, _ = await model_for(runtime, settings)
+    reply, _ = await generate(runtime)
+    resumed = runtime.continuations.find("test-generation", "one-source")
+    assert reply.reply_to == ["source-event"] and len(regenerated) == 1
+    assert resumed["episode"] != row["episode"] and resumed["state"] == "completed"
+    assert len(resumed["revisions"]) > len(row["revisions"])
 
 
-async def test_invalid_evidence_is_repaired_then_bound_to_original_source(runtime, settings):
-    corrected = {
-        "action": "reply_public",
-        "text": "本鱼也想挪个软垫过来，慢慢听你说。",
-        "reason": "light_interaction",
-        "evidence_ids": ["e1"],
-    }
-    first = corrected | {"evidence_ids": ["e99"]}
-    requests, generated, _ = await model_for(runtime, settings, first=first, corrected=corrected)
+async def test_valid_model_wait_is_deferred_without_cross_parent_automatic_reconsideration(runtime, settings):
+    waiting = {"action": "wait", "reason": "cooldown", "explanation": "这条讨论先留待对方补充", "text": "", "evidence_ids": []}
+    requests, generated, _ = await model_for(runtime, settings, first=waiting, corrected=waiting)
+    binding = {"task": "generation", "account_id": "100", "source": {"comment_id": "601"}}
+
+    async def request(parent=None):
+        return await generate_with_recovery(runtime, channel="test-wait", identity="same-source", binding=binding,
+            character=runtime.character, messages=[{"role": "user", "content": "当前原讨论"}],
+            generate=lambda packet: runtime.llm.generate_json(packet, ResponseDecision.model_json_schema(), max_tokens=8192),
+            validate=ResponseDecision.model_validate, max_tokens=8192, guard=lambda: True, parent_round_id=parent)
+
+    value, record = await request()
+    assert value.action == "wait" and record["state"] == "deferred" and len(generated) == 1
+    parent, _ = runtime.browsing_repository.create_round("100", runtime.character, BrowsingPolicy().model_dump(), 0, True)
+    await request(parent["id"])
+    assert len(requests) == 2 and len(generated) == 1
+    saved = runtime.continuations.find("test-wait", "same-source")
+    runtime.continuations.resume(saved["id"], binding=saved["binding"], parent_round_id=parent["id"])
+    await request(parent["id"])
+    assert len(generated) == 2 and len(requests) == 3
+
+
+async def test_invalid_evidence_is_not_repaired_and_keeps_original_source_binding(runtime, settings):
+    first = {"action": "reply_public", "text": "本鱼也想挪个软垫过来，慢慢听你说。",
+             "reason": "light_interaction", "evidence_ids": ["e99"]}
+    requests, generated, _ = await model_for(runtime, settings, first=first)
     schema = ResponseDecision.model_json_schema()
-    schema["properties"]["evidence_ids"]["items"] = {"type": "string", "enum": ["e1"]}
-    original = "cid:123:part:0:segment:1"
-    binding = {"account_id": "100", "source": {"e1": original}, "target": {"parent": "200"}}
+    binding = {"task": "generation", "account_id": "100", "source": {"e1": "cid:123:part:0:segment:1"}, "target": {"parent": "200"}}
 
     def validate(value):
         decision = ResponseDecision.model_validate(value)
@@ -284,37 +293,12 @@ async def test_invalid_evidence_is_repaired_then_bound_to_original_source(runtim
             raise ValueError("引用不在当前已读资料中；本包提供e1")
         return decision
 
-    async with runtime.offline_generation():
-        result, _ = await asyncio.wait_for(
-            generate_with_recovery(
-                runtime,
-                channel="test-source-decision",
-                identity="source-1",
-                binding=binding,
-                character=runtime.character,
-                messages=[{"role": "user", "content": "[e1|00:15] 今天有点累，想找个软垫歇歇。"}],
-                generate=lambda messages: runtime.llm.generate_json(messages, schema, max_tokens=8192),
-                validate=validate,
-                max_tokens=8192,
-                guard=lambda: True,
-                generation_context=nullcontext,
-            ),
-            timeout=2,
-        )
-    bound = ResponseDecision.model_validate(
-        result.model_dump() | {"evidence_ids": [binding["source"][ref] for ref in result.evidence_ids]}
-    )
-    assert bound.evidence_ids == [original] and bound.text == corrected["text"]
+    with pytest.raises(GenerationInvalid):
+        await generate_with_recovery(runtime, channel="test-source-decision", identity="source-1", binding=binding,
+            character=runtime.character, messages=[{"role": "user", "content": "当前原资料"}],
+            generate=lambda packet: runtime.llm.generate_json(packet, schema, max_tokens=8192),
+            validate=validate, max_tokens=8192, guard=lambda: True)
     row = runtime.continuations.find("test-source-decision", "source-1")
-    assert {key: value for key, value in row["binding"].items() if key != "self_identity"} == binding
-    assert row["binding"]["self_identity"] == runtime.identity_snapshot(runtime.character, "100")
-    assert row["state"] == "completed"
-    from tuber_studio.operation_identity import captured_identity
-
-    assert all(captured_identity(request["messages"]) == row["binding"]["self_identity"] for request in requests)
-    assert len(generated) == 2 and len(requests) == 6
-    assert any(
-        "e99" in message["content"] and "e1" in message["content"]
-        for body in requests[2:]
-        for message in body["messages"]
-    )
+    assert row["state"] == "invalid" and {k: v for k, v in row["binding"].items() if k != "self_identity"} == binding
+    assert len(generated) == 1 and len(requests) == 2
+    assert row["current_output"] is None

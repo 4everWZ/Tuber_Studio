@@ -100,7 +100,7 @@ def working_record(row):
 
 class ContinuationDecision(StrictModel):
     action: Literal["revise", "keep", "wait", "abandon", "read_more"]
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: str = Field(min_length=1, max_length=1024)
     read: str = Field(default="", max_length=80)
 
 
@@ -136,32 +136,6 @@ class ContinuationResult:
 
 def visible_payload(value):
     return value.model_dump() if hasattr(value, "model_dump") else value
-
-
-def deferred_generation_decision(row):
-    """Return an explicit model deferral after repetition or output exhaustion."""
-    if not row or row.get("state") not in {"waiting", "abandoned"}:
-        return None
-    feedback = row.get("feedback") or {}
-    repeated = feedback.get("kind") == "style_diagnostic" and any(
-        word in feedback.get("message", "") for word in ("重复", "复读")
-    )
-    if not repeated and feedback.get("kind") != "output_limit":
-        return None
-    step = next(
-        (step for step in reversed(row.get("revisions", []))
-         if step.get("phase") == "decision" and step.get("status") == "completed"),
-        None,
-    )
-    decision = step.get("output") if step else None
-    if (
-        not isinstance(decision, dict)
-        or decision.get("action") not in {"wait", "abandon"}
-        or not isinstance(decision.get("reason"), str)
-        or not decision["reason"].strip()
-    ):
-        return None
-    return decision
 
 
 class ContinuationCoordinator:
@@ -247,6 +221,10 @@ class ContinuationCoordinator:
         row["can_resume"] |= row["state"] in {"pending", "deciding"} and (
             not row["owner"] or (row["lease_until"] or 0) <= time.time()
         )
+        if row["binding"].get("task") == "generation" or row["channel"].startswith("generation."):
+            row["can_resume"] |= row["state"] in {"invalid", "deferred"}
+            if row["state"] == "awaiting_review":
+                row["can_resume"] = False
         row["revisions"] = self.store.all(
             "SELECT * FROM operation_continuation_steps WHERE continuation_id=? ORDER BY id", (identity,)
         )
@@ -539,8 +517,9 @@ class ContinuationCoordinator:
     ):
         """All model callbacks must use the task's real generation meter and lock.
 
-        Only GenerationFeedback is retried. Transport/authorization/programming
-        exceptions are not silently converted into another platform submission.
+        Initial generation is one attempt; model feedback leaves a diagnostic
+        or review candidate. Publication feedback may request one revision, but
+        an invalid decision/revision never starts another repair loop.
         """
         owner = str(uuid4())
         candidate = original_value
@@ -571,8 +550,10 @@ class ContinuationCoordinator:
                         value = await self._bounded(row, initial, row)
                     await self._guard_current(identity, owner, guard)
                     self._step(row, "initial_generation", "completed", output=value)
-                    self._state(identity, "completed", output=value, owner=owner)
-                    return ContinuationResult("completed", value, identity)
+                    action = value.get("action") if isinstance(value, dict) else getattr(value, "action", None)
+                    state = "deferred" if action == "wait" else "completed"
+                    self._state(identity, state, output=value, owner=owner)
+                    return ContinuationResult(state, value, identity)
                 except GenerationFeedback as error:
                     feedback = {"kind": error.kind, "message": str(error)}
                     self._step(row, "feedback", "received", output=error.original_output, feedback=feedback)
@@ -581,7 +562,9 @@ class ContinuationCoordinator:
                         (dump(visible_payload(error.original_output)), identity, owner),
                     )
                     candidate = error.accepted_value
-                    self._state(identity, "pending", feedback=feedback, output=candidate, owner=owner)
+                    state = "awaiting_review" if candidate is not None else "invalid"
+                    self._state(identity, state, feedback=feedback, output=candidate, owner=owner)
+                    return ContinuationResult(state, candidate, identity)
                 except (ContextWindowExceeded, GenerationBudgetExceeded) as error:
                     self._state(
                         identity,
@@ -608,7 +591,6 @@ class ContinuationCoordinator:
                 )
                 token = continuation_context.set(row)
                 raw_decision = None
-                revising = False
                 try:
                     with model_scope() if model_scope else self.generation_scope(identity):
                         raw_decision = await self._bounded(row, decide, row)
@@ -655,7 +637,6 @@ class ContinuationCoordinator:
                             owner=owner,
                         )
                         continue
-                    revising = True
                     with model_scope() if model_scope else self.generation_scope(identity):
                         value = await self._bounded(row, revise, row, decision)
                     await self._guard_current(identity, owner, guard)
@@ -672,22 +653,9 @@ class ContinuationCoordinator:
                         feedback=feedback,
                     )
                     accepted = getattr(error, "accepted_value", None)
-                    same_style = (
-                        feedback["kind"] == "style_diagnostic"
-                        and feedback == row["feedback"]
-                        and accepted is not None
-                        and visible_payload(accepted) == visible_payload(candidate)
-                    )
-                    repeated_limit = feedback["kind"] == row["feedback"].get("kind") == "output_limit"
-                    if revising and (same_style or repeated_limit):
-                        feedback["message"] += "。修订后仍无进展，已暂停本轮自动恢复"
-                        self._state(identity, "checkpoint", feedback=feedback, output=accepted, owner=owner)
-                        return ContinuationResult("checkpoint", continuation_id=identity)
-                    if accepted is not None:
-                        if feedback["kind"] != "style_diagnostic":
-                            raise ValueError("只有正文诊断可保留已校验候选") from None
-                        candidate = accepted
-                    self._state(identity, "pending", feedback=feedback, output=accepted, owner=owner)
+                    state = "awaiting_review" if accepted is not None else "checkpoint"
+                    self._state(identity, state, feedback=feedback, output=accepted, owner=owner)
+                    return ContinuationResult(state, accepted, identity)
                 except (ContinuationCheckpoint, ContextWindowExceeded, GenerationBudgetExceeded) as error:
                     self._state(
                         identity,
@@ -736,23 +704,8 @@ class ContinuationCoordinator:
             budget_limits=budget_limits,
         )
 
-    def restart_generation(
-        self, identity, *, binding, parent_round_id=None, deadline=None, budget_limits=None,
-        restart_deferred=False,
-    ):
-        return self._new_episode(
-            identity,
-            binding=binding,
-            parent_round_id=parent_round_id,
-            deadline=deadline,
-            budget_limits=budget_limits,
-            restart_generation=True,
-            restart_deferred=restart_deferred,
-        )
-
     def _new_episode(
-        self, identity, *, binding, parent_round_id, deadline, budget_limits, restart_generation=False,
-        restart_deferred=False,
+        self, identity, *, binding, parent_round_id, deadline, budget_limits,
     ):
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
@@ -761,17 +714,8 @@ class ContinuationCoordinator:
                 raise ValueError("恢复时原始目标或来源已变化")
             if row["owner"] and (row["lease_until"] or 0) > time.time():
                 raise ValueError("恢复任务仍在处理")
-            if restart_generation:
-                reconsider = (
-                    restart_deferred and row["state"] == "waiting"
-                    and parent_round_id and row["parent_round_id"] != parent_round_id
-                    and deferred_generation_decision(row) is not None
-                )
-                if row["binding"].get("task") != "generation" or not (
-                    row["state"] in {"completed", "abandoned"} or reconsider
-                ):
-                    raise ValueError("只有新的生成请求可以重新开始已完成的生成任务")
-            elif not row["can_resume"] or row["state"] == "needs_reconciliation":
+            generation = row["binding"].get("task") == "generation" or row["channel"].startswith("generation.")
+            if (not row["can_resume"] and not (generation and row["state"] == "completed")) or row["state"] == "needs_reconciliation":
                 raise ValueError("当前恢复任务不可继续生成；未知发送须先核对平台")
             parent_round_id, deadline = self._parent_scope(parent_round_id, deadline)
             self.store.db.execute(
@@ -786,13 +730,13 @@ class ContinuationCoordinator:
                     identity,
                 ),
             )
-            if restart_generation:
+            if generation:
                 self.store.db.execute(
                     "UPDATE operation_continuations SET original_output=NULL,current_output=NULL,feedback=? WHERE id=?",
                     (dump({"kind": "generation_start"}), identity),
                 )
             updated = self.get(identity)
-            if restart_generation:
+            if generation:
                 self._step(updated, "feedback", "received", feedback={"kind": "generation_start"})
             self._step(
                 updated,
@@ -859,6 +803,8 @@ class ContinuationCoordinator:
             raise ValueError("恢复任务仍在处理")
         if automatic and row["manual_revision"]:
             raise ValueError("人工修订需人工发布，不复用自动授权")
+        if automatic and row["feedback"].get("kind") == "style_diagnostic":
+            raise ValueError("正文诊断尚待人工审核，不能签发自动修订提交")
         if (
             row["state"] != "awaiting_review"
             or row["trigger_feedback"].get("kind") != "platform_rejection"

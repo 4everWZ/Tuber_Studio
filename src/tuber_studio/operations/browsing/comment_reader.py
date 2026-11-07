@@ -38,7 +38,11 @@ class CommentProgress:
             self.identity(row, bvid, source),
         )
         if value and value["source_hash"] == content_hash(source):
-            decision = ResponseDecision.model_validate(json.loads(value["decision"]))
+            saved = json.loads(value["decision"])
+            generation = saved.pop("generation", {})
+            decision = ResponseDecision.model_validate(saved)
+            decision._generation_id = generation.get("id")
+            decision._generation_identity = generation.get("identity")
             # A deliberate wait remains eligible on the next visit.
             return decision if decision.action != "wait" else None
         return None
@@ -49,7 +53,9 @@ class CommentProgress:
             (
                 *self.identity(row, bvid, source),
                 content_hash(source),
-                dump(decision.model_dump()),
+                dump(decision.model_dump() | {"generation": {
+                    "id": decision._generation_id, "identity": decision._generation_identity,
+                }}),
                 time.time(),
             ),
         )
@@ -134,7 +140,8 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
             )
         browsing.repo.complete(
             identity, result["owner"], result["generation"],
-            "checkpoint" if continuation or deferred or isinstance(error, ContextWindowExceeded) else "failed",
+            "invalid" if continuation and continuation["state"] == "invalid"
+            else "checkpoint" if continuation or deferred or isinstance(error, ContextWindowExceeded) else "failed",
             payload | {
                 **({"generation_continuation_id": continuation["id"]} if continuation else {}),
                 **({"retry_kind": "round_budget"} if deferred else {}),
@@ -177,6 +184,8 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
     if event is None:
         public_thread["public_text"] = thread.get("public_text") or source["text"]
     evidence.update(public_source_thread=public_thread, origin_round_id=row["id"])
+    if reply._generation_id:
+        evidence["generation_continuation_id"] = reply._generation_id
     if event is not None:
         evidence["source_event"] = event
     if reply._generation_id:
@@ -305,11 +314,13 @@ async def process_event_batch(browsing, row, metrics, own_only):
                     "通知回应生成记录",
                 )
                 browsing.store.execute(
-                    "UPDATE browsing_events SET status='checkpoint',error=? WHERE id=?",
+                    "UPDATE browsing_events SET status=?,error=? WHERE id=?",
                     (
+                        "invalid" if continuation["state"] == "invalid" else "checkpoint",
                         dump(
                             {
-                                "message": "生成进度已保存，可继续",
+                                "message": "输出无效，保留原答供检查" if continuation["state"] == "invalid"
+                                else "生成进度已保存，可继续",
                                 "generation_continuation_id": error.continuation["id"],
                             }
                         ),

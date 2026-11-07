@@ -8,7 +8,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...operation_text import source_alias_literals
 from ...subtitle_presentation import (
     CitationBlock,
     SourcePart,
@@ -380,33 +379,12 @@ class ResponseReference:
         return json.loads(self.source_json) if self.source_json is not None else None
 
 
-_SOURCE_TEXT_FIELDS = {"text", "title", "description", "content", "public_text", "source_text", "quote", "url", "desc"}
-
-
-def _source_alias_literals(data):
-    pending, aliases = [data], set()
-    while pending:
-        value = pending.pop()
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if key in {"self_actor", "recent_public_responses", "source_identity"}:
-                    continue
-                if key in _SOURCE_TEXT_FIELDS and isinstance(child, str):
-                    aliases.update(source_alias_literals(child))
-                elif isinstance(child, (dict, list)):
-                    pending.append(child)
-        elif isinstance(value, list):
-            pending.extend(value)
-    return aliases
-
-
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
-    FORMAT_VERSION = "response-reference-lines-v6-bounded-reasons"
+    FORMAT_VERSION = "response-reference-lines-v7-ref-namespace"
 
     def __init__(self, data):
-        self._source_alias_literals = _source_alias_literals(data)
         records = deepcopy(data.get("evidence", []))
         canonical = {}
         for segment in records:
@@ -432,11 +410,11 @@ class ResponseDecisionInput:
 
         refs, number = [], 1
         for identity, segment in canonical.items():
-            while f"r{number}" in canonical:
+            while f"ref:{number}" in canonical:
                 number += 1
             refs.append(
                 ResponseReference(
-                    f"r{number}",
+                    f"ref:{number}",
                     identity,
                     json.dumps(segment, ensure_ascii=False) if segment is not None else None,
                 )
@@ -501,16 +479,6 @@ class ResponseDecisionInput:
     def format(self):
         return self._presentation
 
-    def include_web_fetch_receipt(self, receipt):
-        if receipt.get("status") != "ok":
-            return
-        for key in ("url", "title"):
-            if isinstance(receipt.get(key), str):
-                self._source_alias_literals.update(source_alias_literals(receipt[key]))
-        for literal in receipt.get("source_alias_literals", []):
-            if isinstance(literal, str):
-                self._source_alias_literals.update(source_alias_literals(literal))
-
     def validate_wire(self, value):
         value = ResponseDecision.model_validate(value.model_dump() if hasattr(value, "model_dump") else value)
         for field in ("explanation", "preference_reason", "contact_purpose"):
@@ -520,16 +488,16 @@ class ResponseDecisionInput:
             raise ValueError("回应引用不属于本次短编号")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
-        leaked = (
-            source_alias_literals(value.text)
-            & self.allowed_aliases
-        ) - self._source_alias_literals
-        if leaked:
-            raise ValueError(
-                "正文含本次内部来源短编号：" + ", ".join(sorted(leaked, key=lambda alias: int(alias[1:])))
-                + "。短编号只用于evidence_ids，请保留原意并改成对方能直接理解的台词。"
-            )
         return value
+
+    def diagnose(self, value):
+        """A prose defect is review evidence, never an invalid citation or a retry."""
+        aliases = {alias.casefold() for alias in re.findall(
+            r"(?<![A-Za-z0-9_])ref:[1-9][0-9]*(?![A-Za-z0-9_])", value.text, re.IGNORECASE,
+        )}
+        if aliases:
+            return "正文含内部引用标识：" + ", ".join(sorted(aliases, key=lambda alias: int(alias[4:])))
+        return None
 
     def resolve(self, value):
         wire = self.validate_wire(value)

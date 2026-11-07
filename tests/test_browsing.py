@@ -30,7 +30,7 @@ def model_packet(source):
         header, content = body.split("\n\n所选材料：\n", 1)
         value = json.loads(header)
         value["evidence"] = [
-            {"id": reference} for reference in re.findall(r"(?m)^\[(r\d+)(?:\||\])", content)
+            {"id": reference} for reference in re.findall(r"(?m)^\[(ref:\d+)(?:\||\])", content)
         ]
         value["content"] = content
         return value
@@ -601,7 +601,7 @@ async def test_discovery_source_changes_at_the_next_round(browsing, monkeypatch)
 
 
 @pytest.mark.parametrize("failed_reads", [1, 3])
-async def test_discovery_retries_once_then_continues_other_videos(browsing, monkeypatch, failed_reads):
+async def test_discovery_defers_failed_attempt_then_continues_other_videos(browsing, monkeypatch, failed_reads):
     from tuber_studio.platforms.bilibili_browsing import PlatformReadError
 
     first, second = BV, "BV1xx411c7mD"
@@ -638,10 +638,12 @@ async def test_discovery_retries_once_then_continues_other_videos(browsing, monk
     async with asyncio.timeout(5):
         while not any(target["bvid"] == second for target, _ in browsing.adapter.sent) or (
             failed_reads == 3 and not any(task.get("consecutive_failures") == 3 for task in browsing.tasks())
+        ) or (
+            failed_reads == 1 and not any(target["bvid"] == first for target, _ in browsing.adapter.sent)
         ):
             await asyncio.sleep(0.01)
     await browsing.set_enabled(False)
-    assert events[:3] == [first, first, second]
+    assert events[:3] == [first, second, first]
     if failed_reads == 3:
         assert events[3] == first
         assert not any(target["bvid"] == first for target, _ in browsing.adapter.sent)

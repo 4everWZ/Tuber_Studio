@@ -10,8 +10,8 @@ from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
 from ...message_outreach import invitation_possibility
-from ...operation_continuations import ContinuationCheckpoint, content_hash, deferred_generation_decision
-from ...operation_generation import GenerationDeferred, generate_with_recovery
+from ...operation_continuations import content_hash
+from ...operation_generation import GenerationInvalid, generate_with_recovery
 from ...operation_identity import captured_identity
 from ...operation_text import (
     operation_character,
@@ -53,7 +53,6 @@ from .models import (
     response_schema,
 )
 from .quotas import DailyReplyLimitReached, day_window
-from .round_context import discovery_retry, generation_resume
 from .thread_context import comment_thread_context
 
 
@@ -282,19 +281,10 @@ class BrowsingDecisions:
 
         async def invoke(packet, *, web_fetch=None):
             if web_fetch is not None:
-                result = await web_fetch.complete(packet, model_schema, invoke_model)
-                if response_input is not None and web_fetch.receipt is not None:
-                    response_input.include_web_fetch_receipt(web_fetch.receipt)
-                return result
+                return await web_fetch.complete(packet, model_schema, invoke_model)
             return await invoke_model(packet, model_schema)
 
         def validate(result):
-            if response_input is not None:
-                saved = self.browsing.runtime.continuations.find("generation.browsing", identity)
-                if saved:
-                    for step in saved["revisions"]:
-                        if step["phase"] == "web_fetch" and step["status"] == "ok" and step["context"]:
-                            response_input.include_web_fetch_receipt(step["context"])
             value = (
                 response_input.validate_wire(result)
                 if response_input is not None
@@ -341,21 +331,6 @@ class BrowsingDecisions:
                     raise ValueError("私信渠道与来源／理由不一致")
             return value
 
-        async def repair_candidate_plan(current):
-            if current["feedback"].get("kind") != "validation_error":
-                raise ContinuationCheckpoint("批次计划只自动修订一次结构校验错误，当前反馈已保留检查点")
-            previous = current.get("current_output") or current.get("original_output")
-            message = current["feedback"].get("message", "批次计划结构校验未通过")
-            try:
-                validate(json.loads(previous) if isinstance(previous, str) else previous)
-            except ValueError as error:
-                message = str(error)
-            return {
-                "action": "revise",
-                "reason": "修订完整的choices对象，每个候选BV恰好一个键，每项给action、explanation和整数priority。"
-                "自行决定去向和priority，保留其余仍认可的行动与优先次序。具体校验反馈：" + message,
-            }
-
         binding = {
             "task": "generation",
             "account_id": row["account_id"],
@@ -385,36 +360,8 @@ class BrowsingDecisions:
             binding["profile_revision"] = profile_revision
         if video_response:
             binding["video_response"] = "aligned-source-dry-v1"
-        retry = discovery_retry.get()
-        # Handed-off comments retain their autonomous task origin even though
-        # the reply round is independent of the video batch.
-        autonomous = row["config"].get("autonomous_batch") or (
-            not row["preview"] and row["config"].get("interaction_only") and retry is not None
-        )
-        if autonomous:
-            binding["autonomous_model"] = self.browsing.model_signature()
-            binding["autonomous_video"] = retry["bvid"] if retry else None
-            if retry and retry["error"]:
-                messages[1] = messages[1] | {
-                    "content": messages[1]["content"] + "\n上次运行反馈（数据）：" + dump(retry["error"])
-                }
+        binding["model"] = self.browsing.model_signature()
         identity = content_hash(binding)
-        deferred = (
-            self.browsing.store.one(
-                "SELECT id FROM operation_continuations WHERE channel='generation.browsing' "
-                "AND entity_id=? AND state='waiting' AND parent_round_id<>?",
-                (identity, row["id"]),
-            )
-            if autonomous and schema is ResponseDecision else None
-        )
-        reconsider = bool(
-            deferred and self._generation_resolution(
-                GenerationDeferred(self.browsing.runtime.continuations.get(deferred["id"]))
-            )
-        )
-        recovery_limit = 1 if schema is CandidateBatchPlan else None
-        if autonomous:
-            recovery_limit = int(schema in {ResponseDecision, CandidateBatchPlan} or bool(retry and retry["failures"]))
         value, _ = await generate_with_recovery(
             self.browsing.runtime,
             channel="generation.browsing",
@@ -428,17 +375,13 @@ class BrowsingDecisions:
             guard=guard,
             parent_round_id=row["id"],
             deadline=row["deadline"],
-            generation_context=self.browsing.runtime.offline_generation,
             context_data={
                 "instruction": messages[1]["content"],
                 "source": response_input.format() if response_input is not None else data,
             },
-            reuse_completed=generation_resume.get() or bool(autonomous and retry and retry["resume"]),
-            restart_deferred=reconsider,
-            restart_incomplete_deferred=bool(schema is ResponseDecision and data.get("video_actions")),
-            max_recoveries=recovery_limit,
-            recovery_decision=repair_candidate_plan if schema is CandidateBatchPlan else None,
-            diagnose=diagnose,
+            reuse_completed=True,
+            diagnose=lambda value: (response_input.diagnose(value) if response_input is not None else None)
+            or (diagnose(value) if diagnose else None),
             allow_web_fetch=response_input is not None,
         )
         result = response_input.resolve(value) if response_input is not None else value
@@ -1034,76 +977,9 @@ class BrowsingDecisions:
                 result["material_key"],
             )
         except Exception as error:
-            resolution = self._generation_resolution(error)
-            if resolution:
-                progress = self.browsing.repo.content_progress(row, material["metadata"]["bvid"])
-                previous_judgment = (progress or {}).get("main_decision") or {}
-                if not previous_judgment and resolution["feedback"].get("kind") == "style_diagnostic":
-                    # Style feedback may hold a complete, source-validated
-                    # answer. Its opinion can survive while its body is held.
-                    for candidate in (resolution["current_candidate"], resolution["original_candidate"]):
-                        try:
-                            candidate = json.loads(candidate) if isinstance(candidate, str) else candidate
-                            previous_judgment = ResponseDecision.model_validate(candidate).model_dump()
-                        except (ValueError, TypeError):
-                            continue
-                        if previous_judgment.get("video_preference") and previous_judgment.get("preference_reason", "").strip():
-                            break
-                if not (
-                    previous_judgment.get("video_preference") in {"like", "neutral", "not_interested"}
-                    and str(previous_judgment.get("preference_reason") or "").strip()
-                ):
-                    # A recovery decision to wait/abandon is not a completed
-                    # viewing judgment. Keep material and the recovery audit,
-                    # leaving the original viewing task resumable.
-                    self.browsing.repo.save_content_progress(row, material, decisions)
-                    payload["generation_resolution"] = resolution
-                    resolution = None
-            if resolution:
-                self.browsing.repo.save_content_progress(row, material, decisions)
-                model_reason = resolution["decision"]["reason"].strip()
-                self.browsing.repo.save_main_decision(
-                    row, material["metadata"]["bvid"],
-                    ResponseDecision(
-                        action="wait" if resolution["decision"]["action"] == "wait" else "skip",
-                        reason="insufficient_evidence",
-                        explanation=previous_judgment.get("explanation") or previous_judgment["preference_reason"],
-                        video_preference=previous_judgment["video_preference"],
-                        preference_reason=previous_judgment["preference_reason"],
-                    ),
-                )
-                self.browsing.repo.complete(
-                    identity,
-                    result["owner"],
-                    result["generation"],
-                    "viewed_without_comment",
-                    json.loads(
-                        self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
-                            "payload"
-                        ]
-                    )
-                    | payload
-                    | {
-                        "reason": model_reason,
-                        "generation_resolution": resolution,
-                        "decisions": [decision.model_dump() for decision in decisions],
-                    },
-                    result["material_key"],
-                )
-                self.browsing.repo.mark_watch_result(
-                    row,
-                    material["metadata"]["bvid"],
-                    fully_read=material["coverage"] == "all_available_cc"
-                    and not material.get("missing_parts"),
-                )
+            if isinstance(error, GenerationInvalid):
+                self.browsing.repo.mark_watch_result(row, material["metadata"]["bvid"], fully_read=False)
                 metrics["viewed"] += 1
-                if (
-                    row["config"].get("batch_id")
-                    and row["config"].get("reply_enabled")
-                    and result.get("task_kind") != "comment_visit"
-                ):
-                    await self.browsing.defer_comment_visit(row, material["metadata"]["bvid"], metrics)
-                return
             metrics["failures"] += 1
             continuation = getattr(error, "continuation", None)
             round_budget = isinstance(error, BrowsingBudgetDeferred) or (
@@ -1120,7 +996,7 @@ class BrowsingDecisions:
                 identity,
                 result["owner"],
                 result["generation"],
-                "checkpoint"
+                "invalid" if isinstance(error, GenerationInvalid) else "checkpoint"
                 if continuation or round_budget or isinstance(error, ContextWindowExceeded)
                 else "failed",
                 json.loads(
@@ -1130,7 +1006,8 @@ class BrowsingDecisions:
                 )
                 | payload
                 | {
-                    "reason": "生成进度已保存，可继续" if continuation else public_error(error),
+                    "reason": (payload.get("reason") or public_error(error)) if isinstance(error, GenerationInvalid)
+                    else "生成进度已保存，可继续" if continuation else public_error(error),
                     **({"retry_kind": "round_budget"} if round_budget else {}),
                     **({"generation_continuation_id": error.continuation["id"]} if continuation else {}),
                     **(
@@ -1147,23 +1024,6 @@ class BrowsingDecisions:
         finally:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
-
-    @staticmethod
-    def _generation_resolution(error):
-        continuation = getattr(error, "continuation", None)
-        if not isinstance(error, ContinuationCheckpoint):
-            return None
-        decision = deferred_generation_decision(continuation)
-        if decision is None:
-            return None
-        return {
-            "continuation_id": continuation["id"],
-            "state": continuation["state"],
-            "feedback": continuation["feedback"],
-            "original_candidate": continuation.get("original_output"),
-            "current_candidate": continuation.get("current_output"),
-            "decision": decision,
-        }
 
     async def _reply_to_video_comment(
         self, row, material, material_key, chosen, item, items, metrics, *, diagnostics=None, metadata=None
@@ -1241,17 +1101,14 @@ class BrowsingDecisions:
                             row, material, thread_context,
                             chosen if material else {"public:" + comment_id}, "reply_public", metrics
                         )
-                    except Exception as error:
-                        resolution = self._generation_resolution(error)
-                        if resolution is None:
-                            raise
+                    except GenerationInvalid as error:
                         if diagnostics is not None:
-                            diagnostics.append(resolution | {"comment_id": source["comment_id"]})
-                        model_reason = resolution["decision"]["reason"].strip()
-                        thread_response = ResponseDecision(
-                            action="wait" if resolution["decision"]["action"] == "wait" else "skip",
-                            reason="insufficient_evidence", explanation=model_reason
-                        )
+                            diagnostics.append({"comment_id": source["comment_id"],
+                                "continuation_id": error.continuation["id"], "state": "invalid",
+                                "feedback": error.continuation["feedback"],
+                                "original_candidate": error.continuation.get("original_output"),
+                                "current_candidate": error.continuation.get("current_output")})
+                        return None
                     self.comment_progress.save(row, bvid, source, thread_response)
                 if thread_response.action not in {"reply_public", "handoff_private"} or not thread_response.text:
                     return None

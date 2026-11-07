@@ -357,7 +357,7 @@ class FeedbackModel:
             raise GenerationFeedback("平台已拒绝这个正文版本，选择修订或暂缓", original_output=value)
         if operation_output_diagnostics(text)["needs_review"]:
             raise GenerationFeedback(
-                "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓",
+                "正文包含大量重复内容，保留完整候选待审核",
                 original_output=value,
                 kind="style_diagnostic",
                 accepted_value=text,
@@ -537,6 +537,9 @@ class FeedbackPublication:
         changed = apply_revision(prepared, result.value)
         if hasattr(changed, "__await__"):
             await changed
+        if self.coordinator.get(row["id"])["feedback"].get("kind") == "style_diagnostic":
+            return {"status": "pending_review", "text": result.value,
+                    "continuation": self.coordinator.dto(channel, identity)}
         previous = row["trigger_feedback"].get("write_token")
         self.coordinator.ticket(
             row["id"], previous, prepared.outgoing(result.value), automatic=automatic, epoch=epoch
@@ -592,6 +595,8 @@ class FeedbackPublication:
                         return resolved
                 raise UnknownPublication("该发送结果尚未核对确认", previous)
             if automatic and existing and existing.get("manual_revision"):
+                return {"status": "pending_review", "continuation": self.coordinator.dto(channel, identity)}
+            if automatic and existing and existing["feedback"].get("kind") == "style_diagnostic":
                 return {"status": "pending_review", "continuation": self.coordinator.dto(channel, identity)}
             if existing and existing["state"] not in {"awaiting_review", "completed"}:
                 if not automatic and prepared.manual_approved:

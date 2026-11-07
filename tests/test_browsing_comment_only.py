@@ -223,25 +223,29 @@ async def test_comment_only_agent_can_wait_without_inventing_video_content_or_ma
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
 
 
-async def test_comment_checkpoint_keeps_model_selection_reason_and_puts_program_state_in_error(browsing, monkeypatch):
+async def test_invalid_comment_keeps_model_selection_reason_and_separate_validation_diagnostic(browsing, monkeypatch):
     await enable_comment_choices(browsing, monkeypatch)
     attach_comment_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
     original = browsing.runtime.llm.generate_json
+    calls = []
 
     async def pause(messages, schema, *, max_tokens):
+        calls.append(schema["title"])
         if schema["title"] == "ResponseDecision":
             return {"action": "reply_public", "reason": "specific_detail", "text": "盐水浓度有多少？",
                     "evidence_ids": ["missing-reference"], "explanation": "想问清楚这层用的比例"}
-        if schema["title"] == "ContinuationDecision":
-            return {"action": "wait", "reason": "等补充这条评论的引用", "read": ""}
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", pause)
     row = await finish_comment_handoff(browsing)
     task = browsing.tasks(round_id=row["id"])[0]
-    assert task["status"] == "checkpoint"
+    assert task["status"] == "comments_checked"
     assert task["reason"] == "先看看评论里大家用了多少盐，再接着聊"
-    assert task["error"] and task["generation_continuation_id"]
+    diagnostic, = task["repetition_decisions"]
+    assert diagnostic["state"] == "invalid" and diagnostic["continuation_id"]
+    assert "回应引用不属于本次短编号" in diagnostic["feedback"]["message"]
+    assert calls == ["CandidateBatchPlan", "ResponseDecision"]
+    assert not browsing.intents() and not browsing.adapter.sent
     assert not browsing.store.all("SELECT * FROM browsing_video_progress")
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")

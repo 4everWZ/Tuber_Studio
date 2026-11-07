@@ -47,7 +47,7 @@ def pick(action, read=""):
     return {"action": action, "reason": "continue this task", "read": read}
 
 
-async def test_bad_reference_can_be_revised_with_original_output_and_specific_feedback(coordinator):
+async def test_bad_reference_during_platform_revision_stops_until_explicit_resume(coordinator):
     row = begin(coordinator)
     attempts = []
 
@@ -66,11 +66,15 @@ async def test_bad_reference_can_be_revised_with_original_output_and_specific_fe
         return {"text": "修订正文", "evidence_ids": ["real-cid:0"]}
 
     result = await coordinator.run(row["id"], decide=decide, revise=revise, guard=lambda: True)
-    assert result.state == "awaiting_review" and result.value["evidence_ids"] == ["real-cid:0"]
+    assert result.state == "checkpoint" and result.value is None and len(attempts) == 1
     saved = coordinator.get(row["id"])
-    assert saved["recoveries"] == 2 and saved["binding"] == binding()
-    assert saved["original_output"] == "original answer"
-    assert saved["current_output"] == result.value and saved["owner"] is None
+    assert saved["recoveries"] == 1 and saved["binding"] == binding()
+    assert saved["original_output"] == "original answer" and saved["owner"] is None
+    assert saved["feedback"]["message"] == "引用e99不在本块"
+    coordinator.resume(row["id"], binding=binding())
+    result = await coordinator.run(row["id"], decide=decide, revise=revise, guard=lambda: True)
+    assert result.state == "awaiting_review" and result.value["evidence_ids"] == ["real-cid:0"]
+    assert len(attempts) == 2
 
 
 @pytest.mark.parametrize("action,state", [("wait", "waiting"), ("abandon", "abandoned")])
@@ -108,11 +112,11 @@ async def test_style_keep_is_allowed_but_cannot_bypass_invalid_structure(coordin
         other["id"], decide=decide, revise=revise, guard=lambda: True, original_value="source missing"
     )
     saved = coordinator.get(other["id"])
-    assert result.state == "checkpoint" and saved["recoveries"] == saved["max_recoveries"]
+    assert result.state == "checkpoint" and saved["recoveries"] == 1
     assert saved["current_output"] is None
 
 
-async def test_recovery_limit_keeps_checkpoint_and_explicit_resume_preserves_history(coordinator):
+async def test_invalid_revision_keeps_checkpoint_and_explicit_resume_preserves_history(coordinator):
     coordinator.operations.configure({"max_recoveries": 2})
     row = begin(coordinator, parent_round_id="original-parent")
 
@@ -128,7 +132,7 @@ async def test_recovery_limit_keeps_checkpoint_and_explicit_resume_preserves_his
     assert result.state == "checkpoint"
     first = coordinator.get(row["id"])
     resumed = coordinator.resume(row["id"], binding=binding(), parent_round_id="new-authorized-parent")
-    assert resumed["recoveries"] == 0 and resumed["total_recoveries"] == 2
+    assert resumed["recoveries"] == 0 and resumed["total_recoveries"] == 1
     assert (
         resumed["revisions"][:-1] == first["revisions"]
         and resumed["parent_round_id"] == "new-authorized-parent"

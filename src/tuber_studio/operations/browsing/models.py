@@ -420,7 +420,7 @@ RESPONSE_INSTRUCTION = (
 )
 
 RESPONSE_REFERENCE_INSTRUCTION = (
-    "所选材料以[r1|起止秒]这类短编号逐段呈现；evidence_ids选择本次短编号。"
+    "所选材料以[ref:1|起止秒]逐段呈现；ref:是内部引用命名空间，仅用于evidence_ids，text写给对方的自然正文。"
     "每个编号对应一条原始引用，最多选择8条；当前公开来源的编号对应thread中的原文。"
 )
 

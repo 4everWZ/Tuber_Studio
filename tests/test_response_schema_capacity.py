@@ -76,6 +76,6 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
     assert actions == {"reply_public", "skip", "wait", "read_comments", "watch_frames", "read_more", "finish"}
     assert response_input.resolve(candidate).evidence_ids == [segment["id"] for segment in evidence[-8:]]
     with pytest.raises(ValueError, match="本次短编号"):
-        response_input.validate_wire(candidate | {"evidence_ids": ["r692"]})
+        response_input.validate_wire(candidate | {"evidence_ids": ["ref:692"]})
     with pytest.raises(ValueError):
         response_input.validate_wire(candidate | {"evidence_ids": aliases[-9:]})

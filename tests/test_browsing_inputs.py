@@ -512,7 +512,7 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
             row, ResponseDecision, response, RESPONSE_INSTRUCTION
         )
         assert reply[0]["content"] == GROUNDED_DAFEIYU_CARD
-        assert "evidence_ids选择本次短编号" in reply[1]["content"]
+        assert "ref:是内部引用命名空间，仅用于evidence_ids" in reply[1]["content"]
         assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
         if kind == "top_level":
             assert "分别引用" in reply[1]["content"]
@@ -624,10 +624,10 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
             for branch in response_body["response_format"]["schema"]["oneOf"]
             if "evidence_ids" in branch["properties"]
         )
-        assert response_body["response_format"]["schema"]["$defs"]["evidence_id"]["enum"] == ["r1"]
+        assert response_body["response_format"]["schema"]["$defs"]["evidence_id"]["enum"] == ["ref:1"]
         assert response_body["response_format"]["schema"]["oneOf"][-1]["required"] == ["web_fetch"]
         response_user = response_body["messages"][-1]["content"]
-        assert "[r1|" in response_user and "11:0" not in response_user
+        assert "[ref:1|" in response_user and "11:0" not in response_user
         assert browsing.tasks()[0]["decisions"][0]["evidence_ids"] == ["11:0"]
         assert browsing.intents()[0]["evidence"] == ["11:0"]
         assert browsing.intents()[0]["status"] == "pending_review" and not browsing.adapter.sent
@@ -646,18 +646,23 @@ async def test_native_http_schema_exposes_only_short_refs_and_database_keeps_rea
 
 
 @pytest.mark.parametrize("bad_ref", ["e99", "11:0"])
-async def test_invalid_or_original_model_ref_is_checkpointed_without_being_adopted(browsing, bad_ref):
+async def test_invalid_or_original_model_ref_is_retained_without_repair_or_adoption(browsing, bad_ref):
+    calls = []
+
     async def generate(messages, schema, *, max_tokens):
+        calls.append(schema["title"])
         assert schema["title"] == "ContentDecision"
         return decision([bad_ref]).model_dump()
 
     browsing.runtime.llm.generate_json = generate
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
-    assert row["status"] == "partial" and task["status"] == "checkpoint"
+    assert row["status"] == "partial" and task["status"] == "invalid"
+    assert calls == ["ContentDecision"]
     assert task["continuation"]["id"] and task["continuation"]["phase"] == "generation"
     episode = browsing.runtime.continuations.get(task["continuation"]["id"])
     assert episode["binding"]["schema"] == "ContentDecision"
+    assert episode["state"] == "invalid"
     assert episode["original_output"] == decision([bad_ref]).model_dump()
     assert any(
         step["phase"] == "feedback"
@@ -748,15 +753,13 @@ async def test_one_group_expands_to_twelve_segments_but_intent_keeps_only_reply_
     model_calls = [packet for kind, packet in browsing.runtime.llm.calls if kind == "ContentDecision"]
     assert model_calls[0]["segments"] == [{"id": "e1"}]
     response = next(packet for kind, packet in browsing.runtime.llm.calls if kind == "ResponseDecision")
-    assert [item["id"] for item in response["evidence"]] == [f"r{i}" for i in range(1, 13)]
+    assert [item["id"] for item in response["evidence"]] == [f"ref:{i}" for i in range(1, 13)]
     assert not browsing.adapter.sent
 
 
-@pytest.mark.parametrize("correction", ["prepare", "skip"])
-async def test_inconsistent_intent_reaches_generation_feedback_and_can_change_choice(browsing, correction):
-    # This mock intentionally provides no usage. Three calls must therefore
-    # reserve their full allowances; production still uses reported native usage.
-    browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
+async def test_inconsistent_intent_keeps_invalid_output_without_an_automatic_repair(browsing):
+    from tuber_studio.operation_generation import GenerationInvalid
+
     bad = {
         "interest": "like",
         "worth_commenting": True,
@@ -764,41 +767,25 @@ async def test_inconsistent_intent_reaches_generation_feedback_and_can_change_ch
         "evidence_ids": ["e1"],
         "coverage_required": "provided",
     }
-    corrected = (
-        bad | {"reason": "specific_detail"}
-        if correction == "prepare"
-        else {
-            "interest": "skip",
-            "worth_commenting": False,
-            "reason": "no_interest",
-            "evidence_ids": [],
-            "coverage_required": "provided",
-        }
-    )
     calls = []
 
     async def generate(messages, schema, *, max_tokens):
         calls.append((schema["title"], copy.deepcopy(messages)))
-        if schema["title"] == "ContinuationDecision":
-            return {"action": "revise", "reason": "重新选择一致的参与意图。", "read": ""}
         assert schema["title"] == "ContentDecision"
-        return copy.deepcopy(bad if sum(kind == "ContentDecision" for kind, _ in calls) == 1 else corrected)
+        return copy.deepcopy(bad)
 
     browsing.runtime.llm.generate_json = generate
     await browsing.preflight(for_automation=False)
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
-    results = await browsing.decisions._content_decisions(material(), row, {"lock_wait_seconds": 0})
-    assert [kind for kind, _ in calls] == ["ContentDecision", "ContinuationDecision", "ContentDecision"]
+    with pytest.raises(GenerationInvalid):
+        await browsing.decisions._content_decisions(material(), row, {"lock_wait_seconds": 0})
+    assert [kind for kind, _ in calls] == ["ContentDecision"]
     identity = browsing.store.one(
         "SELECT id FROM operation_continuations WHERE channel='generation.browsing'"
     )["id"]
     episode = browsing.runtime.continuations.get(identity)
-    assert episode["state"] == "completed" and episode["recoveries"] == 1
+    assert episode["state"] == "invalid" and episode["recoveries"] == 0
     assert episode["original_output"] == bad
-    assert episode["current_output"] == corrected | {"explanation": ""}
     assert any("字段组合不一致" in str(step["feedback"]) for step in episode["revisions"])
-    assert (
-        results[0].interest == corrected["interest"]
-        and results[0].worth_commenting == corrected["worth_commenting"]
-    )
+    assert not browsing.store.all("SELECT * FROM browsing_read_progress")
     assert not browsing.adapter.sent

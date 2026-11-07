@@ -912,6 +912,8 @@ class Comments:
                 )
                 if changed.rowcount != 1:
                     raise ValueError("生成期间草稿已更新，未覆盖")
+                if check.get("output", {}).get("needs_review"):
+                    self.store.execute("UPDATE drafts SET status='pending_review' WHERE id=?", (draft_id,))
             finally:
                 candidate.store.close()
 
@@ -956,6 +958,7 @@ class Comments:
                 )
             ):
                 raise ValueError("原始评论或角色已变化，请重新准备")
+            self.runtime.continuations.resume(row["id"], binding=row["binding"])
             value = self.enqueue([source["id"]], automatic=False)
             return {
                 "status": "queued",
@@ -1084,6 +1087,8 @@ class Comments:
             allowed = {"pending_review"} if automatic else {"approved", "copied"}
             if not row or row["status"] not in allowed:
                 raise ValueError("当前草稿状态不能发布，或已发布／结果未确认")
+            if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
+                raise ValueError("正文诊断尚待审核，未自动发布")
             for seconds, cap in (
                 (3600, policy["max_replies_per_hour"]),
                 (86400, policy["max_replies_per_day"]),

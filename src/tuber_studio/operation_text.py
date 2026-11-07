@@ -7,11 +7,6 @@ from collections import Counter
 MAX_OPERATION_TEXT_BYTES = 256 * 1024
 _ADJACENT_PHRASES = re.compile(r"([^\W_]{4,40}?)(?:\1){2,}")
 _UNBROKEN_PHRASE = re.compile(r"([^\W_]{5,40}?)\1")
-_SOURCE_ALIAS_TOKEN = re.compile(r"(?<![A-Za-z0-9_])r[1-9][0-9]*(?![A-Za-z0-9_])", re.IGNORECASE)
-
-
-def source_alias_literals(text):
-    return {token.casefold() for token in _SOURCE_ALIAS_TOKEN.findall(text)}
 
 
 def reply_output_budget(config, mode):

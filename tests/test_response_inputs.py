@@ -14,7 +14,6 @@ from tuber_studio.operations.browsing.inputs import (
     compact_actor_context,
 )
 from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
-from tuber_studio.operations.browsing.round_context import generation_resume
 
 
 def packet(count=2):
@@ -84,7 +83,7 @@ def test_response_actors_keep_real_addressees_distinct_from_oc_and_source(
     header, body = ResponseDecisionInput(bound).format().split("\n\n所选材料：\n", 1)
     assert list(json.loads(header))[:2] == ["self_actor", "reply_target"]
     assert source["text"] in header and original["evidence"][0]["text"] in body
-    assert ResponseDecisionInput(bound).resolve(reply(["r1"])).evidence_ids == [original["evidence"][0]["id"]]
+    assert ResponseDecisionInput(bound).resolve(reply(["ref:1"])).evidence_ids == [original["evidence"][0]["id"]]
 
 
 def test_missing_account_or_parent_identity_stays_unknown_despite_matching_names():
@@ -114,7 +113,7 @@ async def test_video_main_reply_uses_video_material_without_unrelated_comment_fl
 
     async def generate(messages, schema, *, max_tokens):
         captured.append(model_packet(messages[-1]["content"]))
-        return ResponseDecision(action="reply_public", reason="specific_detail", explanation="想聊鸡蛋浮起来的细节", text="盐水还能托住鸡蛋，鱼鱼想试试。", evidence_ids=["r1"], video_preference="like", preference_reason="这个实验挺有意思").model_dump()
+        return ResponseDecision(action="reply_public", reason="specific_detail", explanation="想聊鸡蛋浮起来的细节", text="盐水还能托住鸡蛋，鱼鱼想试试。", evidence_ids=["ref:1"], video_preference="like", preference_reason="这个实验挺有意思").model_dump()
 
     browsing.runtime.llm.generate_json = generate
     result = await browsing.decisions._response(row, material, context, {source_id}, "top_level", {"lock_wait_seconds": 0}, video_actions=True)
@@ -140,7 +139,7 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(copy.deepcopy(messages))
-        return reply(["r1"]).model_dump()
+        return reply(["ref:1"]).model_dump()
 
     browsing.runtime.llm.generate_json = generate
     result = await browsing.decisions._model(
@@ -265,7 +264,7 @@ async def test_video_comment_can_cite_original_comment_alongside_video_and_publi
     async def generate(messages, schema, *, max_tokens):
         calls.append(copy.deepcopy(messages))
         content = messages[-1]["content"]
-        alias = re.search(r"\[(r\d+)\] 当前评论原文", content)[1]
+        alias = re.search(r"\[(ref:\d+)\] 当前评论原文", content)[1]
         assert content.index("当前评论原文") < content.index("加盐之后")
         return {
             "action": "reply_public", "reason": "specific_detail", "explanation": "想顺着观众安利视频的话聊一句",
@@ -332,35 +331,36 @@ def test_response_presentation_keeps_all_text_thread_recent_and_exact_times():
     data["thread"]["source"]["text"] = "mutated thread"
     assert view.references[0].source() == original["evidence"][0]
     assert json.loads(view.format().split("\n\n所选材料：\n")[0])["thread"] == original["thread"]
-    bound = view.resolve(reply(["r1", "r2"]))
+    bound = view.resolve(reply(["ref:1", "ref:2"]))
     assert bound.evidence_ids == [s["id"] for s in original["evidence"]]
-    assert bound.text == reply(["r1"]).text
+    assert bound.text == reply(["ref:1"]).text
 
 
 def test_one_to_one_29_segments_still_allow_only_eight_original_references():
     data = packet(29)
     view = ResponseDecisionInput(data)
     assert len(view.references) == 29
-    result = view.resolve(reply([f"r{i}" for i in range(1, 9)]))
+    result = view.resolve(reply([f"ref:{i}" for i in range(1, 9)]))
     assert len(result.evidence_ids) == 8 and result.evidence_ids == [s["id"] for s in data["evidence"][:8]]
-    invalid = reply(["r1"]).model_copy(update={"evidence_ids": [f"r{i}" for i in range(1, 10)]})
+    invalid = reply(["ref:1"]).model_copy(update={"evidence_ids": [f"ref:{i}" for i in range(1, 10)]})
     with pytest.raises(ValueError):
         view.resolve(invalid)
     with pytest.raises(ValueError, match="短编号"):
-        view.resolve(reply(["r30"]))
+        view.resolve(reply(["ref:30"]))
 
 
-def test_aliases_do_not_collide_with_original_ids_and_are_invocation_local():
+@pytest.mark.parametrize("canonical_id,wire_ref", [("r1", "ref:1"), ("ref:1", "ref:2")])
+def test_aliases_do_not_collide_with_original_ids_and_are_invocation_local(canonical_id, wire_ref):
     first = packet()
-    first["evidence"][0]["id"] = "r1"
+    first["evidence"][0]["id"] = canonical_id
     view = ResponseDecisionInput(first)
-    assert view.references[0].alias == "r2"
-    for bad in ["r1", first["evidence"][1]["id"], "unknown"]:
+    assert view.references[0].alias == wire_ref
+    for bad in [canonical_id, first["evidence"][1]["id"], "unknown"]:
         with pytest.raises(ValueError, match="短编号"):
             view.resolve(reply([bad]))
     another = ResponseDecisionInput(packet())
-    assert another.resolve(reply(["r1"])).evidence_ids == ["canonical-track:segment:0"]
-    assert view.resolve(reply(["r2"])).evidence_ids == ["r1"]
+    assert another.resolve(reply(["ref:1"])).evidence_ids == ["canonical-track:segment:0"]
+    assert view.resolve(reply([wire_ref])).evidence_ids == [canonical_id]
 
 
 def test_public_text_reference_is_bound_without_inventing_video_segments():
@@ -373,10 +373,10 @@ def test_public_text_reference_is_bound_without_inventing_video_segments():
         "coverage": "public_text",
     }
     view = ResponseDecisionInput(data)
-    assert "[r1] 当前公开来源" in view.format()
+    assert "[ref:1] 当前公开来源" in view.format()
     assert "public:123" not in view.format()
     assert view.references[0].source() is None
-    assert view.resolve(reply(["r1"])).evidence_ids == ["public:123"]
+    assert view.resolve(reply(["ref:1"])).evidence_ids == ["public:123"]
     skip = ResponseDecision(action="skip", reason="no_interest", evidence_ids=[])
     assert view.resolve(skip) == skip
     with pytest.raises(ValueError, match="为空"):
@@ -390,10 +390,10 @@ def test_current_comment_text_is_readable_at_its_reference_without_losing_thread
     before = copy.deepcopy(data)
     view = ResponseDecisionInput(data)
     header, body = view.format().split("\n\n所选材料：\n", 1)
-    assert body == "[r1] 当前评论原文：\n" + source["text"]
+    assert body == "[ref:1] 当前评论原文：\n" + source["text"]
     assert json.loads(header)["thread"] == before["thread"]
     assert data == before and view.references[0].source() is None
-    assert view.resolve(reply(["r1"])).evidence_ids == ["public:" + source["comment_id"]]
+    assert view.resolve(reply(["ref:1"])).evidence_ids == ["public:" + source["comment_id"]]
 
 
 @pytest.mark.parametrize("change", [{"start": -1}, {"end": False}, {"start": 9, "end": 1}, {"text": None}])
@@ -410,52 +410,38 @@ async def prepared_row(browsing):
     return row
 
 
-async def test_wire_error_is_recoverable_and_normalization_happens_only_at_final_boundary(browsing):
+async def test_canonical_id_in_wire_is_invalid_without_an_automatic_repair_call(browsing):
+    from tuber_studio.operation_generation import GenerationInvalid
+
     browsing.store.set("browsing_policy", browsing.policy() | {"max_output_tokens": 32768})
     row = await prepared_row(browsing)
     data = packet(1)
     calls = []
     bad = reply([data["evidence"][0]["id"]]).model_dump()
-    wire = reply(["r1"]).model_dump()
 
     async def generate(messages, schema, *, max_tokens):
         calls.append((schema["title"], copy.deepcopy(messages), copy.deepcopy(schema)))
-        if schema["title"] == "ContinuationDecision":
-            return {"action": "revise", "reason": "重新选择本次材料短编号。", "read": ""}
-        return bad if sum(title == "ResponseDecision" for title, _, _ in calls) == 1 else wire
+        return bad
 
     browsing.runtime.llm.generate_json = generate
-    result = await browsing.decisions._model(
-        row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
-    )
-    assert result.evidence_ids == [data["evidence"][0]["id"]]
-    assert [title for title, _, _ in calls] == [
-        "ResponseDecision",
-        "ContinuationDecision",
-        "ResponseDecision",
-    ]
+    with pytest.raises(GenerationInvalid):
+        await browsing.decisions._model(
+            row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
+        )
+    assert [title for title, _, _ in calls] == ["ResponseDecision"]
     for title, messages, schema in calls:
         if title == "ResponseDecision":
             assert (
-                "[r1|" in messages[2]["content"] and data["evidence"][0]["id"] not in messages[2]["content"]
+                "[ref:1|" in messages[2]["content"] and data["evidence"][0]["id"] not in messages[2]["content"]
             )
-            assert schema["$defs"]["evidence_id"]["enum"] == ["r1"]
+            assert schema["$defs"]["evidence_id"]["enum"] == ["ref:1"]
             assert all(b["properties"]["evidence_ids"]["items"] == {"$ref": "#/$defs/evidence_id"}
                        for b in schema["oneOf"])
     saved = browsing.store.one("SELECT id FROM operation_continuations WHERE channel='generation.browsing'")
     episode = browsing.runtime.continuations.get(saved["id"])
     assert episode["binding"]["input_format"] == ResponseDecisionInput.FORMAT_VERSION
-    assert episode["original_output"] == bad and episode["current_output"] == wire
+    assert episode["state"] == "invalid" and episode["original_output"] == bad
     assert any("回应引用不属于本次短编号" in str(step["feedback"]) for step in episode["revisions"])
-    before = len(calls)
-    token = generation_resume.set(True)
-    try:
-        again = await browsing.decisions._model(
-            row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
-        )
-    finally:
-        generation_resume.reset(token)
-    assert len(calls) == before and again == result
     assert not browsing.adapter.sent and not browsing.intents()
 
 
@@ -466,7 +452,7 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
-        return reply(["r1"]).model_dump()
+        return reply(["ref:1"]).model_dump()
 
     browsing.runtime.llm.generate_json = generate
     first = await browsing.decisions._model(
@@ -476,13 +462,9 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
     first_format = ResponseDecisionInput.FORMAT_VERSION
     monkeypatch.setattr(ResponseDecisionInput, "FORMAT_VERSION", "test-response-v2")
     assert browsing.decisions._capacity_signature(row["config"]) != first_capacity
-    token = generation_resume.set(True)
-    try:
-        second = await browsing.decisions._model(
-            row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
-        )
-    finally:
-        generation_resume.reset(token)
+    second = await browsing.decisions._model(
+        row, ResponseDecision, data, RESPONSE_INSTRUCTION, {"lock_wait_seconds": 0}
+    )
     assert calls == ["ResponseDecision", "ResponseDecision"] and first.model_dump() == second.model_dump()
     assert first._generation_id != second._generation_id
     episodes = [
@@ -495,5 +477,5 @@ async def test_format_version_change_does_not_reuse_previous_wire_checkpoint(bro
         first_format,
         "test-response-v2",
     }
-    assert all(r["current_output"]["evidence_ids"] == ["r1"] for r in episodes)
+    assert all(r["current_output"]["evidence_ids"] == ["ref:1"] for r in episodes)
     assert not browsing.adapter.sent

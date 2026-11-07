@@ -103,8 +103,13 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
     assert len(store.all("SELECT * FROM drafts")) == 1
 
 
-@pytest.mark.parametrize("profile_available", [True, False])
-async def test_profile_change_regenerates_the_approved_comment_before_one_send(comments, store, monkeypatch, profile_available):
+@pytest.mark.parametrize("profile_available,diagnostic", [(True, False), (False, False), (True, True)])
+async def test_profile_change_regenerates_the_approved_comment_before_one_send(comments, store, monkeypatch, profile_available, diagnostic):
+    from tuber_studio.runtime import Runtime
+
+    # This case covers the real diagnostic boundary, beyond the lightweight
+    # comment worker fixture's normal scheduling-only generate_reply stub.
+    monkeypatch.setattr(comments.runtime, "generate_reply", Runtime.generate_reply.__get__(comments.runtime, Runtime))
     comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
     state = {"platform": "bilibili", "account_uid": "injected-test-account", "account_display_name": "旧账号名", "account_bio": "旧简介"}
 
@@ -134,7 +139,8 @@ async def test_profile_change_regenerates_the_approved_comment_before_one_send(c
 
     async def generate(messages, character, event_id, source_text=None):
         calls.append(messages)
-        return Reply(spoken_text=state["account_display_name"] + "，本鲸记住新门牌了。", emotion="cheerful", animation_id="talk_happy", reply_to=[event_id])
+        text = state["account_display_name"] + "，" + "本鲸记住新门牌了。" * (8 if diagnostic else 1)
+        return Reply(spoken_text=text, emotion="cheerful", animation_id="talk_happy", reply_to=[event_id])
 
     monkeypatch.setattr(comments.runtime.llm, "generate", generate)
     if not profile_available:
@@ -144,6 +150,15 @@ async def test_profile_change_regenerates_the_approved_comment_before_one_send(c
         assert retained["status"] == "approved" and retained["text"] == old_text
         assert not calls and not comments.adapter.sent
         return
+    if diagnostic:
+        with pytest.raises(ValueError):
+            await comments.publish(row["id"])
+        retained = store.one("SELECT * FROM drafts")
+        assert retained["status"] == "pending_review"
+        check = json.loads(retained["answer_check"])
+        assert check["output"]["needs_review"] and check["continuation"]["state"] == "awaiting_review"
+        assert len(calls) == 1 and not comments.adapter.sent
+        comments.review(row["id"], "approve")
     await comments.publish(row["id"])
     sent = store.one("SELECT * FROM drafts")
     assert sent["status"] == "published" and sent["text"].startswith("现在的账号名")

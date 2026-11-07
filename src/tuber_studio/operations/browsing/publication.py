@@ -3,7 +3,6 @@
 import asyncio
 import json
 import time
-from contextlib import nullcontext
 from uuid import uuid4
 
 from ...operation_continuations import content_hash
@@ -12,7 +11,7 @@ from ...operation_feedback import (
     PublicationContext,
     publication_binding,
 )
-from ...operation_generation import generate_with_recovery
+from ...operation_generation import generate_with_recovery, generation_requires_review
 from ...operation_identity import runtime_identity
 from ...operation_text import (
     validate_operation_text,
@@ -24,7 +23,7 @@ from ...publication_errors import PlatformRejected, UnknownPublication
 from ...store import dump
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
-from .round_context import generation_resume, read_round
+from .round_context import read_round
 
 
 class BrowsingPublication:
@@ -50,6 +49,8 @@ class BrowsingPublication:
         character = self.browsing.store.character(row["character_id"], row["character_version"])
         target = target | {"generation_identity": getattr(response, "_generation_identity", None)
                            or runtime_identity(self.browsing.runtime, character, row["account_id"])}
+        if response._generation_id:
+            target["generation_continuation_id"] = response._generation_id
         resource = target.get("bvid") or "dynamic:" + str(target["oid"])
         if kind == "top_level":
             source = "top-level"
@@ -75,6 +76,9 @@ class BrowsingPublication:
             and self.browsing.operations.policy()["enabled"]
             and self.browsing.operations.policy()["epoch"] == row["epoch"]
             and self._action_allowed(kind, self.browsing.effective())
+            and not generation_requires_review(
+                self.browsing.store, getattr(response, "_generation_id", None)
+            )
         )
         self.browsing.store.execute(
             "INSERT OR IGNORE INTO browsing_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -345,24 +349,31 @@ class BrowsingPublication:
             return await browsing.runtime.llm.generate_json(packet, schema, max_tokens=request["config"]["decision_max_tokens"])
 
         async with browsing.runtime.offline_generation("reply"):
-            wire, _ = await generate_with_recovery(
+            wire, audit = await generate_with_recovery(
                 browsing.runtime, channel="generation.browsing_identity", identity=identity + ":" + current["identity_version"],
                 binding={"task": "generation", "account_id": account,
                          "character": {key: character[key] for key in ("id", "version")},
                          "source_sha256": content_hash(thread), "self_identity": current},
                 character=character, messages=messages, generate=invoke, validate=response_input.validate_wire,
-                max_tokens=request["config"]["decision_max_tokens"], guard=guard, generation_context=nullcontext,
+                max_tokens=request["config"]["decision_max_tokens"], guard=guard,
+                diagnose=response_input.diagnose,
             )
             response = response_input.resolve(wire)
             guard()
             if response.action != "reply_public":
                 raise ValueError("身份更新后选择暂不发送：" + (response.explanation or response.reason))
             target = target | {"generation_identity": current}
+            if audit:
+                target["generation_continuation_id"] = audit["id"]
             browsing.store.execute(
                 "UPDATE browsing_intents SET text=?,target=?,evidence=?,reason=?,error=NULL,updated_at=? WHERE id=?",
                 (response.text, dump(target), dump(response.evidence_ids), response.explanation or response.reason,
                  time.time(), identity),
             )
+            if audit and audit["state"] == "awaiting_review":
+                browsing.store.execute(
+                    "UPDATE browsing_intents SET status='pending_review',auto_authorized=0 WHERE id=?", (identity,)
+                )
 
     def _apply_revision(self, identity, prepared, text):
         prepared.guard()
@@ -414,24 +425,26 @@ class BrowsingPublication:
                 or not continuation["can_resume"]
             ):
                 raise ValueError("生成检查点的账号、角色、原始任务或状态已变化")
-            token = generation_resume.set(True)
-            try:
-                if event:
-                    policy = self.browsing.configured()
-                    if (
-                        not policy["reply_enabled"]
-                        or source["kind"] == "mention"
-                        and not policy["mention_reply_enabled"]
-                    ):
-                        raise ValueError("通知回应尚未启用")
-                    self.browsing.store.execute(
-                        "UPDATE browsing_events SET status='received' WHERE id=? AND status='checkpoint'",
-                        (source["id"],),
-                    )
-                    return await self.browsing.run(preview=True, notifications_only=True)
-                return await self.browsing.reread(local_id)
-            finally:
-                generation_resume.reset(token)
+            if event:
+                policy = self.browsing.configured()
+                if (
+                    not policy["reply_enabled"]
+                    or source["kind"] == "mention"
+                    and not policy["mention_reply_enabled"]
+                ):
+                    raise ValueError("通知回应尚未启用")
+                self.browsing.runtime.continuations.resume(
+                    continuation_id, binding=continuation["binding"]
+                )
+                self.browsing.store.execute(
+                    "UPDATE browsing_events SET status='received' WHERE id=? AND status IN ('checkpoint','invalid')",
+                    (source["id"],),
+                )
+                return await self.browsing.run(preview=True, notifications_only=True)
+            self.browsing.runtime.continuations.resume(
+                continuation_id, binding=continuation["binding"]
+            )
+            return await self.browsing.reread(local_id)
         return await FeedbackPublication(
             self.browsing.runtime, self.browsing.store, self.browsing.operations
         ).resume(

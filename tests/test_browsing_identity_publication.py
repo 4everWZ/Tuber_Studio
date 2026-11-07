@@ -9,8 +9,8 @@ from test_browsing import finished
 from tuber_studio.operation_identity import identity_snapshot
 
 
-@pytest.mark.parametrize("profile_available", [True, False])
-async def test_identity_changes_refresh_the_approved_public_intent_without_another_approval(browsing, monkeypatch, profile_available):
+@pytest.mark.parametrize("profile_available,internal_ref", [(True, False), (False, False), (True, True)])
+async def test_identity_changes_refresh_the_approved_public_intent_without_another_approval(browsing, monkeypatch, profile_available, internal_ref):
     state = {"platform": "bilibili", "account_uid": "100", "account_display_name": "旧名字", "account_bio": "旧简介"}
 
     def current(character=None, account_id=None):
@@ -40,7 +40,7 @@ async def test_identity_changes_refresh_the_approved_public_intent_without_anoth
         generated.append(messages)
         value = await original(messages, schema, max_tokens=max_tokens)
         if schema.get("title") == "ResponseDecision":
-            value["text"] = "本鲸换好新门牌，还想接着聊盐水里浮起来的鸡蛋。"
+            value["text"] = ("先看ref:1。" if internal_ref else "") + "本鲸换好新门牌，还想接着聊盐水里浮起来的鸡蛋。"
         return value
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
@@ -50,6 +50,16 @@ async def test_identity_changes_refresh_the_approved_public_intent_without_anoth
         assert not generated and not browsing.adapter.sent
         assert browsing.intents()[0]["status"] == "approved"
         return
+    if internal_ref:
+        with pytest.raises(ValueError):
+            await browsing.publish(intent["id"])
+        saved = browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],))
+        assert saved["status"] == "pending_review" and not saved["auto_authorized"]
+        assert len(generated) == 1 and not browsing.adapter.sent
+        audit = browsing.runtime.continuations.get(json.loads(saved["target"])["generation_continuation_id"])
+        assert audit["state"] == "awaiting_review" and "内部引用标识" in audit["feedback"]["message"]
+        assert audit["current_output"]["text"] == saved["text"]
+        browsing.review(intent["id"], "approve")
     await browsing.publish(intent["id"])
     saved = browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],))
     assert saved["status"] == "published" and saved["source_key"] == source_key

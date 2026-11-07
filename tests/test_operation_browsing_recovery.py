@@ -10,7 +10,7 @@ from test_browsing import finished, model_packet
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 
 
-async def test_generation_wait_checkpoint_resumes_original_material_and_stays_preview(browsing):
+async def test_invalid_generation_requires_explicit_resume_with_original_material_and_stays_preview(browsing):
     service = browsing
     service.store.set("browsing_policy", service.policy() | {"max_output_tokens": 32768})
     platform, model = service.adapter, service.runtime.llm
@@ -38,17 +38,28 @@ async def test_generation_wait_checkpoint_resumes_original_material_and_stays_pr
     model.generate_json = generate
     result = await finished(service, preview=True)
     task = service.tasks()[0]
-    assert task["status"] == "checkpoint" and task["continuation"]["can_resume"]
+    assert task["status"] == "invalid" and task["continuation"]["can_resume"]
     continuation_id = task["continuation"]["id"]
+    first = service.runtime.continuations.get(continuation_id)
+    assert first["state"] == "invalid" and first["current_output"] is None
+    assert calls.count("ContentDecision") == 1 and "ContinuationDecision" not in calls
+    material_key = service.store.one("SELECT material_key FROM browsing_tasks WHERE id=?", (task["id"],))["material_key"]
+    material = service.evidence.load(material_key)
     assert not platform.sent
     repairing = True
     resumed = await service.resume_continuation("generation:" + task["id"], continuation_id)
     await asyncio.wait_for(service.active[resumed["id"]], 3)
     assert resumed["id"] != result["id"]
-    assert service.runtime.continuations.get(continuation_id)["state"] == "completed"
+    updated = service.runtime.continuations.get(continuation_id)
+    assert updated["state"] == "completed" and updated["episode"] != first["episode"]
+    assert len(updated["revisions"]) > len(first["revisions"])
     assert any(row["status"] == "selected" for row in service.tasks())
     assert not platform.sent and service.intents()[0]["status"] == "pending_review"
-    assert calls.count("ContinuationDecision") == 2
+    assert calls.count("ContentDecision") == 2 and "ContinuationDecision" not in calls
+    refreshed_key = service.store.one("SELECT material_key FROM browsing_tasks WHERE round_id=?", (resumed["id"],))["material_key"]
+    refreshed = service.evidence.load(refreshed_key)
+    assert refreshed["source_version"] == material["source_version"]
+    assert refreshed["parts"] == material["parts"]
 
 
 async def test_private_failed_response_is_redacted_from_public_task_and_visible_only_in_dm(browsing):

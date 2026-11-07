@@ -1,7 +1,6 @@
-"""Generation validation and prose diagnostics reuse the task continuation loop."""
+"""One generation attempt, durable diagnostics, and explicit interrupted resumes."""
 
 import time
-from contextlib import nullcontext
 
 from .compaction import ContextWindowExceeded
 from .generation_meter import GenerationBudgetExceeded
@@ -9,10 +8,8 @@ from .operation_continuations import (
     ContinuationCheckpoint,
     GenerationFeedback,
     content_hash,
-    continuation_messages,
-    deferred_generation_decision,
 )
-from .operation_feedback import FeedbackModel, coordinator_for, episode_limits
+from .operation_feedback import coordinator_for, episode_limits
 from .operation_identity import captured_identity, identity_messages, runtime_identity
 from .web_fetch import OperationWebFetch
 
@@ -55,6 +52,19 @@ class GenerationDeferred(ContinuationCheckpoint):
         self.continuation = continuation
 
 
+class GenerationInvalid(ValueError):
+    def __init__(self, continuation):
+        super().__init__("运营输出无效，保留原输出与诊断：" + continuation["feedback"].get("message", ""))
+        self.continuation = continuation
+
+
+def generation_requires_review(store, identity):
+    if not identity:
+        return False
+    row = store.one("SELECT state FROM operation_continuations WHERE id=?", (identity,))
+    return row is None or row["state"] != "completed"
+
+
 def recoverable_feedback(error, provider):
     if isinstance(error, (ContextWindowExceeded, GenerationBudgetExceeded, ContinuationCheckpoint)):
         raise error
@@ -83,17 +93,11 @@ async def generate_with_recovery(
     max_tokens,
     guard,
     diagnose=None,
-    generation_context=nullcontext,
-    readers=None,
     parent_round_id=None,
     deadline=None,
     context_data=None,
     reuse_completed=False,
-    max_recoveries=None,
     allow_web_fetch=False,
-    restart_deferred=False,
-    recovery_decision=None,
-    restart_incomplete_deferred=False,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     actor = captured_identity(messages) or runtime_identity(runtime, character, binding.get("account_id"))
@@ -101,14 +105,21 @@ async def generate_with_recovery(
     binding = binding | {"self_identity": actor}
     coordinator = coordinator_for(runtime, runtime.store, runtime.operations)
     limits = episode_limits(max_tokens)
-    if max_recoveries is not None:
-        limits["max_recoveries"] = max_recoveries
     row = coordinator.find(channel, identity)
-    if reuse_completed and row and row["state"] == "completed":
-        if content_hash(row["binding"]) != content_hash(binding):
-            raise ValueError("生成检查点的来源绑定已变化")
+    if row and content_hash(row["binding"]) != content_hash(binding):
+        raise ValueError("生成检查点的来源绑定已变化")
+    if row and (
+        row["state"] in {"invalid", "deferred", "awaiting_review"}
+        or reuse_completed and row["state"] == "completed"
+    ):
         guard()
-        return validate(row["current_output"]), coordinator.dto(channel, identity)
+        if row["state"] == "invalid":
+            raise GenerationInvalid(coordinator.dto(channel, identity))
+        try:
+            return validate(row["current_output"]), coordinator.dto(channel, identity)
+        except ValueError:
+            coordinator._state(row["id"], "invalid")
+            raise GenerationInvalid(coordinator.dto(channel, identity)) from None
 
     def checked(value):
         try:
@@ -117,29 +128,20 @@ async def generate_with_recovery(
             raw = getattr(runtime.llm, "last_content", None)
             raise GenerationFeedback(str(error), original_output=raw if raw is not None else value) from None
 
-    # Browsing may reconsider an explicitly deferred comment in a later batch.
-    # A restart of the same batch keeps its existing continuation instead.
-    reconsider = bool(
-        restart_deferred and row and row["state"] == "waiting"
-        and parent_round_id and row["parent_round_id"] != parent_round_id
-    )
-    run_initial = row is None or row["state"] in {"completed", "abandoned"} or reconsider
-    resume_initial = bool(
-        row
-        and (
-            row["state"] == "checkpoint"
-            and row["feedback"].get("kind") == "round_budget"
-            and row["feedback"].get("initial")
-            and parent_round_id != row["parent_round_id"]
-            or row["state"] == "cancelled"
-            and row["original_output"] is None
-            and row["current_output"] is None
-            or restart_incomplete_deferred
-            and row["state"] == "waiting"
-            and row["feedback"].get("kind") in {"validation_error", "output_limit"}
-            and deferred_generation_decision(row) is not None
-        )
-    )
+    if row and row["state"] in {"waiting", "abandoned", "needs_material"} or (
+        row and row["state"] == "checkpoint" and row["feedback"].get("kind") in {"validation_error", "output_limit", "style_diagnostic"}
+    ):
+        # Old repair-loop results remain auditable; they are not fresh, valid
+        # initial decisions and never silently start another automatic episode.
+        coordinator._state(row["id"], "awaiting_review" if row["current_output"] is not None else "invalid")
+        saved = coordinator.dto(channel, identity)
+        if saved["state"] == "invalid":
+            raise GenerationInvalid(saved)
+        try:
+            return validate(saved["current_output"]), saved
+        except ValueError:
+            coordinator._state(row["id"], "invalid")
+            raise GenerationInvalid(coordinator.dto(channel, identity)) from None
     if row is None:
         row = coordinator.begin(
             channel,
@@ -150,16 +152,7 @@ async def generate_with_recovery(
             deadline=deadline,
             budget_limits=limits,
         )
-    elif run_initial:
-        row = coordinator.restart_generation(
-            row["id"],
-            binding=binding,
-            parent_round_id=parent_round_id,
-            deadline=deadline,
-            budget_limits=limits,
-            restart_deferred=reconsider,
-        )
-    elif row["can_resume"] and row["state"] != "needs_reconciliation":
+    elif row["can_resume"] or row["state"] == "completed":
         row = coordinator.resume(
             row["id"],
             binding=binding,
@@ -167,15 +160,6 @@ async def generate_with_recovery(
             deadline=deadline,
             budget_limits=limits,
         )
-    model = FeedbackModel(
-        runtime,
-        coordinator,
-        character,
-        context_data if context_data is not None else {"task_context": messages},
-        max_tokens=row["limits"].get("generation_max_tokens", max_tokens),
-        reads=(readers or {}).keys(),
-        generation_context=generation_context,
-    )
     web_fetch = (
         OperationWebFetch(guard)
         if allow_web_fetch
@@ -233,33 +217,20 @@ async def generate_with_recovery(
     async def initial(current):
         return await produce(messages, current)
 
-    async def revise(current, decision):
-        packet = continuation_messages(messages)
-        if recovery_decision is not None:
-            packet = [*packet, {"role": "user", "content": "本次校验修订要求：" + decision.reason}]
-        return await produce(packet, current)
-
-    async def decide(current):
-        if recovery_decision is not None:
-            return await recovery_decision(current)
-        if not hasattr(runtime.llm, "generate_json"):
-            raise ContinuationCheckpoint("当前Provider未提供恢复决策接口")
-        return await model.decide(current)
-
     try:
         result = await coordinator.run(
             row["id"],
-            decide=decide,
-            revise=revise,
+            decide=None,
+            revise=None,
             guard=guard,
-            read_more=readers,
-            initial=initial if run_initial or resume_initial else None,
+            initial=initial,
         )
     except Exception as error:
         error.continuation = coordinator.dto(channel, identity)
         raise
-    if result.state in {"awaiting_review", "completed"} and result.value is not None:
+    if result.state in {"awaiting_review", "completed", "deferred"} and result.value is not None:
         value = validate(result.value)
-        coordinator._state(row["id"], "completed", output=value)
-        return value, coordinator.dto(channel, identity) if coordinator.get(row["id"])["recoveries"] else None
+        return value, coordinator.dto(channel, identity)
+    if result.state == "invalid":
+        raise GenerationInvalid(coordinator.dto(channel, identity))
     raise GenerationDeferred(coordinator.dto(channel, identity))

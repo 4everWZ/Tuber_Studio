@@ -41,7 +41,7 @@ def test_video_preference_is_independent_of_permission_to_reply():
 
 
 def test_internal_reasons_are_bounded_without_limiting_reply_prose():
-    wire = response_schema(["r1"], video_actions=True)
+    wire = response_schema(["ref:1"], video_actions=True)
     for branch in wire["oneOf"]:
         for field in ("explanation", "preference_reason"):
             assert branch["properties"][field]["maxLength"] == 1024
@@ -49,7 +49,7 @@ def test_internal_reasons_are_bounded_without_limiting_reply_prose():
             assert "maxLength" not in branch["properties"]["text"]
     packet = ResponseDecisionInput({"evidence": [{"id": "subtitle", "text": "盐水鸡蛋实验"}]})
     response = {"action": "reply_public", "reason": "specific_detail", "text": "正常正文" * 300,
-                "explanation": "看清了鸡蛋浮起来", "evidence_ids": ["r1"]}
+                "explanation": "看清了鸡蛋浮起来", "evidence_ids": ["ref:1"]}
     assert packet.validate_wire(response).text == response["text"]
     with pytest.raises(ValueError, match="explanation.*最多1024"):
         packet.validate_wire(response | {"explanation": "白" * 1025})

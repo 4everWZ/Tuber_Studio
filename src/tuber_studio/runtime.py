@@ -3,7 +3,7 @@
 import asyncio
 import socket
 import time
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 
 import psutil
 
@@ -362,7 +362,7 @@ class Runtime:
 
             def diagnose(value):
                 return (
-                    "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓"
+                    "正文包含大量重复内容，保留原文待审"
                     if operation_output_diagnostics(value.spoken_text)["needs_review"]
                     else None
                 )
@@ -379,7 +379,6 @@ class Runtime:
                 max_tokens=maximum,
                 guard=guard,
                 diagnose=diagnose,
-                generation_context=nullcontext,
                 context_data={
                     "event": event,
                     "relationship": relationship,
@@ -434,14 +433,7 @@ class Runtime:
                 "usage": dict(getattr(self.llm, "last_usage", {})),
             }
             if audit["output"]["needs_review"]:
-                if continuation:
-                    audit["output"] |= {
-                        "diagnostic_needs_review": True,
-                        "needs_review": False,
-                        "agent_checked": True,
-                    }
-                else:
-                    audit["warning"] = "长正文含大量重复段落，保留原文待审"
+                audit["warning"] = "长正文含大量重复段落，保留原文待审"
             audit["continuation"] = continuation
         return reply, audit
 

@@ -1,3 +1,7 @@
+"""Internal references have a namespace; speech defects never require regeneration."""
+
+import json
+
 import pytest
 from test_browsing import browsing as browsing
 
@@ -7,7 +11,7 @@ from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
 def response(text):
     return {
         "action": "reply_public", "reason": "specific_detail", "explanation": "接着当前材料回应",
-        "text": text, "evidence_ids": ["r1"],
+        "text": text, "evidence_ids": ["ref:1"],
     }
 
 
@@ -18,121 +22,61 @@ def source_input(extra=None):
     })
 
 
-@pytest.mark.parametrize("text", ["start with r84.", "先看r84吧", "先看R84吧", "读[r1]再答", "先r84后r2。"])
-def test_unquoted_current_short_reference_gets_specific_format_feedback(text):
-    with pytest.raises(ValueError, match="内部来源短编号") as error:
-        source_input().validate_wire(response(text))
-    assert "evidence_ids" in str(error.value)
-
-
-@pytest.mark.parametrize(
-    "text,extra",
-    [
-        ("DeepSeek R1的语气挺有意思。", {"video_source": {"title": "DeepSeek r1演示"}}),
-        ("这台R84看起来挺小。", {"evidence": [{"id": "product", "text": "R84是一款键盘。"}]}),
-        ("先看r84吧", {"thread": {"source": {"text": "你怎么看R84这个产品？"}}}),
-        ("我也注意到了r84。", {"video_source": {"description": "今天讨论R84"}}),
-        ("r999还挺有意思。", {}),
-        ("br84和r84_model是产品型号。", {}),
-    ],
-)
-def test_source_products_and_nonreference_product_names_remain_available(text, extra):
-    packet = source_input(extra)
-    assert packet.validate_wire(response(text)).text == text
-
-
-def test_actor_bio_and_old_responses_do_not_turn_an_internal_reference_into_source_text():
-    packet = source_input({
-        "self_actor": {"account_bio": "r84", "text": "r84"},
-        "recent_public_responses": [{"text": "先看r84吧"}],
-    })
-    with pytest.raises(ValueError, match="r84"):
-        packet.validate_wire(response("先看r84吧"))
-
-
-def test_canonical_resolution_and_evidence_selection_keep_working_without_alias_in_speech():
+@pytest.mark.parametrize("text", ["start with ref:84.", "先看ref:84吧", "先看REF:84吧", "读[ref:1]再答", "先ref:84后ref:2。", "再看ref:999。"])
+def test_prose_reference_is_diagnostic_while_citations_remain_valid(text):
     packet = source_input()
-    answer = response("原评论说还没做过安全检查，这一点得看清楚。")
-    assert packet.resolve(answer).evidence_ids == ["source:0"]
-    assert packet.validate_wire(answer).text == answer["text"]
+    value = packet.validate_wire(response(text))
+    assert packet.diagnose(value).startswith("正文含内部引用标识：")
+    assert packet.resolve(value).evidence_ids == ["source:0"]
+    assert packet.resolve(value).text == text
 
 
-async def test_browsing_alias_format_feedback_revises_without_publishing(browsing, monkeypatch):
-    import json
-
-    from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
-
-    await browsing.preflight()
-    row, _ = browsing.repo.create_round(
-        browsing.account, browsing.runtime.character, browsing.configured() | {"autonomous_batch": True}, 0, True,
-    )
-    calls, generated = [], []
-    corrected = "原评论说还没做过安全检查，这一点得看清楚。"
-
-    async def generate(messages, schema, *, max_tokens):
-        calls.append(schema["title"])
-        if schema["title"] == "ContinuationDecision":
-            context = "\n".join(message["content"] for message in messages)
-            assert "内部来源短编号" in context and "r1" in context
-            result = {"action": "revise", "reason": "把内部编号改成能理解的正文", "read": ""}
-        else:
-            text = "先看r1吧" if not generated else corrected
-            generated.append(text)
-            result = response(text)
-        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
-        return result
-
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
-    result = await browsing.decisions._model(
-        row, ResponseDecision,
-        {"kind": "reply_public", "evidence": [{"id": "public:42", "text": "这还是半成品，没做过安全检查。"}], "thread": {}},
-        RESPONSE_INSTRUCTION,
-    )
-    assert result.text == corrected and result.evidence_ids == ["public:42"]
-    assert calls == ["ResponseDecision", "ContinuationDecision", "ResponseDecision"]
-    assert not browsing.intents() and not browsing.adapter.sent
+@pytest.mark.parametrize("text", [
+    "DeepSeek R1的语气挺有意思。", "这台R84看起来挺小。", "先看r84吧",
+    "r999还挺有意思。", "br84和r84_model是产品型号。",
+])
+def test_product_names_are_not_internal_references_with_or_without_source_occurrences(text):
+    # The text namespace is independent of the reference transport. No source
+    # scanning, web-page exemption or restore-time whitelist is necessary.
+    for extra in ({}, {"video_source": {"title": text}}, {"thread": {"source": {"text": text}}}):
+        packet = source_input(extra)
+        value = packet.validate_wire(response(text))
+        assert packet.diagnose(value) is None and value.text == text
 
 
-@pytest.mark.parametrize("literal_field", ["excerpt", "title", "url"])
-@pytest.mark.parametrize("resume", [False, True])
-async def test_real_web_product_literal_survives_completed_reuse_and_checkpoint_resume(
-    browsing, monkeypatch, literal_field, resume,
-):
-    import json
+def test_reference_namespace_has_exact_token_boundaries_and_invocation_local_citations():
+    packet = source_input()
+    for text in ("pref:84", "ref:84_model"):
+        assert packet.diagnose(packet.validate_wire(response(text))) is None
+    assert packet.allowed_aliases == {f"ref:{i}" for i in range(1, 85)}
+    for invalid in ("r1", "ref:999", "source:0"):
+        with pytest.raises(ValueError, match="本次短编号"):
+            packet.validate_wire(response("继续聊这个细节。") | {"evidence_ids": [invalid]})
 
+
+@pytest.mark.parametrize("fetch_ok", [False, True])
+async def test_web_product_needs_no_whitelist_on_completed_generation_reuse(browsing, monkeypatch, fetch_ok):
     from tuber_studio import web_fetch
-    from tuber_studio.operation_generation import GenerationDeferred
     from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
-    from tuber_studio.operations.browsing.round_context import generation_resume
 
     await browsing.preflight()
     browsing.runtime.llm.supports_operation_web_fetch = True
     row, _ = browsing.repo.create_round(
         browsing.account, browsing.runtime.character,
-        browsing.configured() | {"autonomous_batch": True, "decision_max_tokens": 512}, 0, True,
+        browsing.configured() | {"autonomous_batch": True}, 0, True,
     )
-    data = {"kind": "reply_public", "evidence": [
-        {"id": f"source:{number}", "text": "真实字幕片段"} for number in range(84)
-    ], "thread": {}}
+    data = {"kind": "reply_public", "evidence": [{"id": "public:42", "text": "你怎么看这款键盘？"}], "thread": {}}
     calls, fetched = [], []
-    resumed = False
 
     async def fetch(url):
         fetched.append(url)
-        page = {"url": url, "title": "产品资料", "excerpt": "真实网页摘录"}
-        page[literal_field] = "https://example.org/R84" if literal_field == "url" else "R84是一款键盘。"
-        return page
+        if not fetch_ok:
+            raise TimeoutError
+        return {"url": url, "title": "R84键盘", "excerpt": "R84是一款键盘。"}
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
-        if schema["title"] == "ContinuationDecision":
-            result = {"action": "revise" if resumed else "wait", "reason": "继续核对引用", "read": ""}
-        elif not fetched:
-            result = {"web_fetch": "https://example.org/product"}
-        else:
-            result = response("R84这款键盘我也想看看。")
-            if resume and not resumed:
-                result["evidence_ids"] = ["r999"]
+        result = {"web_fetch": "https://example.org/R84"} if len(calls) == 1 else response("R84这款键盘我也想看看。")
         browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
         return result
 
@@ -142,67 +86,49 @@ async def test_real_web_product_literal_survives_completed_reuse_and_checkpoint_
     async def run():
         return await browsing.decisions._model(row, ResponseDecision, data, RESPONSE_INSTRUCTION)
 
-    if resume:
-        with pytest.raises(GenerationDeferred):
-            await run()
-        resumed = True
-        result = await run()
-    else:
-        result = await run()
-        call_count = len(calls)
-        token = generation_resume.set(True)
-        try:
-            assert (await run()).text == result.text
-        finally:
-            generation_resume.reset(token)
-        assert len(calls) == call_count
-    assert result.text == "R84这款键盘我也想看看。" and result.evidence_ids == ["source:0"]
-    assert fetched == ["https://example.org/product"]
-    steps = browsing.store.all("SELECT context FROM operation_continuation_steps WHERE phase='web_fetch' AND status='ok'")
-    receipt = json.loads(steps[0]["context"])
-    assert receipt["source_alias_literals"] == ["r84"] and "excerpt" not in receipt
+    result = await run()
+    assert result.text == "R84这款键盘我也想看看。" and result.evidence_ids == ["public:42"]
+    restored = await run()
+    assert restored.text == result.text and restored.evidence_ids == result.evidence_ids
+    assert calls == ["ResponseDecision", "ResponseDecision"]
+    assert fetched == ["https://example.org/R84"]
+    receipt = json.loads(browsing.store.one(
+        "SELECT context FROM operation_continuation_steps WHERE phase='web_fetch'",
+    )["context"])
+    assert "source_alias_literals" not in receipt and "excerpt" not in receipt
+    assert receipt["status"] == ("ok" if fetch_ok else "timeout")
     assert not browsing.intents() and not browsing.adapter.sent
 
 
-async def test_failed_fetch_and_assistant_selected_product_url_do_not_exempt_alias(browsing, monkeypatch):
-    import json
+async def test_reference_in_speech_keeps_candidate_for_review_without_repair_or_automatic_send(browsing, monkeypatch):
+    from test_browsing import BV, finished
 
-    from tuber_studio import web_fetch
-    from tuber_studio.operation_generation import GenerationDeferred
-    from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
-
-    await browsing.preflight()
-    browsing.runtime.llm.supports_operation_web_fetch = True
-    row, _ = browsing.repo.create_round(
-        browsing.account, browsing.runtime.character,
-        browsing.configured() | {"autonomous_batch": True, "decision_max_tokens": 512}, 0, True,
-    )
+    browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
+    await browsing.configure({"sources": ["specified"], "watch_videos": [BV], "recent_sample_limit": 0})
+    original = browsing.runtime.llm.generate_json
     calls = []
-
-    async def fetch(url):
-        raise TimeoutError
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
-        if schema["title"] == "ContinuationDecision":
-            assert "内部来源短编号" in "\n".join(message["content"] for message in messages)
-            result = {"action": "wait", "reason": "网页未读到，先保留任务", "read": ""}
-        elif len(calls) == 1:
-            result = {"web_fetch": "https://example.org/R84"}
-        else:
-            result = response("R84这款键盘我也想看看。")
-        browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
-        return result
+        value = await original(messages, schema, max_tokens=max_tokens)
+        if schema["title"] == "ResponseDecision":
+            value["text"] = "先看ref:1吧，这里加盐以后鸡蛋浮起来了。"
+        browsing.runtime.llm.last_content = json.dumps(value, ensure_ascii=False)
+        return value
 
-    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
-    with pytest.raises(GenerationDeferred):
-        await browsing.decisions._model(
-            row, ResponseDecision,
-            {"kind": "reply_public", "evidence": [
-                {"id": f"source:{number}", "text": "真实字幕片段"} for number in range(84)
-            ], "thread": {}}, RESPONSE_INSTRUCTION,
-        )
-    step = browsing.store.one("SELECT context FROM operation_continuation_steps WHERE phase='web_fetch'")
-    assert "source_alias_literals" not in json.loads(step["context"])
-    assert not browsing.intents() and not browsing.adapter.sent
+    row = await finished(browsing, automatic=True, video_only=True)
+    assert row["status"] == "completed"
+    assert calls == ["CandidateBatchPlan", "ResponseDecision"]
+    intent, = browsing.intents()
+    assert intent["status"] == "pending_review" and not intent["auto_authorized"]
+    assert "ref:1" in intent["text"] and intent["evidence"] == ["11:0"]
+    episode = browsing.runtime.continuations.get(browsing.store.one(
+        "SELECT id FROM operation_continuations WHERE channel='generation.browsing' "
+        "AND json_extract(binding,'$.schema')='ResponseDecision'",
+    )["id"])
+    assert episode["state"] == "awaiting_review"
+    assert "内部引用标识" in episode["feedback"]["message"]
+    assert episode["current_output"]["text"] == intent["text"]
+    assert episode["current_output"]["evidence_ids"] == ["ref:1"]
+    assert not browsing.adapter.sent

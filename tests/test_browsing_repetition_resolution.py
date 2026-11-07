@@ -9,7 +9,6 @@ from test_browsing_batches import authorize
 
 from tuber_studio.api_providers import APIProvider
 from tuber_studio.operation_feedback import FeedbackModel
-from tuber_studio.operation_generation import GenerationDeferred
 from tuber_studio.operations.browsing.decisions import BrowsingDecisions
 from tuber_studio.operations.browsing.models import ResponseDecision
 from tuber_studio.publication_errors import SendLimitReached
@@ -58,10 +57,7 @@ async def test_archived_publication_text_stays_in_audit_without_reentering_curre
     assert browsing.store.one("SELECT text FROM browsing_intents WHERE id='archived'")["text"] == old
 
 
-@pytest.mark.parametrize("action", ["wait", "abandon"])
-async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_the_batch(
-    browsing, monkeypatch, action
-):
+async def test_repeated_main_reply_stays_reviewable_without_parking_the_batch(browsing, monkeypatch):
     await finished(browsing, preview=True)
     published = browsing.intents()[0]
     browsing.review(published["id"], "approve")
@@ -70,8 +66,7 @@ async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_
     await browsing.configure({"sources": ["specified"], "watch_videos": [next_video]})
 
     async def decide(self, row):
-        assert row["feedback"]["kind"] == "style_diagnostic"
-        return {"action": action, "reason": "这句话刚发过，先不重复发，看看别人的新评论"}
+        raise AssertionError("A prose diagnostic must not start a model repair decision")
 
     monkeypatch.setattr(FeedbackModel, "decide", decide)
     await authorize(browsing)
@@ -79,23 +74,15 @@ async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_
     assert completed["status"] == "completed", completed
     assert completed["metrics"]["failures"] == 0
     assert len(browsing.adapter.sent) == 1
-    task = next(
-        item
-        for item in browsing.tasks(round_id=completed["id"])
-        if item["bvid"] == next_video and "generation_resolution" in item.get("payload", {})
-    )
-    assert task["status"] == "viewed_without_comment" and not task["error"]
-    resolution = task["payload"]["generation_resolution"]
-    assert resolution["decision"]["action"] == action
-    assert resolution["original_candidate"]["text"] == published["text"]
-    assert resolution["feedback"]["kind"] == "style_diagnostic"
-    assert browsing.repo.content_progress(completed, next_video)["main_decision"]["action"] == (
-        "wait" if action == "wait" else "skip"
-    )
+    intent = next(item for item in browsing.intents() if item["target"].get("bvid") == next_video)
+    assert intent["status"] == "pending_review" and not intent["auto_authorized"]
+    generation = browsing.runtime.continuations.get(intent["target"]["generation_continuation_id"])
+    assert generation["state"] == "awaiting_review" and generation["recoveries"] == 0
+    assert generation["feedback"]["kind"] == "style_diagnostic"
+    assert not any(step["phase"] == "decision" for step in generation["revisions"])
     saved = browsing.repo.content_progress(completed, next_video)["main_decision"]
-    assert saved["video_preference"] == resolution["original_candidate"]["video_preference"]
-    assert saved["preference_reason"] == resolution["original_candidate"]["preference_reason"]
-    assert saved["text"] == ""
+    assert saved["action"] == "reply_public" and saved["text"] == published["text"]
+    assert saved["video_preference"] and saved["preference_reason"]
     assert browsing.repo.batches.get(completed)["state"] == "completed"
 
     async def comments(video, max_pages=1):
@@ -132,81 +119,13 @@ async def test_repeated_main_reply_can_be_deferred_by_the_model_without_parking_
     reply = await finished(browsing, automatic=True, interaction_only=True)
     assert reply["status"] == "completed"
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "601"]
-    assert (
-        len(
-            [
-                item
-                for item in browsing.intents()
-                if item["target"].get("bvid") == next_video and item["kind"] == "top_level"
-            ]
-        )
-        == 0
-    )
+    main_intents = [item for item in browsing.intents()
+                    if item["target"].get("bvid") == next_video and item["kind"] == "top_level"]
+    assert len(main_intents) == 1 and main_intents[0]["id"] == intent["id"]
+    assert main_intents[0]["status"] == "pending_review"
 
 
-@pytest.mark.parametrize(
-    ("state", "kind", "message"),
-    [
-        ("checkpoint", "style_diagnostic", "正文重复"),
-        ("waiting", "model_error", "模型网络中断"),
-        ("waiting", "timeout", "请求超时"),
-        ("waiting", "capacity", "窗口不足"),
-        ("waiting", "style_diagnostic", "标点异常"),
-    ],
-)
-def test_unrelated_checkpoints_are_not_finalized_as_repetition(state, kind, message):
-    error = GenerationDeferred(
-        {
-            "id": "saved",
-            "state": state,
-            "feedback": {"kind": kind, "message": message},
-            "revisions": [
-                {
-                    "phase": "decision",
-                    "status": "completed",
-                    "action": "wait",
-                    "output": {"action": "wait", "reason": "等网络恢复"},
-                }
-            ],
-        }
-    )
-    assert BrowsingDecisions._generation_resolution(error) is None
-
-
-@pytest.mark.parametrize(
-    ("kind", "same_parent", "reason", "latest_action", "allowed"),
-    [
-        ("output_limit", False, "下次再接着说", "wait", True),
-        ("output_limit", True, "下次再接着说", "wait", False),
-        ("timeout", False, "网络中断", "wait", False),
-        ("output_limit", False, "  ", "wait", False),
-        ("output_limit", False, "继续改写", "revise", False),
-    ],
-)
-async def test_new_episode_rechecks_model_deferral_and_different_parent_atomically(
-    browsing, kind, same_parent, reason, latest_action, allowed
-):
-    first, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
-    browsing.store.execute("UPDATE browsing_rounds SET status='completed' WHERE id=?", (first["id"],))
-    second, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
-    coordinator = browsing.runtime.continuations
-    binding = {"task": "generation", "source": "same-real-comment"}
-    saved = coordinator.begin("generation.browsing", "atomic-deferral", binding, {"kind": kind}, parent_round_id=first["id"])
-    coordinator._step(saved, "decision", "completed", action=latest_action, output={"action": latest_action, "reason": reason})
-    coordinator._state(saved["id"], "waiting")
-    parent = first["id"] if same_parent else second["id"]
-    if allowed:
-        restarted = coordinator.restart_generation(saved["id"], binding=binding, parent_round_id=parent, restart_deferred=True)
-        assert restarted["state"] == "pending" and restarted["episode"] != saved["episode"]
-        assert restarted["parent_round_id"] == second["id"]
-        assert any(step["phase"] == "decision" for step in restarted["revisions"])
-    else:
-        with pytest.raises(ValueError, match="只有新的生成请求"):
-            coordinator.restart_generation(saved["id"], binding=binding, parent_round_id=parent, restart_deferred=True)
-        assert coordinator.get(saved["id"])["state"] == "waiting"
-
-
-async def isolated_output_limit_provider(browsing, action, *, comments=False, network=False, private=None):
+async def isolated_output_limit_provider(browsing, *, comments=False, network=False, private=None):
     """Exercise the real HTTP provider, feedback coordinator and task executor."""
     original = browsing.runtime.llm
     calls = []
@@ -222,7 +141,7 @@ async def isolated_output_limit_provider(browsing, action, *, comments=False, ne
             schema = body["response_format"]["schema"]
             if "read" in schema.get("properties", {}):
                 calls.append("feedback")
-                text = json.dumps({"action": action, "reason": "现在先停在这里，下一次再接着聊", "read": ""})
+                text = json.dumps({"action": "wait", "reason": "unexpected repair call", "read": ""})
                 finish = "stop"
             else:
                 # APIProvider keeps the domain schema inside the web-fetch union.
@@ -273,10 +192,9 @@ async def isolated_output_limit_provider(browsing, action, *, comments=False, ne
     return original, provider, calls
 
 
-@pytest.mark.parametrize("action", ["wait", "abandon"])
 @pytest.mark.parametrize("comments", [False, True])
-async def test_output_limit_explicit_model_choice_finishes_this_batch_and_wait_comments_can_return(
-    browsing, monkeypatch, action, comments
+async def test_output_limit_keeps_diagnostic_without_feedback_or_cross_round_model_retry(
+    browsing, monkeypatch, comments
 ):
     from test_browsing_comment_only import attach_comment_source
 
@@ -285,57 +203,36 @@ async def test_output_limit_explicit_model_choice_finishes_this_batch_and_wait_c
     await browsing.configure({"reply_enabled": comments})
     if comments:
         attach_comment_source(browsing, monkeypatch)
-    original, provider, calls = await isolated_output_limit_provider(browsing, action, comments=comments)
+    original, provider, calls = await isolated_output_limit_provider(browsing, comments=comments)
     try:
-        first = await finished(browsing, automatic=True, video_only=True)
-        if not comments:
-            assert first["status"] == "paused", first
-            saved = browsing.repo.content_progress(first, BV)
-            assert saved["material"]["metadata"]["bvid"] == BV
-            assert saved["main_decision"] is None
-            task = browsing.store.one("SELECT * FROM browsing_tasks WHERE status='checkpoint'")
-            assert json.loads(task["payload"])["generation_resolution"]["decision"]["action"] == action
-            assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
-            assert calls == ["CandidateBatchPlan", "ResponseDecision", "feedback"]
-            assert not browsing.intents() and not browsing.adapter.sent
-            if action == "wait":
-                resumed = await finished(browsing, automatic=True, video_only=True)
-                assert resumed["status"] == "completed", resumed
-                assert browsing.repo.content_progress(resumed, BV)["main_decision"]["video_preference"] == "neutral"
-                assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
-            return
-        assert first["status"] == "completed", first
-        assert first["metrics"]["failures"] == 0
-        assert browsing.repo.batches.get(first)["state"] == "completed"
-        assert not browsing.intents() and not browsing.adapter.sent
-        assert calls == ["CandidateBatchPlan"]
-        first_reply = await finished(browsing, automatic=True, interaction_only=True)
-        assert first_reply["status"] == "completed"
-        assert calls == ["CandidateBatchPlan", "ResponseDecision", "feedback"]
-        assert not browsing.store.all("SELECT * FROM browsing_tasks WHERE status IN ('failed','checkpoint')")
+        main = await finished(browsing, automatic=True, video_only=True)
+        assert main["status"] == ("completed" if comments else "partial")
+        assert browsing.repo.batches.get(main)["state"] == "completed"
         if comments:
-            saved = json.loads(browsing.store.one("SELECT decision FROM browsing_comment_progress")["decision"])
-            assert saved["action"] == ("wait" if action == "wait" else "skip")
-            assert saved["explanation"] == "现在先停在这里，下一次再接着聊"
+            reply = await finished(browsing, automatic=True, interaction_only=True)
+            assert reply["status"] == "completed"
+            diagnostic = browsing.tasks(round_id=reply["id"])[0]["repetition_decisions"][0]
+            assert diagnostic["state"] == "invalid" and diagnostic["comment_id"] == "601"
+            assert not browsing.store.all("SELECT * FROM browsing_comment_progress")
             assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
-            second = await finished(browsing, automatic=True, video_only=True)
-            assert second["status"] == "completed", [
-                (item["status"], item["error"]) for item in browsing.tasks(round_id=second["id"])
-            ]
-            second_reply = await finished(browsing, automatic=True, interaction_only=True)
-            assert second_reply["status"] == "completed"
-            assert len(browsing.adapter.sent) == int(action == "wait"), {
-                "calls": calls, "tasks": browsing.tasks(round_id=second_reply["id"]),
-                "intents": browsing.intents(),
-            }
-            assert calls.count("ResponseDecision") == (2 if action == "wait" else 1)
-            if action == "wait":
-                assert browsing.adapter.sent[0][1] == "慢慢加盐就能看出鸡蛋浮起来，盐水密度的变化很直观。"
-            third = await finished(browsing, automatic=True, video_only=True)
-            assert third["status"] == "completed"
-            third_reply = await finished(browsing, automatic=True, interaction_only=True)
-            assert third_reply["status"] == "completed"
-            assert len(browsing.adapter.sent) == int(action == "wait")
+        else:
+            saved = browsing.repo.content_progress(main, BV)
+            assert saved["material"]["metadata"]["bvid"] == BV and saved["main_decision"] is None
+            task = browsing.tasks(round_id=main["id"])[0]
+            assert task["status"] == "invalid" and task["error"]
+            assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
+        assert calls == ["CandidateBatchPlan", "ResponseDecision"]
+        assert not browsing.intents() and not browsing.adapter.sent
+        generation = browsing.store.one("SELECT id FROM operation_continuations "
+            "WHERE json_extract(binding,'$.schema')='ResponseDecision'")
+        audit = browsing.runtime.continuations.get(generation["id"])
+        assert audit["state"] == "invalid" and audit["feedback"]["kind"] == "output_limit"
+        assert audit["current_output"] is None and audit["original_output"]
+        await finished(browsing, automatic=True, video_only=True)
+        if comments:
+            await finished(browsing, automatic=True, interaction_only=True)
+        assert calls.count("ResponseDecision") == 1 and "feedback" not in calls
+        assert not browsing.adapter.sent
     finally:
         await provider.close()
         browsing.runtime.llm = original
@@ -345,7 +242,7 @@ async def test_real_http_timeout_keeps_checkpoint_without_inventing_a_model_wait
     await browsing.configure({"sources": ["specified"], "watch_videos": [BV]})
     await authorize(browsing)
     await browsing.configure({"reply_enabled": False})
-    original, provider, calls = await isolated_output_limit_provider(browsing, "wait", network=True)
+    original, provider, calls = await isolated_output_limit_provider(browsing, network=True)
     try:
         row = await finished(browsing, automatic=True, video_only=True)
         assert row["status"] == "paused"
@@ -367,7 +264,7 @@ async def test_actual_deferred_private_candidate_is_only_visible_in_private_cont
     await browsing.configure({"sources": ["specified"], "watch_videos": [BV]})
     await authorize(browsing)
     attach_comment_source(browsing, monkeypatch)
-    original, provider, _ = await isolated_output_limit_provider(browsing, "wait", comments=True, private=private)
+    original, provider, _ = await isolated_output_limit_provider(browsing, comments=True, private=private)
     try:
         row = await finished(browsing, automatic=True, video_only=True)
         assert row["status"] == "completed"

@@ -30,7 +30,7 @@ from .operation_feedback import (
     private_generation_views,
     publication_binding,
 )
-from .operation_generation import generate_with_recovery, reply_generation_binding
+from .operation_generation import generate_with_recovery, generation_requires_review, reply_generation_binding
 from .operation_identity import runtime_identity
 from .operation_text import validate_operation_text
 from .operations_control import canonical_intent
@@ -970,7 +970,12 @@ class DirectMessages:
                 researching = (event.get("agreement_task") or {}).get("completion_evidence") == []
                 if draft.get("proposed_text") and proposal_identity == snapshot and not researching:
                     reply = OperationReply(spoken_text=draft["proposed_text"], reply_to=[event["event_id"]])
-                    check = {"generation_identity": proposal_identity, "output": {"needs_review": False}, "reused_proposal": True}
+                    generation_id = (json.loads(draft.get("video_evidence") or "null") or {}).get(
+                        "generation_continuation_id"
+                    )
+                    check = {"generation_identity": proposal_identity, "output": {
+                        "needs_review": generation_requires_review(self.store, generation_id),
+                    }, "reused_proposal": True}
                 else:
                     reply, check = await self.runtime.generate_reply(
                         self.scope(draft), character, event, relationship, mode="direct_message"
@@ -1286,6 +1291,7 @@ class DirectMessages:
                 != self._source(row["source_kind"], row["source_id"], self.runtime.character)["content"]
             ):
                 raise ValueError("原始私信或角色已变化，请重新准备")
+            self.runtime.continuations.resume(continuation["id"], binding=continuation["binding"])
             return {
                 "status": "queued",
                 **self.retry(identity),
@@ -1390,7 +1396,7 @@ class DirectMessages:
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
             if draft["status"] != "pending_review":
                 return self._draft_view(draft)
-            if approved:
+            if approved and not json.loads(draft.get("answer_check") or "{}").get("output", {}).get("needs_review"):
                 self.review(identity, "approve")
         draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if draft["source_kind"] == "comment":
@@ -1444,6 +1450,8 @@ class DirectMessages:
             row = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
             if not row or row["status"] not in ({"pending_review"} if automatic else {"approved", "copied"}):
                 raise ValueError("私信尚未审核、已发送或结果待核对，不能发送")
+            if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
+                raise ValueError("正文诊断尚待审核，未自动发送")
             character = self.store.character(row["character_id"], row["character_version"])
             source = self._source(row["source_kind"], row["source_id"], character)
             if source["platform_user_id"] != row["platform_user_id"] or source["platform"] != row["platform"]:

@@ -26,6 +26,7 @@ async def prepared_service(
     max_tokens=8192,
     unknown=False,
     delivered=False,
+    revision_text="这锅饭我先替你闻香，火候放慢一点。",
 ):
     credentials = {"sessdata": "isolated-session", "csrf": "isolated-csrf"}
     posted = []
@@ -118,7 +119,7 @@ async def prepared_service(
             text = json.dumps(
                 {"action": action, "reason": "结合平台反馈继续这次交流", "read": ""}
                 if "action" in schema["properties"]
-                else {"text": "这锅饭我先替你闻香，火候放慢一点。"},
+                else {"text": revision_text},
                 ensure_ascii=False,
             )
         return httpx.Response(
@@ -205,6 +206,38 @@ async def test_high_explicit_budget_does_not_strand_body_after_decision_refund(s
         assert row["budget"] == {"model_calls": 4, "input_tokens": 800, "output_tokens": 42}
         assert row["limits"]["max_output_tokens"] == 0 and len(posted) == 1
         assert row["limits"]["generation_max_tokens"] == 65536
+    finally:
+        await service.close()
+
+
+@pytest.mark.parametrize("diagnostic", [False, True])
+async def test_platform_revision_diagnostic_is_manual_only_but_clean_revision_keeps_auto_delivery(settings, store, runtime, diagnostic):
+    revised = "选默认配置，选默认配置，选默认配置。" if diagnostic else "这锅饭我先替你闻香，火候放慢一点。"
+    service, identity, posted, requests = await prepared_service(settings, store, runtime, revision_text=revised)
+    service.operations.configure({"enabled": True, "max_per_hour": 0, "max_per_day": 0, "recipient_cooldown_seconds": 0},
+        account_id="100", character=runtime.character)
+    store.set("browsing_policy", BrowsingPolicy(reply_enabled=True, reply_auto_publish=True,
+        max_per_hour=0, max_per_day=0, recipient_cooldown_seconds=0).model_dump())
+    store.execute("UPDATE drafts SET status='pending_review',account_id='100' WHERE id=?", (identity,))
+    try:
+        result = await service.publish(identity, automatic=True)
+        row = runtime.continuations.find("comments", identity)
+        model_calls = len(requests)
+        assert len([request for request in requests if request["max_tokens"] != 1]) == 2
+        if not diagnostic:
+            assert result["status"] == "published" and row["state"] == "completed" and len(posted) == 2
+            return
+        assert result["status"] == "pending_review" and row["state"] == "awaiting_review"
+        assert row["feedback"]["kind"] == "style_diagnostic" and len(posted) == 1
+        assert store.one("SELECT text FROM drafts WHERE id=?", (identity,))["text"] == revised
+        assert not store.all("SELECT * FROM operation_write_retries")
+        with pytest.raises(ValueError, match="正文诊断"):
+            runtime.continuations.ticket(row["id"], row["trigger_feedback"]["write_token"], {"text": revised}, automatic=True)
+        assert (await service.publish(identity, automatic=True))["status"] == "pending_review"
+        assert len(posted) == 1 and len(requests) == model_calls
+        service.review(identity, "approve")
+        assert (await service.publish(identity))["status"] == "published"
+        assert len(posted) == 2 and len(requests) == model_calls
     finally:
         await service.close()
 

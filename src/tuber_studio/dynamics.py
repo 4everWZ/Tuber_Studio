@@ -6,7 +6,6 @@ import json
 import re
 import time
 import unicodedata
-from contextlib import nullcontext
 from datetime import datetime
 
 from .context_delivery import memory_source_allowed
@@ -623,7 +622,7 @@ class Dynamics:
 
         async with self.runtime.offline_generation("video"):
             guard()
-            data, _ = await generate_with_recovery(
+            data, audit = await generate_with_recovery(
                 self.runtime,
                 channel="generation.dynamics",
                 identity=f"identity-refresh:{post_id}:{identity['identity_version']}",
@@ -640,7 +639,9 @@ class Dynamics:
                 validate=lambda value: self._parse(value, row["sources"]),
                 max_tokens=maximum,
                 guard=guard,
-                generation_context=nullcontext,
+                diagnose=lambda value: "正文包含大量重复内容，保留原文待审"
+                if value["action"] == "post" and operation_output_diagnostics(value["content"])["needs_review"]
+                else None,
                 context_data={"public_sources": row["sources"], "reason": "当前账号身份资料已更新"},
             )
             guard()
@@ -672,6 +673,11 @@ class Dynamics:
                     row["decision_id"],
                 ),
             )
+            if audit:
+                self.store.execute("UPDATE dynamic_decisions SET generation_continuation_id=? WHERE id=?",
+                                   (audit["id"], row["decision_id"]))
+                if audit["state"] == "awaiting_review":
+                    self._status(post_id, "pending_review", "正文诊断尚待审核")
 
     async def _publication_context(self, post_id, automatic, epoch):
         await self._refresh_post_identity(post_id, automatic, epoch)
@@ -742,6 +748,7 @@ class Dynamics:
             row = self.runtime.continuations.get(continuation_id)
             if row["binding"]["character"] != {key: self._character()[key] for key in ("id", "version")}:
                 raise ValueError("生成恢复任务的角色已变化")
+            self.runtime.continuations.resume(row["id"], binding=row["binding"])
             result = await self.evaluate(manual=True)
             return {
                 "status": result["status"],
@@ -833,6 +840,8 @@ class Dynamics:
                     raise ValueError("未授权自动发布此动态")
                 if row["status"] != "pending_review":
                     raise ValueError("动态不能重复发布")
+                if operation_output_diagnostics(row["content"])["needs_review"]:
+                    raise ValueError("正文诊断尚待审核，未自动发布")
             elif row["status"] != "approved":
                 raise ValueError("请先审核通过动态")
             if not policy["credentials_configured"]:
@@ -1269,7 +1278,7 @@ class Dynamics:
 
                     def diagnose(value):
                         return (
-                            "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓"
+                            "正文包含大量重复内容，保留原文待审"
                             if value["action"] == "post"
                             and operation_output_diagnostics(value["content"])["needs_review"]
                             else None
@@ -1287,8 +1296,7 @@ class Dynamics:
                         max_tokens=maximum,
                         guard=guard,
                         diagnose=diagnose,
-                        generation_context=nullcontext,
-                        context_data={"public_sources": public_sources},
+                                context_data={"public_sources": public_sources},
                         allow_web_fetch=True,
                     )
                     if data["action"] == "post" and self.policy()["use_memes"] and self.memes:
@@ -1315,7 +1323,6 @@ class Dynamics:
                 output_review = (
                     data["action"] == "post"
                     and operation_output_diagnostics(data["content"])["needs_review"]
-                    and not generation_continuation
                 )
                 decision = self._save_decision(
                     char,

@@ -132,7 +132,7 @@ class BrowsingRepository:
                 previous = self.store.one(
                     "SELECT r.* FROM browsing_rounds r JOIN browsing_batches b ON b.round_id=r.id "
                     "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
-                    "AND r.status IN ('paused','failed','partial','completed') AND (b.state<>'completed' OR "
+                    "AND r.status IN ('paused','failed','partial','completed') AND (b.state IN ('retrieving','ready','paused') OR "
                     "EXISTS(SELECT 1 FROM browsing_batch_items i WHERE i.batch_id=b.id AND i.kind<>'comment_visit' AND i.status='daily_wait' "
                     "AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
                     "AND json_extract(r.config,'$.autonomous_batch')=1 "
@@ -503,7 +503,7 @@ class BrowsingRepository:
     def finish_round(self, identity, status, metrics=None, error=None):
         row = self.round(identity)
         if row["config"].get("batch_id"):
-            if self.batches.finish(row, paused=status in {"cancelled", "failed"}):
+            if self.batches.finish(row, status=status):
                 status = "paused"
             elif status == "cancelled":
                 status = "completed"

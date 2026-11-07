@@ -14,7 +14,7 @@ from ...providers import public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
 from .quotas import DailyReplyLimitReached
-from .round_context import discovery_retry, read_round
+from .round_context import read_round
 
 
 class BrowsingBatches:
@@ -276,19 +276,22 @@ class BrowsingBatches:
     def outcome(self, task_id, status, error=None, payload=None):
         items = self.store.all("SELECT * FROM browsing_batch_items WHERE task_id=?", (task_id,))
         for item in items:
-            self._item_outcome(item, task_id, status, error, payload)
+            self._item_outcome(item, status, error, payload)
 
-    def _item_outcome(self, item, task_id, status, error, payload):
-        if status == "discovered":
-            state = "selected"
-        elif status in {"claimed", "preparing", "evidence_ready"}:
-            state = "running"
-        elif status in {"selected", "viewed_without_comment", "comments_checked", "skipped"}:
-            state = "completed"
-        elif status == "deferred_daily":
-            state = "daily_wait"
-        else:
-            state = "paused"
+    def _item_outcome(self, item, status, error, payload):
+        # A queue retries interrupted work, never a rejected model answer.
+        # Keep the diagnostic on the task while settling its automatic work item.
+        states = {
+            "discovered": "selected",
+            "claimed": "running", "preparing": "running", "evidence_ready": "running",
+            "selected": "completed", "viewed_without_comment": "completed",
+            "comments_checked": "completed", "skipped": "completed",
+            "invalid": "completed", "awaiting_review": "completed",
+            "deferred_daily": "daily_wait",
+            "checkpoint": "paused", "failed": "paused", "cancelled": "paused",
+            "paused": "paused", "retry_wait": "paused",
+        }
+        state = states[status]
         current = json.loads(item["payload"])
         if payload:
             current |= payload
@@ -304,7 +307,7 @@ class BrowsingBatches:
                 (item["batch_id"], item["bvid"], signature, error, time.time()),
             )
 
-    def finish(self, row, paused=False):
+    def finish(self, row, *, status):
         identity = row["config"].get("batch_id")
         if not identity:
             return False
@@ -314,10 +317,11 @@ class BrowsingBatches:
             (identity,),
         )["n"]
         batch = self.get(row)
-        state = "paused" if remaining or batch["plan"] is None else "completed"
+        state = "invalid" if status == "invalid" else "paused" if remaining or batch["plan"] is None else "completed"
         if state == "paused":
             self.store.execute(
-                "UPDATE browsing_batch_items SET status='paused' WHERE batch_id=? AND status='running'",
+                "UPDATE browsing_batch_items SET status='paused' WHERE batch_id=? "
+                "AND kind<>'comment_visit' AND status='running'",
                 (identity,),
             )
         self.store.execute(
@@ -407,7 +411,11 @@ async def execute(browsing, row, notifications_only):
         if isinstance(error, asyncio.CancelledError) or stopping:
             status, task_error = "cancelled", "父轮取消"
         else:
-            status = "partial" if metrics["viewed"] or metrics["prepared"] else "failed"
+            continuation = getattr(error, "continuation", None)
+            status = (
+                "invalid" if continuation and continuation["state"] == "invalid"
+                else "partial" if metrics["viewed"] or metrics["prepared"] else "failed"
+            )
             browsing.last_error = round_error = task_error = public_error(error)
         browsing.store.execute(
             "UPDATE browsing_tasks SET status='cancelled',error=? WHERE round_id=? AND status IN ('discovered','claimed','preparing','evidence_ready')",
@@ -507,92 +515,85 @@ async def process_comment_visits(browsing, row, metrics):
 
 
 async def run_discovery_video(browsing, row, candidate, metrics):
+    """Execute one queue attempt; a later round may resume interrupted work."""
     bvid = candidate["bvid"]
     comment_batch_ids = candidate.get("comment_batch_ids")
     saved = None if comment_batch_ids else browsing.repo.video_retry(row, bvid)
     failures = saved["failures"] if saved else 0
-    error = saved["error"] if saved else None
-    while failures < 3:
-        browsing._check_round(row)
-        identity = browsing.repo.task(row["id"], candidate)
-        if comment_batch_ids:
-            browsing.repo.batches.task(row, bvid, identity, batch_ids=comment_batch_ids)
-        token = discovery_retry.set(
-            {"bvid": bvid, "failures": failures, "error": error, "resume": bool(saved or failures)}
+    if failures >= 3:
+        return
+    browsing._check_round(row)
+    identity = browsing.repo.task(row["id"], candidate)
+    if comment_batch_ids:
+        browsing.repo.batches.task(row, bvid, identity, batch_ids=comment_batch_ids)
+    try:
+        if failures or saved or row["config"].get("batch_id") or comment_batch_ids:
+            await browsing._resume_batch_publications(row, bvid)
+    except (DailyReplyLimitReached, SendLimitReached) as failure:
+        payload = json.loads(
+            browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
+                "payload"
+            ]
+        ) | {
+            "retry_kind": "send_limit"
+            if isinstance(failure, SendLimitReached)
+            else "daily_reply_limit",
+            "next_at": failure.next_at,
+        }
+        browsing.store.execute(
+            "UPDATE browsing_tasks SET status='deferred_daily',payload=?,error=NULL,updated_at=? WHERE id=?",
+            (dump(payload), time.time(), identity),
         )
-        try:
-            try:
-                if failures or saved or row["config"].get("batch_id") or comment_batch_ids:
-                    await browsing._resume_batch_publications(row, bvid)
-            except (DailyReplyLimitReached, SendLimitReached) as failure:
-                payload = json.loads(
-                    browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
-                        "payload"
-                    ]
-                ) | {
-                    "retry_kind": "send_limit"
-                    if isinstance(failure, SendLimitReached)
-                    else "daily_reply_limit",
-                    "next_at": failure.next_at,
-                }
-                browsing.store.execute(
-                    "UPDATE browsing_tasks SET status='deferred_daily',payload=?,error=NULL,updated_at=? WHERE id=?",
-                    (dump(payload), time.time(), identity),
-                )
-                browsing.repo.batches.outcome(identity, "deferred_daily", payload=payload)
-                return
-            except BrowsingBudgetDeferred as failure:
-                browsing.store.execute(
-                    "UPDATE browsing_tasks SET status='checkpoint',error=? WHERE id=?",
-                    (public_error(failure), identity),
-                )
-                if comment_batch_ids:
-                    browsing.repo.batches.outcome(identity, "checkpoint")
-                else:
-                    browsing.repo.defer_video(row, bvid, identity, failures)
-                return
-            except Exception as failure:
-                metrics["failures"] += 1
-                browsing.store.execute(
-                    "UPDATE browsing_tasks SET status='failed',error=? WHERE id=?",
-                    (public_error(failure), identity),
-                )
-            else:
-                prepared = await browsing._prepare_task(identity, row, nullcontext(), metrics)
-                if prepared:
-                    await browsing.decisions._evaluate_task(prepared, row, metrics)
-        finally:
-            discovery_retry.reset(token)
-        browsing._check_round(row)
-        task = browsing.store.one("SELECT status,error,payload FROM browsing_tasks WHERE id=?", (identity,))
-        payload = json.loads(task["payload"])
-        reason = payload.get("reason")
+        browsing.repo.batches.outcome(identity, "deferred_daily", payload=payload)
+        return
+    except BrowsingBudgetDeferred as failure:
+        browsing.store.execute(
+            "UPDATE browsing_tasks SET status='checkpoint',error=? WHERE id=?",
+            (public_error(failure), identity),
+        )
         if comment_batch_ids:
-            # A deferred reply remains on its original queue, never the watch retry registry.
-            browsing.repo.batches.outcome(identity, task["status"], task["error"], payload)
-            return
-        if payload.get("retry_kind") == "round_budget":
+            browsing.repo.batches.outcome(identity, "checkpoint")
+        else:
             browsing.repo.defer_video(row, bvid, identity, failures)
-            return
-        if task["status"] == "checkpoint":
-            browsing.repo.finish_video_attempt(row, candidate, identity, 0)
-            return
-        if task["status"] == "deferred_daily":
-            return
-        if task["status"] in {"selected", "viewed_without_comment", "comments_checked"} or (
-            task["status"] == "skipped"
-            and reason in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
-        ):
-            browsing.repo.finish_video_attempt(row, candidate, identity, 0)
-            return
-        failures += 1
-        error = task["error"]
-        browsing.repo.finish_video_attempt(row, candidate, identity, failures)
-        if failures >= 2:
-            if failures == 3:
-                browsing.store.execute(
-                    "UPDATE browsing_intents SET auto_authorized=0,error=? WHERE round_id=? "
-                    "AND json_extract(target,'$.bvid')=? AND status='pending_review'",
-                    (error, row["id"], bvid),
-                )
-            return
+        return
+    except Exception as failure:
+        metrics["failures"] += 1
+        browsing.store.execute(
+            "UPDATE browsing_tasks SET status='failed',error=? WHERE id=?",
+            (public_error(failure), identity),
+        )
+    else:
+        prepared = await browsing._prepare_task(identity, row, nullcontext(), metrics)
+        if prepared:
+            await browsing.decisions._evaluate_task(prepared, row, metrics)
+    browsing._check_round(row)
+    task = browsing.store.one("SELECT status,error,payload FROM browsing_tasks WHERE id=?", (identity,))
+    payload = json.loads(task["payload"])
+    reason = payload.get("reason")
+    if comment_batch_ids:
+        # A deferred reply remains on its original queue, never the watch retry registry.
+        browsing.repo.batches.outcome(identity, task["status"], task["error"], payload)
+        return
+    if payload.get("retry_kind") == "round_budget":
+        browsing.repo.defer_video(row, bvid, identity, failures)
+        return
+    if task["status"] in {"checkpoint", "invalid", "awaiting_review"}:
+        browsing.repo.finish_video_attempt(row, candidate, identity, 0)
+        return
+    if task["status"] == "deferred_daily":
+        return
+    if task["status"] in {"selected", "viewed_without_comment", "comments_checked"} or (
+        task["status"] == "skipped"
+        and reason in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
+    ):
+        browsing.repo.finish_video_attempt(row, candidate, identity, 0)
+        return
+    failures += 1
+    error = task["error"]
+    browsing.repo.finish_video_attempt(row, candidate, identity, failures)
+    if failures == 3:
+        browsing.store.execute(
+            "UPDATE browsing_intents SET auto_authorized=0,error=? WHERE round_id=? "
+            "AND json_extract(target,'$.bvid')=? AND status='pending_review'",
+            (error, row["id"], bvid),
+        )
