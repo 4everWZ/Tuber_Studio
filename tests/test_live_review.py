@@ -43,8 +43,31 @@ def test_review_counts_real_sampled_visual_without_calling_it_subtitles(tmp_path
     value["visual_frames"] = [frame | {"image_base64": "retained-image"}]
     value["coverage"] = "sampled_visual"
     path.write_text(json.dumps(value), encoding="utf-8")
+    row["progress_material"] = json.dumps(value)
     proof = material_proof(row, tmp_path)
     assert proof["observed_frames"] == 1 and proof["subtitle_segments"] == 0
     value["visual_frames"][0]["content_hash"] = "another-image"
     path.write_text(json.dumps(value), encoding="utf-8")
     assert material_proof(row, tmp_path) is None
+
+
+def test_review_rejects_progress_for_a_different_consumed_source(tmp_path):
+    _, row, value = fixture_material(tmp_path)
+    for consumed in [
+        {}, [],
+        value | {"source_version": "older-source"},
+        value | {"metadata": value["metadata"] | {"bvid": "another-video"}},
+        value | {"parts": []},
+        value | {"parts": [value["parts"][0] | {"segments": [
+            value["parts"][0]["segments"][0] | {"text": "旧缓存里不同的原文"}
+        ]}]},
+    ]:
+        assert material_proof(row | {"progress_material": json.dumps(consumed)}, tmp_path) is None
+    assert material_proof(row | {"progress_material": "not-json"}, tmp_path) is None
+    assert material_proof(row, tmp_path) is not None
+
+
+def test_review_ignores_retrieval_metadata_when_the_consumed_source_is_unchanged(tmp_path):
+    _, row, value = fixture_material(tmp_path)
+    consumed = value | {"fetched_at": 1, "parts": [value["parts"][0] | {"fetched_at": 2}]}
+    assert material_proof(row | {"progress_material": json.dumps(consumed)}, tmp_path) is not None

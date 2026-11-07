@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from tuber_studio.operations.browsing.evidence import BrowsingEvidence
+
 
 def material_proof(row, runtime):
     """Require consumed, source-bound content, not merely a title or cache key."""
@@ -26,11 +28,20 @@ def material_proof(row, runtime):
         return None
     try:
         material = json.loads(path.read_text(encoding="utf-8"))
+        consumed = json.loads(row["progress_material"])
         decisions = json.loads(row["decisions"] or "[]")
         main = json.loads(row["main_decision"] or "null")
     except (OSError, ValueError):
         return None
-    if material.get("metadata", {}).get("bvid") != row["bvid"] or not (decisions or main):
+    if (
+        not isinstance(consumed, dict)
+        or consumed.get("metadata", {}).get("bvid") != row["bvid"]
+        or not consumed.get("source_version")
+        or consumed["source_version"] != material.get("source_version")
+        or BrowsingEvidence.source_version(consumed) != BrowsingEvidence.source_version(material)
+        or material.get("metadata", {}).get("bvid") != row["bvid"]
+        or not (decisions or main)
+    ):
         return None
     cids = {str(part["cid"]) for part in material["metadata"].get("parts", []) if part.get("cid")}
     # CC tracks carry bvid themselves; visual parts inherit the verified parent
@@ -55,7 +66,7 @@ def material_proof(row, runtime):
     subtitles = sum(len(part["segments"]) for part in parts if not part.get("visual"))
     if not subtitles and not observed:
         return None
-    return {"bvid": row["bvid"], "material_key": row["material_key"], "read_state": row["read_state"],
+    return {"bvid": row["bvid"], "material_key": row["material_key"], "source_version": consumed["source_version"], "read_state": row["read_state"],
             "source_parts": len(parts), "source_segments": len(segments), "cids": sorted(cids),
             "subtitle_segments": subtitles, "observed_frames": len(observed),
             "coverage": material.get("coverage"), "fully_read_available_material": row["read_state"] == "complete"}
