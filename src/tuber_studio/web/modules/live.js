@@ -2,6 +2,7 @@
 
 import { $ } from "./core.js";
 import { inferenceDisplay } from "./inference-status.js?v=20261107.08";
+import { inferenceModeChanging, liveActionDisabled } from "./live-controls.js?v=20261107.12";
 
 export function liveEnabled(model) {
   return model.settings?.features?.live_enabled === true;
@@ -9,7 +10,7 @@ export function liveEnabled(model) {
 
 export function resourcesTransitioning(model) {
   const inference = model.status?.inference;
-  return !!(model.modeSwitch || (inference?.operation?.mode != null && inference.operation.mode !== inference.mode));
+  return !!(model.modeSwitch || inferenceModeChanging(inference));
 }
 
 function resourceMode(inference) {
@@ -24,8 +25,8 @@ export function renderLiveFeatures(model) {
   const enabled = liveEnabled(model);
   const liveNotice = $("live-feature-notice");
   if (liveNotice) liveNotice.hidden = enabled;
-  const startBtn = $("start");
-  if (startBtn && !enabled) startBtn.title = "直播特性未启用";
+  const startBtn = document.querySelector('[data-action="start"]');
+  if (startBtn) startBtn.title = enabled ? "" : "直播功能未启用";
 }
 
 export function renderModeControls(inference = {}, model) {
@@ -51,21 +52,7 @@ export function renderControls(model) {
   document.querySelectorAll("[data-action]").forEach(button => {
     if (button.getAttribute("aria-busy") === "true") return;
     const action = button.dataset.action;
-    if (!enabled && !(action === "stop" && status.state !== "stopped")) {
-      button.disabled = true;
-      return;
-    }
-    button.disabled = action === "start" ? status.state !== "stopped" :
-      action === "pause" ? !["live", "degraded"].includes(status.state) :
-      action === "resume" ? status.state !== "paused" :
-      action === "stop" ? status.state === "stopped" :
-      action === "mute" ? !!status.muted :
-      action === "unmute" ? !status.muted :
-      action === "skip" ? !status.current_job :
-      action === "clear" ? !status.queue_length : false;
-    if (["start", "resume"].includes(action) && resourcesTransitioning(model)) {
-      button.disabled = true;
-    }
+    button.disabled = liveActionDisabled(action, status, { enabled, transitioning: resourcesTransitioning(model) });
   });
   $("event-form")?.querySelectorAll("input, select, textarea, button").forEach(input => {
     if (input.getAttribute("aria-busy") !== "true") {

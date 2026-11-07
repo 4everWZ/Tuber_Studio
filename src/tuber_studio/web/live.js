@@ -1,6 +1,7 @@
 "use strict";
 import { $ } from "./modules/core.js";
 import { api as baseApi } from "./modules/api.js";
+import { inferenceModeChanging, liveActionDisabled } from "./modules/live-controls.js?v=20261107.12";
 
 (() => {
   const focusView = new URLSearchParams(location.search).get("view");
@@ -15,7 +16,7 @@ import { api as baseApi } from "./modules/api.js";
   }
   const names = {avatar:"角色形象", title:"直播标题", now:"当前歌曲", lyrics:"歌词字幕", queue:"点歌队列", chat:"弹幕互动", gifts:"礼物心意", decoration:"小装饰"};
   const icons = {avatar:"♙",title:"T",now:"♫",lyrics:"≋",queue:"☷",chat:"☏",gifts:"♡",decoration:"✧"};
-  let state, music, status, dirty = false, saved, polling = false, authenticated = false;
+  let state, music, status, settings, dirty = false, musicDirty = false, saved, polling = false, authenticated = false;
   const scene = new LiveScene($("scene"), {editable:true, onChange:changed, onSelect:select, onWarning:text=>feedback(text,true)});
   function element(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
   function feedback(text, error = false) { $("feedback").hidden = !text; $("feedback").textContent = text; $("feedback").classList.toggle("error",error); }
@@ -33,7 +34,17 @@ import { api as baseApi } from "./modules/api.js";
   async function run(button, action) {
     button.disabled = true; button.setAttribute("aria-busy","true");
     try { await action(); } catch (error) { feedback(error.message,true); }
-    finally { button.disabled = button.id === "save-layout" || button.id === "undo-layout" ? !dirty : false; button.removeAttribute("aria-busy"); if (authenticated) await poll(); }
+    finally { button.disabled = button.id === "save-layout" || button.id === "undo-layout" ? !dirty : false; button.removeAttribute("aria-busy"); if (authenticated) await poll(); renderTransportControls(); }
+  }
+  function renderTransportControls() {
+    const enabled = settings?.features?.live_enabled === true;
+    const transitioning = inferenceModeChanging(status?.inference);
+    for (const button of document.querySelectorAll("[data-control]")) {
+      if (button.getAttribute("aria-busy") !== "true") button.disabled = liveActionDisabled(button.dataset.control, status, { enabled, transitioning });
+      button.title = enabled ? "" : "直播功能未启用";
+    }
+    $("event-form").querySelectorAll("input, select, button").forEach(control => { if (control.getAttribute("aria-busy") !== "true") control.disabled = !enabled || transitioning; });
+    if ($("clear-queue").getAttribute("aria-busy") !== "true") $("clear-queue").disabled = !enabled || !state?.queue.length;
   }
   function login() { authenticated = false; accountPanel.deactivate(); $("login").hidden = false; $("workspace").hidden = true; }
   function changed() {
@@ -66,9 +77,13 @@ import { api as baseApi } from "./modules/api.js";
     renderLayers();
   }
   async function loadMusic() {
+    const first = !music;
     music = await api("/api/live/music"); const config = music.settings;
-    $("default-mode").value = config.default_mode; $("request-mode").value = config.default_mode;
-    $("music-volume").value = config.volume; $("music-limit").value = config.queue_limit; $("music-cooldown").value = config.cooldown_seconds;
+    if (!musicDirty) {
+      $("default-mode").value = config.default_mode;
+      $("music-volume").value = config.volume; $("music-limit").value = config.queue_limit; $("music-cooldown").value = config.cooldown_seconds;
+    }
+    if (first) $("request-mode").value = config.default_mode;
     $("singing-state").textContent = music.singing.reason;
     for (const id of ["default-mode","request-mode"]) { const option = $(id).querySelector('[value="sing"]'); option.disabled = !music.singing.available; option.textContent = music.singing.available ? "角色音色演唱" : "演唱（模型待接入）"; }
     renderSongs();
@@ -79,7 +94,7 @@ import { api as baseApi } from "./modules/api.js";
     $("songs").replaceChildren(...songs.map(song => {
       const row = element("div",null,"song-row"), info = element("div",null,"song-info");
       info.append(element("strong",song.title), element("small",`${song.artist || "未填写演唱者"} · ${song.live_allowed ? "已确认直播用途" : "待确认用途"}${song.vocal ? " · 已有人声轨" : " · 口型待人声轨"}`));
-      const button = element("button","点歌"); button.disabled = !song.live_allowed;
+      const button = element("button","点歌"); button.disabled = !song.live_allowed || settings?.features?.live_enabled !== true;
       button.onclick = () => run(button,async () => {
         const result = await api("/api/live/mock-event",{method:"POST",body:{type:"song",text:song.title,display_name:"主播",metadata:{song_id:song.id,mode:$("request-mode").value}}});
         if (result.status !== "queued") throw new Error(result.reason || result.status);
@@ -120,13 +135,14 @@ import { api as baseApi } from "./modules/api.js";
       const track = playing?.song?.song; const quality = track?.quality;
       const qualityText = quality ? ` · ${track.source === "bodian" ? "波点" : "咪咕"} ${quality.format.toUpperCase()}${quality.format === "flac" ? ` ${quality.bits_per_sample}-bit / ${quality.sample_rate/1000} kHz` : ` ${Math.round(quality.bitrate/1000)} kbps`}` : "";
       $("current-title").textContent = playing?.song?.song.title || (current ? current.text || "正在准备互动" : "准备好，就开始吧");
-      $("current-detail").textContent = playing ? `${playing.paused ? "已暂停" : playing.started ? "播放中" : "等待播放"} · ${Math.floor(playing.position)} / ${Math.round(playing.duration)} 秒${qualityText}${playing.visual_warning ? " · "+playing.visual_warning : ""}` : ({generating:"正在生成互动",synthesizing:"正在准备音频／转换演唱",ready_to_play:"等待播放器"}[current?.status] || "Mock 直播 · 真实平台尚未接入");
+      $("current-detail").textContent = playing ? `${playing.paused ? "已暂停" : playing.started ? "播放中" : "等待播放"} · ${Math.floor(playing.position)} / ${Math.round(playing.duration)} 秒${qualityText}${playing.visual_warning ? " · "+playing.visual_warning : ""}` : ({generating:"正在生成互动",synthesizing:"正在准备音频／转换演唱",ready_to_play:"等待播放器"}[current?.status] || "等待互动或点歌");
       $("media-toggle").disabled = !playing?.song || !playing.started;
       $("media-toggle").textContent = playing?.paused ? "继续歌曲" : "暂停歌曲";
       $("runtime-error").textContent = status.error || "";
+      renderTransportControls();
     } catch(error) { feedback(error.message,true); } finally { polling = false; }
   }
-  async function boot() { authenticated = true; try { await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); if (!focusView) await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
+  async function boot() { authenticated = true; try { settings = await api("/api/settings"); await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); if (!focusView) await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
   $("login-form").onsubmit = async event => { event.preventDefault(); try { await api("/api/auth",{method:"POST",body:{token:$("token").value}}); $("token").value = ""; await boot(); } catch(error) { $("login-error").textContent = error.message; } };
   $("save-layout").onclick = event => run(event.currentTarget, async () => { const value = await api("/api/live/scene",{method:"PUT",body:scene.scene}); loadScene(value); feedback("布局已保存，OBS画面将同步更新。"); });
   $("undo-layout").onclick = () => loadScene(saved);
@@ -152,8 +168,9 @@ import { api as baseApi } from "./modules/api.js";
   $("open-overlay").onclick = event => { const page = window.open("about:blank","_blank"); if (!page) return feedback("请允许打开播放器窗口",true); page.opener = null; run(event.currentTarget,async () => { try { const config = await api("/api/settings"); page.location = config.overlay_url; } catch(error) { page.close(); throw error; } }); };
   $("event-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => { const result = await api("/api/live/mock-event",{method:"POST",body:{type:$("event-type").value,display_name:$("event-name").value,platform_user_id:"workbench-debug",text:$("event-text").value}}); feedback(result.reason || "事件已加入队列",result.status !== "queued"); }); };
   $("music-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => {
-    await api("/api/live/music",{method:"PUT",body:{...music.settings,default_mode:$("default-mode").value,volume:Number($("music-volume").value),queue_limit:Number($("music-limit").value),cooldown_seconds:Number($("music-cooldown").value)}}); await loadMusic(); feedback("点歌设置已保存，对新确认项生效。");
+    await api("/api/live/music",{method:"PUT",body:{...music.settings,default_mode:$("default-mode").value,volume:Number($("music-volume").value),queue_limit:Number($("music-limit").value),cooldown_seconds:Number($("music-cooldown").value)}}); musicDirty = false; await loadMusic(); feedback("点歌设置已保存，对新确认项生效。");
   }); };
+  $("music-form").addEventListener("input", () => { musicDirty = true; });
   $("song-search").oninput = renderSongs;
   $("import-song").onclick = () => $("song-dialog").showModal();
   for (const id of ["close-import","cancel-import"]) $(id).onclick = () => $("song-dialog").close();
@@ -184,6 +201,6 @@ import { api as baseApi } from "./modules/api.js";
       $("song-dialog").close(); $("song-form").reset(); $("import-state").textContent = ""; await loadMusic(); feedback("歌曲已保存，可以选择模式点歌。");
     } catch(error) { $("import-state").textContent = error.message; } finally { button.disabled = false; }
   };
-  window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("beforeunload", event => { if (dirty || musicDirty) { event.preventDefault(); event.returnValue = ""; } });
   setInterval(poll,1000); boot();
 })();

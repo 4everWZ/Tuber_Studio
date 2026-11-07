@@ -446,8 +446,7 @@ def prepare_runtime(root=ROOT):
     """Run the fixed generated-asset bootstrap, then release all its memory.
 
     This child owns conversion/reference work; portable never imports Torch or
-    generates graphs itself. Older checkouts without the script stay usable.
-    The independent program bundle includes the script.
+    generates graphs itself. The independent program bundle supplies the script.
     """
     root = Path(root)
     data = _small_json(_checked(root / "runtime/studio.json", root))
@@ -456,7 +455,7 @@ def prepare_runtime(root=ROOT):
         return {"prepared": False, "reason": "fixed Genie speech is not selected"}
     script = _checked(root / "tools/jetson/tts/bootstrap.py", root)
     if not script.exists():
-        return {"prepared": False, "reason": "legacy checkout has no generated-asset bootstrap"}
+        raise ValueError("Selected Genie speech requires tools/jetson/tts/bootstrap.py from the program bundle")
     if not script.is_file():
         raise ValueError("Generated-asset bootstrap must be a fixed regular program file")
     child = subprocess.Popen(

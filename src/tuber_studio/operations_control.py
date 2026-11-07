@@ -22,7 +22,7 @@ class OperationsPolicy(StrictModel):
 
 
 AUTOMATIC_SWITCHES = {
-    "comments": {"auto_browse", "auto_reply"},
+    "comments": {"auto_reply"},
     "messages": {"auto_poll", "auto_send"},
     "browsing": {
         "discovery_enabled",
@@ -133,6 +133,8 @@ class OperationsControl:
         policy = self.policy()
         if automatic and policy["emergency"]:
             raise ValueError("紧急停止：禁止所有自动收发")
+        if automatic and not policy["enabled"]:
+            raise ValueError("自主运营已停止，禁止自动提交")
         if epoch is not None and (not policy["enabled"] or policy["epoch"] != epoch):
             raise ValueError("自动化授权版本已撤销，保留草稿")
         if (

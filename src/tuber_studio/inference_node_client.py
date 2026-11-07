@@ -14,7 +14,7 @@ from .http_api import endpoint, response_json
 from .inference_profiles import DAFEIYU_MODEL, GEMMA_KEY, GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
 from .operations.browsing.models import DisabledVideoEvidence
 from .providers import VoiceService
-from .runtime_modes import ObservationOwner, close_clients, inference_transition
+from .runtime_modes import ObservationOwner, close_clients, inference_transition, require_model_idle
 from .video_vision import ApiVideoEvidenceProvider
 
 
@@ -71,15 +71,6 @@ def status(runtime):
     }
 
 
-def _require_stopped(runtime):
-    if runtime.live.state != "stopped":
-        raise ValueError("请先停止直播再更换推理节点")
-    if runtime.store.get("comment_policy", {}).get("auto_reply") or runtime.store.get(
-        "dynamic_policy", {}
-    ).get("enabled"):
-        raise ValueError("请先停止自动发布，再更换推理节点")
-
-
 async def _settle(operation):
     task = asyncio.create_task(operation)
     while not task.done():
@@ -117,7 +108,7 @@ async def pair_node(runtime, body):
         validate_api_key(token)
     except ValueError:
         raise ValueError("推理节点配对凭据格式无效") from None
-    _require_stopped(runtime)
+    require_model_idle(runtime)
     if runtime.generation_lock.locked() or runtime.inference.mode_lock.locked():
         raise ValueError("请等待当前模型任务结束")
     client = httpx.AsyncClient(
@@ -131,7 +122,7 @@ async def pair_node(runtime, body):
         await _read_capabilities(client, timeout=10)
         async with runtime.inference.mode_lock, runtime.generation_lock:
             with inference_transition(runtime):
-                _require_stopped(runtime)
+                require_model_idle(runtime)
                 # Re-read under the business transition lock; capability lookup was read-only.
                 before = await response_json(client, "GET", "/health", timeout=10)
                 previous_mode = before.get("mode")
@@ -199,6 +190,7 @@ async def pair_node(runtime, body):
                         )
                     ):
                         raise ValueError("节点实际模型、视觉或引擎身份与运营配置不一致")
+                    require_model_idle(runtime)
                     files_attempted = True
                     atomic_bytes(paths[0], token.encode(), private=True)
                     settings.save_public(proposed)

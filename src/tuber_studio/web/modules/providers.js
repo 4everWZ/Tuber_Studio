@@ -1,7 +1,5 @@
 import { $, node, safeMessage, notice, tokenCount } from "./core.js";
 
-let dafeiyuModelTimer = null;
-
 function syncModelSelectWithInput() {
   const select = $("llm-model-select");
   const value = $("llm-model").value.trim();
@@ -35,27 +33,7 @@ async function loadLocalModelsDropdown(api) {
   }
 }
 
-async function checkDafeiyuModelStatus(api) {
-  const card = $("dafeiyu-model-card");
-  const badge = $("dafeiyu-model-badge");
-  clearTimeout(dafeiyuModelTimer);
-  try {
-    const status = await api("/api/models/dafeiyu/status");
-    const downloading = status.download_status === "downloading";
-    card.hidden = !status.is_full_local && !downloading;
-    badge.textContent = downloading ? "下载中" : status.installed ? "已安装" : "未安装";
-    $("dafeiyu-download").hidden = downloading || status.installed;
-    $("btn-cancel-dafeiyu-download").hidden = !downloading;
-    $("dafeiyu-progress").hidden = !downloading;
-    $("dafeiyu-progress").value = status.download_percent || 0;
-    $("dafeiyu-missing-hint").textContent = status.download_status === "failed" ? "下载失败，可以重试。" : "";
-    if (downloading) dafeiyuModelTimer = setTimeout(() => checkDafeiyuModelStatus(api), 1500);
-  } catch (error) {
-    badge.textContent = "状态读取失败";
-  }
-}
-
-function readProviderPayload() {
+export function readProviderPayload() {
   const integer = (id, title) => {
     const value = Number($(id).value);
     if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < 4096) {
@@ -79,7 +57,6 @@ function readProviderPayload() {
 
   const modelId = ($("llm-model")?.value || "").trim();
   const llmKind = $("llm-kind")?.value || "llama_cpp";
-  const isLlmApi = llmKind === "openai_compatible";
   const llmUrl = ($("llm-base-url")?.value || "").trim();
 
   const payload = {
@@ -90,12 +67,6 @@ function readProviderPayload() {
       context_tokens: context,
       native_context_tokens: native,
       operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536),
-    },
-    vision: {
-      kind: isLlmApi ? "openai_compatible" : "disabled",
-      location: "local",
-      base_url: isLlmApi ? llmUrl : "",
-      model: isLlmApi ? modelId : "",
     },
     credentials: {},
     clear_credentials: [],
@@ -113,7 +84,7 @@ function readProviderPayload() {
 export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatus }) {
   let dirty = false;
   let saving = false;
-  const render = () => renderProviderForm(model.settings, dirty, saving);
+  const render = () => renderProviderForm(model.settings, model.status, dirty, saving);
   const sync = () => {
     if (!dirty) providerFormFromSettings(model.settings, model.status);
     render();
@@ -143,11 +114,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatu
         dirty = false;
         apply(result);
         let message = result.restart_required === true ? "配置已保存；服务要求重启后生效，请按服务提示处理。" : "配置已保存并应用，无需手动重启。已有角色音色保持原选择。";
-        if (result.auto_download_triggered) {
-          message += " 检测到为全套本地部署且本地缺少微调权重，已自动在后台启动从 Hugging Face 镜像下载。";
-        }
         feedback(message);
-        checkDafeiyuModelStatus(api);
         await refreshStatus();
       } catch (error) {
         const retry = error.status === 409 ? " 请先暂停或等待正在生成 / 发布的任务结束，再重试。" : "";
@@ -162,31 +129,10 @@ export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatu
   $("reset-providers").addEventListener("click", () => {
     dirty = false;
     sync();
-    checkDafeiyuModelStatus(api);
     feedback("已恢复当前已保存配置；未提交的密钥输入已清除。");
   });
   $("check-providers-settings").addEventListener("click", event => {
     busy(event.currentTarget, () => checkProviderConnections(api));
-  });
-
-  $("btn-download-dafeiyu-model")?.addEventListener("click", async () => {
-    try {
-      notice("已启动大肥鱼微调模型下载任务（从 Hugging Face 镜像加速拉取）…");
-      await api("/api/models/dafeiyu/download", { method: "POST" });
-      checkDafeiyuModelStatus(api);
-    } catch (e) {
-      notice(`启动下载失败: ${safeMessage(e.message)}`, true);
-    }
-  });
-
-  $("btn-cancel-dafeiyu-download")?.addEventListener("click", async () => {
-    try {
-      await api("/api/models/dafeiyu/cancel", { method: "POST" });
-      notice("已发送取消下载请求。");
-      checkDafeiyuModelStatus(api);
-    } catch (e) {
-      notice(`取消失败: ${safeMessage(e.message)}`, true);
-    }
   });
 
   const select = $("llm-model-select");
@@ -262,7 +208,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatu
   return {
     get dirty() { return dirty; },
     sync,
-    refresh: () => Promise.all([loadLocalModelsDropdown(api), checkDafeiyuModelStatus(api)]),
+    refresh: () => loadLocalModelsDropdown(api),
   };
 }
 
@@ -301,7 +247,7 @@ function providerFormFromSettings(settings, status) {
   syncModelSelectWithInput();
 }
 
-function renderProviderForm(settings, dirty, saving) {
+function renderProviderForm(settings, status, dirty, saving) {
   $("provider-fields").disabled = saving;
   $("save-providers").disabled = saving;
   $("save-providers").setAttribute("aria-busy", String(saving));
@@ -316,9 +262,14 @@ function renderProviderForm(settings, dirty, saving) {
   });
   $("llm-base-url").required = !demo;
   $("llm-model").required = !demo;
+  const context = status?.context;
+  const native = context?.native_tokens;
+  const capacity = context?.server_tokens;
   $("llm-capacity-help").textContent = external ?
-    "默认窗口 131072（128K），可填写不小于 4096 的整数。服务上限由操作者依据 API 提供方能力声明；连接成功或用量计数不能证明服务实际支持该上限，也不等同于本机验证。" :
-    "默认窗口 131072（128K），可填写不小于 4096 的整数。当前 MiniCPM5-2B 原生上限 131072；增大必须有实际服务支持，不能通过 RoPE 参数伪扩展。";
+    "外部服务窗口按提供方的容量填写；保存后用于上下文与输出预算。" :
+    [native ? `当前节点报告模型原生容量 ${tokenCount(native)}` : "模型原生容量等待节点报告",
+      capacity ? `当前服务窗口 ${tokenCount(capacity)}` : "服务窗口等待节点报告"].join(" · ");
+
 }
 
 async function checkProviderConnections(api) {

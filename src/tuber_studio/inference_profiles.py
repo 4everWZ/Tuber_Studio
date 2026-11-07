@@ -42,8 +42,6 @@ LLM_ALIASES = (
         "minicpm5-2b (本地默认)": "llm2b",
         "minicpm5-1b-q8": "llm1bq8",
         "qwen_qwen3.5-2b": "llmqwen35",
-        "llmdafeiyu_v6": GROUNDED_DAFEIYU_KEY,
-        "dafeiyu_v6": GROUNDED_DAFEIYU_KEY,
         "gemma-4-e2b-it": GEMMA_KEY,
     }
 )

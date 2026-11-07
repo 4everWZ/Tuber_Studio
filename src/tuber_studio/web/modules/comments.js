@@ -285,7 +285,8 @@ export function initCommentsModule(model, {
   };
 
   const doLoadPolicy = async () => {
-    const policy = await api("/api/comments/policy");
+    const status = await api("/api/automation");
+    const policy = status.effective?.comments || {};
     renderCommentPolicy(policy, model, commentContinuation, setBadge, describe);
   };
 
@@ -331,7 +332,6 @@ export function initCommentsModule(model, {
     doRenderComments();
   });
 
-  $("refresh-comments")?.addEventListener("click", () => busy($("refresh-comments"), doRefreshComments));
   ["filter-video", "filter-thread", "filter-category", "filter-status"].forEach(id => {
     $(id)?.addEventListener("change", () => { model.commentSourcePage = 0; return doRefreshComments(); });
   });

@@ -54,12 +54,14 @@ async def test_web_timeout_still_delivers_a_final_model_turn(monkeypatch):
     assert result["reply"] == "鱼鱼这次没读到网页。" and len(requests) == 2
 
 
-async def test_private_reply_can_read_only_the_supplied_url(monkeypatch):
-    async def fail_fetch(url):
-        raise AssertionError(f"Model-added URL escaped to the web: {url}")
+async def test_model_selected_public_page_does_not_require_a_user_supplied_url(monkeypatch):
+    fetched = []
 
-    monkeypatch.setattr(web_fetch, "fetch_excerpt", fail_fetch)
-    tool = web_fetch.OperationWebFetch(
-        lambda: None, web_fetch.supplied_https_urls("读读 https://example.org/public。")
-    )
-    assert await tool._read("https://example.org/public?private=conversation") == {"status": "unavailable"}
+    async def fetch(url):
+        fetched.append(url)
+        return {"url": url, "excerpt": "官方公开说明"}
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
+    result = await web_fetch.OperationWebFetch(lambda: None)._read("https://example.org/docs")
+    assert result["status"] == "ok" and result["excerpt"] == "官方公开说明"
+    assert fetched == ["https://example.org/docs"]

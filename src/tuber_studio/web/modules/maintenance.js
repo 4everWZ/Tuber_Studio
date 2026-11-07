@@ -166,7 +166,7 @@ export function initMaintenanceModule(model, {
     event.preventDefault();
     retentionAction("save", async () => {
       const days = $("retention-never")?.checked ? null : Number($("retention-days")?.value);
-      const payload = { enabled: !$("retention-never")?.checked, days };
+      const payload = { days };
       await api("/api/retention", { method: "PUT", body: payload });
       model.retentionDirty = false;
       await doLoadRetention();
@@ -207,7 +207,6 @@ export function initMaintenanceModule(model, {
     if ($("retention-preview-counts")) {
       describe($("retention-preview-counts"), Object.entries(result.counts || {}).map(([key, count]) => [countLabels[key] || key, count]));
     }
-    if ($("retention-preview-detail")) $("retention-preview-detail").textContent = JSON.stringify(result, null, 2);
     if ($("retention-preview-panel")) $("retention-preview-panel").hidden = false;
     if ($("retention-cleanup-state")) $("retention-cleanup-state").textContent = "预览完成，尚未删除。请核对数量和范围后确认。";
   }, model, notice));

@@ -101,6 +101,9 @@ def generation_view(runtime, continuation_id, channel, local_id, *, private=Fals
                 "keep",
                 "abandon",
                 "read_more",
+                "read_comments",
+                "watch_frames",
+                "finish",
             }:
                 dispositions.append("unresolved")
         if dispositions:
@@ -123,9 +126,9 @@ def generation_view(runtime, continuation_id, channel, local_id, *, private=Fals
 
 def episode_limits(max_tokens):
     return {
-        "max_model_calls": 32,
-        "max_input_tokens": 1048576,
-        "max_output_tokens": min(2097152, 32 * max_tokens),
+        "max_model_calls": 0,
+        "max_input_tokens": 0,
+        "max_output_tokens": 0,
         "generation_max_tokens": max_tokens,
     }
 
@@ -569,7 +572,6 @@ class FeedbackPublication:
         automatic=False,
         epoch=None,
         reconcile=None,
-        one_attempt=False,
     ):
         while True:
             existing = self.coordinator.find(channel, identity)
@@ -584,20 +586,7 @@ class FeedbackPublication:
             if automatic and existing and existing.get("manual_revision"):
                 return {"status": "pending_review", "continuation": self.coordinator.dto(channel, identity)}
             if existing and existing["state"] not in {"awaiting_review", "completed"}:
-                if one_attempt and automatic and existing["can_resume"]:
-                    self.coordinator.resume(
-                        existing["id"],
-                        binding=prepared.binding,
-                        parent_round_id=prepared.parent_round_id,
-                        deadline=prepared.deadline,
-                    )
-                    result = await self.continue_task(
-                        channel, identity, prepared, apply_revision, automatic=True, epoch=epoch
-                    )
-                    if result["status"] != "revised":
-                        return result
-                    existing = self.coordinator.get(existing["id"])
-                elif not automatic and prepared.manual_approved:
+                if not automatic and prepared.manual_approved:
                     await self.coordinator._guard(prepared.guard)
                     existing = self.coordinator.approve_manual_revision(
                         existing["id"], binding=prepared.binding, value=prepared.outgoing()
@@ -639,7 +628,7 @@ class FeedbackPublication:
                     )
                 # A read may positively resolve an attempt. Absence is never a
                 # ticket to resubmit an unknown write.
-                if reconcile is not None and not one_attempt:
+                if reconcile is not None:
                     resolved = await reconcile(error.write_token, prepared)
                     if resolved is not None:
                         return resolved
@@ -705,10 +694,10 @@ class FeedbackPublication:
                         original_output=prepared.outgoing(),
                         parent_round_id=prepared.parent_round_id,
                         deadline=prepared.deadline,
-                        budget_limits=self.limits(prepared) | ({"max_recoveries": 1} if one_attempt else {}),
+                        budget_limits=self.limits(prepared),
                     )
                 result = await self.continue_task(
                     channel, identity, prepared, apply_revision, automatic=automatic, epoch=epoch
                 )
-                if one_attempt or result["status"] != "revised":
+                if result["status"] != "revised":
                     return result

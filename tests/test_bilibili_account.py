@@ -99,18 +99,21 @@ def configure(client):
     return response
 
 
-def test_get_configure_blank_clear_and_legacy_policy_are_local_and_redacted(account_client, settings):
+def test_get_configure_blank_clear_and_retired_policy_are_local_and_redacted(account_client, settings):
     client, app, calls, _ = account_client
     assert client.get("/api/account/bilibili").json()["state"] == "not_configured"
     configure(client)
     assert client.get("/api/account/bilibili").json()["state"] == "unverified"
     blank = client.put("/api/account/bilibili", json={"sessdata": " ", "bili_jct": ""})
     assert blank.status_code == 200 and app.state.comments.credentials == SECRET
-    changed = client.put("/api/comments/policy", json={"csrf": "legacy-csrf"})
-    assert changed.status_code == 200 and "legacy-csrf" not in changed.text
-    assert app.state.comments.credentials == SECRET | {"csrf": "legacy-csrf"}
+    assert client.get("/api/comments/policy").status_code == 404
+    assert client.put("/api/comments/policy", json={"csrf": "new-csrf"}).status_code == 404
+    assert app.state.comments.credentials == SECRET
+    changed = client.put("/api/account/bilibili", json={"csrf": "new-csrf"})
+    assert changed.status_code == 200 and "new-csrf" not in changed.text
+    assert app.state.comments.credentials == SECRET | {"csrf": "new-csrf"}
     path = settings.runtime / "bilibili-credentials.json"
-    assert json.loads(path.read_text()) == SECRET | {"csrf": "legacy-csrf"}
+    assert json.loads(path.read_text()) == SECRET | {"csrf": "new-csrf"}
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert client.put("/api/account/bilibili", json={"clear": True, "sessdata": "x"}).status_code == 400
@@ -348,7 +351,7 @@ async def test_old_profile_and_uid_reads_cannot_bind_to_replaced_credentials(set
 
 
 @pytest.mark.asyncio
-async def test_concurrent_legacy_and_account_edits_reject_stale_snapshot(settings, network, monkeypatch):
+async def test_concurrent_credential_replacements_reject_stale_snapshot(settings, network, monkeypatch):
     app = create_app(settings)
     comments, account = app.state.comments, app.state.bilibili_account
     try:
@@ -366,7 +369,7 @@ async def test_concurrent_legacy_and_account_edits_reject_stale_snapshot(setting
         monkeypatch.setattr(comments, "replace_credentials", delayed)
         tasks = [
             asyncio.create_task(account.configure({"csrf": "account-new-csrf"})),
-            asyncio.create_task(comments.set_policy({"sessdata": "legacy-new-session"})),
+            asyncio.create_task(comments.replace_credentials(SECRET | {"sessdata": "legacy-new-session"}, expected=SECRET)),
         ]
         await ready.wait()
         assert captured == [SECRET, SECRET]

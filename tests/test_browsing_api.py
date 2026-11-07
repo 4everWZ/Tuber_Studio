@@ -53,7 +53,6 @@ READS = ["", "/tasks", "/rounds", "/intents", "/inbox", "/discovery", "/discover
 WRITES = [
     ("PUT", "/settings", {}),
     ("POST", "/preflight", {}),
-    ("PUT", "/discovery", {"enabled": True}),
     ("POST", "/enable", {"enabled": False}),
     ("POST", "/round", {"preview": True}),
     ("POST", "/stop", {"emergency": True}),
@@ -247,8 +246,8 @@ def test_comment_workbench_combines_public_drafts_and_redacts_handoff(admin):
     assert not admin.app.state.comments.adapter.sent
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_unified_operations_requires_explicit_restart_activation(settings, legacy):
+@pytest.mark.parametrize("clear_account_cache", [False, True])
+def test_unified_operations_requires_explicit_restart_activation(settings, clear_account_cache):
     with TestClient(make_app(settings)) as first:
         first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         path = "/api/automation/discovery"
@@ -257,10 +256,8 @@ def test_unified_operations_requires_explicit_restart_activation(settings, legac
             "top_level_enabled": True,
             "top_level_auto_publish": True,
         }).raise_for_status()
-        response = (
-            first.put(path, json={"enabled": True}) if legacy
-            else first.post("/api/automation/enable", json={"enabled": True})
-        ).raise_for_status().json()
+        assert first.put(path, json={"enabled": True}).status_code == 405
+        response = first.post("/api/automation/enable", json={"enabled": True}).raise_for_status().json()
         assert response["policy"]["enabled"]
         for _ in range(100):
             if any(row["status"] == "published" for row in first.get("/api/automation/intents").json()):
@@ -276,7 +273,7 @@ def test_unified_operations_requires_explicit_restart_activation(settings, legac
             and item["video_id"] == intent["target"]["bvid"]
             for item in first.get(f"{queue}?view=history").raise_for_status().json()["items"]
         )
-        if legacy:
+        if clear_account_cache:
             first.app.state.browsing.store.set("browsing_discovery_account", None)
     with TestClient(make_app(settings)) as second:
         second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
@@ -343,16 +340,16 @@ def test_public_inbox_only_links_to_private_area_without_private_body(admin):
 def test_parent_start_preserves_permissions_and_uses_latest_saved_settings(admin):
     assert (
         admin.put(
-            "/api/comments/policy",
-            json={"auto_browse": False, "auto_reply": False, "max_replies_per_hour": 2},
+            "/api/automation/settings",
+            json={"reply_enabled": False, "reply_auto_publish": False, "max_per_hour": 2},
         ).status_code
         == 200
     )
     assert admin.post("/api/automation/enable", json={"enabled": True}).status_code == 200
-    during = admin.get("/api/comments/policy").json()
+    during = admin.get("/api/automation").json()["effective"]["comments"]
     assert during["auto_reply"] is False and during["base"]["auto_reply"] is False
     assert during["automation_override"] is True
-    assert admin.put("/api/comments/policy", json={"max_replies_per_hour": 1}).status_code == 200
+    assert admin.put("/api/automation/settings", json={"max_per_hour": 1}).status_code == 200
     message_base = admin.get("/api/messages").json()["policy"]["base"]
     assert admin.put("/api/messages/policy", json=message_base | {"max_per_hour": 3}).status_code == 200
     assert admin.post("/api/automation/enable", json={"enabled": False}).status_code == 200
@@ -367,9 +364,9 @@ def test_parent_start_preserves_permissions_and_uses_latest_saved_settings(admin
 def test_emergency_stop_survives_app_recreation_and_blocks_base_automatic_flags(settings):
     with TestClient(make_app(settings)) as first:
         first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        first.put("/api/comments/policy", json={"auto_reply": True}).raise_for_status()
+        first.put("/api/automation/settings", json={"reply_enabled": True, "reply_auto_publish": True}).raise_for_status()
         assert first.post("/api/automation/stop", json={"emergency": True}).status_code == 200
-        policy = first.get("/api/comments/policy").json()
+        policy = first.get("/api/automation").json()["effective"]["comments"]
         assert policy["base"]["auto_reply"] is True and policy["auto_reply"] is False
     with TestClient(make_app(settings)) as second:
         second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
@@ -410,3 +407,11 @@ def test_automation_settings_accepts_permission_matrix_with_extra_keys(admin):
     assert data["settings"]["reply_auto_publish"] is True
     assert data["settings"]["video_like_auto_publish"] is True
     assert data["settings"]["max_per_day"] == 25
+
+
+def test_removed_comment_policy_routes_cannot_change_permissions_or_credentials(admin):
+    before = admin.get("/api/automation").json()["settings"]
+    for method in ("GET", "PUT"):
+        response = admin.request(method, "/api/comments/policy", json={"auto_reply": True})
+        assert response.status_code == 404
+    assert admin.get("/api/automation").json()["settings"] == before

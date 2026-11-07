@@ -88,7 +88,6 @@ async def generate_with_recovery(
     reuse_completed=False,
     max_recoveries=None,
     allow_web_fetch=False,
-    web_fetch_urls=None,
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     coordinator = coordinator_for(runtime, runtime.store, runtime.operations)
@@ -153,11 +152,10 @@ async def generate_with_recovery(
         generation_context=generation_context,
     )
     web_fetch = (
-        OperationWebFetch(guard, web_fetch_urls)
+        OperationWebFetch(guard)
         if allow_web_fetch
         and character["id"] == "whale"
         and getattr(runtime.llm, "supports_operation_web_fetch", False)
-        and (web_fetch_urls is None or web_fetch_urls)
         else None
     )
     recorded_fetch = False

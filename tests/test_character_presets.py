@@ -158,6 +158,7 @@ def test_upgrade_appends_preserves_history_voice_relations_and_drafts(tmp_path, 
     control = OperationsControl(store)
     store.set("active_character", "whale")
     control.assert_allowed(automatic=False, channel="comments", account_id="42", character=originals["whale"])
+    control.configure({"enabled": True}, account_id="42", character=store.character("whale"))
     with pytest.raises(ValueError, match="角色版本已变化"):
         control.assert_allowed(
             automatic=True, channel="comments", account_id="42", character=originals["whale"]

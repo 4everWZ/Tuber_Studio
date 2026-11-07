@@ -38,7 +38,6 @@ from .platforms.bilibili_dynamics import (
     validate_text,
 )
 from .publication_errors import PlatformRejected, UnknownPublication
-from .runtime_modes import operation_generation_context
 
 DEFAULT_POLICY = {
     "enabled": False,
@@ -490,13 +489,6 @@ class Dynamics:
             },
         )
 
-    def _pause_uncertain(self):
-        data = {k: self.policy()[k] for k in DEFAULT_POLICY}
-        data["enabled"] = False
-        self.store.set("dynamic_policy", data)
-        self._schedule(86400, "动态写入不确定，自动运营已暂停；请人工核对平台后再开启")
-        self.changed.set()
-
     def _quota(self, exclude_post=None):
         now, policy = time.time(), self.policy()
         row = self.store.one(
@@ -855,7 +847,6 @@ class Dynamics:
                         "dynamics", post_id, token, actual_binding, payload, "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入被取消，请人工核对平台")
-                self._pause_uncertain()
                 raise
             except PublishUncertain:
                 if token:
@@ -864,7 +855,6 @@ class Dynamics:
                         "dynamics", post_id, token, actual_binding, payload, "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入结果不确定，请人工核对平台，禁止重试")
-                self._pause_uncertain()
                 raise UnknownPublication("写入结果不确定，请人工核对平台，禁止重试", token) from None
             except ValueError as error:
                 if token:
@@ -884,7 +874,6 @@ class Dynamics:
                         "dynamics", post_id, token, actual_binding, payload, "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入或回执保存失败，请人工核对平台")
-                self._pause_uncertain()
                 raise UnknownPublication("写入或回执保存失败，请人工核对平台，禁止重试", token) from None
             try:
                 self._status(post_id, "published", receipt=receipt)
@@ -899,7 +888,6 @@ class Dynamics:
                 # A local persistence failure after receipt is never a definite
                 # remote rejection, even when the local exception is ValueError.
                 self._status(post_id, "publish_uncertain", "平台写入后保存回执失败，请人工核对平台")
-                self._pause_uncertain()
                 raise UnknownPublication("平台写入后保存回执失败，请人工核对平台，禁止重试", token) from None
             if image:
                 self.memes.release(f"dynamic-draft:{post_id}")
@@ -1061,7 +1049,7 @@ class Dynamics:
             )
             selected, selection_failed = None, False
             try:
-                async with operation_generation_context(self.runtime, self.settings):
+                async with self.runtime.offline_generation("video"):
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])

@@ -87,11 +87,9 @@ def test_comment_workbench_http_accepts_exact_generation_scope_and_fetch_video_a
     app = create_app(settings, Platform())
     with TestClient(app) as client:
         client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
-        fetched = (
-            client.post("/api/comments/fetch", json={"video_id": "BV1d8pU6xEZX", "max_pages": 1})
-            .raise_for_status()
-            .json()
-        )
+        response = client.post("/api/comments/fetch", json={"video_id": "BV1d8pU6xEZX", "max_pages": 1})
+        assert response.status_code == 200, response.text
+        fetched = response.json()
         assert fetched["video_id"] == "BV1d8pU6xEZX"
         selected = client.get("/api/comments", params={"video_id": fetched["video_id"]}).json()[0]["id"]
         now = time.time()

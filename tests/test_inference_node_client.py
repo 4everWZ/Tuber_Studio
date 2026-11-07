@@ -107,7 +107,6 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
         "configured_model": model,
         "fine_tuned_model": model,
         "node_model_state": "active",
-        "local_model_installed": False,
     }
     await asyncio.gather(*runtime.inference.cleanup_tasks)
     await runtime.browsing.visual_provider.close()
@@ -117,14 +116,14 @@ async def test_persona_status_distinguishes_local_install_node_inventory_and_off
     distributed, monkeypatch
 ):
     runtime, state = distributed
-    monkeypatch.setattr("tuber_studio.runtime.is_model_installed", lambda models: True)
     initial = runtime.status()["persona"]
     assert initial["source"] == "character_card"
     assert initial["configured_model"] == "Gemma4-E2B"
-    assert initial["local_model_installed"] and initial["node_model_state"] == "unknown"
+    assert initial["node_model_state"] == "unknown"
+    assert "local_model_installed" not in initial
 
     profile = {"installed": True}
-    runtime.inference.capabilities = {"profiles": {DAFEIYU_KEY: profile}}
+    runtime.inference.capabilities = {"profiles": {GROUNDED_DAFEIYU_KEY: profile}}
     assert runtime.status()["persona"]["node_model_state"] == "installed"
     profile["installed"] = False
     assert runtime.status()["persona"]["node_model_state"] == "not_installed"

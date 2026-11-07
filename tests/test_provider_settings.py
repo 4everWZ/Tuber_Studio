@@ -169,12 +169,15 @@ async def test_failed_public_save_rolls_back_both_files_and_runtime(runtime, mon
 
 
 @pytest.mark.asyncio
-async def test_busy_generation_and_auto_policies_block_reconfiguration(runtime):
+async def test_busy_generation_and_running_parent_block_reconfiguration_but_saved_preferences_do_not(runtime):
     async with runtime.generation_lock:
         with pytest.raises(RuntimeError, match="生成"):
             await apply_settings(runtime, api_patch())
     runtime.store.set("comment_policy", {"auto_reply": True})
-    with pytest.raises(RuntimeError, match="自动"):
+    runtime.store.set("dynamic_policy", {"enabled": True})
+    await apply_settings(runtime, api_patch())
+    runtime.operations.configure({"enabled": True}, account_id="100", character=runtime.character)
+    with pytest.raises(RuntimeError, match="自主运营"):
         await apply_settings(runtime, api_patch())
 
 

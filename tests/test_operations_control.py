@@ -33,7 +33,7 @@ def intent(character, source="42"):
 def test_overlay_never_overwrites_latest_base_or_unrelated_business(store):
     control = OperationsControl(store)
     character = store.character()
-    base = {"auto_browse": False, "auto_reply": False, "max_replies_per_hour": 2}
+    base = {"auto_reply": False, "max_replies_per_hour": 2}
     assert control.effective("comments", base) == base
     control.configure({"enabled": True}, account_id="900", character=character)
     assert not control.effective("comments", base)["auto_reply"]
@@ -43,12 +43,12 @@ def test_overlay_never_overwrites_latest_base_or_unrelated_business(store):
     assert (
         not browsing.get("discovery_enabled") and not browsing["autonomous_topics"] and not browsing["visual_enabled"]
     )
-    base["auto_browse"] = True
+    base["auto_reply"] = True
     control.configure({"enabled": False})
-    assert not control.effective("comments", base)["auto_browse"]
-    assert base["auto_browse"]
+    assert not control.effective("comments", base)["auto_reply"]
+    assert base["auto_reply"]
     control.configure({"emergency": True})
-    assert not control.effective("comments", base)["auto_browse"]
+    assert not control.effective("comments", base)["auto_reply"]
     again = OperationsControl(store)
     assert again.policy()["emergency"] and not again.policy()["enabled"]
     with pytest.raises(ValueError, match="紧急停止"):
@@ -131,6 +131,7 @@ def test_manual_historical_draft_keeps_its_character_version_without_reauthorizi
     token = control.reserve("900", original, intent(original, "old-approved"), "comments")
     assert control.get_attempt(token)["character_version"] == original["version"]
     control.finish(token, "published")
+    control.configure({"enabled": True}, account_id="900", character=store.character())
     with pytest.raises(ValueError, match="版本已变化"):
         control.reserve("900", original, intent(original, "old-automatic"), "comments", automatic=True)
     other = store.save_character(original | {"id": "other-persona"})
@@ -143,6 +144,7 @@ def test_uncertain_fences_only_original_intent_and_retains_quota(store):
     control, character = OperationsControl(store), store.character()
     token = control.reserve("900", character, intent(character), "comments")
     control.finish(token, "uncertain")
+    control.configure({"enabled": True}, account_id="900", character=character)
     other = control.reserve("900", character, intent(character, "43"), "comments", automatic=True)
     control.finish(other, "rejected")
     control.configure({"max_per_hour": 2})
@@ -161,6 +163,14 @@ def test_restart_turns_sending_into_uncertain_without_restoring_submission(store
     with pytest.raises(ValueError):
         reopened.reserve("900", character, intent(character), "comments")
     assert reopened.reserve("900", character, intent(character, "independent-target"), "comments")
+
+
+def test_automatic_admission_requires_parent_even_without_epoch_but_manual_work_remains_available(store):
+    control, character = OperationsControl(store), store.character()
+    with pytest.raises(ValueError, match="自主运营已停止"):
+        control.reserve("900", character, intent(character), "comments", automatic=True)
+    assert not store.all("SELECT * FROM operation_write_attempts")
+    assert control.reserve("900", character, intent(character), "comments", automatic=False)
 
 
 def test_cross_channel_recipient_cooldown_and_account_isolation(store):
@@ -277,7 +287,7 @@ async def test_legacy_final_http_check_blocks_emergency_during_platform_preparat
         base_url="https://api.bilibili.com", transport=httpx.MockTransport(handler)
     )
     comments.credentials = {"sessdata": "fixture", "csrf": "fixture"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     identity = approved_public(comments, store, status="pending_review")
     try:
         with pytest.raises(ValueError):

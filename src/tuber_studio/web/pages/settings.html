@@ -1,7 +1,7 @@
 <section data-section="settings" class="win-page-view" hidden>
   <div class="win-property-tabs">
     <a href="#settings" class="prop-tab active" aria-current="page">推理与模型</a>
-    <a href="#accounts" class="prop-tab">账号与权限矩阵</a>
+    <a href="#accounts" class="prop-tab">账号与登录</a>
     <a href="#overview" class="prop-tab">存储与维护</a>
     <a href="#issues" class="prop-tab">告警与诊断</a>
   </div>
@@ -15,22 +15,11 @@
 
   <div class="win-group-box" id="providers-panel" data-workspace-anchor style="margin-top:16px;">
     <div class="panel-heading">
-      <div class="win-group-title" style="margin:0;">LLM 文本与视觉端点配置</div>
+      <div class="win-group-title" style="margin:0;">文本推理端点配置</div>
       <span id="providers-dirty" class="hint">正在读取已保存配置…</span>
     </div>
 
     <div class="subsection" style="border:0; padding-top:0; margin-top:8px;">
-      <div class="win-subgroup-box" id="dafeiyu-model-card" hidden style="margin-bottom:12px;">
-        <strong>本机大肥鱼专属微调权重</strong>
-        <span id="dafeiyu-model-badge" class="badge" role="status">待读取</span>
-        <p id="dafeiyu-missing-hint" class="hint"></p>
-        <progress id="dafeiyu-progress" max="100" hidden aria-label="下载进度"></progress>
-        <div id="dafeiyu-download" class="actions" hidden>
-          <button type="button" id="btn-download-dafeiyu-model" class="win-btn">下载到本机</button>
-        </div>
-        <button type="button" id="btn-cancel-dafeiyu-download" class="win-btn danger" hidden>取消下载</button>
-      </div>
-
       <div class="actions" style="margin-bottom:12px;">
         <button type="button" id="btn-ping-providers" class="win-btn">⚡ 快速检查表单端点连通性</button>
         <span id="ping-provider-result" class="hint" role="status"></span>
@@ -52,12 +41,8 @@
                 <label>模型标识 (Model ID)</label>
                 <div style="display:flex; gap:6px; margin-top:5px;">
                   <select id="llm-model-select" style="flex:1;">
-                    <optgroup label="内建角色模型" id="fine-tuned-models-group">
-                      <option value="MiniCPM-V-4.7-1B" selected>MiniCPM-V-4.7-1B (大肥鱼专属微调)</option>
-                    </optgroup>
-                    <optgroup label="本地通用模型" id="base-models-group">
-                      <option value="MiniCPM5-2B">MiniCPM5-2B (本地默认)</option>
-                    </optgroup>
+                    <optgroup label="角色模型" id="fine-tuned-models-group"></optgroup>
+                    <optgroup label="节点模型" id="base-models-group"></optgroup>
                     <optgroup label="🌐 远端已拉取模型" id="remote-models-group" hidden></optgroup>
                     <option value="__custom__">自定义输入模型 ID…</option>
                   </select>

@@ -158,6 +158,37 @@ class ContinuationCoordinator:
             CREATE TABLE IF NOT EXISTS operation_continuation_budgets(
                 id TEXT PRIMARY KEY,limits TEXT NOT NULL,budget TEXT NOT NULL);
         """)
+        # Retire only factory-created totals. Custom task budgets stay explicit;
+        # the public settings never offered these former episode-level caps.
+        with store.db:
+            for saved in store.all(
+                "SELECT c.id,c.created_at,c.deadline,c.parent_round_id,b.limits "
+                "FROM operation_continuations c JOIN operation_continuation_budgets b ON b.id=c.id"
+            ):
+                limits = json.loads(saved["limits"])
+                output = limits.get("max_output_tokens")
+                maximum = limits.get("generation_max_tokens")
+                factory_output = (
+                    min(2097152, 32 * maximum) if type(maximum) is int else 65536
+                )
+                if (limits.get("max_model_calls"), limits.get("max_input_tokens"), output) != (
+                    32, 1048576, factory_output
+                ):
+                    continue
+                limits |= dict.fromkeys(("max_model_calls", "max_input_tokens", "max_output_tokens"), 0)
+                store.db.execute(
+                    "UPDATE operation_continuation_budgets SET limits=? WHERE id=?",
+                    (dump(limits), saved["id"]),
+                )
+                parent = self.parent_repository.round(saved["parent_round_id"]) if (
+                    saved["parent_round_id"] and self.parent_repository is not None
+                ) else None
+                implicit = abs(saved["deadline"] - saved["created_at"] - 1800) < 1
+                if parent is not None or implicit:
+                    store.db.execute(
+                        "UPDATE operation_continuations SET deadline=? WHERE id=?",
+                        ((parent["deadline"] or 0) if parent else 0, saved["id"]),
+                    )
 
     def get(self, identity):
         row = self.store.one("SELECT * FROM operation_continuations WHERE id=?", (identity,))
@@ -165,6 +196,7 @@ class ContinuationCoordinator:
             raise ValueError("恢复任务不存在")
         for key in ("binding", "feedback", "original_output", "current_output"):
             row[key] = json.loads(row[key]) if row[key] is not None else None
+        row["deadline"] = row["deadline"] or None
         row["max_recoveries"] = self.operations.policy().get("max_recoveries", 8)
         metering = self.store.one(
             "SELECT budget,limits FROM operation_continuation_budgets WHERE id=?", (identity,)
@@ -280,7 +312,7 @@ class ContinuationCoordinator:
                 "pending",
                 parent_round_id,
                 str(uuid4()),
-                deadline if deadline is not None else now + 1800,
+                deadline or 0,
                 dump(feedback),
                 dump(visible_payload(original_output)) if original_output is not None else None,
                 None,
@@ -290,9 +322,9 @@ class ContinuationCoordinator:
             ),
         )
         limits = budget_limits or {
-            "max_model_calls": 32,
-            "max_input_tokens": 1048576,
-            "max_output_tokens": 65536,
+            "max_model_calls": 0,
+            "max_input_tokens": 0,
+            "max_output_tokens": 0,
         }
         self.store.execute(
             "INSERT INTO operation_continuation_budgets VALUES(?,?,?)",
@@ -312,13 +344,12 @@ class ContinuationCoordinator:
         meter = current_meter.get()
         if parent_round_id is None and meter is not None and meter.repository is self.parent_repository:
             parent_round_id = meter.round_id
-        deadline = deadline if deadline is not None else time.time() + 1800
         if parent_round_id and self.parent_repository is not None:
             parent = self.parent_repository.round(parent_round_id)
             if not parent:
                 raise ValueError("恢复任务的父轮不存在")
             if parent["deadline"] is not None:
-                deadline = min(deadline, parent["deadline"])
+                deadline = min(deadline, parent["deadline"]) if deadline is not None else parent["deadline"]
         return parent_round_id, deadline
 
     def generation_scope(self, identity):
@@ -344,14 +375,14 @@ class ContinuationCoordinator:
             row = self.get(identity)
             if (
                 row["state"] in {"cancelled", "abandoned", "needs_reconciliation"}
-                or time.time() >= row["deadline"]
+                or row["deadline"] is not None and time.time() >= row["deadline"]
             ):
                 raise ContinuationCheckpoint("恢复任务已停止或达到期限")
             limit_row = self.store.one(
                 "SELECT limits FROM operation_continuation_budgets WHERE id=?", (identity,)
             )
             limits = json.loads(limit_row["limits"])
-            caps = {key: limits["max_" + key] for key in ("model_calls", "input_tokens", "output_tokens")}
+            caps = {key: limits["max_" + key] or None for key in ("model_calls", "input_tokens", "output_tokens")}
             budget = reserve_counters(row["budget"], caps, amounts)
             self.store.db.execute(
                 "UPDATE operation_continuation_budgets SET budget=? WHERE id=?", (dump(budget), identity)
@@ -427,7 +458,7 @@ class ContinuationCoordinator:
                 raise ContinuationCheckpoint("恢复任务的执行租约已失效")
             if row["state"] not in {"pending", "deciding"}:
                 return None
-            if time.time() >= row["deadline"] or row["recoveries"] >= row["max_recoveries"]:
+            if (row["deadline"] is not None and time.time() >= row["deadline"]) or row["recoveries"] >= row["max_recoveries"]:
                 self.store.db.execute(
                     "UPDATE operation_continuations SET state='checkpoint',updated_at=? WHERE id=?",
                     (time.time(), identity),
@@ -452,14 +483,14 @@ class ContinuationCoordinator:
         await self._bounded(row, self._guard, guard)
         if (
             row["owner"] != owner
-            or time.time() >= row["deadline"]
+            or row["deadline"] is not None and time.time() >= row["deadline"]
             or row["recoveries"] > row["max_recoveries"]
         ):
             raise ContinuationCheckpoint("恢复任务执行者变化或期限已到")
 
     @staticmethod
     async def _bounded(row, callback, *args):
-        timer = asyncio.timeout(max(0, row["deadline"] - time.time()))
+        timer = asyncio.timeout(max(0, row["deadline"] - time.time()) if row["deadline"] is not None else None)
         try:
             async with timer:
                 return await callback(*args)
@@ -494,8 +525,17 @@ class ContinuationCoordinator:
                 raise ValueError("恢复任务已有执行者")
             self.store.db.execute(
                 "UPDATE operation_continuations SET owner=?,lease_until=? WHERE id=?",
-                (owner, max(row["deadline"], time.time() + 1), identity),
+                (owner, time.time() + 90, identity),
             )
+        async def renew_lease():
+            while True:
+                await asyncio.sleep(30)
+                self.store.execute(
+                    "UPDATE operation_continuations SET lease_until=? WHERE id=? AND owner=?",
+                    (time.time() + 90, identity, owner),
+                )
+
+        heartbeat = asyncio.create_task(renew_lease())
         try:
             if initial is not None:
                 row = self.get(identity)
@@ -654,6 +694,8 @@ class ContinuationCoordinator:
             )
             raise
         finally:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
             self.store.execute(
                 "UPDATE operation_continuations SET owner=NULL,lease_until=NULL WHERE id=? AND owner=?",
                 (identity, owner),
@@ -701,7 +743,7 @@ class ContinuationCoordinator:
             parent_round_id, deadline = self._parent_scope(parent_round_id, deadline)
             self.store.db.execute(
                 "UPDATE operation_continuations SET state='pending',episode=?,recoveries=0,parent_round_id=?,deadline=?,updated_at=?,owner=NULL,lease_until=NULL WHERE id=?",
-                (str(uuid4()), parent_round_id, deadline, time.time(), identity),
+                (str(uuid4()), parent_round_id, deadline or 0, time.time(), identity),
             )
             self.store.db.execute(
                 "UPDATE operation_continuation_budgets SET budget=?,limits=? WHERE id=?",

@@ -80,13 +80,7 @@ function calculatePermissionTier(status, account, hasCsrf) {
 }
 
 function applyPermissionTierUI(tierInfo) {
-  const { tier, icon, text, badgeText } = tierInfo;
-
-  const opCapsule = $("op-permission-capsule-btn");
-  if (opCapsule) {
-    opCapsule.dataset.tier = tier;
-    opCapsule.innerHTML = `<span>${icon} ${text}</span>`;
-  }
+  const { tier, badgeText } = tierInfo;
 
   const matrixBadge = $("matrix-capsule-badge");
   if (matrixBadge) {
@@ -237,11 +231,6 @@ export async function saveMatrixSettings(api, { silent: isSilent = false } = {})
 }
 
 export function initPermissionMatrix(save) {
-  function jumpToPermissionMatrix() {
-    location.hash = "operations-permission-matrix";
-  }
-
-  if ($("op-permission-capsule-btn")) $("op-permission-capsule-btn").onclick = jumpToPermissionMatrix;
   if ($("matrix-save")) $("matrix-save").onclick = () => save();
 
   const matrixContainer = $("operations-permission-matrix");

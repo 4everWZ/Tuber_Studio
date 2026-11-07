@@ -229,3 +229,65 @@ async def test_expired_or_disabled_recovery_stops_before_model(coordinator):
     ).state == "checkpoint"
     assert coordinator.get(other["id"])["recoveries"] == 0
     assert content_hash({"b": 2, "a": 1}) == content_hash({"a": 1, "b": 2})
+
+
+def test_default_continuation_has_no_cumulative_call_token_or_implicit_deadline_limit(coordinator):
+    row = begin(coordinator)
+    assert row["deadline"] is None
+    for _ in range(40):
+        coordinator.reserve_budget(row["id"], model_calls=1, input_tokens=100_000, output_tokens=8192)
+    saved = coordinator.get(row["id"])
+    assert saved["budget"] == {"model_calls": 40, "input_tokens": 4_000_000, "output_tokens": 327_680}
+    assert saved["limits"] == {"max_model_calls": 0, "max_input_tokens": 0, "max_output_tokens": 0}
+
+
+async def test_no_deadline_continuation_cancellation_releases_owner_and_heartbeat(coordinator):
+    row = begin(coordinator)
+    entered = asyncio.Event()
+
+    async def initial(current):
+        entered.set()
+        await asyncio.Future()
+
+    task = asyncio.create_task(coordinator.run(
+        row["id"], initial=initial, decide=None, revise=None, guard=lambda: True
+    ))
+    await entered.wait()
+    assert coordinator.get(row["id"])["owner"]
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    saved = coordinator.get(row["id"])
+    assert saved["owner"] is None and saved["lease_until"] is None
+    assert saved["state"] == "cancelled" and saved["can_resume"]
+
+
+@pytest.mark.parametrize("maximum", [None, 8192, 65536])
+def test_restart_retires_legacy_factory_totals_and_implicit_deadline_without_erasing_progress(coordinator, maximum):
+    row = begin(coordinator)
+    limits = {"max_model_calls": 32, "max_input_tokens": 1048576,
+              "max_output_tokens": min(2097152, 32 * maximum) if maximum else 65536}
+    if maximum:
+        limits["generation_max_tokens"] = maximum
+    coordinator.store.execute("UPDATE operation_continuation_budgets SET limits=?,budget=? WHERE id=?", (
+        json.dumps(limits), json.dumps({"model_calls": 31, "input_tokens": 1_000_000, "output_tokens": 60000}), row["id"]
+    ))
+    coordinator.store.execute("UPDATE operation_continuations SET deadline=created_at+1800 WHERE id=?", (row["id"],))
+    reopened = ContinuationCoordinator(coordinator.store, coordinator.operations)
+    saved = reopened.get(row["id"])
+    assert saved["deadline"] is None
+    assert saved["original_output"] == "original answer"
+    assert saved["budget"]["model_calls"] == 31
+    reopened.reserve_budget(row["id"], model_calls=20, input_tokens=2_000_000, output_tokens=200000)
+    assert reopened.get(row["id"])["budget"]["model_calls"] == 51
+    if maximum:
+        assert saved["limits"]["generation_max_tokens"] == maximum
+
+
+def test_restart_keeps_explicit_non_factory_budget_and_deadline(coordinator):
+    limits = {"max_model_calls": 2, "max_input_tokens": 3000, "max_output_tokens": 4096}
+    deadline = time.time() + 60
+    row = begin(coordinator, deadline=deadline, budget_limits=limits)
+    reopened = ContinuationCoordinator(coordinator.store, coordinator.operations)
+    saved = reopened.get(row["id"])
+    assert saved["limits"] == limits and saved["deadline"] == deadline

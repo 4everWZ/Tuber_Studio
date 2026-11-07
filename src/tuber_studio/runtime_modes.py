@@ -55,13 +55,18 @@ def inference_transition(runtime):
         runtime.inference.revision += 1
 
 
-def operation_generation_context(runtime, settings, *, lane=None):
-    """Separate-model deployments wait for operations; legacy shared models keep their lock."""
-    return (
-        runtime.offline_generation(lane)
-        if lane or settings.data.get("work_mode_profiles")
-        else runtime.generation_lock
-    )
+def require_model_idle(runtime):
+    """Saved channel preferences do not prevent changing an idle deployment."""
+    if runtime.live.state != "stopped":
+        raise ValueError("请先停止直播再修改推理配置")
+    if runtime.operations.policy()["enabled"]:
+        raise ValueError("请先停止自主运营再修改推理配置")
+    browsing = getattr(runtime, "browsing", None)
+    if browsing and (
+        getattr(browsing, "active", None)
+        or getattr(getattr(browsing, "comments", None), "active_task_id", None)
+    ):
+        raise ValueError("请等待当前运营任务结束再修改推理配置")
 
 
 async def apply_mode_profile(runtime, mode):

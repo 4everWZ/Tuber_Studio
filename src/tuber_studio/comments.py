@@ -19,20 +19,12 @@ from .operation_feedback import (
     publication_binding,
 )
 from .operation_text import validate_operation_text
+from .operations.browsing.models import BrowsingPolicy
 from .operations_control import OperationsControl, canonical_intent
 from .platforms.bilibili import BilibiliAdapter, PublishUncertain
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
-from .runtime_modes import operation_generation_context
 
-DEFAULT_POLICY = {
-    "auto_browse": False,
-    "auto_reply": False,
-    "watch_videos": [],
-    "browse_interval_seconds": 300,
-    "max_replies_per_hour": 5,
-    "max_replies_per_day": 20,
-}
 CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
 THREAD_WORKERS = 4
 
@@ -75,9 +67,7 @@ class Comments:
         self.worker = None
         self.policy_changed = asyncio.Event()
         self.publish_lock = asyncio.Lock()
-        self.browse_lock = asyncio.Lock()
-        self.last_browse_error = None
-        self.last_browse_at = None
+        self.fetch_lock = asyncio.Lock()
         self.active_task_id = None
         self.thread_tasks = set()
         self.closed = False
@@ -119,56 +109,24 @@ class Comments:
         await self.adapter.close()
 
     def policy(self):
-        base = DEFAULT_POLICY | self.store.get("comment_policy", {})
+        configured = BrowsingPolicy.model_validate(self.store.get("browsing_policy", {}))
+        credentials = bool(self.credentials.get("sessdata") and self.credentials.get("csrf"))
+        base = {
+            "auto_reply": configured.reply_enabled and configured.reply_auto_publish,
+            "max_replies_per_hour": configured.max_per_hour,
+            "max_replies_per_day": configured.max_per_day,
+        }
         data = self.operations.effective("comments", base)
+        data["auto_reply"] = data["auto_reply"] and credentials
         return data | {
             "base": base,
             "automation_override": self.operations.policy()["enabled"],
             "emergency": self.operations.policy()["emergency"],
-            "credentials_configured": bool(self.credentials.get("sessdata") and self.credentials.get("csrf")),
-            "last_browse_error": self.last_browse_error,
-            "last_browse_at": self.last_browse_at,
+            "credentials_configured": credentials,
         }
 
-    async def set_policy(self, patch):
-        allowed = set(DEFAULT_POLICY) | {"sessdata", "csrf"}
-        if not set(patch) <= allowed:
-            raise ValueError("未知评论策略字段")
-        current = DEFAULT_POLICY | self.store.get("comment_policy", {})
-        data = current | {k: v for k, v in patch.items() if k in DEFAULT_POLICY}
-        if not isinstance(data["auto_browse"], bool) or not isinstance(data["auto_reply"], bool):
-            raise ValueError("开关必须为布尔值")
-        for field, minimum, maximum in (
-            ("browse_interval_seconds", 60, 86400),
-            ("max_replies_per_hour", 0, 30),
-            ("max_replies_per_day", 0, 200),
-        ):
-            if not isinstance(data[field], int) or not minimum <= data[field] <= maximum:
-                raise ValueError(f"{field} 必须在 {minimum} 到 {maximum} 之间")
-        if not isinstance(data["watch_videos"], list) or len(data["watch_videos"]) > 20:
-            raise ValueError("关注视频必须是最多20个BV号的列表")
-        if any(
-            not isinstance(v, str) or not re.fullmatch(r"BV[0-9A-Za-z]{10}", v) for v in data["watch_videos"]
-        ):
-            raise ValueError("关注视频请使用完整BV号")
-        credential_before = dict(self.credentials)
-        credential = dict(credential_before)
-        for name in ("sessdata", "csrf"):
-            if name in patch and patch[name]:
-                value = patch[name]
-                if not isinstance(value, str) or len(value) > 2000 or re.search(r"[\r\n;]", value):
-                    raise ValueError("凭证格式无效")
-                credential[name] = value
-        if data["auto_reply"] and not (credential.get("sessdata") and credential.get("csrf")):
-            raise ValueError("自动回复需要先配置账号 SESSDATA 与 bili_jct；当前仍为人工审核")
-        if credential != self.credentials:
-            await self.replace_credentials(credential, expected=credential_before)
-        self.store.set("comment_policy", data)
-        self.policy_changed.set()
-        return self.policy()
-
     async def replace_credentials(self, credential, *, expected=None):
-        """Settings and the legacy policy route share one private credential store."""
+        """Atomically replace the account credential store against its observed version."""
         if not isinstance(credential, dict) or set(credential) - {"sessdata", "csrf"}:
             raise ValueError("未知账号凭证字段")
         for value in credential.values():
@@ -309,7 +267,7 @@ class Comments:
     async def fetch(self, video, max_pages=1):
         if not isinstance(max_pages, int) or not 1 <= max_pages <= 5:
             raise ValueError("每次读取1到5页")
-        async with self.browse_lock:
+        async with self.fetch_lock:
             data = await self.adapter.fetch(video, max_pages)
         if not data["items"]:
             return {"imported": 0, "duplicates": 0, "video_id": data["video_id"], "detail": "未读到评论"}
@@ -603,7 +561,7 @@ class Comments:
         while True:
             while self._live_pending():
                 await asyncio.sleep(0.2)
-            async with operation_generation_context(self.runtime, self.settings, lane="reply"):
+            async with self.runtime.offline_generation("reply"):
                 if self._live_pending():
                     continue
                 # Recheck after waiting for the GPU: another request may already
@@ -941,12 +899,8 @@ class Comments:
         return await feedback.reconcile("comments", draft_id, read, commit)
 
     def publication_limits(self):
-        policy = self.policy()
-        unified = self.store.get("browsing_policy", {})
-        return {
-            "max_per_hour": unified.get("max_per_hour", policy["max_replies_per_hour"]),
-            "max_per_day": unified.get("max_per_day", policy["max_replies_per_day"]),
-        }
+        policy = BrowsingPolicy.model_validate(self.store.get("browsing_policy", {}))
+        return {"max_per_hour": policy.max_per_hour, "max_per_day": policy.max_per_day}
 
     def _reserve_daily_video_reply(self, token, row, account_id):
         if not (row.get("video_id") or "").startswith("BV"):

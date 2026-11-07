@@ -16,7 +16,7 @@ export function renderPersona(model) {
 
   const states = { active: "节点已加载", installed: "节点已安装", not_installed: "节点未安装" };
   $("persona-model-state").textContent = states[persona?.node_model_state] ??
-    (persona?.local_model_installed ? "本机已有模型文件" : "节点状态待确认");
+    "节点状态待确认";
   $("persona-model-detail").textContent = persona?.fine_tuned_model ?? "";
   const modeAction = $("persona-mode-action");
   const textMode = document.querySelector('[data-inference-mode="text"]');
@@ -119,7 +119,10 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
 }
 
 export async function selectCharacter(id, version, model, { api, list, node, busy, onRenderList }) {
+  const request = (model.characterSelection || 0) + 1;
+  model.characterSelection = request;
   const versions = list(await api(`/api/characters/${encodeURIComponent(id)}/versions`));
+  if (request !== model.characterSelection) return;
   model.characterId = id;
   model.versions = versions;
   const select = $("character-version");
@@ -249,6 +252,10 @@ export function initCharacterStudioUI(model, {
   };
 
   $("character-version")?.addEventListener("change", () => {
+    if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换历史版本？")) {
+      $("character-version").value = String(model.character.version);
+      return;
+    }
     const version = Number($("character-version").value);
     const character = model.versions.find(item => item.version === version);
     if (character) setCharacterEditor(character, model);

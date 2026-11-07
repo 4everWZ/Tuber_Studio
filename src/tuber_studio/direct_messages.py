@@ -91,7 +91,6 @@ class DirectMessages:
         self.operations = comments.operations
         self.authorizations = {}
         self._scheduled = set()
-        self.resume_authorized = False
         self.operations_resumed = False
         self.active_account_id = ""
         self.active_credential = None
@@ -180,7 +179,6 @@ class DirectMessages:
             self.enabled_at = int(time.time())
             self.store.set("message_enabled_at", self.enabled_at)
         self.store.set("message_policy", value)
-        self.resume_authorized = value["enabled"]
         self.changed.set()
         return self.policy()
 
@@ -719,7 +717,7 @@ class DirectMessages:
         if (
             not parent
             or (active and parent["status"] not in {"queued", "running"})
-            or parent["deadline"] <= time.time()
+            or parent["deadline"] is not None and parent["deadline"] <= time.time()
             or parent["account_id"] != draft["account_id"]
             or parent["character_id"] != draft["character_id"]
             or parent["character_version"] != draft["character_version"]
@@ -1428,9 +1426,7 @@ class DirectMessages:
         self.poller = asyncio.create_task(self._poll())
 
     def _processing_authorized(self):
-        return self.policy()["enabled"] and (
-            self.resume_authorized or self.operations_resumed and self.operations.policy()["enabled"]
-        )
+        return self.policy()["enabled"] and self.operations_resumed and self.operations.policy()["enabled"]
 
     def _schedule(self, identity, automatic):
         if identity in self._scheduled:
@@ -1489,7 +1485,6 @@ class DirectMessages:
     async def pause(self):
         """Retain unread messages and generation tasks, revoking queued send grants."""
         was_started = self.worker is not None
-        self.resume_authorized = False
         self.operations_resumed = False
         if self.worker:
             self.worker.cancel()

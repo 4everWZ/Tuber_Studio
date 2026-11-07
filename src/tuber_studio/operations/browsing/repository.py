@@ -88,8 +88,8 @@ class BrowsingRepository:
                 "UPDATE browsing_intents SET status='publish_uncertain',error='提交中重启，禁止重发' WHERE status='publishing'"
             )
             self.store.db.execute(
-                "UPDATE browsing_intents SET status='automatic_skipped',error='运行已结束' WHERE status='automatic_pending' "
-                "AND round_id NOT IN (SELECT id FROM browsing_rounds WHERE json_extract(config,'$.batch_id') IS NOT NULL)"
+                "UPDATE browsing_intents SET status='pending_review',auto_authorized=0,error='旧运行已结束，保留待审草稿' "
+                "WHERE status='automatic_pending'"
             )
             self.store.db.execute(
                 "UPDATE browsing_events SET status='received' WHERE status IN ('source_verified','context_ready')"
@@ -135,27 +135,27 @@ class BrowsingRepository:
                     "AND r.status IN ('paused','failed','partial','completed') AND (b.state<>'completed' OR "
                     "EXISTS(SELECT 1 FROM browsing_batch_items i WHERE i.batch_id=b.id AND i.status='daily_wait' "
                     "AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
-                    "AND COALESCE(json_extract(r.config,'$.discovery_publish'),0)=? "
+                    "AND json_extract(r.config,'$.autonomous_batch')=1 "
+                    "AND COALESCE(json_extract(r.config,'$.discovery_publish'),0)=0 "
                     "ORDER BY r.created_at LIMIT 1",
                     (
                         account,
                         character["id"],
                         character["version"],
                         now,
-                        int(bool(config.get("discovery_publish"))),
                     ),
                 )
                 if previous:
                     previous = self.decode(previous)
-                    restored = previous["config"]
-                    for key in ("discovery_id", "discovery_publish", "autonomous_batch"):
-                        if key in config:
-                            restored[key] = config[key]
-                        else:
-                            restored.pop(key, None)
-                    for key in ("daily_watch_limit", "max_replies_per_video", "business_timezone"):
-                        if key in config:
-                            restored[key] = config[key]
+                    # Keep the original retrieval scope/cursor, but current
+                    # permissions, quotas and resources govern resumed work.
+                    retrieval = {
+                        "sources", "keywords", "watch_videos", "autonomous_topics",
+                        "candidate_limit", "max_search_terms", "max_pages", "batch_id",
+                    }
+                    restored = config | {
+                        key: value for key, value in previous["config"].items() if key in retrieval
+                    }
                     self.store.db.execute(
                         "UPDATE browsing_rounds SET status='queued',config=?,epoch=?,owner=?,deadline=NULL,error=NULL,updated_at=? WHERE id=?",
                         (dump(restored), epoch, str(uuid4()), now, previous["id"]),
@@ -174,7 +174,7 @@ class BrowsingRepository:
                     int(preview),
                     epoch,
                     str(uuid4()),
-                    None if config.get("autonomous_batch") else now + config["deadline_seconds"],
+                    None if not preview else now + config["deadline_seconds"],
                     dump(config),
                     dump(budget),
                     dump({}),

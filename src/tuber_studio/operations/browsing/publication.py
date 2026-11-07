@@ -116,6 +116,14 @@ class BrowsingPublication:
             )
         )
 
+    def has_manual_draft(self, row, resource, comment_id):
+        return bool(self.browsing.store.one(
+            "SELECT d.id FROM drafts d JOIN comments c ON c.id=d.comment_id "
+            "WHERE c.platform='bilibili' AND c.video_id=? AND c.comment_id=? "
+            "AND d.account_id=? AND d.character_id=?",
+            (resource, str(comment_id), row["account_id"], row["character_id"]),
+        ))
+
     def review(self, identity, action, text=None):
         row = self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
         if (
@@ -168,11 +176,11 @@ class BrowsingPublication:
                 "local_id": row["id"],
                 "platform_id": str(target.get("parent") or target["oid"]),
                 "content_sha256": content_hash(source),
-                **({"discovery": True} if self._independent_run(row) else {}),
+                **({"discovery": True} if self._has_legacy_binding(row) else {}),
             },
         )
 
-    def _independent_run(self, intent):
+    def _has_legacy_binding(self, intent):
         parent = self.browsing.repo.round(intent["round_id"])
         return (
             parent["config"]["discovery_id"] if parent and parent["config"].get("discovery_publish") else None
@@ -286,12 +294,6 @@ class BrowsingPublication:
     def _defer_revision(self, identity, prepared, state):
         prepared.guard()
         status = "rejected" if state == "abandoned" else "pending_review"
-        if prepared.binding["source"].get("discovery"):
-            status = (
-                "automatic_skipped"
-                if state in {"abandoned", "waiting", "needs_material"}
-                else "automatic_pending"
-            )
         self.browsing.store.execute(
             "UPDATE browsing_intents SET status=?,updated_at=? WHERE id=?",
             (status, time.time(), identity),
@@ -329,7 +331,7 @@ class BrowsingPublication:
             token = generation_resume.set(True)
             try:
                 if event:
-                    policy = self.browsing.effective()
+                    policy = self.browsing.configured()
                     if (
                         not policy["reply_enabled"]
                         or source["kind"] == "mention"
@@ -359,7 +361,7 @@ class BrowsingPublication:
         feedback = FeedbackPublication(self.browsing.runtime, self.browsing.store, self.browsing.operations)
         if not feedback.coordinator.find("browsing", identity):
             intent = self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
-            if intent and intent["status"] == "publish_uncertain" and self._independent_run(intent):
+            if intent and intent["status"] == "publish_uncertain" and self._has_legacy_binding(intent):
                 saved = self.browsing.store.one(
                     """SELECT token FROM operation_write_attempts WHERE account_id=? AND character_id=?
                        AND intent=? AND resolved_status='uncertain' ORDER BY started_at DESC LIMIT 1""",
@@ -381,7 +383,7 @@ class BrowsingPublication:
         async def read(row, attempt):
             intent_row = self.browsing.store.one("SELECT kind FROM browsing_intents WHERE id=?", (identity,))
             if intent_row and intent_row.get("kind") in ("video_like", "video_fav"):
-                return {"status": "published", "checked_at": time.time()}
+                return {"status": "unsupported"}
             if not hasattr(self.browsing.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             try:
@@ -406,20 +408,27 @@ class BrowsingPublication:
 
     async def publish(self, identity, *, automatic=False):
         row = self.browsing.store.one("SELECT epoch,round_id FROM browsing_intents WHERE id=?", (identity,))
-        return await FeedbackPublication(
-            self.browsing.runtime, self.browsing.store, self.browsing.operations
-        ).submit(
-            "browsing",
-            identity,
-            prepare=lambda: self._publication_context(identity, automatic),
-            send=lambda ticket, binding, body_hash: self._publish_once(
-                identity, automatic=automatic, revision_ticket=ticket, binding=binding, body_hash=body_hash
-            ),
-            apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
-            automatic=automatic,
-            epoch=row["epoch"] if row and automatic else None,
-            reconcile=lambda token, prepared: self._reconcile(identity),
-        )
+        try:
+            return await FeedbackPublication(
+                self.browsing.runtime, self.browsing.store, self.browsing.operations
+            ).submit(
+                "browsing",
+                identity,
+                prepare=lambda: self._publication_context(identity, automatic),
+                send=lambda ticket, binding, body_hash: self._publish_once(
+                    identity, automatic=automatic, revision_ticket=ticket, binding=binding, body_hash=body_hash
+                ),
+                apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
+                automatic=automatic,
+                epoch=row["epoch"] if row and automatic else None,
+                reconcile=lambda token, prepared: self._reconcile(identity),
+            )
+        except UnknownPublication:
+            if not automatic:
+                raise
+            # A submitted intent with an unknown receipt is a durable outcome,
+            # not a failure to read this video or its other discussion threads.
+            return {"status": "publish_uncertain", "id": identity}
 
     async def _publish_once(
         self, identity, *, automatic=False, revision_ticket=None, binding=None, body_hash=None

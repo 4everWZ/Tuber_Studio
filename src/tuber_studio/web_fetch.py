@@ -2,7 +2,6 @@
 
 import asyncio
 import ipaddress
-import re
 import socket
 import time
 from html.parser import HTMLParser
@@ -39,32 +38,17 @@ def source_url(value):
     return url.copy_with(raw_path=url.raw_path, fragment=None)
 
 
-def supplied_https_urls(text):
-    urls = set()
-    for value in re.findall(r"https://[^\s<>\x22'，。！？；、）】]+", text, flags=re.IGNORECASE):
-        try:
-            url = source_url(value.rstrip(".,!?)"))
-        except httpx.InvalidURL:
-            continue
-        if url.host and not url.userinfo:
-            urls.add(url)
-    return frozenset(urls)
-
-
 class OperationWebFetch:
     """One model-selected page, reused if this generation needs revision."""
 
-    def __init__(self, guard, urls=None):
+    def __init__(self, guard):
         self.guard = guard
-        self.urls = urls
         self.context = None
         self.receipt = None
 
     async def complete(self, messages, schema, invoke):
         if self.context is None:
             instruction = WEB_FETCH_INSTRUCTION
-            if self.urls is not None:
-                instruction = "可读当前消息里给出的公开链接。" + instruction
             choices = schema.get("oneOf")
             wire_schema = (
                 schema | {"oneOf": [*choices, WEB_FETCH_SCHEMA]}
@@ -102,8 +86,6 @@ class OperationWebFetch:
 
     async def _read(self, value):
         try:
-            if self.urls is not None and source_url(value) not in self.urls:
-                return {"status": "unavailable"}
             return {"status": "ok", **await fetch_excerpt(value)}
         except TimeoutError:
             return {"status": "timeout"}

@@ -31,14 +31,6 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
             raise HTTPException(404, "账号头像暂时不可用") from None
         return Response(image, media_type=mime)
 
-    @app.get("/api/comments/policy", dependencies=[Depends(require_admin)])
-    async def policy():
-        return comments.policy()
-
-    @app.put("/api/comments/policy", dependencies=[Depends(require_admin)])
-    async def set_policy(data: dict = Body(...)):
-        return await comments.set_policy(data)
-
     @app.get("/api/comments/videos", dependencies=[Depends(require_admin)])
     async def videos():
         try:

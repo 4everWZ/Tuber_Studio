@@ -140,6 +140,7 @@ async def dynamic_memes(settings, store):
 
     comments.account_id = account
     runtime = SimpleNamespace(llm=Model(), generation_lock=asyncio.Lock())
+    runtime.offline_generation = lambda lane: runtime.generation_lock
     service = Dynamics(settings, store, runtime, comments, memes=catalog)
     GroundedMemory(store).record(
         "public:test",

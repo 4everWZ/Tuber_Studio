@@ -75,7 +75,10 @@ async def model_for(
 
 
 @pytest.mark.parametrize("mode", ["comment_draft", "direct_message", "live"])
-async def test_runtime_operation_web_fetch_is_model_selected(runtime, settings, monkeypatch, mode):
+@pytest.mark.parametrize("provided_url", [False, True])
+async def test_runtime_operation_web_fetch_is_model_selected(
+    runtime, settings, monkeypatch, mode, provided_url
+):
     url = "https://example.org/penguin"
     first = {"web_fetch": url} if mode != "live" else {"spoken_text": "本鲸在呢。"}
     requests, generated, _ = await model_for(runtime, settings, first=first)
@@ -86,7 +89,10 @@ async def test_runtime_operation_web_fetch_is_model_selected(runtime, settings, 
         return {"url": target, "title": "企鹅资料", "excerpt": "企鹅生活在南半球。", "truncated": False}
 
     monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
-    event = {"event_id": "source-event", "text": f"我看到 {url}，你怎么看？"}
+    event = {
+        "event_id": "source-event",
+        "text": f"我看到 {url}，你怎么看？" if provided_url else "企鹅生活在哪里？",
+    }
     reply, _ = await runtime.generate_reply(mode, runtime.character, event, mode=mode)
     if mode == "live":
         assert reply.spoken_text == "本鲸在呢。"

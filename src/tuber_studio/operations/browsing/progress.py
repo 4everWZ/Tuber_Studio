@@ -134,10 +134,10 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
                     deadline=row["deadline"],
                     force=row["config"].get("force_read", False),
                 )
-            # Requirement: 无字幕的视频，暂时标记不刷视频，TBD等待后续接入ASR
-            has_subtitles = any(isinstance(p, dict) and p.get("segments") for p in material.get("parts", []))
-            if not has_subtitles:
-                raise EvidenceUnavailable("no_subtitles", "视频无可用字幕，暂时跳过（待后续接入ASR语音识别）")
+            # 原字幕或已绑定的真实帧观察均可作为材料。
+            has_evidence = any(isinstance(p, dict) and p.get("segments") for p in material.get("parts", []))
+            if not has_evidence:
+                raise EvidenceUnavailable("no_subtitles", "无可用字幕或画面材料")
             reason = browsing.filter_reason(material["metadata"], row["config"])
             if reason:
                 raise EvidenceUnavailable("filtered", reason)

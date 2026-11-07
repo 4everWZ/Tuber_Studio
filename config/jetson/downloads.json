@@ -2,13 +2,23 @@
   "format": 1,
   "files": [
     {
-      "path": "models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
-      "bytes": 672003776,
-      "sha256": "44f464ecf2b745baec09a5bb7750099ef1a121557ff0df99f821cc267a5c43e5",
+      "path": "models/authentic-dora-20261107/MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf",
+      "bytes": 672003744,
+      "sha256": "8fab6fa834020011a37bfd82fb6c74509ea6c57d826820480d8f99182b7d74cf",
       "mode": 292,
       "urls": [
-        "https://hf-mirror.com/4everImmortality/dafeiyu-minicpmv/resolve/9a0af22b60f794fd885cf4f87bb78f920dd5370b/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
-        "https://huggingface.co/4everImmortality/dafeiyu-minicpmv/resolve/9a0af22b60f794fd885cf4f87bb78f920dd5370b/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+        "https://hf-mirror.com/4everImmortality/dafeiyu-minicpmv/resolve/68f9542e3c7dee1b41a1be12fe97f3095819b952/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf",
+        "https://huggingface.co/4everImmortality/dafeiyu-minicpmv/resolve/68f9542e3c7dee1b41a1be12fe97f3095819b952/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+      ]
+    },
+    {
+      "path": "models/authentic-dora-20261107/mmproj-4x-f16.gguf",
+      "bytes": 899679136,
+      "sha256": "20977a90fd8d6381a84588d5675f97abaae2a1d882126c8e86c7d0eadfe183ca",
+      "mode": 292,
+      "urls": [
+        "https://hf-mirror.com/4everImmortality/dafeiyu-minicpmv/resolve/68f9542e3c7dee1b41a1be12fe97f3095819b952/mmproj-4x-f16.gguf",
+        "https://huggingface.co/4everImmortality/dafeiyu-minicpmv/resolve/68f9542e3c7dee1b41a1be12fe97f3095819b952/mmproj-4x-f16.gguf"
       ]
     },
     {

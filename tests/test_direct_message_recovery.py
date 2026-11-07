@@ -62,6 +62,7 @@ async def test_network_interruption_preserves_private_source_and_resumes_for_rev
     assert calls == 1 and messages.queue.empty()
     monkeypatch.setattr(messages.runtime, "generate_reply", original)
     messages.store.execute("UPDATE dm_drafts SET next_attempt_at=0 WHERE id=?", (identity,))
+    messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
     await messages.resume_pending()
     assert (await finished(messages, identity))["status"] == "pending_review"
     assert not messages.adapter.sent
@@ -82,6 +83,7 @@ async def test_pending_private_recovery_keeps_other_accounts_and_archived_charac
     )
     latest = messages.enqueue("message", incoming(messages, key="current", account_id="900"), schedule=False)
     messages.store.execute("UPDATE dm_drafts SET resume_pending=1 WHERE status='queued'")
+    messages.operations.configure({"enabled": True}, account_id="900", character=messages.runtime.character)
     await messages.resume_pending()
     assert (await finished(messages, latest))["status"] == "pending_review"
     assert current["version"] == messages.runtime.character["version"]
@@ -96,3 +98,36 @@ async def test_pending_private_recovery_keeps_other_accounts_and_archived_charac
         == previous["version"]
     )
     assert not messages.adapter.sent
+
+
+async def test_saving_private_permissions_while_parent_stopped_does_not_resume_old_work(messages):
+    identity = messages.enqueue(
+        "message", incoming(messages, account_id="900"), schedule=False
+    )
+    messages.store.execute("UPDATE dm_drafts SET resume_pending=1 WHERE id=?", (identity,))
+    await messages.configure({"enabled": True, "auto_poll": True, "auto_send": True})
+    await messages.resume_pending()
+    assert messages.queue.empty()
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "queued"
+    manual = messages.enqueue("message", incoming(messages, key="new-manual", account_id="900"))
+    assert (await finished(messages, manual))["status"] == "pending_review"
+    assert not messages.adapter.sent
+
+
+def test_private_handoff_accepts_unbounded_parent_but_still_rejects_stopped_parent(messages):
+    import json
+
+    from tuber_studio.operations.browsing.models import BrowsingPolicy
+
+    character = messages.runtime.character
+    repository = messages.runtime.browsing_repository
+    parent, _ = repository.create_round("900", character, BrowsingPolicy().model_dump(), 0, False)
+    draft = {
+        "video_evidence": json.dumps({"origin_round_id": parent["id"]}),
+        "account_id": "900", "character_id": character["id"], "character_version": character["version"],
+    }
+    assert parent["deadline"] is None
+    assert messages._origin_round(draft, active=True)["id"] == parent["id"]
+    repository.finish_round(parent["id"], "paused")
+    with pytest.raises(ValueError, match="已停止"):
+        messages._origin_round(draft, active=True)

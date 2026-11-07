@@ -8,9 +8,9 @@ from typing import Literal
 import httpx
 from fastapi import Body, Depends, HTTPException
 
-from .. import model_hub
 from ..inference_node_client import pair_node, refresh_capabilities
 from ..inference_node_client import status as inference_node_status
+from ..inference_profiles import DAFEIYU_KEY, GROUNDED_DAFEIYU_KEY, LLM_MODELS, VISION_ROUTES
 from ..provider_diagnostics import register_provider_diagnostics
 from ..provider_settings import ProviderConfigurationError, apply_settings
 from ..providers import public_error
@@ -86,17 +86,7 @@ def register_model_api(app, settings, runtime, require_admin):
     @app.put("/api/settings/providers", dependencies=[Depends(require_admin)])
     async def provider_settings(data: dict = Body(...)):
         try:
-            result = await apply_settings(runtime, data)
-            auto_download_triggered = False
-            if result["context_recount_required"] and model_hub.is_full_local_deployment(settings):
-                selected_model = settings.data.get("llm", {}).get("model", "")
-                if model_hub.is_dafeiyu_model(selected_model) and not model_hub.is_model_installed(
-                    settings.models
-                ):
-                    model_hub.start_model_download(settings.models)
-                    auto_download_triggered = True
-            result["auto_download_triggered"] = auto_download_triggered
-            return result
+            return await apply_settings(runtime, data)
         except ProviderConfigurationError as error:
             raise HTTPException(409, str(error)) from None
         except RuntimeError as error:
@@ -137,47 +127,23 @@ def register_model_api(app, settings, runtime, require_admin):
 
     @app.get("/api/providers/local-models", dependencies=[Depends(require_admin)])
     async def local_models():
-        """Categorized list of fine-tuned persona models and base generic models."""
-        hub_status = model_hub.get_model_status(settings.models)
-        installed = hub_status["installed"]
-        return {
-            "fine_tuned": [
+        """Known node profiles; installation comes from the observed node inventory."""
+        capabilities = runtime.inference.capabilities or {}
+        profiles = {} if capabilities.get("monitoring_error") else capabilities.get("profiles", {})
+        result = {"fine_tuned": [], "base": []}
+        for key, model in LLM_MODELS.items():
+            if key == DAFEIYU_KEY:
+                continue
+            fine_tuned = key == GROUNDED_DAFEIYU_KEY
+            result["fine_tuned" if fine_tuned else "base"].append(
                 {
-                    "id": "MiniCPM-V-4.7-1B",
-                    "name": "MiniCPM-V-4.7-1B (大肥鱼微调)",
-                    "repo": model_hub.DEFAULT_REPO_ID,
-                    "filename": model_hub.DEFAULT_MODEL_FILENAME,
-                    "installed": installed,
-                    "multimodal": True,
-                    "tag": "微调人设",
-                    "description": "基于 MiniCPM-V-4.7-1B 微调融合，已内化大肥鱼人设与口癖，具备多模态视觉能力",
-                },
-            ],
-            "base": [
-                {
-                    "id": "MiniCPM5-2B",
-                    "name": "MiniCPM5-2B",
-                    "installed": True,
-                    "multimodal": False,
-                    "tag": "纯文本",
-                    "description": "通用纯文本模型（平滑回退至纯文本模式）",
-                },
-            ],
-        }
-
-    @app.get("/api/models/dafeiyu/status", dependencies=[Depends(require_admin)])
-    async def get_dafeiyu_model_status():
-        return model_hub.get_model_status(settings.models, settings_or_data=settings)
-
-    @app.post("/api/models/dafeiyu/download", dependencies=[Depends(require_admin)])
-    async def trigger_dafeiyu_model_download():
-        """Trigger background download of the Da Feiyu model from Hugging Face / mirror."""
-        return model_hub.start_model_download(settings.models, force=False)
-
-    @app.post("/api/models/dafeiyu/cancel", dependencies=[Depends(require_admin)])
-    async def cancel_dafeiyu_model_download():
-        """Cancel an ongoing download task."""
-        model_hub.cancel_model_download()
-        return {"status": "cancelled"}
+                    "id": model,
+                    "name": f"{model} (大肥鱼 DoRA)" if fine_tuned else model,
+                    "installed": profiles.get(key, {}).get("installed"),
+                    "multimodal": key in VISION_ROUTES.values(),
+                    "tag": "微调人设" if fine_tuned else "通用模型",
+                }
+            )
+        return result
 
     register_provider_diagnostics(app, settings, require_admin)

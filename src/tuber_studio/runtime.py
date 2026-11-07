@@ -18,7 +18,6 @@ from .live.scene import LiveScene
 from .live.session import LiveSession
 from .media_cache import MediaCache
 from .memory import missing_slots
-from .model_hub import is_model_installed
 from .model_runtime.session import InferenceRuntime
 from .models import OperationReply
 from .operation_continuations import ContinuationCoordinator, content_hash
@@ -33,7 +32,6 @@ from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 from .runtime_modes import apply_mode_profile, profile_alignment_error
 from .video_vision_service import restore_admission
-from .web_fetch import supplied_https_urls
 
 
 class Runtime:
@@ -240,7 +238,7 @@ class Runtime:
         capabilities = self.inference.capabilities or {}
         data = self.settings.data
         operations = data.get("work_mode_profiles", {}).get("text", {}).get("llm", data["llm"])
-        grounded = operations["model"] == GROUNDED_DAFEIYU_MODEL
+        grounded = operations["model"] != DAFEIYU_MODEL
         model_key = GROUNDED_DAFEIYU_KEY if grounded else DAFEIYU_KEY
         if self.inference.client and health.get("state") != "error":
             running = health.get("providers", {}).get(model_key, {}).get("running")
@@ -262,7 +260,6 @@ class Runtime:
             "configured_model": data["llm"]["model"],
             "fine_tuned_model": GROUNDED_DAFEIYU_MODEL if grounded else DAFEIYU_MODEL,
             "node_model_state": node_model_state,
-            "local_model_installed": is_model_installed(self.settings.models),
         }
 
     @reuse_turn_token_counts
@@ -340,7 +337,6 @@ class Runtime:
                     else [],
                 },
                 allow_web_fetch=True,
-                web_fetch_urls=supplied_https_urls(event["text"]) if mode == "direct_message" else None,
             )
         else:
             scene = (

@@ -59,12 +59,6 @@ def register_browsing_api(app, browsing, require_admin):
             visible_since=browsing.store.get("browsing_history_visible_since", 0),
         )
 
-    @app.put("/api/automation/discovery", dependencies=dependencies)
-    async def control_discovery(data: dict = Body(...)):
-        if set(data) != {"enabled"} or type(data["enabled"]) is not bool:
-            raise ValueError("仅接受布尔值 enabled")
-        return await browsing.set_enabled(data["enabled"])
-
     @app.put("/api/automation/settings", dependencies=dependencies)
     async def configure(data: dict = Body(...)):
         if set(data) == {"discovery_source"}:

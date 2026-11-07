@@ -101,7 +101,7 @@ def test_diagnostics_scope_credentials_to_the_selected_service(settings, monkeyp
     monkeypatch.setattr(httpx.AsyncClient, "get", remote_get)
     with TestClient(create_app(settings)) as client:
         admin = {"Authorization": "Bearer " + settings.admin_token}
-        assert client.get("/api/models/dafeiyu/status", headers=admin).status_code == 200
+        assert client.get("/api/models/dafeiyu/status", headers=admin).status_code == 404
         assert not requests
         assert (
             client.post(
@@ -126,150 +126,48 @@ def test_diagnostics_scope_credentials_to_the_selected_service(settings, monkeyp
     }
 
 
-def test_dafeiyu_model_hub_status_and_download(settings, monkeypatch):
-    app = create_app(settings)
+def test_retired_business_host_model_downloader_is_not_exposed(settings):
+    with TestClient(create_app(settings)) as client:
+        headers = {"Authorization": "Bearer " + settings.admin_token}
+        assert client.get("/api/models/dafeiyu/status", headers=headers).status_code == 404
+        for action in ("download", "cancel"):
+            assert client.post(f"/api/models/dafeiyu/{action}", headers=headers).status_code == 404
+        assert not list(settings.models.iterdir())
 
+
+def test_model_catalog_uses_current_profile_and_observed_inventory(settings):
+    from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
+
+    app = create_app(settings)
     with TestClient(app) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
-        res = client.get("/api/models/dafeiyu/status", headers=headers)
-        assert res.status_code == 200
-        status = res.json()
-        assert status["model_name"] == "MiniCPM-V-4.7-1B (大肥鱼专属微调)"
-        assert status["filename"] == "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
-        assert status["repo_id"] == "4everImmortality/dafeiyu-minicpmv"
-        assert "installed" in status
-        assert "is_full_local" in status
-
-        # Trigger cancel
-        cancel_res = client.post("/api/models/dafeiyu/cancel", headers=headers)
-        assert cancel_res.status_code == 200
-        assert cancel_res.json()["status"] == "cancelled"
-
-
-def test_is_full_local_deployment_detection():
-    from tuber_studio.model_hub import is_full_local_deployment
-
-    # 1. Full local deployment (llama_cpp on 127.0.0.1)
-    local_cfg = {
-        "inference_broker": {"deployment": "local", "base_url": "http://127.0.0.1:9012"},
-        "llm": {"kind": "llama_cpp", "base_url": "http://127.0.0.1:9012/llm"},
-    }
-    assert is_full_local_deployment(local_cfg) is True
-
-    # 2. Remote Docker / Jetson node
-    remote_cfg = {
-        "inference_broker": {"deployment": "remote", "base_url": "http://100.95.31.18:9012"},
-        "llm": {"kind": "llama_cpp", "base_url": "http://100.95.31.18:9012/llm"},
-    }
-    assert is_full_local_deployment(remote_cfg) is False
-
-    # 3. External IP even without explicit deployment="remote"
-    external_ip_cfg = {
-        "inference_broker": {"base_url": "http://192.168.1.100:9012"},
-        "llm": {"kind": "llama_cpp", "base_url": "http://192.168.1.100:9012/llm"},
-    }
-    assert is_full_local_deployment(external_ip_cfg) is False
-
-    # 4. Cloud API (openai_compatible)
-    cloud_cfg = {
-        "inference_broker": {"deployment": "local"},
-        "llm": {"kind": "openai_compatible", "base_url": "https://api.deepseek.com/v1"},
-    }
-    assert is_full_local_deployment(cloud_cfg) is False
+        data = client.get("/api/providers/local-models", headers=headers).json()
+        assert data["fine_tuned"][0]["id"] == GROUNDED_DAFEIYU_MODEL
+        assert all(item["installed"] is None for group in data.values() for item in group)
+        app.state.runtime.inference.capabilities = {
+            "profiles": {GROUNDED_DAFEIYU_KEY: {"installed": True}, "llm2b": {"installed": False}}
+        }
+        data = client.get("/api/providers/local-models", headers=headers).json()
+        assert data["fine_tuned"][0]["installed"] is True
+        assert next(item for item in data["base"] if item["id"] == "MiniCPM5-2B")["installed"] is False
+        app.state.runtime.inference.capabilities["monitoring_error"] = "node disconnected"
+        assert (
+            client.get("/api/providers/local-models", headers=headers).json()["fine_tuned"][0]["installed"]
+            is None
+        )
 
 
-def test_web_startup_does_not_download(settings, monkeypatch):
-    import unittest.mock as mock
+def test_saving_provider_settings_has_no_implicit_download_result(settings, monkeypatch):
+    async def apply(runtime, data):
+        return {"status": "ok", "context_recount_required": True}
 
-    from tuber_studio import model_hub
-
-    with (
-        mock.patch.object(model_hub, "start_model_download") as mock_start,
-        mock.patch.object(model_hub, "ensure_model_on_first_run") as mock_ensure,
-    ):
-        app = create_app(settings)
-        with TestClient(app) as client:
-            client.get("/api/status")
-        mock_start.assert_not_called()
-        mock_ensure.assert_not_called()
-
-
-def test_provider_settings_auto_download_on_confirm(settings, monkeypatch):
-    import unittest.mock as mock
-
-    from tuber_studio import model_hub
-
-    app = create_app(settings)
-    headers = {"Authorization": "Bearer " + settings.admin_token}
-
-    with TestClient(app) as client:
-        # Mock apply_settings returning success
-        async def fake_apply(runtime, data):
-            return {"status": "ok", "context_recount_required": True}
-
-        monkeypatch.setattr("tuber_studio.model_runtime.api.apply_settings", fake_apply)
-
-        # 1. Full local + Dafeiyu model + Not installed -> triggers auto-download
-        with (
-            mock.patch.object(model_hub, "is_full_local_deployment", return_value=True),
-            mock.patch.object(model_hub, "is_dafeiyu_model", return_value=True),
-            mock.patch.object(model_hub, "is_model_installed", return_value=False),
-            mock.patch.object(model_hub, "start_model_download") as mock_dl,
-        ):
-            res = client.put(
-                "/api/settings/providers", headers=headers, json={"llm": {"model": "MiniCPM-V-4.7-1B"}}
-            )
-            assert res.status_code == 200
-            assert res.json()["auto_download_triggered"] is True
-            mock_dl.assert_called_once()
-
-        # 2. Remote Docker / Cloud API -> does NOT trigger auto-download
-        with (
-            mock.patch.object(model_hub, "is_full_local_deployment", return_value=False),
-            mock.patch.object(model_hub, "is_dafeiyu_model", return_value=True),
-            mock.patch.object(model_hub, "is_model_installed", return_value=False),
-            mock.patch.object(model_hub, "start_model_download") as mock_dl,
-        ):
-            res = client.put(
-                "/api/settings/providers", headers=headers, json={"llm": {"model": "MiniCPM-V-4.7-1B"}}
-            )
-            assert res.status_code == 200
-            assert res.json()["auto_download_triggered"] is False
-            mock_dl.assert_not_called()
-
-
-def test_model_hub_module_logic(tmp_path):
-    from tuber_studio import model_hub
-
-    # 1. Non-existent file
-    assert not model_hub.is_model_installed(tmp_path)
-    status = model_hub.get_model_status(tmp_path)
-    assert status["installed"] is False
-    assert status["file_size"] == 0
-
-    # 2. Corrupt / small file (<600MB)
-    fake_model = tmp_path / model_hub.DEFAULT_MODEL_FILENAME
-    fake_model.write_bytes(b"too small")
-    assert not model_hub.is_model_installed(tmp_path)
-
-    # 3. Simulate installed model (>= 600MB via mock stat)
-    import os
-    import unittest.mock as mock
-
-    fake_stat = os.stat_result((0o100644, 0, 0, 0, 0, 0, 672003776, 0, 0, 0))
-    with mock.patch("pathlib.Path.stat", return_value=fake_stat):
-        assert model_hub.is_model_installed(tmp_path)
-        status = model_hub.get_model_status(tmp_path)
-        assert status["installed"] is True
-
-    # 4. ensure_model_on_first_run returns True if already installed
-    with mock.patch.object(model_hub, "is_model_installed", return_value=True):
-        assert model_hub.ensure_model_on_first_run(tmp_path) is True
-
-    # 5. ensure_model_on_first_run starts download if missing
-    with (
-        mock.patch.object(model_hub, "is_model_installed", return_value=False),
-        mock.patch.object(model_hub, "start_model_download") as mock_dl,
-    ):
-        assert model_hub.ensure_model_on_first_run(tmp_path) is False
-        mock_dl.assert_called_once_with(tmp_path, force=False)
+    monkeypatch.setattr("tuber_studio.model_runtime.api.apply_settings", apply)
+    with TestClient(create_app(settings)) as client:
+        response = client.put(
+            "/api/settings/providers",
+            json={"llm": {"model": "custom"}},
+            headers={"Authorization": "Bearer " + settings.admin_token},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "context_recount_required": True}
+        assert not list(settings.models.iterdir())

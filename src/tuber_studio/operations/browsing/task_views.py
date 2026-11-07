@@ -74,7 +74,8 @@ def tasks(browsing, status=None, *, round_id=None, task_id=None):
     args = tuple(value for _, value in filters)
     rows = browsing.store.all(
         "SELECT t.*,r.account_id,r.character_id,r.character_version,"
-        "COALESCE(json_extract(r.config,'$.discovery_publish'),0) AS autonomous "
+        "(COALESCE(json_extract(r.config,'$.autonomous_batch'),0) OR "
+        "COALESCE(json_extract(r.config,'$.discovery_publish'),0)) AS autonomous "
         "FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id"
         + where
         + " ORDER BY t.created_at DESC LIMIT 100",

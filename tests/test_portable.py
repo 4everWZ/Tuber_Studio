@@ -416,7 +416,8 @@ def test_prepare_hook_runs_fixed_child_only_for_selected_local_speech(tmp_path, 
     (tmp_path / "runtime/studio.json").write_text(
         json.dumps({"tts": {"kind": "gpt_sovits", "local_backend": "genie_onnx_int8"}})
     )
-    assert portable.prepare_runtime(tmp_path)["prepared"] is False
+    with pytest.raises(ValueError, match="Selected Genie speech requires"):
+        portable.prepare_runtime(tmp_path)
     script = tmp_path / "tools/jetson/tts/bootstrap.py"
     script.parent.mkdir(parents=True)
     script.write_text("# fixed program, not executed by CPU contract test")

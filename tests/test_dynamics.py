@@ -68,6 +68,7 @@ def service(settings, store, monkeypatch):
     comments = SimpleNamespace(adapter=object(), publish_lock=asyncio.Lock(), configured=True)
     comments.policy = lambda: {"credentials_configured": comments.configured}
     runtime = SimpleNamespace(llm=Model(), generation_lock=asyncio.Lock())
+    runtime.offline_generation = lambda lane: runtime.generation_lock
     service = Dynamics(settings, store, runtime, comments)
     service.operations.configure({"enabled": True}, account_id="injected-test-account", character=store.character())
     service.sent = []
@@ -305,7 +306,8 @@ async def test_failed_attempts_are_durable_safe_and_not_retried(service, monkeyp
     assert post["status"] == status and post["attempted_at"]
     assert "secret" not in json.dumps(service.policy()) + json.dumps(post)
     if status == "publish_uncertain":
-        assert service.policy()["enabled"] is False
+        assert service.policy()["enabled"] is True
+        assert service.policy()["base"]["enabled"] is True
     again = Dynamics(service.settings, service.store, service.runtime, service.comments)
     with pytest.raises(ValueError):
         await again.publish(post["id"])

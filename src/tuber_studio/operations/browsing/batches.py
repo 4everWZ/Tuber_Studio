@@ -417,8 +417,15 @@ async def resume_batch_publications(browsing, row, bvid):
         (row["account_id"], row["character_id"], bvid, row["id"], row["character_version"], row["epoch"]),
     ):
         if item["status"] == "publish_uncertain":
-            if await browsing.publication._reconcile(item["id"]) is None:
-                raise ValueError("原提交回执尚待确认")
+            try:
+                await browsing.publication._reconcile(item["id"])
+            except Exception as error:
+                # The original intent stays fenced. A failed readback must not
+                # block other comment targets on this video.
+                browsing.store.execute(
+                    "UPDATE browsing_intents SET error=? WHERE id=? AND status='publish_uncertain'",
+                    (public_error(error), item["id"]),
+                )
         elif browsing.publication._action_allowed(item["kind"], browsing.effective()):
             await browsing.publish(item["id"], automatic=True)
 

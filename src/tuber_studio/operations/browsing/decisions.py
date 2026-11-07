@@ -220,9 +220,8 @@ class BrowsingDecisions:
             ):
                 raise ValueError("等待模型期间用户档案已更新")
             source = data.get("source_identity")
-            if source and self.browsing.store.one(
-                "SELECT d.id FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE c.platform='bilibili' AND c.video_id=? AND c.comment_id=? AND d.character_id=?",
-                (source["resource"], source["comment_id"], row["character_id"]),
+            if source and self.browsing.publication.has_manual_draft(
+                row, source["resource"], source["comment_id"],
             ):
                 raise ValueError("等待模型期间同源评论已有候选，合并处理")
 
@@ -647,7 +646,7 @@ class BrowsingDecisions:
                 main_decision and main_decision.get("action") in {"watch_frames", "read_more"}
             ):
                 decisions = restore_stored_content_decisions(material, saved_decisions)
-            elif row["config"].get("discovery_publish") or row["config"].get("autonomous_batch"):
+            elif row["config"].get("autonomous_batch"):
                 segments = self.browsing._segments(material)
                 references = {segment["id"] for segment in segments}
                 existing_top = self.browsing.store.one(
@@ -1113,10 +1112,8 @@ class BrowsingDecisions:
                     (row["account_id"], row["character_id"], canonical),
                 ):
                     return None
-                if self.browsing.store.one(
-                    "SELECT d.id FROM drafts d JOIN comments c ON c.id=d.comment_id "
-                    "WHERE c.platform='bilibili' AND c.video_id=? AND c.comment_id=? AND d.character_id=?",
-                    (bvid, comment_id, row["character_id"]),
+                if self.browsing.publication.has_manual_draft(
+                    row, bvid, comment_id,
                 ):
                     return None
                 target = {

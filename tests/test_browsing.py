@@ -1241,7 +1241,7 @@ async def test_automatic_queue_wait_rechecks_old_source_draft(browsing):
         else:
             pytest.fail("notification did not reach waiting generation")
         browsing.store.execute(
-            "INSERT INTO drafts(comment_id,text,status,character_id,character_version) VALUES(?,?,'pending_review',?,?)",
+            "INSERT INTO drafts(comment_id,text,status,character_id,character_version,account_id) VALUES(?,?,'pending_review',?,?,'100')",
             (comment, "人工候选", browsing.runtime.character["id"], browsing.runtime.character["version"]),
         )
     finally:

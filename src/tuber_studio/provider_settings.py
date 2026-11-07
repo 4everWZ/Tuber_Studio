@@ -10,6 +10,7 @@ from .config import atomic_bytes, normalize_broker_llm, uses_broker_llm, validat
 from .deployment_profiles import select_local_voice
 from .inference_profiles import LLM_MODELS, llm_resource_key
 from .providers import VoiceService, public_error
+from .runtime_modes import require_model_idle
 
 FIELDS = {
     "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens"},
@@ -208,11 +209,10 @@ async def apply_settings(runtime, body):
     data, keys = proposal(settings, body)
     model_update = not _voice_only(body)
     if model_update:
-        policy = runtime.store.get("comment_policy", {})
-        if policy.get("auto_browse") or policy.get("auto_reply"):
-            raise ProviderConfigurationError("请先关闭自动浏览和自动回复，再修改Provider")
-        if runtime.store.get("dynamic_policy", {}).get("enabled"):
-            raise ProviderConfigurationError("请先停止动态运营，再修改Provider")
+        try:
+            require_model_idle(runtime)
+        except ValueError as error:
+            raise ProviderConfigurationError(str(error)) from None
     staged = copy.copy(settings)
     staged.data, staged.provider_keys = data, keys
     created = []
@@ -241,6 +241,8 @@ async def apply_settings(runtime, body):
     attempted_window = None
     async with runtime.inference.mode_lock, runtime.generation_lock:
         try:
+            if model_update:
+                require_model_idle(runtime)
             previous_file = settings.path.read_bytes() if settings.path.exists() else None
             previous_private = (
                 settings.credentials_path.read_bytes() if settings.credentials_path.exists() else None
@@ -281,6 +283,8 @@ async def apply_settings(runtime, body):
                         llm.profile_error = f"远端连接异常: {public_error(exc)}"
                     else:
                         raise
+            if model_update:
+                require_model_idle(runtime)
             files_attempted = True
             settings.save_keys(keys)
             settings.save_public(data)

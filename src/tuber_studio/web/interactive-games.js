@@ -1,11 +1,17 @@
 "use strict";
 
 window.InteractiveGamesUI = class {
-  constructor({ notify = () => {} } = {}) {
+  constructor({ api, notify = () => {} } = {}) {
+    this.api = api;
     this.notify = notify;
     this.rules = null;
     this.gameStatus = null;
     this.drawGuessStatus = null;
+    this.rulesDirty = false;
+    this.rulesRequest = 0;
+    this.saving = false;
+    this.bound = false;
+    this.bindEvents();
   }
 
   async init() {
@@ -14,36 +20,46 @@ window.InteractiveGamesUI = class {
   }
 
   bindEvents() {
+    if (this.bound) return;
+    this.bound = true;
     // Game switch buttons
     document.addEventListener("click", async (e) => {
       const btn = e.target.closest("[data-game-switch]");
       if (btn) {
         const gameId = btn.dataset.gameSwitch;
-        await this.switchGame(gameId);
+        await this.runAction(btn, () => this.switchGame(gameId));
       }
 
       const actBtn = e.target.closest("[data-game-action]");
       if (actBtn) {
         const action = actBtn.dataset.gameAction;
-        await this.executeAction(action);
+        await this.runAction(actBtn, () => this.executeAction(action));
       }
 
       if (e.target.id === "dg-start-btn") {
-        await this.startDrawGuess();
+        await this.runAction(e.target, () => this.startDrawGuess());
       }
       if (e.target.id === "dg-stop-btn") {
-        await this.stopDrawGuess();
+        await this.runAction(e.target, () => this.stopDrawGuess());
       }
     });
 
     // Save rules form
     const rulesForm = document.getElementById("interactive-rules-form");
     if (rulesForm) {
+      rulesForm.addEventListener("input", () => { this.rulesDirty = true; });
       rulesForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         await this.saveRulesFromForm();
       });
     }
+  }
+
+  async runAction(button, work) {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await work(); }
+    finally { button.disabled = false; this.renderDrawGuessCard(); }
   }
 
   async refresh() {
@@ -56,38 +72,37 @@ window.InteractiveGamesUI = class {
 
   async fetchGameStatus() {
     try {
-      const res = await fetch("/api/games/status");
-      if (!res.ok) return;
-      this.gameStatus = await res.json();
+      this.gameStatus = await this.api("/api/games/status");
       this.renderGameCard();
     } catch (e) {
-      // offline or silent
+      const state = document.getElementById("live-game-summary");
+      if (state) state.textContent = `游戏状态读取失败：${e.message}`;
     }
   }
 
   async fetchDrawGuessStatus() {
     try {
-      const res = await fetch("/api/draw-and-guess/status");
-      if (!res.ok) return;
-      this.drawGuessStatus = await res.json();
+      this.drawGuessStatus = await this.api("/api/draw-and-guess/status");
       this.renderDrawGuessCard();
-    } catch (e) {}
+    } catch (e) { const state = document.getElementById("dg-live-status"); if (state) state.textContent = `读取失败：${e.message}`; }
   }
 
   async fetchRules() {
+    const request = ++this.rulesRequest;
     try {
-      const res = await fetch("/api/interactive-rules");
-      if (!res.ok) return;
-      this.rules = await res.json();
-      this.populateRulesForm();
-    } catch (e) {}
+      const data = await this.api("/api/interactive-rules");
+      if (request !== this.rulesRequest) return;
+      this.rules = data;
+      if (!this.rulesDirty && !this.saving) this.populateRulesForm();
+      this.renderDrawGuessCard();
+    } catch (e) { this.ruleFeedback(`规则读取失败：${e.message}`, true); }
   }
 
   renderGameCard() {
     const card = document.getElementById("live-game-panel");
     if (!card || !this.gameStatus) return;
 
-    const st = this.gameStatus.active_status;
+    const st = this.gameStatus.active_status || {};
     const nameEl = document.getElementById("live-game-name");
     const summaryEl = document.getElementById("live-game-summary");
     const activityEl = document.getElementById("live-game-activity");
@@ -149,20 +164,17 @@ window.InteractiveGamesUI = class {
           ? `上一题: 【${this.drawGuessStatus.word}】 ${this.drawGuessStatus.winner ? "胜者: " + this.drawGuessStatus.winner : "(无人猜出)"}`
           : "等待送礼触发或手动开启";
       }
-      if (btnStart) btnStart.disabled = false;
+      if (btnStart) btnStart.disabled = !this.rules;
       if (btnStop) btnStop.disabled = true;
     }
   }
 
   async switchGame(gameId) {
     try {
-      const res = await fetch("/api/games/switch", {
+      const data = await this.api("/api/games/switch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ game_id: gameId }),
+        body: { game_id: gameId },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "切换失败");
       this.notify(data.spoken_text || `已切换游戏: ${gameId}`);
       await this.fetchGameStatus();
     } catch (e) {
@@ -172,13 +184,10 @@ window.InteractiveGamesUI = class {
 
   async executeAction(action) {
     try {
-      const res = await fetch("/api/games/action", {
+      const data = await this.api("/api/games/action", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: { action },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "执行失败");
       this.notify(`游戏指令【${action}】: ${data.message}`);
       await this.fetchGameStatus();
     } catch (e) {
@@ -188,13 +197,10 @@ window.InteractiveGamesUI = class {
 
   async startDrawGuess() {
     try {
-      const res = await fetch("/api/draw-and-guess/start", {
+      const data = await this.api("/api/draw-and-guess/start", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trigger_user: "主播", duration_sec: 60 }),
+        body: { trigger_user: "主播", duration_sec: this.rules?.draw_and_guess?.round_duration_sec ?? 60 },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "启动失败");
       this.notify(data.spoken_text || "已开启你画我猜！");
       await this.fetchDrawGuessStatus();
     } catch (e) {
@@ -204,12 +210,9 @@ window.InteractiveGamesUI = class {
 
   async stopDrawGuess() {
     try {
-      const res = await fetch("/api/draw-and-guess/stop", {
+      const data = await this.api("/api/draw-and-guess/stop", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "停止失败");
       this.notify(`已结束本轮你画我猜，答案是：【${data.word}】`);
       await this.fetchDrawGuessStatus();
     } catch (e) {
@@ -228,7 +231,7 @@ window.InteractiveGamesUI = class {
     const songCoin = document.getElementById("rule-song-coin");
     const songGifts = document.getElementById("rule-song-gifts");
     if (songMode) songMode.value = sr.mode || "free";
-    if (songCoin) songCoin.value = sr.min_coin || 0;
+    if (songCoin) songCoin.value = sr.min_coin ?? 0;
     if (songGifts) songGifts.value = (sr.gift_names || []).join(", ");
 
     // Draw and guess
@@ -240,12 +243,13 @@ window.InteractiveGamesUI = class {
     const dgDuration = document.getElementById("rule-dg-duration");
     if (dgEnable) dgEnable.checked = Boolean(dg.enabled);
     if (dgMode) dgMode.value = dg.trigger_mode || "gift_only";
-    if (dgCoin) dgCoin.value = dg.min_coin || 10;
+    if (dgCoin) dgCoin.value = dg.min_coin ?? 10;
     if (dgGifts) dgGifts.value = (dg.gift_names || []).join(", ");
     if (dgDuration) dgDuration.value = dg.round_duration_sec || 60;
   }
 
   async saveRulesFromForm() {
+    if (this.saving) return;
     const songMode = document.getElementById("rule-song-mode")?.value || "free";
     const songCoin = parseInt(document.getElementById("rule-song-coin")?.value || "0", 10);
     const songGifts = (document.getElementById("rule-song-gifts")?.value || "")
@@ -279,19 +283,32 @@ window.InteractiveGamesUI = class {
         round_duration_sec: dgDuration,
       },
     };
+    const controls = [...document.getElementById("interactive-rules-form").querySelectorAll("input, select, button")].map(control => [control, control.disabled]);
 
     try {
-      const res = await fetch("/api/interactive-rules", {
+      this.saving = true;
+      ++this.rulesRequest;
+      for (const [control] of controls) control.disabled = true;
+      this.ruleFeedback("正在保存…");
+      const data = await this.api("/api/interactive-rules", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: payload,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "保存失败");
       this.rules = data;
+      this.rulesDirty = false;
+      this.populateRulesForm();
+      this.ruleFeedback("互动规则已保存。");
       this.notify("互动与礼物门槛规则保存成功！");
     } catch (e) {
+      this.ruleFeedback(`保存失败：${e.message}`, true);
       this.notify(e.message, true);
+    } finally {
+      this.saving = false;
+      for (const [control, disabled] of controls) control.disabled = disabled;
     }
+  }
+  ruleFeedback(text, error = false) {
+    const state = document.getElementById("interactive-rules-state");
+    if (state) { state.textContent = text; state.classList.toggle("error-text", error); }
   }
 };

@@ -171,7 +171,8 @@ async def test_high_explicit_budget_does_not_strand_body_after_decision_refund(s
         assert [item["max_tokens"] for item in requests] == [1, 65536, 1, 65536]
         row = runtime.continuations.find("comments", identity)
         assert row["budget"] == {"model_calls": 4, "input_tokens": 800, "output_tokens": 42}
-        assert row["limits"]["max_output_tokens"] == 2097152 and len(posted) == 1
+        assert row["limits"]["max_output_tokens"] == 0 and len(posted) == 1
+        assert row["limits"]["generation_max_tokens"] == 65536
     finally:
         await service.close()
 
@@ -555,3 +556,21 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
     finally:
         await service.close()
         await comments.close()
+
+
+@pytest.mark.parametrize("action", ["read_comments", "watch_frames", "read_more", "finish", "skip"])
+def test_video_only_generation_actions_remain_public_and_do_not_create_private_inbox_entries(runtime, action):
+    from tuber_studio.operation_feedback import generation_view, private_generation_views
+
+    char = runtime.character
+    value = {"action": action, "explanation": "盐水浮鸡蛋看明白了，按内容选择下一步", "text": ""}
+    row = runtime.continuations.begin(
+        "generation.browsing", "video-action",
+        {"task": "generation", "schema": "ResponseDecision", "account_id": "100",
+         "character": {"id": char["id"], "version": char["version"]}},
+        {"kind": "generation_start"}, original_output=value,
+    )
+    public = generation_view(runtime, row["id"], "browsing", "task-1")
+    assert public["original_output"] == value
+    assert public.get("output_visibility") not in {"private", "unresolved"}
+    assert not private_generation_views(runtime, "100", char)

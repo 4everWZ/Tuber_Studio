@@ -2,7 +2,7 @@
 
 class InferenceNodePanel {
   constructor(root, api, onPaired) {
-    this.root = root; this.api = api; this.busy = false; this.dirty = false; this.paired = false;
+    this.root = root; this.api = api; this.busy = false; this.dirty = false; this.paired = false; this.formRevision = 0;
     root.innerHTML = `<div class="panel-heading"><h2>Jetson 推理</h2><span data-state class="badge">待读取</span></div>
       <p class="hint">通过局域网连接 Jetson。账号、对话和任务保存在业务电脑。</p>
       <dl data-summary class="description-list"></dl>
@@ -14,18 +14,23 @@ class InferenceNodePanel {
       <div class="actions"><button data-probe type="button">验证视觉能力</button><button data-idle type="button">释放推理资源</button></div>
       <div data-storage></div></details>`;
     this.$ = selector => root.querySelector(selector);
-    this.$('[data-url]').oninput = () => {
+    const changed = () => {
+      this.formRevision++;
       this.dirty = true;
       this.$('[data-check]').hidden = true;
     };
+    this.$('[data-url]').oninput = changed;
+    this.$('[data-token]').oninput = changed;
     this.$('[data-pair]').onsubmit = event => { event.preventDefault(); this.action(async () => {
       const token = this.$('[data-token]').value.trim();
+      const revision = this.formRevision;
       const body = {base_url: this.$('[data-url]').value.trim(), ...(token ? {token} : {})};
       this.feedback('正在配对并加载运营模型…');
       const value = await api('/api/inference/node', {method:'PUT', body});
-      this.$('[data-token]').value = ''; this.dirty = false; this.render(value);
+      if (revision === this.formRevision) { this.$('[data-token]').value = ''; this.dirty = false; }
+      this.render(value);
       await onPaired();
-      return '已连接，运营配置已保存。';
+      return this.dirty ? '连接配置已保存；表单有后续修改尚未保存。' : '已连接，运营配置已保存。';
     }); };
     this.$('[data-check]').onclick = () => this.action(async () => { this.render(await api('/api/inference/node/check', {method:'POST'})); return '节点能力已刷新。'; });
     this.$('[data-probe]').onclick = () => this.action(async () => {

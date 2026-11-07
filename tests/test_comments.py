@@ -72,19 +72,25 @@ async def test_default_review_and_manual_approval_never_sends(comments, store):
 
 
 async def test_auto_reply_requires_credentials_and_explicit_enable(comments, store):
-    with pytest.raises(ValueError, match="需要先配置"):
-        await comments.set_policy({"auto_reply": True})
-    assert not comments.policy()["auto_reply"]
-    comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
-    row = await draft(comments, store, automatic=True)
+    assert not comments.policy()["auto_reply"]
+    pending = await draft(comments, store)
+    with pytest.raises(ValueError):
+        await comments.publish(pending["id"], automatic=True)
+    assert not comments.adapter.sent
+    comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
+    comments.operations.configure(
+        {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
+    )
+    row = await comments.publish(pending["id"], automatic=True)
     assert row["status"] == "published"
     assert len(comments.adapter.sent) == 1
     with pytest.raises(ValueError):
-        await comments.publish(row["id"], automatic=True)
+        await comments.publish(pending["id"], automatic=True)
     assert len(comments.adapter.sent) == 1
     assert "test-session" not in str(comments.policy())
 
@@ -116,11 +122,12 @@ async def test_definite_platform_rejection_preserves_reviewed_draft(comments, st
 
 async def test_stop_auto_reply_retains_later_drafts(comments, store):
     comments.credentials = {"sessdata": "test", "csrf": "test"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
+    store.set("comment_policy", {"auto_reply": True})  # Retired settings cannot override current permissions.
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
-    await comments.set_policy({"auto_reply": False})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": False})
     row = await draft(comments, store, automatic=True)
     assert row["status"] == "pending_review"
     assert comments.adapter.sent == []
@@ -145,7 +152,7 @@ def test_import_1000_comments_is_idempotent_and_keeps_same_name_users_separate(c
 
 async def test_manual_batches_stay_reviewable_when_auto_mode_is_enabled(comments, store):
     comments.credentials = {"sessdata": "test", "csrf": "test"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
@@ -191,7 +198,7 @@ async def test_hourly_limit_is_enforced_before_second_http_write(comments, store
     row = await draft(comments, store)
     comments.review(row["id"], "approve")
     comments.credentials = {"sessdata": "test", "csrf": "test"}
-    store.set("comment_policy", {"max_replies_per_hour": 1})
+    store.set("browsing_policy", {"max_per_hour": 1})
     await comments.publish(row["id"])
     comments.import_items("BV1d8pU6xEZX", [{"comment_id": "456", "content": "下一条问题怎么处理？"}])
     second = store.one("SELECT id FROM comments WHERE comment_id='456'")["id"]
@@ -442,7 +449,7 @@ async def test_checks_are_stored_and_threaded_duplicate_batches_never_republish(
 
     monkeypatch.setattr(runtime, "generate_reply", generate)
     comments.credentials = {"sessdata": "test", "csrf": "test"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
@@ -509,7 +516,7 @@ async def test_auto_reply_targets_nested_comment_in_its_original_thread(comments
 
     comments.adapter.publish = publish
     comments.credentials = {"sessdata": "test", "csrf": "test"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )
@@ -541,7 +548,7 @@ async def test_cancelling_thread_batch_collects_inflight_publish_and_never_sends
 
     comments.adapter.publish = blocked
     comments.credentials = {"sessdata": "test", "csrf": "test"}
-    store.set("comment_policy", {"auto_reply": True})
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
     comments.operations.configure(
         {"enabled": True}, account_id="injected-test-account", character=comments.runtime.character
     )

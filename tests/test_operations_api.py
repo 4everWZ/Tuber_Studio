@@ -78,10 +78,20 @@ def test_provider_reconfiguration_requires_stopping_autonomous_operations(settin
     # Seed the persisted policy directly; no background platform job is started.
     app.state.store.set("dynamic_policy", {"enabled": True, "auto_publish": False})
     with TestClient(app) as client:
+        app.state.runtime.operations.configure(
+            {"enabled": True}, account_id="injected-test-account", character=app.state.runtime.character
+        )
         response = client.put(
             "/api/settings/providers",
             headers={"Authorization": "Bearer " + settings.admin_token},
             json={},
         )
         assert response.status_code == 409
-        assert "停止动态运营" in response.json()["detail"]
+        assert "停止自主运营" in response.json()["detail"]
+        app.state.runtime.operations.configure({"enabled": False})
+        assert app.state.store.get("dynamic_policy")["enabled"]
+        assert client.put(
+            "/api/settings/providers",
+            headers={"Authorization": "Bearer " + settings.admin_token},
+            json={},
+        ).status_code == 200

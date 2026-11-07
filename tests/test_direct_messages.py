@@ -229,6 +229,7 @@ async def test_automatic_poll_resumes_saved_messages_when_queue_has_space(messag
     messages.queue = asyncio.Queue(maxsize=1)
     messages.queue.put_nowait((0, False))
     await messages.configure({"enabled": True, "auto_poll": True})
+    await messages.resume_pending()
     messages.adapter.rows = [
         {
             "sender_uid": 123,

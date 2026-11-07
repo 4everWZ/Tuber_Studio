@@ -5,7 +5,6 @@ import json
 import re
 import time
 
-from ...comments import DEFAULT_POLICY
 from ...direct_messages import MessagePolicy
 from ...providers import public_error
 from ...store import dump
@@ -155,7 +154,7 @@ class BrowsingService:
             "account_id": self.account or control["account_id"],
             "character": {k: self.runtime.character[k] for k in ("id", "version")},
             "base": {
-                "comments": DEFAULT_POLICY | self.store.get("comment_policy", {}),
+                "comments": self.comments.policy()["base"],
                 "messages": MessagePolicy.model_validate(self.store.get("message_policy", {})).model_dump(),
                 "dynamics": self.store.get("dynamic_policy", {}),
                 "browsing": self.policy(),

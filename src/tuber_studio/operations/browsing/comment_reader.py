@@ -146,8 +146,15 @@ async def process_events(browsing, row, metrics, *, own_only=False):
 
 async def process_event_batch(browsing, row, metrics, own_only):
     events = browsing.store.all(
-        "WITH eligible AS (SELECT * FROM browsing_events WHERE account_id=? AND status='received' "
-        "AND (?=0 OR kind='own_comment') AND COALESCE(CASE WHEN json_valid(error) THEN "
+        "WITH pending AS (SELECT *,CASE WHEN json_valid(payload) THEN payload ELSE '{}' END AS data "
+        "FROM browsing_events WHERE account_id=? AND status='received' AND (?=0 OR kind='own_comment')), "
+        "scoped AS (SELECT *,ROW_NUMBER() OVER (PARTITION BY "
+        "COALESCE(json_extract(data,'$.resource_type'),'unknown'),"
+        "COALESCE(json_extract(data,'$.oid'),json_extract(data,'$.bvid'),source_key,id),"
+        "COALESCE(NULLIF(NULLIF(CAST(json_extract(data,'$.root') AS TEXT),'0'),''),"
+        "NULLIF(NULLIF(CAST(json_extract(data,'$.parent') AS TEXT),'0'),''),"
+        "json_extract(data,'$.comment_id'),source_key,id) ORDER BY timestamp,id) AS position FROM pending), "
+        "eligible AS (SELECT * FROM scoped WHERE position=1 AND COALESCE(CASE WHEN json_valid(error) THEN "
         "json_extract(error,'$.next_at') END,0)<=?), "
         "newest AS (SELECT id FROM eligible ORDER BY (kind='own_comment') DESC,timestamp DESC,id LIMIT 1), "
         "oldest AS (SELECT id FROM eligible ORDER BY (kind='own_comment') DESC,timestamp,id LIMIT 1) "
@@ -258,11 +265,14 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             (event_row["id"],),
         )
         return
-    if browsing.store.one(
-        "SELECT d.id FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE c.platform='bilibili' AND c.video_id=? AND c.comment_id=?",
-        (resource, source["comment_id"]),
+    if browsing.publication.has_manual_draft(
+        row, resource, source["comment_id"],
     ):
-        raise ValueError("同一公开来源已有评论或私信移交草稿")
+        browsing.store.execute(
+            "UPDATE browsing_events SET status='skipped',error='同源草稿已存在' WHERE id=?",
+            (event_row["id"],),
+        )
+        return
     material, keys = None, []
     if event_row["kind"] == "own_comment":
         allowed = {"public:" + str(source["comment_id"])}

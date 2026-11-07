@@ -33,6 +33,10 @@ class DailyMemoryUI {
 
   async refresh() {
     if (!this.container || this.busy) return;
+    return this.load();
+  }
+
+  async load() {
     try {
       const res = await this.api("/api/daily-memory");
       this.data = res.highlights || [];
@@ -58,7 +62,7 @@ class DailyMemoryUI {
         body: { date: date || undefined, auto_approve: false },
       });
       this.notify(`已提炼 ${res.total || 0} 条今日趣事与高光（待审核）。`);
-      await this.refresh();
+      await this.load();
     } catch (e) {
       this.notify(`提炼失败: ${e.message}`, true);
       if (notice) notice.textContent = `提炼失败: ${e.message}`;
