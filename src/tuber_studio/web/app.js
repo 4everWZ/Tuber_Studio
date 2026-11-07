@@ -2,7 +2,7 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.10";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.13";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.10";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.10";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
@@ -22,7 +22,7 @@ import {
 import {
   selectedThread,
   initCommentsModule,
-} from "./modules/comments.js?v=20261107.12";
+} from "./modules/comments.js?v=20261107.13";
 import {
   initDynamicsModule,
 } from "./modules/dynamics.js?v=20261107.10";
@@ -111,7 +111,7 @@ document.addEventListener("workspace-issue", event => {
 });
 const discoveryPanel = initDiscoveryPanel(api);
 const refreshOperationsActivity = initOperationsActivity(api);
-const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status);
+const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.status, (draft, key) => commentsModule?.draftUpdated(draft, key));
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
 $("daily-memory-card").addEventListener("toggle", event => {
   if (model.authenticated && event.currentTarget.open) void dailyMemoryUI.refresh();

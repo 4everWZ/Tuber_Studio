@@ -11,6 +11,7 @@ function setupDOM(t) {
       value: "",
       children: [],
       dataset: {},
+      attributes: {},
       classList: { toggle() {} },
       listeners: {},
       style: {},
@@ -22,7 +23,8 @@ function setupDOM(t) {
         this.children.splice(index < 0 ? this.children.length : index, 0, child);
       },
       replaceChildren(...children) { this.children = children; },
-      setAttribute() {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      getAttribute(name) { return this.attributes[name]; },
       addEventListener(type, listener) { this.listeners[type] = listener; },
       querySelector() { return null; },
       querySelectorAll(selector) {
@@ -105,7 +107,10 @@ test("publishing saves the current draft and a failed attempt remains retryable"
       }
       return row;
     }
-    if (path.includes("?view=")) return { items: [row], offset: 0, total: 1 };
+    if (path.includes("?view=")) {
+      const items = path.includes("view=history") === (row.status === "published") ? [row] : [];
+      return { items, offset: 0, total: items.length };
+    }
     return row;
   };
   const queue = initCommentQueue(api, () => {}, () => null);
@@ -126,6 +131,12 @@ test("publishing saves the current draft and a failed attempt remains retryable"
   await retry.onclick();
   assert.equal(row.status, "published");
   assert.equal(writes.filter(([path]) => path.endsWith("/review")).length, 1);
+  assert.equal(detail.children[0].textContent, "记录详情");
+  assert.match(detail.children[1].textContent, /本条已处理/);
+  assert.equal(byId("queue-list").children.length, 0);
+  await queue.refresh();
+  assert.equal(detail.querySelectorAll("button").length, 0);
+  await queue.open("history", "comments/draft");
   assert.equal(detail.children[0].textContent, "平台已受理");
 });
 
@@ -136,6 +147,107 @@ test("comments use ten compact records per page without loading browsing history
   const queue = initCommentQueue(async path => { calls.push(path); return { items: [], total: 0, offset: 0 }; }, () => {}, () => null);
   await queue.open("review");
   assert.deepEqual(calls, ["/api/comments/workbench?view=review&limit=10&offset=0"]);
+});
+
+function sourceDependencies(api) {
+  const node = (tag, text) => Object.assign(document.createElement(tag), { textContent: text });
+  return {
+    api, node, list: value => value, label: value => value, badge: text => node("span", text),
+    cell(row, text) { const td = node("td"); td.append(typeof text === "object" ? text : node("span", text)); row.append(td); return td; },
+    empty(row) { row.replaceChildren(); }, busy: (_, action) => action(), notice() {},
+    commentContinuation: { render() {} }, setBadge() {}, describe() {},
+  };
+}
+
+const sourceComment = (id, status) => ({ id, comment_id: String(id), video_id: "import-ui-test", content: `评论 ${id}`,
+  ...(status ? { draft: { id: `draft-${id}`, status, text: "已有回复" } } : {}) });
+
+test("source selection excludes completed records and never regenerates existing drafts", async t => {
+  const byId = setupDOM(t);
+  const { initCommentsModule } = await import("../src/tuber_studio/web/modules/comments.js");
+  const records = [sourceComment(1, "rejected"), sourceComment(2, "published"), sourceComment(3, "copied"),
+    sourceComment(4, "approved"), sourceComment(5, "pending_review"), sourceComment(6)];
+  const model = { comments: [], categorySaving: new Set(), selectedComments: new Set([1, 2, 3, 4, 5, 6]) };
+  const module = initCommentsModule(model, sourceDependencies(async url => url.startsWith("/api/comments?") ?
+    url.includes("status=rejected") ? records.slice(0, 1) : records : []));
+  await module.refreshComments();
+  assert.deepEqual(model.comments.map(row => row.id), [4, 5, 6]);
+  assert.deepEqual([...model.selectedComments], [6]);
+  assert.equal(byId("selected-comment-count").textContent, "已选 1 条");
+  assert.equal(byId("comments").children[0].children[0].children[0].disabled, true);
+  byId("select-comments").checked = false;
+  byId("select-comments").listeners.change();
+  assert.equal(model.selectedComments.size, 0);
+  byId("filter-status").value = "rejected";
+  await module.refreshComments();
+  assert.deepEqual(model.comments.map(row => row.id), [1]);
+  assert.equal(byId("comments").children[0].children[0].children[0].disabled, true);
+  assert.equal(byId("select-comments").checked, false);
+});
+
+test("accepted generation clears its selected sources while a failed request preserves them", async t => {
+  const byId = setupDOM(t);
+  const { initCommentsModule } = await import("../src/tuber_studio/web/modules/comments.js");
+  const model = { comments: [sourceComment(1)], categorySaving: new Set(), selectedComments: new Set([1]) };
+  let fail = true, tracked;
+  initCommentsModule(model, { ...sourceDependencies(async (url, options) => {
+    assert.equal(url, "/api/comments/drafts");
+    assert.deepEqual(options.body, { comment_ids: [1] });
+    if (fail) throw Error("连接失败");
+    return { task_id: "new-task" };
+  }), onDraftsRequested: (id, ids) => { tracked = [id, ids]; } });
+  await assert.rejects(byId("generate-drafts").listeners.click(), /连接失败/);
+  assert.deepEqual([...model.selectedComments], [1]);
+  fail = false;
+  await byId("generate-drafts").listeners.click();
+  assert.deepEqual(tracked, ["new-task", [1]]);
+  assert.equal(model.selectedComments.size, 0);
+  assert.equal(byId("selected-comment-count").textContent, "已选 0 条");
+  assert.equal(byId("select-comments").checked, false);
+  assert.equal(byId("generate-drafts").disabled, true);
+});
+
+test("saving retains a reviewable draft and terminal actions clear selection and detail", async t => {
+  const byId = setupDOM(t);
+  const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
+  const { initCommentsModule } = await import("../src/tuber_studio/web/modules/comments.js");
+  const navigatorBefore = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { async writeText() {} } } });
+  t.after(() => navigatorBefore ? Object.defineProperty(globalThis, "navigator", navigatorBefore) : delete globalThis.navigator);
+  const model = { comments: [sourceComment(1, "pending_review"), sourceComment(2, "approved")], categorySaving: new Set(), selectedComments: new Set([1, 2]), commentId: 1 };
+  const sources = initCommentsModule(model, sourceDependencies());
+  let row = { id: "draft-1", comment_id: 1, channel: "comments", source: "manual", status: "pending_review", text: "待审核回复" };
+  const next = { id: "draft-2", comment_id: 2, channel: "comments", source: "manual", status: "approved", text: "下一条" };
+  const queue = initCommentQueue(async (url, options) => {
+    if (options) {
+      if (url.endsWith("/copy")) row = { ...row, status: "copied" };
+      else row = { ...row, status: options.body.action === "reject" ? "rejected" : "approved" };
+      return row;
+    }
+    if (url.includes("?view=")) {
+      const items = [row, next].filter(item => ["pending_review", "approved"].includes(item.status));
+      return { items, offset: 0, total: items.length };
+    }
+    return url.endsWith("draft-2") ? next : row;
+  }, () => {}, () => null, sources.draftUpdated);
+  await queue.open("review", "comments/draft-1");
+  let detail = byId("queue-detail");
+  await detail.querySelectorAll("button").find(button => button.textContent === "保存").onclick();
+  assert.equal(model.comments[0].draft.status, "approved");
+  assert.equal(detail.children[0].textContent, "已审核 · 待提交");
+  await detail.querySelectorAll("button").find(button => button.textContent === "复制").onclick();
+  assert.equal(model.comments.length, 1);
+  assert.equal(model.commentId, null);
+  assert.equal(model.selectedComments.size, 0);
+  assert.equal(detail.querySelectorAll("button").length, 0);
+  await queue.refresh();
+  assert.equal(detail.querySelectorAll("button").length, 0);
+  assert.equal(byId("queue-list").children.length, 1);
+  await queue.open("review", "comments/draft-2");
+  row = next;
+  await detail.querySelectorAll("button").find(button => button.textContent === "拒绝").onclick();
+  assert.equal(model.comments.length, 0);
+  assert.equal(detail.querySelectorAll("button").length, 0);
 });
 
 test("daily operational activity shows video replies with date and page navigation", async t => {

@@ -1,6 +1,7 @@
 "use strict";
 
 import { $ } from "./core.js";
+import { commentCanGenerate, commentFinished, reconcileCommentSelection } from "./comment-state.js?v=20261107.13";
 
 const sourcePageSize = 10;
 const visibleComments = model => (model.comments || []).slice((model.commentSourcePage || 0) * sourcePageSize, ((model.commentSourcePage || 0) + 1) * sourcePageSize);
@@ -9,7 +10,7 @@ export function commentQuery() {
   const params = new URLSearchParams();
   [["video_id", "filter-video"], ["thread_id", "filter-thread"], ["category", "filter-category"], ["status", "filter-status"]].forEach(([key, id]) => {
     const el = $(id);
-    if (el && el.value.trim()) params.set(key, el.value.trim());
+    if (el && el.value.trim() && !(key === "status" && el.value === "all")) params.set(key, el.value.trim());
   });
   return params.toString();
 }
@@ -53,10 +54,11 @@ export async function refreshThreadContext(model, api, tokenCount, occupancyText
 }
 
 export function updateCommentSelection(model) {
+  reconcileCommentSelection(model);
   if ($("selected-comment-count")) {
     $("selected-comment-count").textContent = `已选 ${model.selectedComments.size} 条`;
   }
-  const page = visibleComments(model);
+  const page = visibleComments(model).filter(commentCanGenerate);
   const selected = page.filter(comment => model.selectedComments.has(comment.id)).length;
   if ($("generate-drafts")?.getAttribute("aria-busy") !== "true") $("generate-drafts").disabled = !model.selectedComments.size;
   if ($("select-comments")) {
@@ -146,6 +148,7 @@ export function renderComments(model, {
 }) {
   const tbody = $("comments");
   if (!tbody) return;
+  reconcileCommentSelection(model);
   if ($("comment-count")) $("comment-count").textContent = `(${model.comments?.length || 0})`;
   const total = model.comments?.length || 0;
   model.commentSourcePage = Math.min(model.commentSourcePage || 0, Math.max(0, Math.ceil(total / sourcePageSize) - 1));
@@ -165,8 +168,10 @@ export function renderComments(model, {
       const row = node("tr", null, comment.id === model.commentId ? "selected-row" : "");
       const check = document.createElement("input");
       check.type = "checkbox";
+      check.disabled = !commentCanGenerate(comment);
       check.checked = model.selectedComments.has(comment.id);
       check.setAttribute("aria-label", `选择 ${comment.display_name || "观众"} 的评论`);
+      if (check.disabled) check.title = "已有草稿，点击评论查看；无需重复生成。";
       check.onchange = () => {
         check.checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id);
         updateCommentSelection(model);
@@ -275,11 +280,11 @@ export function initCommentsModule(model, {
       api("/api/comment-tasks")
     ]);
     if (request !== commentsRequest || query !== commentQuery()) return;
-    model.comments = list(comments);
+    model.comments = list(comments).filter(comment => $("filter-status")?.value || !commentFinished(comment));
     const changedSelection = !model.comments.some(item => item.id === model.commentId);
-    if (changedSelection) model.commentId = model.comments[0]?.id ?? null;
+    if (changedSelection) model.commentId = null;
     doRenderComments();
-    if (changedSelection) await onCommentSelected?.(model.comments[0]);
+    if (changedSelection) await onCommentSelected?.(null);
     renderCommentTasks(list(tasks), { node, cell, badge, empty });
     await doRefreshThreadContext();
   };
@@ -318,15 +323,24 @@ export function initCommentsModule(model, {
     await doRefreshComments();
   }));
 
-  $("generate-drafts")?.addEventListener("click", () => busy($("generate-drafts"), async () => {
-    if (!model.selectedComments.size) throw new Error("请先选择评论");
-    const ids = [...model.selectedComments];
-    const result = await api("/api/comments/drafts", { method: "POST", body: { comment_ids: ids } });
-    await onDraftsRequested?.(result.task_id, ids);
-  }));
+  $("generate-drafts")?.addEventListener("click", async () => {
+    try {
+      await busy($("generate-drafts"), async () => {
+        updateCommentSelection(model);
+        if (!model.selectedComments.size) throw new Error("请先选择评论");
+        const ids = [...model.selectedComments];
+        const result = await api("/api/comments/drafts", { method: "POST", body: { comment_ids: ids } });
+        ids.forEach(id => model.selectedComments.delete(id));
+        doRenderComments();
+        await onDraftsRequested?.(result.task_id, ids);
+      });
+    } finally {
+      updateCommentSelection(model);
+    }
+  });
 
   $("select-comments")?.addEventListener("change", () => {
-    visibleComments(model).forEach(comment => {
+    visibleComments(model).filter(commentCanGenerate).forEach(comment => {
       $("select-comments").checked ? model.selectedComments.add(comment.id) : model.selectedComments.delete(comment.id);
     });
     doRenderComments();
@@ -371,6 +385,18 @@ export function initCommentsModule(model, {
   }));
 
   return {
+    draftUpdated(draft, key) {
+      if (!key.startsWith("comments/")) return;
+      const comment = model.comments.find(item => String(item.draft?.id) === String(draft.id) || String(item.id) === String(draft.comment_id));
+      if (!comment) return;
+      comment.draft = { ...comment.draft, ...draft };
+      model.selectedComments.delete(comment.id);
+      if (commentFinished(comment)) {
+        if (!$("filter-status")?.value) model.comments = model.comments.filter(item => item !== comment);
+        if (model.commentId === comment.id) model.commentId = null;
+      }
+      doRenderComments();
+    },
     refreshComments: doRefreshComments,
     renderComments: doRenderComments,
     loadPolicy: doLoadPolicy,

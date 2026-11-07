@@ -53,7 +53,7 @@
           <details class="comment-source-filters"><summary>筛选评论</summary>
             <div class="form-grid"><label>视频<input id="filter-video" placeholder="全部视频"></label><label>楼 ID<input id="filter-thread" placeholder="全部楼"></label>
               <label>类别<select id="filter-category"><option value="">全部</option><option value="question">问题</option><option value="suggestion">建议</option><option value="interaction">互动</option><option value="spam">垃圾</option><option value="general">一般</option></select></label>
-              <label>草稿状态<select id="filter-status"><option value="">全部</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label>
+              <label>草稿状态<select id="filter-status"><option value="">待操作</option><option value="all">全部（含历史）</option><option value="pending_review">待审核</option><option value="approved">已审核</option><option value="rejected">已拒绝</option><option value="copied">已复制</option><option value="published">已发布</option></select></label>
             </div><div class="actions"><button id="filter-comments" type="button">筛选</button><button id="analyze-comments" type="button">归类</button></div>
           </details>
           <table class="comment-source-table"><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页评论"></th><th>评论</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table>
