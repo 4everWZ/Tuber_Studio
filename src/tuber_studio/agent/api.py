@@ -1,6 +1,8 @@
 """Character, memory, and conversation context routes."""
 
 import json
+import re
+import time
 from typing import Annotated, Literal
 
 from fastapi import Body, Depends, HTTPException, Path, Query
@@ -198,3 +200,133 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
             raise ValueError("scope应为live或comments")
         async with runtime.generation_lock:
             return await runtime.context.compact(scope, runtime.character, mode)
+
+    @app.post("/api/chat/intelligent", dependencies=[Depends(require_admin)])
+    async def intelligent_chat(data: dict = Body(...)):
+        user_message = (data.get("message") or "").strip()
+        if not user_message:
+            raise HTTPException(400, "消息不能为空")
+
+        char = runtime.character
+        char_id = char["id"]
+        scope = f"operator:{char_id}"
+
+        # A. Dynamic / Post intent
+        if any(kw in user_message for kw in ("发动态", "发个动态", "发一条动态", "写个动态", "写条动态")):
+            topic = re.sub(r"^(帮我|给我在b站|在b站)?(发个动态|发一条动态|发动态|写个动态|写条动态)[：:，,\s]*", "", user_message).strip() or "日常生活碎碎念"
+            prompt_text = (
+                f"你是一只叫{char.get('name', '大肥鱼')}的虚拟主播。饲养员让你发一条B站动态，主题是：{topic}。"
+                "请以第一人称口吻写一段生动幽默、富有生活感的动态文案（40-100字），不写标题，直接写文案。"
+            )
+            messages = [
+                {"role": "system", "content": "你是一只活泼傲娇的鲸鱼娘虚拟主播。直接输出动态正文。"},
+                {"role": "user", "content": prompt_text}
+            ]
+            async with runtime.offline_generation("dynamic_card"):
+                gen_reply = await runtime.llm.generate(messages, max_tokens=256)
+            spoken = f"收到啦饲养员！本鱼已经准备好这篇关于【{topic}】的动态啦，你看看合不合心意~"
+            card = {
+                "type": "dynamic_draft",
+                "title": "B站动态草稿",
+                "data": {
+                    "text": gen_reply.spoken_text if hasattr(gen_reply, "spoken_text") else str(gen_reply),
+                    "topic": topic,
+                    "character_id": char_id,
+                },
+                "actions": [
+                    {"id": "publish", "label": "发布动态", "action": "publish_dynamic"},
+                    {"id": "edit", "label": "编辑修改", "action": "edit_dynamic"}
+                ]
+            }
+            return {
+                "reply_text": spoken,
+                "emotion": "cheerful",
+                "card": card
+            }
+
+        # B. Video browsing intent
+        elif any(kw in user_message for kw in ("刷视频", "看视频", "去看看视频", "刷b站", "逛b站")):
+            keyword = re.sub(r"^(帮我|去)?(刷视频|看视频|去看看视频|刷b站|逛b站)[：:，,\s]*", "", user_message).strip() or "热门ACG/二次元"
+            spoken = f"没问题！本鱼这就去潜水刷一刷【{keyword}】相关的视频，看看评论区大家都在聊什么好玩的~"
+            card = {
+                "type": "video_browsing",
+                "title": "视频巡航与探索中控",
+                "data": {
+                    "keyword": keyword,
+                    "frame_budget": "8-16 帧 (多模态高精度)",
+                    "anti_hallucination": "字幕关键帧互证开启",
+                    "status": "ready"
+                },
+                "actions": [
+                    {"id": "start_browsing", "label": "开始巡航", "action": "start_video_browsing"},
+                    {"id": "view_history", "label": "查看已读视频", "action": "view_browsing_history"}
+                ]
+            }
+            return {
+                "reply_text": spoken,
+                "emotion": "excited",
+                "card": card
+            }
+
+        # C. Livestream intent
+        elif any(kw in user_message for kw in ("开播", "准备开播", "开始直播", "开启直播", "下播")):
+            is_start = "下播" not in user_message
+            spoken = (
+                "好耶！直播间中控已经就绪，弹幕活动过滤与战团好感系统均已载入，随时可以开播迎接小鱼籽们啦！"
+                if is_start else
+                "呼~ 今天播得好尽兴，下播休息吃白饭去咯！"
+            )
+            card = {
+                "type": "live_studio_hud",
+                "title": "直播间极简中控 HUD",
+                "data": {
+                    "live_state": "running" if is_start else "stopped",
+                    "poll_filtering": "活动过滤已激活",
+                    "affinity_system": "Warband [-100, +100] 就绪",
+                    "recent_barrage_count": len(getattr(runtime.live, "recent_barrage", []))
+                },
+                "actions": [
+                    {"id": "toggle_live", "label": "切换直播状态", "action": "toggle_live"},
+                    {"id": "draw_guess", "label": "发起你画我猜", "action": "start_draw_guess"}
+                ]
+            }
+            return {
+                "reply_text": spoken,
+                "emotion": "cheerful" if is_start else "idle",
+                "card": card
+            }
+
+        # D. Direct companion chat with operator (饲养员)
+        event = {
+            "event_id": f"op_{int(time.time() * 1000)}",
+            "text": user_message,
+            "sender_name": "饲养员",
+            "is_operator": True,
+        }
+        operator_rel = {
+            "stage": "特别熟悉",
+            "affinity": 100,
+            "relationship_summary": "工作站饲养员与主制作人，最信任的伙伴",
+            "tags": ["饲养员", "制作人", "信任", "号主"],
+        }
+        reply, check = await runtime.generate_reply(
+            scope,
+            char,
+            event,
+            relationship=operator_rel,
+            mode="live"
+        )
+        return {
+            "reply_text": reply.spoken_text,
+            "emotion": getattr(reply, "emotion", "cheerful"),
+            "animation_id": getattr(reply, "animation_id", "talk_happy"),
+            "card": {
+                "type": "conversation",
+                "title": "日常互动",
+                "data": {
+                    "role": "operator_companion",
+                    "speaker": char.get("name", "大肥鱼"),
+                }
+            }
+        }
+

@@ -27,7 +27,7 @@ CDN_PATHS = {
 MAX_SHEET_BYTES = 8 * 1024 * 1024
 MAX_SHEET_PIXELS = 24 * 1024 * 1024
 MAX_FRAME_BYTES = 256 * 1024
-MAX_FRAMES_BYTES = 1024 * 1024
+MAX_FRAMES_BYTES = 4 * 1024 * 1024
 
 
 def _integer(value, minimum=1, maximum=100000):
@@ -310,7 +310,7 @@ class FrameSampler:
                 await response.aclose()
 
     async def frames(self, metadata, count=3, *, cid=None, timestamps=None):
-        _integer(count, maximum=6)
+        _integer(count, maximum=16)
         if not self.decoder.available:
             raise PlatformReadError("frames_unavailable", "未安装ffmpeg／ffprobe")
         bvid = metadata.get("bvid")

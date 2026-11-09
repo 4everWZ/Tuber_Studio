@@ -43,9 +43,9 @@ class VideoVisionConfig(StrictModel):
     runtime_profile: str = ""
     context_tokens: int = Field(default=131072, ge=4096, le=1048576, strict=True)
     native_context_tokens: int = Field(default=131072, ge=4096, le=1048576, strict=True)
-    max_frames: int = Field(default=3, ge=1, le=6, strict=True)
+    max_frames: int = Field(default=3, ge=1, le=16, strict=True)
     max_pixels: int = Field(default=1024 * 1024, ge=1, le=4096 * 4096, strict=True)
-    max_bytes: int = Field(default=1024 * 1024, ge=1, le=2 * 1024 * 1024, strict=True)
+    max_bytes: int = Field(default=1024 * 1024, ge=1, le=4 * 1024 * 1024, strict=True)
     max_output_tokens: int = Field(default=2048, ge=256, le=65536, strict=True)
     enable_thinking: bool | None = Field(default=None, strict=True)
     sampling: LlamaCppSampling = Field(default_factory=LlamaCppSampling)
@@ -63,8 +63,8 @@ class VideoVisionConfig(StrictModel):
             raise ValueError("视觉输出预算没有留下输入空间")
         if self.enabled and not self.model.strip():
             raise ValueError("启用视觉须指定真实模型ID")
-        if self.frame_strategy == "joint" and self.max_frames > 3:
-            raise ValueError("联合视觉请求最多使用三帧")
+        if self.frame_strategy == "joint" and self.max_frames > 8:
+            raise ValueError("联合视觉请求最多使用八帧")
         if any(
             len(value) > 2048
             for value in (
