@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from ..models import Reply
 from ..providers import public_error
+from .activity_filter import LiveActivityFilter
 from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService
 from .interactive_rules import InteractiveRulesService
@@ -46,6 +47,8 @@ class LiveSession:
         self.playback = None
         self.media_changed = asyncio.Event()
         self.online_songs = OnlineSongs(runtime)
+        self.activity_filter = LiveActivityFilter()
+        self.recent_barrage: list[dict] = []
 
     @property
     def busy(self):
@@ -343,8 +346,12 @@ class LiveSession:
                 status, reason = "filtered", str(error)
         elif event.type == "disconnect":
             status, reason = "filtered", "模拟平台断线；需人工恢复"
-        elif event.type == "chat" and (not event.text.strip() or len(set(event.text.strip())) < 2):
-            status, reason = "filtered", "空消息或重复字符"
+        elif event.type == "chat":
+            should_filter, filter_reason = self.activity_filter.check_event(event)
+            if should_filter:
+                status, reason = "filtered", filter_reason
+            elif not event.text.strip() or len(set(event.text.strip())) < 2:
+                status, reason = "filtered", "空消息或重复字符"
         # Bound both acceptance rate and the tracking map; anonymous viewers are not merged by nickname.
         user_key = (
             (event.platform, event.platform_user_id, "song" if event.type == "song" else "interaction")
@@ -386,12 +393,39 @@ class LiveSession:
         )
         if event.type == "song":
             self.store.update_job(job_id, media=media)
+        elif event.type == "chat":
+            self.recent_barrage.append({"display_name": event.display_name, "text": event.text, "time": time.time()})
+            if len(self.recent_barrage) > 20:
+                self.recent_barrage.pop(0)
         self.queue.append(job_id)
         if online_snapshot:
             self.online_songs.choices.pop(online_snapshot["online"].get("choice_token"), None)
         self.online_songs.sync()
         self.wake.set()
         return {"id": db_id, "job_id": job_id, "status": "queued"}
+
+    def start_poll(self, topic: str, options: list[str], duration_seconds: float = 60.0):
+        return self.activity_filter.start_poll(topic, options, duration_seconds)
+
+    async def finish_poll(self):
+        result = self.activity_filter.end_poll()
+        if not result:
+            return None
+        from ..models import Event
+
+        event = Event(
+            platform="live",
+            room_id=self.session_id or "default",
+            event_id=f"poll_result:{uuid4()}",
+            type="chat",
+            platform_user_id="system",
+            display_name="直播间播报",
+            text=result["summary_text"],
+            timestamp=datetime.now(UTC),
+            metadata={"poll_result": result},
+        )
+        await self.submit(event)
+        return result
 
     def pick(self):
         # Basic P0 gift priority, alternating with chat to prevent starvation; P1 audio quotas remain separate.

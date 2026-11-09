@@ -186,6 +186,69 @@ class DrawAndGuessContextTool(BaseAgentTool):
         )
 
 
+class LiveAmbientEnvironmentTool(BaseAgentTool):
+    """Injects real-time current date, time, weekday, and ambient real-world context for live stream."""
+
+    name = "live_ambient_environment"
+    description = "Provides real-time date/time, weekday, and ambient context for live stream without polling."
+    kind = ToolKind.CONTEXT_AUGMENT
+
+    def can_handle(self, event: dict[str, Any], context_info: dict[str, Any]) -> bool:
+        return context_info.get("mode") == "live"
+
+    def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> dict[str, Any]:
+        from datetime import datetime
+
+        now = datetime.now()
+        weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+        return {
+            "datetime": now.strftime("%Y年%m月%d日 %H:%M"),
+            "weekday": f"星期{weekdays[now.weekday()]}",
+        }
+
+    def render_context(self, data: dict[str, Any] | None) -> str | None:
+        if not data:
+            return None
+        return (
+            f"[当前时空与现实环境感知] 当前现实时间为 {data['datetime']}，{data['weekday']}。"
+            "你清楚知晓现实作息与时间流逝。观众问起时可自然随口回答，但不必机械每句报时。"
+        )
+
+
+class LiveBarrageContextTool(BaseAgentTool):
+    """Injects recent live room chat context so the streamer perceives audience chatter flow."""
+
+    name = "live_barrage_context"
+    description = "Injects recent ambient viewer chatter into live prompt context."
+    kind = ToolKind.CONTEXT_AUGMENT
+
+    def __init__(self, live_session=None):
+        self.live_session = live_session
+
+    def can_handle(self, event: dict[str, Any], context_info: dict[str, Any]) -> bool:
+        if context_info.get("mode") != "live" or not self.live_session:
+            return False
+        return bool(getattr(self.live_session, "recent_barrage", None))
+
+    def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> list[dict[str, Any]]:
+        if not self.live_session:
+            return []
+        items = list(getattr(self.live_session, "recent_barrage", []))
+        current_text = event.get("text", "") if event else ""
+        filtered = [it for it in items if it.get("text") != current_text]
+        return filtered[-6:]
+
+    def render_context(self, data: list[dict[str, Any]] | None) -> str | None:
+        if not data:
+            return None
+        lines = "\n".join(f"- {item.get('display_name', '观众')}: {item.get('text', '')}" for item in data)
+        return (
+            "[当前直播间弹幕氛围与近期观众互动]\n"
+            f"{lines}\n"
+            "（以上为观众之间的近期热聊流水，仅供你感知话题氛围与互动上下文，无需逐一回复，可自然融入交流）"
+        )
+
+
 class ToolRegistry:
     """Manages agent capabilities and context collection."""
 
@@ -252,9 +315,13 @@ def build_default_tool_registry(
     daily_memory=None,
     game_livestream=None,
     draw_and_guess=None,
+    live_session=None,
 ) -> ToolRegistry:
     """Factory creating and registering standard Tuber Studio tools."""
     registry = ToolRegistry()
+    registry.register(LiveAmbientEnvironmentTool())
+    if live_session:
+        registry.register(LiveBarrageContextTool(live_session))
     if daily_memory:
         registry.register(RecentAnecdotesTool(daily_memory))
         registry.register(HistoricalRecallTool(daily_memory))
