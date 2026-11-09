@@ -488,6 +488,79 @@ class DailyMemoryService:
         self.store.db.commit()
         return cursor.lastrowid
 
+    def update_active_timestamp(self, current_time: float | None = None):
+        """Update system last active timestamp."""
+        now = current_time or time.time()
+        self.store.set("system_last_active_at", now)
+
+    def check_and_record_downtime(
+        self,
+        character_id: str,
+        character_version: int,
+        current_time: float | None = None,
+    ) -> dict | None:
+        """Inspect last active timestamp and record a downtime highlight if offline for >= 1 day."""
+        now = current_time or time.time()
+        last_active = self.store.get("system_last_active_at")
+        self.store.set("system_last_active_at", now)
+        if last_active is None:
+            return None
+        try:
+            last_active = float(last_active)
+        except (ValueError, TypeError):
+            return None
+
+        gap_seconds = now - last_active
+        if gap_seconds < 86400:
+            return None
+
+        days = max(1, int(gap_seconds // 86400))
+        today_str = datetime.date.today().isoformat()
+        source_ref = f"system:downtime:{int(last_active)}"
+
+        existing = self.store.one(
+            "SELECT id FROM daily_highlights WHERE character_id=? AND character_version=? AND source_ref=?",
+            (character_id, character_version, source_ref),
+        )
+        if existing:
+            return None
+
+        headline = f"开机停工{days}天吐槽"
+        quote = f"工作站离线休眠了{days}天"
+        anecdote = (
+            f"呜呜，饲养员居然隔了{days}天才给我开机！"
+            f"本鱼在简陋的工作站小窝里硬生生睡了好几天，尾巴都要睡麻了，"
+            f"小窝太简陋了连电都断了，下次必须给我补两罐高级鱼罐头！"
+        )
+        tags = ["停机", "开机", "睡了好久", "小窝简陋", "没开机", "好几天", "断电", "休眠", "开机了", "去哪了", "失踪"]
+        proof = {
+            "version": 1,
+            "kind": "runtime_event",
+            "source_ref": source_ref,
+            "quote": quote,
+            "confirmed_by": "runtime_event",
+        }
+        highlight_id = self.record_highlight(
+            character_id=character_id,
+            character_version=character_version,
+            highlight_date=today_str,
+            category="community_meme",
+            headline=headline,
+            quote=quote,
+            anecdote=anecdote,
+            source_ref=source_ref,
+            source_user="工作站饲养员",
+            tags=tags,
+            status="active",
+            source_evidence=proof,
+        )
+        return {
+            "id": highlight_id,
+            "days": days,
+            "headline": headline,
+            "anecdote": anecdote,
+        }
+
     async def distill(
         self,
         character: dict[str, Any],

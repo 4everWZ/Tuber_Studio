@@ -23,7 +23,7 @@ from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from ...publication_errors import SendLimitReached
 from ...store import dump
-from .comment_reader import CommentProgress, evaluate_comment_visit, handoff_comment
+from .comment_reader import CommentProgress, evaluate_comment_visit, handoff_comment, merge_continuous_comments
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
@@ -917,7 +917,8 @@ class BrowsingDecisions:
             if row["config"].get("reply_enabled", False) and chosen and not defer_comments and may_discuss:
                 if context is None:
                     context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
-                items = context.get("items", []) if isinstance(context, dict) else []
+                raw_items = context.get("items", []) if isinstance(context, dict) else []
+                items = merge_continuous_comments(raw_items)
                 for item in items:
                     if self.browsing.repo.video_reply_limit_reached(row, bvid):
                         comments_complete = False
@@ -1095,6 +1096,11 @@ class BrowsingDecisions:
                     thread_context["resource_author_uid"] = str(metadata["owner_uid"])
                 source = thread_context["source"]
                 thread_response = self.comment_progress.get(row, bvid, source)
+                if thread_response is None and item.get("merged_sources"):
+                    for ms in item["merged_sources"]:
+                        if existing := self.comment_progress.get(row, bvid, ms):
+                            thread_response = existing
+                            break
                 if thread_response is None:
                     try:
                         thread_response = await self._response(
@@ -1110,6 +1116,8 @@ class BrowsingDecisions:
                                 "current_candidate": error.continuation.get("current_output")})
                         return None
                     self.comment_progress.save(row, bvid, source, thread_response)
+                    for ms in item.get("merged_sources", []):
+                        self.comment_progress.save(row, bvid, ms, thread_response)
                 if thread_response.action not in {"reply_public", "handoff_private"} or not thread_response.text:
                     return None
                 target.update(

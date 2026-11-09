@@ -55,6 +55,7 @@ class Runtime:
             daily_memory=self.daily_memory,
             game_livestream=self.live.game_livestream,
             draw_and_guess=self.live.draw_and_guess,
+            live_session=self.live,
         )
         self.context = ContextManager(
             settings,
@@ -72,6 +73,11 @@ class Runtime:
         self.operation_turns = OperationTurns(self.generation_lock, self.operations_waiting)
         self._conversation_turns = {}
         self.error = None
+        try:
+            char = store.character()
+            self.daily_memory.check_and_record_downtime(char["id"], char["version"])
+        except Exception:
+            pass
         self.cache = MediaCache(self)
         self.live.media.cache = self.cache
         self.voices.cache = self.cache
@@ -319,6 +325,7 @@ class Runtime:
         messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence)
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         messages = identity_messages(messages, generation_identity)
+        self.daily_memory.update_active_timestamp()
         operation = mode in {"comment_draft", "direct_message"}
         generate = (
             getattr(self.llm, "generate_operation", self.llm.generate) if operation else self.llm.generate

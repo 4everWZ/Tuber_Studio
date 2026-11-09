@@ -16,7 +16,74 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
-from .thread_context import comment_thread_context
+from .thread_context import comment_source, comment_thread_context
+
+
+def _extract_timestamp(item):
+    for key in ("created_at", "ctime", "pubdate", "time", "timestamp"):
+        val = item.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                pass
+    return None
+
+
+def merge_continuous_comments(items, time_window_seconds=600):
+    """Merge consecutive comments from the same author in the same thread within time window."""
+    if not items:
+        return []
+    merged = []
+    for item in items:
+        if not merged:
+            merged.append(dict(item))
+            continue
+        prev = merged[-1]
+        prev_uid = str(prev.get("user_id") or prev.get("platform_user_id") or "")
+        curr_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
+        prev_thread = str(prev.get("thread_id") or prev.get("comment_id") or "")
+        curr_thread = str(item.get("thread_id") or item.get("comment_id") or "")
+
+        can_merge = False
+        if prev_uid and curr_uid and prev_uid == curr_uid and prev_thread == curr_thread:
+            prev_ts = _extract_timestamp(prev)
+            curr_ts = _extract_timestamp(item)
+            if prev_ts is not None and curr_ts is not None:
+                if abs(curr_ts - prev_ts) <= time_window_seconds:
+                    can_merge = True
+            else:
+                can_merge = True
+
+        if can_merge:
+            prev_text = str(prev.get("content") or prev.get("text") or "")
+            curr_text = str(item.get("content") or item.get("text") or "")
+            combined_text = f"{prev_text}\n{curr_text}" if prev_text and curr_text else (prev_text or curr_text)
+
+            sources = prev.get("merged_sources")
+            if not sources:
+                sources = [comment_source(prev)]
+            sources.append(comment_source(item))
+
+            comment_ids = prev.get("merged_comment_ids")
+            if not comment_ids:
+                comment_ids = [str(prev["comment_id"])]
+            comment_ids.append(str(item["comment_id"]))
+
+            prev["content"] = combined_text
+            prev["text"] = combined_text
+            prev["comment_id"] = item["comment_id"]
+            prev["merged_sources"] = sources
+            prev["merged_comment_ids"] = comment_ids
+            if "ctime" in item:
+                prev["ctime"] = item["ctime"]
+            if "created_at" in item:
+                prev["created_at"] = item["created_at"]
+        else:
+            merged.append(dict(item))
+    return merged
 
 
 class CommentProgress:
@@ -100,7 +167,7 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
     try:
         browsing._check_round(row)
         context = await browsing.video_comment_context(row, metadata["bvid"])
-        items = context.get("items", [])
+        items = merge_continuous_comments(context.get("items", []))
         chosen = {segment["id"] for segment in browsing._segments(material)} if material else set()
         for item in items:
             if browsing.repo.video_reply_limit_reached(row, metadata["bvid"]):

@@ -114,7 +114,9 @@ class DirectMessages:
             CREATE TABLE IF NOT EXISTS dm_inbox(id INTEGER PRIMARY KEY,platform TEXT NOT NULL,message_id TEXT NOT NULL,platform_user_id TEXT NOT NULL,display_name TEXT,content TEXT NOT NULL,sent_at REAL,character_id TEXT,received_at REAL,UNIQUE(platform,message_id));
             CREATE TABLE IF NOT EXISTS dm_drafts(id INTEGER PRIMARY KEY,platform TEXT NOT NULL,platform_user_id TEXT NOT NULL,display_name TEXT,source_kind TEXT,source_id INTEGER,character_id TEXT,character_version INTEGER,status TEXT,text TEXT,reason TEXT,answer_check TEXT,model TEXT,error TEXT,receipt TEXT,created_at REAL,updated_at REAL,UNIQUE(source_kind,source_id,character_id));
             CREATE TABLE IF NOT EXISTS dm_attempts(id INTEGER PRIMARY KEY,draft_id INTEGER,platform_user_id TEXT,started_at REAL,status TEXT,receipt TEXT,error TEXT);
+            CREATE TABLE IF NOT EXISTS dm_operator_replies(id INTEGER PRIMARY KEY,platform TEXT NOT NULL,account_id TEXT NOT NULL,platform_user_id TEXT NOT NULL,message_id TEXT NOT NULL,content TEXT NOT NULL,sent_at REAL NOT NULL,character_id TEXT NOT NULL,UNIQUE(platform,account_id,message_id));
             CREATE INDEX IF NOT EXISTS dm_inbox_user ON dm_inbox(platform,platform_user_id,character_id,id);
+            CREATE INDEX IF NOT EXISTS dm_operator_replies_lookup ON dm_operator_replies(platform,account_id,platform_user_id,character_id,sent_at);
         """)
         store.execute(
             "UPDATE dm_drafts SET status='queued',error='已保留生成进度，等待恢复' WHERE status IN ('queued','generating')"
@@ -309,16 +311,70 @@ class DirectMessages:
 
     def _ingest_history(self, rows, uid, own_uid, display_name):
         count = 0
+        operator_replies_found = []
         for row in sorted(rows, key=lambda row: int(row.get("timestamp", 0))):
-            if str(row.get("sender_uid")) != str(uid) or str(row.get("receiver_id")) != str(own_uid) or row.get("receiver_type", 1) != 1 or row.get("msg_type") != 1 or row.get("msg_status", 0) != 0:
+            if row.get("receiver_type", 1) != 1 or row.get("msg_type") != 1 or row.get("msg_status", 0) != 0:
                 continue
+            sender = str(row.get("sender_uid", ""))
+            receiver = str(row.get("receiver_id", ""))
+            msg_key = str(row.get("msg_key", ""))
+            if not re.fullmatch(r"[1-9][0-9]{0,19}", msg_key):
+                raise ValueError("平台私信缺少有效消息ID")
             content = row.get("content")
             content = json.loads(content) if isinstance(content, str) else content
-            if not re.fullmatch(r"[1-9][0-9]{0,19}", str(row.get("msg_key", ""))):
-                raise ValueError("平台私信缺少有效消息ID")
-            _, fresh = self.ingest({"message_id": str(row["msg_key"]), "platform_user_id": str(uid),
-                "display_name": display_name, "text": content["content"], "timestamp": row["timestamp"], "account_id": str(own_uid)})
-            count += int(fresh)
+            msg_text = content.get("content", "") if isinstance(content, dict) else str(content)
+            ts = float(row.get("timestamp", 0))
+
+            if sender == str(uid) and receiver == str(own_uid):
+                _, fresh = self.ingest({
+                    "message_id": msg_key,
+                    "platform_user_id": str(uid),
+                    "display_name": display_name,
+                    "text": msg_text,
+                    "timestamp": ts,
+                    "account_id": str(own_uid),
+                })
+                count += int(fresh)
+            elif sender == str(own_uid) and receiver == str(uid):
+                is_system = bool(
+                    self.store.one(
+                        "SELECT id FROM dm_attempts WHERE status='published' AND receipt LIKE ?",
+                        (f'%"{msg_key}"%',),
+                    )
+                    or self.store.one(
+                        "SELECT id FROM dm_drafts WHERE status='published' AND receipt LIKE ?",
+                        (f'%"{msg_key}"%',),
+                    )
+                )
+                if not is_system:
+                    self.store.execute(
+                        "INSERT OR IGNORE INTO dm_operator_replies"
+                        "(platform, account_id, platform_user_id, message_id, content, sent_at, character_id) "
+                        "VALUES('bilibili', ?, ?, ?, ?, ?, ?)",
+                        (
+                            str(own_uid),
+                            str(uid),
+                            msg_key,
+                            msg_text,
+                            ts,
+                            self.runtime.character["id"],
+                        ),
+                    )
+                    operator_replies_found.append({"timestamp": ts, "msg_key": msg_key, "text": msg_text})
+
+        for op in operator_replies_found:
+            pending = self.store.all(
+                "SELECT id FROM dm_drafts WHERE platform='bilibili' AND account_id=? AND platform_user_id=? "
+                "AND character_id=? AND status IN ('queued', 'generating', 'pending_review', 'failed') "
+                "AND created_at <= ?",
+                (str(own_uid), str(uid), self.runtime.character["id"], op["timestamp"] + 10),
+            )
+            for draft in pending:
+                self.store.execute(
+                    "UPDATE dm_drafts SET status='cancelled', error='号主已在平台手动回复，无需重复发送', updated_at=? WHERE id=?",
+                    (time.time(), draft["id"]),
+                )
+
         return count
 
     async def _refresh_conversation_inbox(self, draft):
@@ -372,6 +428,9 @@ class DirectMessages:
                    AND d.platform=n.platform AND d.platform_user_id=n.platform_user_id
                    AND ((d.source_kind='message' AND d.source_id=n.id) OR
                         (d.status IN ('queued','generating') AND d.character_version=?))
+               ) AND NOT EXISTS (
+                   SELECT 1 FROM dm_operator_replies o WHERE o.account_id=? AND o.character_id=?
+                   AND o.platform=n.platform AND o.platform_user_id=n.platform_user_id AND o.sent_at>=n.sent_at
                ) ORDER BY sent_at DESC,id DESC LIMIT ?""",
             (
                 account_id,
@@ -380,6 +439,8 @@ class DirectMessages:
                 account_id,
                 self.runtime.character["id"],
                 self.runtime.character["version"],
+                account_id,
+                self.runtime.character["id"],
                 slots,
             ),
         )
@@ -626,6 +687,21 @@ class DirectMessages:
                     source["id"],
                 ),
             )[::-1]
+            op_replies = self.store.all(
+                "SELECT message_id,content,sent_at FROM dm_operator_replies WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? ORDER BY sent_at DESC LIMIT 10",
+                (
+                    draft["platform"],
+                    draft["platform_user_id"],
+                    character["id"],
+                    draft.get("account_id", ""),
+                ),
+            )[::-1]
+            if op_replies:
+                event["operator_replies"] = op_replies
+                event["co_pilot_guidance"] = (
+                    "号主/饲养员此前已在平台手动回复过该用户（详见operator_replies）。"
+                    "请结合号主的回复顺畅接话，不要重复回答号主已经解答过的要点。"
+                )
         if len(json.dumps(event, ensure_ascii=False)) > 1_000_000:
             raise ValueError("来源上下文过大，保留原文；请整理该楼后重新准备私信")
         return event
