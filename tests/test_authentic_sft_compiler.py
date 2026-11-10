@@ -79,9 +79,10 @@ class CharacterTokenizer:
     eos_token_id = 9999
     all_special_tokens = ["<eos>"]
 
-    def __init__(self, *, drop_system=False, add_stop=True):
+    def __init__(self, *, drop_system=False, add_stop=True, emitted_stop_id=9999):
         self.drop_system = drop_system
         self.add_stop = add_stop
+        self.emitted_stop_id = emitted_stop_id
 
     def apply_chat_template(self, messages, **kwargs):
         return "".join(
@@ -100,7 +101,7 @@ class CharacterTokenizer:
         while i < len(text):
             stop = text.startswith("<eos>", i)
             length = 5 if stop else 1
-            ids.append(self.eos_token_id if stop else ord(text[i]))
+            ids.append(self.emitted_stop_id if stop else ord(text[i]))
             offsets.append((i, i + length))
             i += length
         return {"input_ids": ids, "offset_mapping": offsets, "attention_mask": [1] * len(ids)}
@@ -115,6 +116,17 @@ def test_mask_only_keeps_assistant_body_and_eos(modules):
     supervised = [label for label in encoded["labels"] if label != -100]
     assert supervised == [*map(ord, "first"), 9999, *map(ord, "second"), 9999]
     assert count == len(supervised)
+
+
+def test_mask_accepts_a_model_declared_turn_end(modules):
+    compiler, _, tokens, _ = modules
+    row = compiler.sample("source", "family", "dafeiyu_core", [("Q", "A")], system="SYS")
+    tokenizer = CharacterTokenizer(emitted_stop_id=7000)
+    with pytest.raises(ValueError, match="native EOS"):
+        tokens.encode_row(row, tokenizer, 256)
+    encoded, count = tokens.encode_row(row, tokenizer, 256, end_tokens=(7000,))
+    assert [label for label in encoded["labels"] if label != -100] == [ord("A"), 7000]
+    assert count == 2
 
 
 def test_mask_fails_closed_on_system_drop_missing_stop_cutoff_and_pixels(modules):
@@ -201,3 +213,24 @@ def test_eval_only_queue_never_compiles_or_erases_artifacts(modules, monkeypatch
     assert (adapter / "adapter_model.safetensors").read_bytes() == b"original"
     assert not (output / "compiled_data").exists()
     assert not next(row for row in results[-1] if row["id"] == "qwen35_9b")["evaluated"]
+
+
+def test_queue_uses_current_training_entry_points(modules, monkeypatch, tmp_path):
+    _, _, _, queue = modules
+    training = tmp_path / "tools" / "training"
+    training.mkdir(parents=True)
+    for name in ("build_authentic_sft_dataset.py", "train_dora.py"):
+        (training / name).touch()
+    monkeypatch.setattr(
+        sys, "argv", ["queue", "--repo_root", str(tmp_path), "--only_model", "qwen35_9b"]
+    )
+    monkeypatch.setattr(queue, "disk_has_room", lambda _: True)
+    commands = []
+
+    def capture(command, **kwargs):
+        commands.append(Path(command[1]))
+        return 0
+
+    monkeypatch.setattr(queue, "run_command", capture)
+    queue.main()
+    assert commands == [training / "build_authentic_sft_dataset.py", training / "train_dora.py"]

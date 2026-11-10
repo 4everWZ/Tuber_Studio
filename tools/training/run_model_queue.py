@@ -30,7 +30,7 @@ QUEUE_CANDIDATES = [
         "epochs": 3,
         "max_seq_len": 512,
         "vram": "~1.2 GB (Q4_K_M)",
-        "deploy_sug": "⚡ **端侧极速核弹**：量化仅 1.2 GB，预估 AGX 吞吐 55–70 tok/s，适合秒级高并发伴播",
+        "deploy_sug": "端侧直播候选，按首音和共驻验收",
     },
     {
         "id": "qwen35_4b",
@@ -46,7 +46,7 @@ QUEUE_CANDIDATES = [
         "epochs": 3,
         "max_seq_len": 512,
         "vram": "2.51 GB (Q4_K_M)",
-        "deploy_sug": "⚡ **AGX Orin 极速伴播副模型**：256K 原生长上下文，响应超快",
+        "deploy_sug": "端侧直播候选，核对实际窗口与延迟",
     },
     {
         "id": "qwen35_9b",
@@ -62,7 +62,7 @@ QUEUE_CANDIDATES = [
         "epochs": 3,
         "max_seq_len": 512,
         "vram": "5.23 GB (Q4_K_M)",
-        "deploy_sug": "🔥 **AGX Orin 生产主力**：首字延迟 <380ms，解码 23 tok/s",
+        "deploy_sug": "运营候选，须通过独立质量和共驻验收",
     },
     {
         "id": "gemma4_12b",
@@ -288,7 +288,7 @@ def main():
                     r["training"] = False
                     update_markdown_report(results, report_paths)
                     continue
-                train_script = tools_dir / "train_dora.py"
+                train_script = tools_dir / "training" / "train_dora.py"
                 if not train_script.exists():
                     train_script = repo_root / "train_dora.py"
                 train_cmd = [

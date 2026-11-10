@@ -63,7 +63,7 @@ def render_with_spans(tokenizer, messages):
     return native, assistant_spans
 
 
-def encode_row(row, tokenizer, max_seq_length):
+def encode_row(row, tokenizer, max_seq_length, *, end_tokens=()):
     text, spans = render_with_spans(tokenizer, validated_messages(row, tokenizer))
     encoded = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True, truncation=False)
     ids = encoded["input_ids"]
@@ -71,6 +71,7 @@ def encode_row(row, tokenizer, max_seq_length):
     if len(ids) > max_seq_length:
         raise ValueError(f"Sequence has {len(ids)} tokens, above {max_seq_length}; do not truncate answers")
     labels = [IGNORE] * len(ids)
+    valid_stops = {tokenizer.eos_token_id, *end_tokens}
     for left, right in spans:
         body = [index for index, (start, end) in enumerate(offsets) if start < right and end > left]
         if not body or offsets[body[0]][0] != left or offsets[body[-1]][1] != right:
@@ -79,7 +80,7 @@ def encode_row(row, tokenizer, max_seq_length):
             raise ValueError("Assistant token crosses a role boundary")
         stop = next((i for i in range(body[-1] + 1, len(ids)) if offsets[i][1] > offsets[i][0]
                      and not text[slice(*offsets[i])].isspace()), None)
-        if stop is None or ids[stop] != tokenizer.eos_token_id:
+        if stop is None or ids[stop] not in valid_stops:
             raise ValueError("Assistant body lacks its native EOS stop")
         for index in (*body, stop):
             labels[index] = ids[index]
@@ -89,7 +90,7 @@ def encode_row(row, tokenizer, max_seq_length):
     return {"input_ids": ids, "attention_mask": encoded["attention_mask"], "labels": labels}, count
 
 
-def tokenize_split(rows, tokenizer, max_seq_length, *, allow_legacy=False):
+def tokenize_split(rows, tokenizer, max_seq_length, *, allow_legacy=False, end_tokens=()):
     encoded = []
     for index, row in enumerate(rows, 1):
         try:
@@ -101,7 +102,7 @@ def tokenize_split(rows, tokenizer, max_seq_length, *, allow_legacy=False):
                 bucket = "legacy"
             if row.get("bucket", bucket) != bucket:
                 raise ValueError("Category and training bucket differ")
-            inputs, tokens = encode_row(row, tokenizer, max_seq_length)
+            inputs, tokens = encode_row(row, tokenizer, max_seq_length, end_tokens=end_tokens)
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError(f"{row.get('source', index)}: {error}") from error
         encoded.append((bucket, inputs, tokens))

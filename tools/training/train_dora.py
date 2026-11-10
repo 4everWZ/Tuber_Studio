@@ -150,10 +150,11 @@ def validate_run(args):
         raise ValueError("Clean baseline requires pinned Qwen3.5-9B, rank 16/alpha 32 DoRA, at most two epochs, and a frozen holdout")
 
 
-def prepare_training(args, tokenizer):
+def prepare_training(args, tokenizer, end_tokens=()):
     raw_train, raw_dev, split_fingerprints = read_split_files(args.data_dir, require_manifest=args.clean_baseline)
-    train = tokenize_split(raw_train, tokenizer, args.max_seq_length, allow_legacy=not args.clean_baseline)
-    dev = tokenize_split(raw_dev, tokenizer, args.max_seq_length, allow_legacy=not args.clean_baseline)
+    options = {"allow_legacy": not args.clean_baseline, "end_tokens": end_tokens}
+    train = tokenize_split(raw_train, tokenizer, args.max_seq_length, **options)
+    dev = tokenize_split(raw_dev, tokenizer, args.max_seq_length, **options)
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     global_batch = world_size * args.batch_size
     selected = balance_training(train, seed=args.seed, global_batch=global_batch) if args.clean_baseline else train
@@ -169,6 +170,7 @@ def prepare_training(args, tokenizer):
         "holdout_sha256": digest(args.holdout.read_bytes()) if args.holdout else None,
         "tokenizer_class": type(tokenizer).__name__,
         "assistant_loss": "native-content-and-eos-v1",
+        "allowed_stop_token_ids": sorted({tokenizer.eos_token_id, *end_tokens}),
         "visual_training": "text-only; multimodal rows rejected",
         "seed": args.seed,
         "dora_rank": args.r,
@@ -210,6 +212,7 @@ def main():
         AutoTokenizer,
         BitsAndBytesConfig,
         DataCollatorForSeq2Seq,
+        GenerationConfig,
         Trainer,
         TrainingArguments,
         set_seed,
@@ -224,14 +227,21 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, **source)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    train_rows, dev_rows, metadata = prepare_training(args, tokenizer)
+    config = AutoConfig.from_pretrained(args.model_name_or_path, **source)
+    try:
+        generation = GenerationConfig.from_pretrained(args.model_name_or_path, **source)
+    except OSError:
+        generation = GenerationConfig.from_model_config(config)
+    end_tokens = generation.eos_token_id
+    if isinstance(end_tokens, int):
+        end_tokens = (end_tokens,)
+    train_rows, dev_rows, metadata = prepare_training(args, tokenizer, end_tokens or ())
     logger.info("Prepared SFT metrics %s", metadata)
     if args.prepare_only:
         args.output_dir.mkdir(parents=True)
         (args.output_dir / "training_metrics.json").write_bytes(json_bytes(metadata))
         return
 
-    config = AutoConfig.from_pretrained(args.model_name_or_path, **source)
     multimodal = any(getattr(config, field, None) is not None for field in ("vision_config", "audio_config"))
     model_class = AutoModelForImageTextToText if multimodal else AutoModelForCausalLM
     dtype = torch.bfloat16 if args.bf16 and torch.cuda.is_bf16_supported() else torch.float16
