@@ -44,3 +44,12 @@
 模型只负责生成音频，不自行播放。服务统一校验输出路径、格式、非静音、声音／模型身份并隔离缓存，沿用原播放者与ACK；取消／超时会传播到Provider，具体实现须释放自身推理／子进程资源。接口测试不证明音质通过，未来模型须另做人工试听与设备资源验收；详细契约见[声音规范](../specs/models-and-audio.md#说话与演唱能力)。
 
 在独立直播工作台下方或主工作台「设置 → 存储与维护」可查看实际容量、受保护与可回收大小，设置各池上限并清理。导入曲库与在线歌曲共用音乐额度；曲库引用和播放／待播素材受保护，需先移除曲库条目才可回收其原文件。
+
+
+## 房间活动与可选 Q 版 Live2D
+
+独立直播工作台可开启房间投票和结束投票。已识别的参与明细不进入回复队列，结果留在本场共享上下文。网页取材、天气和冷场短句均可在直播工作台设置。天气需填已授权公开的地点；免费天气接口限非商业用途并展示归属。冷场沿用已有播放队列。
+
+已有 Q 版素材继续作为默认演出。可将经许可的 Cubism 文件放在 `runtime/live2d/<角色ID>/`，并提供 `avatar.json` 记录 `model`（`.model3.json`）、`license`、`commercial_allowed` 及可选 `mouth_parameter`、`motions`、`expressions`。同时在 `runtime/live2d/sdk/` 安装对应的 `pixi.min.js`、`live2dcubismcore.min.js`、`cubism4.min.js`。场景继续使用原来的 OBS 浏览器源和播放器，缺失或装载失败会显示 GIF。公开使用须核对 SDK 和模型各自的用途授权。[Cubism Web SDK](https://docs.live2d.com/en/cubism-sdk-manual/cubism-sdk-for-web/) · [发布许可](https://www.live2d.com/en/sdk/license/)
+
+原创 Q 版分层要求优先保留蓝发、呆毛、耳鳍、鲸尾轮廓。尾根、尾柄、尾鳍分别可形变，保留待机、说话、困惑和开心表达。分层立绘和绑定完成后，单独验证透明合成、真实人声音量口型、静音闭嘴及播放确认。

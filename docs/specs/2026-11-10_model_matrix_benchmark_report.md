@@ -1,7 +1,9 @@
 # 🐟 Tuber Studio 大肥鱼 V2 新一代模型矩阵评测与基准对比报告
 
+这份历史记录保留当时的探针结果。发布和共驻结论见[独立持出回放](../../evaluations/results/workstation-candidate-replay-20261110.md)。原生上下文、实际装载窗口与测得内存应分别阅读。
+
 **日期**: 2026-11-10  
-**硬件环境**: Workstation 双卡 NVIDIA RTX 3090 (48GB VRAM), CUDA 13.2, PyTorch 2.10.0+cu130, AGX Orin 64GB (32GB VRAM 配额)  
+**硬件环境**: Workstation 双卡 NVIDIA RTX 3090 (48GB VRAM), CUDA 13.2, PyTorch 2.10.0+cu130, AGX Orin 64GB (约 32 GB 项目共享内存预算)
 **目标架构**: $\ge$ 256K 原生超长上下文、混合线性注意力 / MoE / 现代原生大模型架构（全面淘汰旧代 Qwen 2.5 系列）
 
 ---
@@ -19,10 +21,10 @@
 
 | 候选模型 | 架构特征 | 参数量 (活跃/总计) | 原生上下文 | 微调模式 | OC 拟真度 | AI 味违规 | 基础常识通过率 | 显存占用 (4-bit) | AGX Orin 投产建议 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Dafeiyu Qwen 3.5 9B** (微调) | 混合线性注意力 + 全注意力 (Dense) | 8.95B / 8.95B | **262,144 (256K)** | **BF16 DoRA** | **83.3 / 100** | **0 次 (100% 纯净)** | **3 / 3 (100%)** | 权重 5.23 GB (Q4_K_M) | **🔥 直播首选主力**：首字延迟 <200ms，解码 42+ tok/s，256K KV Cache 仅占 12.6GB |
-| **Gemma 4 12B** (Zero-shot) | Gemma 4 统一多模态基础模型 (Dense) | 12B / 12B | 131,072 (128K) | Zero-shot | 70.3 / 100 | 1 次 (93.3%) | 3 / 3 (100%) | 权重 ~7.5 GB | 表现出基座模型典型缺陷（易受越狱诱导、泄漏 Prompt、自生多轮假对话） |
-| **Gemma 4 26B-A4B-it** | 细粒度 MoE (128 专家, 激活 8) | **4.1B / 26B** | **262,144 (256K)** | 4-bit QLoRA | 待标定 | 0 次 | 3 / 3 (100%) | 权重 ~14.8 GB | **🔥 离线创作/极高灵性**：4.1B 激活参数突破显存带宽瓶颈，解码可达 45+ tok/s |
-| **Qwen 3.8-Flash-Next** | 超细粒度混合 MoE (512 专家) | **3.5B / 28B** | **262,144 (256K)** | 4-bit QLoRA | 待标定 | 0 次 | 3 / 3 (100%) | 权重 ~15.5 GB | 兼顾极低激活带宽与超大容量参数容量 |
+| **Dafeiyu Qwen 3.5 9B** (微调) | 混合线性注意力 + 全注意力 (Dense) | 8.95B / 8.95B | **262,144 (256K)** | **BF16 DoRA** | **83.3 / 100** | **0 次 (100% 纯净)** | **3 / 3 (100%)** | 权重 5.23 GB (Q4_K_M) | AGX 文本候选，8K 单条历史测速见下 |
+| **Gemma 4 12B** (Zero-shot) | Gemma 4 统一多模态基础模型 (Dense) | 12B / 12B | 262,144 (256K) | Zero-shot | 70.3 / 100 | 1 次 (93.3%) | 3 / 3 (100%) | 权重 ~7.5 GB | 表现出基座模型典型缺陷（易受越狱诱导、泄漏 Prompt、自生多轮假对话） |
+| **Gemma 4 26B-A4B-it** | 细粒度 MoE (128 专家, 激活 8) | **4.1B / 26B** | **262,144 (256K)** | 4-bit QLoRA | 待标定 | 0 次 | 3 / 3 (100%) | 权重 ~14.8 GB | 候选，缺设备实测 |
+| **Qwen3.8-Flash-Next** | MoE | 6B / 125B，另有 n-gram embedding 与 MTP | 256K | 未复验 | — | — | — | 超出本机候选预算 | [官方规格](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) |
 | **Qwen 3.8-27B** | Dense 混合注意力 | 27B / 27B | **262,144 (256K)** | 4-bit QLoRA | 待标定 | 0 次 | 3 / 3 (100%) | 权重 ~16.2 GB | 纯稠密大模型，适合离线写长篇文案与复杂逻辑推演 |
 
 ---
@@ -74,28 +76,9 @@
    - 原生上下文：`qwen35.context_length = 262144` (256K)
    - SHA256: `e19b025db5b1b7536918e0ecb661781dab3d2a9e094f81dc7d6bec845f7d8c79`
    - **MTP 解耦优化**：Qwen 3.5 包含 32 层混合线性注意力主干与 1 层 Multi-Token Prediction (MTP) 投机草稿层。在 Ollama / llama.cpp 单阶段自回归推理部署中，通过 `--no-mtp` 标志剔除 MTP draft 权重，避免出现 `blk.32.attn_norm.weight not found` 的张量不对齐异常，确保生产推理极致轻量与标准兼容。
-2. **显存预算与 KV Cache 分配**：
-   - 模型权重（Q4_K_M）：~5.3 GB
-   - 4-bit KV Cache (256K Context)：~12.6 GB
-   - 系统总占用：**~17.9 GB**，完全在 AGX Orin 32GB 分配限额内，剩余 >14 GB 显存安全余量。
-3. **无缝部署注册**：
-   - 使用流式 chunk 分块（8MB）直连 AGX Orin Ollama HTTP API (`POST /api/blobs/sha256:...`)；
-   - 通过 `POST /api/create` 注册为 `dafeiyu-v2`；
-   - 配合智能 UI (`/api/chat/intelligent`) 与直播 HUD 统一调用。
+2. **原先的容量估算**。256K 约 17.9 GB 为早期预测，实际 K/V 配置、峰值和另一项目共驻未复验。
+3. **试验注册**。Ollama 资产登记为 `dafeiyu-v2`。AGX 试验和工作台主线部署分开。
 
----
+## 5. AGX Orin 历史文本探针
 
-## 5. AGX Orin 64GB 实机推理性能实测
-
-- **部署设备**: NVIDIA Jetson AGX Orin 64GB (32GB VRAM 配额), JetPack 6, Ollama 0.33.2
-- **装载模型**: `dafeiyu-v2:latest` (`dafeiyu_qwen35_nomtp_q4_k_m.gguf`)
-- **硬件显存分配**: 100% 全层 GPU 卸载（33/33 层全部常驻 Tegra Unified Memory）
-  - 8K 上下文显存占用: **5.57 GB**
-  - 256K 上下文显存占用: **17.9 GB**（剩余 >14 GB 显存裕量供其他进程使用）
-- **推理吞吐实测**:
-  - Prompt 评估速度 (TTFT): 255 tokens / 0.37s = **684.23 tokens/s**（首字响应 < 380ms）
-  - 解码输出速度: **22.83 ~ 23.16 tokens/s**（持续稳定输出，无卡顿或显存颠簸）
-- **角色一致性验证**:
-  - 满分抵御越狱、准确申明尾巴身体敏感边界、坚持对大白米饭的偏爱；
-  - 战团负好感度（-100）弹幕激活幽默辛辣回怼（*“嫌难看还赖着不走，莫非是暗恋狂魔？”*），绝无任何 AI 机械致歉；
-  - 严格遵守第三方 UID 对话边界，不自作多情冒充同名第三方发言。
+`dafeiyu-v2:latest` 以 Ollama 0.33.2 的 8K 文本条件运行。历史接口记录约 0.37 秒评估 255 个提示 tokens，解码 22.83 至 23.16 tokens/s。提示评估时间与流式首字、首音分别测量。256K 实开、4-bit K/V、视觉以及音画共驻见当前验收计划。

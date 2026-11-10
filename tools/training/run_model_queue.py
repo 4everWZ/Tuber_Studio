@@ -17,7 +17,6 @@ Automates:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import shutil
@@ -84,7 +83,7 @@ QUEUE_CANDIDATES = [
         "arch": "Gemma 4 Unified Multimodal (Dense)",
         "params": "12B",
         "active_params": "12B",
-        "native_context": "131,072 (128K)",
+        "native_context": "262,144 (256K)",
         "mode": "qlora_4bit",
         "batch_size": 1,
         "grad_accum": 4,
@@ -92,7 +91,7 @@ QUEUE_CANDIDATES = [
         "epochs": 3,
         "max_seq_len": 512,
         "vram": "~7.8 GB (4-bit)",
-        "deploy_sug": "🎨 **多模态大底座主力**：128K 上下文，纯净大白米饭偏执",
+        "deploy_sug": "多模态候选，独立验证处理器、聊天模板、共驻与实际窗口后再选型",
     },
 ]
 
@@ -206,8 +205,8 @@ def update_markdown_report(results: list[dict], report_paths: list[Path]):
         "# 🐟 Tuber Studio 大肥鱼 V2 候选模型微调与矩阵评测全量报告",
         "",
         f"**最后更新时间**: {time.strftime('%Y-%m-%d %H:%M:%S')}",
-        "**测试环境**: Workstation 双卡 NVIDIA RTX 3090 (48GB VRAM), CUDA 13.2, PyTorch 2.10.0+cu130, AGX Orin 64GB (32GB VRAM 配额)",
-        "**核心要求**: 原生 $\\ge 256\\text{K}$ 超长上下文、现代混合线性注意力 / MoE 架构、防爆硬盘自动化运维",
+        "训练环境为 Workstation 双卡 RTX 3090。本表的关键词和三题常识结果用于训练诊断。",
+        "生产选型见[独立持出回放](../../evaluations/results/workstation-candidate-replay-20261110.md)。",
         "",
         "## 1. 候选模型微调对比矩阵",
         "",
@@ -300,7 +299,6 @@ def main():
 
     report_paths = [
         repo_root / "docs" / "specs" / "candidate_models_finetune_matrix.md",
-        repo_root / "candidate_models_finetune_matrix.md",
     ]
 
     results = [dict(c) for c in QUEUE_CANDIDATES]
