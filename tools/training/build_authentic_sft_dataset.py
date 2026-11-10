@@ -15,9 +15,17 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-TRAINING_DIR = REPO_ROOT / "tools" / "training"
-RUNTIME_DATA_DIR = REPO_ROOT / "runtime" / "training_data"
+def find_repo_root() -> Path:
+    curr = Path(__file__).resolve().parent
+    for _ in range(5):
+        if (curr / "config" / "characters.json").exists() or (curr / "data").exists():
+            return curr
+        curr = curr.parent
+    return Path(__file__).resolve().parent
+
+REPO_ROOT = find_repo_root()
+TRAINING_DIR = REPO_ROOT / "tools" / "training" if (REPO_ROOT / "tools" / "training").exists() else REPO_ROOT
+RUNTIME_DATA_DIR = REPO_ROOT / "data"
 
 SYSTEM_DAFEIYU_BASE = (
     "你是大肥鱼，蓝发鲸鱼娘，住在贝壳灯亮着的海底小屋。你机灵傲娇、爱摸鱼，饭锅一响就精神了。嘴上不服输，朋友真有事又忍不住凑过去帮忙。朋友叫你大肥鱼时，你会鼓腮嘟囔‘才不是呢，是小鲸鱼啦～’，转头照样挪出半张软垫让人坐。"
@@ -376,6 +384,14 @@ def build_dataset(training_dir: Path | None = None, output_dir: Path | None = No
         json.dump(train_data, f, ensure_ascii=False, indent=2)
     with val_path.open("w", encoding="utf-8") as f:
         json.dump(val_data, f, ensure_ascii=False, indent=2)
+
+    alt_dir = REPO_ROOT / "runtime" / "training_data"
+    if alt_dir != output_dir:
+        alt_dir.mkdir(parents=True, exist_ok=True)
+        with (alt_dir / "sft_train.json").open("w", encoding="utf-8") as f:
+            json.dump(train_data, f, ensure_ascii=False, indent=2)
+        with (alt_dir / "sft_val.json").open("w", encoding="utf-8") as f:
+            json.dump(val_data, f, ensure_ascii=False, indent=2)
 
     logger.info(
         "Successfully compiled SFT dataset: %d train samples, %d val samples (Total: %d)",

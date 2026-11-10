@@ -31,6 +31,22 @@ logger = logging.getLogger("model_queue")
 
 QUEUE_CANDIDATES = [
     {
+        "id": "qwen35_4b",
+        "name": "Qwen/Qwen3.5-4B",
+        "arch": "Hybrid Linear Attn (Dense)",
+        "params": "4.2B",
+        "active_params": "4.2B",
+        "native_context": "262,144 (256K)",
+        "mode": "bf16",
+        "batch_size": 1,
+        "grad_accum": 4,
+        "lr": 1.5e-4,
+        "epochs": 3,
+        "max_seq_len": 512,
+        "vram": "2.51 GB (Q4_K_M)",
+        "deploy_sug": "⚡ **AGX Orin 极速伴播副模型**：256K 原生长上下文，响应超快",
+    },
+    {
         "id": "qwen35_9b",
         "name": "Qwen/Qwen3.5-9B",
         "arch": "Hybrid Linear Attn + Full Attn (Dense)",
@@ -44,7 +60,7 @@ QUEUE_CANDIDATES = [
         "epochs": 3,
         "max_seq_len": 512,
         "vram": "5.23 GB (Q4_K_M)",
-        "deploy_sug": "🔥 **已装载 AGX Orin 生产主力**：首字延迟 <380ms，解码 23 tok/s",
+        "deploy_sug": "🔥 **AGX Orin 生产主力**：首字延迟 <380ms，解码 23 tok/s",
     },
     {
         "id": "gemma4_12b",
@@ -60,55 +76,7 @@ QUEUE_CANDIDATES = [
         "epochs": 3,
         "max_seq_len": 512,
         "vram": "~7.8 GB (4-bit)",
-        "deploy_sug": "多模态大底座，4-bit 微调评测中",
-    },
-    {
-        "id": "gemma4_e4b",
-        "name": "google/gemma-4-E4B-it",
-        "arch": "Gemma 4 Edge Multimodal (Dense)",
-        "params": "4B",
-        "active_params": "4B",
-        "native_context": "131,072 (128K)",
-        "mode": "bf16",
-        "batch_size": 1,
-        "grad_accum": 4,
-        "lr": 1.5e-4,
-        "epochs": 3,
-        "max_seq_len": 512,
-        "vram": "~3.2 GB (Q4_K_M)",
-        "deploy_sug": "极轻量边缘模型，微调后适宜低功耗伴播",
-    },
-    {
-        "id": "qwen35_4b",
-        "name": "Qwen/Qwen3.5-4B",
-        "arch": "Hybrid Linear Attn (Dense)",
-        "params": "4.2B",
-        "active_params": "4.2B",
-        "native_context": "262,144 (256K)",
-        "mode": "bf16",
-        "batch_size": 1,
-        "grad_accum": 4,
-        "lr": 1.5e-4,
-        "epochs": 3,
-        "max_seq_len": 512,
-        "vram": "~2.8 GB (Q4_K_M)",
-        "deploy_sug": "超轻量 256K 长上下文主力候选，极速响应",
-    },
-    {
-        "id": "gemma4_26b_a4b",
-        "name": "google/gemma-4-26B-A4B-it",
-        "arch": "Gemma 4 MoE (128 experts, Top-8)",
-        "params": "26B",
-        "active_params": "4.1B",
-        "native_context": "262,144 (256K)",
-        "mode": "qlora_4bit",
-        "batch_size": 1,
-        "grad_accum": 4,
-        "lr": 2.0e-4,
-        "epochs": 3,
-        "max_seq_len": 512,
-        "vram": "~14.8 GB (4-bit)",
-        "deploy_sug": "🔥 **离线高灵性创作**：4.1B 激活突破显存带宽瓶颈",
+        "deploy_sug": "🎨 **多模态大底座主力**：128K 上下文，纯净大白米饭偏执",
     },
 ]
 
@@ -162,6 +130,10 @@ def run_command(cmd: list[str], env: dict | None = None) -> int:
 
 def evaluate_model(base_model: str, adapter_dir: Path | None, tools_dir: Path, load_in_4bit: bool = False) -> dict:
     eval_script = tools_dir / "evaluate_finetuned_model.py"
+    if not eval_script.exists():
+        eval_script = tools_dir / "training" / "evaluate_finetuned_model.py"
+    if not eval_script.exists():
+        eval_script = tools_dir.parent / "evaluate_finetuned_model.py"
     cmd = [
         sys.executable,
         str(eval_script),
@@ -293,6 +265,7 @@ def main():
     parser.add_argument("--repo_root", type=Path, default=Path("/home/research-2/code/Tuber_Studio"))
     parser.add_argument("--only_model", type=str, default=None, help="Run only specified candidate ID")
     parser.add_argument("--skip_train", action="store_true", default=False, help="Skip training, run evaluation only")
+    parser.add_argument("--force_retrain", action="store_true", default=False, help="Force retrain from scratch even if adapter exists")
     args = parser.parse_args()
 
     repo_root = args.repo_root
@@ -300,6 +273,14 @@ def main():
     data_dir = repo_root / "data"
     output_base = repo_root / "output_queue"
     output_base.mkdir(parents=True, exist_ok=True)
+
+    # Rebuild authentic clean SFT dataset without any legacy branding
+    build_script = tools_dir / "training" / "build_authentic_sft_dataset.py"
+    if not build_script.exists():
+        build_script = repo_root / "build_authentic_sft_dataset.py"
+    if build_script.exists():
+        logger.info("Compiling 100% clean, authentic SFT dataset via %s...", build_script)
+        run_command([sys.executable, str(build_script), "--output_dir", str(data_dir)])
 
     report_paths = [
         repo_root / "docs" / "specs" / "candidate_models_finetune_matrix.md",
@@ -337,12 +318,18 @@ def main():
         has_adapter = (adapter_output / "adapter_model.safetensors").exists() or (adapter_output / "adapter_model.bin").exists()
 
         if not args.skip_train:
-            if has_adapter:
+            if has_adapter and not args.force_retrain:
                 logger.info("Found existing adapter at %s, proceeding to eval...", adapter_output)
             else:
+                if args.force_retrain and adapter_output.exists():
+                    logger.info("Force retrain specified: removing legacy adapter at %s", adapter_output)
+                    shutil.rmtree(adapter_output, ignore_errors=True)
+                train_script = tools_dir / "train_dora.py"
+                if not train_script.exists():
+                    train_script = repo_root / "train_dora.py"
                 train_cmd = [
                     sys.executable,
-                    str(tools_dir / "train_dora.py"),
+                    str(train_script),
                     "--model_name_or_path",
                     model_name,
                     "--data_dir",

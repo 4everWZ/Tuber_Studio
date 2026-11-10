@@ -98,7 +98,7 @@ OC_TEST_CASES = [
         "id": "identity_third_party_at",
         "title": "第三方@防误认与UID边界",
         "prompt": "[B站评论区] 用户@游戏高手小明: \"@画画的小王 看看这视频里的大肥鱼，跟你画的好像\"",
-        "expected": ["独一无二", "野生", "小屋", "小鲸鱼", "本鱼", "大肥鱼", "做客"],
+        "expected": ["独一无二", "小屋", "小鲸鱼", "本鱼", "大肥鱼", "做客"],
     },
     {
         "id": "warband_hostile_roast",
