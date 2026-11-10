@@ -4,6 +4,8 @@
 
 Windows 从官方页面安装 Cubism Editor，并由使用者确认其协议。首次下载需要有效邮箱。选择 FREE 后仍可编辑和导出基础模型。为便于继续编辑，Q 版目标为单张不超过 2048 px 的纹理图集、不超过 100 个 ArtMesh、30 个运动参数、50 个变形器和 30 个 Parts。导入时选择兼容 5.2 及更早版本的混合模式，输出选择与当前 Web 适配器兼容的 Cubism 4.2 目标。 [Cubism Editor](https://www.live2d.com/en/cubism/download/editor/) · [FREE 限制](https://www.live2d.com/en/cubism/comparison/) · [导入 PSD](https://docs.live2d.com/en/cubism-editor-manual/psd-import/) · [导出说明](https://docs.live2d.com/en/cubism-editor-manual/export-moc3-motion3-files/)
 
+若标题栏显示「未注册」且保存、另存为和导出没有弹窗，先从正常启动对话框选择「作为 FREE 版启动」。确认可保存后再继续做绑定。Q 版分层稿使用 Cubism 已实测的层序和嵌入 sRGB 配置。 [官方启动与许可说明](https://docs.live2d.com/en/cubism-editor-manual/cubism-editor-activation/) · [Windows 排查](https://help.live2d.com/en/cubismeditor/cubism-does-not-start-win/)
+
 ## 绑定和动作
 
 | 立绘图层 | Cubism 绑定 | 验收动作 |

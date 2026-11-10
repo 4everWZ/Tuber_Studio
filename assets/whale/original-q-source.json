@@ -61,13 +61,13 @@
     "Flower",
     "Hand_Details"
   ],
-  "rig_export": "pending_editor",
+  "rig_export": "blocked_editor_unregistered",
   "usage": "personal and non-commercial streaming",
   "files": [
     "dafeiyu-q-original.svg",
     "dafeiyu-q-layered.psd",
     "dafeiyu-q-preview.png"
   ],
-  "artifact_dir": "runtime/releases/dafeiyu-avatar/0.1.0",
-  "license_scope": "local and noncommercial"
+  "native_editor_evidence": "evaluations/results/live2d-native-preflight-20261111.json",
+  "artifact_dir": "runtime/releases/dafeiyu-avatar/0.1.0"
 }

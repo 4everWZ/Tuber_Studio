@@ -1,0 +1,37 @@
+{
+  "editor": {
+    "version": "5.3.04",
+    "sdk_target": "4.2",
+    "psd_import": "verified",
+    "visual_layer_order": "verified",
+    "artmeshes": 54,
+    "canvas": [
+      1200,
+      1600
+    ],
+    "mouth_preview": {
+      "parameter": "ParamMouthOpenY",
+      "art_mesh": "Mouth_Interior",
+      "closed_opacity_percent": 0,
+      "open_opacity_percent": 100
+    },
+    "license_state": "unregistered",
+    "save_export": "blocked",
+    "license_dialog_error": "java.lang.NullPointerException: must not be null",
+    "cmo3": false,
+    "can3": false,
+    "moc3": false
+  },
+  "obs_fallback": {
+    "obs": "33.0.1",
+    "source": "CEF browser_source",
+    "canvas": [
+      1280,
+      720
+    ],
+    "transparent_corners": true,
+    "playback_ack": "completed",
+    "first_audio_ms": 179,
+    "stream_active": false
+  }
+}
