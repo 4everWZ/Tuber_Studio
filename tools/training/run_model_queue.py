@@ -278,7 +278,7 @@ def update_markdown_report(results: list[dict], report_paths: list[Path]):
 
 def main():
     parser = argparse.ArgumentParser(description="Run multi-model candidate queue with automated safety and markdown.")
-    parser.add_argument("--repo_root", type=Path, default=Path("/home/research-2/code/Tuber_Studio"))
+    parser.add_argument("--repo_root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--only_model", type=str, default=None, help="Run only specified candidate ID")
     parser.add_argument("--skip_train", action="store_true", default=False, help="Skip training, run evaluation only")
     parser.add_argument("--force_retrain", action="store_true", default=False, help="Force retrain from scratch even if adapter exists")

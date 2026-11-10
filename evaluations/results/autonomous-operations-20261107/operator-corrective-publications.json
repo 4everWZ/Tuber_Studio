@@ -9,7 +9,7 @@
       "intent_id": "a637aeb6-ced7-43da-b690-f7948e3fc407",
       "authorship": "operator_revision",
       "model_acceptance": false,
-      "account_uid": "3706944382568764",
+      "account_uid": "911663982327390",
       "character_id": "whale",
       "character_version": 3,
       "target": {
@@ -39,7 +39,7 @@
         "error_type": null
       },
       "observed_publication": {
-        "author_uid": "3706944382568764",
+        "author_uid": "911663982327390",
         "parent": "323229110432",
         "text": "回复 @凉宫春日の随波逐流 :白饭锅家的……刚才接错频道，尾巴都尴尬得僵住了。这锅我认，饭别扣。",
         "mentions": [
@@ -71,7 +71,7 @@
       "intent_id": "1c076caf-b75b-4c02-bc3c-75bb10182b57",
       "authorship": "operator_revision",
       "model_acceptance": false,
-      "account_uid": "3706944382568764",
+      "account_uid": "911663982327390",
       "character_id": "whale",
       "character_version": 3,
       "target": {
@@ -101,7 +101,7 @@
         "error_type": null
       },
       "observed_publication": {
-        "author_uid": "3706944382568764",
+        "author_uid": "911663982327390",
         "parent": "323230681024",
         "text": "回复 @神射手夜空 :是我接错话了，你喊的是另一位，我的尾巴倒先到了。脑子：没在叫我。尾巴：已到场。你们继续，我退后两步。",
         "mentions": [
@@ -124,7 +124,7 @@
       "intent_id": "8104f6b9-be2b-4f1e-82d8-b105d8854fc4",
       "authorship": "operator_revision",
       "model_acceptance": false,
-      "account_uid": "3706944382568764",
+      "account_uid": "911663982327390",
       "character_id": "whale",
       "character_version": 3,
       "target": {
@@ -154,7 +154,7 @@
         "error_type": null
       },
       "observed_publication": {
-        "author_uid": "3706944382568764",
+        "author_uid": "911663982327390",
         "parent": "323231188736",
         "text": "回复 @梓沫骐大大 :对，接串了。刚才那段属于饭熟了，脑子没熟。我先把脑子盛回来，再好好说话。",
         "mentions": [

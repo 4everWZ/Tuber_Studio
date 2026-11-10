@@ -1,11 +1,12 @@
 """Register the uploaded GGUF blob into Ollama as an active model."""
 
 import json
+import os
 import sys
 import urllib.request
 
-host = sys.argv[1] if len(sys.argv) > 1 else "100.65.102.90"
-port = sys.argv[2] if len(sys.argv) > 2 else "11434"
+host = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TUBER_OLLAMA_HOST", "127.0.0.1")
+port = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("TUBER_OLLAMA_PORT", "11434")
 digest = sys.argv[3] if len(sys.argv) > 3 else "0a4049abc7f8b7765ed2e3bfaf229de7f3162f4998b0e14bf09d36a3642d194a"
 model_name = sys.argv[4] if len(sys.argv) > 4 else "dafeiyu-v2"
 
@@ -20,7 +21,7 @@ PARAMETER stop "<|endoftext|>"
 SYSTEM "{SYSTEM_PROMPT}"
 """
 
-print(f"Creating model '{model_name}' on http://{host}:{port}/api/create...")
+print(f"Creating model '{model_name}' on configured Ollama endpoint...")
 create_payload = {
     "name": model_name,
     "files": {"dafeiyu_qwen35_4b_nomtp_q4_k_m.gguf": f"sha256:{digest}"},

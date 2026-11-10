@@ -328,11 +328,11 @@
       "runner_environment": "github-hosted",
       "cleaned_sdk_paths": [],
       "free_before_bytes": {
-        "/home/runner/work/Tuber_Studio/Tuber_Studio": 114232242176,
+        "~/work/Tuber_Studio/Tuber_Studio": 114232242176,
         "/var/lib/docker": 114232242176
       },
       "free_after_bytes": {
-        "/home/runner/work/Tuber_Studio/Tuber_Studio": 114232242176,
+        "~/work/Tuber_Studio/Tuber_Studio": 114232242176,
         "/var/lib/docker": 114232242176
       }
     },

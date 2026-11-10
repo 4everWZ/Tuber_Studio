@@ -6,7 +6,7 @@
     "base_model_class": "MiniCPMV4_7ForConditionalGeneration",
     "parent_library": "transformers.models.minicpmv4_7.modeling_minicpmv4_7"
   },
-  "base_model_name_or_path": "/home/research-2/.cache/huggingface/hub/models--openbmb--MiniCPM-V-4.7-1B/snapshots/ad9bf379feb71204c888b22923d63322452407f9",
+  "base_model_name_or_path": "~/.cache/huggingface/hub/models--openbmb--MiniCPM-V-4.7-1B/snapshots/ad9bf379feb71204c888b22923d63322452407f9",
   "bias": "none",
   "corda_config": null,
   "ensure_weight_tying": false,

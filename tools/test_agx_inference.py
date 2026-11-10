@@ -2,10 +2,11 @@
 import json
 import time
 import urllib.request
+import os
 import sys
 
-host = sys.argv[1] if len(sys.argv) > 1 else "100.65.102.90"
-port = sys.argv[2] if len(sys.argv) > 2 else "11434"
+host = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TUBER_OLLAMA_HOST", "127.0.0.1")
+port = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("TUBER_OLLAMA_PORT", "11434")
 model = sys.argv[3] if len(sys.argv) > 3 else "dafeiyu-4b:latest"
 prompt = sys.argv[4] if len(sys.argv) > 4 else "大肥鱼！今晚给你煮了一大锅热气腾腾的大白米饭，快来吃！"
 
@@ -15,7 +16,7 @@ payload = {
     "stream": False,
 }
 
-print(f"Sending prompt to http://{host}:{port}/api/generate...")
+print(f"Sending prompt to configured Ollama endpoint...")
 print(f"Model: {model}")
 print(f"Prompt: {prompt}")
 

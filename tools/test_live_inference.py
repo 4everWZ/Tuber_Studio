@@ -1,13 +1,14 @@
 import json
+import os
 import time
 import urllib.request
 
-host = "100.65.102.90"
-port = "11434"
+host = os.environ.get("TUBER_OLLAMA_HOST", "127.0.0.1")
+port = os.environ.get("TUBER_OLLAMA_PORT", "11434")
 model = "dafeiyu-v2"
 
 prompt = "大肥鱼！叫你呢大肥鱼！今晚吃啥？"
-print(f"Testing live inference on http://{host}:{port} with model '{model}'...")
+print(f"Testing live inference with model '{model}'...")
 print(f"User prompt: {prompt}")
 
 payload = {

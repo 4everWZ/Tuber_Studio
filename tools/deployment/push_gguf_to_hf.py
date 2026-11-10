@@ -9,12 +9,13 @@ from huggingface_hub import HfApi, create_repo
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("hf_upload_gguf")
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 api = HfApi()
 
 GGUF_MODELS = [
     {
         "repo_id": "4everImmortality/dafeiyu-qwen35-4b-gguf",
-        "file_path": Path("/home/research-2/code/Tuber_Studio/runtime/merged_models/dafeiyu_qwen35_4b_merged/dafeiyu_qwen35_4b_nomtp_q4_k_m.gguf"),
+        "file_path": REPO_ROOT / "runtime/merged_models/dafeiyu_qwen35_4b_merged/dafeiyu_qwen35_4b_nomtp_q4_k_m.gguf",
         "filename": "dafeiyu_qwen35_4b_nomtp_q4_k_m.gguf",
         "base_model": "Qwen/Qwen3.5-4B",
         "title": "Dafeiyu V2 - Qwen 3.5 4B GGUF (Q4_K_M)",
@@ -23,7 +24,7 @@ GGUF_MODELS = [
     },
     {
         "repo_id": "4everImmortality/dafeiyu-qwen35-9b-gguf",
-        "file_path": Path("/home/research-2/code/Tuber_Studio/runtime/merged_models/dafeiyu_qwen35_merged/dafeiyu_qwen35_nomtp_q4_k_m.gguf"),
+        "file_path": REPO_ROOT / "runtime/merged_models/dafeiyu_qwen35_merged/dafeiyu_qwen35_nomtp_q4_k_m.gguf",
         "filename": "dafeiyu_qwen35_nomtp_q4_k_m.gguf",
         "base_model": "Qwen/Qwen3.5-9B",
         "title": "Dafeiyu V2 - Qwen 3.5 9B GGUF (Q4_K_M)",

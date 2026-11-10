@@ -57,7 +57,7 @@ async def test_public_fetch_pins_address_and_rejects_private_redirect(monkeypatc
     client = httpx.AsyncClient
 
     async def resolve(host, port, **kwargs):
-        address = "100.95.31.18" if host == "private.example.org" else "93.184.215.14"
+        address = "100.64.0.42" if host == "private.example.org" else "93.184.215.14"
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
 
     def response(request):

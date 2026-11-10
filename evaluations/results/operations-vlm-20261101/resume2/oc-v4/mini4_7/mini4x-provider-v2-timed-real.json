@@ -55,31 +55,31 @@
   },
   "inputs": {
     "registry": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\evaluations\\candidates\\vlm-operations.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\evaluations\\candidates\\vlm-operations.json",
       "sha256": "98c0965613ccd0bb7e6d336b49fb679359a0e443e97edc9bc70f48e7ef1adc86"
     },
     "owner": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-ready-proof-v2-timed\\owner.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-ready-proof-v2-timed\\owner.json",
       "sha256": "e94aeec01d3138b3f6fe00a51c1814de959478887c0af82c740b6c1090ce7de7"
     },
     "metrics": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-ready-proof-v2-timed\\metrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-ready-proof-v2-timed\\metrics.json",
       "sha256": "ecef6a518b15d82a29204b11d0532f906485a41797292f736a94b5197dc4ab3c"
     },
     "manifest": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\storyboard-report.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\storyboard-report.json",
       "sha256": "71273b7f4002fbdd8b11582f23268739ef624c85584787a2a127c52d99677e78"
     },
     "metadata_report": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e4b-v4-bilibili-sequential-run.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e4b-v4-bilibili-sequential-run.json",
       "sha256": "eaa06ae72d8664ba5a65abbb72db0f4d402bb3b8ec1569eedcdf4b5368c3672c"
     },
     "sampling_json": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-provider-sampling.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-provider-sampling.json",
       "sha256": "9ff32b983c5aa558129505bd296910e15e66d52e4a894a922d754211d2c562c9"
     },
     "resource_proof": {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-video-resource-proof-v2-timed.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-video-resource-proof-v2-timed.json",
       "sha256": "72a395d2e8a69e74601938804366b3e46af857c371c5eddb8741f8dbea371971"
     }
   },
@@ -942,7 +942,7 @@
     "backend_sampling": false,
     "lora": []
   },
-  "runtime_directory": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-provider-v2-timed-runtime",
+  "runtime_directory": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\mini4x-provider-v2-timed-runtime",
   "helper_sha256": "989cc8459c6970e8ef1b717d6484144538a53407f1e34b5f3e7016918be56308",
   "software_sha256": {
     "video_vision.py": "7d9c4af948c09596d145a70604854e106a5e4cfd563d89d3ef5cd468ac5264c7",

@@ -44,7 +44,7 @@
     "optional_asset_images": [
       {
         "ref": "frame:1",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -59,7 +59,7 @@
       },
       {
         "ref": "frame:2",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -74,7 +74,7 @@
       },
       {
         "ref": "frame:3",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,

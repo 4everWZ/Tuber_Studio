@@ -7,7 +7,7 @@ from tuber_studio.http_api import endpoint
 def test_business_modes_preserve_operator_data_and_separate_thinking_models(settings):
     original = settings.data | {"llm": settings.data["llm"] | {"max_tokens": 160}}
     original["operator_extension"] = {"keep": "unchanged"}
-    data = business_configuration(original, "http://100.95.31.18:9012")
+    data = business_configuration(original, "http://100.64.0.42:9012")
     settings._validate(data)
     assert data["llm"]["model"] == "Gemma4-E2B"
     assert data["llm"]["context_tokens"] == 131072

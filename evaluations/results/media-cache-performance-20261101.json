@@ -738,7 +738,7 @@
           "pid": null,
           "migu_configured": false
         },
-        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "source_root": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
         "process_peak_rss_bytes": 54988800,
         "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
       },
@@ -1447,7 +1447,7 @@
           "pid": null,
           "migu_configured": false
         },
-        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "source_root": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
         "process_peak_rss_bytes": 59494400,
         "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
       },
@@ -2156,7 +2156,7 @@
           "pid": null,
           "migu_configured": false
         },
-        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "source_root": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
         "process_peak_rss_bytes": 72400896,
         "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
       }
@@ -2882,7 +2882,7 @@
           "pid": null,
           "migu_configured": false
         },
-        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "source_root": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
         "process_peak_rss_bytes": 54276096,
         "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
       },
@@ -3588,7 +3588,7 @@
           "pid": null,
           "migu_configured": false
         },
-        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "source_root": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
         "process_peak_rss_bytes": 56225792,
         "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
       },
@@ -4294,7 +4294,7 @@
           "pid": null,
           "migu_configured": false
         },
-        "source_root": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
+        "source_root": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\worktrees\\media-cache-performance",
         "process_peak_rss_bytes": 64700416,
         "fixture": "All files in online_music; music catalog, queue, tasks and other cache pools empty"
       }

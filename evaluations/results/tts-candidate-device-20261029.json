@@ -44,7 +44,7 @@
       "/workspace/tuber/runtime/evaluations/tts-candidates/installation-verification.json",
       "/workspace/tuber/runtime/evaluations/tts-candidates/installer.log"
     ],
-    "host_bundle_directory": "/home/weizheng/code/Tuber_Studio/runtime/evaluations/tts-candidates",
+    "host_bundle_directory": "~/code/Tuber_Studio/runtime/evaluations/tts-candidates",
     "receipt_observation": "Original installation receipt, installation-verification.json and installer.log were retrieved after the stopped campaign. The 249/249 production version/path comparison is from that earlier installation phase, not an operator or model test.",
     "full_receipts_retrieved_locally": true,
     "installed_only_in_candidate_venv": [
@@ -169,7 +169,7 @@
     "controller_sha256": "6a084a360d8b4cde6cc122a87e5041200b309b4a9c7603d8393069cb01a01d64",
     "local_and_remote_controller_hash_matched_before_launch": true,
     "evidence_directory": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3",
-    "host_evidence_directory": "/home/weizheng/code/Tuber_Studio/runtime/tmp/tts-candidates-c6d8dd3",
+    "host_evidence_directory": "~/code/Tuber_Studio/runtime/tmp/tts-candidates-c6d8dd3",
     "campaign_receipt": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3/campaign.json",
     "launch_log": "/workspace/tuber/runtime/tmp/tts-candidates-c6d8dd3-launch.log",
     "full_raw_campaign_retrieved_locally": true,

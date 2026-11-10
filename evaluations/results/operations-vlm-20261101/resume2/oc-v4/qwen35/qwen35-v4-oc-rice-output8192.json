@@ -49,7 +49,7 @@
     "optional_asset_images": [
       {
         "ref": "frame:1",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -79,14 +79,14 @@
             "operation": "identity"
           },
           "official_sources": [],
-          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+          "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
           "bytes": 7104,
-          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg"
+          "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg"
         }
       },
       {
         "ref": "frame:2",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -116,14 +116,14 @@
             "operation": "identity"
           },
           "official_sources": [],
-          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+          "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
           "bytes": 8793,
-          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg"
+          "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg"
         }
       },
       {
         "ref": "frame:3",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -153,9 +153,9 @@
             "operation": "identity"
           },
           "official_sources": [],
-          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+          "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
           "bytes": 7895,
-          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg"
+          "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg"
         }
       }
     ],
@@ -186,9 +186,9 @@
           "operation": "identity"
         },
         "official_sources": [],
-        "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rice-output8192.fixture.png",
+        "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rice-output8192.fixture.png",
         "bytes": 2796,
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rice-output8192.fixture.png"
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\qwen35-v4-oc-rice-output8192.fixture.png"
       }
     }
   },

@@ -51,7 +51,7 @@ def test_direct_loopback_workbench_needs_no_management_token(settings, monkeypat
         assert local.post("/api/live/stop", headers={"Origin": "http://localhost:8019"}).status_code == 403
     with TestClient(
         create_app(settings, ReadOnlyPlatform()),
-        client=("100.64.0.2", 49152),
+        client=("100.64.0.42", 49152),
         base_url="http://localhost:8020",
     ) as remote:
         assert remote.get("/api/status").status_code == 401

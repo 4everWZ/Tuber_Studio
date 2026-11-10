@@ -71,7 +71,7 @@
 | **GGUF 量化包** | Qwen 3.5 4B | [4everImmortality/dafeiyu-qwen35-4b-gguf](https://huggingface.co/4everImmortality/dafeiyu-qwen35-4b-gguf) | 2.51 GB (Q4_K_M) | 适用于边缘端/个人电脑极速推论 |
 | **GGUF 量化包** | Qwen 3.5 9B | [4everImmortality/dafeiyu-qwen35-9b-gguf](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf) | 5.23 GB (Q4_K_M) | 适用于 24G+ 显存/AGX 深度长文创作 |
 
-### B. AGX Orin 边缘端运行拓扑 (`100.65.102.90:11434`)
+### B. AGX Orin 边缘端运行拓扑 (`192.0.2.104:11434`)
 
 - **`dafeiyu-v2:latest`** (Qwen 3.5 9B Q4_K_M): 驻留显存 ~5.6 GB，解码速率 **23.1 tokens/s**，主理多轮复杂企划与深海电台角色扮演；
 - **`dafeiyu-4b:latest`** (Qwen 3.5 4B Q4_K_M `--no-mtp`): 驻留显存 ~3.2 GB，解码速率 **32.7 tokens/s**，首字延迟 <180ms，主理实时直播弹幕与伴播应答。

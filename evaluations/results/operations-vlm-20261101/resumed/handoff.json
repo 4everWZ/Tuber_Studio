@@ -47,7 +47,7 @@
   "restore_command": [
     "ssh",
     "-o",
-    "HostName=192.168.1.182",
+    "HostName=198.51.100.165",
     "-o",
     "ConnectTimeout=5",
     "jetson",

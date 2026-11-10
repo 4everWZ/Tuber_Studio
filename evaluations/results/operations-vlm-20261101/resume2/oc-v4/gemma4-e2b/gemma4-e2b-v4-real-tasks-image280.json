@@ -47,7 +47,7 @@
     "optional_asset_images": [
       {
         "ref": "frame:1",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -92,14 +92,14 @@
             "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
             "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
           ],
-          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
+          "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-10.jpg",
           "bytes": 145613,
-          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\frame-1-gemma4_image_280.png"
+          "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\frame-1-gemma4_image_280.png"
         }
       },
       {
         "ref": "frame:2",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -144,14 +144,14 @@
             "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
             "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
           ],
-          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
+          "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-20.jpg",
           "bytes": 183973,
-          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\frame-2-gemma4_image_280.png"
+          "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\frame-2-gemma4_image_280.png"
         }
       },
       {
         "ref": "frame:3",
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
         "mime_type": "image/jpeg",
         "width": 480,
         "height": 270,
@@ -196,9 +196,9 @@
             "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
             "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
           ],
-          "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
+          "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\platform-real\\837470340-35.jpg",
           "bytes": 155380,
-          "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\frame-3-gemma4_image_280.png"
+          "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\frame-3-gemma4_image_280.png"
         }
       }
     ],
@@ -244,9 +244,9 @@
           "https://huggingface.co/google/gemma-4-E4B-it/blob/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json",
           "https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/models/gemma4/image_processing_pil_gemma4.py"
         ],
-        "parent_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.fixture.png",
+        "parent_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.fixture.png",
         "bytes": 13108,
-        "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\fixture-shapes-gemma4_image_280.png"
+        "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\resume2\\gemma4-e2b-v4-real-tasks-image280.images\\fixture-shapes-gemma4_image_280.png"
       }
     }
   },
@@ -1578,7 +1578,7 @@
                     "必剪创作"
                   ],
                   "tags_missing": false,
-                  "owner_uid": "4241505",
+                  "owner_uid": "909305952413360",
                   "owner": "乐乐妈妈与乐乐",
                   "duration": 45.0,
                   "parts": [
@@ -1696,7 +1696,7 @@
                 "必剪创作"
               ],
               "tags_missing": false,
-              "owner_uid": "4241505",
+              "owner_uid": "909305952413360",
               "owner": "乐乐妈妈与乐乐",
               "duration": 45.0,
               "parts": [

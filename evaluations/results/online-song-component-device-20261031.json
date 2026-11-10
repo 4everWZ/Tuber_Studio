@@ -11,7 +11,7 @@
   "image_digest": "sha256:4b3d0deb9bd9608e801f7c202748e69a84d55ef8cc096d54b3f5053894c7e4ee",
   "image_id": "sha256:ad133997e55e3c95356548fb47e501917180ad2b6fb45f51e38ca3bf7648b965",
   "base_environment_reused": "ghcr.io/4everwz/tuber_studio:env-ff99292f7ae1efb88a7a367d",
-  "source_directory": "/home/weizheng/code/Tuber_Studio/releases/2b452cae235a435f3e4a242a026e35cfaecddd33/program",
+  "source_directory": "~/code/Tuber_Studio/releases/2b452cae235a435f3e4a242a026e35cfaecddd33/program",
   "preserved": {
     "studio.json": true,
     "admin-token": true,
@@ -83,7 +83,7 @@
     "mode": "text",
     "migu_configured": false
   },
-  "backup": "/home/weizheng/code/Tuber_Studio/runtime/backups/before-online-component-20261031-153546",
+  "backup": "~/code/Tuber_Studio/runtime/backups/before-online-component-20261031-153546",
   "external_platform_messages_or_broadcasts": false,
   "not_validated": [
     "Migu authenticated source retrieval: MIGU_COOKIE not configured.",

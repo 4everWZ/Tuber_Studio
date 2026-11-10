@@ -43,7 +43,7 @@
     "decision_max_tokens": 4096
   },
   "character": {
-    "source_file": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-vlm\\character.json",
+    "source_file": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-vlm\\character.json",
     "imported_fields": [
       "core",
       "style",

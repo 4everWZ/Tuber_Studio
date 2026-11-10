@@ -15,8 +15,8 @@
   "anonymous_registry_manifest_status": 200,
   "new_layer_bytes": 349175542,
   "program_archive_sha256": "cc06a4b5c75d554797623e7936834d1e241d9597203c991535f15e5c0f1d06d7",
-  "source_directory": "/home/weizheng/code/Tuber_Studio/releases/35f81e609c920b039cddcc16ba1018aae29eb09c/program",
-  "data_directory": "/home/weizheng/code/Tuber_Studio/runtime",
+  "source_directory": "~/code/Tuber_Studio/releases/35f81e609c920b039cddcc16ba1018aae29eb09c/program",
+  "data_directory": "~/code/Tuber_Studio/runtime",
   "image_without_program_mount": {
     "image_has_application": false,
     "image_has_assets": false,
@@ -96,7 +96,7 @@
   },
   "rollback": {
     "old_image": "sha256:42b4a8468d232b283d8d612d799840b70dc1b5400f968c866c61312b4f1d3b58",
-    "backup": "/home/weizheng/code/Tuber_Studio/runtime/backups/environment-migration-20261031-140425"
+    "backup": "~/code/Tuber_Studio/runtime/backups/environment-migration-20261031-140425"
   },
   "transport": "GHCR layer CDN direct download stalled; temporary loopback transport used existing operator proxy. Official GHCR digest subsequently confirmed, temporary transport closed before service startup. Docker daemon settings unchanged.",
   "external_platform_messages_sent": false,

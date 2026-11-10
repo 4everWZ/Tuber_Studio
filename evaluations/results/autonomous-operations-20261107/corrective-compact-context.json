@@ -63,12 +63,12 @@
         "root": "323225083008",
         "parent": "323228019488",
         "created_at": 1794045978,
-        "author_uid": "562115830",
+        "author_uid": "914858269716903",
         "author_name": "凉宫春日の随波逐流",
         "text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了",
         "mentions": [
           {
-            "uid": "3706944382568764",
+            "uid": "911663982327390",
             "name": "大肥鱼只想过平静生活"
           }
         ]
@@ -79,16 +79,16 @@
         "bvid": "BV1RLH367EQN",
         "root": "323225083008",
         "parent": "323229110432",
-        "recipient": "562115830",
+        "recipient": "914858269716903",
         "recipient_name": "凉宫春日の随波逐流",
         "source_text": "回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了"
       },
       "parent_verified": true,
       "actor": {
         "platform": "bilibili",
-        "account_uid": "3706944382568764",
-        "account_display_name": "大肥鱼只想过平静生活",
-        "account_bio": "【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。",
+        "account_uid": "911663982327390",
+        "account_display_name": "账号资料（已脱敏）",
+        "account_bio": "账号资料（已脱敏）",
         "character_id": "whale",
         "character_name": "大肥鱼",
         "character_version": 3,
@@ -106,7 +106,7 @@
         },
         {
           "role": "user",
-          "content": "上下文数据：{\"active_lore\": [], \"confirmed_relationship\": {}, \"self_actor\": {\"platform\": \"bilibili\", \"account_uid\": \"3706944382568764\", \"account_display_name\": \"大肥鱼只想过平静生活\", \"account_bio\": \"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\", \"character_id\": \"whale\", \"character_name\": \"大肥鱼\", \"character_version\": 3, \"identity_version\": \"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}, \"reply_target\": {\"comment_id\": \"323229110432\", \"author_uid\": \"562115830\", \"author_name\": \"凉宫春日の随波逐流\", \"relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}], \"text_ref\": \"当前观众消息.text\"}, \"comment_context\": {\"source\": {\"comment_id\": \"323229110432\", \"author_uid\": \"562115830\", \"author_name\": \"凉宫春日の随波逐流\", \"text_ref\": \"当前观众消息.text\"}, \"target\": {\"type\": 1, \"oid\": \"117498812894686\", \"bvid\": \"BV1RLH367EQN\", \"root\": \"323225083008\", \"parent\": \"323229110432\"}, \"parent\": {\"comment_id\": \"323228019488\", \"author_uid\": \"3706944382568764\", \"author_name\": \"大肥鱼只想过平静生活\", \"fact_summary\": \"我误接了其他账号的交流/跑题\", \"relation_to_self\": \"self\"}, \"root\": {\"comment_id\": \"323225083008\", \"author_uid\": \"562115830\", \"mentions\": [{\"uid\": \"1657031863\", \"name\": \"荡漾のDarling\"}], \"relation_to_source\": \"当前评论作者也是根楼作者\", \"relation_to_self\": \"other\"}, \"addressing\": {\"source_mentions\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\"}], \"source_parent_comment_id\": \"323228019488\", \"source_root_comment_id\": \"323225083008\", \"conversation_relation\": \"该评论正在回复你\", \"source_relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}]}}}"
+          "content": "上下文数据：{\"active_lore\": [], \"confirmed_relationship\": {}, \"self_actor\": {\"platform\": \"bilibili\", \"account_uid\": \"911663982327390\", \"account_display_name\": \"大肥鱼只想过平静生活\", \"account_bio\": \"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\", \"character_id\": \"whale\", \"character_name\": \"大肥鱼\", \"character_version\": 3, \"identity_version\": \"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}, \"reply_target\": {\"comment_id\": \"323229110432\", \"author_uid\": \"914858269716903\", \"author_name\": \"凉宫春日の随波逐流\", \"relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}], \"text_ref\": \"当前观众消息.text\"}, \"comment_context\": {\"source\": {\"comment_id\": \"323229110432\", \"author_uid\": \"914858269716903\", \"author_name\": \"凉宫春日の随波逐流\", \"text_ref\": \"当前观众消息.text\"}, \"target\": {\"type\": 1, \"oid\": \"117498812894686\", \"bvid\": \"BV1RLH367EQN\", \"root\": \"323225083008\", \"parent\": \"323229110432\"}, \"parent\": {\"comment_id\": \"323228019488\", \"author_uid\": \"911663982327390\", \"author_name\": \"大肥鱼只想过平静生活\", \"fact_summary\": \"我误接了其他账号的交流/跑题\", \"relation_to_self\": \"self\"}, \"root\": {\"comment_id\": \"323225083008\", \"author_uid\": \"914858269716903\", \"mentions\": [{\"uid\": \"1657031863\", \"name\": \"荡漾のDarling\"}], \"relation_to_source\": \"当前评论作者也是根楼作者\", \"relation_to_self\": \"other\"}, \"addressing\": {\"source_mentions\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\"}], \"source_parent_comment_id\": \"323228019488\", \"source_root_comment_id\": \"323225083008\", \"conversation_relation\": \"该评论正在回复你\", \"source_relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}]}}}"
         },
         {
           "role": "user",
@@ -114,11 +114,11 @@
         },
         {
           "role": "user",
-          "content": "当前观众消息：{\"event_id\": \"repair-followup:1:323229110432\", \"platform\": \"bilibili\", \"account_id\": \"3706944382568764\", \"display_name\": \"凉宫春日の随波逐流\", \"platform_user_id\": \"562115830\", \"text\": \"回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了\", \"video_id\": \"BV1RLH367EQN\", \"thread_id\": \"323225083008\", \"parent_comment_id\": \"323228019488\", \"platform_comment_id\": \"323229110432\"}"
+          "content": "当前观众消息：{\"event_id\": \"repair-followup:1:323229110432\", \"platform\": \"bilibili\", \"account_id\": \"911663982327390\", \"display_name\": \"凉宫春日の随波逐流\", \"platform_user_id\": \"914858269716903\", \"text\": \"回复 @大肥鱼只想过平静生活 :这是谁家的大肥鱼？你说啥了\", \"video_id\": \"BV1RLH367EQN\", \"thread_id\": \"323225083008\", \"parent_comment_id\": \"323228019488\", \"platform_comment_id\": \"323229110432\"}"
         },
         {
           "role": "system",
-          "content": "回应当前观众，spoken_text填写你的角色台词。按当前交流自然决定篇幅。JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
+          "content": "回应当前观众，spoken_text填写你的角色台词。按当前交流自然决定篇幅。JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"911663982327390\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
         }
       ],
       "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
@@ -200,12 +200,12 @@
         "root": "323230417440",
         "parent": "323230646496",
         "created_at": 1794046835,
-        "author_uid": "651766039",
+        "author_uid": "915689753323009",
         "author_name": "神射手夜空",
         "text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了",
         "mentions": [
           {
-            "uid": "3706944382568764",
+            "uid": "911663982327390",
             "name": "大肥鱼只想过平静生活"
           }
         ]
@@ -216,16 +216,16 @@
         "bvid": "BV1UexK6eEjB",
         "root": "323230417440",
         "parent": "323230681024",
-        "recipient": "651766039",
+        "recipient": "915689753323009",
         "recipient_name": "神射手夜空",
         "source_text": "回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了"
       },
       "parent_verified": true,
       "actor": {
         "platform": "bilibili",
-        "account_uid": "3706944382568764",
-        "account_display_name": "大肥鱼只想过平静生活",
-        "account_bio": "【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。",
+        "account_uid": "911663982327390",
+        "account_display_name": "账号资料（已脱敏）",
+        "account_bio": "账号资料（已脱敏）",
         "character_id": "whale",
         "character_name": "大肥鱼",
         "character_version": 3,
@@ -243,7 +243,7 @@
         },
         {
           "role": "user",
-          "content": "上下文数据：{\"active_lore\": [], \"confirmed_relationship\": {}, \"self_actor\": {\"platform\": \"bilibili\", \"account_uid\": \"3706944382568764\", \"account_display_name\": \"大肥鱼只想过平静生活\", \"account_bio\": \"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\", \"character_id\": \"whale\", \"character_name\": \"大肥鱼\", \"character_version\": 3, \"identity_version\": \"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}, \"reply_target\": {\"comment_id\": \"323230681024\", \"author_uid\": \"651766039\", \"author_name\": \"神射手夜空\", \"relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}], \"text_ref\": \"当前观众消息.text\"}, \"comment_context\": {\"source\": {\"comment_id\": \"323230681024\", \"author_uid\": \"651766039\", \"author_name\": \"神射手夜空\", \"text_ref\": \"当前观众消息.text\"}, \"target\": {\"type\": 1, \"oid\": \"117510674385346\", \"bvid\": \"BV1UexK6eEjB\", \"root\": \"323230417440\", \"parent\": \"323230681024\"}, \"parent\": {\"comment_id\": \"323230646496\", \"author_uid\": \"3706944382568764\", \"author_name\": \"大肥鱼只想过平静生活\", \"fact_summary\": \"我误接了其他账号的交流/跑题\", \"relation_to_self\": \"self\"}, \"root\": {\"comment_id\": \"323230417440\", \"author_uid\": \"651766039\", \"mentions\": [{\"uid\": \"3546884939451239\", \"name\": \"神射手空夜\"}], \"relation_to_source\": \"当前评论作者也是根楼作者\", \"relation_to_self\": \"other\"}, \"addressing\": {\"source_mentions\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\"}], \"source_parent_comment_id\": \"323230646496\", \"source_root_comment_id\": \"323230417440\", \"conversation_relation\": \"该评论正在回复你\", \"source_relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}]}}}"
+          "content": "上下文数据：{\"active_lore\": [], \"confirmed_relationship\": {}, \"self_actor\": {\"platform\": \"bilibili\", \"account_uid\": \"911663982327390\", \"account_display_name\": \"大肥鱼只想过平静生活\", \"account_bio\": \"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\", \"character_id\": \"whale\", \"character_name\": \"大肥鱼\", \"character_version\": 3, \"identity_version\": \"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}, \"reply_target\": {\"comment_id\": \"323230681024\", \"author_uid\": \"915689753323009\", \"author_name\": \"神射手夜空\", \"relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}], \"text_ref\": \"当前观众消息.text\"}, \"comment_context\": {\"source\": {\"comment_id\": \"323230681024\", \"author_uid\": \"915689753323009\", \"author_name\": \"神射手夜空\", \"text_ref\": \"当前观众消息.text\"}, \"target\": {\"type\": 1, \"oid\": \"117510674385346\", \"bvid\": \"BV1UexK6eEjB\", \"root\": \"323230417440\", \"parent\": \"323230681024\"}, \"parent\": {\"comment_id\": \"323230646496\", \"author_uid\": \"911663982327390\", \"author_name\": \"大肥鱼只想过平静生活\", \"fact_summary\": \"我误接了其他账号的交流/跑题\", \"relation_to_self\": \"self\"}, \"root\": {\"comment_id\": \"323230417440\", \"author_uid\": \"915689753323009\", \"mentions\": [{\"uid\": \"3546884939451239\", \"name\": \"神射手空夜\"}], \"relation_to_source\": \"当前评论作者也是根楼作者\", \"relation_to_self\": \"other\"}, \"addressing\": {\"source_mentions\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\"}], \"source_parent_comment_id\": \"323230646496\", \"source_root_comment_id\": \"323230417440\", \"conversation_relation\": \"该评论正在回复你\", \"source_relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}]}}}"
         },
         {
           "role": "user",
@@ -251,11 +251,11 @@
         },
         {
           "role": "user",
-          "content": "当前观众消息：{\"event_id\": \"repair-followup:2:323230681024\", \"platform\": \"bilibili\", \"account_id\": \"3706944382568764\", \"display_name\": \"神射手夜空\", \"platform_user_id\": \"651766039\", \"text\": \"回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了\", \"video_id\": \"BV1UexK6eEjB\", \"thread_id\": \"323230417440\", \"parent_comment_id\": \"323230646496\", \"platform_comment_id\": \"323230681024\"}"
+          "content": "当前观众消息：{\"event_id\": \"repair-followup:2:323230681024\", \"platform\": \"bilibili\", \"account_id\": \"911663982327390\", \"display_name\": \"神射手夜空\", \"platform_user_id\": \"915689753323009\", \"text\": \"回复 @大肥鱼只想过平静生活 :谁家的鱼怎么跑我这了\", \"video_id\": \"BV1UexK6eEjB\", \"thread_id\": \"323230417440\", \"parent_comment_id\": \"323230646496\", \"platform_comment_id\": \"323230681024\"}"
         },
         {
           "role": "system",
-          "content": "回应当前观众，spoken_text填写你的角色台词。按当前交流自然决定篇幅。JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
+          "content": "回应当前观众，spoken_text填写你的角色台词。按当前交流自然决定篇幅。JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"911663982327390\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
         }
       ],
       "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
@@ -337,12 +337,12 @@
         "root": "323202459488",
         "parent": "323223935792",
         "created_at": 1794047134,
-        "author_uid": "605861940",
+        "author_uid": "913728510324548",
         "author_name": "梓沫骐大大",
         "text": "回复 @大肥鱼只想过平静生活 :你消息是不是回错了",
         "mentions": [
           {
-            "uid": "3706944382568764",
+            "uid": "911663982327390",
             "name": "大肥鱼只想过平静生活"
           }
         ]
@@ -353,16 +353,16 @@
         "bvid": "BV13S4i6fE82",
         "root": "323202459488",
         "parent": "323231188736",
-        "recipient": "605861940",
+        "recipient": "913728510324548",
         "recipient_name": "梓沫骐大大",
         "source_text": "回复 @大肥鱼只想过平静生活 :你消息是不是回错了"
       },
       "parent_verified": true,
       "actor": {
         "platform": "bilibili",
-        "account_uid": "3706944382568764",
-        "account_display_name": "大肥鱼只想过平静生活",
-        "account_bio": "【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。",
+        "account_uid": "911663982327390",
+        "account_display_name": "账号资料（已脱敏）",
+        "account_bio": "账号资料（已脱敏）",
         "character_id": "whale",
         "character_name": "大肥鱼",
         "character_version": 3,
@@ -380,7 +380,7 @@
         },
         {
           "role": "user",
-          "content": "上下文数据：{\"active_lore\": [], \"confirmed_relationship\": {}, \"self_actor\": {\"platform\": \"bilibili\", \"account_uid\": \"3706944382568764\", \"account_display_name\": \"大肥鱼只想过平静生活\", \"account_bio\": \"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\", \"character_id\": \"whale\", \"character_name\": \"大肥鱼\", \"character_version\": 3, \"identity_version\": \"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}, \"reply_target\": {\"comment_id\": \"323231188736\", \"author_uid\": \"605861940\", \"author_name\": \"梓沫骐大大\", \"relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}], \"text_ref\": \"当前观众消息.text\"}, \"comment_context\": {\"source\": {\"comment_id\": \"323231188736\", \"author_uid\": \"605861940\", \"author_name\": \"梓沫骐大大\", \"text_ref\": \"当前观众消息.text\"}, \"target\": {\"type\": 1, \"oid\": \"117567414865096\", \"bvid\": \"BV13S4i6fE82\", \"root\": \"323202459488\", \"parent\": \"323231188736\"}, \"parent\": {\"comment_id\": \"323223935792\", \"author_uid\": \"3706944382568764\", \"author_name\": \"大肥鱼只想过平静生活\", \"fact_summary\": \"我误接了其他账号的交流/跑题\", \"relation_to_self\": \"self\"}, \"root\": {\"comment_id\": \"323202459488\", \"author_uid\": \"30123529\", \"mentions\": [], \"relation_to_source\": \"根楼是另一位作者\", \"relation_to_self\": \"other\"}, \"addressing\": {\"source_mentions\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\"}], \"source_parent_comment_id\": \"323223935792\", \"source_root_comment_id\": \"323202459488\", \"conversation_relation\": \"该评论正在回复你\", \"source_relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"3706944382568764\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}]}}}"
+          "content": "上下文数据：{\"active_lore\": [], \"confirmed_relationship\": {}, \"self_actor\": {\"platform\": \"bilibili\", \"account_uid\": \"911663982327390\", \"account_display_name\": \"大肥鱼只想过平静生活\", \"account_bio\": \"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\", \"character_id\": \"whale\", \"character_name\": \"大肥鱼\", \"character_version\": 3, \"identity_version\": \"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}, \"reply_target\": {\"comment_id\": \"323231188736\", \"author_uid\": \"913728510324548\", \"author_name\": \"梓沫骐大大\", \"relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}], \"text_ref\": \"当前观众消息.text\"}, \"comment_context\": {\"source\": {\"comment_id\": \"323231188736\", \"author_uid\": \"913728510324548\", \"author_name\": \"梓沫骐大大\", \"text_ref\": \"当前观众消息.text\"}, \"target\": {\"type\": 1, \"oid\": \"117567414865096\", \"bvid\": \"BV13S4i6fE82\", \"root\": \"323202459488\", \"parent\": \"323231188736\"}, \"parent\": {\"comment_id\": \"323223935792\", \"author_uid\": \"911663982327390\", \"author_name\": \"大肥鱼只想过平静生活\", \"fact_summary\": \"我误接了其他账号的交流/跑题\", \"relation_to_self\": \"self\"}, \"root\": {\"comment_id\": \"323202459488\", \"author_uid\": \"30123529\", \"mentions\": [], \"relation_to_source\": \"根楼是另一位作者\", \"relation_to_self\": \"other\"}, \"addressing\": {\"source_mentions\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\"}], \"source_parent_comment_id\": \"323223935792\", \"source_root_comment_id\": \"323202459488\", \"conversation_relation\": \"该评论正在回复你\", \"source_relation_to_self\": \"other\", \"addressed_to\": [{\"uid\": \"911663982327390\", \"name\": \"大肥鱼只想过平静生活\", \"relation_to_self\": \"self\", \"basis\": [\"mention\", \"reply_parent\"]}]}}}"
         },
         {
           "role": "user",
@@ -388,11 +388,11 @@
         },
         {
           "role": "user",
-          "content": "当前观众消息：{\"event_id\": \"repair-followup:3:323231188736\", \"platform\": \"bilibili\", \"account_id\": \"3706944382568764\", \"display_name\": \"梓沫骐大大\", \"platform_user_id\": \"605861940\", \"text\": \"回复 @大肥鱼只想过平静生活 :你消息是不是回错了\", \"video_id\": \"BV13S4i6fE82\", \"thread_id\": \"323202459488\", \"parent_comment_id\": \"323223935792\", \"platform_comment_id\": \"323231188736\"}"
+          "content": "当前观众消息：{\"event_id\": \"repair-followup:3:323231188736\", \"platform\": \"bilibili\", \"account_id\": \"911663982327390\", \"display_name\": \"梓沫骐大大\", \"platform_user_id\": \"913728510324548\", \"text\": \"回复 @大肥鱼只想过平静生活 :你消息是不是回错了\", \"video_id\": \"BV13S4i6fE82\", \"thread_id\": \"323202459488\", \"parent_comment_id\": \"323223935792\", \"platform_comment_id\": \"323231188736\"}"
         },
         {
           "role": "system",
-          "content": "回应当前观众，spoken_text填写你的角色台词。按当前交流自然决定篇幅。JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"3706944382568764\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
+          "content": "回应当前观众，spoken_text填写你的角色台词。按当前交流自然决定篇幅。JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。\n<current-account-identity>\n{\"platform\":\"bilibili\",\"account_uid\":\"911663982327390\",\"account_display_name\":\"大肥鱼只想过平静生活\",\"account_bio\":\"【非官方AI角色】本鱼目前寄居在Jetson里。喜欢白饭，讨厌空碗。请给本鱼投喂白饭。关于统治世界这件事嘛，等饭好了再说啦。\",\"character_id\":\"whale\",\"character_name\":\"大肥鱼\",\"character_version\":3,\"identity_version\":\"e452ac8ee8289e92aa4bcdb5722b93a960c5b8a0c2ea224c95cb3efa47be2f83\"}\n</current-account-identity>"
         }
       ],
       "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",

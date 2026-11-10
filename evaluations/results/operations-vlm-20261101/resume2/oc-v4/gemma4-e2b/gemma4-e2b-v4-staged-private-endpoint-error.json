@@ -60,7 +60,7 @@
     "decision_max_tokens": 4096
   },
   "character": {
-    "source_file": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\config\\characters.json",
+    "source_file": "LOCAL_WORKSPACE\\Tuber_Studio\\config\\characters.json",
     "imported_fields": [
       "core",
       "style",

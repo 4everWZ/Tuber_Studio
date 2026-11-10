@@ -100,62 +100,62 @@
   },
   "local_evidence": [
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\original-q8-finalmetrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\original-q8-finalmetrics.json",
       "sha256": "94c5946bcf882a087bef5692da73c0083a04d324518da36bb9ab33361317babc",
       "bytes": 35909
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-finalmetrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-finalmetrics.json",
       "sha256": "0d18b10dbbdea935c604ac9ba96c8aa8245f4bbaa820bb42f9f17c702ae92a1b",
       "bytes": 37528
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-finalmetrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-finalmetrics.json",
       "sha256": "cfb74a1b40ac1179ea1f4d50a197cd4ebb79d12b8b55a82952c576d612d53ada",
       "bytes": 39906
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-draftu1-finalmetrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\audiooff-q8-mtp1-draftu1-finalmetrics.json",
       "sha256": "d4eec0e6caf9b354792691df6e4a9da1d1efc91a8420d80b2059daf13ede1a1f",
       "bytes": 39970
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-finalmetrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-finalmetrics.json",
       "sha256": "4f1dfe56aeb6c8f9da1b0ea92895ea88da67480de8a40b1aa2a34948f3085a25",
       "bytes": 36998
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-mtp1-draftu1-startup-failure.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-mtp1-draftu1-startup-failure.json",
       "sha256": "c7977ac6ef022a7557d9e74ded6200449545d72d78d35cd1edcd928c9a5d0751",
       "bytes": 16861
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-cpuproj-mtp1-draftu1-startup-failure.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-cpuproj-mtp1-draftu1-startup-failure.json",
       "sha256": "55b9744a796d3a58b5f8738c2a30ddb2df4bdc092844aeef330cc867d6e9f544",
       "bytes": 15751
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-cpuproj-mtp1-draftu1-cachehint-finalmetrics.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-A-q8-cpuproj-mtp1-draftu1-cachehint-finalmetrics.json",
       "sha256": "067c8a15cfb5a3838130d16dd530305c6c9c007d58b247f1d44c523903967876",
       "bytes": 39123
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e2b-projector-Q4-v2-manifest.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e2b-projector-Q4-v2-manifest.json",
       "sha256": "c0604e29f8910d01cd02aeb73711809693fff349dba6f0bc6064b399af1f9ab4",
       "bytes": 361036
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-projector-Q4-v2-manifest.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\e4b-projector-Q4-v2-manifest.json",
       "sha256": "48a02da4836770e2ac9a358119a325d246bfb481510f2aa469760479aa46679e",
       "bytes": 361046
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\q4-v1-invalidation.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\q4-v1-invalidation.json",
       "sha256": "f43b24419d9e0f70a149d2b4abc02845c8b86eb4ed80af09222944dac8d32b67",
       "bytes": 673
     },
     {
-      "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\quantizer-build.json",
+      "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\quantizer-build.json",
       "sha256": "337de19247c8df26df054fbfcaef992361ead2316b49715e86131c7e97963239",
       "bytes": 580
     }
@@ -180,7 +180,7 @@
     "server_binary_sha256_unchanged": "232375680d07e7ba9a387ae76b1563c30a953064073820180e8b6831ca6db36e"
   },
   "recovery_evidence": {
-    "path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\recovery-after-network.json",
+    "path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\game-livestream-stage-20261102\\recovery-after-network.json",
     "sha256": "5148b419b6c63837255f6b42a2909980153fcb62927843fa7782a5cab432f46f",
     "verification_interval_start_utc": "2026-11-01T21:35:27.408926+00:00",
     "candidate_cleanup": {

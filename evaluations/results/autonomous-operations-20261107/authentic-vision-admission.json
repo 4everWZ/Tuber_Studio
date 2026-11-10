@@ -2,7 +2,7 @@
   "proof": {
     "passed": true,
     "configuration": {
-      "base_url": "http://100.95.31.18:9012/vlm/dafeiyu/v1",
+      "base_url": "http://203.0.113.96:9012/vlm/dafeiyu/v1",
       "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
       "model_revision": "8fab6fa834020011a37bfd82fb6c74509ea6c57d826820480d8f99182b7d74cf",
       "projector_revision": "20977a90fd8d6381a84588d5675f97abaae2a1d882126c8e86c7d0eadfe183ca",
@@ -99,7 +99,7 @@
     "images": true,
     "tested_frames": 3,
     "properties": {
-      "endpoint": "http://100.95.31.18:9012/vlm/dafeiyu/v1/",
+      "endpoint": "http://203.0.113.96:9012/vlm/dafeiyu/v1/",
       "context_tokens": 131072,
       "model_alias": [
         "MiniCPM-V-4.7-1B-Dafeiyu-Grounded"

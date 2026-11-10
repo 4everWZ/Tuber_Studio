@@ -3,7 +3,7 @@
   "production_round_id": null,
   "production_task_store_attached": false,
   "provider_identity": {
-    "base_url": "http://100.95.31.18:9012/vlm/dafeiyu/v1",
+    "base_url": "http://203.0.113.96:9012/vlm/dafeiyu/v1",
     "model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded",
     "model_revision": "8fab6fa834020011a37bfd82fb6c74509ea6c57d826820480d8f99182b7d74cf",
     "projector_revision": "20977a90fd8d6381a84588d5675f97abaae2a1d882126c8e86c7d0eadfe183ca",
@@ -32,7 +32,7 @@
     "protocol": "sequential_captions_indexed_assessment_v2"
   },
   "properties": {
-    "endpoint": "http://100.95.31.18:9012/vlm/dafeiyu/v1/",
+    "endpoint": "http://203.0.113.96:9012/vlm/dafeiyu/v1/",
     "context_tokens": 131072,
     "model_alias": [
       "MiniCPM-V-4.7-1B-Dafeiyu-Grounded"
@@ -62,7 +62,7 @@
         "sheet_index": 0,
         "sheet_sha256": "1d4817ea9d5d59eaf2b97b209b8f520fc5e7042b2278d483c77d991375ec82bb"
       },
-      "local_file": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\fresh-user-ui-20261107\\real-frame-BV1dQnd6qEjj-43091691821-40s.jpg",
+      "local_file": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\fresh-user-ui-20261107\\real-frame-BV1dQnd6qEjj-43091691821-40s.jpg",
       "bytes": 20263,
       "artifact_file": "real-frame-BV1dQnd6qEjj-43091691821-40s.jpg"
     }

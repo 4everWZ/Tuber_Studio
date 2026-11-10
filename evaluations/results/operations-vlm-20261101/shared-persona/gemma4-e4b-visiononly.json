@@ -1123,7 +1123,7 @@
       "9.30.375.328 I slot print_timing: id  0 | task 2265 | prompt eval time =    2120.14 ms /   349 tokens (    6.07 ms per token,   164.61 tokens per second)",
       "9.30.375.346 I slot print_timing: id  0 | task 2265 |        eval time =   92611.39 ms /  1229 tokens (   75.42 ms per token,    13.26 tokens per second)",
       "9.30.375.349 I slot print_timing: id  0 | task 2265 |       total time =   94731.53 ms /  1578 tokens",
-      "10.11.203.236 I slot encode_mtmd_: id  0 | task 3497 | encoding mtmd batch from idx = 80, n_chunks = 1",
+      "203.0.113.27 I slot encode_mtmd_: id  0 | task 3497 | encoding mtmd batch from idx = 80, n_chunks = 1",
       "10.11.718.087 I decoding image batch 1/2, n_tokens_batch = 256",
       "10.12.729.648 I image decoded (batch 1/2) in 1012 ms",
       "10.12.729.661 I decoding image batch 2/2, n_tokens_batch = 8",

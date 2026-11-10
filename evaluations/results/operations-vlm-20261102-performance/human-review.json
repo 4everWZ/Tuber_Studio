@@ -175,7 +175,7 @@
         "actual_time_seconds": 10.0,
         "frame_id": "42322100507:storyboard:2:6d712cf90e74fa99",
         "path": "tmp/operations-browse-20261101/device/operations-corpus-20261101/BV14oa961ELQ/0.jpg",
-        "absolute_path": "D:\\Code\\PythonCurriculum\\Tuber_Studio\\tmp\\operations-browse-20261101\\device\\operations-corpus-20261101\\BV14oa961ELQ\\0.jpg",
+        "absolute_path": "LOCAL_WORKSPACE\\Tuber_Studio\\tmp\\operations-browse-20261101\\device\\operations-corpus-20261101\\BV14oa961ELQ\\0.jpg",
         "sha256": "6d712cf90e74fa99e197e1f31317045c883a4e56997852f40fbaf69794c1f3b9",
         "bytes": 12624,
         "size_px": [

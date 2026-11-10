@@ -184,7 +184,7 @@ def test_output_schema_can_describe_url_text_but_has_no_remote_resolver():
     "body",
     [
         {"weights_path": "/etc/passwd"},
-        {"save_path": "/home/other-user/output.wav"},
+        {"save_path": "/example/output.wav"},
         {"command": "restart"},
         {"aux_ref_audio_paths": ["https://example.invalid/reference.wav"]},
         {"media_type": "ogg"},

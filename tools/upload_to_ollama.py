@@ -1,14 +1,16 @@
 """Stream a large GGUF file to Ollama API as a sha256 blob."""
 
+import os
 import sys
 import time
 import requests
 
 digest = sys.argv[1]
 filepath = sys.argv[2]
-url = f"http://100.65.102.90:11434/api/blobs/sha256:{digest}"
+base_url = os.environ.get("TUBER_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+url = f"{base_url}/api/blobs/sha256:{digest}"
 
-print(f"Uploading {filepath} to {url}...")
+print("Uploading GGUF blob to configured Ollama endpoint…")
 total_bytes = 0
 t0 = time.time()
 
