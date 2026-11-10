@@ -31,6 +31,22 @@ logger = logging.getLogger("model_queue")
 
 QUEUE_CANDIDATES = [
     {
+        "id": "qwen35_2b",
+        "name": "Qwen/Qwen3.5-2B",
+        "arch": "Hybrid Linear Attn (Dense)",
+        "params": "2.1B",
+        "active_params": "2.1B",
+        "native_context": "262,144 (256K)",
+        "mode": "bf16",
+        "batch_size": 2,
+        "grad_accum": 2,
+        "lr": 2.0e-4,
+        "epochs": 3,
+        "max_seq_len": 512,
+        "vram": "~1.2 GB (Q4_K_M)",
+        "deploy_sug": "⚡ **端侧极速核弹**：量化仅 1.2 GB，预估 AGX 吞吐 55–70 tok/s，适合秒级高并发伴播",
+    },
+    {
         "id": "qwen35_4b",
         "name": "Qwen/Qwen3.5-4B",
         "arch": "Hybrid Linear Attn (Dense)",

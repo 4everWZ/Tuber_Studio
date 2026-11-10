@@ -11,8 +11,9 @@
 | 候选模型 | 架构特征 | 参数量 (活跃/总计) | 原生上下文 | 微调模式 | OC 拟真度 | AI 味违规 | 基础常识通过率 | 显存占用 | 训练用时 | 落地状态与建议 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | `Qwen/Qwen3.5-9B` | Hybrid Linear Attn + Full Attn (Dense) | 8.95B / 8.95B | 262,144 (256K) | `bf16` DoRA | **82.3 / 100** | **0 次** | **3/3 (100%)** | 5.23 GB (Q4_K_M) | 48.2 min | 🔥 **已装载 AGX Orin 生产主力 (`dafeiyu-v2:latest`)**：首字延迟 <380ms，解码 23 tok/s |
-| `Qwen/Qwen3.5-4B` | Hybrid Linear Attn (Dense) | 4.2B / 4.2B | 262,144 (256K) | `bf16` DoRA | **98.7 / 100** | **0 次** | **3/3 (100%)** | 2.51 GB (Q4_K_M) | 35.6 min | ⚡ **AGX Orin 极速伴播副模型 (`dafeiyu-4b:latest`)**：全场拟真第一，Q4 量化仅 2.51 GB，超高并发响应 |
+| `Qwen/Qwen3.5-4B` | Hybrid Linear Attn (Dense) | 4.2B / 4.2B | 262,144 (256K) | `bf16` DoRA | **98.7 / 100** | **0 次** | **3/3 (100%)** | 2.51 GB (Q4_K_M) | 35.6 min | ⚡ **AGX Orin 极速伴播副模型 (`dafeiyu-4b:latest`)**：全场拟真第一，Q4 量化仅 2.51 GB，实测 32.8 tok/s |
 | `google/gemma-4-12B` | Gemma 4 Unified Multimodal (Dense) | 12B / 12B | 131,072 (128K) | `qlora_4bit` | **97.7 / 100** | **0 次** | **3/3 (100%)** | ~7.8 GB (4-bit) | 32.5 min | 🎨 **多模态大底座主力**：消除零样本自言自语与系统词泄露，白米饭偏执与动作细节表现极佳 |
+| `Qwen/Qwen3.5-2B` | Hybrid Linear Attn (Dense) | 2.1B / 2.1B | 262,144 (256K) | `bf16` DoRA | *排队中* | - | - | ~1.2 GB (Q4_K_M) | 预计 15 min | 🚀 **端侧极速核弹（排队中）**：Q4仅1.2GB，预估AGX吞吐55-70 tok/s，适合秒级高并发伴播 |
 | `google/gemma-4-E4B-it` | Gemma 4 Edge Multimodal (Dense) | 4B / 4B | 131,072 (128K) | `bf16` DoRA | *训练异常* | - | - | ~3.2 GB (Q4_K_M) | 0.3 min | ⚠️ **PEFT 目标冲突**：SigLIP 视觉塔张量与全局 DoRA 冲突，需单独解耦 Language Model 模块微调 |
 | `google/gemma-4-26B-A4B-it` | Gemma 4 MoE (128 experts, Top-8) | 4.1B / 26B | 262,144 (256K) | `qlora_4bit` | *显存超限* | - | - | 49.6 GB (bf16) | 29.9 min (下载) | ⚠️ **量化器瓶颈**：128 专家 3D 张量 `[128, 1408, 2816]` 无法被 `bitsandbytes` 4-bit 量化，静态 bf16 权重超 48GB 上限 |
 
