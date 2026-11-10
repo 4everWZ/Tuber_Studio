@@ -16,7 +16,7 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
-from .thread_context import comment_source, comment_thread_context
+from .thread_context import comment_thread_context
 
 
 def _extract_timestamp(item):
@@ -33,55 +33,37 @@ def _extract_timestamp(item):
 
 
 def merge_continuous_comments(items, time_window_seconds=600):
-    """Merge consecutive comments from the same author in the same thread within time window."""
-    if not items:
-        return []
-    merged = []
+    """Group adjacent sources without synthesizing a platform comment."""
+    def addressing(item):
+        mentions = item.get("mentions") or []
+        uid = item.get("user_id") or item.get("platform_user_id")
+        if not uid or item.get("parent_verified") is False or any(not mention.get("uid") for mention in mentions):
+            return None
+        return (
+            str(uid), str(item.get("thread_id") or item["comment_id"]),
+            str(item.get("parent_comment_id") or "0"),
+            frozenset(str(mention["uid"]) for mention in mentions),
+        )
+
+    groups = []
     for item in items:
-        if not merged:
-            merged.append(dict(item))
-            continue
-        prev = merged[-1]
-        prev_uid = str(prev.get("user_id") or prev.get("platform_user_id") or "")
-        curr_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
-        prev_thread = str(prev.get("thread_id") or prev.get("comment_id") or "")
-        curr_thread = str(item.get("thread_id") or item.get("comment_id") or "")
-
-        can_merge = False
-        if prev_uid and curr_uid and prev_uid == curr_uid and prev_thread == curr_thread:
-            prev_ts = _extract_timestamp(prev)
-            curr_ts = _extract_timestamp(item)
-            if prev_ts is not None and curr_ts is not None:
-                if abs(curr_ts - prev_ts) <= time_window_seconds:
-                    can_merge = True
-
-        if can_merge:
-            prev_text = str(prev.get("content") or prev.get("text") or "")
-            curr_text = str(item.get("content") or item.get("text") or "")
-            combined_text = f"{prev_text}\n{curr_text}" if prev_text and curr_text else (prev_text or curr_text)
-
-            sources = prev.get("merged_sources")
-            if not sources:
-                sources = [comment_source(prev)]
-            sources.append(comment_source(item))
-
-            comment_ids = prev.get("merged_comment_ids")
-            if not comment_ids:
-                comment_ids = [str(prev["comment_id"])]
-            comment_ids.append(str(item["comment_id"]))
-
-            prev["content"] = combined_text
-            prev["text"] = combined_text
-            prev["comment_id"] = item["comment_id"]
-            prev["merged_sources"] = sources
-            prev["merged_comment_ids"] = comment_ids
-            if "ctime" in item:
-                prev["ctime"] = item["ctime"]
-            if "created_at" in item:
-                prev["created_at"] = item["created_at"]
+        timestamp = _extract_timestamp(item)
+        group = groups[-1] if groups else []
+        signature = addressing(item)
+        if group and len(group) < 8 and timestamp is not None and signature and signature == addressing(group[-1]):
+            times = [_extract_timestamp(previous) for previous in group]
+            if all(value is not None and abs(timestamp - value) <= time_window_seconds for value in times):
+                group.append(item)
+                continue
+        groups.append([item])
+    result = []
+    for group in groups:
+        if len(group) == 1:
+            result.append(dict(group[0]))
         else:
-            merged.append(dict(item))
-    return merged
+            group.sort(key=_extract_timestamp)
+            result.append(dict(group[-1], grouped_comments=group))
+    return result
 
 
 class CommentProgress:
@@ -106,6 +88,11 @@ class CommentProgress:
             saved = json.loads(value["decision"])
             generation = saved.pop("generation", {})
             decision = ResponseDecision.model_validate(saved)
+            if decision.action in {"reply_public", "handoff_private"} and generation.get("source_id") != str(source["comment_id"]):
+                # Legacy merged rows could copy a decision onto several IDs.
+                # Existing intents still own their targets, but bare decisions
+                # without an original anchor cannot authorize a new one.
+                return None
             decision._generation_id = generation.get("id")
             decision._generation_identity = generation.get("identity")
             # A deliberate wait remains eligible on the next visit.
@@ -120,6 +107,7 @@ class CommentProgress:
                 content_hash(source),
                 dump(decision.model_dump() | {"generation": {
                     "id": decision._generation_id, "identity": decision._generation_identity,
+                    "source_id": str(source["comment_id"]),
                 }}),
                 time.time(),
             ),
@@ -165,9 +153,9 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
     try:
         browsing._check_round(row)
         context = await browsing.video_comment_context(row, metadata["bvid"])
-        items = merge_continuous_comments(context.get("items", []))
+        items = context.get("items", [])
         chosen = {segment["id"] for segment in browsing._segments(material)} if material else set()
-        for item in items:
+        for item in merge_continuous_comments(items):
             if browsing.repo.video_reply_limit_reached(row, metadata["bvid"]):
                 raise DailyReplyLimitReached(day_window(row["config"].get("business_timezone", "Asia/Taipei")))
             intent = await browsing.decisions._reply_to_video_comment(
@@ -462,10 +450,7 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         raise ValueError("账号来源无效、本人循环或广告互动")
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     canonical = canonical_intent("bilibili", resource, source["comment_id"], row["character_id"])
-    if browsing.store.one(
-        "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
-        (row["account_id"], row["character_id"], canonical),
-    ):
+    if browsing.publication.source_intent(row, canonical):
         browsing.store.execute(
             "UPDATE browsing_events SET status='skipped',error='同源回应意图已存在' WHERE id=?",
             (event_row["id"],),

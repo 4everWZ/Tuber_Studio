@@ -1,6 +1,5 @@
 """Tests for explicit UID-based mention authentication and third-party dialogue boundaries."""
 
-import pytest
 from tuber_studio.operations.browsing.inputs import bind_response_actors
 
 

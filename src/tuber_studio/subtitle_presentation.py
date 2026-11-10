@@ -13,7 +13,7 @@ class SourcePart:
     cid: str
     page: int
     title: str
-    kind: Literal["subtitle", "visual_observation"]
+    kind: Literal["subtitle", "visual_observation", "audio_transcript"]
     language: str | None
     is_ai: bool | None
     metadata_json: str
@@ -210,7 +210,7 @@ def render_blocks(blocks, *, text_renderer=None):
             lines.append(f"视频第{part.page}部分（P{part.page}）" + (f" {part.title}" if part.title else ""))
             previous_page, previous_track = part.page, None
         if part.index != previous_track:
-            label = "画面观察" if part.kind == "visual_observation" else "字幕"
+            label = {"visual_observation": "画面观察", "subtitle": "字幕", "audio_transcript": "本地语音识别"}[part.kind]
             hints = [part.language] if part.language else []
             if part.is_ai is True:
                 hints.append("自动")

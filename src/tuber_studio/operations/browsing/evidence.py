@@ -8,6 +8,7 @@ import json
 import math
 import re
 import time
+import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +16,7 @@ from uuid import uuid4
 from ...api_providers import validate_image
 from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
+from .local_asr import LocalVideoASR
 from .models import DisabledVideoEvidence, browsing_filter_reason
 from .round_context import read_round
 
@@ -40,6 +42,7 @@ class BrowsingEvidence:
         if linked(self.directory):
             raise ValueError("浏览缓存目录不能使用链接")
         self.directory.mkdir(exist_ok=True)
+        self.asr = LocalVideoASR(runtime.settings)
 
     def load(self, identity, *, allow_expired=False):
         if not isinstance(identity, str) or not re.fullmatch(r"(?:[a-f0-9]{32}|[a-f0-9]{64})", identity):
@@ -155,6 +158,7 @@ class BrowsingEvidence:
         result.pop("visual_frames", None)
         result.pop("visual_sampling_version", None)
         result.pop("visual_source_ids", None)
+        result.pop("frame_sampling", None)
         result["coverage"] = "partial" if result["missing_parts"] else "all_available_cc"
         return result
 
@@ -175,6 +179,7 @@ class BrowsingEvidence:
         if require_visual and not config["visual_enabled"]:
             raise EvidenceUnavailable("visual_unavailable", "当前浏览配置未启用视觉")
         visual_source_ids = tuple(sorted(set(visual_source_ids)))
+        sampling = config.get("frame_sampling", "baseline")
         cached_cc = None
         if not force:
             for row in self.store.all(
@@ -184,6 +189,10 @@ class BrowsingEvidence:
                 try:
                     material = self.load(row["id"])
                     if material["languages"] == config["languages"]:
+                        if any(part.get("asr") for part in material["parts"]) or (
+                            self.asr.enabled and material["missing_parts"]
+                        ):
+                            continue  # Re-read opt-in local clips by their current content, never stale ASR.
                         reason = browsing_filter_reason(material["metadata"], config, complete=True)
                         if reason:
                             raise EvidenceUnavailable("filtered", reason)
@@ -192,6 +201,7 @@ class BrowsingEvidence:
                         usable_visual = (
                             usable_visual
                             and tuple(material.get("visual_source_ids", ())) == visual_source_ids
+                            and material.get("frame_sampling", "baseline") == sampling
                         )
                         if usable_visual or not has_visual and not require_visual:
                             self.hits += 1
@@ -216,6 +226,7 @@ class BrowsingEvidence:
                 require_visual,
                 visual_source_ids,
                 self._visual_identity(),
+                sampling,
                 self.source_version(base),
             )
             async with self._flight(
@@ -226,6 +237,7 @@ class BrowsingEvidence:
                     deadline=deadline,
                     expires_at=expires_at,
                     visual_source_ids=visual_source_ids,
+                    sampling=sampling,
                 ),
             ) as result:
                 return result[0], copy.deepcopy(result[1])
@@ -243,6 +255,7 @@ class BrowsingEvidence:
                 video,
                 tuple(config["languages"]),
                 config["visual_enabled"],
+                sampling,
                 require_visual,
                 visual_source_ids,
                 self._visual_identity(),
@@ -295,17 +308,29 @@ class BrowsingEvidence:
                 if kind not in {"no_subtitles", "empty"}:
                     raise
                 missing.append({"cid": part["cid"], "reason": kind})
+        have_cc = bool(parts)
+        if missing and self.asr.enabled:
+            missing_cid = str(missing[0]["cid"])
+            part = next(item for item in metadata["parts"] if str(item["cid"]) == missing_cid)
+            try:
+                transcription = await self.asr.transcribe(metadata, part, deadline=deadline)
+                if transcription:
+                    parts.append(transcription)
+                    missing[0]["asr"] = "sampled_audio"
+            except (ValueError, OSError, TimeoutError, wave.Error, EOFError):
+                missing[0]["asr"] = "unavailable"
         visual_frames = []
-        if not parts or require_visual:
+        sampling = config.get("frame_sampling", "baseline")
+        if not parts or require_visual or (not have_cc and config["visual_enabled"]):
             if not parts and not config["visual_enabled"]:
                 raise EvidenceUnavailable(
                     missing[0]["reason"] if missing else "no_subtitles",
                     "视频无可用字幕，暂时跳过（待后续接入ASR语音识别）",
                 )
-            cid, timestamps = self._visual_targets(parts, visual_source_ids)
+            cid, timestamps = self._visual_targets(parts, visual_source_ids, sampling) if have_cc else (None, None)
             try:
                 visual_parts, visual_frames = await self._visual_parts(
-                    metadata, task, deadline, cid=cid, timestamps=timestamps
+                    metadata, task, deadline, cid=cid, timestamps=timestamps, sampling=sampling
                 )
                 parts.extend(visual_parts)
             except Exception:
@@ -317,19 +342,23 @@ class BrowsingEvidence:
             "missing_parts": missing,
             "languages": config["languages"],
             "fetched_at": time.time(),
-            "coverage": "sampled_visual" if visual_frames else "partial" if missing else "all_available_cc",
+            "coverage": (
+                "sampled_visual" if visual_frames else "sampled_audio" if parts and not have_cc
+                else "partial" if missing else "all_available_cc"
+            ),
         }
         if visual_frames:
-            self._bind_visual_sampling(material, visual_frames, visual_source_ids)
+            self._bind_visual_sampling(material, visual_frames, visual_source_ids, sampling)
         return await self._store(material)
 
     @staticmethod
-    def _bind_visual_sampling(material, frames, source_ids):
+    def _bind_visual_sampling(material, frames, source_ids, sampling):
         material["visual_frames"] = frames
         material["visual_sampling_version"] = VISUAL_SAMPLING_VERSION
         material["visual_source_ids"] = list(source_ids)
+        material["frame_sampling"] = sampling
 
-    def _visual_targets(self, parts, source_ids):
+    def _visual_targets(self, parts, source_ids, sampling="baseline"):
         groups = []
         selected = set(source_ids)
         for part in parts:
@@ -346,20 +375,30 @@ class BrowsingEvidence:
         if not groups:
             return None, None
         _, cid, segments = max(groups, key=lambda group: group[0])
+        if sampling == "adaptive" and selected:
+            if len(segments) > 3:
+                segments = [segments[int(len(segments) * p)] for p in (0.15, 0.50, 0.85)]
+            times = []
+            for segment in segments:
+                start, end = segment["start"], segment["end"]
+                times.append((start + end) / 2)
+                if end - start >= 4:
+                    times.append(start + 0.75 * (end - start))
+            return str(cid), list(dict.fromkeys(sorted(times)))
         if len(segments) > 3:
             segments = [segments[int(len(segments) * p)] for p in (0.15, 0.50, 0.85)]
         return str(cid), list(dict.fromkeys((s["start"] + s["end"]) / 2 for s in segments))
 
-    async def _with_visual(self, material, *, task, deadline, expires_at, visual_source_ids):
+    async def _with_visual(self, material, *, task, deadline, expires_at, visual_source_ids, sampling):
         # Only raw CC is shared across provider identities. New observations
         # belong to the current provider and preserve the original CC tracks.
         material = self._cc_only(material)
-        cid, timestamps = self._visual_targets(material["parts"], visual_source_ids)
+        cid, timestamps = self._visual_targets(material["parts"], visual_source_ids, sampling)
         parts, frames = await self._visual_parts(
-            material["metadata"], task, deadline, cid=cid, timestamps=timestamps
+            material["metadata"], task, deadline, cid=cid, timestamps=timestamps, sampling=sampling
         )
         material["parts"].extend(parts)
-        self._bind_visual_sampling(material, frames, visual_source_ids)
+        self._bind_visual_sampling(material, frames, visual_source_ids, sampling)
         material["coverage"] = "sampled_visual"
         material["fetched_at"] = time.time()
         return await self._store(material, expires_at=expires_at)
@@ -400,7 +439,7 @@ class BrowsingEvidence:
     def _valid_time(value):
         return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
-    async def _visual_parts(self, metadata, task, deadline, *, cid=None, timestamps=None):
+    async def _visual_parts(self, metadata, task, deadline, *, cid=None, timestamps=None, sampling="baseline"):
         capabilities = dict(self.visual.capabilities())
         if not (
             capabilities.get("available")
@@ -429,7 +468,13 @@ class BrowsingEvidence:
                 import inspect
 
                 sig = inspect.signature(self.adapter.video_frames)
-                call_args = [metadata, min(3, capabilities["max_frames"])]
+                count = 3
+                if sampling == "adaptive":
+                    target_cid = str(cid or metadata["parts"][0]["cid"])
+                    duration = next(part["duration"] for part in metadata["parts"] if str(part["cid"]) == target_cid)
+                    count = len(timestamps) if timestamps else 3 if duration <= 45 else 4 if duration <= 180 else 6
+                count = min(count, capabilities["max_frames"], 6) if capabilities.get("multiple_images") else 1
+                call_args = [metadata, count]
                 call_kwargs = {}
                 if cid is not None:
                     if "cid" in sig.parameters:
@@ -447,7 +492,7 @@ class BrowsingEvidence:
                 if (
                     not isinstance(frames, list)
                     or not frames
-                    or len(frames) > min(6, capabilities["max_frames"])
+                    or len(frames) > count
                     or len(frames) > 1
                     and not capabilities.get("multiple_images")
                 ):

@@ -29,6 +29,20 @@ from .round_context import read_round
 class BrowsingPublication:
     def __init__(self, browsing):
         self.browsing = browsing
+        browsing.store.execute("""CREATE TABLE IF NOT EXISTS browsing_reply_coverage(
+            account_id TEXT,character_id TEXT,source_key TEXT,intent_id TEXT NOT NULL REFERENCES browsing_intents(id) ON DELETE CASCADE,
+            PRIMARY KEY(account_id,character_id,source_key))""")
+
+    def source_intent(self, row, key):
+        scope = (row["account_id"], row["character_id"], key)
+        store = self.browsing.store
+        return store.one(
+            "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=? "
+            "UNION ALL SELECT i.id FROM browsing_reply_coverage c JOIN browsing_intents i ON i.id=c.intent_id "
+            "WHERE c.account_id=? AND c.character_id=? AND c.source_key=? "
+            "AND i.status IN ('pending_review','approved','publishing','publish_uncertain','published') LIMIT 1",
+            (*scope, *scope),
+        )
 
     def _reserve_daily_reply(self, token, row):
         bvid = row["target"].get("bvid")
@@ -64,10 +78,7 @@ class BrowsingPublication:
         if kind == "reply_public" and (
             target.get("bvid")
             and self.browsing.repo.video_reply_limit_reached(row, target["bvid"])
-            or self.browsing.store.one(
-                "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
-                (row["account_id"], row["character_id"], source_key),
-            )
+            or self.source_intent(row, source_key)
         ):
             return None
         identity, now = str(uuid4()), time.time()
@@ -80,32 +91,49 @@ class BrowsingPublication:
                 self.browsing.store, getattr(response, "_generation_id", None)
             )
         )
-        self.browsing.store.execute(
-            "INSERT OR IGNORE INTO browsing_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                identity,
-                row["account_id"],
-                row["character_id"],
-                row["character_version"],
-                source_key,
-                kind,
-                row["id"],
-                row["epoch"],
-                int(auto),
-                "private_handoff" if kind == "private_handoff" else "pending_review",
-                "" if kind == "private_handoff" else response.text.strip(),
-                response.explanation.strip() or response.reason,
-                dump(target),
-                dump(sorted(evidence_ids)),
-                dump(material_keys),
-                dump([self.browsing.evidence.load(k)["source_version"] for k in material_keys]),
-                None,
-                "not_checked",
-                None,
-                now,
-                now,
-            ),
-        )
+        store = self.browsing.store
+        covered_ids = response.covered_comments if kind == "reply_public" else []
+        coverage = [canonical_intent("bilibili", resource, value, row["character_id"])
+                    for value in covered_ids if value != source]
+        if covered_ids:
+            target["covered_comment_ids"] = covered_ids
+        with store.db:
+            if coverage:
+                store.db.execute("BEGIN IMMEDIATE")
+                if any(self.source_intent(row, key) for key in [source_key, *coverage]):
+                    return None
+            inserted = store.db.execute(
+                "INSERT OR IGNORE INTO browsing_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    identity,
+                    row["account_id"],
+                    row["character_id"],
+                    row["character_version"],
+                    source_key,
+                    kind,
+                    row["id"],
+                    row["epoch"],
+                    int(auto),
+                    "private_handoff" if kind == "private_handoff" else "pending_review",
+                    "" if kind == "private_handoff" else response.text.strip(),
+                    response.explanation.strip() or response.reason,
+                    dump(target),
+                    dump(sorted(evidence_ids)),
+                    dump(material_keys),
+                    dump([self.browsing.evidence.load(k)["source_version"] for k in material_keys]),
+                    None,
+                    "not_checked",
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            if inserted.rowcount:
+                store.db.executemany(
+                    "INSERT INTO browsing_reply_coverage VALUES(?,?,?,?) "
+                    "ON CONFLICT(account_id,character_id,source_key) DO UPDATE SET intent_id=excluded.intent_id",
+                    [(row["account_id"], row["character_id"], key, identity) for key in coverage],
+                )
         return self.browsing.repo.decode(
             self.browsing.store.one(
                 "SELECT * FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
@@ -117,16 +145,8 @@ class BrowsingPublication:
         key = canonical_intent(
             comment["platform"], comment["video_id"], comment["comment_id"], character["id"]
         )
-        return bool(
-            self.browsing.store.one(
-                "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
-                (
-                    self.browsing.account or self.browsing.operations.policy()["account_id"],
-                    character["id"],
-                    key,
-                ),
-            )
-        )
+        account = self.browsing.account or self.browsing.operations.policy()["account_id"]
+        return bool(self.source_intent({"account_id": account, "character_id": character["id"]}, key))
 
     def has_manual_draft(self, row, resource, comment_id):
         return bool(self.browsing.store.one(
@@ -188,6 +208,7 @@ class BrowsingPublication:
                 "local_id": row["id"],
                 "platform_id": str(target.get("parent") or target["oid"]),
                 "content_sha256": content_hash(source),
+                **({"covered_comment_ids": target["covered_comment_ids"]} if target.get("covered_comment_ids") else {}),
                 **({"discovery": True} if self._has_legacy_binding(row) else {}),
             },
         )

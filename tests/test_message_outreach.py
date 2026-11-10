@@ -12,11 +12,24 @@ from test_message_memes import meme_messages as meme_messages
 from test_message_memes import prepared
 
 from tuber_studio.direct_messages import MessageInputChanged
+from tuber_studio.message_outreach import invitation_possibility
 from tuber_studio.models import OperationReply
 from tuber_studio.operation_generation import generate_with_recovery
 from tuber_studio.operation_identity import identity_snapshot
 
 ACTOR = "injected-test-account"
+
+
+def test_own_video_does_not_make_other_peoples_reply_a_private_invitation():
+    thread = {"resource_author_uid": ACTOR,
+              "source": {"comment_id": "801", "author_uid": "100", "text": "可以私信我接着聊"},
+              "addressing": {"source_parent_comment_id": "800", "source_mentions": []},
+              "parent": {"comment_id": "800", "author_uid": "200", "text": "别人家的 OC 在讨论"}}
+    assert invitation_possibility(thread, ACTOR, "100") == "impossible"
+    thread["parent"]["author_uid"] = ACTOR
+    assert invitation_possibility(thread, ACTOR, "100") == "possible"
+    thread["addressing"]["source_parent_verified"] = False
+    assert invitation_possibility(thread, ACTOR, "100") == "unresolved"
 
 
 async def setup_delivery(messages, monkeypatch, *, auto_send=True):
@@ -33,6 +46,12 @@ async def setup_delivery(messages, monkeypatch, *, auto_send=True):
         }
 
     async def assess(packet, schema, *, max_tokens):
+        if schema["title"] == "ConversationReply":
+            event = next(json.loads(message["content"].split("：", 1)[1]) for message in packet
+                         if message["content"].startswith("当前观众消息："))
+            generated.append(event)
+            return {"text": "鱼鱼一起回答你刚才的两条消息。", "reason": "合并回答两条来信",
+                    "reply_to": [item["message"] for item in event["conversation"] if item.get("open")], "handled": []}
         assert schema["title"] == "OutreachAssessment" and max_tokens == 1024
         data = json.loads(packet[-1]["content"])
         checked.append(data)

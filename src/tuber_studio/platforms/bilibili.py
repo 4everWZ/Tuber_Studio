@@ -284,6 +284,7 @@ class BilibiliAdapter:
         if isinstance(root, bool) or isinstance(parent, bool):
             raise ValueError("评论楼标识无效")
         root = _positive_id(root) if root not in (None, 0, "0", "") else thread_id or cid
+        parent_verified = parent not in (None, 0, "0", "") or root == cid
         parent = _positive_id(parent) if parent not in (None, 0, "0", "") else parent_comment_id
         if thread_id is not None and root != thread_id:
             raise ValueError("评论楼标识不一致")
@@ -301,6 +302,7 @@ class BilibiliAdapter:
             "comment_id": cid,
             "thread_id": root,
             "parent_comment_id": parent,
+            "parent_verified": parent_verified,
             "platform_user_id": _positive_id(member["mid"]),
             "display_name": str(member["uname"]),
             "content": str(content["message"]),

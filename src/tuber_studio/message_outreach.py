@@ -37,13 +37,14 @@ def outreach_sources(thread):
         value = dict(row) | {"comment_id": str(row["comment_id"]),
             "text": row.get("text") or row.get("content"),
             "author_uid": str(row.get("author_uid") or row.get("platform_user_id") or row.get("user_id") or ""),
-            "_parent_known": "parent_comment_id" in row, "_mentions_known": "mentions" in row}
+            "_parent_known": "parent_comment_id" in row and row.get("parent_verified", True),
+            "_mentions_known": "mentions" in row}
         if str(value["comment_id"]) == str((thread.get("source") or {}).get("comment_id")):
             value["mentions"] = addressing.get("source_mentions", value.get("mentions", []))
             value["_mentions_known"] = "source_mentions" in addressing or value["_mentions_known"]
             if "source_parent_comment_id" in addressing:
                 value["parent_comment_id"] = addressing["source_parent_comment_id"]
-                value["_parent_known"] = True
+                value["_parent_known"] = addressing.get("source_parent_verified", True)
         previous = next((previous for previous in rows if previous["comment_id"] == value["comment_id"]), None)
         if previous is None:
             rows.append(value)
@@ -61,12 +62,16 @@ def _source_addressing(source, sources, actor_uid, owner_uid):
         return "possible"
     if mentions:
         return "unresolved" if any(person.get("uid") in (None, "", "0", 0) for person in mentions) else "impossible"
+    if not source["_parent_known"] or ("@" in source["text"] or "＠" in source["text"]):
+        return "unresolved"
     parent_id = source.get("parent_comment_id")
-    parent = next((row for row in sources if row["comment_id"] == str(parent_id)), {})
-    if str(parent.get("author_uid") or "") == actor_uid or owner_uid == actor_uid:
-        return "possible"
-    parent_known = bool(parent.get("author_uid")) if parent_id not in (None, "", "0", 0) else source["_parent_known"]
-    return "impossible" if parent_known and owner_uid and source["_mentions_known"] else "unresolved"
+    if parent_id not in (None, "", "0", 0):
+        parent = next((row for row in sources if row["comment_id"] == str(parent_id)), {})
+        uid = str(parent.get("author_uid") or "")
+        return "possible" if uid == actor_uid else "impossible" if uid else "unresolved"
+    if source["_parent_known"] and source["_mentions_known"] and owner_uid:
+        return "possible" if owner_uid == actor_uid else "impossible"
+    return "unresolved"
 
 
 def invitation_possibility(thread, actor_uid, recipient_uid):
@@ -77,7 +82,8 @@ def invitation_possibility(thread, actor_uid, recipient_uid):
     candidates = [row for row in sources if row["author_uid"] == str(recipient_uid)]
     if not candidates:
         return "impossible" if sources and all(row["author_uid"] for row in sources) else "unresolved"
-    states = {_source_addressing(row, sources, str(actor_uid), str(thread.get("resource_author_uid") or "")) for row in candidates}
+    owner_uid = str(thread.get("resource_author_uid") or "")
+    states = {_source_addressing(row, sources, str(actor_uid), owner_uid) for row in candidates}
     return "possible" if "possible" in states else "unresolved" if "unresolved" in states else "impossible"
 
 

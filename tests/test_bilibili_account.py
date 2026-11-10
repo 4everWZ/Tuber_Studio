@@ -458,7 +458,7 @@ async def test_private_reads_reject_account_changed_while_awaiting(settings, net
             return value
 
         monkeypatch.setattr(adapter, "sessions", AsyncMock(return_value=("111", ["222"])))
-        monkeypatch.setattr(adapter, "history", AsyncMock(return_value=[]))
+        monkeypatch.setattr(adapter, "history_page", AsyncMock(return_value=([], 0, 0)))
         if phase == "sessions":
             monkeypatch.setattr(adapter, "sessions", lambda: blocked(("111", ["222"])))
             pending = asyncio.create_task(messages.sync())
@@ -473,7 +473,7 @@ async def test_private_reads_reject_account_changed_while_awaiting(settings, net
                     "content": {"content": "旧账号私密原文"},
                 }
             ]
-            monkeypatch.setattr(adapter, "history", lambda uid: blocked(rows))
+            monkeypatch.setattr(adapter, "history_page", lambda uid, *, before: blocked((rows, 0, 0)))
             pending = asyncio.create_task(messages.sync())
         else:
             inbox, _ = messages.ingest(

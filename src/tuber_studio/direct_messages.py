@@ -5,10 +5,11 @@ import json
 import re
 import time
 from contextlib import nullcontext
+from dataclasses import dataclass
 from typing import Literal
 
 import httpx
-from pydantic import Field, model_validator
+from pydantic import Field, StrictInt, model_validator
 
 from .generation_meter import GenerationMeter, budgeted_json
 from .meme_selection import select_meme
@@ -32,10 +33,14 @@ from .operation_feedback import (
 )
 from .operation_generation import generate_with_recovery, generation_requires_review, reply_generation_binding
 from .operation_identity import runtime_identity
-from .operation_text import validate_operation_text
+from .operation_text import operation_output_diagnostics, validate_operation_text
 from .operations_control import canonical_intent
 from .platforms.bilibili import PublishUncertain
-from .platforms.bilibili_messages import BilibiliMessagesAdapter, MessagePreparationCancelled
+from .platforms.bilibili_messages import (
+    BilibiliMessagesAdapter,
+    MessagePreparationCancelled,
+    message_sequence,
+)
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 
@@ -88,6 +93,27 @@ class MessageInputChanged(ValueError):
 
 class MessageIdentityChanged(MessageInputChanged):
     """The account profile changed after the latest pre-send refresh."""
+
+
+class IncomingSettlement(StrictModel):
+    incoming: StrictInt
+    outgoing: StrictInt
+    quote: str = Field(min_length=1, max_length=300)
+
+
+class ConversationReply(StrictModel):
+    text: str = ""
+    reason: str = Field(min_length=1, max_length=1024)
+    reply_to: list[StrictInt] = Field(default_factory=list, max_length=8)
+    handled: list[IncomingSettlement] = Field(default_factory=list, max_length=8)
+
+
+@dataclass(frozen=True)
+class ConversationWindow:
+    timeline: list[dict]
+    refs: dict[int, int]
+    links: dict[tuple[int, int], str | None]
+    fingerprint: str
 
 
 class DirectMessages:
@@ -178,6 +204,18 @@ class DirectMessages:
                 store.execute(f"ALTER TABLE dm_drafts ADD COLUMN {name} {definition}")
         store.execute("UPDATE dm_drafts SET resume_pending=1 WHERE status='queued'")
         store.execute("CREATE UNIQUE INDEX IF NOT EXISTS dm_outreach_invitation ON dm_drafts(account_id,character_id,platform,platform_user_id,contact_key) WHERE contact_key<>''")
+        for table in ("dm_inbox", "dm_operator_replies"):
+            if "sequence" not in {row[1] for row in store.db.execute(f"PRAGMA table_info({table})")}:
+                store.execute(f"ALTER TABLE {table} ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
+        store.execute("CREATE INDEX IF NOT EXISTS dm_inbox_sequence ON dm_inbox(platform,account_id,character_id,platform_user_id,sent_at,sequence,id)")
+        if "origin" not in {row[1] for row in store.db.execute("PRAGMA table_info(dm_operator_replies)")}:
+            store.execute("ALTER TABLE dm_operator_replies ADD COLUMN origin TEXT NOT NULL DEFAULT 'operator'")
+        store.execute("""CREATE TABLE IF NOT EXISTS dm_incoming_settlements(
+            incoming_id INTEGER PRIMARY KEY, outgoing_id TEXT NOT NULL)""")
+        store.execute("""CREATE TABLE IF NOT EXISTS dm_sync_cursors(
+            account_id TEXT, character_id TEXT, platform_user_id TEXT, newest INTEGER NOT NULL,
+            before_sequence INTEGER NOT NULL, pending_newest INTEGER NOT NULL,
+            PRIMARY KEY(account_id,character_id,platform_user_id))""")
 
     def policy(self):
         base = MessagePolicy.model_validate(self.store.get("message_policy", {})).model_dump()
@@ -226,7 +264,7 @@ class DirectMessages:
         if not self.policy()["enabled"]:
             raise ValueError("私信功能未启用")
 
-    def ingest(self, value):
+    def ingest(self, value, *, sequence=0):
         message = IncomingMessage.model_validate(value).model_dump()
         if message["timestamp"] > time.time() + 30:
             raise ValueError("私信时间在未来")
@@ -245,10 +283,12 @@ class DirectMessages:
                 )
             ):
                 raise ValueError("同一私信消息ID的来源或原文不能改写")
+            if sequence and not existing["sequence"]:
+                self.store.execute("UPDATE dm_inbox SET sequence=? WHERE id=?", (sequence, existing["id"]))
             return existing["id"], False
         self.store.ensure_user(message["platform"], message["platform_user_id"], message["display_name"])
         identity = self.store.execute(
-            "INSERT INTO dm_inbox(platform,message_id,platform_user_id,display_name,content,sent_at,character_id,received_at,account_id) VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO dm_inbox(platform,message_id,platform_user_id,display_name,content,sent_at,character_id,received_at,account_id,sequence) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 message["platform"],
                 message["message_id"],
@@ -259,6 +299,7 @@ class DirectMessages:
                 self.runtime.character["id"],
                 time.time(),
                 message["account_id"],
+                sequence,
             ),
         ).lastrowid
         return identity, True
@@ -291,15 +332,20 @@ class DirectMessages:
                 if not self.policy()["enabled"] or (automatic and not self.policy()["auto_poll"]):
                     break
                 try:
-                    rows = await adapter.history(uid)
-                    require_current_account()
-                    if not self.policy()["enabled"] or (automatic and not self.policy()["auto_poll"]):
-                        break
                     known = self.store.one(
                         "SELECT display_name FROM users WHERE platform='bilibili' AND platform_user_id=?",
                         (uid,),
                     )
-                    count += self._ingest_history(rows, uid, own_uid, known["display_name"] if known else f"UID {uid}")
+                    def require_read_permission():
+                        require_current_account()
+                        if not self.policy()["enabled"] or (automatic and not self.policy()["auto_poll"]):
+                            raise ValueError("私信读取已停止")
+
+                    imported, _ = await self._sync_history(
+                        adapter, uid, own_uid, known["display_name"] if known else f"UID {uid}",
+                        require_read_permission, cutoff=self._inbox_cutoff(str(own_uid)) if automatic else None,
+                    )
+                    count += imported
                 except (ValueError, KeyError, TypeError) as error:
                     errors.append(f"UID {uid}：{public_error(error)}")
             require_current_account()
@@ -309,20 +355,64 @@ class DirectMessages:
             self.error = "；".join(errors)[:500] or None
             return {"imported": count, "errors": errors}
 
+    async def _sync_history(self, adapter, uid, account, name, guard, *, cutoff=None, require_latest=False):
+        if not hasattr(adapter, "history_page"):
+            rows = await adapter.history(uid)
+            guard()
+            return self._ingest_history(rows, uid, account, name), True
+        scope = (str(account), self.runtime.character["id"], str(uid))
+        state = self.store.one(
+            "SELECT newest,before_sequence,pending_newest FROM dm_sync_cursors WHERE account_id=? AND character_id=? AND platform_user_id=?",
+            scope,
+        ) or {"newest": 0, "before_sequence": 0, "pending_newest": 0}
+        newest, before, pending = state["newest"], state["before_sequence"], state["pending_newest"]
+        refreshed_head = not before
+        count = 0
+        for _ in range(3):
+            rows, next_page, latest = await adapter.history_page(uid, before=before)
+            guard()
+            if self.runtime.character["id"] != scope[1]:
+                raise ValueError("读取期间角色已变化")
+            count += self._ingest_history(rows, uid, account, name)
+            pending = max(pending, latest)
+            before = next_page
+            if before and (
+                (newest and before <= newest)
+                or (cutoff is not None and any(float(row.get("timestamp", 0)) < cutoff for row in rows))
+            ):
+                before = 0
+            self.store.execute(
+                "INSERT OR REPLACE INTO dm_sync_cursors VALUES(?,?,?,?,?,?)",
+                (
+                    *scope,
+                    newest if before else pending,
+                    before,
+                    pending if before else 0,
+                ),
+            )
+            if not before and (refreshed_head or not require_latest):
+                return count, True
+            if not before:
+                newest, pending = pending, 0
+                refreshed_head = True
+        return count, False
+
     def _ingest_history(self, rows, uid, own_uid, display_name):
         count = 0
-        operator_replies_found = []
-        for row in sorted(rows, key=lambda row: int(row.get("timestamp", 0))):
+        for row in sorted(rows, key=lambda row: (message_sequence(row.get("msg_seqno")), int(row.get("timestamp", 0)))):
             if row.get("receiver_type", 1) != 1 or row.get("msg_type") != 1 or row.get("msg_status", 0) != 0:
                 continue
             sender = str(row.get("sender_uid", ""))
             receiver = str(row.get("receiver_id", ""))
             msg_key = str(row.get("msg_key", ""))
+            sequence = message_sequence(row.get("msg_seqno"))
             if not re.fullmatch(r"[1-9][0-9]{0,19}", msg_key):
                 raise ValueError("平台私信缺少有效消息ID")
             content = row.get("content")
             content = json.loads(content) if isinstance(content, str) else content
             msg_text = content.get("content", "") if isinstance(content, dict) else str(content)
+            if not isinstance(msg_text, str) or not msg_text.strip():
+                continue
             ts = float(row.get("timestamp", 0))
 
             if sender == str(uid) and receiver == str(own_uid):
@@ -333,24 +423,20 @@ class DirectMessages:
                     "text": msg_text,
                     "timestamp": ts,
                     "account_id": str(own_uid),
-                })
+                }, sequence=sequence)
                 count += int(fresh)
             elif sender == str(own_uid) and receiver == str(uid):
                 is_system = bool(
-                    self.store.one(
-                        "SELECT id FROM dm_attempts WHERE status='published' AND receipt LIKE ?",
-                        (f'%"{msg_key}"%',),
-                    )
-                    or self.store.one(
-                        "SELECT id FROM dm_drafts WHERE status='published' AND receipt LIKE ?",
-                        (f'%"{msg_key}"%',),
-                    )
+                    self.store.one("SELECT id FROM dm_drafts WHERE account_id=? AND platform_user_id=? "
+                        "AND platform='bilibili' AND status='published' AND json_valid(receipt) "
+                        "AND CAST(json_extract(receipt,'$.msg_key') AS TEXT)=?", (str(own_uid), str(uid), msg_key))
                 )
-                if not is_system:
-                    self.store.execute(
+                self.store.execute(
                         "INSERT OR IGNORE INTO dm_operator_replies"
-                        "(platform, account_id, platform_user_id, message_id, content, sent_at, character_id) "
-                        "VALUES('bilibili', ?, ?, ?, ?, ?, ?)",
+                        "(platform, account_id, platform_user_id, message_id, content, sent_at, character_id, sequence,origin) "
+                        "VALUES('bilibili', ?, ?, ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(platform,account_id,message_id) DO UPDATE SET sequence=excluded.sequence,origin=excluded.origin "
+                        "WHERE dm_operator_replies.origin<>excluded.origin OR dm_operator_replies.sequence=0",
                         (
                             str(own_uid),
                             str(uid),
@@ -358,28 +444,16 @@ class DirectMessages:
                             msg_text,
                             ts,
                             self.runtime.character["id"],
+                            sequence,
+                            "oc" if is_system else "operator",
                         ),
                     )
-                    operator_replies_found.append({"timestamp": ts, "msg_key": msg_key, "text": msg_text})
-
-        for op in operator_replies_found:
-            pending = self.store.all(
-                "SELECT id FROM dm_drafts WHERE platform='bilibili' AND account_id=? AND platform_user_id=? "
-                "AND character_id=? AND status IN ('queued', 'generating', 'pending_review', 'failed') "
-                "AND created_at <= ?",
-                (str(own_uid), str(uid), self.runtime.character["id"], op["timestamp"] + 10),
-            )
-            for draft in pending:
-                self.store.execute(
-                    "UPDATE dm_drafts SET status='cancelled', error='号主已在平台手动回复，无需重复发送', updated_at=? WHERE id=?",
-                    (time.time(), draft["id"]),
-                )
 
         return count
 
     async def _refresh_conversation_inbox(self, draft):
         if self.injected or not hasattr(await self._adapter(), "history"):
-            return
+            return True
         if self.runtime.character["id"] != draft["character_id"]:
             raise ValueError("当前OC已变化，请切回原会话角色")
         async with self.sync_lock:
@@ -389,11 +463,14 @@ class DirectMessages:
             self._require_unchanged_draft(draft)
             if account != draft["account_id"]:
                 raise ValueError("当前账号与私信会话不一致")
-            rows = await adapter.history(draft["platform_user_id"])
-            self._require_unchanged_draft(draft)
-            if self.adapter is not adapter or credential != self.comments.credentials:
-                raise ValueError("读取期间账号已变化，未混入私密上下文")
-            self._ingest_history(rows, draft["platform_user_id"], account, draft["display_name"])
+            def guard():
+                self._require_unchanged_draft(draft)
+                if self.adapter is not adapter or credential != self.comments.credentials:
+                    raise ValueError("读取期间账号已变化，未混入私密上下文")
+
+            _, complete = await self._sync_history(adapter, draft["platform_user_id"], account, draft["display_name"],
+                guard, cutoff=self._inbox_cutoff(account), require_latest=True)
+            return complete
 
     def _require_unchanged_draft(self, draft):
         fresh = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (draft["id"],))
@@ -404,10 +481,9 @@ class DirectMessages:
     def _inbox_cutoff(self, account_id):
         key = f"message_inbox_cutoff:{account_id}:{self.runtime.character['id']}"
         cutoff = self.store.get(key)
-        if cutoff is None:
-            cutoff = max(
-                int(self.enabled_at), self.started_at, int(self.operations.policy()["enabled_at"] or 0)
-            )
+        baseline = max(int(self.enabled_at), int(self.operations.policy()["enabled_at"] or 0))
+        if cutoff is None or cutoff < baseline:
+            cutoff = max(baseline, self.started_at if cutoff is None else 0)
             self.store.set(key, cutoff)
         return cutoff
 
@@ -421,16 +497,16 @@ class DirectMessages:
         candidates = self.store.all(
             """WITH newest AS (
                    SELECT id,platform,platform_user_id,sent_at,
-                          ROW_NUMBER() OVER (PARTITION BY platform,platform_user_id ORDER BY sent_at DESC,id DESC) AS rank
-                   FROM dm_inbox WHERE account_id=? AND character_id=? AND sent_at>=?
+                          ROW_NUMBER() OVER (PARTITION BY platform,platform_user_id ORDER BY sequence DESC,sent_at DESC,id DESC) AS rank
+                   FROM dm_inbox i WHERE account_id=? AND character_id=? AND sent_at>=?
+                   AND NOT EXISTS (SELECT 1 FROM dm_incoming_settlements s WHERE s.incoming_id=i.id)
+                   AND NOT EXISTS (SELECT 1 FROM dm_sync_cursors c WHERE c.account_id=i.account_id
+                       AND c.character_id=i.character_id AND c.platform_user_id=i.platform_user_id AND c.before_sequence<>0)
                ) SELECT id FROM newest n WHERE rank=1 AND NOT EXISTS (
                    SELECT 1 FROM dm_drafts d WHERE d.account_id=? AND d.character_id=?
                    AND d.platform=n.platform AND d.platform_user_id=n.platform_user_id
                    AND ((d.source_kind='message' AND d.source_id=n.id) OR
-                        (d.status IN ('queued','generating') AND d.character_version=?))
-               ) AND NOT EXISTS (
-                   SELECT 1 FROM dm_operator_replies o WHERE o.account_id=? AND o.character_id=?
-                   AND o.platform=n.platform AND o.platform_user_id=n.platform_user_id AND o.sent_at>=n.sent_at
+                        (d.status IN ('queued','generating','publishing','publish_uncertain') AND d.character_version=?))
                ) ORDER BY sent_at DESC,id DESC LIMIT ?""",
             (
                 account_id,
@@ -439,13 +515,11 @@ class DirectMessages:
                 account_id,
                 self.runtime.character["id"],
                 self.runtime.character["version"],
-                account_id,
-                self.runtime.character["id"],
                 slots,
             ),
         )
         for candidate in candidates:
-            self.enqueue("message", candidate["id"], automatic=True)
+            self.enqueue("message", candidate["id"], automatic=True, continuous=True)
 
     def _source(self, kind, identity, character):
         table = "dm_inbox" if kind == "message" else "comments" if kind == "comment" else None
@@ -474,6 +548,7 @@ class DirectMessages:
         proposed_text="",
         proposal_identity=None,
         contact_trigger=None,
+        continuous=False,
     ):
         self._enabled()
         character = character or self.runtime.character
@@ -501,6 +576,8 @@ class DirectMessages:
         )
         if kind == "comment":
             trigger["contact_trigger"] = contact_trigger
+        elif continuous:
+            trigger["continuous"] = True
         if automatic and self.operations.policy()["enabled"]:
             trigger["automatic_epoch"] = self.operations.policy()["epoch"]
         draft_id = self.store.execute(
@@ -677,34 +754,268 @@ class DirectMessages:
                     "completion_evidence": self._completion_evidence(draft),
                     "task": "完成原约定的查找后联系一次；尚未查到时保留约定等待，不把自称查到当完成证据"}
         else:
-            event["recent_incoming"] = self.store.all(
-                "SELECT message_id,content,sent_at FROM dm_inbox WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? AND id<? ORDER BY id DESC LIMIT 30",
-                (
-                    draft["platform"],
-                    draft["platform_user_id"],
-                    character["id"],
-                    draft.get("account_id", ""),
-                    source["id"],
-                ),
-            )[::-1]
-            op_replies = self.store.all(
-                "SELECT message_id,content,sent_at FROM dm_operator_replies WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? ORDER BY sent_at DESC LIMIT 10",
-                (
-                    draft["platform"],
-                    draft["platform_user_id"],
-                    character["id"],
-                    draft.get("account_id", ""),
-                ),
-            )[::-1]
-            if op_replies:
-                event["operator_replies"] = op_replies
-                event["co_pilot_guidance"] = (
-                    "号主/饲养员此前已在平台手动回复过该用户（详见operator_replies）。"
-                    "请结合号主的回复顺畅接话，不要重复回答号主已经解答过的要点。"
-                )
+            conversation = self._reply_window(draft, source)
+            event["conversation"] = conversation.timeline
+            event["conversation_sha256"] = conversation.fingerprint
         if len(json.dumps(event, ensure_ascii=False)) > 1_000_000:
             raise ValueError("来源上下文过大，保留原文；请整理该楼后重新准备私信")
         return event
+
+    @staticmethod
+    def _ordered_messages(rows):
+        by_time = sorted(rows, key=lambda row: (row["sent_at"], row["id"]))
+        sequenced = iter(sorted((row for row in rows if row["sequence"]), key=lambda row: row["sequence"]))
+        return [next(sequenced) if row["sequence"] else row for row in by_time]
+
+    def _reply_window(self, draft, source):
+        scope = tuple(draft[key] for key in ("platform", "platform_user_id", "character_id", "account_id"))
+        common = "platform=? AND platform_user_id=? AND character_id=? AND account_id=?"
+        order = " ORDER BY sequence DESC,sent_at DESC,id DESC"
+        incoming = self.store.all(
+            "SELECT i.id,message_id,content,sent_at,sequence,s.incoming_id AS settled,'viewer' AS origin "
+            "FROM dm_inbox i LEFT JOIN dm_incoming_settlements s ON s.incoming_id=i.id WHERE "
+            + common
+            + " AND CASE WHEN sequence>0 AND ?>0 THEN sequence<=? ELSE (sent_at,i.id)<=(?,?) END"
+            + order.replace("id DESC", "i.id DESC")
+            + " LIMIT 30",
+            (*scope, source["sequence"], source["sequence"], source["sent_at"], source["id"]),
+        )
+        outgoing = self.store.all(
+            "SELECT id,message_id,content,sent_at,sequence,origin FROM dm_operator_replies WHERE "
+            + common
+            + order
+            + " LIMIT 15",
+            scope,
+        )
+        trigger = json.loads(draft.get("trigger_source") or "{}")
+        cutoff = (
+            self.store.get(f"message_inbox_cutoff:{draft['account_id']}:{draft['character_id']}", 0)
+            if trigger.get("continuous")
+            else 0
+        )
+        batch_start = max(source["sent_at"] - 600, cutoff)
+        claimed = {
+            item["source_id"]
+            for item in self.store.all(
+                "SELECT source_id FROM dm_drafts WHERE " + common + " AND id<>? AND source_kind='message' "
+                "AND status IN ('queued','generating','published','publishing','publish_uncertain',"
+                "'rejected','copied','pending_review','approved')",
+                (*scope, draft["id"]),
+            )
+        }
+        pending = [
+            item
+            for item in incoming
+            if not item["settled"] and item["id"] not in claimed and item["sent_at"] >= batch_start
+        ][:8]
+
+        # An equal timestamp without two sequence values cannot prove which turn was first.
+        def later(response, message):
+            if response["sequence"] and message["sequence"]:
+                return response["sequence"] > message["sequence"]
+            return response["sent_at"] > message["sent_at"]
+
+        timeline = self._ordered_messages([*incoming, *outgoing])
+        refs, links, public = {}, {}, []
+        pending_ids = {message["id"] for message in pending}
+        for index, item in enumerate(timeline, 1):
+            ref = {"message": index, "speaker": item["origin"], "text": item["content"]}
+            if item["origin"] == "viewer" and item["id"] in pending_ids:
+                ref["open"] = True
+                refs[index] = item["id"]
+            public.append(ref)
+        for index, response in enumerate(timeline, 1):
+            if response["origin"] != "operator":
+                continue
+            for i in refs:
+                incoming = timeline[i - 1]
+                if later(response, incoming):
+                    links[(i, index)] = response["message_id"]
+                elif response["sent_at"] == incoming["sent_at"] and not (
+                    response["sequence"] and incoming["sequence"]
+                ):
+                    links[(i, index)] = None
+        fingerprint = content_hash(
+            [
+                (message["message_id"], message["sequence"], view)
+                for message, view in zip(timeline, public, strict=True)
+            ]
+        )
+        return ConversationWindow(public, refs, links, fingerprint)
+
+    def _settle_incoming(self, draft, incoming_ids, outgoing_id):
+        self.store.db.executemany(
+            "INSERT OR IGNORE INTO dm_incoming_settlements SELECT id,? FROM dm_inbox "
+            "WHERE id=? AND account_id=? AND character_id=? AND platform=? AND platform_user_id=?",
+            [
+                (
+                    str(outgoing_id),
+                    value,
+                    draft["account_id"],
+                    draft["character_id"],
+                    draft["platform"],
+                    draft["platform_user_id"],
+                )
+                for value in incoming_ids
+            ],
+        )
+
+    def _conversation_matches(self, draft, expected):
+        if draft["source_kind"] != "message":
+            return True
+        source = self.store.one("SELECT * FROM dm_inbox WHERE id=?", (draft["source_id"],))
+        conversation = self._reply_window(draft, source)
+        return bool(conversation.refs) and (
+            conversation.fingerprint == expected if expected else not conversation.links
+        )
+
+    def _requeue_changed_conversation(self, draft, automatic):
+        self.store.execute(
+            "UPDATE dm_drafts SET status='queued',resume_pending=1,next_attempt_at=0,error=NULL,updated_at=? "
+            "WHERE id=? AND status NOT IN ('published','publish_uncertain','rejected')",
+            (time.time(), draft["id"]),
+        )
+        self.authorizations[draft["id"]] = self.operations.policy()["epoch"] if automatic else None
+
+    def _check_conversation(self, draft, expected, *, automatic):
+        if not self._conversation_matches(draft, expected):
+            self._requeue_changed_conversation(draft, automatic)
+            raise MessageInputChanged("会话出现新发言，已保留原稿并准备更新回复")
+
+    def _settle_delivered_reply(self, draft, receipt):
+        if draft["source_kind"] == "message":
+            check = json.loads(draft.get("answer_check") or "{}")
+            self._settle_incoming(
+                draft, check.get("reply_incoming_ids") or [draft["source_id"]], receipt["msg_key"]
+            )
+
+    def _delivered_event(self, draft, character):
+        event = self._event(draft, character)
+        if draft["source_kind"] != "message":
+            return event
+        check = json.loads(draft.get("answer_check") or "{}")
+        if ids := check.get("reply_incoming_ids"):
+            rows = self.store.all(
+                "SELECT id,message_id,content,sent_at,sequence FROM dm_inbox WHERE platform=? AND platform_user_id=? "
+                "AND character_id=? AND account_id=? AND id IN (SELECT value FROM json_each(?))",
+                (
+                    draft["platform"],
+                    draft["platform_user_id"],
+                    draft["character_id"],
+                    draft["account_id"],
+                    json.dumps(ids),
+                ),
+            )
+            if rows:
+                rows = self._ordered_messages(rows)
+                event["text"] = "\n".join(row["content"] for row in rows)
+                event["reply_sources"] = [row["message_id"] for row in rows]
+        return event
+
+    async def _reply_to_conversation(self, draft, character, event, relationship, refs, links):
+        config = self.settings.data["llm"]
+        maximum = config.get("operations_max_tokens", 8192)
+        scope = self.scope(draft)
+        binding = reply_generation_binding(scope, character, event, "direct_message") | {
+            "conversation_sha256": event["conversation_sha256"],
+        }
+        snapshot = runtime_identity(self.runtime, character, draft["account_id"])
+        binding["self_identity"] = snapshot
+        messages = await self.runtime.context.prepare(
+            scope,
+            character,
+            event,
+            relationship,
+            "direct_message",
+            output_tokens=maximum,
+        )
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "这次只输出text、reason、reply_to、handled。conversation按真实先后列出用户、号主与已确认OC发言。"
+                    "open为待处理来信。若号主已回答某条，handled填incoming与对应的operator发言号outgoing，"
+                    "quote逐字引用真正解答该问题的号主原话。"
+                    "reply_to列出本次text实际接话的open编号，text只回答这些未处理内容。意思相同的几条可一起处理。"
+                    "全答过则text留空；不能判断的来信不填任何一栏，reason写明原因。发言号只放字段，勿写入正文。"
+                ),
+            }
+        )
+        schema = ConversationReply.model_json_schema()
+        schema["properties"]["handled"]["items"] = schema.pop("$defs")["IncomingSettlement"]
+        schema["properties"]["reply_to"]["items"]["enum"] = sorted(refs)
+        schema["required"] = ["text", "reason", "reply_to", "handled"]
+
+        def validate(value):
+            result = ConversationReply.model_validate(
+                value.model_dump() if hasattr(value, "model_dump") else value
+            )
+            replied = set(result.reply_to)
+            handled = {item.incoming for item in result.handled}
+            if (
+                not result.reason.strip()
+                or replied & handled
+                or not replied <= refs.keys()
+                or len(handled) != len(result.handled)
+                or any(
+                    not links.get((item.incoming, item.outgoing))
+                    or item.quote.strip() not in event["conversation"][item.outgoing - 1]["text"]
+                    or not item.quote.strip()
+                    for item in result.handled
+                )
+                or bool(replied) != bool(result.text.strip())
+            ):
+                raise ValueError("私信接力决定与当前来信或实际号主回复不一致")
+            if result.text:
+                result.text = validate_operation_text(result.text)
+            return result
+
+        def guard():
+            if (
+                self.runtime.character["id"] != character["id"]
+                or runtime_identity(
+                    self.runtime,
+                    character,
+                    draft["account_id"],
+                )
+                != snapshot
+            ):
+                raise ValueError("私信生成期间账号或角色已变化")
+
+        async def generate(packet, wire_schema):
+            return await budgeted_json(self.runtime.llm, packet, wire_schema, max_tokens=maximum)
+
+        async def invoke(packet, *, web_fetch=None):
+            if web_fetch is not None:
+                return await web_fetch.complete(packet, schema, generate)
+            return await generate(packet, schema)
+
+        decision, audit = await generate_with_recovery(
+            self.runtime,
+            channel="generation.direct_message",
+            identity=event["event_id"] + ":" + content_hash(binding),
+            binding=binding,
+            character=character,
+            messages=messages,
+            generate=invoke,
+            validate=validate,
+            max_tokens=maximum,
+            guard=guard,
+            reuse_completed=True,
+            allow_web_fetch=True,
+            diagnose=lambda value: (
+                "正文包含大量重复内容，保留原文待审"
+                if value.text and operation_output_diagnostics(value.text)["needs_review"]
+                else None
+            ),
+        )
+        return decision, {
+            "generation_identity": snapshot,
+            "output": {
+                "needs_review": any(value is None for value in links.values())
+                or bool(audit and audit["state"] == "awaiting_review")
+            },
+        }
 
     async def _refresh_outreach_thread(self, draft):
         """Recover missing participant evidence without reading video material."""
@@ -875,6 +1186,16 @@ class DirectMessages:
         )
         return action == "send"
 
+    def _newer_incoming(self, draft, source):
+        return self.store.one(
+            "SELECT i.id,i.message_id FROM dm_inbox i WHERE account_id=? AND character_id=? AND platform=? AND platform_user_id=? "
+            "AND CASE WHEN sequence>0 AND ?>0 THEN sequence>? ELSE (sent_at,i.id)>(?,?) END "
+            "AND NOT EXISTS (SELECT 1 FROM dm_incoming_settlements s WHERE s.incoming_id=i.id) "
+            "ORDER BY sequence DESC,sent_at DESC,id DESC LIMIT 1",
+            (draft["account_id"], draft["character_id"], draft["platform"], draft["platform_user_id"],
+             source["sequence"], source["sequence"], source["sent_at"], source["id"]),
+        )
+
     def _merge_incoming(self, identity, *, automatic=False):
         row = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not row or row["status"] in {"published", "publishing", "publish_uncertain"}:
@@ -895,11 +1216,7 @@ class DirectMessages:
         if row["source_kind"] != "message":
             return False
         source = self._source("message", row["source_id"], self.store.character(row["character_id"], row["character_version"]))
-        latest = self.store.one(
-            "SELECT id FROM dm_inbox WHERE account_id=? AND character_id=? AND platform=? AND platform_user_id=? "
-            "AND (sent_at>? OR (sent_at=? AND id>?)) ORDER BY sent_at DESC,id DESC LIMIT 1",
-            (row["account_id"], row["character_id"], row["platform"], row["platform_user_id"], source["sent_at"], source["sent_at"], source["id"]),
-        )
+        latest = self._newer_incoming(row, source)
         if not latest:
             return False
         other = self.store.one("SELECT id FROM dm_drafts WHERE account_id=? AND character_id=? AND source_kind='message' AND source_id=? AND id<>?",
@@ -910,6 +1227,7 @@ class DirectMessages:
             return True
         trigger = json.loads(row.get("trigger_source") or "{}")
         trigger["ids"] = list(dict.fromkeys([*trigger.get("ids", [row["source_id"]]), latest["id"]]))
+        trigger["message_id"] = latest["message_id"]
         self.store.execute("UPDATE dm_drafts SET source_id=?,trigger_source=?,status='queued',resume_pending=1,error=NULL,updated_at=? WHERE id=?",
                            (latest["id"], json.dumps(trigger, ensure_ascii=False), time.time(), identity))
         self.authorizations[identity] = self.operations.policy()["epoch"] if automatic else None
@@ -954,6 +1272,13 @@ class DirectMessages:
     async def _generate_owned(self, identity, automatic):
         draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not draft or draft["status"] != "queued":
+            return
+        if draft["source_kind"] == "message" and self.store.one(
+            "SELECT 1 FROM dm_sync_cursors WHERE account_id=? AND character_id=? AND platform_user_id=? AND before_sequence<>0",
+            (draft["account_id"], draft["character_id"], draft["platform_user_id"]),
+        ):
+            self.store.execute("UPDATE dm_drafts SET resume_pending=1,next_attempt_at=? WHERE id=?",
+                               (time.time() + self.policy()["poll_interval_seconds"], identity))
             return
         if self.store.one(
             "SELECT 1 FROM character_archives WHERE character_id=? AND version=?",
@@ -1023,6 +1348,14 @@ class DirectMessages:
             character = self.store.character(draft["character_id"], draft["character_version"])
             source = self._source(draft["source_kind"], draft["source_id"], character)
             event = self._event(draft, character)
+            handled, reply_ids = [], []
+            if draft["source_kind"] == "message":
+                window = self._reply_window(draft, source)
+                refs, links = window.refs, window.links
+                if not refs:
+                    self.store.execute("UPDATE dm_drafts SET status='cancelled',resume_pending=0,error=? WHERE id=?",
+                        ("来信已处理，无需重复发送", identity))
+                    return
             relationship = self.runtime.relationships.observe(
                 character["id"],
                 draft["platform"],
@@ -1052,12 +1385,22 @@ class DirectMessages:
                     check = {"generation_identity": proposal_identity, "output": {
                         "needs_review": generation_requires_review(self.store, generation_id),
                     }, "reused_proposal": True}
+                elif draft["source_kind"] == "message" and (links or len(refs) > 1):
+                    decision, check = await self._reply_to_conversation(draft, character, event, relationship, refs, links)
+                    handled = [(refs[item.incoming], links[(item.incoming, item.outgoing)]) for item in decision.handled]
+                    reply_ids = [refs[ref] for ref in dict.fromkeys(decision.reply_to)]
+                    reply = OperationReply(spoken_text=decision.text) if decision.text else None
+                    check["operator_decision"] = decision.reason
+                    if set(refs.values()) != set(reply_ids) | {incoming for incoming, _ in handled}:
+                        check["output"]["needs_review"] = True
                 else:
                     reply, check = await self.runtime.generate_reply(
                         self.scope(draft), character, event, relationship, mode="direct_message"
                     )
+                    if draft["source_kind"] == "message":
+                        reply_ids = list(refs.values())
                 selected, selection_failed = None, False
-                if self.policy()["use_memes"] and self.memes:
+                if reply and self.policy()["use_memes"] and self.memes:
                     try:
                         selected = await select_meme(
                             self.runtime, self.memes, character, event, reply.spoken_text
@@ -1068,6 +1411,24 @@ class DirectMessages:
                         selection_failed = True
             if self._merge_incoming(identity, automatic=automatic):
                 raise MessageInputChanged("新来信已合并，重新准备回复")
+            if draft["source_kind"] == "message":
+                self._check_conversation(draft, event["conversation_sha256"], automatic=automatic)
+                with self.store.db:
+                    for incoming, outgoing in handled:
+                        self._settle_incoming(draft, [incoming], outgoing)
+                    check["reply_incoming_ids"] = reply_ids
+                    check["conversation_sha256"] = self._reply_window(draft, source).fingerprint
+                    trigger = json.loads(draft.get("trigger_source") or "{}")
+                    trigger["ids"] = sorted(set(trigger.get("ids", [])) | set(refs.values()))
+                    self.store.db.execute("UPDATE dm_drafts SET trigger_source=? WHERE id=?",
+                                          (json.dumps(trigger, ensure_ascii=False), identity))
+                    if not reply:
+                        complete = not check["output"].get("needs_review")
+                        self.store.db.execute("UPDATE dm_drafts SET status=?,resume_pending=0,answer_check=?,error=?,updated_at=? WHERE id=?",
+                            ("cancelled" if complete else "failed", json.dumps(check, ensure_ascii=False),
+                            "号主已在平台手动回复，无需重复发送" if complete else decision.reason, time.time(), identity))
+                if not reply:
+                    return
             self.store.execute(
                 "UPDATE dm_drafts SET status=?,resume_pending=0,next_attempt_at=0,text=?,answer_check=?,model=?,error=NULL,updated_at=? WHERE id=?",
                 (
@@ -1182,6 +1543,7 @@ class DirectMessages:
         }
 
     def _publication_binding(self, row, source, account, character):
+        check = json.loads(row.get("answer_check") or "{}")
         return publication_binding(
             "messages",
             account,
@@ -1200,6 +1562,7 @@ class DirectMessages:
                 if row["source_kind"] == "comment"
                 else source["message_id"],
                 "content_sha256": content_hash(source["content"]),
+                **({"reply_incoming_ids": check["reply_incoming_ids"]} if check.get("reply_incoming_ids") else {}),
             },
         )
 
@@ -1406,14 +1769,13 @@ class DirectMessages:
 
         def commit(receipt, verification):
             encoded = json.dumps(receipt, ensure_ascii=False)
-            self.store.execute(
-                "UPDATE dm_drafts SET status='published',receipt=?,error=NULL,updated_at=? WHERE id=?",
-                (encoded, time.time(), identity),
-            )
-            self.store.execute(
-                "UPDATE dm_attempts SET status='published',receipt=? WHERE id=(SELECT MAX(id) FROM dm_attempts WHERE draft_id=?)",
-                (encoded, identity),
-            )
+            draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+            with self.store.db:
+                self.store.db.execute("UPDATE dm_drafts SET status='published',receipt=?,error=NULL,updated_at=? WHERE id=?",
+                    (encoded, time.time(), identity))
+                self.store.db.execute("UPDATE dm_attempts SET status='published',receipt=? WHERE id=(SELECT MAX(id) FROM dm_attempts WHERE draft_id=?)",
+                    (encoded, identity))
+                self._settle_delivered_reply(draft, receipt)
             if self.memes:
                 self.memes.release(f"dm-draft:{identity}")
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
@@ -1428,7 +1790,7 @@ class DirectMessages:
             self.runtime.context.record(
                 self.scope(draft),
                 character,
-                self._event(draft, character),
+                self._delivered_event(draft, character),
                 spoken,
                 "direct_message",
                 memory_kind=None if payload.get("message_kind") == "image" else check.get("memory_kind"),
@@ -1454,11 +1816,20 @@ class DirectMessages:
             scope = (draft["account_id"], draft["character_id"], "dm:" + draft["platform"], draft["platform_user_id"])
             async with self.runtime.conversation_turn(scope):
                 return await self.send(identity, automatic=automatic, authorization_epoch=authorization_epoch, _conversation_owned=True)
-        await self._refresh_conversation_inbox(draft)
+        if not await self._refresh_conversation_inbox(draft):
+            self._requeue_changed_conversation(draft, automatic)
+            raise MessageInputChanged("私信历史仍在补齐，已保留进度，暂未发送")
         if self._merge_incoming(identity, automatic=automatic):
             if not self.queue.full():
                 self._schedule(identity, automatic)
             raise MessageInputChanged("新来信已合并，重新准备回复后发送")
+        try:
+            self._check_conversation(draft, json.loads(draft.get("answer_check") or "{}").get("conversation_sha256"),
+                                     automatic=automatic)
+        except MessageInputChanged:
+            if not self.queue.full():
+                self._schedule(identity, automatic)
+            raise
         character = self.store.character(draft["character_id"], draft["character_version"])
         observed = await self.runtime.refresh_identity(character, draft["account_id"])
         self._require_unchanged_draft(draft)
@@ -1540,7 +1911,7 @@ class DirectMessages:
                 automatic
                 and row["source_kind"] == "message"
                 and source["sent_at"]
-                < max(int(self.enabled_at), self.started_at, int(self.operations.policy()["enabled_at"] or 0))
+                < self._inbox_cutoff(row["account_id"])
             ):
                 raise ValueError("历史来信不自动追发，保留草稿")
             for seconds, maximum in ((3600, policy["max_per_hour"]), (86400, policy["max_per_day"])):
@@ -1633,13 +2004,11 @@ class DirectMessages:
                 def authorized(*, reserve=True):
                     nonlocal token
                     generated = json.loads(row.get("answer_check") or "{}").get("generation_identity")
+                    if not self._conversation_matches(row, json.loads(row.get("answer_check") or "{}").get("conversation_sha256")):
+                        raise MessageInputChanged("会话出现新发言，暂未提交私信")
                     if generated != runtime_identity(self.runtime, character, row["account_id"]):
                         raise MessageIdentityChanged("提交前账号资料已更新，按最新身份重新准备")
-                    if row["source_kind"] == "message" and self.store.one(
-                        "SELECT 1 FROM dm_inbox WHERE account_id=? AND character_id=? AND platform=? AND platform_user_id=? "
-                        "AND (sent_at>? OR (sent_at=? AND id>?)) LIMIT 1",
-                        (row["account_id"], row["character_id"], row["platform"], row["platform_user_id"], source["sent_at"], source["sent_at"], source["id"]),
-                    ):
+                    if row["source_kind"] == "message" and self._newer_incoming(row, source):
                         raise MessageInputChanged("提交前收到新来信，重新合并回复")
                     policy = self.policy()
                     if image:
@@ -1733,8 +2102,8 @@ class DirectMessages:
                 self.store.execute("UPDATE dm_drafts SET status=? WHERE id=?", (previous, identity))
                 if isinstance(error, MessageIdentityChanged):
                     self.store.execute("UPDATE dm_drafts SET status='queued',proposed_text='',outreach_check=NULL,resume_pending=1,error=NULL WHERE id=?", (identity,))
-                else:
-                    self._merge_incoming(identity, automatic=automatic)
+                elif not self._merge_incoming(identity, automatic=automatic):
+                    self._requeue_changed_conversation(row, automatic)
                 if not self.queue.full():
                     self._schedule(identity, automatic)
                 self.store.execute("UPDATE dm_attempts SET status='cancelled',error='新来信已合并，未提交' WHERE id=?", (attempt,))
@@ -1795,6 +2164,7 @@ class DirectMessages:
                     self.store.db.execute(
                         "UPDATE dm_attempts SET status='published',receipt=? WHERE id=?", (encoded, attempt)
                     )
+                    self._settle_delivered_reply(row, receipt)
                 if token:
                     self.operations.finish(token, "published", receipt=receipt)
             except Exception:
@@ -1812,7 +2182,7 @@ class DirectMessages:
             self.runtime.context.record(
                 self.scope(row),
                 character,
-                self._event(row, character),
+                self._delivered_event(row, character),
                 spoken,
                 "direct_message",
                 memory_kind=None if image else check.get("memory_kind"),
@@ -1840,7 +2210,7 @@ class DirectMessages:
                 "private_continuations": [],
             }
         users = self.store.all(
-            "SELECT platform,platform_user_id,MAX(display_name) AS display_name,MAX(id) AS recent FROM dm_inbox WHERE character_id=? AND account_id=? GROUP BY platform,platform_user_id ORDER BY recent DESC LIMIT 100",
+            "SELECT platform,platform_user_id,MAX(display_name) AS display_name,MAX(sent_at) AS recent FROM dm_inbox WHERE character_id=? AND account_id=? GROUP BY platform,platform_user_id ORDER BY recent DESC LIMIT 100",
             (character["id"], account_id),
         )
         drafts = self.store.all(
@@ -1895,10 +2265,10 @@ class DirectMessages:
             return {"account_id": "", "messages": [], "drafts": [], "relationship": {}}
         return {
             "account_id": account_id,
-            "messages": self.store.all(
-                "SELECT * FROM dm_inbox WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? ORDER BY id DESC LIMIT 100",
+            "messages": self._ordered_messages(self.store.all(
+                "SELECT * FROM dm_inbox WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? ORDER BY sequence DESC,sent_at DESC,id DESC LIMIT 100",
                 (platform, uid, character["id"], account_id),
-            )[::-1],
+            )),
             "drafts": [
                 self._draft_view(row)
                 for row in self.store.all(

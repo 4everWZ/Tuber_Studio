@@ -29,6 +29,7 @@ def reply_generation_binding(scope, character, event, mode):
             "platform_comment_id",
             "source_created_at",
             "agreement_id",
+            "conversation_sha256",
         )
         if key in event
     }

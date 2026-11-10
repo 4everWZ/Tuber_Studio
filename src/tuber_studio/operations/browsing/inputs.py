@@ -65,7 +65,8 @@ def bind_response_actors(data, self_actor):
         if basis not in actor["basis"]:
             actor["basis"].append(basis)
 
-    for mention in addressing.get("source_mentions", []):
+    mentions = addressing.get("source_mentions", [])
+    for mention in mentions:
         if isinstance(mention, dict):
             add(mention.get("uid"), mention.get("name"), "mention")
     parent = thread.get("parent") or {}
@@ -81,14 +82,15 @@ def bind_response_actors(data, self_actor):
         for a in addressed.values()
     )
     has_third_party = any(a.get("relation_to_self") == "other" for a in addressed.values())
+    mentions_other = any(a["relation_to_self"] == "other" and "mention" in a["basis"] for a in addressed.values())
     addressing["is_explicitly_mentioned"] = is_explicitly_mentioned
     addressing["is_reply_to_self"] = is_reply_to_self
     addressing["has_third_party_mention"] = has_third_party
     addressing["conversation_nature"] = (
         "direct_interaction_with_self"
-        if (is_explicitly_mentioned or is_reply_to_self)
+        if (is_explicitly_mentioned or (is_reply_to_self and not mentions))
         else "third_party_dialogue"
-        if has_third_party
+        if (mentions_other if mentions else has_third_party)
         else "general_public_comment"
     )
     if source:
@@ -155,6 +157,8 @@ def compact_actor_context(bound, current_reference=None, *, current_text_ref=Non
             thread[name] = reference(thread[name])
     if "timeline" in thread:
         thread["timeline"] = [reference(row) for row in thread["timeline"]]
+    if "grouped_comments" in thread:
+        thread["grouped_comments"] = [reference(row) for row in thread["grouped_comments"]]
     # Raw rows stay in backend data for diagnostics/hash bindings. Include all
     # their unique bodies here even when the compact timeline shows only eight.
     for row in thread.pop("items", []):
@@ -445,6 +449,11 @@ class ResponseDecisionInput:
         self.references = tuple(refs)
         self.allowed_aliases = frozenset(ref.alias for ref in refs)
         self._by_alias = {ref.alias: ref for ref in refs}
+        thread = data.get("thread") or {}
+        group = {"public:" + str(item["comment_id"]) for item in thread.get("grouped_comments", [])}
+        self.grouped_comment_refs = frozenset(ref.alias for ref in refs if ref.canonical_id in group)
+        self.anchor_alias = next((ref.alias for ref in refs if ref.canonical_id ==
+            "public:" + str((thread.get("source") or {}).get("comment_id"))), None)
         header = deepcopy(
             {key: value for key, value in data.items() if key not in {"evidence", "allowed_evidence_ids"}}
         )
@@ -468,6 +477,10 @@ class ResponseDecisionInput:
                         comment_lines.append(f"[{ref.alias}] 当前评论原文：见reply_target.text")
                     else:
                         comment_lines.append(f"[{ref.alias}] 当前评论原文：\n{source['text']}")
+                elif ref.alias in self.grouped_comment_refs:
+                    grouped = next(item for item in header["thread"]["grouped_comments"]
+                                   if "public:" + str(item["comment_id"]) == ref.canonical_id)
+                    comment_lines.append(f"[{ref.alias}] 连续来评原文：见{grouped['text_ref']}")
                 else:
                     comment_lines.append(f"[{ref.alias}] 当前公开来源（原文见thread）")
                 continue
@@ -510,6 +523,12 @@ class ResponseDecisionInput:
             raise ValueError("回应引用不属于本次短编号")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
+        if value.action == "reply_public" and self.grouped_comment_refs:
+            covered = set(value.covered_comments)
+            if self.anchor_alias not in covered or not covered <= self.grouped_comment_refs:
+                raise ValueError("覆盖来评必须包含当前回复目标，且只限本次分组")
+        elif value.covered_comments:
+            raise ValueError("当前动作不接受连续来评覆盖")
         return value
 
     def diagnose(self, value):
@@ -525,7 +544,11 @@ class ResponseDecisionInput:
         wire = self.validate_wire(value)
         return ResponseDecision.model_validate(
             wire.model_dump()
-            | {"evidence_ids": [self._by_alias[alias].canonical_id for alias in wire.evidence_ids]}
+            | {
+                "evidence_ids": [self._by_alias[alias].canonical_id for alias in wire.evidence_ids],
+                "covered_comments": list(dict.fromkeys(self._by_alias[alias].canonical_id.split(":", 1)[1]
+                    for alias in wire.covered_comments)),
+            }
         )
 
 
@@ -592,7 +615,8 @@ class ContentDecisionInput:
                 cid=cid,
                 page=page,
                 title=metadata.get("title") or "",
-                kind="visual_observation" if part.get("visual") else "subtitle",
+                kind=("visual_observation" if part.get("visual") else
+                      "audio_transcript" if part.get("asr") else "subtitle"),
                 language=part.get("language"),
                 is_ai=part.get("is_ai"),
                 metadata_json=json.dumps(

@@ -2,7 +2,7 @@ import { $, node, safeMessage } from "./core.js";
 import { contactLabel, contactReason, contactStatus } from "./message-labels.js?v=20261107.20";
 
 const pageSize = 10;
-const readLabels = { complete: "完整阅读", fully_read: "完整阅读", full: "完整阅读", partial: "部分阅读", sampled_visual: "抽样画面", title_only: "仅看标题", comments_only: "只看评论", not_read: "未阅读", none: "未阅读", new: "尚未观看", started: "已开始观看", reading: "阅读中", viewed: "已看过" };
+const readLabels = { complete: "完整阅读", fully_read: "完整阅读", full: "完整阅读", partial: "部分阅读", sampled_visual: "抽样画面", sampled_audio: "抽样语音", title_only: "仅看标题", comments_only: "只看评论", not_read: "未阅读", none: "未阅读", new: "尚未观看", started: "已开始观看", reading: "阅读中", viewed: "已看过" };
 const statusLabels = { published: "已发送", publish_uncertain: "结果待确认", automatic_skipped: "未发送", failed: "发送失败", pending_review: "待审核", approved: "已保存", copied: "已复制", rejected: "已拒绝", private_handoff: "已转私信", received: "收到来信", queued: "排队生成中" };
 
 export function mainReplySummary(item) {

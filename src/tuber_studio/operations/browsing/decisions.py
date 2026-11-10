@@ -23,7 +23,12 @@ from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from ...publication_errors import SendLimitReached
 from ...store import dump
-from .comment_reader import CommentProgress, evaluate_comment_visit, handoff_comment, merge_continuous_comments
+from .comment_reader import (
+    CommentProgress,
+    evaluate_comment_visit,
+    handoff_comment,
+    merge_continuous_comments,
+)
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
     CLASSIFICATION_INSTRUCTION,
@@ -187,6 +192,7 @@ class BrowsingDecisions:
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
                 allow_comments=data.get("allow_comments", True),
+                grouped_comment_refs=response_input.grouped_comment_refs,
             )
         elif schema is CandidateBatchPlan:
             allowed_videos = [item["bvid"] for item in data["candidates"]]
@@ -918,8 +924,7 @@ class BrowsingDecisions:
                 if context is None:
                     context = await self.browsing.video_comment_context(row, material["metadata"]["bvid"])
                 raw_items = context.get("items", []) if isinstance(context, dict) else []
-                items = merge_continuous_comments(raw_items)
-                for item in items:
+                for item in merge_continuous_comments(raw_items):
                     if self.browsing.repo.video_reply_limit_reached(row, bvid):
                         comments_complete = False
                         status = "deferred_daily"
@@ -936,7 +941,7 @@ class BrowsingDecisions:
                         result["material_key"],
                         chosen,
                         item,
-                        items,
+                        raw_items,
                         metrics,
                         diagnostics=payload.setdefault("repetition_decisions", []),
                     )
@@ -1030,32 +1035,18 @@ class BrowsingDecisions:
         self, row, material, material_key, chosen, item, items, metrics, *, diagnostics=None, metadata=None
     ):
         author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
-        item_text = str(item.get("text") or item.get("content") or "")
-        if (
-            not author_uid
-            or author_uid == str(row["account_id"])
-            or category(item_text) == "spam"
-            or len(item_text.strip()) < 2
-        ):
+        if not author_uid or author_uid == str(row["account_id"]):
             return None
         comment_id = str(item["comment_id"])
         root_id = str(item.get("thread_id") or comment_id)
         metadata = material["metadata"] if material else metadata
         bvid = metadata["bvid"]
-        canonical = canonical_intent("bilibili", bvid, comment_id, row["character_id"])
         scope = (str(row["account_id"]), row["character_id"], bvid, root_id)
         lane = operation_lane.set("reply")
         try:
             async with self.browsing.runtime.conversation_turn(scope) as waited:
                 self.browsing._check_round(row)
-                if self.browsing.repo.video_reply_limit_reached(row, bvid) or self.browsing.store.one(
-                    "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=?",
-                    (row["account_id"], row["character_id"], canonical),
-                ):
-                    return None
-                if self.browsing.publication.has_manual_draft(
-                    row, bvid, comment_id,
-                ):
+                if self.browsing.repo.video_reply_limit_reached(row, bvid):
                     return None
                 target = {
                     "type": 1,
@@ -1064,43 +1055,50 @@ class BrowsingDecisions:
                     "root": root_id,
                     "parent": comment_id,
                 }
+                candidates = item.get("grouped_comments") or [item]
                 if waited:
                     read_thread = getattr(self.browsing.adapter, "read_video_thread", None)
                     if read_thread is not None:
                         fresh = await self.browsing._read(read_thread, target)
-                        source = fresh["source"]
-                        item = {
-                            **item,
-                            "content": source["text"],
-                            "text": source["text"],
-                            "platform_user_id": source["author_uid"],
-                            "user_id": source["author_uid"],
-                            "display_name": source.get("author_name", item.get("display_name", "")),
-                        }
                         items = fresh["items"]
+                        by_id = {str(record["comment_id"]): record for record in items}
+                        candidates = [by_id[key] for record in candidates
+                                      if (key := str(record["comment_id"])) in by_id]
                     elif hasattr(self.browsing.adapter, "read_video_reply"):
                         source = await self.browsing._read(self.browsing.adapter.read_video_reply, target)
-                        item = {
-                            **item,
+                        candidates = [{
+                            **{key: value for key, value in item.items() if key != "grouped_comments"},
                             "content": source["text"],
                             "text": source["text"],
                             "platform_user_id": source["author_uid"],
                             "user_id": source["author_uid"],
-                        }
-                    author_uid = str(item.get("user_id") or item.get("platform_user_id") or "")
-                    item_text = str(item.get("text") or item.get("content") or "")
-                    if author_uid == str(row["account_id"]) or category(item_text) == "spam":
-                        return None
+                        }]
+                pending = []
+                for candidate in candidates:
+                    body = str(candidate.get("text") or candidate.get("content") or "")
+                    uid = str(candidate.get("user_id") or candidate.get("platform_user_id") or "")
+                    if uid != author_uid or len(body.strip()) < 2 or category(body) == "spam":
+                        continue
+                    candidate_id = candidate["comment_id"]
+                    key = canonical_intent("bilibili", bvid, candidate_id, row["character_id"])
+                    if not self.browsing.publication.source_intent(row, key) and not self.browsing.publication.has_manual_draft(
+                        row, bvid, candidate_id,
+                    ):
+                        pending.append(candidate)
+                candidates = pending
+                if not candidates:
+                    return None
+                item = merge_continuous_comments(candidates)[-1]
+                comment_id = str(item["comment_id"])
+                target["parent"] = comment_id
+                item_text = str(item.get("text") or item.get("content") or "")
                 thread_context = self._video_comment_context(item, items, target)
                 if metadata and metadata.get("owner_uid"):
                     thread_context["resource_author_uid"] = str(metadata["owner_uid"])
                 source = thread_context["source"]
+                if grouped := thread_context.get("grouped_comments"):
+                    source = source | {"grouped_comments": grouped}
                 thread_response = self.comment_progress.get(row, bvid, source)
-                if thread_response is None and item.get("merged_sources"):
-                    for ms in item["merged_sources"]:
-                        if existing := self.comment_progress.get(row, bvid, ms):
-                            thread_response = existing
-                            break
                 if thread_response is None:
                     try:
                         thread_response = await self._response(
@@ -1116,8 +1114,6 @@ class BrowsingDecisions:
                                 "current_candidate": error.continuation.get("current_output")})
                         return None
                     self.comment_progress.save(row, bvid, source, thread_response)
-                    for ms in item.get("merged_sources", []):
-                        self.comment_progress.save(row, bvid, ms, thread_response)
                 if thread_response.action not in {"reply_public", "handoff_private"} or not thread_response.text:
                     return None
                 target.update(
@@ -1194,6 +1190,7 @@ class BrowsingDecisions:
             data["allowed_evidence_ids"] = sorted(
                 set(data.get("allowed_evidence_ids", []))
                 | {"public:" + str(context["source"]["comment_id"])}
+                | {"public:" + str(item["comment_id"]) for item in context.get("grouped_comments", [])}
             )
             data["source_identity"] = {
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
@@ -1204,6 +1201,9 @@ class BrowsingDecisions:
             ResponseDecision,
             data,
             RESPONSE_INSTRUCTION
+            + (" grouped_comments是同一用户对同一对象的连续来评。若一并公开回答，"
+               "covered_comments只列正文实际回答的来评ref编号，必须包含当前回复目标。"
+               if context.get("grouped_comments") else "")
             + (
                 " 这次可直接选择行动并给出正文，无需先做兴趣或渠道分类。"
                 "想继续翻评论选read_comments；想补看画面选watch_frames；想补读视频内容选read_more。"

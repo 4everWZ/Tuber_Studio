@@ -474,6 +474,43 @@ async def test_cc_is_preferred_to_visual_even_when_some_parts_have_no_cc(evidenc
     assert material["parts"] and visual.calls == 0
 
 
+async def test_frame_policy_changes_actual_request_without_reusing_baseline(evidence_factory, config):
+    adapter = await no_cc_adapter()
+    adapter.metadata["parts"][0]["duration"] = 300
+    service = evidence_factory(adapter, TestVisual())
+    config["visual_enabled"] = True
+    first_key, baseline = await service.prepare(BV, config)
+    second_key, adaptive = await service.prepare(BV, config | {"frame_sampling": "adaptive"})
+    assert first_key != second_key
+    assert baseline["frame_sampling"] == "baseline"
+    assert adaptive["frame_sampling"] == "adaptive"
+    assert [call[1] for call in adapter.calls if call[0] == "frames"] == [3, 6]
+
+
+async def test_opt_in_local_asr_is_partial_audio_evidence_not_cc(evidence_factory, config, monkeypatch):
+    import wave
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setenv("TUBER_VIDEO_ASR_CLI", "whisper-cli")
+    service = evidence_factory(await no_cc_adapter())
+    model = service.directory / "stub.gguf"
+    model.write_bytes(b"test identity")
+    service.asr.model = str(model)
+    service.asr.directory.mkdir()
+    with wave.open(str(service.asr.directory / f"{BV}-456.wav"), "wb") as clip:
+        clip.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+        clip.writeframes(bytes(32000))
+    run = AsyncMock(return_value=[{"id": "456:asr:1", "start": 0.1, "end": 0.5, "text": "现场说话"}])
+    monkeypatch.setattr(service.asr, "_read", run)
+    _, material = await service.prepare(BV, config)
+    assert material["coverage"] == "sampled_audio"
+    assert material["parts"][0]["asr"] and not material["parts"][0]["coverage"]["complete"]
+    assert material["parts"][0]["track_id"].startswith("local-asr:")
+    assert {row["cid"] for row in material["missing_parts"]} == {"456", "457"}
+    assert not any(call[0] == "frames" for call in service.adapter.calls)
+    assert run.await_count == 1
+
+
 async def test_visual_references_actual_times_and_each_part_without_claiming_full_view(
     evidence_factory, config
 ):

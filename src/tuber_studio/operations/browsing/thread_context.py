@@ -17,6 +17,8 @@ def comment_thread_context(item, items, target):
     actual = by_id.get(comment_id, item)
 
     def parent_of(row):
+        if row.get("parent_verified") is False:
+            return None
         parent = row.get("parent_comment_id")
         return str(parent) if parent not in (None, "", 0, "0") else None
 
@@ -27,6 +29,7 @@ def comment_thread_context(item, items, target):
         return comment_source(row) | {
             "root_id": str(row.get("thread_id") or row["comment_id"]),
             "parent_comment_id": parent_of(row),
+            "parent_verified": row.get("parent_verified", "parent_comment_id" in row or str(row["comment_id"]) == root_id),
             "mentions": list(row.get("mentions") or []),
             "available": True,
         }
@@ -45,9 +48,12 @@ def comment_thread_context(item, items, target):
             "is_target": str(row["comment_id"]) == comment_id,
         } for row in timeline[:8]],
         "items": timeline,
+        **({"grouped_comments": [present(row, str(row["comment_id"])) for row in item["grouped_comments"]]}
+           if item.get("grouped_comments") else {}),
         "addressing": {
             "source_mentions": list(actual.get("mentions") or []),
             "source_parent_comment_id": parent_id,
+            "source_parent_verified": actual.get("parent_verified", "parent_comment_id" in actual or comment_id == root_id),
             "source_root_comment_id": root_id,
         },
     }

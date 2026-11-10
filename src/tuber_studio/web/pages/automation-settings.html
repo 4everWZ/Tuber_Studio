@@ -104,6 +104,12 @@
           <label class="check-field" style="grid-column:1 / -1;">
             <input id="exp-visual-enabled" type="checkbox"> 启用视频画面分析
           </label>
+          <label>取帧策略
+            <select id="exp-frame-sampling">
+              <option value="baseline">基线 · 最多三帧</option>
+              <option value="adaptive">试验 · 按时长最多六帧</option>
+            </select>
+          </label>
         </div>
       </fieldset>
       <div class="actions" style="margin-top:12px;">

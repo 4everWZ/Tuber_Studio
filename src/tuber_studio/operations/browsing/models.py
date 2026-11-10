@@ -79,6 +79,7 @@ class BrowsingPolicy(StrictModel):
     replies_enabled: bool = False
     comment_handoff_enabled: bool = False
     visual_enabled: bool = False
+    frame_sampling: Literal["baseline", "adaptive"] = "baseline"
     workers: int = Field(default=4, ge=1, le=8)
     candidate_limit: int = Field(default=MAX_BATCH_CANDIDATES, ge=1, le=MAX_BATCH_CANDIDATES)
     inspect_limit: int = Field(default=4, ge=1, le=20)
@@ -326,6 +327,7 @@ class ResponseDecision(StrictModel):
         "spam",
     ]
     evidence_ids: list[str] = Field(default_factory=list, max_length=8)
+    covered_comments: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("text")
     @classmethod
@@ -435,6 +437,7 @@ def response_schema(
     video_actions=False,
     allow_public=True,
     allow_comments=True,
+    grouped_comment_refs=(),
 ):
     """Constrain source IDs and channel consistency before the model emits text."""
     reasons = {
@@ -457,6 +460,7 @@ def response_schema(
         if action == "reply_public" and not allow_public or action == "read_comments" and not allow_comments:
             continue
         sending = action in {"reply_public", "handoff_private"}
+        grouped_reply = action == "reply_public" and grouped_comment_refs
         if sending and not evidence_ids or action == "handoff_private" and not allow_handoff:
             continue
         branches.append(
@@ -489,6 +493,8 @@ def response_schema(
                         if evidence_ids
                         else {"type": "string"},
                     },
+                    **({"covered_comments": {"type": "array", "minItems": 1, "maxItems": 8,
+                        "items": {"type": "string", "enum": sorted(grouped_comment_refs)}}} if grouped_reply else {}),
                     "text": {
                         "type": "string",
                         "minLength": 1 if sending else 0,
@@ -498,7 +504,8 @@ def response_schema(
                 },
                 "required": ["reason", "explanation", "action", "evidence_ids", "text"]
                 + (["contact_purpose", "contact_trigger"] if action == "handoff_private" else [])
-                + (["video_preference", "preference_reason"] if video_actions else []),
+                + (["video_preference", "preference_reason"] if video_actions else [])
+                + (["covered_comments"] if grouped_reply else []),
             }
         )
     schema = {"title": "ResponseDecision", "type": "object", "oneOf": branches}

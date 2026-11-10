@@ -44,6 +44,7 @@ export function renderOperationsQuickBar(status) {
   if (!roundSettingsDirty) {
     for (const [name, id, fallback] of roundNumberFields) $(id).value = settings[name] ?? fallback;
     $("exp-visual-enabled").checked = settings.visual_enabled !== false;
+    $("exp-frame-sampling").value = settings.frame_sampling || "baseline";
     $("op-business-timezone").value = settings.business_timezone || "Asia/Taipei";
   }
   $("op-save-quick-config").disabled = roundSettingsSaving;
@@ -105,7 +106,8 @@ export function initOperationsModule(api, accountPanel) {
       const payload = Object.fromEntries(roundNumberFields.map(([name, id]) => [name, Number($(id).value)]));
       payload.business_timezone = $("op-business-timezone").value.trim() || "Asia/Taipei";
       payload.visual_enabled = $("exp-visual-enabled").checked;
-      const fields = [...roundForm.querySelectorAll("input")];
+      payload.frame_sampling = $("exp-frame-sampling").value;
+      const fields = [...roundForm.querySelectorAll("input, select")];
       roundSettingsSaving = true;
       save.disabled = true;
       for (const field of fields) field.disabled = true;

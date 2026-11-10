@@ -18,6 +18,14 @@ from .bilibili_images import upload_image
 ORIGIN = "https://api.vc.bilibili.com"
 
 
+def message_sequence(value):
+    if type(value) is int or isinstance(value, str) and value.isascii() and value.isdecimal():
+        number = int(value)
+        if 0 < number < 2**63:
+            return number
+    return 0
+
+
 class MessagePreparationCancelled(asyncio.CancelledError):
     """No final message submission occurred; the reviewed draft can be retained."""
 
@@ -47,14 +55,26 @@ class BilibiliMessagesAdapter(BilibiliAdapter):
         ]
 
     async def history(self, uid):
+        return (await self.history_page(uid))[0]
+
+    async def history_page(self, uid, *, before=0):
+        params = {"talker_id": _positive_id(uid), "session_type": 1, "size": 30, "begin_seqno": 0}
+        if before:
+            params["end_seqno"] = str(before)
         data = await self._get(
             ORIGIN + "/svr_sync/v1/svr_sync/fetch_session_msgs",
-            {"talker_id": _positive_id(uid), "session_type": 1, "size": 30, "begin_seqno": 0},
+            params,
         )
         rows = data.get("messages") or []
-        if not isinstance(rows, list):
+        if not isinstance(rows, list) or len(rows) > 30 or any(not isinstance(row, dict) for row in rows):
             raise ValueError("平台私信消息记录无效")
-        return rows[:30]
+        sequences = [message_sequence(row.get("msg_seqno")) for row in rows]
+        available = [value for value in sequences if value]
+        if (data.get("has_more") and not available) or (
+            before and available and max(available) >= int(before)
+        ):
+            raise ValueError("平台私信分页序列缺失或未推进")
+        return rows, min(available) if data.get("has_more") else 0, max(available, default=0)
 
     async def reconcile_publication(self, target, *, author_uid, text, started_at, receipt=None):
         from .bilibili_reconciliation import reconcile_message

@@ -65,6 +65,11 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
         {"role": "system", "content": system_content},
         {"role": "system", "content": f"当前交流场景：{mode}"},
     ]
+    if mode == "direct_message" and "conversation" in event:
+        messages[1]["content"] += (
+            "\n会话记录中 viewer 是来信人，operator 是号主代回，oc 是你已实际发送的话。"
+            "以当前 open 来信为回复对象，先前记录用于承接话题。"
+        )
     actors = None
     if mode in {"comment_draft", "comment_channel_decision"} and event.get("self_actor"):
         from .operations.browsing.inputs import (
@@ -90,7 +95,10 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
         optional.update(self_actor=actors["self_actor"], reply_target=actors.get("reply_target"),
                         thread=actors.get("thread"))
     messages.append({"role": "user", "content": "上下文数据：" + json.dumps(optional, ensure_ascii=False)})
-    wire_event = {key: value for key, value in event.items() if key not in {"self_actor", "comment_context"}} if actors else event
+    internal = {"self_actor", "comment_context"} if actors else set()
+    if mode == "direct_message":
+        internal.add("conversation_sha256")
+    wire_event = {key: value for key, value in event.items() if key not in internal} if internal else event
     messages.append({"role": "user", "content": "当前观众消息：" + json.dumps(wire_event, ensure_ascii=False)})
     if mode == "comment_channel_decision":
         return messages
