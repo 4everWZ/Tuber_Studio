@@ -128,6 +128,7 @@ async def test_small_decision_plain_body_and_backend_binding_share_native_parame
         "preference_reason": "",
         "contact_purpose": "",
         "contact_trigger": None,
+        "covered_comments": [],
     }
     assert result["structural_complete"] and result["pipeline_acceptance"]
     assert result["model_calls"] == 2 and result["budget_delta"]["model_calls"] == 2
@@ -160,7 +161,7 @@ async def test_skip_needs_no_body_generation(experiment):
     assert (
         result["actual"]
         == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": "",
-                   "contact_purpose": "", "contact_trigger": None}
+                   "contact_purpose": "", "contact_trigger": None, "covered_comments": []}
         and result["model_calls"] == 1
     )
 
@@ -404,7 +405,7 @@ async def test_evidence_packet_can_be_empty_for_no_evidence_but_never_invents_re
     assert (
         result["actual"]
         == SKIP | {"text": "", "explanation": "", "video_preference": None, "preference_reason": "",
-                   "contact_purpose": "", "contact_trigger": None}
+                   "contact_purpose": "", "contact_trigger": None, "covered_comments": []}
         and result["model_calls"] == 2
     )
     assert not result["evidence_packet"]["quote_mapping"]
