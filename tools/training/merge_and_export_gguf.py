@@ -18,19 +18,19 @@ def parse_args():
     parser.add_argument(
         "--base_model",
         type=str,
-        default="openbmb/MiniCPM-V-4.7-1B",
+        default="Qwen/Qwen3.5-9B",
         help="Base model path or HF repo",
     )
     parser.add_argument(
         "--adapter_path",
         type=Path,
-        default=Path("runtime/checkpoints/dafeiyu_dora"),
-        help="Path to trained DoRA adapter",
+        default=Path("output_dafeiyu_qwen35_dora"),
+        help="Path to trained DoRA/QLoRA adapter",
     )
     parser.add_argument(
         "--output_dir",
         type=Path,
-        default=Path("runtime/merged_models/minicpm_v_dafeiyu"),
+        default=Path("runtime/merged_models/dafeiyu_qwen35_merged"),
         help="Directory to save merged HuggingFace model",
     )
     parser.add_argument(
