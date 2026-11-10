@@ -1,18 +1,18 @@
 # 🐟 Tuber Studio 大肥鱼 V2 候选模型微调与矩阵评测全量报告
 
-**最后更新时间**: 2026-11-10 20:41:23  
-**测试环境**: Workstation 双卡 NVIDIA RTX 3090 (48GB VRAM), CUDA 13.2, PyTorch 2.10.0+cu130, AGX Orin 64GB (32GB VRAM 配额)  
-**核心要求**: 原生 $\ge 256\text{K}$ 超长上下文、现代混合线性注意力 / MoE 架构、防爆硬盘自动化运维  
+**最后更新时间**: 2026-11-10 22:46:42
+**测试环境**: Workstation 双卡 NVIDIA RTX 3090 (48GB VRAM), CUDA 13.2, PyTorch 2.10.0+cu130, AGX Orin 64GB (32GB VRAM 配额)
+**核心要求**: 原生 $\ge 256\text{K}$ 超长上下文、现代混合线性注意力 / MoE 架构、防爆硬盘自动化运维
 
 ## 1. 候选模型微调对比矩阵
 
 | 候选模型 | 架构特征 | 参数量 (活跃/总计) | 原生上下文 | 微调模式 | OC 拟真度 | AI 味违规 | 基础常识通过率 | 显存占用 | 训练用时 | 落地状态与建议 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| `Qwen/Qwen3.5-9B` | Hybrid Linear Attn + Full Attn (Dense) | 8.95B / 8.95B | 262,144 (256K) | `bf16` | **83.3 / 100** | **0 次** | **3/3 (100%)** | 5.23 GB (Q4_K_M) | 16.5 min | 🔥 **已装载 AGX Orin 生产主力**：首字延迟 <380ms，解码 23 tok/s |
-| `google/gemma-4-12B` | Gemma 4 Unified Multimodal (Dense) | 12B / 12B | 131,072 (128K) | `qlora_4bit` | *排队微调中...* | - | - | ~7.8 GB (4-bit) | - | 多模态大底座，4-bit 微调评测中 |
-| `google/gemma-4-E4B-it` | Gemma 4 Edge Multimodal (Dense) | 4B / 4B | 131,072 (128K) | `bf16` | *待排队* | - | - | ~3.2 GB (Q4_K_M) | - | 极轻量边缘模型，微调后适宜低功耗伴播 |
-| `Qwen/Qwen3.5-4B` | Hybrid Linear Attn (Dense) | 4.2B / 4.2B | 262,144 (256K) | `bf16` | *待排队* | - | - | ~2.8 GB (Q4_K_M) | - | 超轻量 256K 长上下文主力候选，极速响应 |
-| `google/gemma-4-26B-A4B-it` | Gemma 4 MoE (128 experts, Top-8) | 4.1B / 26B | 262,144 (256K) | `qlora_4bit` | *待排队* | - | - | ~14.8 GB (4-bit) | - | 🔥 **离线高灵性创作**：4.1B 激活突破显存带宽瓶颈 |
+| `Qwen/Qwen3.5-9B` | Hybrid Linear Attn + Full Attn (Dense) | 8.95B / 8.95B | 262,144 (256K) | `bf16` | **82.3 / 100** | **0 次** | **3/3 (100%)** | 5.23 GB (Q4_K_M) | - | 🔥 **已装载 AGX Orin 生产主力**：首字延迟 <380ms，解码 23 tok/s |
+| `google/gemma-4-12B` | Gemma 4 Unified Multimodal (Dense) | 12B / 12B | 131,072 (128K) | `qlora_4bit` | **97.7 / 100** | **0 次** | **3/3 (100%)** | ~7.8 GB (4-bit) | 32.5 min | 多模态大底座，4-bit 微调评测中 |
+| `google/gemma-4-E4B-it` | Gemma 4 Edge Multimodal (Dense) | 4B / 4B | 131,072 (128K) | `bf16` | *训练异常* | - | - | ~3.2 GB (Q4_K_M) | 0.3 min | 极轻量边缘模型，微调后适宜低功耗伴播 |
+| `Qwen/Qwen3.5-4B` | Hybrid Linear Attn (Dense) | 4.2B / 4.2B | 262,144 (256K) | `bf16` | **98.7 / 100** | **0 次** | **3/3 (100%)** | ~2.8 GB (Q4_K_M) | 35.6 min | 超轻量 256K 长上下文主力候选，极速响应 |
+| `google/gemma-4-26B-A4B-it` | Gemma 4 MoE (128 experts, Top-8) | 4.1B / 26B | 262,144 (256K) | `qlora_4bit` | *训练异常* | - | - | ~14.8 GB (4-bit) | 29.9 min | 🔥 **离线高灵性创作**：4.1B 激活突破显存带宽瓶颈 |
 
 ---
 
