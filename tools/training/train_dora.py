@@ -1,13 +1,20 @@
-"""DoRA SFT for the OC's language-model layers.
+"""Da Feiyu Persona Fine-Tuning Pipeline (DoRA / 4-bit QLoRA) on Workstation.
 
-Optimized for Workstation with 2x RTX 3090 (48GB VRAM total).
-Supports both MiniCPM-V-4.7-1B and Gemma 4 E2B.
-Freezes vision encoder and projector, fine-tuning only the language model layers.
+Optimized for 2x RTX 3090 (48GB VRAM total).
+Supports:
+- Qwen/Qwen3.5-9B (Dense 9B, Native 256K context, Hybrid Linear Attention)
+- google/gemma-4-12B (Gemma 4 12B Multimodal)
+- google/gemma-4-26B-A4B-it (Gemma 4 26B MoE with 4B active params, Native 256K context)
+- Qwen/Qwen3.8-Flash-Next (Qwen3.8 MoE with 512 fine-grained experts, Native 256K context)
+- Qwen/Qwen3.8-27B (Dense 27B, Native 256K context)
+
+Freezes vision encoder and projector if present, fine-tuning only the language model layers.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -42,23 +49,23 @@ FREEZE_PATTERNS = [
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train anime persona using DoRA and SimPO on 2x 3090.")
+    parser = argparse.ArgumentParser(description="Train anime persona using DoRA/QLoRA on 2x 3090.")
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="openbmb/MiniCPM-V-4.7-1B",
+        default="Qwen/Qwen3.5-9B",
         help="Path or HuggingFace repo ID of the base model",
     )
     parser.add_argument(
         "--data_dir",
         type=Path,
-        default=Path("runtime/training_data"),
-        help="Directory containing sft_train.json or simpo_train.json",
+        default=Path("data"),
+        help="Directory containing sft_train.json and sft_val.json",
     )
     parser.add_argument(
         "--output_dir",
         type=Path,
-        default=Path("runtime/checkpoints/dafeiyu_dora"),
+        default=Path("output_dafeiyu_dora"),
         help="Directory to save checkpoints and final adapter",
     )
     parser.add_argument(
@@ -66,21 +73,30 @@ def parse_args():
         type=str,
         choices=["sft"],
         default="sft",
-        help="Train the language-model adapter with SFT",
+        help="Training stage",
     )
     parser.add_argument(
-        "--use_dora", action="store_true", default=True, help="Enable Weight-Decomposed LoRA (DoRA)"
+        "--use_dora",
+        action="store_true",
+        default=True,
+        help="Enable Weight-Decomposed LoRA (DoRA) for full precision mode",
+    )
+    parser.add_argument(
+        "--load_in_4bit",
+        action="store_true",
+        default=False,
+        help="Enable 4-bit NF4 QLoRA (recommended for 26B+ MoE models)",
     )
     parser.add_argument("--r", type=int, default=16, help="LoRA rank")
     parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA alpha scaling factor")
     parser.add_argument("--lora_dropout", type=float, default=0.05, help="LoRA dropout rate")
-    parser.add_argument("--batch_size", type=int, default=4, help="Per-device train batch size")
+    parser.add_argument("--batch_size", type=int, default=1, help="Per-device train batch size")
     parser.add_argument(
         "--gradient_accumulation_steps", type=int, default=4, help="Gradient accumulation steps"
     )
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Peak learning rate")
+    parser.add_argument("--learning_rate", type=float, default=1.5e-4, help="Peak learning rate")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
-    parser.add_argument("--max_seq_length", type=int, default=1024, help="Maximum sequence length")
+    parser.add_argument("--max_seq_length", type=int, default=512, help="Maximum sequence length")
     parser.add_argument(
         "--gradient_checkpointing",
         action="store_true",
@@ -104,27 +120,51 @@ def freeze_vision_modules(model):
             param.requires_grad = False
             frozen_count += 1
 
-    logger.info(
-        "Vision freeze complete: %d / %d parameter tensors frozen to preserve visual and OCR capability.",
-        frozen_count,
-        total_count,
-    )
+    if frozen_count > 0:
+        logger.info(
+            "Vision freeze complete: %d / %d parameter tensors frozen to preserve visual/OCR capabilities.",
+            frozen_count,
+            total_count,
+        )
 
 
-def setup_dora_config(args):
-    """Creates a PEFT LoraConfig with use_dora=True."""
+def setup_peft_config(args):
+    """Creates a PEFT LoraConfig with DoRA (or QLoRA when load_in_4bit is active)."""
     try:
         from peft import LoraConfig, TaskType
     except ImportError:
         logger.error(
-            "peft is required. Please install it on the workstation: pip install peft trl transformers"
+            "peft is required. Please install it on the workstation: pip install peft trl transformers bitsandbytes"
         )
         sys.exit(1)
 
-    if "gemma" in args.model_name_or_path.lower():
-        target_modules = r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)"
+    model_lower = args.model_name_or_path.lower()
+    if "qwen" in model_lower:
+        target_modules = [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+            "in_proj_qkv",
+            "out_proj",
+        ]
+    elif "gemma" in model_lower:
+        target_modules = [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
     else:
         target_modules = DEFAULT_TARGET_MODULES
+
+    use_dora = args.use_dora and (not args.load_in_4bit)
 
     peft_config = LoraConfig(
         r=args.r,
@@ -133,13 +173,14 @@ def setup_dora_config(args):
         lora_dropout=args.lora_dropout,
         bias="none",
         task_type=TaskType.CAUSAL_LM,
-        use_dora=args.use_dora,
+        use_dora=use_dora,
     )
     logger.info(
-        "DoRA configuration created: rank=%d, alpha=%d, use_dora=%s, targets=%s",
+        "PEFT configuration created: rank=%d, alpha=%d, use_dora=%s, 4bit=%s, targets=%s",
         args.r,
         args.lora_alpha,
-        args.use_dora,
+        use_dora,
+        args.load_in_4bit,
         target_modules,
     )
     return peft_config
@@ -150,22 +191,20 @@ def main():
     logger.info("Initializing Da Feiyu Persona Training (Stage: %s)...", args.stage)
     logger.info("Model: %s | Device count: %s", args.model_name_or_path, os.environ.get("WORLD_SIZE", "1"))
 
-    # Check dependencies
     try:
         import torch
-        from peft import get_peft_model
+        from peft import get_peft_model, prepare_model_for_kbit_training
         from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
+            BitsAndBytesConfig,
+            DataCollatorForSeq2Seq,
+            Trainer,
             TrainingArguments,
         )
     except ImportError as e:
-        logger.warning(
-            "Training dependencies (torch, transformers, peft) not fully installed in current lightweight environment: %s\n"
-            "This script is ready to run on the Workstation: python -m torch.distributed.run --nproc_per_node=2 tools/training/train_dora.py",
-            e,
-        )
-        return
+        logger.error("Required library missing: %s", e)
+        sys.exit(1)
 
     logger.info("CUDA Available: %s (Device count: %d)", torch.cuda.is_available(), torch.cuda.device_count())
     if torch.cuda.is_available():
@@ -177,36 +216,49 @@ def main():
                 torch.cuda.get_device_properties(i).total_memory // (1024**3),
             )
 
-    # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Model
     torch_dtype = torch.bfloat16 if args.bf16 and torch.cuda.is_bf16_supported() else torch.float16
-    logger.info("Loading base model %s with dtype=%s...", args.model_name_or_path, torch_dtype)
+    quant_config = None
+    if args.load_in_4bit:
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch_dtype,
+        )
+        logger.info("4-bit NF4 Quantization enabled for base model.")
 
+    logger.info("Loading base model %s (dtype=%s)...", args.model_name_or_path, torch_dtype)
     try:
         from transformers import AutoModelForImageTextToText
 
         model = AutoModelForImageTextToText.from_pretrained(
             args.model_name_or_path,
-            dtype=torch_dtype,
+            torch_dtype=torch_dtype if not args.load_in_4bit else None,
+            quantization_config=quant_config,
             trust_remote_code=True,
-            device_map="auto" if not os.environ.get("WORLD_SIZE") else None,
+            device_map="auto" if args.load_in_4bit else None,
         )
-    except Exception as e:
-        logger.info("AutoModelForImageTextToText failed (%s), falling back to AutoModelForCausalLM...", e)
+    except Exception:
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path,
-            dtype=torch_dtype,
+            torch_dtype=torch_dtype if not args.load_in_4bit else None,
+            quantization_config=quant_config,
             trust_remote_code=True,
-            device_map="auto" if not os.environ.get("WORLD_SIZE") else None,
+            device_map="auto" if args.load_in_4bit else None,
         )
 
-    # Freeze vision and apply DoRA
     freeze_vision_modules(model)
-    peft_config = setup_dora_config(args)
+
+    if args.load_in_4bit:
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=args.gradient_checkpointing
+        )
+
+    peft_config = setup_peft_config(args)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
@@ -214,10 +266,8 @@ def main():
     train_file = args.data_dir / "sft_train.json"
     val_file = args.data_dir / "sft_val.json"
     if not train_file.exists():
-        logger.error("Dataset not found at %s. Please run prepare_persona_dataset.py first.", train_file)
+        logger.error("Dataset not found at %s.", train_file)
         sys.exit(1)
-
-    import json
 
     from datasets import Dataset
 
@@ -238,11 +288,25 @@ def main():
     train_ds = train_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
     val_ds = val_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
 
-    header_think = tokenizer.encode(
-        "<|im_start|>assistant\n<think>\n\n</think>\n\n", add_special_tokens=False
-    )
-    header_plain = tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False)
-    end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    header_candidates = [
+        "<|im_start|>assistant\n<think>\n\n</think>\n\n",
+        "<|im_start|>assistant\n",
+        "<start_of_turn>model\n",
+        "<|start_header_id|>assistant<|end_header_id|>\n\n",
+    ]
+    encoded_headers = [tokenizer.encode(h, add_special_tokens=False) for h in header_candidates]
+    encoded_headers = [h for h in encoded_headers if len(h) > 0]
+
+    end_token_candidates = ["<|im_end|>", "<end_of_turn>", "<|eot_id|>", "</s>", tokenizer.eos_token]
+    end_ids = set()
+    for cand in end_token_candidates:
+        if cand:
+            try:
+                cid = tokenizer.convert_tokens_to_ids(cand)
+                if cid is not None and cid != tokenizer.unk_token_id:
+                    end_ids.add(cid)
+            except Exception:
+                pass
 
     def tokenize_function(examples):
         tokenized = tokenizer(examples["text"], truncation=True, max_length=args.max_seq_length)
@@ -252,21 +316,17 @@ def main():
             idx = 0
             found_any = False
             while idx < len(ids):
-                # Try matching assistant header
                 match_len = 0
-                if idx + len(header_think) <= len(ids) and ids[idx : idx + len(header_think)] == header_think:
-                    match_len = len(header_think)
-                elif (
-                    idx + len(header_plain) <= len(ids) and ids[idx : idx + len(header_plain)] == header_plain
-                ):
-                    match_len = len(header_plain)
+                for h in encoded_headers:
+                    if idx + len(h) <= len(ids) and ids[idx : idx + len(h)] == h:
+                        match_len = len(h)
+                        break
 
                 if match_len > 0:
                     start = idx + match_len
-                    # Find matching <|im_end|>
                     stop = len(ids)
                     for j in range(start, len(ids)):
-                        if ids[j] == end_id:
+                        if ids[j] in end_ids:
                             stop = j
                             break
                     for k in range(start, min(stop + 1, len(ids))):
@@ -284,14 +344,14 @@ def main():
     tokenized_train = train_ds.map(tokenize_function, batched=True, remove_columns=["text"])
     tokenized_val = val_ds.map(tokenize_function, batched=True, remove_columns=["text"])
 
-    from transformers import DataCollatorForSeq2Seq, Trainer
-
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, pad_to_multiple_of=8, return_tensors="pt")
 
-    # Training arguments
     training_args = TrainingArguments(
         output_dir=str(args.output_dir),
         per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=1,
+        eval_accumulation_steps=1,
+        dataloader_drop_last=True,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         num_train_epochs=args.epochs,
@@ -302,15 +362,12 @@ def main():
         save_strategy="epoch",
         eval_strategy="epoch",
         save_total_limit=2,
+        ddp_find_unused_parameters=False,
         seed=args.seed,
         report_to="none",
     )
 
-    logger.info(
-        "Workstation training configuration finalized (output_dir=%s). Launching Trainer...",
-        training_args.output_dir,
-    )
-
+    logger.info("Launching Trainer (output_dir=%s)...", training_args.output_dir)
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -322,11 +379,10 @@ def main():
     train_result = trainer.train()
     logger.info("Training complete! Train loss: %.4f", train_result.training_loss)
 
-    logger.info("Saving DoRA adapter weights to %s...", args.output_dir)
+    logger.info("Saving adapter weights to %s...", args.output_dir)
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
 
-    # Save metrics
     metrics = {
         "train_loss": train_result.training_loss,
         "train_runtime_seconds": train_result.metrics.get("train_runtime", 0),
@@ -339,7 +395,7 @@ def main():
     with open(args.output_dir / "training_metrics.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
 
-    logger.info("DoRA training pipeline finished successfully!")
+    logger.info("Persona fine-tuning pipeline finished successfully!")
 
 
 if __name__ == "__main__":
