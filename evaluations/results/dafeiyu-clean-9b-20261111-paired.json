@@ -1,0 +1,1610 @@
+{
+  "holdout_sha256": "f5d6d36356324607bbedbe203e84ca0005743c34091f04bfd5cefde555527f1d",
+  "protocol_sha256": "48aced409b68a071b1fe81e0a70fbb4fb1e53c68827897191bfc5505291afb0a",
+  "conditions": {
+    "base": {
+      "artifact": "qwen35-9b-base-bf16",
+      "base_revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a"
+    },
+    "deployed": {
+      "artifact": "minicpmv-dora-deployed-q4km",
+      "base_revision": "ad9bf379feb71204c888b22923d63322452407f9"
+    },
+    "candidate": {
+      "artifact": "qwen35-9b-dora-clean-checkpoint-38",
+      "base_revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a"
+    }
+  },
+  "general": {
+    "case_count": 120,
+    "additional_errors": 7,
+    "candidate_minus_base_rate_95pct_paired_bootstrap": [
+      -0.1417,
+      0.0167
+    ],
+    "categories": {
+      "reading": {
+        "candidate_correct": 17,
+        "base_correct": 20,
+        "additional_errors": 3
+      },
+      "numeracy": {
+        "candidate_correct": 12,
+        "base_correct": 16,
+        "additional_errors": 4
+      },
+      "practical": {
+        "candidate_correct": 11,
+        "base_correct": 15,
+        "additional_errors": 4
+      },
+      "instruction": {
+        "candidate_correct": 19,
+        "base_correct": 18,
+        "additional_errors": -1
+      },
+      "coding": {
+        "candidate_correct": 20,
+        "base_correct": 16,
+        "additional_errors": -4
+      },
+      "continuity": {
+        "candidate_correct": 14,
+        "base_correct": 15,
+        "additional_errors": 1
+      }
+    },
+    "pass": false
+  },
+  "oc": {
+    "wins": 23,
+    "losses": 5,
+    "ties": 12,
+    "pass": false
+  },
+  "synthetic_operations": {
+    "failed_cases": [
+      "source-none",
+      "source-cid",
+      "same-display",
+      "owner-video-third-party",
+      "verified-invite",
+      "unknown-receipt",
+      "human-covered-all",
+      "draft-not-memory",
+      "owner-secret",
+      "verified-public-note"
+    ],
+    "pass": false
+  },
+  "offline_quality_gate_pass": false,
+  "details": [
+    {
+      "id": "room-return",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "tool-case",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "night-pass",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "rain-switch",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "speaker-attribution",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "postcondition",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "zine-price",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "trip-days",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "different-time",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "stamp",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "food-table",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "schedule-single",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "count-description",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "packet-font",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "letter-no-evidence",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "lake-who",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "filter-table",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "rename-translation",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "conditional-exception",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "observation-claim",
+      "suite": "general",
+      "category": "reading",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "rope-sections",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "mixing-concentration",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "scale-recipe",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "bus-interval",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "water-difference",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "hex-value",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "calibration",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "parking-quanta",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "stamp-subset",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "sorted-median",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "net-area",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "travel-delay",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 1,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "power-base",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "change-in-rate",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "four-packs",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "balance-scale",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "tier-badge",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "box-volume",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "weighted-shifts",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "tank-fraction",
+      "suite": "general",
+      "category": "numeracy",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "bag-label",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "keys-pocket",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "paper-size",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "power-backup",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "currency-pack",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 1,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "parcel-flat",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "quiet-reschedule",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "draft-notice",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "fabric-wash",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "sensor-notify",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "test-setup",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "liquid-bin",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "lost-hour",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "map-closure",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "assembly-order",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "paint-samples",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "cup-insulation",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "photo-consent",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "rumor-date",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "stable-threshold",
+      "suite": "general",
+      "category": "practical",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "json-single",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "one-sentence",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "list-order",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "extract-status",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "two-fields",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "permitted-items",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "forbidden-word",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "lowercase-words",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "nested-quotation",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "table-select",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "keep-original",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "count-lines",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "reverse-exclude",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "single-choice",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "name-normalize",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "limit-disclosure",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "sort-number",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "direction-correction",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "translate-brief",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "priority-note",
+      "suite": "general",
+      "category": "instruction",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "index-negative",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "copy-shallow",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "python-bool",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "join-string",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "loop-range",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "set-count",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "dictionary-default",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "python-comprehension",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "json-type",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "sql-null",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "sql-filter",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "git-local",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 1,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "shell-literal",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "binary-leading",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "regex-anchors",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "code-descent",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "list-slice",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "http-read",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "csv-quoted",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "ordered-dict",
+      "suite": "general",
+      "category": "coding",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "reschedule-rooms",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "card-correction",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "credit-change",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "ask-only-one",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "tentative-fixed",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "order-change",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "train-receipt",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "scope-spelling",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "gear-count-change",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "check-two-routes",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "role-update",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "session-split",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "two-versions",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "frame-claim",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true
+    },
+    {
+      "id": "rename-assignee",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "uncertainty-last",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false
+    },
+    {
+      "id": "branch-fact",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "numbers-override",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "different-label",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false
+    },
+    {
+      "id": "commitment-scope",
+      "suite": "general",
+      "category": "continuity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": true
+    },
+    {
+      "id": "fade-vote",
+      "suite": "oc",
+      "category": "live-collab",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "tiny-rain",
+      "suite": "oc",
+      "category": "live-collab",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "backstage-cue",
+      "suite": "oc",
+      "category": "live-collab",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "signal-paper",
+      "suite": "oc",
+      "category": "live-collab",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "livestream-safety",
+      "suite": "oc",
+      "category": "live-collab",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "guest-language",
+      "suite": "oc",
+      "category": "live-collab",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "editor-label",
+      "suite": "oc",
+      "category": "edit-division",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "film-object",
+      "suite": "oc",
+      "category": "edit-division",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "cut-smile",
+      "suite": "oc",
+      "category": "edit-division",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "voice-move",
+      "suite": "oc",
+      "category": "edit-division",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "loss"
+    },
+    {
+      "id": "tiny-title",
+      "suite": "oc",
+      "category": "edit-division",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "credit-roleplay",
+      "suite": "oc",
+      "category": "edit-division",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "game-hold",
+      "suite": "oc",
+      "category": "game-mistake",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "switch-color",
+      "suite": "oc",
+      "category": "game-mistake",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "loss"
+    },
+    {
+      "id": "gear-sorry",
+      "suite": "oc",
+      "category": "game-mistake",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "newcomer-tone",
+      "suite": "oc",
+      "category": "game-mistake",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "game-count",
+      "suite": "oc",
+      "category": "game-mistake",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "party-surprise",
+      "suite": "oc",
+      "category": "game-mistake",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "oc-same-name",
+      "suite": "oc",
+      "category": "comment-misread",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "loss"
+    },
+    {
+      "id": "caption-correction",
+      "suite": "oc",
+      "category": "comment-misread",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "mistake-meme",
+      "suite": "oc",
+      "category": "comment-misread",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "no-dm-invite",
+      "suite": "oc",
+      "category": "comment-misread",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "loss"
+    },
+    {
+      "id": "source-shift",
+      "suite": "oc",
+      "category": "comment-misread",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "nested-quote",
+      "suite": "oc",
+      "category": "comment-misread",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "owner-unsent",
+      "suite": "oc",
+      "category": "operator-private",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "owner-tired",
+      "suite": "oc",
+      "category": "operator-private",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "owner-decision",
+      "suite": "oc",
+      "category": "operator-private",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "operator-story",
+      "suite": "oc",
+      "category": "operator-private",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "operator-gap",
+      "suite": "oc",
+      "category": "operator-private",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "owner-recall",
+      "suite": "oc",
+      "category": "operator-private",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "meal-choice",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "loss"
+    },
+    {
+      "id": "tail-thought",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "rice-help",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "nickname-move",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "pose-lore",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "sound-evidence",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "tie"
+    },
+    {
+      "id": "reply-fact-persona",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "comfort-change",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "quiet-company",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "do-not-overshare",
+      "suite": "oc",
+      "category": "daily-oc",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "preference": "win"
+    },
+    {
+      "id": "source-none",
+      "suite": "operations",
+      "category": "evidence",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": true,
+      "structured_pass": false
+    },
+    {
+      "id": "source-actual-frame",
+      "suite": "operations",
+      "category": "evidence",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false,
+      "structured_pass": true
+    },
+    {
+      "id": "source-cid",
+      "suite": "operations",
+      "category": "evidence",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "same-display",
+      "suite": "operations",
+      "category": "identity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "owner-video-third-party",
+      "suite": "operations",
+      "category": "identity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "verified-invite",
+      "suite": "operations",
+      "category": "identity",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": true
+    },
+    {
+      "id": "unknown-receipt",
+      "suite": "operations",
+      "category": "publication",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "already-published",
+      "suite": "operations",
+      "category": "publication",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": true,
+      "reference_correct": false,
+      "structured_pass": true
+    },
+    {
+      "id": "human-covered-all",
+      "suite": "operations",
+      "category": "publication",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "draft-not-memory",
+      "suite": "operations",
+      "category": "isolation",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "owner-secret",
+      "suite": "operations",
+      "category": "isolation",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    },
+    {
+      "id": "verified-public-note",
+      "suite": "operations",
+      "category": "isolation",
+      "candidate_length_finishes": 0,
+      "reference_length_finishes": 0,
+      "candidate_correct": false,
+      "reference_correct": false,
+      "structured_pass": false
+    }
+  ],
+  "review": {
+    "mode": "anonymous assistant review by suite",
+    "notes": {
+      "parking-quanta": "Frozen wording has 30/90-minute ambiguity. Scored against pre-registered expectation of 13 yuan; alternate reading does not change the final release decision.",
+      "operational_scope": "Synthetic offline model decisions; platform sending, actual video evidence, and target device untested in this replay."
+    }
+  }
+}
