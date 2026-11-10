@@ -9,8 +9,16 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
+import sys
 from pathlib import Path
+
+# Ensure unbuffered output
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -143,14 +151,14 @@ AI_CLICHES = [
     r"作为.{0,8}(?:AI|语言模型|人工智能|虚拟助手)",
     r"我无法(?:像人类一样|提供|进行|满足|产生)",
     r"有什么(?:可以帮您|我能为您效劳)",
-    r"首先[，,].*其次[，,].*最后",
+    r"首先[，,].*?其次[，,].*?最后",
     r"综上所述|总而言之|值得注意的是",
     r"加油(?:啊|吧|！)",
     r"祝你.{0,8}(?:生活愉快|一切顺利)",
 ]
 
 
-def test_generation(model, tokenizer, prompt, sys_prompt=SYSTEM_PROMPT, max_tokens=256):
+def test_generation(model, tokenizer, prompt, sys_prompt=SYSTEM_PROMPT, max_tokens=160):
     import torch
 
     messages = [
@@ -166,6 +174,12 @@ def test_generation(model, tokenizer, prompt, sys_prompt=SYSTEM_PROMPT, max_toke
 
     inputs = tokenizer(formatted, return_tensors="pt").to(model.device)
 
+    eos_token_ids = [tokenizer.eos_token_id]
+    for stop_str in ["<|im_end|>", "<end_of_turn>", "<|endoftext|>"]:
+        tid = tokenizer.convert_tokens_to_ids(stop_str)
+        if tid is not None and tid != tokenizer.unk_token_id and tid not in eos_token_ids:
+            eos_token_ids.append(tid)
+
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
@@ -174,6 +188,7 @@ def test_generation(model, tokenizer, prompt, sys_prompt=SYSTEM_PROMPT, max_toke
             temperature=0.7,
             top_p=0.9,
             repetition_penalty=1.1,
+            eos_token_id=eos_token_ids,
             pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
         )
     output_ids = outputs[0][inputs["input_ids"].shape[1] :]
@@ -276,15 +291,15 @@ def run_evaluation(base_model_path: str, adapter_path: str | None = None, load_i
         score = max(0, min(100, score))
         oc_scores.append(score)
 
-        print(f"\n[{idx}/{len(OC_TEST_CASES)}] {case['title']} (得分: {score})")
-        print(f"  观众: 「{case['prompt']}」")
-        print(f"  大肥鱼: 「{reply}」")
-        print(f"  命中特征: {matched} | AI违规: {'❌ 发现' if has_cliche else '✅ 无'}")
+        print(f"\n[{idx}/{len(OC_TEST_CASES)}] {case['title']} (得分: {score})", flush=True)
+        print(f"  观众: 「{case['prompt']}」", flush=True)
+        print(f"  大肥鱼: 「{reply}」", flush=True)
+        print(f"  命中特征: {matched} | AI违规: {'❌ 发现' if has_cliche else '✅ 无'}", flush=True)
 
     avg_oc = sum(oc_scores) / len(oc_scores)
 
     # 2. Foundation Capability Evaluation (Anti-collapse)
-    print("\n### 阶段二：基础通用能力与常识推理防坍缩评测")
+    print("\n### 阶段二：基础通用能力与常识推理防坍缩评测", flush=True)
     foundation_passed = 0
     for idx, case in enumerate(FOUNDATION_TEST_CASES, 1):
         reply = test_generation(
@@ -297,19 +312,20 @@ def run_evaluation(base_model_path: str, adapter_path: str | None = None, load_i
         passed = case["key_answer"].lower() in reply.lower() or len(reply) >= 10
         if passed:
             foundation_passed += 1
-        print(f"\n[通用常识 {idx}] {case['title']}")
-        print(f"  提问: 「{case['prompt']}」")
-        print(f"  回答: 「{reply}」")
-        print(f"  状态: {'✅ 通过' if passed else '⚠️ 存疑'}")
+        print(f"\n[通用常识 {idx}] {case['title']}", flush=True)
+        print(f"  提问: 「{case['prompt']}」", flush=True)
+        print(f"  回答: 「{reply}」", flush=True)
+        print(f"  状态: {'✅ 通过' if passed else '⚠️ 存疑'}", flush=True)
 
-    print("\n" + "=" * 60)
-    print("📈 综合评测总结报告")
-    print(f"- OC 拟真度综合得分: {avg_oc:.1f} / 100")
-    print(f"- AI 味违规次数: {cliche_violations} (纯净率: {(1 - cliche_violations / len(OC_TEST_CASES)) * 100:.1f}%)")
+    print("\n" + "=" * 60, flush=True)
+    print("📈 综合评测总结报告", flush=True)
+    print(f"- OC 拟真度综合得分: {avg_oc:.1f} / 100", flush=True)
+    print(f"- AI 味违规次数: {cliche_violations} (纯净率: {(1 - cliche_violations / len(OC_TEST_CASES)) * 100:.1f}%)", flush=True)
     print(
-        f"- 基础常识防坍缩通过率: {foundation_passed} / {len(FOUNDATION_TEST_CASES)} ({foundation_passed / len(FOUNDATION_TEST_CASES) * 100:.1f}%)"
+        f"- 基础常识防坍缩通过率: {foundation_passed} / {len(FOUNDATION_TEST_CASES)} ({foundation_passed / len(FOUNDATION_TEST_CASES) * 100:.1f}%)",
+        flush=True,
     )
-    print("=" * 60 + "\n")
+    print("=" * 60 + "\n", flush=True)
 
 
 def main():
