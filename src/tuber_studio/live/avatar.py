@@ -51,6 +51,48 @@ def load_object(path, limit):
     return value
 
 
+def avatar_package(root, *, commercial_mode=False):
+    """Return a local export manifest and its complete runtime file closure."""
+    root = root.resolve()
+    manifest = AvatarManifest.model_validate(load_object(checked_file(root, "avatar.json"), 32768))
+    if not manifest.license.strip() or (commercial_mode and not manifest.commercial_allowed):
+        raise ValueError("Live2D 素材用途尚未确认")
+    if not manifest.model.endswith(".model3.json"):
+        raise ValueError("需要 Cubism model3.json 模型")
+    model = load_object(checked_file(root, manifest.model), 256 * 1024)
+    references = model["FileReferences"]
+    motions = references.get("Motions", {})
+    expressions = references.get("Expressions", [])
+    if not references["Moc"].endswith(".moc3") or not references["Textures"]:
+        raise ValueError("Live2D 模型缺少 Moc 或贴图")
+    for name, motion in manifest.motions.items():
+        if motion.index >= len(motions.get(motion.group, ())):
+            raise ValueError(f"Live2D 动作映射未导出：{name}")
+    expression_names = {item.get("Name") for item in expressions}
+    for name, expression in manifest.expressions.items():
+        if expression not in expression_names:
+            raise ValueError(f"Live2D 表情映射未导出：{name}")
+    files = [references["Moc"], *references["Textures"]]
+    files += [references[key] for key in ("Physics", "Pose", "DisplayInfo", "UserData") if key in references]
+    files += [item["File"] for item in expressions]
+    for group in motions.values():
+        for item in group:
+            if item.get("Sound"):
+                raise ValueError("请移除模型动作内的音效，直播只有一个播放器")
+            files.append(item["File"])
+    if len(files) > 128:
+        raise ValueError("Live2D 模型引用过多")
+    parents = PurePosixPath(manifest.model).parent
+    allowed = {manifest.model}
+    for item in files:
+        relative = (parents / item).as_posix()
+        path = checked_file(root, relative)
+        if path.suffix.lower() not in {".json", ".moc3", ".png", ".jpg", ".jpeg", ".webp"}:
+            raise ValueError("Live2D 模型引用了不支持的文件")
+        allowed.add(relative)
+    return manifest, allowed
+
+
 class LiveAvatar:
     def __init__(self, settings):
         self.settings = settings
@@ -58,35 +100,9 @@ class LiveAvatar:
 
     def installed(self, character_id):
         root = self.root / character_id
-        manifest = AvatarManifest.model_validate(load_object(checked_file(root, "avatar.json"), 32768))
-        if not manifest.license.strip() or self.settings.data.get("commercial_mode") and not manifest.commercial_allowed:
-            raise ValueError("Live2D 素材用途尚未确认")
-        if not manifest.model.endswith(".model3.json"):
-            raise ValueError("需要 Cubism model3.json 模型")
-        model = load_object(checked_file(root, manifest.model), 256 * 1024)
-        references = model["FileReferences"]
-        motions = references.get("Motions", {})
-        expressions = references.get("Expressions", [])
-        if not references["Moc"].endswith(".moc3") or not references["Textures"]:
-            raise ValueError("Live2D 模型缺少 Moc 或贴图")
-        files = [references["Moc"], *references["Textures"]]
-        files += [references[key] for key in ("Physics", "Pose", "DisplayInfo", "UserData") if key in references]
-        files += [item["File"] for item in expressions]
-        for group in motions.values():
-            for item in group:
-                if item.get("Sound"):
-                    raise ValueError("请移除模型动作内的音效，直播只有一个播放器")
-                files.append(item["File"])
-        if len(files) > 128:
-            raise ValueError("Live2D 模型引用过多")
-        parents = PurePosixPath(manifest.model).parent
-        allowed = {manifest.model}
-        for item in files:
-            relative = (parents / item).as_posix()
-            path = checked_file(root, relative)
-            if path.suffix.lower() not in {".json", ".moc3", ".png", ".jpg", ".jpeg", ".webp"}:
-                raise ValueError("Live2D 模型引用了不支持的文件")
-            allowed.add(relative)
+        if root.resolve() != root:
+            raise ValueError("Live2D 角色目录不能重定向")
+        manifest, allowed = avatar_package(root, commercial_mode=self.settings.data.get("commercial_mode"))
         for name in SDK:
             checked_file(self.root / "sdk", name)
         return root, manifest, allowed
