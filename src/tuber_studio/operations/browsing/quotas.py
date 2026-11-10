@@ -231,7 +231,6 @@ class BrowsingQuotas:
         return token
 
     def settle_reply(self, token, status, *, receipt=None, now=None):
-        now = time.time() if now is None else now
         outcome = {
             "published": "published",
             "uncertain": "uncertain",
@@ -241,6 +240,9 @@ class BrowsingQuotas:
         if outcome is None:
             raise ValueError("无效的每日回复结算状态")
         with self._transaction() as db:
+            if now is None:
+                row = db.execute("SELECT started_at FROM browsing_reply_quotas WHERE token=?", (token,)).fetchone()
+                now = row[0] if row else time.time()
             db.execute(
                 "UPDATE browsing_reply_quotas SET status=?,updated_at=?,published_at=? WHERE token=? AND status!='published'",
                 (outcome, now, publication_time(receipt, now) if outcome == "published" else None, token),

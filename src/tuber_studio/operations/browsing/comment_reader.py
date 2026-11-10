@@ -54,8 +54,6 @@ def merge_continuous_comments(items, time_window_seconds=600):
             if prev_ts is not None and curr_ts is not None:
                 if abs(curr_ts - prev_ts) <= time_window_seconds:
                     can_merge = True
-            else:
-                can_merge = True
 
         if can_merge:
             prev_text = str(prev.get("content") or prev.get("text") or "")
