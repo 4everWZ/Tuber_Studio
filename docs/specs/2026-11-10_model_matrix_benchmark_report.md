@@ -67,12 +67,13 @@
 
 ## 4. AGX Orin 64GB 落地技术方案
 
-1. **GGUF V3 格式与量化**：
-   - 导出模型：`dafeiyu_qwen35_q4_k_m.gguf`
+1. **GGUF V3 格式与量化与 MTP 架构适配**：
+   - 导出模型：`dafeiyu_qwen35_nomtp_q4_k_m.gguf`
    - 文件大小：**5.23 GB (5,357 MiB)**
    - 权重比特：5.02 BPW
    - 原生上下文：`qwen35.context_length = 262144` (256K)
-   - SHA256: `0a4049abc7f8b7765ed2e3bfaf229de7f3162f4998b0e14bf09d36a3642d194a`
+   - SHA256: `e19b025db5b1b7536918e0ecb661781dab3d2a9e094f81dc7d6bec845f7d8c79`
+   - **MTP 解耦优化**：Qwen 3.5 包含 32 层混合线性注意力主干与 1 层 Multi-Token Prediction (MTP) 投机草稿层。在 Ollama / llama.cpp 单阶段自回归推理部署中，通过 `--no-mtp` 标志剔除 MTP draft 权重，避免出现 `blk.32.attn_norm.weight not found` 的张量不对齐异常，确保生产推理极致轻量与标准兼容。
 2. **显存预算与 KV Cache 分配**：
    - 模型权重（Q4_K_M）：~5.3 GB
    - 4-bit KV Cache (256K Context)：~12.6 GB
