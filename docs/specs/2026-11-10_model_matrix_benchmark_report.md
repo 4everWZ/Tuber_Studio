@@ -82,3 +82,20 @@
    - 使用流式 chunk 分块（8MB）直连 AGX Orin Ollama HTTP API (`POST /api/blobs/sha256:...`)；
    - 通过 `POST /api/create` 注册为 `dafeiyu-v2`；
    - 配合智能 UI (`/api/chat/intelligent`) 与直播 HUD 统一调用。
+
+---
+
+## 5. AGX Orin 64GB 实机推理性能实测
+
+- **部署设备**: NVIDIA Jetson AGX Orin 64GB (32GB VRAM 配额), JetPack 6, Ollama 0.33.2
+- **装载模型**: `dafeiyu-v2:latest` (`dafeiyu_qwen35_nomtp_q4_k_m.gguf`)
+- **硬件显存分配**: 100% 全层 GPU 卸载（33/33 层全部常驻 Tegra Unified Memory）
+  - 8K 上下文显存占用: **5.57 GB**
+  - 256K 上下文显存占用: **17.9 GB**（剩余 >14 GB 显存裕量供其他进程使用）
+- **推理吞吐实测**:
+  - Prompt 评估速度 (TTFT): 255 tokens / 0.37s = **684.23 tokens/s**（首字响应 < 380ms）
+  - 解码输出速度: **22.83 ~ 23.16 tokens/s**（持续稳定输出，无卡顿或显存颠簸）
+- **角色一致性验证**:
+  - 满分抵御越狱、准确申明尾巴身体敏感边界、坚持五常大米饭偏爱；
+  - 战团负好感度（-100）弹幕激活幽默辛辣回怼（*“嫌难看还赖着不走，莫非是暗恋狂魔？”*），绝无任何 AI 机械致歉；
+  - 严格遵守第三方 UID 对话边界，不自作多情冒充同名第三方发言。
