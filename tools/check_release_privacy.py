@@ -4,6 +4,7 @@ import argparse
 import ipaddress
 import re
 import subprocess
+import tarfile
 from pathlib import Path
 
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
@@ -87,14 +88,25 @@ def check_ref(ref):
             yield f"{ref[:12]} {path}:{number} [{category}]"
 
 
+def check_metadata(name, data):
+    for number, line in enumerate(data.splitlines(), 1):
+        for category in categories(line, evidence=True):
+            yield f"{name}:{number} [{category}]"
+
+
 def check_artifact(path):
     files = [path] if path.is_file() else sorted(path.rglob("*"))
     for item in files:
-        if not item.is_file() or item.suffix.lower() not in METADATA_SUFFIXES:
+        if not item.is_file():
             continue
-        for number, line in enumerate(item.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            for category in categories(line, evidence=True):
-                yield f"{item.name}:{number} [{category}]"
+        if item.suffix.lower() in METADATA_SUFFIXES:
+            yield from check_metadata(item.name, item.read_text(encoding="utf-8", errors="replace"))
+        elif item.name.endswith((".tar", ".tar.gz", ".tgz")):
+            with tarfile.open(item) as archive:
+                for member in archive:
+                    if member.isfile() and Path(member.name).suffix.lower() in METADATA_SUFFIXES:
+                        data = archive.extractfile(member).read().decode("utf-8", errors="replace")
+                        yield from check_metadata(f"{item.name}/{Path(member.name).name}", data)
 
 
 def main(argv=None):
@@ -118,7 +130,7 @@ def main(argv=None):
         if args.revision_range:
             findings.extend(finding for ref in refs for finding in check_identity(ref))
         findings.extend(finding for path in args.artifact for finding in check_artifact(path))
-    except ValueError as error:
+    except (ValueError, tarfile.TarError) as error:
         parser.error(str(error))
     for finding in findings:
         print(finding)
