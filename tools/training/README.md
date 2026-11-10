@@ -1,27 +1,35 @@
 # 大肥鱼 OC 训练与导出
 
-当前主线训练大肥鱼 OC 的表达、关系和互动，不训练通用 Agent 底座。平台能力、调度、联网取材与发送由业务程序提供。现有语料与训练数据保持原样；修改训练集或重训须另行明确，不能以修工程问题为由重写角色样本。
+大肥鱼 OC 训练覆盖表达、关系和互动，并检查通用能力保留。平台能力、调度、联网取材与发送由业务程序提供。训练输入由既有语料派生，保留原始文本及历史训练集。
 
 ## 当前 DoRA 与证据
 
-当前 adapter 位于 workstation 的 `~/code/Tuber_Studio/output_dafeiyu_dora`。底模为 `openbmb/MiniCPM-V-4.7-1B`，沿用已有 612 条 SFT 样本、assistant-only loss、DoRA rank 16／alpha 32；双 RTX 3090 训练五轮。下列命令用于复现流程，执行训练会产生新权重，不代表已重新验收。
+已部署的 1B 版本基座为 `openbmb/MiniCPM-V-4.7-1B`，历史训练使用 612 条 SFT 样本、assistant-only loss、DoRA rank 16／alpha 32，双 RTX 3090 训练五轮。部署工件由推理 Profile 核验主权重与投影器。
 
 工作站真实视频回放、字幕接口限制、画面引用问题及复读样例见[DoRA 实测](../../evaluations/results/authentic-dora-20261107/README.md)。结构完整、资源可运行与角色／内容质量分别判断。先前 V6 系列不作为当前部署或后续训练起点；历史实验保留在 Git 与 `evaluations/results/`。
 
-## 已有数据与训练
+## Qwen3.5-9B 派生基线
 
-使用工作站项目专用 Python 环境。`build_authentic_sft_dataset.py` 从原始 txt 编译 SFT，支持 `--training_dir`、`--output_dir`、`--seed`；已有训练集无需重新编译。需要验证构建器时输出到独立目录，避免覆盖当前数据。
+使用工作站项目专用 Python 环境。编译器按二次元宽度、大肥鱼 OC 深度、通用能力归类，先合并同源与近重复会话，再分训练和开发。原始文本、历史样本和已有适配器保留。编译器向指定目录写入组别及文件摘要，发现不同内容时要求新目录。
 
-`run_finetune.sh`是双卡训练包装器，可用 `TUBER_TRAINING_DATA`、`TUBER_TRAINING_OUTPUT`、`TUBER_TRAINING_WORKERS`指定已有数据、新输出和进程数；它不自动宣称评估通过。也可从仓库根目录，在已有 `sft_train.json` 的目录上显式启动训练：
+干净基线使用模型原生模板，逐样本验证 system 与对话原文均实际进入输入。监督只覆盖 assistant 正文及其 EOS，超过序列长度、缺少终止符或带视觉／音频资产的样本直接失败。语言适配器目标排除视觉组件。训练数据按实际监督 token 平衡，宽度与深度合计约 70%，通用约 30%，允许偏差 3 个百分点。
 
 ```bash
-torchrun --nproc_per_node=2 tools/training/train_dora.py \
-  --model_name_or_path "$BASE" --data_dir "$DATA" --output_dir "$NEW_ADAPTER" \
-  --r 16 --lora_alpha 32 --batch_size 4 --gradient_accumulation_steps 2 \
-  --learning_rate 3e-4 --epochs 5 --max_seq_length 1024 --bf16
+python tools/training/build_authentic_sft_dataset.py --output_dir "$RUN/data" --seed 42
+python -m evaluations.dafeiyu_holdout audit \
+  --compiled "$RUN/data/sft_train.json" "$RUN/data/sft_val.json" --raw-dir tools/training
+torchrun --standalone --nproc_per_node=2 tools/training/train_dora.py \
+  --model_name_or_path Qwen/Qwen3.5-9B --revision "$BASE_REVISION" \
+  --local_files_only --clean_baseline \
+  --holdout evaluations/cases/dafeiyu-next-holdout-v1.jsonl \
+  --data_dir "$RUN/data" --output_dir "$RUN/adapter" \
+  --r 16 --lora_alpha 32 --batch_size 1 --gradient_accumulation_steps 4 \
+  --learning_rate 0.00015 --epochs 2 --max_seq_length 1024 --seed 42
 ```
 
-`BASE` 指本次 adapter 对应的原始底模，`DATA` 指保留的训练集，`NEW_ADAPTER` 使用新目录。assistant-only loss 由训练器掩码实现；不能把 loss 下降当作角色、真实视频理解或多轮稳定性通过。
+`BASE_REVISION` 是已缓存的 40 位基座提交，`RUN` 是独立输出目录。`training_metrics.json` 记录训练输入、模板、留出集、实际 token 配额及检查点。先用开发集选检查点，再进入配对留出回放。训练或开发 loss 只用于训练诊断。历史 1B 包装器 `run_finetune.sh` 仍支持显式指定数据与新输出。
+
+编号工件、分片摘要、开发选择与留出回放进度记录在本次实验结果中。[9B 干净基线](../../evaluations/results/dafeiyu-clean-9b-20261111.md)
 
 ## 合并与 GGUF 导出
 

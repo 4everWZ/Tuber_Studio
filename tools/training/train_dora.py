@@ -1,24 +1,16 @@
-"""Da Feiyu Persona Fine-Tuning Pipeline (DoRA / 4-bit QLoRA) on Workstation.
-
-Optimized for 2x RTX 3090 (48GB VRAM total).
-Supports:
-- Qwen/Qwen3.5-9B (Dense 9B, Native 256K context, Hybrid Linear Attention)
-- google/gemma-4-12B (Gemma 4 12B Multimodal)
-- google/gemma-4-26B-A4B-it (Gemma 4 26B MoE with 4B active params, Native 256K context)
-- Qwen/Qwen3.8-Flash-Next (Qwen3.8 MoE with 512 fine-grained experts, Native 256K context)
-- Qwen/Qwen3.8-27B (Dense 27B, Native 256K context)
-
-Freezes vision encoder and projector if present, fine-tuning only the language model layers.
-"""
+"""Train a language-only OC adapter with verified native assistant supervision."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
-import sys
+import re
+from importlib.metadata import version
 from pathlib import Path
+
+from sft_dataset import digest, json_bytes, read_split_files
+from sft_tokenization import balance_training, token_counts, tokenize_split
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -107,282 +99,174 @@ def parse_args():
         "--bf16", action="store_true", default=True, help="Use BF16 mixed precision (Ampere native)"
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--revision", help="Pin the Hugging Face base revision")
+    parser.add_argument("--local_files_only", action="store_true")
+    parser.add_argument("--clean_baseline", action="store_true", help="Use the approved Qwen3.5-9B 70:30 baseline")
+    parser.add_argument("--holdout", type=Path, help="Frozen evaluation JSONL, fingerprinted and kept out of training")
+    parser.add_argument("--prepare_only", action="store_true", help="Verify exact training inputs before loading weights")
     return parser.parse_args()
 
 
-def freeze_vision_modules(model):
-    """Freezes vision encoder and projector layers, keeping only LLM backbone trainable."""
-    frozen_count = 0
-    total_count = 0
-    for name, param in model.named_parameters():
-        total_count += 1
-        if any(pattern in name.lower() for pattern in FREEZE_PATTERNS):
-            param.requires_grad = False
-            frozen_count += 1
-
-    if frozen_count > 0:
-        logger.info(
-            "Vision freeze complete: %d / %d parameter tensors frozen to preserve visual/OCR capabilities.",
-            frozen_count,
-            total_count,
-        )
+def vision_parameter(name):
+    return any(part in FREEZE_PATTERNS for part in name.lower().split("."))
 
 
-def setup_peft_config(args):
-    """Creates a PEFT LoraConfig with DoRA (or QLoRA when load_in_4bit is active)."""
-    try:
-        from peft import LoraConfig, TaskType
-    except ImportError:
-        logger.error(
-            "peft is required. Please install it on the workstation: pip install peft trl transformers bitsandbytes"
-        )
-        sys.exit(1)
+def setup_peft_config(args, model):
+    from peft import LoraConfig, TaskType
 
-    model_lower = args.model_name_or_path.lower()
-    if "qwen" in model_lower:
-        target_modules = [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-            "in_proj_qkv",
-            "out_proj",
-        ]
-    elif "gemma" in model_lower:
-        target_modules = [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ]
-    else:
-        target_modules = DEFAULT_TARGET_MODULES
-
-    use_dora = args.use_dora and (not args.load_in_4bit)
-
-    peft_config = LoraConfig(
+    suffixes = set(DEFAULT_TARGET_MODULES)
+    if model.config.model_type.startswith("qwen"):
+        suffixes.update(("in_proj_qkv", "out_proj"))
+    targets = [
+        name for name, _ in model.named_modules()
+        if name.rsplit(".", 1)[-1] in suffixes and not vision_parameter(name)
+    ]
+    if not targets:
+        raise ValueError("No language-model adapter targets matched")
+    return LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
         r=args.r,
         lora_alpha=args.lora_alpha,
-        target_modules=target_modules,
         lora_dropout=args.lora_dropout,
+        target_modules=targets,
+        use_dora=args.use_dora and not args.load_in_4bit,
         bias="none",
-        task_type=TaskType.CAUSAL_LM,
-        use_dora=use_dora,
     )
-    logger.info(
-        "PEFT configuration created: rank=%d, alpha=%d, use_dora=%s, 4bit=%s, targets=%s",
-        args.r,
-        args.lora_alpha,
-        use_dora,
-        args.load_in_4bit,
-        target_modules,
-    )
-    return peft_config
+
+
+def validate_run(args):
+    if args.output_dir.exists():
+        raise FileExistsError("Training output directory already exists; choose a new one")
+    if min(args.batch_size, args.max_seq_length, args.gradient_accumulation_steps, args.epochs) < 1:
+        raise ValueError("Batch size, gradient accumulation, length and epochs must be positive")
+    if args.clean_baseline and (
+        args.model_name_or_path != "Qwen/Qwen3.5-9B"
+        or not re.fullmatch(r"[0-9a-f]{40}", args.revision or "")
+        or (args.r, args.lora_alpha) != (16, 32)
+        or args.load_in_4bit
+        or args.epochs > 2
+        or not args.holdout
+    ):
+        raise ValueError("Clean baseline requires pinned Qwen3.5-9B, rank 16/alpha 32 DoRA, at most two epochs, and a frozen holdout")
+
+
+def prepare_training(args, tokenizer):
+    raw_train, raw_dev, split_fingerprints = read_split_files(args.data_dir, require_manifest=args.clean_baseline)
+    train = tokenize_split(raw_train, tokenizer, args.max_seq_length, allow_legacy=not args.clean_baseline)
+    dev = tokenize_split(raw_dev, tokenizer, args.max_seq_length, allow_legacy=not args.clean_baseline)
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    global_batch = world_size * args.batch_size
+    selected = balance_training(train, seed=args.seed, global_batch=global_batch) if args.clean_baseline else train
+    tokens = token_counts(selected)
+    source_directory = Path(__file__).resolve().parent
+    metadata = {
+        "schema": "dafeiyu-adapter-training-v1",
+        "status": "prepared",
+        "model": args.model_name_or_path,
+        "model_revision": args.revision,
+        "template_sha256": digest(tokenizer.chat_template.encode("utf-8")),
+        "split_sha256": split_fingerprints,
+        "holdout_sha256": digest(args.holdout.read_bytes()) if args.holdout else None,
+        "tokenizer_class": type(tokenizer).__name__,
+        "assistant_loss": "native-content-and-eos-v1",
+        "visual_training": "text-only; multimodal rows rejected",
+        "seed": args.seed,
+        "dora_rank": args.r,
+        "dora_alpha": args.lora_alpha,
+        "dora_dropout": args.lora_dropout,
+        "load_in_4bit": args.load_in_4bit,
+        "epochs": args.epochs,
+        "learning_rate": args.learning_rate,
+        "max_seq_length": args.max_seq_length,
+        "global_batch": global_batch,
+        "gradient_accumulation": args.gradient_accumulation_steps,
+        "train_rows_before_replay": len(train),
+        "train_rows_per_epoch": len(selected),
+        "dev_rows": len(dev),
+        "original_train_supervised_tokens": token_counts(train),
+        "train_supervised_tokens_per_epoch": tokens,
+        "dev_supervised_tokens": token_counts(dev),
+        "general_token_share": tokens.get("general_ability", 0) / sum(tokens.values()),
+        "selection_sha256": digest(json_bytes([inputs for _, inputs, _ in selected])),
+        "training_code_sha256": {
+            name: digest((source_directory / name).read_bytes())
+            for name in ("train_dora.py", "sft_dataset.py", "sft_tokenization.py")
+        },
+        "library_versions": {name: version(name) for name in ("torch", "transformers", "peft", "datasets", "accelerate")},
+    }
+    return [row[1] for row in selected], [row[1] for row in dev], metadata
 
 
 def main():
     args = parse_args()
-    logger.info("Initializing Da Feiyu Persona Training (Stage: %s)...", args.stage)
-    logger.info("Model: %s | Device count: %s", args.model_name_or_path, os.environ.get("WORLD_SIZE", "1"))
+    validate_run(args)
+    import torch
+    from datasets import Dataset
+    from peft import get_peft_model, prepare_model_for_kbit_training
+    from transformers import (
+        AutoConfig,
+        AutoModelForCausalLM,
+        AutoModelForImageTextToText,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+        DataCollatorForSeq2Seq,
+        Trainer,
+        TrainingArguments,
+        set_seed,
+    )
 
-    try:
-        import torch
-        from peft import get_peft_model, prepare_model_for_kbit_training
-        from transformers import (
-            AutoModelForCausalLM,
-            AutoTokenizer,
-            BitsAndBytesConfig,
-            DataCollatorForSeq2Seq,
-            Trainer,
-            TrainingArguments,
-        )
-    except ImportError as e:
-        logger.error("Required library missing: %s", e)
-        sys.exit(1)
-
-    logger.info("CUDA Available: %s (Device count: %d)", torch.cuda.is_available(), torch.cuda.device_count())
-    if torch.cuda.is_available():
-        for i in range(torch.cuda.device_count()):
-            logger.info(
-                "GPU %d: %s (%d GB VRAM)",
-                i,
-                torch.cuda.get_device_name(i),
-                torch.cuda.get_device_properties(i).total_memory // (1024**3),
-            )
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+    set_seed(args.seed)
+    source = {
+        "revision": args.revision,
+        "local_files_only": args.local_files_only,
+        "trust_remote_code": not args.clean_baseline,
+    }
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, **source)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    train_rows, dev_rows, metadata = prepare_training(args, tokenizer)
+    logger.info("Prepared SFT metrics %s", metadata)
+    if args.prepare_only:
+        args.output_dir.mkdir(parents=True)
+        (args.output_dir / "training_metrics.json").write_bytes(json_bytes(metadata))
+        return
 
-    if not tokenizer.chat_template:
-        model_lower = args.model_name_or_path.lower()
-        if "gemma" in model_lower:
-            tokenizer.chat_template = (
-                "{{ bos_token }}{% for message in messages %}"
-                "{% if message['role'] == 'user' %}{{ '<start_of_turn>user\n' + message['content'] + '<end_of_turn>\n' }}"
-                "{% elif message['role'] == 'assistant' %}{{ '<start_of_turn>model\n' + message['content'] + '<end_of_turn>\n' }}"
-                "{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<start_of_turn>model\n' }}{% endif %}"
-            )
-            logger.info("Injected standard Gemma chat template into base tokenizer.")
-        else:
-            tokenizer.chat_template = (
-                "{% for message in messages %}"
-                "{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}"
-                "{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-            )
-            logger.info("Injected standard ChatML chat template into base tokenizer.")
-
-    torch_dtype = torch.bfloat16 if args.bf16 and torch.cuda.is_bf16_supported() else torch.float16
-    quant_config = None
+    config = AutoConfig.from_pretrained(args.model_name_or_path, **source)
+    multimodal = any(getattr(config, field, None) is not None for field in ("vision_config", "audio_config"))
+    model_class = AutoModelForImageTextToText if multimodal else AutoModelForCausalLM
+    dtype = torch.bfloat16 if args.bf16 and torch.cuda.is_bf16_supported() else torch.float16
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    device_map = {"": local_rank} if args.load_in_4bit else None
+    quantization = None
     if args.load_in_4bit:
-        quant_config = BitsAndBytesConfig(
+        quantization = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch_dtype,
+            bnb_4bit_compute_dtype=dtype,
         )
-        logger.info("4-bit NF4 Quantization enabled for base model.")
-
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    device_map = {"": local_rank} if args.load_in_4bit else None
-
-    logger.info("Loading base model %s (dtype=%s, device_map=%s)...", args.model_name_or_path, torch_dtype, device_map)
-    is_vision = any(k in args.model_name_or_path.lower() for k in ["cpm-v", "vl", "vision", "qwen-vl"])
-    if is_vision:
-        try:
-            from transformers import AutoModelForImageTextToText
-
-            model = AutoModelForImageTextToText.from_pretrained(
-                args.model_name_or_path,
-                torch_dtype=torch_dtype if not args.load_in_4bit else None,
-                quantization_config=quant_config,
-                trust_remote_code=True,
-                device_map=device_map,
-            )
-        except Exception:
-            model = AutoModelForCausalLM.from_pretrained(
-                args.model_name_or_path,
-                torch_dtype=torch_dtype if not args.load_in_4bit else None,
-                quantization_config=quant_config,
-                trust_remote_code=True,
-                device_map=device_map,
-            )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name_or_path,
-            torch_dtype=torch_dtype if not args.load_in_4bit else None,
-            quantization_config=quant_config,
-            trust_remote_code=True,
-            device_map=device_map,
-        )
-
-    freeze_vision_modules(model)
-
+    model = model_class.from_pretrained(
+        args.model_name_or_path,
+        dtype=dtype if not args.load_in_4bit else None,
+        quantization_config=quantization,
+        device_map=device_map,
+        **source,
+    )
     if args.load_in_4bit:
-        model = prepare_model_for_kbit_training(
-            model, use_gradient_checkpointing=args.gradient_checkpointing
-        )
-
-    peft_config = setup_peft_config(args)
-    model = get_peft_model(model, peft_config)
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
+    model.config.use_cache = False
+    model = get_peft_model(model, setup_peft_config(args, model), revision=args.revision)
+    if any(param.requires_grad and vision_parameter(name) for name, param in model.named_parameters()):
+        raise ValueError("Visual parameters are unexpectedly trainable")
     model.print_trainable_parameters()
 
-    # Load datasets
-    train_file = args.data_dir / "sft_train.json"
-    val_file = args.data_dir / "sft_val.json"
-    if not train_file.exists():
-        logger.error("Dataset not found at %s.", train_file)
-        sys.exit(1)
-
-    from datasets import Dataset
-
-    with open(train_file, encoding="utf-8") as f:
-        raw_train = json.load(f)
-    with open(val_file, encoding="utf-8") as f:
-        raw_val = json.load(f)
-
-    def format_samples(batch):
-        texts = []
-        for msgs in batch["messages"]:
-            formatted = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
-            texts.append(formatted)
-        return {"text": texts}
-
-    train_ds = Dataset.from_list(raw_train)
-    val_ds = Dataset.from_list(raw_val)
-    train_ds = train_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
-    val_ds = val_ds.map(format_samples, batched=True, remove_columns=["messages", "category"])
-
-    header_candidates = [
-        "<|im_start|>assistant\n<think>\n\n</think>\n\n",
-        "<|im_start|>assistant\n",
-        "<start_of_turn>model\n",
-        "<|start_header_id|>assistant<|end_header_id|>\n\n",
-    ]
-    encoded_headers = [tokenizer.encode(h, add_special_tokens=False) for h in header_candidates]
-    encoded_headers = [h for h in encoded_headers if len(h) > 0]
-
-    end_token_candidates = ["<|im_end|>", "<end_of_turn>", "<|eot_id|>", "</s>", tokenizer.eos_token]
-    end_ids = set()
-    for cand in end_token_candidates:
-        if cand:
-            try:
-                cid = tokenizer.convert_tokens_to_ids(cand)
-                if cid is not None and cid != tokenizer.unk_token_id:
-                    end_ids.add(cid)
-            except Exception:
-                pass
-
-    def tokenize_function(examples):
-        tokenized = tokenizer(examples["text"], truncation=True, max_length=args.max_seq_length)
-        all_labels = []
-        for ids in tokenized["input_ids"]:
-            labels = [-100] * len(ids)
-            idx = 0
-            found_any = False
-            while idx < len(ids):
-                match_len = 0
-                for h in encoded_headers:
-                    if idx + len(h) <= len(ids) and ids[idx : idx + len(h)] == h:
-                        match_len = len(h)
-                        break
-
-                if match_len > 0:
-                    start = idx + match_len
-                    stop = len(ids)
-                    for j in range(start, len(ids)):
-                        if ids[j] in end_ids:
-                            stop = j
-                            break
-                    for k in range(start, min(stop + 1, len(ids))):
-                        labels[k] = ids[k]
-                    found_any = True
-                    idx = stop + 1
-                else:
-                    idx += 1
-            if not found_any:
-                labels = ids.copy()
-            all_labels.append(labels)
-        tokenized["labels"] = all_labels
-        return tokenized
-
-    tokenized_train = train_ds.map(tokenize_function, batched=True, remove_columns=["text"])
-    tokenized_val = val_ds.map(tokenize_function, batched=True, remove_columns=["text"])
-
-    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, pad_to_multiple_of=8, return_tensors="pt")
-
+    collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, pad_to_multiple_of=8, return_tensors="pt")
     training_args = TrainingArguments(
         output_dir=str(args.output_dir),
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=1,
         eval_accumulation_steps=1,
-        dataloader_drop_last=True,
+        dataloader_drop_last=False,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         num_train_epochs=args.epochs,
@@ -392,41 +276,38 @@ def main():
         logging_steps=10,
         save_strategy="epoch",
         eval_strategy="epoch",
-        save_total_limit=2,
+        save_total_limit=None if args.clean_baseline else 2,
         ddp_find_unused_parameters=False,
         seed=args.seed,
+        data_seed=args.seed,
         report_to="none",
     )
-
-    logger.info("Launching Trainer (output_dir=%s)...", training_args.output_dir)
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_train,
-        eval_dataset=tokenized_val,
-        data_collator=data_collator,
+        train_dataset=Dataset.from_list(train_rows),
+        eval_dataset=Dataset.from_list(dev_rows),
+        data_collator=collator,
+        processing_class=tokenizer,
     )
-
+    metadata_path = args.output_dir / "training_metrics.json"
+    if trainer.is_world_process_zero():
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path.write_bytes(json_bytes(metadata))
     train_result = trainer.train()
-    logger.info("Training complete! Train loss: %.4f", train_result.training_loss)
-
-    logger.info("Saving adapter weights to %s...", args.output_dir)
     trainer.save_model(args.output_dir)
-    tokenizer.save_pretrained(args.output_dir)
-
-    metrics = {
-        "train_loss": train_result.training_loss,
-        "train_runtime_seconds": train_result.metrics.get("train_runtime", 0),
-        "train_samples_per_second": train_result.metrics.get("train_samples_per_second", 0),
-        "epochs": args.epochs,
-        "model": args.model_name_or_path,
-        "dora_rank": args.r,
-        "dora_alpha": args.lora_alpha,
-    }
-    with open(args.output_dir / "training_metrics.json", "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2)
-
-    logger.info("Persona fine-tuning pipeline finished successfully!")
+    if trainer.is_world_process_zero():
+        metadata.update(
+            status="complete",
+            train_loss=train_result.training_loss,
+            train_runtime_seconds=train_result.metrics.get("train_runtime"),
+            train_samples_per_second=train_result.metrics.get("train_samples_per_second"),
+            global_steps=trainer.state.global_step,
+            checkpoints=sorted(path.name for path in args.output_dir.glob("checkpoint-*")),
+            evaluations=[row for row in trainer.state.log_history if "eval_loss" in row],
+        )
+        metadata_path.write_bytes(json_bytes(metadata))
+    logger.info("Persona fine-tuning finished")
 
 
 if __name__ == "__main__":

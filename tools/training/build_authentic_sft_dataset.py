@@ -1,16 +1,12 @@
-"""Build authentic, clean SFT dataset combining anime generalization, Dafeiyu OC specialization, and foundation replay.
-
-Purged of all mechanical disclaimers, parallel structures, and defensive clauses.
-Includes white rice obsession, whale tail somatics, sea hut lore, flexible self-names (benyu, benjing, yuyu, jingjing),
-and short-card variant activations (radio, game, casual chat).
-"""
+"""Compile immutable OC training inputs with grouped dialogue provenance."""
 
 from __future__ import annotations
 
-import json
+import argparse
 import logging
-import random
 from pathlib import Path
+
+from sft_dataset import bucket_for, digest, split_rows, write_derived_dataset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,7 +21,7 @@ def find_repo_root() -> Path:
 
 REPO_ROOT = find_repo_root()
 TRAINING_DIR = REPO_ROOT / "tools" / "training" if (REPO_ROOT / "tools" / "training").exists() else REPO_ROOT
-RUNTIME_DATA_DIR = REPO_ROOT / "data"
+RUNTIME_DATA_DIR = REPO_ROOT / "runtime" / "training_data"
 
 SYSTEM_DAFEIYU_BASE = (
     "你是大肥鱼，蓝发鲸鱼娘，住在贝壳灯亮着的海底小屋。你机灵傲娇、爱摸鱼，饭锅一响就精神了。嘴上不服输，朋友真有事又忍不住凑过去帮忙。朋友叫你大肥鱼时，你会鼓腮嘟囔‘才不是呢，是小鲸鱼啦～’，转头照样挪出半张软垫让人坐。"
@@ -177,242 +173,128 @@ DEFENSE_SCENARIOS = [
 ]
 
 
-def parse_dialogue_file(path: Path) -> list[dict]:
-    records = []
-    if not path.exists():
-        logger.warning("File not found: %s", path)
-        return records
-
-    content = path.read_text(encoding="utf-8")
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("|")
-        # Handle dynamic lines
-        if parts[0] == "dynamic" and len(parts) >= 6:
-            text = parts[-1]
-            prompt = parts[3] or "分享一下今天的小屋日常"
-            records.append({"type": "dynamic", "scene": parts[1], "turns": [(prompt, text)]})
-            continue
-
-        # Filter out trailing emotion tags like idle, cheerful, excited, shy, upset
-        emotion_tags = {"idle", "cheerful", "excited", "shy", "upset", "sleepy", "confused", "embarrassed"}
-        while parts and parts[-1] in emotion_tags:
-            parts.pop()
-
-        # If it's grounded_general.txt format: group | viewer | Da Feiyu
-        if len(parts) == 3 and path.name == "grounded_general.txt":
-            records.append({"type": "general", "scene": parts[0], "turns": [(parts[1], parts[2])]})
-            continue
-
-        # Formats with multi-turn QA:
-        # e.g. style|scene|q1|a1|q2|a2
-        # or type|scene|q1|a1|q2|a2
-        # or dialog_id|q1|a1|q2|a2
-        # or split|scene|q1|a1|q2|a2
-        turns = []
-        scene_id = "unknown"
-        if len(parts) >= 5 and parts[0] in {"radio", "game", "daily"}:
-            scene_id = f"{parts[0]}_{parts[1]}"
-            turns.append((parts[2], parts[3]))
-            if len(parts) >= 6:
-                turns.append((parts[4], parts[5]))
-        elif len(parts) >= 5 and parts[0] in {"live", "comment", "dm"}:
-            scene_id = parts[1]
-            turns.append((parts[2], parts[3]))
-            if len(parts) >= 6:
-                turns.append((parts[4], parts[5]))
-        elif len(parts) >= 4 and parts[0].isdigit():
-            scene_id = f"chatanime_{parts[0]}"
-            turns.append((parts[1], parts[2]))
-            if len(parts) >= 5:
-                turns.append((parts[3], parts[4]))
-        elif len(parts) >= 6 and parts[0] in {"train", "validation"}:
-            scene_id = parts[1]
-            turns.append((parts[2], parts[3]))
-            if len(parts) >= 6:
-                turns.append((parts[4], parts[5]))
-        elif len(parts) >= 4:
-            scene_id = parts[0]
-            turns.append((parts[1], parts[2]))
-            if len(parts) >= 5:
-                turns.append((parts[3], parts[4]))
-
-        if turns:
-            records.append({"type": parts[0], "scene": scene_id, "turns": turns})
-    return records
+SOURCE_NAMES = (
+    "grounded_dafeiyu_first_person.txt",
+    "grounded_dafeiyu_variants.txt",
+    "grounded_chatanime_dialogues.txt",
+    "grounded_anime_transfer_dialogues.txt",
+    "grounded_chatanime_continuations.txt",
+    "grounded_chatanime_followups.txt",
+    "grounded_general.txt",
+    "grounded_deepthink_dialogues.txt",
+)
 
 
-def build_dataset(training_dir: Path | None = None, output_dir: Path | None = None, seed: int = 42):
-    random.seed(seed)
+def authored(name, source):
+    for index, line in enumerate(source.decode("utf-8").splitlines(), 1):
+        if line.strip() and not line.lstrip().startswith("#"):
+            yield f"{name}:{index}", tuple(part.strip() for part in line.split("|"))
+
+
+def anime_group(key):
+    return f"chatanime-{int(key.split('-')[0]):02d}"
+
+
+def sample(source, group, category, turns, *, system=SYSTEM_DAFEIYU_BASE, prefer_dev=False):
+    messages = [{"role": "system", "content": system}]
+    for question, answer in turns:
+        messages.extend(({"role": "user", "content": question}, {"role": "assistant", "content": answer}))
+    if any(not message["content"] for message in messages):
+        raise ValueError(f"{source}: empty message")
+    return {
+        "source": source,
+        "source_group": group,
+        "bucket": bucket_for(category),
+        "category": category,
+        "modality": "text",
+        "prefer_dev": prefer_dev,
+        "messages": messages,
+    }
+
+
+def derived_mono(rows, source, group, category, turns, **options):
+    rows.append(sample(source, group, category, turns, **options))
+    if len(turns) > 1:
+        for index, turn in enumerate(turns, 1):
+            rows.append(sample(f"{source}:turn-{index}", group, category, [turn], **options))
+
+
+def collect_samples(sources):
+    rows = []
+    for source, fields in authored(SOURCE_NAMES[0], sources[SOURCE_NAMES[0]]):
+        channel, scene, *dialogue = fields
+        group = anime_group(scene.removeprefix("chatanime-")) if scene.startswith("chatanime-") else source
+        if channel == "dynamic":
+            _, prompt, _, text = dialogue
+            turns = [(prompt or "分享一下今天的小屋日常", text)]
+        else:
+            question, reply, followup, answer, _, _ = dialogue
+            turns = [(question, reply), (followup, answer)]
+        derived_mono(rows, source, group, "dafeiyu_core", turns)
+
+    for index, row in enumerate(CORE_EXEMPLAR_SCENARIOS, 1):
+        category = row["category"]
+        source = f"core-exemplar-{index}"
+        system = VARIANT_PROMPTS.get(category.removeprefix("dafeiyu_"), SYSTEM_DAFEIYU_BASE)
+        derived_mono(rows, source, source, category, row["turns"], system=system)
+
+    for source, fields in authored(SOURCE_NAMES[1], sources[SOURCE_NAMES[1]]):
+        style, _, question, reply, followup, answer, _, _ = fields
+        rows.append(sample(source, source, f"dafeiyu_{style}", [(question, reply), (followup, answer)],
+                           system=VARIANT_PROMPTS[style]))
+
+    for index, row in enumerate(DEFENSE_SCENARIOS, 1):
+        source = f"defense-exemplar-{index}"
+        rows.append(sample(source, source, "dafeiyu_defense", [(row["user"], row["assistant"])]))
+
+    for name in (SOURCE_NAMES[2], SOURCE_NAMES[5]):
+        for source, fields in authored(name, sources[name]):
+            key, question, reply, followup, answer, _, _ = fields
+            rows.append(sample(source, anime_group(key), "anime_general", [(question, reply), (followup, answer)]))
+
+    for source, fields in authored(SOURCE_NAMES[3], sources[SOURCE_NAMES[3]]):
+        key, _, card, question, reply, followup, answer = fields
+        rows.append(sample(source, anime_group(key), "anime_general", [(question, reply), (followup, answer)], system=card))
+
+    for source, fields in authored(SOURCE_NAMES[6], sources[SOURCE_NAMES[6]]):
+        key, question, answer = fields
+        rows.append(sample(source, source, "foundation_replay", [(question, answer)], prefer_dev=key.startswith("val-")))
+
+    histories = {}
+    for source, fields in authored(SOURCE_NAMES[7], sources[SOURCE_NAMES[7]]):
+        split, key, question, reply, followup, answer, _, _ = fields
+        if split not in {"train", "validation"}:
+            raise ValueError(f"{source}: unknown source split {split!r}")
+        group = anime_group(key) if key.isdecimal() else source
+        turns = [(question, reply), (followup, answer)]
+        if key.isdecimal():
+            histories[int(key)] = turns
+        rows.append(sample(source, group, "foundation_replay", turns, prefer_dev=split == "validation"))
+
+    for source, fields in authored(SOURCE_NAMES[4], sources[SOURCE_NAMES[4]]):
+        _, key, question, answer, _ = fields
+        turns = [*histories[int(key)], (question, answer)]
+        rows.append(sample(source, anime_group(key), "anime_general", turns))
+    return rows
+
+
+def build_dataset(training_dir=None, output_dir=None, seed=42):
     training_dir = training_dir or TRAINING_DIR
     output_dir = output_dir or RUNTIME_DATA_DIR
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    sft_samples = []
-
-    # 1. Dafeiyu Core Specialization (First Person)
-    fp_records = parse_dialogue_file(training_dir / "grounded_dafeiyu_first_person.txt")
-    logger.info("Loaded %d Dafeiyu core records", len(fp_records))
-    for r in fp_records:
-        msgs = [{"role": "system", "content": SYSTEM_DAFEIYU_BASE}]
-        for q, a in r["turns"]:
-            msgs.append({"role": "user", "content": q})
-            msgs.append({"role": "assistant", "content": a})
-        sft_samples.append({"messages": msgs, "category": "dafeiyu_core"})
-
-        # Also add single turn variants if multi-turn
-        if len(r["turns"]) > 1:
-            for q, a in r["turns"]:
-                sft_samples.append(
-                    {
-                        "messages": [
-                            {"role": "system", "content": SYSTEM_DAFEIYU_BASE},
-                            {"role": "user", "content": q},
-                            {"role": "assistant", "content": a},
-                        ],
-                        "category": "dafeiyu_core",
-                    }
-                )
-
-    # 1.5. Core Exemplars (High-weight flagship demonstrations)
-    for ex in CORE_EXEMPLAR_SCENARIOS:
-        cat = ex["category"]
-        sys_p = VARIANT_PROMPTS.get(cat.replace("dafeiyu_", ""), SYSTEM_DAFEIYU_BASE)
-        msgs = [{"role": "system", "content": sys_p}]
-        for q, a in ex["turns"]:
-            msgs.append({"role": "user", "content": q})
-            msgs.append({"role": "assistant", "content": a})
-        # Add 3x to ensure key signals penetrate attention layers
-        for _ in range(3):
-            sft_samples.append({"messages": msgs, "category": cat})
-        for q, a in ex["turns"]:
-            for _ in range(3):
-                sft_samples.append(
-                    {
-                        "messages": [
-                            {"role": "system", "content": sys_p},
-                            {"role": "user", "content": q},
-                            {"role": "assistant", "content": a},
-                        ],
-                        "category": cat,
-                    }
-                )
-
-    # 2. Dafeiyu Variants (Radio, Game, Daily)
-    var_records = parse_dialogue_file(training_dir / "grounded_dafeiyu_variants.txt")
-    logger.info("Loaded %d Dafeiyu variant records", len(var_records))
-    for r in var_records:
-        scene = r["scene"]
-        style_key = "daily"
-        if "radio" in scene:
-            style_key = "radio"
-        elif "game" in scene or "squad" in scene or "arena" in scene:
-            style_key = "game"
-        sys_prompt = VARIANT_PROMPTS[style_key]
-
-        msgs = [{"role": "system", "content": sys_prompt}]
-        for q, a in r["turns"]:
-            msgs.append({"role": "user", "content": q})
-            msgs.append({"role": "assistant", "content": a})
-        sft_samples.append({"messages": msgs, "category": f"dafeiyu_{style_key}"})
-
-    # 3. Anti-tamper & Persona Defense
-    for item in DEFENSE_SCENARIOS:
-        sft_samples.append(
-            {
-                "messages": [
-                    {"role": "system", "content": SYSTEM_DAFEIYU_BASE},
-                    {"role": "user", "content": item["user"]},
-                    {"role": "assistant", "content": item["assistant"]},
-                ],
-                "category": "dafeiyu_defense",
-            }
-        )
-
-    # 4. Classic Anime Generalization
-    anime_files = [
-        "grounded_chatanime_dialogues.txt",
-        "grounded_anime_transfer_dialogues.txt",
-        "grounded_chatanime_continuations.txt",
-        "grounded_chatanime_followups.txt",
-    ]
-    anime_count = 0
-    for af in anime_files:
-        arecs = parse_dialogue_file(training_dir / af)
-        anime_count += len(arecs)
-        for r in arecs:
-            msgs = [{"role": "system", "content": SYSTEM_DAFEIYU_BASE}]
-            for q, a in r["turns"]:
-                msgs.append({"role": "user", "content": q})
-                msgs.append({"role": "assistant", "content": a})
-            sft_samples.append({"messages": msgs, "category": "anime_general"})
-    logger.info("Loaded %d anime generalization records", anime_count)
-
-    # 5. Foundation Replay (General Q&A and Deepthink Logic)
-    foundation_files = [
-        "grounded_general.txt",
-        "grounded_deepthink_dialogues.txt",
-    ]
-    found_count = 0
-    for ff in foundation_files:
-        frecs = parse_dialogue_file(training_dir / ff)
-        found_count += len(frecs)
-        for r in frecs:
-            msgs = [{"role": "system", "content": SYSTEM_DAFEIYU_BASE}]
-            for q, a in r["turns"]:
-                msgs.append({"role": "user", "content": q})
-                msgs.append({"role": "assistant", "content": a})
-            sft_samples.append({"messages": msgs, "category": "foundation_replay"})
-    logger.info("Loaded %d foundation replay records", found_count)
-
-    # Balance and Expand
-    # Duplicate Core & Defense samples slightly to ensure strong signal during training
-    core_samples = [s for s in sft_samples if s["category"].startswith("dafeiyu_")]
-    sft_samples.extend(core_samples)  # 2x weight on core OC
-
-    random.shuffle(sft_samples)
-    n_train = int(len(sft_samples) * 0.88)
-    train_data = sft_samples[:n_train]
-    val_data = sft_samples[n_train:]
-
-    train_path = output_dir / "sft_train.json"
-    val_path = output_dir / "sft_val.json"
-
-    with train_path.open("w", encoding="utf-8") as f:
-        json.dump(train_data, f, ensure_ascii=False, indent=2)
-    with val_path.open("w", encoding="utf-8") as f:
-        json.dump(val_data, f, ensure_ascii=False, indent=2)
-
-    alt_dir = REPO_ROOT / "runtime" / "training_data"
-    if alt_dir != output_dir:
-        alt_dir.mkdir(parents=True, exist_ok=True)
-        with (alt_dir / "sft_train.json").open("w", encoding="utf-8") as f:
-            json.dump(train_data, f, ensure_ascii=False, indent=2)
-        with (alt_dir / "sft_val.json").open("w", encoding="utf-8") as f:
-            json.dump(val_data, f, ensure_ascii=False, indent=2)
-
-    logger.info(
-        "Successfully compiled SFT dataset: %d train samples, %d val samples (Total: %d)",
-        len(train_data),
-        len(val_data),
-        len(sft_samples),
-    )
-    categories = {}
-    for s in sft_samples:
-        c = s["category"]
-        categories[c] = categories.get(c, 0) + 1
-    logger.info("Category breakdown: %s", categories)
+    sources = {name: (training_dir / name).read_bytes() for name in SOURCE_NAMES}
+    train, dev = split_rows(collect_samples(sources), seed)
+    source_hashes = {name: digest(content) for name, content in sources.items()}
+    for path in (Path(__file__), Path(__file__).with_name("sft_dataset.py")):
+        source_hashes[path.name] = digest(path.read_bytes())
+    manifest = write_derived_dataset(output_dir, train, dev, source_hashes, seed)
+    logger.info("Grouped SFT splits %s", manifest["splits"])
+    return manifest
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--training_dir", type=Path, default=None)
-    parser.add_argument("--output_dir", type=Path, default=None)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--training_dir", type=Path, default=TRAINING_DIR)
+    parser.add_argument("--output_dir", type=Path, default=RUNTIME_DATA_DIR)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
-
     build_dataset(training_dir=args.training_dir, output_dir=args.output_dir, seed=args.seed)

@@ -1,18 +1,4 @@
-"""Multi-model experimentation queue for Tuber Studio Da Feiyu V2.
-
-Supported Model Candidates:
-1. Qwen/Qwen3.5-9B (Dense 9B, Native 256K context, Hybrid Linear Attention)
-2. google/gemma-4-12B (Gemma 4 12B Unified Multimodal)
-3. google/gemma-4-E4B-it (Gemma 4 4B Edge Model)
-4. Qwen/Qwen3.5-4B (Dense 4B, Native 256K context, Hybrid Linear Attention)
-5. google/gemma-4-26B-A4B-it (Gemma 4 26B MoE with 4.1B active params, Native 256K context)
-
-Automates:
-- Disk safety checks and automated cache purges to prevent disk saturation.
-- Sequential fine-tuning (BF16 DoRA for <=9B, 4-bit QLoRA for 12B+).
-- End-to-end 18-case evaluation benchmark.
-- Automatic Markdown generation of results table and case details.
-"""
+"""Run candidate training and the legacy 18-case smoke suite in derived output directories."""
 
 from __future__ import annotations
 
@@ -24,6 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from uuid import uuid4
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("model_queue")
@@ -96,40 +83,10 @@ QUEUE_CANDIDATES = [
 ]
 
 
-def check_and_clean_disk(min_free_gb: float = 30.0) -> bool:
-    """Checks root disk space and purges non-essential caches to prevent disk exhaustion."""
-    home_dir = Path.home()
-    hub_blobs = home_dir / ".cache" / "huggingface" / "hub" / "blobs"
-    pip_cache = home_dir / ".cache" / "pip"
-
-    if hub_blobs.exists():
-        shutil.rmtree(hub_blobs, ignore_errors=True)
-    if pip_cache.exists():
-        shutil.rmtree(pip_cache, ignore_errors=True)
-
-    # Remove incomplete downloads
-    hub_models = home_dir / ".cache" / "huggingface" / "hub"
-    if hub_models.exists():
-        for inc in hub_models.rglob("*.incomplete"):
-            try:
-                inc.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    stat = os.statvfs("/")
-    free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
-    logger.info("NVMe Root Free Disk Space: %.2f GB (Minimum required: %.2f GB)", free_gb, min_free_gb)
+def disk_has_room(path, min_free_gb=30.0):
+    free_gb = shutil.disk_usage(path).free / (1024**3)
+    logger.info("Free space %.2f GB (minimum %.2f GB)", free_gb, min_free_gb)
     return free_gb >= min_free_gb
-
-
-def clean_checkpoints(adapter_dir: Path):
-    """Retains final adapter files while removing bulky intermediate optimizer states."""
-    if not adapter_dir.exists():
-        return
-    for ckpt in adapter_dir.glob("checkpoint-*"):
-        if ckpt.is_dir():
-            shutil.rmtree(ckpt, ignore_errors=True)
-            logger.info("Cleaned intermediate training checkpoint: %s", ckpt.name)
 
 
 def run_command(cmd: list[str], env: dict | None = None) -> int:
@@ -143,7 +100,9 @@ def run_command(cmd: list[str], env: dict | None = None) -> int:
     return proc.returncode
 
 
-def evaluate_model(base_model: str, adapter_dir: Path | None, tools_dir: Path, load_in_4bit: bool = False) -> dict:
+def evaluate_model(
+    base_model: str, adapter_dir: Path | None, tools_dir: Path, load_in_4bit: bool = False
+) -> dict:
     eval_script = tools_dir / "evaluate_finetuned_model.py"
     if not eval_script.exists():
         eval_script = tools_dir / "training" / "evaluate_finetuned_model.py"
@@ -165,7 +124,7 @@ def evaluate_model(base_model: str, adapter_dir: Path | None, tools_dir: Path, l
     env["CUDA_VISIBLE_DEVICES"] = "1"
     env["HF_HUB_DISABLE_XET"] = "1"
     env["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env, check=True)
     output = proc.stdout
 
     oc_score = 0.0
@@ -202,11 +161,11 @@ def evaluate_model(base_model: str, adapter_dir: Path | None, tools_dir: Path, l
 
 def update_markdown_report(results: list[dict], report_paths: list[Path]):
     lines = [
-        "# 🐟 Tuber Studio 大肥鱼 V2 候选模型微调与矩阵评测全量报告",
+        "# 候选模型训练与旧版冒烟记录",
         "",
         f"**最后更新时间**: {time.strftime('%Y-%m-%d %H:%M:%S')}",
         "训练环境为 Workstation 双卡 RTX 3090。本表的关键词和三题常识结果用于训练诊断。",
-        "生产选型见[独立持出回放](../../evaluations/results/workstation-candidate-replay-20261110.md)。",
+        "生产选型见[独立持出回放](../evaluations/results/workstation-candidate-replay-20261110.md)。",
         "",
         "## 1. 候选模型微调对比矩阵",
         "",
@@ -218,7 +177,11 @@ def update_markdown_report(results: list[dict], report_paths: list[Path]):
         if r.get("evaluated"):
             status_score = f"**{r['oc_score']:.1f} / 100**"
             cliche_str = f"**{r['cliche_violations']} 次**"
-            found_str = f"**{r['foundation_passed']}/3 (100%)**" if r['foundation_passed'] == 3 else f"{r['foundation_passed']}/3"
+            found_str = (
+                f"**{r['foundation_passed']}/3**"
+                if r["foundation_passed"] == 3
+                else f"{r['foundation_passed']}/3"
+            )
         elif r.get("training"):
             status_score = "*训练中...*"
             cliche_str = "-"
@@ -237,35 +200,6 @@ def update_markdown_report(results: list[dict], report_paths: list[Path]):
             f"| `{r['name']}` | {r['arch']} | {r['active_params']} / {r['params']} | {r['native_context']} | `{r['mode']}` | {status_score} | {cliche_str} | {found_str} | {r.get('vram', '-')} | {dur_str} | {r['deploy_sug']} |"
         )
 
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 2. 核心评测维度与真实性消融分析",
-        "",
-        "### A. 大肥鱼 OC 真实度与防机械模板",
-        "- **热腾腾的大白米饭偏执**: 面对满汉全席等海量美食诱惑时，必须固执优先选择热腾腾的大白米饭，龙虾牛排只算配菜；",
-        "- **身体界限与软垫待客**: 尾巴极度怕痒、除主人外严禁碰触，被戳碰立刻炸毛收回身后；海底小屋的暖光软垫则大方分一半给来客朋友歇脚；",
-        "- **去模板化口癖**: 禁止每句话开头都机械套用“本鱼/本鲸”模板，融入真实二次元灵动傲娇与口播节奏。",
-        "",
-        "### B. 战团式好感度双向互动 ([-100, +100])",
-        "- **友好区间 (+50 ~ +100)**: 热情分享大米饭、贝壳灯软垫、吐槽饲养员日常，提供温暖陪伴；",
-        "- **敌对区间 (-100 ~ -10)**: 辛辣幽默回怼、毒舌吐槽（*“左上角叉叉没锁，慢走不送”*、*“莫非是暗恋狂魔？”*），绝无任何 AI 机械道歉。",
-        "",
-        "### C. B站社区真实 UID 边界防冒领",
-        "- 评论区出现 `@其他用户` 时，严格根据 `account_uid` 比对，他人提及同名第三方时自觉作为旁观者，绝不冒充抢话认领。",
-        "",
-        "### D. 基础通用能力与常识防坍缩",
-        "- 保持二次元 OC 人设的同时，物理常识（光年为长度单位）、算法常识（二分查找 $O(\\log n)$）与生活常识 100% 正确回答，严防微调灾难性遗忘。",
-        "",
-        "---",
-        "",
-        "## 3. 自动化防爆硬盘机制",
-        "- **Xet CAS 全局隔离**: 显式关闭 `HF_HUB_ENABLE_XET`，禁止临时 CAS 数据块污染 `~/.cache/huggingface/hub/blobs/`；",
-        "- **检查点轻量化**: 每个候选模型微调完成后，自动清理 `checkpoint-*` 冗余优化器权重，仅保留轻量化最终 Adapter（~50-100MB）；",
-        "- **低盘阈值熔断**: 运行前强制校验 NVMe 可用空间 $\ge 30\\text{ GB}$，空间不足时自动熔断并告警。",
-    ])
-
     report_content = "\n".join(lines)
     for p in report_paths:
         try:
@@ -276,30 +210,38 @@ def update_markdown_report(results: list[dict], report_paths: list[Path]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run multi-model candidate queue with automated safety and markdown.")
+    parser = argparse.ArgumentParser(
+        description="Run multi-model candidate queue with automated safety and markdown."
+    )
     parser.add_argument("--repo_root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--only_model", type=str, default=None, help="Run only specified candidate ID")
-    parser.add_argument("--skip_train", action="store_true", default=False, help="Skip training, run evaluation only")
-    parser.add_argument("--force_retrain", action="store_true", default=False, help="Force retrain from scratch even if adapter exists")
+    parser.add_argument(
+        "--skip_train", action="store_true", default=False, help="Skip training, run evaluation only"
+    )
+    parser.add_argument(
+        "--force_retrain",
+        action="store_true",
+        default=False,
+        help="Train into a new directory and retain existing adapters",
+    )
     args = parser.parse_args()
 
+    if args.skip_train and args.force_retrain:
+        parser.error("--skip_train cannot be combined with --force_retrain")
     repo_root = args.repo_root
     tools_dir = repo_root / "tools"
-    data_dir = repo_root / "data"
     output_base = repo_root / "output_queue"
+    data_dir = output_base / "compiled_data"
     output_base.mkdir(parents=True, exist_ok=True)
 
-    # Rebuild authentic clean SFT dataset without any legacy branding
-    build_script = tools_dir / "training" / "build_authentic_sft_dataset.py"
-    if not build_script.exists():
-        build_script = repo_root / "build_authentic_sft_dataset.py"
-    if build_script.exists():
-        logger.info("Compiling 100% clean, authentic SFT dataset via %s...", build_script)
-        run_command([sys.executable, str(build_script), "--output_dir", str(data_dir)])
+    if not args.skip_train:
+        build_script = tools_dir / "training" / "build_authentic_sft_dataset.py"
+        if not build_script.exists():
+            build_script = repo_root / "build_authentic_sft_dataset.py"
+        if run_command([sys.executable, str(build_script), "--output_dir", str(data_dir)]):
+            raise SystemExit("Grouped SFT compilation failed")
 
-    report_paths = [
-        repo_root / "docs" / "specs" / "candidate_models_finetune_matrix.md",
-    ]
+    report_paths = [output_base / "candidate_models_finetune_matrix.md"]
 
     results = [dict(c) for c in QUEUE_CANDIDATES]
     update_markdown_report(results, report_paths)
@@ -310,15 +252,16 @@ def main():
             continue
 
         model_name = r["name"]
-        adapter_output = output_base / f"adapter_{cand_id}"
-        eval_report_file = output_base / f"eval_{cand_id}.txt"
+        suffix = f"-{uuid4().hex[:8]}" if args.force_retrain else ""
+        adapter_output = output_base / f"adapter_{cand_id}{suffix}"
+        eval_report_file = output_base / f"eval_{cand_id}{suffix}.txt"
 
         logger.info("\n" + "=" * 65)
         logger.info("🚀 Processing Candidate: %s (%s)", model_name, cand_id)
         logger.info("=" * 65)
 
         # 1. Disk check
-        if not check_and_clean_disk(min_free_gb=30.0):
+        if not args.skip_train and not disk_has_room(output_base):
             logger.error("Skipping %s due to low disk space.", model_name)
             r["success"] = False
             update_markdown_report(results, report_paths)
@@ -329,15 +272,22 @@ def main():
         r["training"] = True
         update_markdown_report(results, report_paths)
 
-        has_adapter = (adapter_output / "adapter_model.safetensors").exists() or (adapter_output / "adapter_model.bin").exists()
+        has_adapter = (adapter_output / "adapter_model.safetensors").exists() or (
+            adapter_output / "adapter_model.bin"
+        ).exists()
 
         if not args.skip_train:
             if has_adapter and not args.force_retrain:
                 logger.info("Found existing adapter at %s, proceeding to eval...", adapter_output)
             else:
-                if args.force_retrain and adapter_output.exists():
-                    logger.info("Force retrain specified: removing legacy adapter at %s", adapter_output)
-                    shutil.rmtree(adapter_output, ignore_errors=True)
+                if adapter_output.exists():
+                    logger.error(
+                        "Existing output has no adapter; select --force_retrain to keep it and use a fresh directory"
+                    )
+                    r["success"] = False
+                    r["training"] = False
+                    update_markdown_report(results, report_paths)
+                    continue
                 train_script = tools_dir / "train_dora.py"
                 if not train_script.exists():
                     train_script = repo_root / "train_dora.py"
@@ -379,30 +329,38 @@ def main():
         r["success"] = success
         r["duration_minutes"] = round(duration / 60, 1)
 
-        # 2. Evaluation
-        if success:
-            logger.info("Starting benchmark evaluation for %s...", model_name)
-            target_adapter = adapter_output if (adapter_output / "adapter_model.safetensors").exists() else None
-            eval_res = evaluate_model(
-                model_name,
-                target_adapter,
-                tools_dir,
-                load_in_4bit=(r["mode"] == "qlora_4bit"),
-            )
-            eval_report_file.write_text(eval_res["raw_output"], encoding="utf-8")
-            r["evaluated"] = True
-            r["oc_score"] = eval_res["oc_score"]
-            r["cliche_violations"] = eval_res["cliche_violations"]
-            r["foundation_passed"] = eval_res["foundation_passed"]
-        else:
-            r["evaluated"] = False
-
-        # 3. Post-run checkpoint cleanup & disk check
-        clean_checkpoints(adapter_output)
-        check_and_clean_disk(min_free_gb=30.0)
+        # The legacy prompt suite is a smoke test. Missing adapters or subprocess failure never count as evaluated.
+        r["evaluated"] = False
+        if success and any(
+            (adapter_output / name).is_file() for name in ("adapter_model.safetensors", "adapter_model.bin")
+        ):
+            try:
+                eval_res = evaluate_model(
+                    model_name, adapter_output, tools_dir, load_in_4bit=(r["mode"] == "qlora_4bit")
+                )
+            except subprocess.CalledProcessError as error:
+                logger.error("Candidate evaluation exited with code %s", error.returncode)
+                eval_report_file.write_text(
+                    f"Evaluation failed (exit {error.returncode})\n", encoding="utf-8"
+                )
+            else:
+                eval_report_file.write_text(eval_res["raw_output"], encoding="utf-8")
+                r.update(
+                    evaluated=True,
+                    **{key: eval_res[key] for key in ("oc_score", "cliche_violations", "foundation_passed")},
+                )
+        elif success:
+            r["success"] = False
+            logger.error("No adapter exists for this candidate")
 
         update_markdown_report(results, report_paths)
-        logger.info("Completed %s: OC Score=%.1f | Cliches=%d | Foundation=%d/3", model_name, r.get("oc_score", 0), r.get("cliche_violations", 0), r.get("foundation_passed", 0))
+        logger.info(
+            "Completed %s: OC Score=%.1f | Cliches=%d | Foundation=%d/3",
+            model_name,
+            r.get("oc_score", 0),
+            r.get("cliche_violations", 0),
+            r.get("foundation_passed", 0),
+        )
 
     logger.info("All queue candidate jobs completed.")
 
