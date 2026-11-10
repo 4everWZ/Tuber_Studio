@@ -1,14 +1,23 @@
 "use strict";
 import { $ } from "./modules/core.js";
 import { api as baseApi } from "./modules/api.js";
-import { inferenceModeChanging, liveActionDisabled } from "./modules/live-controls.js?v=20261107.12";
+import { LiveDesk } from "./modules/live-desk.js?v=20261111";
 
 (() => {
   const focusView = new URLSearchParams(location.search).get("view");
-  if (focusView === "scene" || focusView === "music") document.body.dataset.focusView = focusView;
+  const page = ["scene", "music", "settings"].includes(focusView) ? focusView : "desk";
   const frame = window.frameElement;
+  if (frame) document.body.dataset.liveEmbedded = "true";
+  for (const section of document.querySelectorAll("[data-live-page]")) section.hidden = section.dataset.livePage !== page;
+  document.querySelector(`[data-live-tab="${page}"]`).setAttribute("aria-current", "page");
+  if (frame) {
+    for (const link of document.querySelectorAll("[data-desk-link]")) {
+      link.href = `/#live-${link.dataset.deskLink}`;
+      link.target = "_top";
+    }
+  }
   const visible = () => !document.hidden && !frame?.closest("[hidden]");
-  if (focusView && frame) {
+  if (frame) {
     new ResizeObserver(([entry]) => {
       const height = Math.ceil(entry.target.getBoundingClientRect().height);
       if (height) frame.style.height = `${height + 24}px`;
@@ -16,8 +25,7 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
   }
   const names = {avatar:"角色形象", title:"直播标题", now:"当前歌曲", lyrics:"歌词字幕", queue:"点歌队列", chat:"弹幕互动", gifts:"礼物心意", decoration:"小装饰"};
   const icons = {avatar:"♙",title:"T",now:"♫",lyrics:"≋",queue:"☷",chat:"☏",gifts:"♡",decoration:"✧"};
-  let state, music, status, settings, dirty = false, musicDirty = false, saved, polling = false, authenticated = false;
-  const scene = new LiveScene($("scene"), {editable:true, onChange:changed, onSelect:select, onWarning:text=>feedback(text,true)});
+  let state, music, settings, dirty = false, musicDirty = false, saved, polling = false, authenticated = false;
   function element(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
   function feedback(text, error = false) { $("feedback").hidden = !text; $("feedback").textContent = text; $("feedback").classList.toggle("error",error); }
   async function api(path, options = {}) {
@@ -27,26 +35,46 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
       throw error;
     }
   }
-  const online = new OnlineSongRequests(api, feedback);
-  const cachePanel = new CachePanel($("cache-panel"), api, feedback);
   const accountPanel = new BilibiliAccountUI({header: $("global-bilibili-account"), api, notify: feedback});
-  setInterval(() => { if (authenticated && !focusView && visible()) cachePanel.refresh(); }, 5000);
+  function login() { authenticated = false; accountPanel.deactivate(); $("login").hidden = false; $("workspace").hidden = true; }
+  function bindLogin(boot) {
+    $("login-form").onsubmit = async event => {
+      event.preventDefault();
+      try {
+        await api("/api/auth", { method: "POST", body: { token: $("token").value } });
+        $("token").value = "";
+        await boot();
+      } catch (error) { $("login-error").textContent = error.message; }
+    };
+  }
+  if (page === "desk") {
+    const desk = new LiveDesk($("live-desk"), { api, visible: () => authenticated && visible() });
+    async function bootDesk() {
+      try {
+        desk.settings = await api("/api/settings");
+        authenticated = true;
+        $("login").hidden = true;
+        $("workspace").hidden = false;
+        await desk.refresh();
+        if (authenticated && !frame) await accountPanel.activate();
+      } catch (error) { login(); $("login-error").textContent = error.message; }
+    }
+    bindLogin(bootDesk);
+    setInterval(() => desk.refresh(), 1000);
+    bootDesk();
+    return;
+  }
+  const scene = page === "scene" ? new LiveScene($("scene"), {editable:true, onChange:changed, onSelect:select, onWarning:text=>feedback(text,true)}) : null;
+  const online = page === "music" ? new OnlineSongRequests(api, feedback) : null;
+  if (page === "settings") {
+    const cachePanel = new CachePanel($("cache-panel"), api, feedback);
+    setInterval(() => { if (authenticated && visible()) cachePanel.refresh(); }, 5000);
+  }
   async function run(button, action) {
     button.disabled = true; button.setAttribute("aria-busy","true");
     try { await action(); } catch (error) { feedback(error.message,true); }
-    finally { button.disabled = button.id === "save-layout" || button.id === "undo-layout" ? !dirty : false; button.removeAttribute("aria-busy"); if (authenticated) await poll(); renderTransportControls(); }
+    finally { button.disabled = button.id === "save-layout" || button.id === "undo-layout" ? !dirty : false; button.removeAttribute("aria-busy"); if (authenticated) await poll(); }
   }
-  function renderTransportControls() {
-    const enabled = settings?.features?.live_enabled === true;
-    const transitioning = inferenceModeChanging(status?.inference);
-    for (const button of document.querySelectorAll("[data-control]")) {
-      if (button.getAttribute("aria-busy") !== "true") button.disabled = liveActionDisabled(button.dataset.control, status, { enabled, transitioning });
-      button.title = enabled ? "" : "直播功能未启用";
-    }
-    $("event-form").querySelectorAll("input, select, button").forEach(control => { if (control.getAttribute("aria-busy") !== "true") control.disabled = !enabled || transitioning; });
-    if ($("clear-queue").getAttribute("aria-busy") !== "true") $("clear-queue").disabled = !enabled || !state?.queue.length;
-  }
-  function login() { authenticated = false; accountPanel.deactivate(); $("login").hidden = false; $("workspace").hidden = true; }
   function changed() {
     dirty = true; $("save-state").textContent = "布局尚未保存";
     $("save-layout").disabled = false; $("undo-layout").disabled = false; renderLayers();
@@ -106,20 +134,6 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
     }));
     if (!songs.length) { const empty = element("div",null,"empty"); empty.append(element("span","♫"),element("div",query ? "没有找到这首歌" : "曲库还是空的，导入一首获准使用的歌吧。")); $("songs").append(empty); }
   }
-  function renderQueue() {
-    $("queue-count").textContent = state.queue.length;
-    $("queue").replaceChildren(...state.queue.map((q,index) => {
-      const row = element("li"), info = element("div",null,"queue-info");
-      info.append(element("strong",q.media?.song.title || q.text),element("small",`${q.requester} · ${q.media ? q.media.mode === "sing" ? "角色演唱" : "直接播放" : q.type === "gift" ? "礼物" : "互动"}`));
-      const up = element("button","↑"); up.disabled = index === 0; up.setAttribute("aria-label","上移待播任务");
-      up.onclick = () => run(up, async () => { const order = state.queue.map(item => item.id); [order[index-1],order[index]] = [order[index],order[index-1]]; await api("/api/live/queue",{method:"PUT",body:order}); });
-      const remove = element("button","×"); remove.setAttribute("aria-label","移除待播任务");
-      remove.onclick = () => run(remove, () => api(`/api/live/queue/${q.id}`,{method:"DELETE"}));
-      if (q.preparation) info.append(element("small",q.preparation[1] || q.preparation[0],q.preparation[1] ? "error" : ""));
-      row.append(element("span",String(index+1).padStart(2,"0")),info,up,remove); return row;
-    }));
-    if (!state.queue.length) $("queue").append(element("li","还没有待播任务，下一首留给你。","empty"));
-  }
   function renderPoll() {
     const active = state.poll;
     const latest = active || state.activities?.at(-1);
@@ -143,27 +157,36 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
   async function poll() {
     if (polling || !authenticated || !visible()) return; polling = true;
     try {
-      const values = await Promise.all([api("/api/live/view"),api("/api/status"),api("/api/live/online")]);
-      [state,status] = values; online.update(values[2]);
-      if (!scene.scene || (!dirty && JSON.stringify(state.scene) !== scene.signature)) loadScene(state.scene);
-      scene.update(state); renderQueue(); renderPoll();
-      $("session-state").textContent = state.muted ? "已静音" : ({stopped:"未开播",live:"直播中",paused:"队列已暂停",degraded:"连接降级"}[state.state] || state.state);
-      $("player-state").textContent = state.overlay_connected ? "播放器已连接" : "播放器未连接";
-      $("character-name").textContent = `${state.character.name} · v${state.character.version}`;
-      $("voice-state").textContent = `说话音色：${status.character.voice_profile}`;
-      const playing = state.playback, current = status.current_job;
-      const track = playing?.song?.song; const quality = track?.quality;
-      const qualityText = quality ? ` · ${track.source === "bodian" ? "波点" : "咪咕"} ${quality.format.toUpperCase()}${quality.format === "flac" ? ` ${quality.bits_per_sample}-bit / ${quality.sample_rate/1000} kHz` : ` ${Math.round(quality.bitrate/1000)} kbps`}` : "";
-      $("current-title").textContent = playing?.song?.song.title || (current ? current.text || "正在准备互动" : "准备好，就开始吧");
-      $("current-detail").textContent = playing ? `${playing.paused ? "已暂停" : playing.started ? "播放中" : "等待播放"} · ${Math.floor(playing.position)} / ${Math.round(playing.duration)} 秒${qualityText}${playing.visual_warning ? " · "+playing.visual_warning : ""}` : ({generating:"正在生成互动",synthesizing:"正在准备音频／转换演唱",ready_to_play:"等待播放器"}[current?.status] || "等待互动或点歌");
-      $("media-toggle").disabled = !playing?.song || !playing.started;
-      $("media-toggle").textContent = playing?.paused ? "继续歌曲" : "暂停歌曲";
-      $("runtime-error").textContent = status.error || "";
-      renderTransportControls();
+      if (online) {
+        online.update(await api("/api/live/online"));
+      } else if (scene) {
+        const [view, status] = await Promise.all([api("/api/live/view"), api("/api/status")]);
+        state = view;
+        if (!scene.scene || (!dirty && JSON.stringify(state.scene) !== scene.signature)) loadScene(state.scene);
+        scene.update(state);
+        $("character-name").textContent = `${state.character.name} · v${state.character.version}`;
+        $("voice-state").textContent = `说话音色：${status.character.voice_profile}`;
+      } else {
+        state = await api("/api/live/view");
+        renderPoll();
+      }
     } catch(error) { feedback(error.message,true); } finally { polling = false; }
   }
-  async function boot() { authenticated = true; try { settings = await api("/api/settings"); await loadMusic(); renderLiveOptions(await api("/api/live/options")); await poll(); $("login").hidden = true; $("workspace").hidden = false; if (!focusView) await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
-  $("login-form").onsubmit = async event => { event.preventDefault(); try { await api("/api/auth",{method:"POST",body:{token:$("token").value}}); $("token").value = ""; await boot(); } catch(error) { $("login-error").textContent = error.message; } };
+  async function boot() {
+    authenticated = true;
+    try {
+      settings = await api("/api/settings");
+      if (page === "music") await loadMusic();
+      if (page === "settings") renderLiveOptions(await api("/api/live/options"));
+      await poll();
+      if (!authenticated) return;
+      $("login").hidden = true;
+      $("workspace").hidden = false;
+      if (!frame) await accountPanel.activate();
+      scene?.fit();
+    } catch (error) { login(); $("login-error").textContent = error.message; }
+  }
+  bindLogin(boot);
   $("save-layout").onclick = event => run(event.currentTarget, async () => { const value = await api("/api/live/scene",{method:"PUT",body:scene.scene}); loadScene(value); feedback("布局已保存，OBS画面将同步更新。"); });
   $("undo-layout").onclick = () => loadScene(saved);
   const reset = element("button","恢复默认布局","full"); reset.id = "reset-layout"; $("add-decoration").after(reset);
@@ -182,22 +205,6 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
   };
   $("toggle-edit").onclick = event => { scene.editable = !scene.editable; scene.canvas.classList.toggle("editing",scene.editable); event.target.textContent = scene.editable ? "完成编排" : "编辑场景"; event.target.setAttribute("aria-pressed",String(scene.editable)); };
   $("add-decoration").onclick = () => { if (scene.scene.items.length >= 32) return feedback("最多32个场景组件",true); scene.scene.items.push({id:"deco_"+crypto.randomUUID().slice(0,8),kind:"decoration",x:50,y:200,width:100,height:100,z:5,text:"🫧",visible:true,locked:false}); scene.load(scene.scene); scene.select(scene.scene.items.at(-1).id); changed(); };
-  for (const button of document.querySelectorAll("[data-control]")) button.onclick = () => run(button, () => api(`/api/live/${button.dataset.control}`,{method:"POST"}));
-  $("media-toggle").onclick = event => run(event.currentTarget, () => api(`/api/live/media-${state.playback?.paused ? "resume" : "pause"}`,{method:"POST"}));
-  $("clear-queue").onclick = event => { if (confirm("清空所有待播任务？当前播放保持。")) run(event.currentTarget, () => api("/api/live/clear",{method:"POST"})); };
-  $("open-overlay").onclick = event => { const page = window.open("about:blank","_blank"); if (!page) return feedback("请允许打开播放器窗口",true); page.opener = null; run(event.currentTarget,async () => { try { const config = await api("/api/settings"); page.location = config.overlay_url; } catch(error) { page.close(); throw error; } }); };
-  $("event-form").onsubmit = event => {
-    event.preventDefault();
-    run(event.submitter, async () => {
-      const result = await api("/api/live/mock-event",{method:"POST",body:{
-        type:$("event-type").value,display_name:$("event-name").value,
-        platform_user_id:"workbench-debug",text:$("event-text").value,
-      }});
-      const received = result.status === "queued" || result.reason === "已计票";
-      if (received) $("event-text").value = "";
-      feedback(result.reason || "事件已加入队列",!received);
-    });
-  };
   $("live-weather").onchange = () => {
     const show = $("live-weather").checked;
     $("live-weather-location").hidden = !show;

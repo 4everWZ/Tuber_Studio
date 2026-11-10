@@ -1,8 +1,8 @@
 import { $ } from "./core.js";
 import { renderPersona } from "./character-studio.js?v=20261107.12";
-import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261107.15";
+import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261111.01";
 import { renderVoicePreview } from "./voices.js";
-import { describe, label, occupancyText, setBadge, tokenCount } from "./workspace-display.js";
+import { describe, label, occupancyText, tokenCount } from "./workspace-display.js";
 import { inferenceDisplay } from "./inference-status.js?v=20261107.15";
 
 export function renderWorkspaceStatus(model, status) {
@@ -10,18 +10,12 @@ export function renderWorkspaceStatus(model, status) {
   renderServiceStatusCapsule(status, model.settings);
   renderControls(model);
   renderPersona(model);
-  setBadge($("live-state"), status.state);
   $("overview-live-state").textContent = label(status.state);
   $("overview-queue").textContent = status.queue_length ?? "—";
   $("overview-player").textContent = status.overlay_connected ? "已连接" : "未连接";
   $("overview-speech").textContent = {
     gpt_sovits: "本地语音", openai_compatible: "兼容 API", prerecorded: "预录音频",
   }[status.providers?.tts] || "待确认";
-  const job = status.current_job;
-  setBadge($("live-current-status"), job?.status || "ready");
-  $("live-current-text").textContent = job?.text || (job ? "正在处理当前事件…" : "等待事件。");
-  $("live-current-detail").textContent = job?.error || status.error || "";
-  $("last-played").textContent = status.last_played?.text || "暂无已确认播放记录。";
   if (status.context) renderContext(status.context);
   renderVoicePreview(model);
   if ($("character-version")) {

@@ -1,28 +1,82 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>直播工作台 · Tuber Studio</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/live.css"><link rel="stylesheet" href="/static/scene.css"><link rel="stylesheet" href="/static/account.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>直播工作台 · Tuber Studio</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/live.css?v=20261111"><link rel="stylesheet" href="/static/scene.css"><link rel="stylesheet" href="/static/account.css"></head>
 <body>
   <main id="login" class="login" hidden><form id="login-form" class="panel"><span class="brand-icon">🐋</span><h1>进入直播工作台</h1><label>管理员令牌<input id="token" type="password" autocomplete="current-password" required></label><button class="primary">登录</button><p id="login-error" role="alert"></p><a href="/">返回评论工作台</a></form></main>
   <div id="workspace" hidden>
-    <header class="topbar account-topbar"><a class="brand" href="/live"><span class="brand-icon">🐋</span><span>大肥鱼 <small>LIVE STUDIO</small></span></a><nav aria-label="工作区"><a href="/#live">回到直播控制 ↗</a><a href="/#comments">评论运营 ↗</a></nav><div class="top-status"><span id="session-state" class="status">连接中</span><span id="player-state">播放器未连接</span><button id="open-overlay">打开 OBS 播放器 ↗</button></div><div id="global-bilibili-account" class="global-bilibili-account"></div></header>
+    <header class="topbar account-topbar"><a class="brand" href="/live"><span class="brand-icon">🐋</span><span>大肥鱼 <small>直播工作台</small></span></a><a href="/#live">回到主工作台 ↗</a><div id="global-bilibili-account" class="global-bilibili-account"></div></header>
+    <nav class="live-local-nav" aria-label="直播工作区"><a data-live-tab="desk" href="/live">播控台</a><a data-live-tab="scene" href="/live?view=scene">场景编排</a><a data-live-tab="music" href="/live?view=music">曲库与点歌</a><a data-live-tab="settings" href="/live?view=settings">直播设置</a></nav>
     <div id="feedback" class="feedback" role="status" hidden></div>
-    <div class="studio-heading"><div><p class="eyebrow">你的水下小舞台</p><h1>直播工作台 <span>♡</span></h1></div><div class="actions"><span id="save-state">布局已保存</span><button id="undo-layout" disabled>撤销布局修改</button><button id="save-layout" class="primary" disabled>保存布局</button></div></div>
-    <div class="editor-layout">
+    <main id="live-desk" data-live-page="desk" hidden>
+      <header class="desk-header">
+        <div><h1>直播播控台</h1><div class="desk-status" role="status"><span>本地演播 · Mock</span><span data-desk-session>读取状态中</span><span data-desk-player></span><strong data-desk-mute-state></strong></div></div>
+        <div class="actions desk-session-actions">
+          <button type="button" class="primary" data-desk-action="start">启动会话</button>
+          <button type="button" data-desk-action="pause">暂停队列</button>
+          <button type="button" data-desk-action="resume" hidden>恢复队列</button>
+          <button type="button" class="danger" data-desk-action="mute">紧急静音</button>
+          <button type="button" data-desk-action="unmute" hidden>解除静音</button>
+          <button type="button" data-desk-action="stop">停止会话</button>
+        </div>
+      </header>
+      <div class="desk-notices">
+        <p data-desk-feature class="desk-hint" role="status"></p>
+        <p data-desk-load-error class="desk-error" role="alert"></p>
+        <p data-desk-runtime-error class="desk-error" role="alert"></p>
+        <p data-desk-action-error class="desk-error" role="alert"></p>
+        <p data-desk-action-state class="desk-hint" role="status"></p>
+      </div>
+      <div class="desk-grid">
+        <section class="panel desk-panel desk-program" aria-labelledby="desk-program-title">
+          <div class="desk-panel-heading"><h2 id="desk-program-title">节目预览</h2><span class="desk-hint">预览静音 · <a data-desk-link="scene" href="/live?view=scene">编辑场景</a></span></div>
+          <div class="desk-preview" data-desk-preview></div>
+          <div class="desk-now">
+            <div class="desk-panel-heading"><strong data-desk-current-title>暂无当前节目</strong><span class="desk-chip" data-desk-current-state>空闲</span></div>
+            <p class="desk-hint" data-desk-current-detail></p>
+            <div class="desk-clock" data-desk-clock hidden><progress data-desk-progress aria-label="播出进度"></progress><span data-desk-position></span></div>
+            <p data-desk-caption class="desk-caption" hidden></p>
+            <div data-desk-last class="desk-last" hidden><span class="desk-hint">上一条已确认播报</span><p data-desk-last-spoken></p></div>
+            <div class="actions"><button type="button" data-desk-action="media">暂停歌曲</button><button type="button" data-desk-action="skip">跳过当前</button></div>
+          </div>
+          <details class="desk-tools"><summary>OBS 输出与运行工具</summary><div class="actions"><button type="button" data-desk-open-output>打开播放器 ↗</button><button type="button" data-desk-copy-output>复制 OBS 浏览器源地址</button><button type="button" data-desk-refresh>刷新状态</button><a data-desk-link="settings" href="/live?view=settings">直播设置 →</a></div><p class="desk-hint">只有获得播放权的播放器输出音频。</p></details>
+        </section>
+        <section class="panel desk-panel" aria-labelledby="desk-queue-title">
+          <div class="desk-panel-heading"><h2 id="desk-queue-title" data-desk-queue-heading tabindex="-1">歌曲队列</h2><span class="desk-chip" data-desk-song-count>0 首待播</span></div>
+          <p class="desk-hint" data-desk-other-count></p>
+          <ol data-desk-queue class="desk-list desk-queue" aria-label="待播歌曲"></ol>
+          <p data-desk-queue-empty class="desk-empty">暂无待播歌曲。</p>
+          <div class="desk-queue-footer"><a data-desk-link="music" href="/live?view=music">曲库与点歌 →</a><button type="button" data-desk-action="clear">清空全部待播</button></div>
+        </section>
+        <section class="panel desk-panel desk-room" aria-labelledby="desk-room-title">
+          <div class="desk-panel-heading"><h2 id="desk-room-title">直播间</h2><button type="button" data-desk-follow aria-pressed="true">跟随最新：开</button></div>
+          <div class="desk-feed-tabs" role="tablist" aria-label="直播间记录">
+            <button type="button" role="tab" id="desk-chat-tab" aria-controls="desk-chat" aria-selected="true" data-desk-feed="chat">弹幕与礼物</button>
+            <button type="button" role="tab" id="desk-dialogue-tab" aria-controls="desk-dialogue" aria-selected="false" data-desk-feed="dialogue">播报记录</button>
+          </div>
+          <div data-desk-chat id="desk-chat" role="tabpanel" aria-labelledby="desk-chat-tab" tabindex="0" class="desk-feed"><ol class="desk-list"></ol><p data-feed-empty class="desk-empty">本会话暂无弹幕或礼物。</p></div>
+          <div data-desk-dialogue id="desk-dialogue" role="tabpanel" aria-labelledby="desk-dialogue-tab" tabindex="0" class="desk-feed" hidden><ol class="desk-list"></ol><p data-feed-empty class="desk-empty">本会话暂无播报记录。</p></div>
+          <details class="desk-tools"><summary>离线事件调试</summary>
+            <form data-desk-mock><fieldset><div class="fields"><label>类型<select name="type"><option value="chat">弹幕</option><option value="gift">礼物</option><option value="song">点歌</option><option value="sfx">预录音效</option><option value="disconnect">模拟断线</option></select></label><label>昵称<input name="name" maxlength="80" value="调试鱼宝" required></label></div><label>消息<input name="text" maxlength="500" required></label><label data-desk-asset-label hidden>音效素材 ID<input name="asset" maxlength="100"></label><button type="submit">注入 Mock 事件</button></fieldset></form>
+          </details>
+        </section>
+      </div>
+    </main>
+    <div class="studio-heading" data-live-page="scene" hidden><div><h1>场景编排</h1></div><div class="actions"><span id="save-state">布局已保存</span><button id="undo-layout" disabled>撤销布局修改</button><button id="save-layout" class="primary" disabled>保存布局</button></div></div>
+    <div class="editor-layout" data-live-page="scene" hidden>
       <aside class="layers panel"><div class="panel-heading"><h2>场景图层</h2><span class="mini">可拖拽</span></div><div id="layers"></div><button id="add-decoration" class="full">＋ 添加装饰</button><div class="layer-footer"><label>场景标题<input id="scene-title" maxlength="80"></label><label>背景<select id="scene-background"><option value="ocean">深海小窝</option><option value="transparent">透明 · OBS 叠加</option></select></label><div class="fields"><label>画布宽<input id="canvas-width" type="number" min="640" max="3840"></label><label>画布高<input id="canvas-height" type="number" min="360" max="2160"></label></div></div></aside>
-      <section class="stage-area"><div class="stage-toolbar"><span><i class="dot"></i> 场景编排 <small>预览静音</small></span><button id="toggle-edit" aria-pressed="true">完成编排</button></div><div class="canvas-shell"><div id="scene"></div></div><div class="stage-caption"><span>拖动元素调整位置 · 右下角缩放 · 方向键微调</span><span id="canvas-size">1920 × 1080</span></div><div class="transport panel"><div class="transport-summary"><span class="live-dot"></span><div><strong id="current-title">准备好，就开始吧</strong><small id="current-detail">Mock 直播 · 真实平台尚未接入</small></div></div><div class="actions"><button data-control="start" class="primary">开始直播</button><button id="media-toggle" disabled>暂停歌曲</button><button data-control="skip">跳过</button><button data-control="pause">暂停队列</button><button data-control="resume">恢复队列</button><button data-control="mute" class="danger">紧急静音</button><button data-control="unmute">解除静音</button><button data-control="stop">停止</button></div></div></section>
+      <section class="stage-area"><div class="stage-toolbar"><span><i class="dot"></i> 场景编排 <small>预览静音</small></span><button id="toggle-edit" aria-pressed="true">完成编排</button></div><div class="canvas-shell"><div id="scene"></div></div><div class="stage-caption"><span>拖动元素调整位置 · 右下角缩放 · 方向键微调</span><span id="canvas-size">1920 × 1080</span></div></section>
       <aside class="inspector panel"><div class="panel-heading"><h2>组件属性</h2><span id="selected-name" class="mini">未选择</span></div><p id="inspector-empty" class="hint">点击画面或图层，调整组件的位置与显示。</p><fieldset id="inspector-fields" disabled><div class="fields"><label>X<input id="item-x" type="number"></label><label>Y<input id="item-y" type="number"></label><label>宽度<input id="item-width" type="number" min="40"></label><label>高度<input id="item-height" type="number" min="30"></label></div><label>图层顺序<input id="item-z" type="number" min="0" max="100"></label><label>装饰文字／符号<input id="item-text" maxlength="120"></label><div class="checks"><label><input id="item-visible" type="checkbox">显示</label><label><input id="item-locked" type="checkbox">锁定</label></div></fieldset><div class="voice-summary"><h3>当前角色</h3><strong id="character-name">—</strong><p id="voice-state" class="hint">正在读取声音状态</p><p id="singing-state" class="hint"></p></div></aside>
     </div>
-    <div class="operations-layout"><section class="panel library"><div class="panel-heading"><div><p class="eyebrow">MUSIC ROOM</p><h2>曲库与点歌</h2></div><button id="import-song">＋ 导入歌曲</button></div><div class="song-tools"><label class="sr-only" for="song-search">搜索曲库</label><input id="song-search" type="search" placeholder="搜索歌曲或演唱者"><label>本次模式<select id="request-mode"><option value="direct">直接播放</option><option value="sing">大肥鱼音色演唱</option></select></label></div><div id="songs" class="song-list"></div><details class="music-settings"><summary>点歌设置</summary><form id="music-form"><div class="fields"><label>默认模式<select id="default-mode"><option value="direct">直接播放</option><option value="sing">角色音色演唱</option></select></label><label>音乐音量<input id="music-volume" type="number" step="0.05" min="0" max="1"></label><label>点歌队列上限<input id="music-limit" type="number" min="1" max="100"></label><label>同用户冷却（秒）<input id="music-cooldown" type="number" min="0" max="3600"></label></div><button type="submit">保存点歌设置</button></form></details></section>
-      <section class="panel queue-panel"><div class="panel-heading"><h2>待播队列 <span id="queue-count" class="mini">0</span></h2><button id="clear-queue">清空</button></div><ol id="queue" class="work-queue"></ol><details class="mock-tools"><summary>离线弹幕／礼物调试</summary><form id="event-form"><div class="fields"><label>类型<select id="event-type"><option value="chat">弹幕</option><option value="gift">礼物</option></select></label><label>昵称<input id="event-name" value="调试鱼宝" maxlength="80"></label></div><label>消息<input id="event-text" maxlength="500" required placeholder="今天想听什么歌？"></label><button>注入 Mock 事件</button></form></details><p id="runtime-error" class="error" role="alert"></p></section></div>
-    <section class="panel online-panel" aria-labelledby="online-heading">
+    <div class="operations-layout" data-live-page="music" hidden><section class="panel library"><div class="panel-heading"><h1>曲库与点歌</h1><button id="import-song">＋ 导入歌曲</button></div><div class="song-tools"><label class="sr-only" for="song-search">搜索曲库</label><input id="song-search" type="search" placeholder="搜索歌曲或演唱者"><label>本次模式<select id="request-mode"><option value="direct">直接播放</option><option value="sing">大肥鱼音色演唱</option></select></label></div><div id="songs" class="song-list"></div><details class="music-settings"><summary>点歌设置</summary><form id="music-form"><div class="fields"><label>默认模式<select id="default-mode"><option value="direct">直接播放</option><option value="sing">角色音色演唱</option></select></label><label>音乐音量<input id="music-volume" type="number" step="0.05" min="0" max="1"></label><label>点歌队列上限<input id="music-limit" type="number" min="1" max="100"></label><label>同用户冷却（秒）<input id="music-cooldown" type="number" min="0" max="3600"></label></div><button type="submit">保存点歌设置</button></form></details></section></div>
+    <section class="panel online-panel" aria-labelledby="online-heading" data-live-page="music" hidden>
       <div class="panel-heading"><div><p class="eyebrow">ONLINE MUSIC · 可选组件</p><h2 id="online-heading">在线点歌</h2></div><label class="check"><input id="online-enabled" type="checkbox">启用点歌</label><button id="online-restart" hidden>重启点歌组件</button></div>
       <p id="online-status" role="status">正在读取组件状态</p><p id="online-error" class="error" role="alert"></p>
       <p id="online-install" class="hint" hidden>首次使用需安装 Node.js 22+，在项目的 components/song_requests 目录执行 <code>npm ci --ignore-scripts</code>，再开启点歌。</p>
       <details><summary>音源、音质与缓存设置</summary><form id="online-settings"><div class="fields"><label>播放用途<select id="online-usage"><option value="broadcast">直播（需确认用途范围）</option><option value="local_test">仅本机／OBS 技术测试</option></select></label><label>音源优先顺序<select id="online-sources"><option value="bodian,migu">波点 → 咪咕</option><option value="migu,bodian">咪咕 → 波点</option><option value="bodian">仅波点</option><option value="migu">仅咪咕</option></select></label><label>请求音质<select id="online-quality"><option value="flac_preferred">优先 FLAC，回退高码率</option><option value="high_bitrate">高码率</option></select></label><label>回退码率<select id="online-bitrate"><option value="320000">320 kbps</option><option value="256000">256 kbps</option><option value="192000">192 kbps</option><option value="128000">128 kbps</option></select></label><label>音乐总缓存上限（MiB，最高15360＝15GiB）<input id="online-cache" type="number" min="96" max="15360" value="15360"></label><label>单曲下载上限（MiB）<input id="online-download" type="number" min="1" max="96" value="96"></label><label>单曲最长（秒）<input id="online-duration" type="number" min="10" max="600" value="600"></label></div><label class="check"><input id="online-lower" type="checkbox">允许低于回退码率</label><p class="hint">按音源顺序寻找可用音质；播放信息以实际文件为准。咪咕凭证通过辅助进程的 MIGU_COOKIE 环境变量配置。仅预备当前及下一首，缓存保留原始文件。</p><label>音源与用途许可说明<textarea id="online-license" rows="2" maxlength="500" placeholder="记录本机测试范围或目标直播场景的音源与授权范围"></textarea></label><div class="checks"><label><input id="online-live-allowed" type="checkbox">已确认可用于目标直播场景</label><label><input id="online-commercial" type="checkbox">已确认商业用途</label></div><button type="submit">保存在线点歌设置</button><p class="hint">关闭或重新配置会停止在线歌曲并取消在线待播与准备；缓存、配置、TTS 互动和本地曲库保留。</p></form></details>
       <div id="online-controls" hidden><form id="online-search-form" class="song-tools"><label class="sr-only" for="online-query">搜索在线歌曲</label><input id="online-query" type="search" maxlength="100" required placeholder="输入歌名，可补充歌手或版本"><button id="online-search-button">搜索在线曲库</button></form><p id="online-search-state" role="status">弹幕发送「点歌 歌名」；有歧义时返回候选，可回复序号或由主播确认。</p><div id="online-results" class="song-list"></div><div id="online-candidates"></div></div>
     </section>
-    <section class="panel online-panel" aria-labelledby="room-heading">
-      <h2 id="room-heading">直播互动</h2>
+    <section class="panel online-panel" aria-labelledby="room-heading" data-live-page="settings" hidden>
+      <h1 id="room-heading">直播设置</h1>
       <details>
         <summary>冷场与按需联网</summary>
         <form id="live-options-form">
@@ -53,9 +107,9 @@
         </form>
       </details>
     </section>
-    <section class="panel online-panel" id="cache-panel"></section>
+    <section class="panel online-panel" id="cache-panel" data-live-page="settings" hidden></section>
     <footer>虚构 AI 同人角色 · 非官方　 /　 形象：YunYueSama　 /　 预览不输出声音，正式音频由单一 OBS 播放器输出。</footer>
   </div>
   <dialog id="song-dialog"><form id="song-form"><div class="panel-heading"><div><p class="eyebrow">添加到曲库</p><h2>导入歌曲</h2></div><button type="button" id="close-import" aria-label="关闭">✕</button></div><div class="fields"><label>歌曲名<input id="song-title" required maxlength="100"></label><label>演唱者／来源<input id="song-artist" maxlength="100"></label></div><label>歌曲音频 <span class="hint">WAV／FLAC／MP3 · 最长10分钟 · 96MiB以内</span><input id="song-file" type="file" accept=".wav,.flac,.mp3,audio/wav,audio/flac,audio/mpeg" required></label><details><summary>人声、伴奏与歌词</summary><p class="hint">独立人声用于跟唱口型；伴奏作为后续演唱模型接口的素材预留。</p><label>独立人声 WAV<input id="vocal-file" type="file" accept=".wav,audio/wav"></label><label>伴奏 WAV<input id="accompaniment-file" type="file" accept=".wav,audio/wav"></label><label>同步歌词（LRC）<textarea id="song-lyrics" rows="4" placeholder="[00:12.00]第一句歌词"></textarea></label></details><label>来源与用途许可说明<textarea id="song-license" rows="2" required maxlength="500" placeholder="记录来源、授权范围或自有作品说明"></textarea></label><label class="check"><input id="song-live-allowed" type="checkbox">已确认可用于目标直播场景</label><label class="check"><input id="song-commercial" type="checkbox">已确认允许商业用途</label><p id="import-state" role="status"></p><div class="actions"><button class="primary" id="import-submit">上传并保存歌曲</button><button type="button" id="cancel-import">取消</button></div></form></dialog>
-  <script src="/static/live2d-avatar.js" defer></script><script src="/static/scene.js?v=20261110" defer></script><script src="/static/cache-panel.js" defer></script><script src="/static/online-songs.js" defer></script><script src="/static/account.js" defer></script><script src="/static/live.js?v=20261110" type="module"></script>
+  <script src="/static/live2d-avatar.js" defer></script><script src="/static/scene.js?v=20261110" defer></script><script src="/static/cache-panel.js" defer></script><script src="/static/online-songs.js" defer></script><script src="/static/account.js" defer></script><script src="/static/live.js?v=20261111" type="module"></script>
 </body></html>

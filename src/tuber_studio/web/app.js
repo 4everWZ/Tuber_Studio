@@ -30,16 +30,15 @@ import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";
 import {
-  renderLiveFeatures,
   renderControls,
   initLiveModule,
-} from "./modules/live.js?v=20261107.15";
+} from "./modules/live.js?v=20261111.01";
 
 import {
-  badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
+  badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
-import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261110.01";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.15";
+import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261111.01";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.01";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#chat";
@@ -73,12 +72,10 @@ let commentsModule = null;
 let dynamicsModule = null;
 let characterStudio = null;
 let maintenanceModule = null;
-let liveModule = null;
 
 const refreshComments = async () => commentsModule?.refreshComments();
 const refreshDynamics = async () => dynamicsModule?.refreshDynamics();
 const refreshThreadContext = async () => commentsModule?.refreshThreadContext();
-const refreshLive = async () => liveModule?.refreshLive();
 
 const commentContinuation = new OperationContinuationView($("comment-continuation"), api, notice, refreshComments);
 const dynamicContinuation = new OperationContinuationView($("dynamic-continuation"), api, notice, refreshDynamics);
@@ -204,14 +201,8 @@ function applyWorkbenchSettings(settings) {
   accountPanel.setLocalAccess(localAccess);
   inferenceProviders.sync();
   voiceSettings.sync();
-  renderLiveFeatures(model);
   if (model.status) renderStatus(model.status);
   else renderVoicePreview(model);
-  let overlayUrl;
-  try { overlayUrl = new URL(model.settings.overlay_url || "/overlay", location.origin).href; }
-  catch { overlayUrl = `${location.origin}/overlay`; }
-  $("overlay-url").value = overlayUrl;
-  $("open-overlay").href = overlayUrl;
 }
 
 async function refreshSettings() {
@@ -243,11 +234,8 @@ function connectAdmin() {
   if (model.socket) model.socket.close();
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   model.socket = new WebSocket(`${protocol}//${location.host}/ws/admin`);
-  model.socket.onmessage = async event => {
+  model.socket.onmessage = event => {
     const message = JSON.parse(event.data);
-    if (message.type === "job_updated" || message.type === "event_queued") {
-      if (model.page === "live") await refreshLive();
-    }
     if (message.type === "context_updated" && message.context) renderContext(message.context);
     if (message.type === "status") renderStatus(message.data);
   };
@@ -385,9 +373,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     await refreshDynamics();
   } else if (model.page === "assets") {
     await memeGallery.refresh();
-  } else if (model.page === "live") {
-    await refreshLive();
-  } else if (model.page === "live-scene" || model.page === "live-music") {
+  } else if (["live", "live-scene", "live-music", "live-settings"].includes(model.page)) {
     const frame = document.querySelector(`[data-section="${model.page}"] iframe`);
     if (!frame.hasAttribute("src")) frame.src = frame.dataset.src;
   } else if (model.page === "live-interaction") {
@@ -410,7 +396,6 @@ async function poll() {
   try {
     const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh(), updatePermissionCapsule({ background: true })];
     if (model.page === "automation") updates.push(refreshOperationsActivity());
-    if (model.page === "live") updates.push(refreshLive());
     if (model.page === "comments") updates.push(commentQueue.refresh());
     if (model.page === "messages") updates.push(messagesPanel.refresh({ background: true }));
     if (model.page === "dynamics") updates.push(dynamicsModule?.refreshDynamics({ background: true }));
@@ -493,16 +478,9 @@ maintenanceModule = initMaintenanceModule(model, {
   onCommentsImported: showCommentSources,
 });
 
-liveModule = initLiveModule(model, {
+initLiveModule(model, {
   api,
-  busy,
   notice,
-  node,
-  cell,
-  time,
-  label,
-  badge,
-  empty,
   renderStatusFn: renderStatus,
   renderVoicePreviewFn: () => renderVoicePreview(model),
   loadSettingsFn: refreshSettings,
@@ -583,11 +561,6 @@ $("preview-form")?.addEventListener("submit", event => {
   });
 });
 
-
-$("copy-overlay")?.addEventListener("click", () => busy($("copy-overlay"), async () => {
-  await navigator.clipboard.writeText($("overlay-url")?.value || "");
-  notice("播放器链接已复制。");
-}));
 
 $("compact-live")?.addEventListener("click", () => busy($("compact-live"), () => compactContext("live")));
 $("compact-comments-settings")?.addEventListener("click", () => busy($("compact-comments-settings"), () => compactContext("comments", $("compact-video-id")?.value.trim(), $("compact-thread-id")?.value.trim())));

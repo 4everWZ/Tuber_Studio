@@ -8,7 +8,7 @@ export function liveActionDisabled(action, status = {}, { enabled = false, trans
   if (transitioning && ["start", "resume"].includes(action)) return true;
   return action === "start" ? state !== "stopped" :
     action === "pause" ? !["live", "degraded"].includes(state) :
-    action === "resume" ? state !== "paused" :
+    action === "resume" ? !["paused", "degraded"].includes(state) :
     action === "stop" ? state === "stopped" :
     action === "mute" ? !!status.muted :
     action === "unmute" ? !status.muted :
