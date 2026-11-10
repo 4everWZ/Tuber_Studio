@@ -1,0 +1,24 @@
+.operator-chat { width: min(100%, 52rem); margin-inline: auto; padding-block: 1.5rem 2rem; }
+.operator-chat-heading, .operator-chat-actions, .operator-chat-suggestions {
+  display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
+}
+.operator-chat-heading, .operator-chat-actions { justify-content: space-between; }
+.operator-chat-heading h1 { margin: 0; }
+.operator-chat-heading p { margin-block: .25rem 0; }
+.operator-chat-feed { display: grid; gap: 1.25rem; margin-block: 1.5rem; overflow-wrap: anywhere; }
+.operator-chat-turn { display: grid; gap: .75rem; }
+.operator-chat-turn p { margin: 0; white-space: pre-wrap; }
+.operator-chat-user {
+  justify-self: end; width: fit-content; max-width: min(90%, 35rem);
+  background: var(--surface-2, #ebf0f7); color: var(--text, #172536);
+  border: 1px solid var(--border, #cad3e1); border-radius: 1rem; padding: .65rem .9rem;
+}
+.operator-chat-card, .operator-chat-compose {
+  border: 1px solid var(--border, #cad3e1); border-radius: .85rem; padding: .85rem;
+  display: grid; gap: .65rem;
+}
+.operator-chat-card h2 { margin: 0; font-size: 1.05rem; }
+.operator-chat-card textarea, .operator-chat-compose textarea { width: 100%; resize: vertical; }
+.operator-chat-card details form { display: grid; gap: .5rem; margin-block: .5rem; }
+.operator-chat-actions button { margin-inline-start: auto; }
+.operator-chat-status-error { color: var(--danger, #a21c21); }

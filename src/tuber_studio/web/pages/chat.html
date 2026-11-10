@@ -1,172 +1,23 @@
-<section data-section="chat" class="win-page-view" hidden>
-  <div class="page-heading win-heading">
-    <h1>智能对话与中控 (Intelligent Studio)</h1>
-    <p class="muted">基于 ChatGPT Dots / Intelligent UI 理念的极简自然语言对话中控</p>
-  </div>
-
-  <div class="intelligent-container" style="max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; height: calc(100vh - 160px);">
-    <!-- The Intelligent Dot Hero -->
-    <div class="dot-hero" style="text-align: center; padding: 15px 0;">
-      <div id="intelligent-dot" class="intelligent-dot idle" title="大肥鱼在线状态" style="width: 24px; height: 24px; border-radius: 50%; background: #00d2ff; box-shadow: 0 0 16px #00d2ff; margin: 0 auto; transition: all 0.3s ease;"></div>
-      <div id="dot-status-text" class="hint" style="margin-top: 6px; font-size: 12px; color: #888;">大肥鱼待命中 · 饲养员专属通道</div>
+<section data-section="chat" class="operator-chat" hidden>
+  <header class="operator-chat-heading">
+    <div>
+      <h1 id="operator-chat-title">与大肥鱼对话</h1>
+      <p class="muted">私聊留存在工作台。动态草稿和只读浏览也可以从这里开始。</p>
     </div>
-
-    <!-- Message Feed -->
-    <div id="intelligent-feed" class="intelligent-feed" style="flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 14px;">
-      <!-- Welcome message -->
-      <div class="chat-msg bot-msg" style="display: flex; gap: 10px; align-items: flex-start;">
-        <div class="avatar" style="width: 32px; height: 32px; border-radius: 50%; background: #1e3a5f; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px;">鱼</div>
-        <div class="bubble-wrap" style="max-width: 80%;">
-          <div class="bubble" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5;">
-            饲养员你好呀！我是大肥鱼。你可以直接对我说指令，比如让我<b>发动态</b>、<b>去刷视频</b>或者<b>准备开播</b>，也可以随时和我随心吐槽闲聊哦~
-          </div>
-        </div>
-      </div>
+    <button id="operator-chat-clear" type="button">清空私聊</button>
+  </header>
+  <div id="operator-chat-feed" class="operator-chat-feed" role="log" aria-label="私聊消息" aria-live="polite"></div>
+  <form id="operator-chat-form" class="operator-chat-compose">
+    <div class="operator-chat-suggestions">
+      <button type="button" data-chat-prompt="发个动态：">写动态</button>
+      <button type="button" data-chat-prompt="去刷视频：">刷视频</button>
+      <button type="button" data-chat-prompt="查看直播状态">直播状态</button>
     </div>
-
-    <!-- Quick Suggestions Bar -->
-    <div class="quick-suggestions" style="display: flex; gap: 8px; overflow-x: auto; padding: 6px 12px;">
-      <button type="button" class="btn-suggestion win-btn" onclick="sendQuickPrompt('发个动态吐槽今天下雨小窝受潮')">📝 发动态吐槽下雨</button>
-      <button type="button" class="btn-suggestion win-btn" onclick="sendQuickPrompt('去刷视频看看原神新版本')">🎬 去刷原神视频</button>
-      <button type="button" class="btn-suggestion win-btn" onclick="sendQuickPrompt('准备开播')">🎙️ 准备开播</button>
-      <button type="button" class="btn-suggestion win-btn" onclick="sendQuickPrompt('今天工作好累啊陪我聊聊天')">💬 随心闲聊</button>
+    <label for="operator-chat-input">给大肥鱼发消息</label>
+    <textarea id="operator-chat-input" rows="2" maxlength="2000" required></textarea>
+    <div class="operator-chat-actions">
+      <span id="operator-chat-status" role="status"></span>
+      <button class="primary" id="operator-chat-send" type="submit">发送</button>
     </div>
-
-    <!-- Input Bar -->
-    <div class="intelligent-input-bar" style="padding: 12px; display: flex; gap: 8px; background: rgba(15, 23, 42, 0.8); border-top: 1px solid rgba(255,255,255,0.08); border-radius: 12px;">
-      <input id="intelligent-input" type="text" placeholder="给大肥鱼发送指令或聊天..." style="flex: 1; padding: 10px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 14px;" onkeydown="if(event.key==='Enter') sendIntelligentMessage()">
-      <button id="intelligent-send-btn" type="button" class="win-btn primary" onclick="sendIntelligentMessage()" style="border-radius: 20px; padding: 0 18px;">发送</button>
-    </div>
-  </div>
-
-  <script>
-    async function sendQuickPrompt(text) {
-      const input = document.getElementById('intelligent-input');
-      if (input) {
-        input.value = text;
-        sendIntelligentMessage();
-      }
-    }
-
-    async function sendIntelligentMessage() {
-      const input = document.getElementById('intelligent-input');
-      const text = input ? input.value.trim() : '';
-      if (!text) return;
-      input.value = '';
-
-      const feed = document.getElementById('intelligent-feed');
-      const dot = document.getElementById('intelligent-dot');
-      const statusText = document.getElementById('dot-status-text');
-
-      // Append User message
-      const userDiv = document.createElement('div');
-      userDiv.className = 'chat-msg user-msg';
-      userDiv.style = 'display: flex; justify-content: flex-end;';
-      userDiv.innerHTML = `
-        <div class="bubble" style="max-width: 80%; background: #0066cc; color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 14px;">
-          ${escapeHtml(text)}
-        </div>
-      `;
-      feed.appendChild(userDiv);
-      feed.scrollTop = feed.scrollHeight;
-
-      // Animate dot to thinking
-      if (dot) {
-        dot.style.background = '#ffaa00';
-        dot.style.boxShadow = '0 0 20px #ffaa00';
-      }
-      if (statusText) statusText.innerText = '大肥鱼思考中...';
-
-      try {
-        const res = await fetch('/api/chat/intelligent', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({message: text})
-        });
-        if (!res.ok) throw new Error('网络请求异常 ' + res.status);
-        const data = await res.json();
-
-        // Animate dot to speaking
-        if (dot) {
-          dot.style.background = '#00ff88';
-          dot.style.boxShadow = '0 0 24px #00ff88';
-        }
-        if (statusText) statusText.innerText = `大肥鱼 (${data.emotion || 'happy'}) 回应中`;
-
-        // Render Bot response and card
-        const botDiv = document.createElement('div');
-        botDiv.className = 'chat-msg bot-msg';
-        botDiv.style = 'display: flex; gap: 10px; align-items: flex-start;';
-
-        let cardHtml = '';
-        if (data.card) {
-          const c = data.card;
-          if (c.type === 'dynamic_draft') {
-            cardHtml = `
-              <div class="gen-card" style="margin-top: 8px; padding: 12px; background: rgba(0, 0, 0, 0.4); border: 1px solid #00d2ff; border-radius: 8px;">
-                <div style="font-weight: bold; color: #00d2ff; margin-bottom: 6px;">📋 ${escapeHtml(c.title)}</div>
-                <div style="font-size: 13px; line-height: 1.4; white-space: pre-wrap; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">${escapeHtml(c.data.text || '')}</div>
-                <div style="margin-top: 8px; display: flex; gap: 8px;">
-                  <button type="button" class="win-btn primary" onclick="alert('已确认发布至B站动态队列！')">确认发布</button>
-                  <button type="button" class="win-btn" onclick="alert('文案已复制到剪贴板，可自由修改')">复制文案</button>
-                </div>
-              </div>
-            `;
-          } else if (c.type === 'video_browsing') {
-            cardHtml = `
-              <div class="gen-card" style="margin-top: 8px; padding: 12px; background: rgba(0, 0, 0, 0.4); border: 1px solid #a855f7; border-radius: 8px;">
-                <div style="font-weight: bold; color: #a855f7; margin-bottom: 6px;">🎬 ${escapeHtml(c.title)}</div>
-                <div style="font-size: 12px; color: #aaa;">巡航关键词：<b>${escapeHtml(c.data.keyword)}</b> · 帧预算：${escapeHtml(c.data.frame_budget)}</div>
-                <div style="font-size: 12px; color: #4ade80; margin-top: 4px;">🛡️ ${escapeHtml(c.data.anti_hallucination)}</div>
-                <div style="margin-top: 8px;">
-                  <button type="button" class="win-btn" onclick="location.hash='#automation'">前往自主运营看板</button>
-                </div>
-              </div>
-            `;
-          } else if (c.type === 'live_studio_hud') {
-            cardHtml = `
-              <div class="gen-card" style="margin-top: 8px; padding: 12px; background: rgba(0, 0, 0, 0.4); border: 1px solid #ef4444; border-radius: 8px;">
-                <div style="font-weight: bold; color: #ef4444; margin-bottom: 6px;">🎙️ ${escapeHtml(c.title)}</div>
-                <div style="font-size: 12px; color: #aaa;">当前状态：<b>${c.data.live_state}</b> · ${escapeHtml(c.data.poll_filtering)}</div>
-                <div style="font-size: 12px; color: #38bdf8; margin-top: 4px;">⚔️ ${escapeHtml(c.data.affinity_system)}</div>
-                <div style="margin-top: 8px;">
-                  <button type="button" class="win-btn" onclick="location.hash='#live'">进入直播中控台</button>
-                </div>
-              </div>
-            `;
-          }
-        }
-
-        botDiv.innerHTML = `
-          <div class="avatar" style="width: 32px; height: 32px; border-radius: 50%; background: #1e3a5f; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px;">鱼</div>
-          <div class="bubble-wrap" style="max-width: 80%;">
-            <div class="bubble" style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5;">
-              ${escapeHtml(data.reply_text || '')}
-              ${cardHtml}
-            </div>
-          </div>
-        `;
-        feed.appendChild(botDiv);
-        feed.scrollTop = feed.scrollHeight;
-      } catch (err) {
-        const errDiv = document.createElement('div');
-        errDiv.className = 'chat-msg bot-msg';
-        errDiv.innerHTML = `<div class="bubble" style="color: #ff6666;">发送失败：${escapeHtml(err.message)}</div>`;
-        feed.appendChild(errDiv);
-      } finally {
-        setTimeout(() => {
-          if (dot) {
-            dot.style.background = '#00d2ff';
-            dot.style.boxShadow = '0 0 16px #00d2ff';
-          }
-          if (statusText) statusText.innerText = '大肥鱼待命中 · 饲养员专属通道';
-        }, 1200);
-      }
-    }
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-  </script>
+  </form>
 </section>

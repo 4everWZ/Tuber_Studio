@@ -123,6 +123,8 @@ class RetentionManager:
             "(SELECT 1 FROM grounded_memory m WHERE m.scope=w.mode AND m.character_id=w.character_id "
             "AND m.character_version=w.character_version AND m.created_at < :cutoff))",
         }
+        if self.store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='operator_chat_turns'"):
+            clauses["operator_chat_turns"] = "created_at < :cutoff"
         if self.store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='context_history_audit'"):
             clauses = {"context_history_audit": "created_at < :cutoff OR NOT EXISTS "
                        "(SELECT 1 FROM context_windows WHERE key=context_history_audit.window_key) OR EXISTS "

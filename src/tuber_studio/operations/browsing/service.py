@@ -470,6 +470,8 @@ class BrowsingService:
         interaction_only=False,
         video_only=False,
         comment_visit=False,
+        keywords=None,
+        request_id=None,
     ):
         if self.closed:
             raise ValueError("浏览服务已停止")
@@ -478,6 +480,14 @@ class BrowsingService:
         preview = not automatic if preview is None else preview
         if not automatic and not preview:
             raise ValueError("手工运行仅允许预览")
+        selection = {"video": video, "keywords": keywords}
+        if request_id:
+            if not preview or automatic or not video_only:
+                raise ValueError("对话任务只支持单个只读视频轮次")
+            if existing := self.repo.requested_preview(
+                request_id, self.runtime.character, selection, self.comments.display_account_id()
+            ):
+                return {"id": existing["id"], "status": existing["status"], "reused": True, "preview": True}
         if automatic and not self.operations.policy()["enabled"]:
             raise ValueError("请先启动自主运营")
         if interaction_only:
@@ -500,6 +510,8 @@ class BrowsingService:
             config = self.configured() if preview else self.effective()
         if video_only:
             config = config | {"video_only": True}
+        if request_id:
+            config = config | {"operator_selection": selection}
         if automatic:
             # One fetched batch is the unit of work. Do not interrupt its agents
             # with a second, hidden shared request/token allowance.
@@ -510,6 +522,8 @@ class BrowsingService:
                 config["autonomous_batch"] = True
         if video:
             config = config | {"sources": ["specified"], "watch_videos": [video], "force_read": True}
+        elif keywords:
+            config = config | {"sources": ["search"], "keywords": keywords}
         if comment_visit:
             config = config | {"comment_visit": True}
         if (
@@ -521,7 +535,8 @@ class BrowsingService:
         ):
             return {"status": "deferred", "reason": "OC有界延后计划尚未到期"}
         row, created = self.repo.create_round(
-            self.account, self.runtime.character, config, self.operations.policy()["epoch"], preview
+            self.account, self.runtime.character, config, self.operations.policy()["epoch"], preview,
+            request_id=request_id,
         )
         if automatic and not notifications_only and not interaction_only:
             self.store.set("browsing_discovery_pending:" + self.account, True)

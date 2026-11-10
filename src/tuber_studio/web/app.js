@@ -2,9 +2,10 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
+import { initOperatorChat } from "./modules/operator-chat.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.21";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.23";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261107.20";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261110.01";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
@@ -13,7 +14,7 @@ import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261107.17";
+} from "./modules/operations.js?v=20261110.01";
 import {
   renderPersona,
   initCharacterStudioUI,
@@ -37,11 +38,11 @@ import {
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, time, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
-import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261107.22";
+import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261110.01";
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261107.15";
 
 const api = async (path, options = {}) => {
-  const source = location.hash || "#automation";
+  const source = location.hash || "#chat";
   try {
     return await baseApi(path, options, showLogin);
   } catch (error) {
@@ -52,7 +53,7 @@ const api = async (path, options = {}) => {
 const updatePermissionCapsule = options => updateCapsuleModule(api, accountPanel, options);
 
 const model = {
-  authenticated: false, status: null, page: "automation", characters: [], versions: [],
+  authenticated: false, status: null, page: "chat", characters: [], versions: [],
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, policy: null,
@@ -103,6 +104,7 @@ const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope 
 messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const issueLog = initIssueLog(api, () => model.page);
+const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin));
 document.addEventListener("workspace-issue", event => {
   event.preventDefault();
   issueLog.record(event.detail);
@@ -191,6 +193,7 @@ function showLogin() {
   accountPanel.deactivate();
   messagesPanel.closeImagePicker();
   userMemoryEditor.close();
+  operatorChat.reset();
 }
 
 function applyWorkbenchSettings(settings) {
@@ -356,7 +359,9 @@ async function compactContext(scope, videoId, threadId) {
 async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   if (model.page !== "comments") commentQueue.leave();
   if (!model.authenticated) return;
-  if (model.page === "comments") {
+  if (model.page === "chat") {
+    await operatorChat.refresh();
+  } else if (model.page === "comments") {
     if (routeKind === "activity") { location.hash = "automation"; return; }
     const queueView = commentQueueViews.includes(routeKind) ? routeKind : null;
     const [channel, identity] = queueView ? [routeId, taskId] : [routeKind, routeId];

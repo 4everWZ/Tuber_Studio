@@ -52,6 +52,7 @@ def single_system_messages(messages):
 
 
 def build_messages(character, event, relationship, mode="live", *, settings=None):
+    operator_chat = mode == "operator_chat"
     anchor = built_in_anchor(character, settings, for_response=mode != "comment_channel_decision")
     if not anchor and mode != "live":
         character = operation_character(character)
@@ -63,7 +64,7 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
 
     messages = [
         {"role": "system", "content": system_content},
-        {"role": "system", "content": f"当前交流场景：{mode}"},
+        {"role": "system", "content": "当前交流场景：号主私聊" if operator_chat else f"当前交流场景：{mode}"},
     ]
     if mode == "direct_message" and "conversation" in event:
         messages[1]["content"] += (
@@ -99,7 +100,8 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
     if mode == "direct_message":
         internal.add("conversation_sha256")
     wire_event = {key: value for key, value in event.items() if key not in internal} if internal else event
-    messages.append({"role": "user", "content": "当前观众消息：" + json.dumps(wire_event, ensure_ascii=False)})
+    speaker = "号主" if operator_chat else "观众"
+    messages.append({"role": "user", "content": f"当前{speaker}消息：" + json.dumps(wire_event, ensure_ascii=False)})
     if mode == "comment_channel_decision":
         return messages
 
@@ -108,7 +110,7 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
         style = {} if anchor else character["style"]
         length_instruction = f"用{style.get('min_chars', 1)}到{style.get('max_chars', 60)}字回答。"
     suffix_content = (
-        "回应当前观众，spoken_text填写你的角色台词。"
+        f"回应当前{speaker}，spoken_text填写你的角色台词。"
         + length_instruction
         + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
         "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"

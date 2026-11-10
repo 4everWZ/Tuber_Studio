@@ -4,11 +4,12 @@ const { test } = require("node:test");
 const fs = require("node:fs");
 const path = require("node:path");
 
-test("sidebar contains four workspaces and keeps existing features in local navigation", () => {
+test("sidebar offers chat and four workspaces with local navigation", () => {
   const html = fs.readFileSync(path.join(__dirname, "../src/tuber_studio/web/index.html"), "utf8");
   const sidebar = html.match(/<nav class="explorer-nav"[\s\S]*?<\/nav>/)[0];
   assert.deepEqual([...sidebar.matchAll(/data-parent-page="([^"]+)"/g)].map(match => match[1]), ["operations", "live", "characters", "settings"]);
-  assert.equal([...sidebar.matchAll(/<a /g)].length, 4);
+  assert.equal([...sidebar.matchAll(/<a /g)].length, 5);
+  assert.match(sidebar, /href="#chat"/);
   for (const route of ["live-scene", "live-music", "live-interaction", "characters", "voices", "assets", "settings", "accounts", "overview", "issues"]) {
     assert.ok(html.includes(`data-workspace-tab="${route}"`), `existing ${route} is reachable within its workspace`);
   }

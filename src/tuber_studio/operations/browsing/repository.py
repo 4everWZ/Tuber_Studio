@@ -117,16 +117,34 @@ class BrowsingRepository:
     def round(self, identity):
         return self.decode(self.store.one("SELECT * FROM browsing_rounds WHERE id=?", (identity,)))
 
-    def create_round(self, account, character, config, epoch, preview):
-        now, identity = time.time(), str(uuid4())
+    def requested_preview(self, request_id, character, selection, account=None):
+        existing = self.round(request_id)
+        if existing and (
+            not existing["preview"]
+            or account and existing["account_id"] != account
+            or existing["character_id"] != character["id"]
+            or existing["character_version"] != character["version"]
+            or existing["config"].get("operator_selection") != selection
+        ):
+            raise ValueError("请求已用于其他浏览轮次")
+        return existing
+
+    def create_round(self, account, character, config, epoch, preview, *, request_id=None):
+        now, identity = time.time(), request_id or str(uuid4())
         with self.store.db:
             self.store.db.execute("BEGIN IMMEDIATE")
+            if request_id and (
+                existing := self.requested_preview(request_id, character, config["operator_selection"], account)
+            ):
+                return existing, False
             previous = self.store.one(
                 "SELECT * FROM browsing_rounds WHERE account_id=? AND status IN ('queued','running') "
                 "AND COALESCE(json_extract(config,'$.interaction_only'),0)=?",
                 (account, int(bool(config.get("interaction_only")))),
             )
             if previous:
+                if request_id:
+                    raise ValueError("已有浏览轮次正在运行")
                 return self.decode(previous), False
             if config.get("autonomous_batch"):
                 previous = self.store.one(

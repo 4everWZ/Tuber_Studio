@@ -40,7 +40,7 @@ export function initWorkspaceNavigation(model, loadPage) {
   window.addEventListener("hashchange", changePage);
 
   async function changePage() {
-    const requested = location.hash.slice(1) || "automation";
+    const requested = location.hash.slice(1) || "chat";
     const [root, routeKind, routeId, taskId] = requested.split("/");
     const legacyAnchors = {
       "voice-cache-card": "cache-panel", storage: "cache-panel", providers: "providers-panel",
@@ -51,7 +51,7 @@ export function initWorkspaceNavigation(model, loadPage) {
     const page = anchor?.closest("[data-section]")?.dataset.section ||
       (root === "automation" && routeKind === "round" ? "automation-records" : root);
     const pages = {
-      comments: "评论与草稿", automation: "自主运营", messages: "私信", dynamics: "动态",
+      chat: "对话", comments: "评论与草稿", automation: "自主运营", messages: "私信", dynamics: "动态",
       "automation-records": "运行记录", "automation-settings": "刷视频与运营设置", issues: "告警与错误",
       live: "直播控制", "live-scene": "场景编排", "live-music": "曲库与点歌",
       "live-interaction": "互动与游戏",

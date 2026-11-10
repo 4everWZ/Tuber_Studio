@@ -183,6 +183,7 @@ class GroundedMemory:
             "source_quote",
             "derived_reply",
             "grounded_reply",
+            "operator_private",
         }:
             raise ValueError("Unsupported memory source kind")
         extracted = extract_facts(text)

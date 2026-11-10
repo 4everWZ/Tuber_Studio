@@ -325,7 +325,7 @@ class BrowsingEvidence:
             if not parts and not config["visual_enabled"]:
                 raise EvidenceUnavailable(
                     missing[0]["reason"] if missing else "no_subtitles",
-                    "视频无可用字幕，暂时跳过（待后续接入ASR语音识别）",
+                    "视频无可用字幕或本地转写材料，暂时跳过",
                 )
             cid, timestamps = self._visual_targets(parts, visual_source_ids, sampling) if have_cc else (None, None)
             try:

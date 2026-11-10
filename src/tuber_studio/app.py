@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agent.api import register_agent_api
+from .agent.operator_chat import register_operator_chat
 from .auth_sessions import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -213,6 +214,7 @@ def create_app(
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
     register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin)
     register_agent_api(app, settings, runtime, store, comments, require_admin)
+    register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
     register_model_api(app, settings, runtime, require_admin)
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
     register_message_api(app, messages, require_admin)

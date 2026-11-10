@@ -164,5 +164,14 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         return dynamics.review(post_id, data.get("action"), data.get("text"), **options)
 
     @app.post("/api/dynamics/posts/{post_id}/publish", dependencies=[Depends(require_admin)])
-    async def publish_dynamic(post_id: int):
-        return await dynamics.publish(post_id)
+    async def publish_dynamic(post_id: int, data: dict = Body(default={})):
+        expected = None
+        if data:
+            if set(data) != {"text"} or not isinstance(data["text"], str):
+                raise ValueError("仅可提交当前动态正文")
+            row = dynamics._post(post_id)
+            if row["status"] == "published":
+                return row
+            if row["status"] in {"pending_review", "approved"} and not row.get("attempted_at"):
+                expected = dynamics.review(post_id, "approve", data["text"])["content"]
+        return await dynamics.publish(post_id, expected_text=expected) if expected else await dynamics.publish(post_id)

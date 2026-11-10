@@ -252,7 +252,8 @@ class Dynamics:
         char = self._character()
         rows = self.store.all(
             "SELECT * FROM grounded_memory WHERE character_id=? AND character_version=? "
-            "AND role='assistant' AND kind='role_story' AND fictional=1 AND scope NOT LIKE 'dm:%' ORDER BY id DESC LIMIT 200",
+            "AND role='assistant' AND kind='role_story' AND fictional=1 "
+            "AND scope NOT LIKE 'dm:%' AND scope NOT LIKE 'operator:%' ORDER BY id DESC LIMIT 200",
             (char["id"], char["version"]),
         )
         account = runtime_identity(self.runtime, char).get("account_uid") or ""
@@ -326,6 +327,7 @@ class Dynamics:
     def _sources(self):
         char = self._character()
         result = self.daily_memory.public_incident_sources(char["id"], char["version"])
+        result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
         rows = self.store.all(
             "SELECT d.id,d.text,d.receipt,c.video_id,c.comment_id,c.content FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.status='published' AND c.platform='bilibili' "
@@ -424,6 +426,14 @@ class Dynamics:
 
     def _valid_sources(self, row):
         char = self._character()
+        sources = row["sources"]
+        if row.get("manual") and len(sources) == 1 and sources[0].get("type") == "operator_topic":
+            decision = self.store.one("SELECT sources FROM dynamic_decisions WHERE id=?", (row["decision_id"],))
+            return (
+                (row["character_id"], row["character_version"]) == (char["id"], char["version"])
+                and decision is not None
+                and json.loads(decision["sources"]) == sources
+            )
         current = {s["id"]: s for s in self._sources()}
         return (
             row["character_id"] == char["id"]
@@ -793,7 +803,7 @@ class Dynamics:
 
         return await feedback.reconcile("dynamics", post_id, read, commit)
 
-    async def publish(self, post_id, automatic=False):
+    async def publish(self, post_id, automatic=False, *, expected_text=None):
         if not hasattr(self.runtime, "settings"):
             self.runtime.settings = self.settings
         control = self.operations.policy()
@@ -809,6 +819,7 @@ class Dynamics:
                 binding=binding,
                 body_hash=body_hash,
                 authorization_epoch=epoch,
+                expected_text=expected_text,
             ),
             apply_revision=lambda prepared, text: self._apply_revision(post_id, prepared, text),
             automatic=automatic,
@@ -825,12 +836,15 @@ class Dynamics:
         binding=None,
         body_hash=None,
         authorization_epoch=None,
+        expected_text=None,
     ):
         # Model regeneration may wait for the inference lock. Finish it before
         # acquiring the shared platform write lock used by other generators.
         await self._refresh_post_identity(post_id, automatic, authorization_epoch)
         async with self.comments.publish_lock:
             row, policy = self._post(post_id), self.policy()
+            if expected_text is not None and row["content"] != expected_text:
+                raise ValueError("草稿已变化，请重新检查当前正文")
             if automatic:
                 if (
                     not (policy["enabled"] and policy["auto_publish"])
@@ -1104,59 +1118,103 @@ class Dynamics:
             raise ValueError("等待决定不得包含待发布正文")
         return data
 
-    def _save_decision(self, char, manual, data, sources, error=None, *, generation_identity=None):
+    def _save_decision(
+        self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True
+    ):
         now = time.time()
         selected = [s for s in sources if s["id"] in data["source_ids"]]
         model = str(self.settings.data["llm"].get("model", self.settings.data["llm"]["kind"]))
         next_at = now + data["next_evaluation_seconds"]
-        decision_id = self.store.execute(
-            "INSERT INTO dynamic_decisions(character_id,character_version,model,manual,action,reason,content,"
-            "source_ids,sources,next_evaluation_at,created_at,status,error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                char["id"],
-                char["version"],
-                model,
-                int(manual),
-                data["action"],
-                data["reason"],
-                data["content"],
-                _json(data["source_ids"]),
-                _json(selected),
-                next_at,
-                now,
-                data["action"],
-                error,
-            ),
-        ).lastrowid
-        if data["action"] == "post":
-            post_id = self.store.execute(
-                "INSERT INTO dynamic_posts(decision_id,character_id,character_version,model,content,reason,"
-                "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        with self.store.db:
+            decision_id = self.store.db.execute(
+                "INSERT INTO dynamic_decisions(character_id,character_version,model,manual,action,reason,content,"
+                "source_ids,sources,next_evaluation_at,created_at,status,error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    decision_id,
                     char["id"],
                     char["version"],
                     model,
-                    data["content"],
+                    int(manual),
+                    data["action"],
                     data["reason"],
+                    data["content"],
                     _json(data["source_ids"]),
                     _json(selected),
-                    "pending_review",
+                    next_at,
                     now,
-                    now,
-                    _content_hash(data["content"]),
-                    int(manual),
-                    getattr(self.comments, "display_account_id", lambda: "")() or "",
+                    data["action"],
+                    error,
                 ),
             ).lastrowid
-            self.store.execute("UPDATE dynamic_decisions SET post_id=? WHERE id=?", (post_id, decision_id))
-            self.store.execute(
-                "UPDATE dynamic_posts SET generation_identity=? WHERE id=?",
-                (_json(generation_identity or runtime_identity(self.runtime, char)), post_id),
-            )
-        self._schedule(data["next_evaluation_seconds"], error)
+            if data["action"] == "post":
+                post_id = self.store.db.execute(
+                    "INSERT INTO dynamic_posts(decision_id,character_id,character_version,model,content,reason,"
+                    "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        decision_id,
+                        char["id"],
+                        char["version"],
+                        model,
+                        data["content"],
+                        data["reason"],
+                        _json(data["source_ids"]),
+                        _json(selected),
+                        "pending_review",
+                        now,
+                        now,
+                        _content_hash(data["content"]),
+                        int(manual),
+                        getattr(self.comments, "display_account_id", lambda: "")() or "",
+                    ),
+                ).lastrowid
+                self.store.db.execute("UPDATE dynamic_decisions SET post_id=? WHERE id=?", (post_id, decision_id))
+                self.store.db.execute(
+                    "UPDATE dynamic_posts SET generation_identity=? WHERE id=?",
+                    (_json(generation_identity or runtime_identity(self.runtime, char)), post_id),
+                )
+        if schedule:
+            self._schedule(data["next_evaluation_seconds"], error)
         return next(d for d in self.list_decisions(100) if d["id"] == decision_id)
+
+    async def create_operator_draft(self, character, request_id, topic):
+        source = {"id": f"operator-topic:{request_id}", "type": "operator_topic", "text": topic}
+        async with self.evaluation_lock:
+            existing = self.store.one(
+                "SELECT id, character_id, character_version, sources FROM dynamic_posts "
+                "WHERE manual=1 AND source_ids=?",
+                (_json([source["id"]]),),
+            )
+            if existing:
+                if (
+                    (existing["character_id"], existing["character_version"])
+                    != (character["id"], character["version"])
+                    or json.loads(existing["sources"]) != [source]
+                ):
+                    raise ValueError("请求已用于其他动态草稿")
+                return self._post(existing["id"])
+            identity = runtime_identity(self.runtime, character)
+            messages = dynamic_decision_messages(
+                character, self.settings.data, [], [source], current_time=datetime.now().astimezone().isoformat()
+            )
+            messages.append({
+                "role": "system",
+                "content": "operator_topic 是号主明确指定的本次公开动态主题，请按它起草，返回 post 并引用其来源。",
+            })
+            async with self.runtime.offline_generation("video"):
+                result = await budgeted_json(
+                    self.runtime.llm, identity_messages(messages, identity), self.decision_schema([source]),
+                    max_tokens=512,
+                )
+            current = self._character()
+            if (current["id"], current["version"]) != (character["id"], character["version"]) or (
+                runtime_identity(self.runtime, current) != identity
+            ):
+                raise ValueError("生成期间账号或角色已变化")
+            data = self._parse(result, [source])
+            if data["action"] != "post":
+                raise ValueError("本次没有可保存的动态正文")
+            saved = self._save_decision(character, True, data, [source], generation_identity=identity, schedule=False)
+            return self._post(saved["post_id"])
 
     async def evaluate(self, manual=False):
         async with self.evaluation_lock:
