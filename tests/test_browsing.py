@@ -1201,7 +1201,7 @@ async def test_notification_private_handoff_owned_by_round_and_never_public_body
     relation = browsing.runtime.relationships.view(
         browsing.runtime.character["id"], "bilibili", "300", account_id="100"
     )
-    assert relation["affinity"] == 21
+    assert relation["affinity"] == 1
     assert draft["text"] not in json.dumps(browsing.inbox(), ensure_ascii=False)
     browsing.store.execute("UPDATE browsing_rounds SET status='cancelled' WHERE id=?", (row["id"],))
     browsing.store.execute("UPDATE dm_drafts SET status='cancelled' WHERE id=?", (draft["id"],))

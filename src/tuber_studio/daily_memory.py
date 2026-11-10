@@ -12,6 +12,7 @@ import logging
 import re
 import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger(__name__)
 
@@ -317,7 +318,9 @@ class DailyMemoryService:
         """Recall factual experiences by their public floor, or relevant conversation text."""
         result = []
         query_words = self._extract_recall_keywords(query_text)
-        for source in self.public_incident_sources(character["id"], character["version"]):
+        sources = self.public_incident_sources(character["id"], character["version"])
+        sources.extend(self.public_experience_sources(character["id"], character["version"]))
+        for source in sources:
             linked = any(
                 ref["bvid"] == str(video_id or "")
                 and (
@@ -338,6 +341,39 @@ class DailyMemoryService:
             if linked or relevant:
                 result.append(source)
         return result[:2]
+
+    def public_experience_sources(self, character_id, character_version):
+        rows = self.store.all(
+            "SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? AND status='active' "
+            "AND (source_ref LIKE 'system:downtime:%' OR source_ref LIKE 'operator-public:%') "
+            "ORDER BY highlight_date DESC,id DESC LIMIT 10",
+            (character_id, character_version),
+        )
+        return [
+            {"id": f"experience:{row['id']}", "type": proof["kind"], "fictional": False,
+             "text": row["quote"], "public_sources": []}
+            for row in rows if (proof := self._source_evidence(row))
+            and proof["kind"] in {"runtime_event", "operator_note"}
+        ]
+
+    def confirm_operator_experience(self, character, request_id, fact):
+        source_ref = f"operator-public:{request_id}"
+        previous = self.store.one(
+            "SELECT id,quote FROM daily_highlights WHERE character_id=? AND character_version=? AND source_ref=?",
+            (character["id"], character["version"], source_ref),
+        )
+        if previous:
+            if previous["quote"] != fact:
+                raise ValueError("这段对话已有确认的公开经历")
+            return previous["id"]
+        return self.record_highlight(
+            character["id"], character["version"], self.business_date(time.time()), "community_meme",
+            "号主确认的公开经历", fact, fact, source_ref=source_ref, operator_confirmed=True,
+        )
+
+    def business_date(self, now):
+        zone = self.store.get("browsing_policy", {}).get("business_timezone", "Asia/Taipei")
+        return datetime.datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()
 
     def public_incident_sources(self, character_id, character_version):
         rows = self.store.all(
@@ -491,7 +527,7 @@ class DailyMemoryService:
     def update_active_timestamp(self, current_time: float | None = None):
         """Update system last active timestamp."""
         now = current_time or time.time()
-        self.store.set("system_last_active_at", now)
+        self.store.set("system_runtime_heartbeat_at", now)
 
     def check_and_record_downtime(
         self,
@@ -501,8 +537,8 @@ class DailyMemoryService:
     ) -> dict | None:
         """Inspect last active timestamp and record a downtime highlight if offline for >= 1 day."""
         now = current_time or time.time()
-        last_active = self.store.get("system_last_active_at")
-        self.store.set("system_last_active_at", now)
+        last_active = self.store.get("system_runtime_heartbeat_at")
+        self.update_active_timestamp(now)
         if last_active is None:
             return None
         try:
@@ -515,7 +551,7 @@ class DailyMemoryService:
             return None
 
         days = max(1, int(gap_seconds // 86400))
-        today_str = datetime.date.today().isoformat()
+        today_str = self.business_date(now)
         source_ref = f"system:downtime:{int(last_active)}"
 
         existing = self.store.one(
@@ -525,14 +561,10 @@ class DailyMemoryService:
         if existing:
             return None
 
-        headline = f"开机停工{days}天吐槽"
-        quote = f"工作站离线休眠了{days}天"
-        anecdote = (
-            f"呜呜，饲养员居然隔了{days}天才给我开机！"
-            f"本鱼在简陋的工作站小窝里硬生生睡了好几天，尾巴都要睡麻了，"
-            f"小窝太简陋了连电都断了，下次必须给我补两罐高级鱼罐头！"
-        )
-        tags = ["停机", "开机", "睡了好久", "小窝简陋", "没开机", "好几天", "断电", "休眠", "开机了", "去哪了", "失踪"]
+        headline = f"工作台恢复运行（间隔约 {days} 天）"
+        quote = f"本次启动距上次工作台运行记录约 {days} 天。"
+        anecdote = quote
+        tags = ["停机", "开机", "睡了好久", "小窝", "没开机", "好几天", "休眠", "去哪了", "失踪"]
         proof = {
             "version": 1,
             "kind": "runtime_event",
@@ -715,8 +747,11 @@ class DailyMemoryService:
         # Score and rank relevance if query_text is given
         scored = []
         for row in rows:
-            if not self._source_evidence(row):
+            proof = self._source_evidence(row)
+            if not proof:
                 continue
+            if (row.get("source_ref") or "").startswith(("operator-public:", "system:downtime:")):
+                continue  # Only the relevant public-experience path recalls these facts.
             if row["category"] == "public_incident" and not include_incidents:
                 continue
             score = 0

@@ -24,7 +24,7 @@ class Event(BaseModel):
     room_id: str = Field(default="debug", min_length=1, max_length=80)
     platform_user_id: str | None = Field(default=None, max_length=100)
     display_name: str = Field(default="匿名观众", max_length=80)
-    type: Literal["chat", "gift", "song", "disconnect", "sfx"] = "chat"
+    type: Literal["chat", "gift", "song", "disconnect", "sfx", "activity", "idle"] = "chat"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     text: str = Field(default="", max_length=500)
     metadata: dict = Field(default_factory=dict)

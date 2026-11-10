@@ -224,7 +224,9 @@ async def test_queue_dedup_expiry_and_identity_are_persistent(runtime, store):
     assert len(runtime.live.queue) == 3
     expired = Event(text="已经过期", timestamp=datetime.now(UTC) - timedelta(seconds=120))
     assert (await runtime.submit(expired))["status"] == "expired"
-    assert store.event(a["id"])["user_id"] != store.event(b["id"])["user_id"]
+    assert store.event(a["id"])["payload"]["platform_user_id"] == "u1"
+    assert store.event(b["id"])["payload"]["platform_user_id"] == "u2"
+    assert not store.all("SELECT * FROM users")
     await runtime.control("stop")
     await runtime.control("start")
     assert (await runtime.submit(event))["status"] == "duplicate"

@@ -12,7 +12,9 @@ import enum
 import json
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger(__name__)
 
@@ -193,24 +195,27 @@ class LiveAmbientEnvironmentTool(BaseAgentTool):
     description = "Provides real-time date/time, weekday, and ambient context for live stream without polling."
     kind = ToolKind.CONTEXT_AUGMENT
 
+    def __init__(self, live_session=None):
+        self.live_session = live_session
+
     def can_handle(self, event: dict[str, Any], context_info: dict[str, Any]) -> bool:
         return context_info.get("mode") == "live"
 
     def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> dict[str, Any]:
-        from datetime import datetime
-
-        now = datetime.now()
+        timezone = self.live_session.timezone() if self.live_session else "Asia/Taipei"
+        now = datetime.now(ZoneInfo(timezone))
         weekdays = ["一", "二", "三", "四", "五", "六", "日"]
         return {
             "datetime": now.strftime("%Y年%m月%d日 %H:%M"),
             "weekday": f"星期{weekdays[now.weekday()]}",
+            "timezone": timezone,
         }
 
     def render_context(self, data: dict[str, Any] | None) -> str | None:
         if not data:
             return None
         return (
-            f"[当前时空与现实环境感知] 当前现实时间为 {data['datetime']}，{data['weekday']}。"
+            f"[直播时钟] {data['datetime']}，{data['weekday']}（{data['timezone']}）。"
             "你清楚知晓现实作息与时间流逝。观众问起时可自然随口回答，但不必机械每句报时。"
         )
 
@@ -226,26 +231,17 @@ class LiveBarrageContextTool(BaseAgentTool):
         self.live_session = live_session
 
     def can_handle(self, event: dict[str, Any], context_info: dict[str, Any]) -> bool:
-        if context_info.get("mode") != "live" or not self.live_session:
-            return False
-        return bool(getattr(self.live_session, "recent_barrage", None))
+        return context_info.get("mode") == "live" and self.live_session is not None
 
-    def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> list[dict[str, Any]]:
-        if not self.live_session:
-            return []
-        items = list(getattr(self.live_session, "recent_barrage", []))
-        current_text = event.get("text", "") if event else ""
-        filtered = [it for it in items if it.get("text") != current_text]
-        return filtered[-6:]
+    def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> dict[str, Any]:
+        return self.live_session.room_context(event or {}) if self.live_session else {}
 
-    def render_context(self, data: list[dict[str, Any]] | None) -> str | None:
-        if not data:
+    def render_context(self, data: dict[str, Any] | None) -> str | None:
+        if not data or not any(data.values()):
             return None
-        lines = "\n".join(f"- {item.get('display_name', '观众')}: {item.get('text', '')}" for item in data)
         return (
-            "[当前直播间弹幕氛围与近期观众互动]\n"
-            f"{lines}\n"
-            "（以上为观众之间的近期热聊流水，仅供你感知话题氛围与互动上下文，无需逐一回复，可自然融入交流）"
+            "[本场近期弹幕与活动，仅供理解当前话题]\n"
+            + json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         )
 
 
@@ -319,7 +315,7 @@ def build_default_tool_registry(
 ) -> ToolRegistry:
     """Factory creating and registering standard Tuber Studio tools."""
     registry = ToolRegistry()
-    registry.register(LiveAmbientEnvironmentTool())
+    registry.register(LiveAmbientEnvironmentTool(live_session))
     if live_session:
         registry.register(LiveBarrageContextTool(live_session))
     if daily_memory:

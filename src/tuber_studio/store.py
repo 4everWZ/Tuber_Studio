@@ -195,7 +195,11 @@ class Store:
     def user(self, event):
         if not event.platform_user_id:
             return None
-        return self.ensure_user(event.platform, event.platform_user_id, event.display_name)
+        row = self.one(
+            "SELECT id FROM users WHERE platform=? AND platform_user_id=?",
+            (event.platform, event.platform_user_id),
+        )
+        return row["id"] if row else None
 
     def ensure_user(self, platform, platform_user_id, display_name):
         self.execute(
@@ -286,7 +290,7 @@ class Store:
                 "UPDATE jobs SET status='completed',updated_at=? WHERE id=?", (time.time(), job_id)
             )
             self.db.execute("UPDATE events SET status='completed' WHERE id=?", (event["id"],))
-            if event["payload"]["type"] == "song":
+            if event["payload"]["type"] in {"song", "idle"}:
                 return True
             self.db.execute(
                 "INSERT OR IGNORE INTO conversations(session_id,character_id,user_id,event_text,"

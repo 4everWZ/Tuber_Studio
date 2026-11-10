@@ -120,13 +120,33 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
     }));
     if (!state.queue.length) $("queue").append(element("li","还没有待播任务，下一首留给你。","empty"));
   }
+  function renderPoll() {
+    const active = state.poll;
+    const latest = active || state.activities?.at(-1);
+    $("live-poll-start").disabled = !["live","paused"].includes(state.state) || active;
+    $("live-poll-finish").disabled = !active;
+    $("live-poll-state").textContent = !latest ? "暂无投票" : active
+      ? `投票中 · ${latest.topic} · ${latest.options.join("／")}`
+      : latest.counts ? `${latest.topic} · ${latest.total_votes} 票 · ${Object.entries(latest.counts).map(([name, count]) => name + " " + count).join("／")}${latest.complete ? "" : " · 统计未完整"}`
+      : `${latest.topic} · ${latest.result || "已更新"}`;
+  }
+  function renderLiveOptions(options) {
+    $("live-timezone").value = options.timezone || "";
+    $("live-idle").checked = options.idle;
+    $("live-web-fetch").checked = options.web_fetch;
+    $("live-weather").checked = Boolean(options.weather);
+    $("live-weather-name").value = options.weather?.name || "";
+    $("live-weather-lat").value = options.weather?.latitude ?? "";
+    $("live-weather-lon").value = options.weather?.longitude ?? "";
+    $("live-weather").onchange();
+  }
   async function poll() {
     if (polling || !authenticated || !visible()) return; polling = true;
     try {
       const values = await Promise.all([api("/api/live/view"),api("/api/status"),api("/api/live/online")]);
       [state,status] = values; online.update(values[2]);
       if (!scene.scene || (!dirty && JSON.stringify(state.scene) !== scene.signature)) loadScene(state.scene);
-      scene.update(state); renderQueue();
+      scene.update(state); renderQueue(); renderPoll();
       $("session-state").textContent = state.muted ? "已静音" : ({stopped:"未开播",live:"直播中",paused:"队列已暂停",degraded:"连接降级"}[state.state] || state.state);
       $("player-state").textContent = state.overlay_connected ? "播放器已连接" : "播放器未连接";
       $("character-name").textContent = `${state.character.name} · v${state.character.version}`;
@@ -142,7 +162,7 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
       renderTransportControls();
     } catch(error) { feedback(error.message,true); } finally { polling = false; }
   }
-  async function boot() { authenticated = true; try { settings = await api("/api/settings"); await loadMusic(); await poll(); $("login").hidden = true; $("workspace").hidden = false; feedback(""); if (!focusView) await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
+  async function boot() { authenticated = true; try { settings = await api("/api/settings"); await loadMusic(); renderLiveOptions(await api("/api/live/options")); await poll(); $("login").hidden = true; $("workspace").hidden = false; if (!focusView) await accountPanel.activate(); scene.fit(); } catch(error) { login(); $("login-error").textContent = error.message; } }
   $("login-form").onsubmit = async event => { event.preventDefault(); try { await api("/api/auth",{method:"POST",body:{token:$("token").value}}); $("token").value = ""; await boot(); } catch(error) { $("login-error").textContent = error.message; } };
   $("save-layout").onclick = event => run(event.currentTarget, async () => { const value = await api("/api/live/scene",{method:"PUT",body:scene.scene}); loadScene(value); feedback("布局已保存，OBS画面将同步更新。"); });
   $("undo-layout").onclick = () => loadScene(saved);
@@ -166,7 +186,52 @@ import { inferenceModeChanging, liveActionDisabled } from "./modules/live-contro
   $("media-toggle").onclick = event => run(event.currentTarget, () => api(`/api/live/media-${state.playback?.paused ? "resume" : "pause"}`,{method:"POST"}));
   $("clear-queue").onclick = event => { if (confirm("清空所有待播任务？当前播放保持。")) run(event.currentTarget, () => api("/api/live/clear",{method:"POST"})); };
   $("open-overlay").onclick = event => { const page = window.open("about:blank","_blank"); if (!page) return feedback("请允许打开播放器窗口",true); page.opener = null; run(event.currentTarget,async () => { try { const config = await api("/api/settings"); page.location = config.overlay_url; } catch(error) { page.close(); throw error; } }); };
-  $("event-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => { const result = await api("/api/live/mock-event",{method:"POST",body:{type:$("event-type").value,display_name:$("event-name").value,platform_user_id:"workbench-debug",text:$("event-text").value}}); feedback(result.reason || "事件已加入队列",result.status !== "queued"); }); };
+  $("event-form").onsubmit = event => {
+    event.preventDefault();
+    run(event.submitter, async () => {
+      const result = await api("/api/live/mock-event",{method:"POST",body:{
+        type:$("event-type").value,display_name:$("event-name").value,
+        platform_user_id:"workbench-debug",text:$("event-text").value,
+      }});
+      const received = result.status === "queued" || result.reason === "已计票";
+      if (received) $("event-text").value = "";
+      feedback(result.reason || "事件已加入队列",!received);
+    });
+  };
+  $("live-weather").onchange = () => {
+    const show = $("live-weather").checked;
+    $("live-weather-location").hidden = !show;
+    $("live-weather-location").disabled = !show;
+  };
+  $("live-options-form").onsubmit = event => {
+    event.preventDefault();
+    run(event.submitter, async () => {
+      const weather = $("live-weather").checked ? {
+        name:$("live-weather-name").value.trim(),
+        latitude:$("live-weather-lat").valueAsNumber,
+        longitude:$("live-weather-lon").valueAsNumber,
+      } : null;
+      const options = await api("/api/live/options",{method:"PUT",body:{
+        timezone:$("live-timezone").value.trim() || null,
+        idle:$("live-idle").checked,web_fetch:$("live-web-fetch").checked,weather,
+      }});
+      renderLiveOptions(options);
+      feedback("直播设置已保存。");
+    });
+  };
+  $("live-poll-form").onsubmit = event => {
+    event.preventDefault();
+    run(event.submitter, async () => {
+      await api("/api/live/poll/start",{method:"POST",body:{
+        topic:$("live-poll-topic").value.trim(),
+        options:$("live-poll-options").value.split(/\r?\n/).map(text=>text.trim()).filter(Boolean),
+        duration_seconds:$("live-poll-duration").valueAsNumber,
+      }});
+      $("live-poll-topic").value = "";
+      $("live-poll-options").value = "";
+    });
+  };
+  $("live-poll-finish").onclick = event => run(event.currentTarget, () => api("/api/live/poll/finish",{method:"POST"}));
   $("music-form").onsubmit = event => { event.preventDefault(); run(event.submitter,async () => {
     await api("/api/live/music",{method:"PUT",body:{...music.settings,default_mode:$("default-mode").value,volume:Number($("music-volume").value),queue_limit:Number($("music-limit").value),cooldown_seconds:Number($("music-cooldown").value)}}); musicDirty = false; await loadMusic(); feedback("点歌设置已保存，对新确认项生效。");
   }); };

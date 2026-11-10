@@ -73,11 +73,6 @@ class Runtime:
         self.operation_turns = OperationTurns(self.generation_lock, self.operations_waiting)
         self._conversation_turns = {}
         self.error = None
-        try:
-            char = store.character()
-            self.daily_memory.check_and_record_downtime(char["id"], char["version"])
-        except Exception:
-            pass
         self.cache = MediaCache(self)
         self.live.media.cache = self.cache
         self.voices.cache = self.cache
@@ -191,6 +186,8 @@ class Runtime:
         return self.live.state in {"live", "paused"} and self.live.busy
 
     async def open(self):
+        char = self.character
+        self.daily_memory.check_and_record_downtime(char["id"], char["version"])
         await self.live.online_songs.open()
         try:
             if self.settings.data.get("work_mode_profiles") and self.inference.client:
@@ -227,6 +224,7 @@ class Runtime:
         await self.voices.close()
         await self.vision.close()
         await self.inference.close()
+        self.daily_memory.update_active_timestamp()
 
     async def cleanup_retention(self, before=None, *, automatic=False):
         if automatic and self.retention.days is None:
@@ -245,6 +243,7 @@ class Runtime:
     async def _retention_loop(self):
         while True:
             await asyncio.sleep(60)
+            self.daily_memory.update_active_timestamp()
             last = (self.retention.last_result or {}).get("completed_at", 0)
             if time.time() - last >= INTERVAL_SECONDS:
                 try:
@@ -325,7 +324,6 @@ class Runtime:
         messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence)
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         messages = identity_messages(messages, generation_identity)
-        self.daily_memory.update_active_timestamp()
         operation = mode in {"comment_draft", "direct_message"}
         generate = (
             getattr(self.llm, "generate_operation", self.llm.generate) if operation else self.llm.generate
@@ -409,7 +407,11 @@ class Runtime:
                 if reply is None and scene.current(self.live.session_id):
                     messages = scene.annotate(messages)
             if reply is None:
-                reply = await generate(messages, character, event["event_id"], event["text"])
+                reply = (
+                    await self.live.generate_text_reply(generate, messages, character, event)
+                    if mode == "live"
+                    else await generate(messages, character, event["event_id"], event["text"])
+                )
         missing = missing_slots(reply.spoken_text, evidence)
         supported = [
             slot

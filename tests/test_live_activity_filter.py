@@ -1,79 +1,75 @@
-"""Tests for LiveActivityFilter and poll/activity interception."""
+"""Polls and typed activities never enter the reply queue or raw room history."""
 
-import pytest
-from tuber_studio.live.activity_filter import LiveActivityFilter
+import asyncio
+from datetime import UTC, datetime, timedelta
+
+from tuber_studio.live.activity_filter import LivePoll
 from tuber_studio.models import Event
-from datetime import datetime, UTC
 
 
-def make_chat(text, user_id="u1", name="观众1"):
-    return Event(
-        platform="live",
-        room_id="r1",
-        event_id=f"evt_{datetime.now().timestamp()}_{text}",
-        type="chat",
-        platform_user_id=user_id,
-        display_name=name,
-        text=text,
-        timestamp=datetime.now(UTC),
-    )
+def chat(text, uid="u1", **extra):
+    return Event(text=text, platform_user_id=uid, display_name="同名观众", **extra)
 
 
-def test_activity_filter_platform_broadcast():
-    filt = LiveActivityFilter()
-    evt1 = make_chat("用户小明 进入直播间")
-    filtered, reason = filt.check_event(evt1)
-    assert filtered is True
-    assert "广播" in reason
+async def test_poll_admission_room_context_and_result(runtime, store):
+    await runtime.control("start")
+    await runtime.control("pause")
+    request = LivePoll(topic="吃什么", options=["白饭", "海带"], duration_seconds=60)
+    started = runtime.live.start_poll(request)
+    vote = chat("1")
+    assert (await runtime.submit(vote))["reason"] == "已计票"
+    assert (await runtime.submit(vote))["status"] == "duplicate"
+    assert (await runtime.submit(chat("B")))["reason"] == "已计票"
+    assert (await runtime.submit(chat("#A", "u2")))["reason"] == "已计票"
+    assert "未计票" in (await runtime.submit(chat("2", None)))["reason"]
+    stale = chat("2", "u3", timestamp=datetime.now(UTC) - timedelta(seconds=1))
+    assert "不在活动时段" in (await runtime.submit(stale))["reason"]
+    outside = chat("白饭", "u1", room_id="other")
+    assert (await runtime.submit(outside))["status"] == "queued"
+    one = chat("进入直播间后这个投票会显示结果吗")
+    two = chat(one.text, "u2")
+    for event in (one, two):
+        assert (await runtime.submit(event))["status"] == "queued"
+    result = runtime.live.finish_poll()
+    assert result["id"] == started["id"] and result["counts"] == {"白饭": 1, "海带": 1}
+    assert result["winners"] == ["白饭", "海带"] and result["winner"] is None
+    assert runtime.live.finish_poll() is None
+    assert (await runtime.submit(vote))["status"] == "duplicate"
+    packet = runtime.live.room_context(two.model_dump())
+    assert packet["弹幕"] == [
+        {"event_id": one.event_id, "uid": "u1", "display_name": "同名观众", "text": one.text}
+    ]
+    assert [item["phase"] for item in packet["活动"]] == ["started", "ended"]
+    assert len(store.all("SELECT * FROM events")) == 3
+    assert len(runtime.live.queue) == 3
+    await runtime.control("stop")
+    await runtime.control("start")
+    assert runtime.live.room_context(two.model_dump()) == {"弹幕": [], "活动": []}
 
-    evt2 = make_chat("点亮了粉丝勋章")
-    filtered, reason = filt.check_event(evt2)
-    assert filtered is True
 
-    evt_normal = make_chat("大肥鱼今天好可爱呀")
-    filtered, reason = filt.check_event(evt_normal)
-    assert filtered is False
-    assert reason is None
+async def test_poll_expires_once_while_queue_is_paused(runtime, store):
+    await runtime.control("start")
+    await runtime.control("pause")
+    request = LivePoll(topic="接下来做什么", options=["画画", "唱歌"], duration_seconds=1)
+    runtime.live.start_poll(request)
+    async with asyncio.timeout(3):
+        while runtime.live.activity_filter.active_poll:
+            await asyncio.sleep(0.02)
+    assert [item["phase"] for item in runtime.live.recent_activities] == ["started", "ended"]
+    assert not store.all("SELECT * FROM jobs")
+    assert runtime.live.recent_activities[-1]["total_votes"] == 0
+    assert runtime.live.recent_activities[-1]["winner"] is None
 
 
-def test_activity_filter_interactive_poll():
-    filt = LiveActivityFilter()
-    assert not filt.is_poll_active()
-
-    # Start poll
-    poll_info = filt.start_poll("今晚吃什么", ["红烧大排", "清蒸海带"], duration_seconds=30)
-    assert filt.is_poll_active()
-    assert poll_info["topic"] == "今晚吃什么"
-
-    # Vote with number '1'
-    evt_v1 = make_chat("1", user_id="u1", name="小张")
-    filtered, reason = filt.check_event(evt_v1)
-    assert filtered is True
-    assert "红烧大排" in reason
-
-    # Vote with option letter 'B'
-    evt_v2 = make_chat("B", user_id="u2", name="小李")
-    filtered, reason = filt.check_event(evt_v2)
-    assert filtered is True
-    assert "清蒸海带" in reason
-
-    # Vote with keyword '清蒸海带'
-    evt_v3 = make_chat("清蒸海带", user_id="u3", name="小王")
-    filtered, reason = filt.check_event(evt_v3)
-    assert filtered is True
-    assert "清蒸海带" in reason
-
-    # Non-vote chat is NOT filtered
-    evt_chat = make_chat("我都想吃怎么办呢", user_id="u4", name="吃货")
-    filtered, reason = filt.check_event(evt_chat)
-    assert filtered is False
-
-    # End poll and verify synthesis
-    result = filt.end_poll()
-    assert not filt.is_poll_active()
-    assert result["total_votes"] == 3
-    assert result["counts"]["清蒸海带"] == 2
-    assert result["counts"]["红烧大排"] == 1
-    assert result["winner"] == "清蒸海带"
-    assert "【直播间投票结果】" in result["summary_text"]
-    assert "最终获胜选项是【清蒸海带】" in result["summary_text"]
+async def test_typed_activity_admits_only_summary(runtime, store):
+    await runtime.control("start")
+    await runtime.control("pause")
+    raw = Event(type="activity", text="观众已打卡")
+    summary = Event(type="activity", metadata={"summary": {
+        "id": "platform-poll", "phase": "ended", "topic": "今晚选歌", "result": "白饭之歌",
+    }})
+    assert (await runtime.submit(raw))["status"] == "filtered"
+    assert (await runtime.submit(summary))["status"] == "recorded"
+    assert (await runtime.submit(summary))["status"] == "duplicate"
+    assert not store.all("SELECT * FROM events")
+    assert runtime.live.room_context(chat("投票结束了吗").model_dump())["活动"][0]["result"] == "白饭之歌"

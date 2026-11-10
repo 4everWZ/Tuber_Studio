@@ -4,19 +4,29 @@ import asyncio
 import json
 import secrets
 import time
+from collections import deque
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from ..models import Reply
+from ..models import Event, Reply
 from ..providers import public_error
-from .activity_filter import LiveActivityFilter
+from .activity_filter import ActivitySummary, LiveActivityFilter
 from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService
 from .interactive_rules import InteractiveRulesService
-from .media import LiveMedia
+from .media import LiveMedia, inspect_wav
 from .online_songs import OnlineSongs
+from .options import LiveLookup, LiveOptions
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
+IDLE_AFTER = 90
+IDLE_COOLDOWN = 180
+IDLE_WINDOW = 600
+IDLE_LINES = (
+    "小窝安静得能听见气泡冒上去。你们慢慢潜水，我也歇会儿。",
+    "给尾巴找个舒服的位置……好，这下谁都别挪我的坐垫。",
+    "刚刚桌上还有一碗白饭。至于现在去哪儿了，你们别问。",
+)
 
 
 class LiveSession:
@@ -48,7 +58,13 @@ class LiveSession:
         self.media_changed = asyncio.Event()
         self.online_songs = OnlineSongs(runtime)
         self.activity_filter = LiveActivityFilter()
-        self.recent_barrage: list[dict] = []
+        self.poll_timer = None
+        self.recent_barrage = deque(maxlen=20)
+        self.recent_activities = deque(maxlen=8)
+        self.lookup = LiveLookup()
+        self.last_activity = time.monotonic()
+        self.idle_attempts = deque(maxlen=2)
+        self.idle_index = 0
 
     @property
     def busy(self):
@@ -58,6 +74,7 @@ class LiveSession:
         self.worker = asyncio.create_task(self._loop())
 
     async def stop_worker(self):
+        self.reset_poll()
         if self.worker:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
@@ -74,6 +91,13 @@ class LiveSession:
 
     def new_session(self):
         self.online_songs.choices.clear()
+        self.reset_poll()
+        self.recent_barrage.clear()
+        self.recent_activities.clear()
+        self.accept_times.clear()
+        self.idle_attempts.clear()
+        self.runtime.relationships.clear_live()
+        self.last_activity = time.monotonic()
         self.session_id = str(uuid4())
         character = self.runtime.character
         self.store.execute(
@@ -152,12 +176,18 @@ class LiveSession:
         elif action == "pause":
             if self.state != "stopped":
                 self.state = "paused"
+                if self.idle_unplayed():
+                    await self.cancel_current("已暂停冷场任务")
         elif action == "resume":
             self.state = "live"
             self.runtime.error = None
         elif action == "stop":
             self.state = "stopped"
             self.online_songs.choices.clear()
+            self.reset_poll()
+            self.recent_barrage.clear()
+            self.recent_activities.clear()
+            self.runtime.relationships.clear_live()
             self.clear_queue()
             await self.cancel_current("停止会话")
         elif action == "mute":
@@ -171,6 +201,7 @@ class LiveSession:
             self.clear_queue()
         else:
             raise ValueError("未知控制命令")
+        self.last_activity = time.monotonic()
         self.wake.set()
         self.online_songs.sync()
         return self.runtime.status()
@@ -193,7 +224,7 @@ class LiveSession:
         self.wake.set()
         return result
 
-    async def submit(self, event, *, online_snapshot=None):
+    async def submit(self, event, *, online_snapshot=None, verified_account_id=None):
         key = (event.platform, event.room_id, event.event_id)
         while key in self.submissions:
             await asyncio.shield(self.submissions[key])
@@ -202,16 +233,49 @@ class LiveSession:
         finished = asyncio.get_running_loop().create_future()
         self.submissions[key] = finished
         try:
-            return await self._submit(event, online_snapshot=online_snapshot)
+            return await self._submit(
+                event, online_snapshot=online_snapshot, verified_account_id=verified_account_id
+            )
         finally:
             self.submissions.pop(key, None)
             finished.set_result(None)
 
-    async def _submit(self, event, *, online_snapshot=None):
+    async def _submit(self, event, *, online_snapshot=None, verified_account_id=None, internal=False):
+        session_id = self.session_id
         now = datetime.now(UTC)
         age = (now - event.timestamp).total_seconds()
         status, reason = "queued", None
+        if event.type == "idle" and not internal:
+            raise ValueError("冷场任务只由直播调度器生成")
+        metadata = dict(event.metadata)
+        metadata.pop("_live_account", None)
+        if verified_account_id and event.platform == "bilibili":
+            metadata["_live_account"] = str(verified_account_id)
+        event = event.model_copy(update={"metadata": metadata})
         if self.state != "stopped" and -30 <= age <= self.settings.data["event_ttl_seconds"]:
+            self.expire_poll()
+            if event.type == "activity" and event.metadata.get("summary") is not None:
+                activity = ActivitySummary.model_validate(event.metadata["summary"]).model_dump()
+                item = activity | {"platform": event.platform, "room_id": event.room_id}
+                fields = ("platform", "room_id", "id", "phase")
+                duplicate = any(all(old[k] == item[k] for k in fields) for old in self.recent_activities)
+                if not duplicate:
+                    self.recent_activities.append(item)
+                return {"id": None, "status": "duplicate" if duplicate else "recorded", "reason": "活动摘要"}
+            filtered = self.activity_filter.check_event(event)
+            if filtered:
+                status, reason = filtered
+                return {"id": None, "status": status, "reason": reason}
+            if event.type == "chat" and (text := clean_barrage(event.text)):
+                self.recent_barrage.append({
+                    "platform": event.platform,
+                    "room_id": event.room_id,
+                    "event_id": event.event_id,
+                    "uid": event.platform_user_id,
+                    "display_name": event.display_name,
+                    "text": text[:240],
+                    "at": event.timestamp.timestamp(),
+                })
             try:
                 if event.type == "chat":
                     # 1. Check if Draw & Guess is active and user guessed correctly
@@ -321,6 +385,8 @@ class LiveSession:
             except ValueError as error:
                 status, reason = "filtered", str(error)
         age = (datetime.now(UTC) - event.timestamp).total_seconds()
+        if session_id != self.session_id:
+            return {"id": None, "status": "filtered", "reason": "处理期间直播场次已切换"}
         if self.state == "stopped":
             status, reason = "filtered", "Mock会话未启动"
         elif age > self.settings.data["event_ttl_seconds"] or age < -30:
@@ -346,15 +412,11 @@ class LiveSession:
                 status, reason = "filtered", str(error)
         elif event.type == "disconnect":
             status, reason = "filtered", "模拟平台断线；需人工恢复"
-        elif event.type == "chat":
-            should_filter, filter_reason = self.activity_filter.check_event(event)
-            if should_filter:
-                status, reason = "filtered", filter_reason
-            elif not event.text.strip() or len(set(event.text.strip())) < 2:
-                status, reason = "filtered", "空消息或重复字符"
+        elif event.type == "chat" and not clean_barrage(event.text):
+            status, reason = "filtered", "空消息或重复字符"
         # Bound both acceptance rate and the tracking map; anonymous viewers are not merged by nickname.
         user_key = (
-            (event.platform, event.platform_user_id, "song" if event.type == "song" else "interaction")
+            (event.platform, event.room_id, event.platform_user_id, "song" if event.type == "song" else "interaction")
             if event.platform_user_id
             else None
         )
@@ -371,8 +433,16 @@ class LiveSession:
         if event.type == "disconnect" and self.state != "stopped":
             self.state, self.runtime.error = "degraded", reason
             self.wake.set()
+        if (
+            event.type == "gift" and event.metadata.get("_live_account")
+            and event.metadata.get("paid_support") is True
+            and self.state != "stopped" and -30 <= age <= self.settings.data["event_ttl_seconds"]
+        ):
+            self.observe_relationship(self.runtime.character, event.model_dump(mode="json"), support=True)
         if status != "queued":
             return {"id": db_id, "status": status, "reason": reason}
+        if event.type != "idle":
+            self.last_activity = time.monotonic()
         if user_key:
             self.accept_times[user_key] = time.monotonic()
             if len(self.accept_times) > 2000:
@@ -393,39 +463,110 @@ class LiveSession:
         )
         if event.type == "song":
             self.store.update_job(job_id, media=media)
-        elif event.type == "chat":
-            self.recent_barrage.append({"display_name": event.display_name, "text": event.text, "time": time.time()})
-            if len(self.recent_barrage) > 20:
-                self.recent_barrage.pop(0)
         self.queue.append(job_id)
+        if event.type != "idle" and self.idle_unplayed():
+            await self.cancel_current("观众互动优先")
         if online_snapshot:
             self.online_songs.choices.pop(online_snapshot["online"].get("choice_token"), None)
         self.online_songs.sync()
         self.wake.set()
         return {"id": db_id, "job_id": job_id, "status": "queued"}
 
-    def start_poll(self, topic: str, options: list[str], duration_seconds: float = 60.0):
-        return self.activity_filter.start_poll(topic, options, duration_seconds)
+    def options(self):
+        return LiveOptions.model_validate(self.store.get("live_options", {}))
 
-    async def finish_poll(self):
-        result = self.activity_filter.end_poll()
-        if not result:
-            return None
-        from ..models import Event
+    def set_options(self, options):
+        if options.weather and self.settings.data.get("commercial_mode"):
+            raise ValueError("当前免费天气来源用于非商业直播")
+        self.store.set("live_options", options.model_dump())
+        self.wake.set()
+        return options
 
-        event = Event(
-            platform="live",
-            room_id=self.session_id or "default",
-            event_id=f"poll_result:{uuid4()}",
-            type="chat",
-            platform_user_id="system",
-            display_name="直播间播报",
-            text=result["summary_text"],
-            timestamp=datetime.now(UTC),
-            metadata={"poll_result": result},
+    def timezone(self):
+        return self.options().timezone or self.runtime.browsing.policy().get("business_timezone", "Asia/Taipei")
+
+    def room_context(self, event):
+        room = (event.get("platform"), event.get("room_id"))
+        event_id = event.get("event_id")
+        cutoff = time.time() - self.settings.data["event_ttl_seconds"]
+        return {
+            "弹幕": [
+                {key: item[key] for key in ("event_id", "uid", "display_name", "text")}
+                for item in self.recent_barrage
+                if (item["platform"], item["room_id"]) == room
+                and item["event_id"] != event_id and item["at"] >= cutoff
+            ][-6:],
+            "活动": [
+                {k: v for k, v in item.items() if k not in {"platform", "room_id", "started_at", "duration"}}
+                for item in self.recent_activities
+                if (item["platform"], item["room_id"]) == room
+            ][-2:],
+        }
+
+    def observe_relationship(self, character, event, *, support=False):
+        source = "live:" + json.dumps(
+            [self.session_id, event["platform"], event["room_id"], event["event_id"]],
+            separators=(",", ":"),
         )
-        await self.submit(event)
+        return self.runtime.relationships.observe_live(
+            self.session_id, character["id"], event["platform"], event["platform_user_id"],
+            event["display_name"], source, event["text"],
+            account_id=event["metadata"].get("_live_account", ""), support=support,
+        )
+
+    async def generate_text_reply(self, generate, messages, character, event):
+        options = self.options()
+        if options.weather and self.settings.data.get("commercial_mode"):
+            options = options.model_copy(update={"weather": None})
+        provider = self.runtime.llm
+        if (options.web_fetch or options.weather) and getattr(provider, "supports_operation_web_fetch", False):
+            return await self.lookup.generate(provider, messages, event["event_id"], options)
+        return await generate(messages, character, event["event_id"], event["text"])
+
+    def start_poll(self, request):
+        if self.state not in {"live", "paused"}:
+            raise ValueError("请先启动直播会话")
+        self.expire_poll()
+        activity = self.activity_filter.start_poll(request)
+        self.recent_activities.append(activity)
+        self.poll_timer = asyncio.get_running_loop().call_later(request.duration_seconds, self.finish_poll)
+        return activity
+
+    def finish_poll(self):
+        if self.poll_timer:
+            self.poll_timer.cancel()
+            self.poll_timer = None
+        result = self.activity_filter.end_poll()
+        if result:
+            self.recent_activities.append(result)
         return result
+
+    def expire_poll(self):
+        if self.activity_filter.active_poll and not self.activity_filter.is_poll_active():
+            self.finish_poll()
+
+    def reset_poll(self):
+        if self.poll_timer:
+            self.poll_timer.cancel()
+            self.poll_timer = None
+        self.activity_filter = LiveActivityFilter()
+
+    def idle_deadline(self):
+        if self.state != "live" or self.muted or not self.overlay or not self.options().idle:
+            return None
+        due = self.last_activity + IDLE_AFTER
+        if self.idle_attempts:
+            due = max(due, self.idle_attempts[-1] + IDLE_COOLDOWN)
+        if len(self.idle_attempts) == self.idle_attempts.maxlen:
+            due = max(due, self.idle_attempts[0] + IDLE_WINDOW)
+        return due
+
+    def idle_unplayed(self):
+        job = self.store.job(self.current_id) if self.current_id else None
+        return bool(
+            job and job["status"] not in TERMINAL | {"playing"}
+            and self.store.event(job["event_id"])["payload"]["type"] == "idle"
+        )
 
     def pick(self):
         # Basic P0 gift priority, alternating with chat to prevent starvation; P1 audio quotas remain separate.
@@ -441,8 +582,26 @@ class LiveSession:
 
     async def _loop(self):
         while True:
-            await self.wake.wait()
+            deadline = self.idle_deadline()
+            delay = max(0.001, deadline - time.monotonic()) if deadline is not None else None
+            if not self.queue or self.state != "live" or self.muted:
+                try:
+                    await asyncio.wait_for(self.wake.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
             self.wake.clear()
+            idle_at = self.idle_deadline()
+            if not self.queue and idle_at is not None and time.monotonic() >= idle_at:
+                if self.runtime.generation_lock.locked():
+                    self.last_activity = time.monotonic()
+                else:
+                    self.idle_attempts.append(time.monotonic())
+                    line = (
+                        IDLE_LINES[self.idle_index] if self.runtime.character["id"] == "whale"
+                        else "安静一会儿，你们想聊了就叫我。"
+                    )
+                    await self._submit(Event(type="idle", text=line), internal=True)
+                    self.idle_index = (self.idle_index + 1) % len(IDLE_LINES)
             while self.queue and self.state == "live" and not self.muted:
                 self.current_id = self.pick()
                 self.online_songs.sync()
@@ -464,6 +623,9 @@ class LiveSession:
             job = self.store.job(job_id)
             row = self.store.event(job["event_id"])
             event = row["payload"]
+            account_id = event["metadata"].get("_live_account")
+            if account_id:
+                event["account_id"] = account_id
             if event["type"] == "song":
                 await self._process_song(job_id, job)
                 return
@@ -496,7 +658,11 @@ class LiveSession:
                 else:
                     self.store.update_job(job_id, status="generating")
                     meta = event.get("metadata") or {}
-                    if meta.get("draw_guess_won"):
+                    if event["type"] == "idle":
+                        reply = Reply(spoken_text=event["text"], emotion="cheerful", animation_id="talk")
+                        answer_check = None
+                        self.timings["llm_ms"] = 0
+                    elif meta.get("draw_guess_won"):
                         reply = Reply(
                             spoken_text=meta["draw_guess_won"]["spoken_text"],
                             emotion="cheerful",
@@ -538,7 +704,10 @@ class LiveSession:
                             "live:" + self.session_id,
                             character,
                             event,
-                            self.store.relationship(character["id"], row["user_id"]),
+                            self.runtime.relationships.live_view(
+                                self.session_id, character["id"], event["platform"],
+                                event["platform_user_id"], account_id=account_id or "",
+                            ),
                         )
                         self.timings["llm_ms"] = round((time.perf_counter() - started) * 1000)
                     self.store.update_job(
@@ -668,6 +837,16 @@ class LiveSession:
         activity=None,
         final_segment=True,
     ):
+        if not media and self.settings.data.get("features", {}).get("live_enabled"):
+            try:
+                activity = await asyncio.to_thread(inspect_wav, audio.path, envelope=True)
+            except ValueError:
+                activity = None
+        if self.idle_unplayed() and (self.state != "live" or not self.options().idle):
+            job = self.store.job(job_id)
+            self.store.update_job(job_id, status="cancelled", error="冷场任务已暂停或关闭")
+            self.store.execute("UPDATE events SET status='cancelled' WHERE id=?", (job["event_id"],))
+            return
         deadline = time.monotonic() + self.settings.data.get("playback_wait_seconds", 45)
         while not self.overlay:
             if time.monotonic() > deadline:
@@ -742,6 +921,8 @@ class LiveSession:
             return None
         owner = str(uuid4())
         self.overlay, self.overlay_id = websocket, owner
+        self.last_activity = time.monotonic()
+        self.wake.set()
         await websocket.send_json(
             {
                 "type": "hello",
@@ -755,6 +936,7 @@ class LiveSession:
         if owner and owner == self.overlay_id:
             self.overlay, self.overlay_id = None, None
             await self.cancel_current("overlay断线，任务取消且不重播")
+            self.wake.set()
 
     async def acknowledge(self, owner, data):
         if not owner or owner != self.overlay_id or data.get("job_id") != self.current_id:
@@ -801,7 +983,9 @@ class LiveSession:
             event = self.store.event(job["event_id"])["payload"]
             character = self.store.character(job["character_id"], job["character_version"])
             check = json.loads(job["answer_check"]) if job.get("answer_check") else {}
-            if event["type"] != "song":
+            if event["type"] not in {"song", "idle"}:
+                if account_id := event["metadata"].get("_live_account"):
+                    event["account_id"] = account_id
                 self.runtime.context.record(
                     "live:" + job["session_id"],
                     character,
@@ -809,7 +993,10 @@ class LiveSession:
                     job["text"],
                     memory_kind=check.get("memory_kind"),
                 )
+            if event["type"] == "chat":
+                self.observe_relationship(character, event)
             self.last_played = self.store.job(job["id"])
+            self.last_activity = time.monotonic()
             self.playback_done.set()
             self.media_changed.set()
             return True
@@ -821,3 +1008,8 @@ class LiveSession:
             self.media_changed.set()
             return True
         return False
+
+
+def clean_barrage(text):
+    text = text.strip()
+    return text if len(set(text)) >= 2 else ""

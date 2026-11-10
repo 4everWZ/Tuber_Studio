@@ -14,8 +14,11 @@ from pydantic import Field
 
 from ..media_cache import CachePolicy
 from ..models import Event, StrictModel
+from .activity_filter import LivePoll
+from .avatar import LiveAvatar
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from .online_songs import SongRequestSettings
+from .options import LiveOptions
 
 
 class ConfirmSong(StrictModel):
@@ -25,6 +28,7 @@ class ConfirmSong(StrictModel):
 
 def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin):
     media, store = runtime.live.media, runtime.store
+    avatar = LiveAvatar(settings)
 
     async def require_view(request: Request):
         if not (admin_ok(request) or overlay_ok(request)):
@@ -57,7 +61,8 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         events = [
             json.loads(row["payload"])
             for row in store.all(
-                "SELECT payload FROM events WHERE session_id=? ORDER BY id DESC LIMIT 20",
+                "SELECT payload FROM events WHERE session_id=? AND status NOT IN ('filtered','expired','dropped') "
+                "AND json_extract(payload,'$.type') IN ('chat','gift') ORDER BY id DESC LIMIT 20",
                 (runtime.live.session_id,),
             )
         ]
@@ -68,11 +73,15 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
             "events": list(reversed(events)),
             "character": {key: character[key] for key in ("id", "name", "version")},
             "assets": settings.assets(character),
+            "live2d": avatar.projection(character["id"]),
             "playback": runtime.live.playback,
             "state": runtime.live.state,
             "muted": runtime.live.muted,
             "server_time": time.time(),
             "overlay_connected": runtime.live.overlay is not None,
+            "activities": list(runtime.live.recent_activities),
+            "poll": (runtime.live.activity_filter.active_poll or {}).get("public"),
+            "weather_attribution": bool(runtime.live.options().weather and not settings.data.get("commercial_mode")),
         }
 
     @app.get("/live")
@@ -82,6 +91,14 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
     @app.get("/api/live/view", dependencies=[Depends(require_view)])
     async def live_view():
         return view()
+
+    @app.get("/media/live2d/{group}/{relative:path}", dependencies=[Depends(require_view)])
+    async def live2d_file(group: str, relative: str):
+        try:
+            path = avatar.file(runtime.character["id"], group, relative)
+        except (OSError, KeyError, TypeError, ValueError, AttributeError):
+            raise HTTPException(404, "Live2D 文件未安装") from None
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
 
     @app.put("/api/live/scene", dependencies=[Depends(require_admin)])
     async def save_scene(data: dict = Body(...)):
@@ -221,6 +238,22 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
     @app.post("/api/live/mock-event", dependencies=[Depends(require_admin)])
     async def mock_event(event: Event):
         return await runtime.submit(event)
+
+    @app.get("/api/live/options", dependencies=[Depends(require_admin)])
+    async def live_options():
+        return runtime.live.options()
+
+    @app.put("/api/live/options", dependencies=[Depends(require_admin)])
+    async def set_live_options(data: LiveOptions):
+        return runtime.live.set_options(data)
+
+    @app.post("/api/live/poll/start", dependencies=[Depends(require_admin)])
+    async def start_poll(data: LivePoll):
+        return runtime.live.start_poll(data)
+
+    @app.post("/api/live/poll/finish", dependencies=[Depends(require_admin)])
+    async def finish_poll():
+        return runtime.live.finish_poll()
 
     @app.post("/api/live/{action}", dependencies=[Depends(require_admin)])
     async def control(action: str):

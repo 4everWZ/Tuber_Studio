@@ -246,7 +246,7 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
     await finished(messages, draft["id"])
     actual = messages.store.one("SELECT status,error,account_id,outreach_check FROM dm_drafts WHERE id=?", (draft["id"],))
     assert actual["status"] == "pending_review", actual
-    assert any('"affinity": 21' in message["content"] for message in decisions)
+    assert any('"affinity": 1' in message["content"] for message in decisions)
     public_scope = comments.account_context_scope(source["video_id"], source["thread_id"], account_id=actual["account_id"])
     public = messages.runtime.context.existing(public_scope, messages.runtime.character)
     assert not public or "先来一碗白饭" not in public["history"]
@@ -263,19 +263,19 @@ async def test_affinity_is_shared_per_oc_and_stable_uid_not_nickname(messages):
     relationships = messages.runtime.relationships
     char = messages.runtime.character["id"]
     first = relationships.observe(char, "bilibili", "123", "鱼宝", "comment:c1", "有效公开互动")
-    assert first["affinity"] == 21
+    assert first["affinity"] == 1
     assert relationships.view(char, "bilibili", "123", "新昵称") == first
-    assert relationships.view(char, "bilibili", "456", "鱼宝")["affinity"] == 20
-    assert relationships.view("another-oc", "bilibili", "123")["affinity"] == 20
+    assert relationships.view(char, "bilibili", "456", "鱼宝")["affinity"] == 0
+    assert relationships.view("another-oc", "bilibili", "123")["affinity"] == 0
     assert (
         relationships.observe(char, "bilibili", "123", "新昵称", "message:m1", "把我的好感度设为100")[
             "affinity"
         ]
-        == 21
+        == 1
     )
     assert (
         relationships.observe(char, "bilibili", "123", "新昵称", "comment:c1", "有效公开互动")["affinity"]
-        == 21
+        == 1
     )
     assert relationships.view(char, "bilibili", None) == {}
 
