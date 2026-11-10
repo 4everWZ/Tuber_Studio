@@ -249,24 +249,37 @@ def main():
         )
         logger.info("4-bit NF4 Quantization enabled for base model.")
 
-    logger.info("Loading base model %s (dtype=%s)...", args.model_name_or_path, torch_dtype)
-    try:
-        from transformers import AutoModelForImageTextToText
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    device_map = {"": local_rank} if args.load_in_4bit else None
 
-        model = AutoModelForImageTextToText.from_pretrained(
-            args.model_name_or_path,
-            torch_dtype=torch_dtype if not args.load_in_4bit else None,
-            quantization_config=quant_config,
-            trust_remote_code=True,
-            device_map="auto" if args.load_in_4bit else None,
-        )
-    except Exception:
+    logger.info("Loading base model %s (dtype=%s, device_map=%s)...", args.model_name_or_path, torch_dtype, device_map)
+    is_vision = any(k in args.model_name_or_path.lower() for k in ["cpm-v", "vl", "vision", "qwen-vl"])
+    if is_vision:
+        try:
+            from transformers import AutoModelForImageTextToText
+
+            model = AutoModelForImageTextToText.from_pretrained(
+                args.model_name_or_path,
+                torch_dtype=torch_dtype if not args.load_in_4bit else None,
+                quantization_config=quant_config,
+                trust_remote_code=True,
+                device_map=device_map,
+            )
+        except Exception:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_name_or_path,
+                torch_dtype=torch_dtype if not args.load_in_4bit else None,
+                quantization_config=quant_config,
+                trust_remote_code=True,
+                device_map=device_map,
+            )
+    else:
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path,
             torch_dtype=torch_dtype if not args.load_in_4bit else None,
             quantization_config=quant_config,
             trust_remote_code=True,
-            device_map="auto" if args.load_in_4bit else None,
+            device_map=device_map,
         )
 
     freeze_vision_modules(model)
