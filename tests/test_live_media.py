@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.live.media import default_scene, inspect_wav
+from tuber_studio.live.studio import room_feed
 from tuber_studio.models import Event, Reply
 from tuber_studio.providers import Audio
 
@@ -79,7 +80,8 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
             except asyncio.CancelledError:
                 second_cancelled.set()
                 raise
-        return Audio(runtime.settings.audio / f"segment-{len(calls)}.wav", 0.4, part)
+        actual = part if len(calls) == 1 else "下一轮我们慢一点。"
+        return Audio(runtime.settings.audio / f"segment-{len(calls)}.wav", 0.4, actual)
 
     monkeypatch.setattr(runtime, "generate_reply", reply)
     monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
@@ -103,6 +105,7 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
     assert not await runtime.live.acknowledge(owner, first | {"type": "ended"})
     assert store.job(job_id)["status"] == "synthesizing"
     assert not store.all("SELECT * FROM conversations")
+    assert room_feed(runtime.live)["last_spoken"] is None
 
     if cancel:
         await runtime.live.cancel_current()
@@ -115,14 +118,16 @@ async def test_genie_live_plays_first_clause_while_next_is_synthesizing(runtime,
     second_release.set()
     await wait_for(lambda: len(plays()) == 2)
     second = {"job_id": job_id, "playback_token": plays()[1]["playback_token"]}
-    assert plays()[1]["text"] == "下一轮我们慢一点试试。"
+    assert plays()[1]["text"] == "下一轮我们慢一点。"
     assert second != first
     assert not await runtime.live.acknowledge(owner, first | {"type": "ended"})
     assert await runtime.live.acknowledge(owner, second | {"type": "started"})
     assert runtime.live.timings["first_audio_ms"] == first_audio_ms
     assert await runtime.live.acknowledge(owner, second | {"type": "ended"})
     assert store.job(job_id)["status"] == "completed"
-    assert [row["reply_text"] for row in store.all("SELECT * FROM conversations")] == [text]
+    spoken = "鱼鱼刚看完这一段，下一轮我们慢一点。"
+    assert [row["reply_text"] for row in store.all("SELECT * FROM conversations")] == [spoken]
+    assert room_feed(runtime.live)["last_spoken"]["text"] == spoken
 
 
 async def test_song_is_real_playback_and_never_enters_dialogue_memory(runtime, store):
@@ -216,6 +221,7 @@ def test_live_api_scopes_streaming_upload_and_scene_persistence(settings):
         assert client.post("/api/live/uploads", content=pcm()).status_code == 401
         client.post("/api/overlay/auth", json={"token": settings.overlay_token})
         assert client.get("/api/live/view").status_code == 200
+        assert client.get("/api/live/studio").status_code == 401
         assert client.put("/api/live/scene", json=default_scene()).status_code == 401
         assert client.get("/api/live/music").status_code == 401
         client.post("/api/auth", json={"token": settings.admin_token})
@@ -233,6 +239,29 @@ def test_live_api_scopes_streaming_upload_and_scene_persistence(settings):
             == 403
         )
         assert client.put("/api/live/queue", json=["missing"]).status_code == 400
+
+
+def test_live_studio_limits_chat_and_dialogue_to_this_session(settings):
+    with TestClient(create_app(settings)) as client:
+        client.post("/api/overlay/auth", json={"token": settings.overlay_token}).raise_for_status()
+        client.headers["Authorization"] = f"Bearer {settings.admin_token}"
+        client.post("/api/live/start").raise_for_status()
+        client.post("/api/live/pause").raise_for_status()
+        client.post("/api/live/poll/start", json={"topic": "晚饭", "options": ["白饭", "海带"]}).raise_for_status()
+        for text, uid in [("1", "first-viewer"), ("刚刚聊到哪了？", "second-viewer")]:
+            client.post("/api/live/mock-event", json={"text": text, "platform_user_id": uid}).raise_for_status()
+        desk = client.get("/api/live/studio").raise_for_status().json()
+        assert [row["text"] for row in desk["chat"]] == ["刚刚聊到哪了？"]
+        assert [row["status"] for row in desk["dialogue"]] == ["queued"]
+        assert desk["dialogue"][0]["text"] is None and desk["last_spoken"] is None
+        output = client.get("/api/live/view", headers={"Authorization": ""}).raise_for_status().json()
+        assert output["queue"] == []
+        assert set(output["events"][0]) == {"type", "display_name", "text"}
+        client.post("/api/live/stop").raise_for_status()
+        client.post("/api/live/start").raise_for_status()
+        next_desk = client.get("/api/live/studio").raise_for_status().json()
+        assert desk["session_id"] != next_desk["session_id"]
+        assert not next_desk["chat"] and not next_desk["dialogue"]
 
 
 @pytest.mark.parametrize("action", ["mute", "skip", "stop"])

@@ -280,14 +280,15 @@ class Store:
         )
         return list(reversed(rows))
 
-    def complete(self, job_id):
+    def complete(self, job_id, spoken_text):
         job = self.job(job_id)
         if job["status"] != "playing":
             return False
         event = self.event(job["event_id"])
         with self.db:
             self.db.execute(
-                "UPDATE jobs SET status='completed',updated_at=? WHERE id=?", (time.time(), job_id)
+                "UPDATE jobs SET status='completed',text=?,updated_at=? WHERE id=?",
+                (spoken_text, time.time(), job_id),
             )
             self.db.execute("UPDATE events SET status='completed' WHERE id=?", (event["id"],))
             if event["payload"]["type"] in {"song", "idle"}:
@@ -300,7 +301,7 @@ class Store:
                     job["character_id"],
                     event["user_id"],
                     event["payload"]["text"],
-                    job["text"],
+                    spoken_text,
                     job_id,
                     time.time(),
                 ),

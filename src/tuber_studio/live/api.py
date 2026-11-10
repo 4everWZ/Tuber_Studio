@@ -19,6 +19,7 @@ from .avatar import LiveAvatar
 from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspect_audio
 from .online_songs import SongRequestSettings
 from .options import LiveOptions
+from .studio import room_feed
 
 
 class ConfirmSong(StrictModel):
@@ -34,12 +35,14 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         if not (admin_ok(request) or overlay_ok(request)):
             raise HTTPException(401, "需要管理或播放器凭证")
 
-    def view():
+    def view(*, operator=False):
         queued = []
         for identity in runtime.live.queue:
             job = store.job(identity)
             event = store.event(job["event_id"])["payload"]
             snapshot = json.loads(job["media"]) if job.get("media") else None
+            if not operator and snapshot is None:
+                continue
             is_online = bool(snapshot and snapshot.get("online"))
             if snapshot:
                 snapshot = {
@@ -50,22 +53,22 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
                 {
                     "id": identity,
                     "type": event["type"],
-                    "text": event["text"],
+                    "text": event["text"] if operator else snapshot["song"]["title"],
                     "requester": event["display_name"],
                     "media": snapshot,
                     "preparation": runtime.live.online_songs.preparation_status(identity)
-                    if is_online
+                    if is_online and operator
                     else None,
                 }
             )
-        events = [
-            json.loads(row["payload"])
-            for row in store.all(
-                "SELECT payload FROM events WHERE session_id=? AND status NOT IN ('filtered','expired','dropped') "
-                "AND json_extract(payload,'$.type') IN ('chat','gift') ORDER BY id DESC LIMIT 20",
-                (runtime.live.session_id,),
-            )
-        ]
+        events = store.all(
+            "SELECT json_extract(payload,'$.type') AS type, "
+            "json_extract(payload,'$.display_name') AS display_name, "
+            "json_extract(payload,'$.text') AS text "
+            "FROM events WHERE session_id=? AND status NOT IN ('filtered','expired','dropped') "
+            "AND json_extract(payload,'$.type') IN ('chat','gift') ORDER BY id DESC LIMIT 20",
+            (runtime.live.session_id,),
+        )
         character = runtime.character
         return {
             "scene": media.scene(),
@@ -89,8 +92,16 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         return FileResponse(Path(__file__).parents[1] / "web/live.html")
 
     @app.get("/api/live/view", dependencies=[Depends(require_view)])
-    async def live_view():
-        return view()
+    async def live_view(request: Request):
+        return view(operator=admin_ok(request))
+
+    @app.get("/api/live/studio", dependencies=[Depends(require_admin)])
+    async def live_studio():
+        inference = runtime.inference.status or {}
+        pending = (inference.get("operation") or {}).get("mode")
+        return view(operator=True) | room_feed(runtime.live) | {
+            "inference_transitioning": pending is not None and pending != inference.get("mode"),
+        }
 
     @app.get("/media/live2d/{group}/{relative:path}", dependencies=[Depends(require_view)])
     async def live2d_file(group: str, relative: str):

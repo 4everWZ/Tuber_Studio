@@ -55,6 +55,7 @@ class LiveSession:
         self.last_gift = False
         self.media = LiveMedia(self.settings, self.store, singing_provider=singing_provider)
         self.playback = None
+        self.spoken_parts = []
         self.media_changed = asyncio.Event()
         self.online_songs = OnlineSongs(runtime)
         self.activity_filter = LiveActivityFilter()
@@ -95,6 +96,8 @@ class LiveSession:
         self.recent_barrage.clear()
         self.recent_activities.clear()
         self.accept_times.clear()
+        self.last_played = None
+        self.timings = dict.fromkeys(self.timings)
         self.idle_attempts.clear()
         self.runtime.relationships.clear_live()
         self.last_activity = time.monotonic()
@@ -249,6 +252,8 @@ class LiveSession:
             raise ValueError("冷场任务只由直播调度器生成")
         metadata = dict(event.metadata)
         metadata.pop("_live_account", None)
+        metadata.pop("_live_input", None)
+        original_type, original_text = event.type, event.text
         if verified_account_id and event.platform == "bilibili":
             metadata["_live_account"] = str(verified_account_id)
         event = event.model_copy(update={"metadata": metadata})
@@ -427,6 +432,10 @@ class LiveSession:
             and time.monotonic() - self.accept_times.get(user_key, -10000) < cooldown
         ):
             status, reason = "filtered", "同用户短时限流"
+        if original_type in {"chat", "gift"} and (event.type, event.text) != (original_type, original_text):
+            event = event.model_copy(update={
+                "metadata": {**event.metadata, "_live_input": {"type": original_type, "text": original_text}},
+            })
         db_id, fresh = self.store.add_event(event, self.session_id, status, reason)
         if not fresh:
             return {"id": db_id, "status": "duplicate", "reason": "重复事件，不再入队"}
@@ -619,7 +628,8 @@ class LiveSession:
 
     async def _process(self, job_id):
         try:
-            self.timings["first_audio_ms"] = None
+            self.timings = dict.fromkeys(self.timings)
+            self.spoken_parts.clear()
             job = self.store.job(job_id)
             row = self.store.event(job["event_id"])
             event = row["payload"]
@@ -968,18 +978,17 @@ class LiveSession:
             if self.playback:
                 self.playback["started"] = True
             return True
-        if (
-            data.get("type") == "ended"
-            and job["status"] == "playing"
-            and self.playback
-            and not self.playback["final_segment"]
-        ):
-            self.store.update_job(job["id"], status="synthesizing", playback_token=None)
-            self.playback = None
-            self.playback_done.set()
-            self.media_changed.set()
-            return True
-        if data.get("type") == "ended" and self.store.complete(job["id"]):
+        if data.get("type") == "ended" and job["status"] == "playing" and self.playback:
+            self.spoken_parts.append(self.playback["text"])
+            if not self.playback["final_segment"]:
+                self.store.update_job(job["id"], status="synthesizing", playback_token=None)
+                self.playback = None
+                self.playback_done.set()
+                self.media_changed.set()
+                return True
+            spoken = "".join(self.spoken_parts)
+            if not self.store.complete(job["id"], spoken):
+                return False
             event = self.store.event(job["event_id"])["payload"]
             character = self.store.character(job["character_id"], job["character_version"])
             check = json.loads(job["answer_check"]) if job.get("answer_check") else {}
@@ -990,20 +999,27 @@ class LiveSession:
                     "live:" + job["session_id"],
                     character,
                     event,
-                    job["text"],
+                    spoken,
                     memory_kind=check.get("memory_kind"),
                 )
             if event["type"] == "chat":
                 self.observe_relationship(character, event)
             self.last_played = self.store.job(job["id"])
             self.last_activity = time.monotonic()
+            self.playback = None
             self.playback_done.set()
             self.media_changed.set()
             return True
         if data.get("type") == "failed" and job["status"] not in TERMINAL:
+            message = "浏览器播放失败，请检查自动播放权限／音频设备"
             self.store.update_job(
-                job["id"], status="failed", error="浏览器播放失败，请检查自动播放权限／音频设备"
+                job["id"], status="failed", error=message
             )
+            self.store.execute(
+                "UPDATE events SET status='failed',reason=? WHERE id=?", (message, job["event_id"])
+            )
+            self.runtime.error = message
+            self.playback = None
             self.playback_done.set()
             self.media_changed.set()
             return True
