@@ -166,11 +166,19 @@ def test_generation(model, tokenizer, prompt, sys_prompt=SYSTEM_PROMPT, max_toke
         {"role": "user", "content": prompt},
     ]
     try:
-        formatted = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
-        )
-    except (TypeError, ValueError):
-        formatted = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        try:
+            formatted = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
+            )
+        except (TypeError, ValueError):
+            formatted = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    except Exception:
+        bos = getattr(tokenizer, "bos_token", "") or ""
+        model_name = str(getattr(model, "name_or_path", "")).lower()
+        if "gemma" in model_name:
+            formatted = f"{bos}<start_of_turn>user\n{sys_prompt}\n\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+        else:
+            formatted = f"{bos}<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
 
     inputs = tokenizer(formatted, return_tensors="pt").to(model.device)
 
