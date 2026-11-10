@@ -44,6 +44,8 @@ class Store:
                 character_version INTEGER,status TEXT NOT NULL,text TEXT,emotion TEXT,
                 animation_id TEXT,audio_ref TEXT,error TEXT,llm_ms REAL,tts_ms REAL,
                 playback_token TEXT,answer_check TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS events_session ON events(session_id,id);
+            CREATE INDEX IF NOT EXISTS jobs_session_played ON jobs(session_id,status,updated_at);
             CREATE TABLE IF NOT EXISTS conversations(
                 id INTEGER PRIMARY KEY,session_id TEXT,character_id TEXT,user_id INTEGER,
                 event_text TEXT,reply_text TEXT,job_id TEXT UNIQUE,created_at REAL NOT NULL);

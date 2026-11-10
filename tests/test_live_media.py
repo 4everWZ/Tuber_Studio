@@ -159,6 +159,30 @@ async def test_song_is_real_playback_and_never_enters_dialogue_memory(runtime, s
     assert not store.all("SELECT * FROM context_windows")
 
 
+async def test_live_studio_alert_tracks_actual_playback_recovery(runtime):
+    song = await add_song(runtime)
+    player = Player()
+    owner = await runtime.live.attach_overlay(player)
+    await runtime.control("start")
+
+    async def request_song():
+        result = await runtime.submit(Event(type="song", text=song["title"]))
+        identity = result["job_id"]
+        await wait_for(lambda: any(message.get("job_id") == identity for message in player.messages))
+        play = next(message for message in player.messages if message.get("job_id") == identity)
+        return {"job_id": identity, "playback_token": play["playback_token"]}
+
+    failed = await request_song()
+    assert await runtime.live.acknowledge(owner, failed | {"type": "failed"})
+    assert "浏览器播放失败" in room_feed(runtime.live)["error"]
+    await wait_for(lambda: runtime.live.current_id is None)
+
+    recovered = await request_song()
+    assert await runtime.live.acknowledge(owner, recovered | {"type": "started"})
+    assert await runtime.live.acknowledge(owner, recovered | {"type": "ended"})
+    assert room_feed(runtime.live)["error"] is None
+
+
 async def test_song_snapshot_dedup_permissions_and_unsupported_singing(runtime):
     await add_song(runtime)
     await runtime.control("start")

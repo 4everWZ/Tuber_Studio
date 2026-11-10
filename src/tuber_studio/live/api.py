@@ -100,6 +100,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         inference = runtime.inference.status or {}
         pending = (inference.get("operation") or {}).get("mode")
         return view(operator=True) | room_feed(runtime.live) | {
+            "live_enabled": settings.data.get("features", {}).get("live_enabled", False),
             "inference_transitioning": pending is not None and pending != inference.get("mode"),
         }
 
