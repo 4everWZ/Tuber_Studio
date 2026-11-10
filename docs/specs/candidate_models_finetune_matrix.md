@@ -56,3 +56,22 @@
 - **Xet CAS 全局隔离**: 显式关闭 `HF_HUB_ENABLE_XET`，禁止临时 CAS 数据块污染 `~/.cache/huggingface/hub/blobs/`；
 - **检查点轻量化**: 每个候选模型微调完成后，自动清理 `checkpoint-*` 冗余优化器权重，仅保留轻量化最终 Adapter（~50-100MB）；
 - **低盘阈值熔断**: 运行前强制校验 NVMe 可用空间 $\ge 30\text{ GB}$，空间不足时自动熔断并告警。
+
+---
+
+## 5. 权重与端侧部署发布汇总 (Hugging Face & Ollama)
+
+### A. Hugging Face 权重与量化库 (`4everImmortality`)
+
+| 资产类型 | 模型 / 规格 | 仓库链接 | 大小 / 格式 | 用途说明 |
+| :--- | :--- | :--- | :---: | :--- |
+| **DoRA 适配器** | Qwen 3.5 4B | [4everImmortality/dafeiyu-qwen35-4b-dora](https://huggingface.co/4everImmortality/dafeiyu-qwen35-4b-dora) | ~85 MB | 拟真度 98.7 首选轻量适配器 |
+| **DoRA 适配器** | Qwen 3.5 9B | [4everImmortality/dafeiyu-qwen35-9b-dora](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-dora) | ~110 MB | 256K 超长上下文创作主力适配器 |
+| **QLoRA 适配器** | Gemma 4 12B | [4everImmortality/dafeiyu-gemma4-12b-qlora](https://huggingface.co/4everImmortality/dafeiyu-gemma4-12b-qlora) | ~95 MB | 多模态大模型底座适配器 |
+| **GGUF 量化包** | Qwen 3.5 4B | [4everImmortality/dafeiyu-qwen35-4b-gguf](https://huggingface.co/4everImmortality/dafeiyu-qwen35-4b-gguf) | 2.51 GB (Q4_K_M) | 适用于边缘端/个人电脑极速推论 |
+| **GGUF 量化包** | Qwen 3.5 9B | [4everImmortality/dafeiyu-qwen35-9b-gguf](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf) | 5.23 GB (Q4_K_M) | 适用于 24G+ 显存/AGX 深度长文创作 |
+
+### B. AGX Orin 边缘端运行拓扑 (`100.65.102.90:11434`)
+
+- **`dafeiyu-v2:latest`** (Qwen 3.5 9B Q4_K_M): 驻留显存 ~5.6 GB，解码速率 **23.1 tokens/s**，主理多轮复杂企划与深海电台角色扮演；
+- **`dafeiyu-4b:latest`** (Qwen 3.5 4B Q4_K_M `--no-mtp`): 驻留显存 ~3.2 GB，解码速率 **32.7 tokens/s**，首字延迟 <180ms，主理实时直播弹幕与伴播应答。
