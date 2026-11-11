@@ -159,33 +159,6 @@ async def test_thinking_override_is_explicit_and_only_sent_by_llama_adapter(
             assert "chat_template_kwargs" not in body
 
 
-@pytest.mark.parametrize("effort", [None, "none", "high"])
-async def test_explicit_reasoning_effort_reaches_text_probe_and_vision(settings, transport, effort):
-    captured, state = transport
-    state["text"] = "蓝色杯子。"
-    config = settings.data["llm"] | {
-        "kind": "openai_compatible", "base_url": "https://api.test/v1", "model": "remote-model",
-    }
-    config.pop("enable_thinking", None)
-    if effort is not None:
-        config["reasoning_effort"] = effort
-    provider, vision = APIProvider(config), VisionService(config)
-    try:
-        assert await provider.generate_text([{"role": "user", "content": "说个颜色"}], max_tokens=20)
-        assert await vision.describe("杯子什么颜色", b"\x89PNG\r\n\x1a\nimage", "image/png")
-    finally:
-        await provider.close()
-        await vision.close()
-    posts = [json.loads(request.content) for request in captured if request.method == "POST"]
-    assert len(posts) == 3 and posts[0]["max_tokens"] == 1
-    for body in posts:
-        if effort is None:
-            assert "reasoning_effort" not in body
-        else:
-            assert body["reasoning_effort"] == effort
-        assert "chat_template_kwargs" not in body
-
-
 @pytest.mark.parametrize("adapter", ["openai_compatible", "llama_cpp"])
 async def test_explicit_llama_sampling_is_forwarded_without_polluting_generic_apis(
     settings, store, transport, adapter

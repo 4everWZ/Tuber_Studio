@@ -83,7 +83,6 @@ class APIProvider:
             "messages": single_system_messages(provider_identity_messages(self, messages)),
             "max_tokens": budget,
             "stream": False,
-            **({"reasoning_effort": self.config["reasoning_effort"]} if "reasoning_effort" in self.config else {}),
         }
         thinking = self.config.get("enable_thinking")
         if self.adapter == "llama_cpp" and thinking is not None:
@@ -340,7 +339,6 @@ class VisionService:
                 ],
                 "max_tokens": self.config.get("max_tokens", 1024),
                 "stream": False,
-                **({"reasoning_effort": self.config["reasoning_effort"]} if "reasoning_effort" in self.config else {}),
                 **(
                     {"chat_template_kwargs": {"enable_thinking": self.config["enable_thinking"]}}
                     if "enable_thinking" in self.config
