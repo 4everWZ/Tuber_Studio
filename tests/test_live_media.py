@@ -179,6 +179,11 @@ async def test_live_studio_alert_tracks_actual_playback_recovery(runtime):
 
     recovered = await request_song()
     assert await runtime.live.acknowledge(owner, recovered | {"type": "started"})
+    playing = room_feed(runtime.live)
+    assert playing["current"]["status"] == "playing" and playing["error"] is None
+    diagnostic, = playing["dialogue"]
+    assert diagnostic["id"] == failed["job_id"] and diagnostic["song_title"] == song["title"]
+    assert "浏览器播放失败" in diagnostic["error"]
     assert await runtime.live.acknowledge(owner, recovered | {"type": "ended"})
     assert room_feed(runtime.live)["error"] is None
 

@@ -16,11 +16,13 @@ def room_feed(live):
         "SELECT j.id, j.event_id, json_extract(e.payload,'$.type') AS type, "
         "json_extract(e.payload,'$.display_name') AS requester, j.status, "
         "CASE WHEN j.status='completed' THEN j.text END AS text, "
+        "json_extract(j.media,'$.song.title') AS song_title, "
         "CASE WHEN j.status IN ('failed','cancelled','expired') THEN j.error END AS error, j.created_at "
         "FROM jobs j JOIN events e ON j.event_id=e.id WHERE j.session_id=? "
     )
     dialogue = store.all(
-        projection + "AND json_extract(e.payload,'$.type') <> 'song' ORDER BY j.created_at DESC LIMIT 20",
+        projection + "AND (json_extract(e.payload,'$.type') <> 'song' OR j.status='failed') "
+        "ORDER BY j.created_at DESC LIMIT 20",
         (live.session_id,),
     )
     current = store.one(projection + "AND j.id=?", (live.session_id, live.current_id))
@@ -35,12 +37,6 @@ def room_feed(live):
         "ORDER BY j.updated_at DESC LIMIT 1",
         (live.session_id,),
     )
-    unresolved = store.one(
-        "SELECT error FROM jobs WHERE session_id=? AND status='failed' AND updated_at > coalesce("
-        "(SELECT max(updated_at) FROM jobs WHERE session_id=? AND status='completed'),0) "
-        "ORDER BY updated_at DESC LIMIT 1",
-        (live.session_id, live.session_id),
-    )
     return {
         "session_id": live.session_id,
         "chat": list(reversed(chat)),
@@ -48,5 +44,5 @@ def room_feed(live):
         "current": current,
         "last_spoken": last_spoken,
         "timings": live.timings,
-        "error": live.runtime.error if live.state == "degraded" else (unresolved or {}).get("error"),
+        "error": live.runtime.error if live.state == "degraded" else (current or {}).get("error"),
     }

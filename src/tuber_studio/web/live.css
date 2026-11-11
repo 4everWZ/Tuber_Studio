@@ -27,7 +27,7 @@
 [data-live-embedded] #live-desk { margin: 10px 6px 14px; }
 .desk-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .desk-header h1 { font-size: 22px; letter-spacing: 0; }
-.desk-status { display: flex; flex-wrap: wrap; gap: 6px 12px; color: #49676e; margin-top: 3px; font-size: 13px; }
+.desk-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: #49676e; margin-top: 3px; font-size: 13px; }
 .desk-status strong { color: #963e34; }
 .desk-notices p { margin: 0 0 8px; }
 .desk-notices p:empty, .desk-hint:empty { display: none; }

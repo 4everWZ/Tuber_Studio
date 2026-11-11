@@ -1,7 +1,7 @@
 "use strict";
 import { $ } from "./modules/core.js";
 import { api as baseApi } from "./modules/api.js";
-import { LiveDesk } from "./modules/live-desk.js?v=20261111";
+import { LiveDesk } from "./modules/live-desk.js?v=20261111.1";
 
 (() => {
   const focusView = new URLSearchParams(location.search).get("view");
@@ -195,7 +195,7 @@ import { LiveDesk } from "./modules/live-desk.js?v=20261111";
     const value = event.target.type === "checkbox" ? event.target.checked : field === "text" ? event.target.value : Number(event.target.value);
     scene.edit(scene.selected,{[field]:value});
   };
-  $("scene-title").onchange = () => { scene.scene.title = $("scene-title").value; scene.update(state); changed(); };
+  $("scene-title").oninput = event => { scene.scene.title = event.currentTarget.value; scene.update(state); changed(); };
   $("scene-background").onchange = () => { const value = structuredClone(scene.scene); value.background = $("scene-background").value; scene.load(value); changed(); };
   for (const dimension of ["width","height"]) $("canvas-"+dimension).onchange = () => {
     const value = Number($("canvas-"+dimension).value); if (value < (dimension === "width" ? 640 : 360) || value > (dimension === "width" ? 3840 : 2160)) return;

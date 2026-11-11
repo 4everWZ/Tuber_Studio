@@ -140,6 +140,7 @@ export class LiveDesk {
       playback ? "等待播放器确认" : jobLabels[current?.status] || "空闲";
     this.say("[data-desk-session]", sessionLabels[this.view.state] || this.view.state);
     this.say("[data-desk-player]", this.view.overlay_connected ? "播放器已连接" : "播放器未连接");
+    this.find("[data-desk-open-output]").hidden = this.view.overlay_connected;
     this.say("[data-desk-mute-state]", this.view.muted ? "已静音" : "");
     this.say("[data-desk-current-state]", phase);
     this.say("[data-desk-current-title]", song?.title || (current ? kindLabels[current.type] || "互动播报" : "暂无当前节目"));
@@ -223,6 +224,7 @@ export class LiveDesk {
       const state = item.status === "completed" ? "已确认播放" : jobLabels[item.status] || item.status;
       const row = this.feedRow(item, item.created_at, state);
       if (item.status === "completed" && item.text) row.append(element("p", item.text));
+      if (item.type === "song" && item.song_title) row.append(element("p", item.song_title));
       if (item.error && item.status !== "completed") {
         row.append(element("small", item.error, "desk-error"));
       }
