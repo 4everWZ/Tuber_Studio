@@ -321,7 +321,7 @@ class BrowsingRepository:
                 "JOIN browsing_rounds parent ON parent.id=t.round_id "
                 "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.failures<3 "
                 "AND COALESCE(json_extract(parent.config,'$.review_session_id'),'')=? "
-                "AND COALESCE(json_extract(t.payload,'$.next_at'),t.updated_at + 60*r.failures)<=? "
+                "AND COALESCE(json_extract(t.payload,'$.next_at'),t.updated_at)<=? "
                 "ORDER BY t.updated_at LIMIT ?",
                 (*self.retry_scope(row), row["config"].get("review_session_id", ""), time.time(), row["config"]["candidate_limit"]),
             )
@@ -426,6 +426,8 @@ class BrowsingRepository:
                 )
                 task = self.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (task_id,))
                 payload = json.loads(task["payload"]) | {"consecutive_failures": failures}
+                if failures < 3:
+                    payload["next_at"] = time.time() + 60 * failures
                 self.store.db.execute(
                     "UPDATE browsing_tasks SET status=?,payload=? WHERE id=?",
                     ("skipped" if failures == 3 else "retry_wait", dump(payload), task_id),
