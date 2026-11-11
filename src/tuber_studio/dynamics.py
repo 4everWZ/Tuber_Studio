@@ -10,6 +10,7 @@ from datetime import datetime
 
 from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
+from .dynamic_comment_card import comment_card, render_comment_card
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
 from .operation_continuations import content_hash
@@ -61,12 +62,11 @@ def dynamic_decision_messages(character, settings, recent_posts, public_sources,
         {
             "role": "system",
             "content": (
-                "用自己的口吻写给关注你的人。材料来自公开互动和角色故事。"
-                "fictional是海底小剧场，public_incident是发生过的公开互动，聊到自己的糊涂事也可以接梗。"
-                "有想分享的内容就post，留待下次就wait。输出JSON字段："
-                "action(post或wait),reason,content,source_ids,next_evaluation_seconds(300..86400)。"
-                "post正文按当前情境自然决定篇幅，source_ids引用提供的来源ID；wait正文为空。"
-                "content写第一人称动态正文，来源编号放在source_ids。"
+                "给第一次听到这件事的关注者写一条独立动态。挑一件事，说清起因、你当时做了什么、后来怎样。"
+                "public_incident给出经过和原评论；published_reply给出原评论及你当时发出的回复。"
+                "海底小剧场用讲故事的口吻。讲完再接自己的感想或梗，篇幅随这件事决定。"
+                "想分享选post，content写正文，source_ids填这件事对应的一项来源。"
+                "留待下次选wait，content留空。reason写选择缘由，next_evaluation_seconds填300到86400。"
             ),
         },
         {
@@ -234,7 +234,7 @@ class Dynamics:
     def summary_status(self):
         return self.memory_summary.status(
             self._character(),
-            self._summary_sources(),
+            [source for source in self._summary_sources() if source["type"] == "public_memory"],
             self.policy()["memory_summary_max_tokens"],
             self._summary_model(),
         )
@@ -389,7 +389,7 @@ class Dynamics:
             sql += " WHERE status=?"
             args.append(status)
         return [
-            continuation_view(self.runtime, "dynamics", self._decode(r))
+            self._post_view(r)
             for r in self.store.all(sql + " ORDER BY id DESC LIMIT ?", (*args, limit))
         ]
 
@@ -411,11 +411,18 @@ class Dynamics:
         return [self._decode(r) for r in rows]
 
     def _post(self, post_id):
-        return continuation_view(
-            self.runtime,
-            "dynamics",
-            self._decode(self.store.one("SELECT * FROM dynamic_posts WHERE id=?", (post_id,))),
-        )
+        return self._post_view(self.store.one("SELECT * FROM dynamic_posts WHERE id=?", (post_id,)))
+
+    def _post_view(self, row):
+        post = self._decode(row)
+        post["comment_card"] = comment_card(post["sources"])
+        return continuation_view(self.runtime, "dynamics", post)
+
+    def comment_card_image(self, post_id):
+        card = self._post(post_id)["comment_card"]
+        if not card:
+            raise ValueError("这条动态没有原评论图")
+        return render_comment_card(card)
 
     def _valid_sources(self, row):
         char = self._character()
@@ -450,13 +457,15 @@ class Dynamics:
             self._status(post_id, "invalidated", "人物版本或公开来源已变化")
             raise ValueError("人物版本或公开来源已变化，需重新评估")
         if action == "copy":
-            if meme_id:
+            if meme_id or row["comment_card"]:
                 raise ValueError("图文动态不能复制成纯文字，请审核后发布图文")
             if row["status"] != "approved":
                 raise ValueError("请先审核动态再复制")
             return row | {"copy_text": row["content"]}
         content = validate_text(text) if text is not None else row["content"]
         owner = f"dynamic-draft:{post_id}"
+        if meme_id and row["comment_card"]:
+            meme_id = None
         if meme_id and action != "reject":
             if not self.memes:
                 raise ValueError("表情组件尚未启用")
@@ -544,7 +553,12 @@ class Dynamics:
 
     def _outgoing(self, row, character):
         value = {"text": row["content"]}
-        if row.get("meme_id"):
+        if card := row["comment_card"]:
+            value["text"] += "\n\n" + "\n".join(
+                f"原评论：{url}" for url in dict.fromkeys(item["url"] for item in card["comments"])
+            )
+            value["comment_card_sha256"] = hashlib.sha256(render_comment_card(card)).hexdigest()
+        elif row.get("meme_id"):
             if not self.memes:
                 raise ValueError("配图组件未挂载")
             asset = self.memes.resolve(row["meme_id"], character)
@@ -782,7 +796,8 @@ class Dynamics:
                 return {"status": "check_failed", "reason": "account_changed"}
             return await adapter.reconcile_dynamic_publication(
                 row["binding"]["target"]
-                | {"message_kind": "image" if row["feedback"]["sent_payload"].get("meme_id") else "text"},
+                | {"message_kind": "image" if any(row["feedback"]["sent_payload"].get(key)
+                    for key in ("meme_id", "comment_card_sha256")) else "text"},
                 author_uid=account,
                 text=row["feedback"]["sent_payload"]["text"],
                 started_at=attempt["started_at"],
@@ -865,7 +880,9 @@ class Dynamics:
                 raise ValueError("相同正文已尝试发布，请勿重复发送")
             self._check_used_sources(row)
             image = None
-            if row.get("meme_id"):
+            if card := row["comment_card"]:
+                image = {"mime_type": "image/png", "content": render_comment_card(card)}
+            elif row.get("meme_id"):
                 if not self.memes:
                     raise ValueError("图文草稿缺少表情组件，保留待审")
                 image = self.memes.read(row["meme_id"], row["character_id"])
@@ -908,10 +925,11 @@ class Dynamics:
                     fresh["status"] != "publishing"
                     or not self._valid_sources(fresh)
                     or fresh["content"] != row["content"]
+                    or fresh["sources"] != row["sources"]
                     or fresh.get("meme_id") != row.get("meme_id")
                 ):
                     raise PublishCancelled("人物版本或公开来源已变化，取消发送")
-                if image:
+                if image and not card:
                     try:
                         current_asset = self.memes.resolve(row["meme_id"], character)
                         if current_asset["sha256"] != image["asset"]["sha256"]:
@@ -964,6 +982,7 @@ class Dynamics:
             if (
                 fresh["status"] != row["status"]
                 or fresh["content"] != row["content"]
+                or fresh["sources"] != row["sources"]
                 or fresh.get("meme_id") != row.get("meme_id")
             ):
                 raise ValueError("账号核验期间草稿已变化，保留当前审核状态；请重新确认后发布")
@@ -974,13 +993,13 @@ class Dynamics:
                 if image:
                     receipt = await publish_image(
                         adapter,
-                        row["content"],
+                        payload["text"],
                         image,
                         before_send=before_send,
                         prepare_authorized=lambda: before_send(reserve=False),
                     )
                 else:
-                    receipt = await publish_text(adapter, row["content"], before_send=before_send)
+                    receipt = await publish_text(adapter, payload["text"], before_send=before_send)
             except PublishPreparationCancelled:
                 self._status(post_id, row["status"], "配图准备已取消，尚未提交动态")
                 raise
@@ -1045,7 +1064,7 @@ class Dynamics:
                 # remote rejection, even when the local exception is ValueError.
                 self._status(post_id, "publish_uncertain", "平台写入后保存回执失败，请人工核对平台")
                 raise UnknownPublication("平台写入后保存回执失败，请人工核对平台，禁止重试", token) from None
-            if image:
+            if self.memes and row.get("meme_id"):
                 self.memes.release(f"dynamic-draft:{post_id}")
             return self._post(post_id)
 
@@ -1073,7 +1092,7 @@ class Dynamics:
                 "content": {"type": "string"},
                 "source_ids": {
                     "type": "array",
-                    "maxItems": len(sources),
+                    "maxItems": min(len(sources), 1),
                     "items": {"type": "string", "enum": [source["id"] for source in sources]},
                 },
                 "next_evaluation_seconds": {"type": "integer", "minimum": 300, "maximum": 86400},
@@ -1098,7 +1117,7 @@ class Dynamics:
             raise ValueError("模型决定理由无效")
         ids = data["source_ids"]
         allowed = {s["id"] for s in sources}
-        if not isinstance(ids, list) or any(not isinstance(i, str) for i in ids) or len(set(ids)) != len(ids):
+        if not isinstance(ids, list) or len(ids) > 1 or any(not isinstance(i, str) for i in ids):
             raise ValueError("模型来源列表无效")
         if not set(ids) <= allowed or (data["action"] == "post" and not ids):
             raise ValueError("模型引用了未授权来源")
@@ -1282,19 +1301,16 @@ class Dynamics:
                             and (not include_enabled or manual or self.policy()["enabled"])
                         )
 
-                    summary = await self.memory_summary.build(
-                        self.runtime.llm,
-                        char,
-                        sources,
-                        budget,
-                        model_identity,
-                        authorized=authorized,
-                    )
-                    public_sources = [
-                        source
-                        for source in self.memory_summary.public_sources(summary)
-                        if source["id"] not in self._used_source_ids()
-                    ]
+                    by_id = {source["id"]: source for source in sources}
+                    public_sources = [source for source in sources if source["type"] != "public_memory"]
+                    stories = [source for source in sources if source["type"] == "public_memory"]
+                    if stories:
+                        summary = await self.memory_summary.build(
+                            self.runtime.llm, char, stories, budget, model_identity, authorized=authorized,
+                        )
+                        public_sources.extend(self.memory_summary.public_sources(summary))
+                    used_ids = self._used_source_ids()
+                    public_sources = [source for source in public_sources if source["id"] not in used_ids]
                     if not public_sources:
                         base["reason"] = "运营记忆摘要暂无新的可发布摘录"
                         return self._save_decision(char, manual, base, [])
@@ -1350,7 +1366,11 @@ class Dynamics:
                                 context_data={"public_sources": public_sources},
                         allow_web_fetch=True,
                     )
-                    if data["action"] == "post" and self.policy()["use_memes"] and self.memes:
+                    selected_sources = [by_id[source_id] for source_id in data["source_ids"]]
+                    if (
+                        data["action"] == "post" and not comment_card(selected_sources)
+                        and self.policy()["use_memes"] and self.memes
+                    ):
                         try:
                             selected = await select_meme(
                                 self.runtime,

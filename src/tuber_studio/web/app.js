@@ -25,7 +25,7 @@ import {
 } from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261107.17";
+} from "./modules/dynamics.js?v=20261111.06";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";

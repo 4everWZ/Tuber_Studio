@@ -145,9 +145,57 @@ async def test_public_incident_is_factual_cited_and_removed_from_draft_sources(s
     assert post["sources"][0]["fictional"] is False
     payload = json.loads(service.runtime.llm.calls[-1][1]["content"])
     assert payload["public_sources"][0]["fictional"] is False
+    assert payload["public_sources"][0]["public_sources"][0]["quote"] == "你消息是不是回错了"
+    assert post["comment_card"]["comments"] == [{
+        "quote": "你消息是不是回错了",
+        "url": "https://www.bilibili.com/video/BV13S4i6fE82#reply323231188736",
+    }]
     assert service._valid_sources(post)
     memory.delete_highlight(identifier)
     assert not service._valid_sources(post)
+
+
+async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment_card(service, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image, ImageFont
+
+    from tuber_studio import dynamic_comment_card
+
+    monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
+    published_reply(service)
+    decision = await service.evaluate(manual=True)
+    post_id = decision["post_id"]
+    card = service.comment_card_image(post_id)
+    with Image.open(BytesIO(card)) as rendered:
+        assert rendered.format == "PNG" and rendered.width == 960
+    observed = []
+
+    async def send(adapter, text, image, *, before_send, prepare_authorized):
+        assert prepare_authorized()
+        before_send()
+        observed.append((text, image))
+        return {"platform": "bilibili", "dynamic_id": "12345"}
+
+    monkeypatch.setattr(module, "publish_image", send)
+    text = "前些天有人问起海底厨房，我回他说那里总有一碗热饭。今天揭锅时又想起他这句。"
+    service.review(post_id, "approve", text)
+    result = await service.publish(post_id)
+    assert result["status"] == "published"
+    assert observed == [(
+        text + "\n\n原评论：https://www.bilibili.com/video/BV1d8pU6xEZX#reply42",
+        {"mime_type": "image/png", "content": card},
+    )]
+
+
+def test_dynamic_decision_picks_one_episode(service):
+    sources = [{"id": "incident:1"}, {"id": "reply:2"}]
+    assert service.decision_schema(sources)["properties"]["source_ids"]["maxItems"] == 1
+    with pytest.raises(ValueError, match="模型来源列表无效"):
+        service._parse({
+            "action": "post", "reason": "想分享", "content": "动态正文。",
+            "source_ids": [source["id"] for source in sources], "next_evaluation_seconds": 300,
+        }, sources)
 
 
 async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approval(service):

@@ -518,14 +518,20 @@ def test_uncertain_response_raw_is_private_scoped_and_never_creates_recipient(
 
 @pytest.mark.parametrize("channel", ["messages", "dynamics"])
 async def test_other_channels_revise_real_business_rejection_under_same_intent(
-    settings, store, runtime, channel
+    settings, store, runtime, channel, monkeypatch
 ):
+    from PIL import ImageFont
+
+    from tuber_studio import dynamic_comment_card
     from tuber_studio.direct_messages import DirectMessages
     from tuber_studio.dynamics import Dynamics
     from tuber_studio.platforms.bilibili_messages import BilibiliMessagesAdapter
 
     comments, comment_draft, _, requests = await prepared_service(settings, store, runtime)
     writes = []
+    uploads = []
+    if channel == "dynamics":
+        monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
 
     def platform(request):
         if request.url.path == "/x/web-interface/nav":
@@ -543,6 +549,15 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
                     },
                 },
             )
+        if request.url.path == "/x/dynamic/feed/draw/upload_bfs" and channel == "dynamics":
+            assert b"image/png" in request.content
+            uploads.append(request)
+            return httpx.Response(200, json={
+                "code": 0, "data": {
+                    "image_url": "https://i0.hdslb.com/bfs/new_dyn/comment.png",
+                    "image_width": 960, "image_height": 240, "img_size": 12,
+                },
+            })
         expected = "/web_im/v1/web_im/send_msg" if channel == "messages" else "/x/dynamic/feed/create/dyn"
         assert request.url.path == expected and request.method == "POST"
         writes.append(
@@ -620,6 +635,10 @@ async def test_other_channels_revise_real_business_rejection_under_same_intent(
         if channel == "messages":
             assert all(write["msg[receiver_id]"] == ["200"] for write in writes)
             assert len(store.all("SELECT * FROM dm_attempts")) == 2
+        else:
+            assert len(uploads) == 2
+            assert all(write["dyn_req"]["scene"] == 2 for write in writes)
+            assert all("#reply" in write["dyn_req"]["content"]["contents"][0]["raw_text"] for write in writes)
     finally:
         await service.close()
         await comments.close()

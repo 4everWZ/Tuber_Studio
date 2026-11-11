@@ -29,7 +29,10 @@
         <span id="dynamic-post-status" class="badge">选择动态</span>
       </div>
       <dl id="dynamic-post-meta" class="description-list"></dl>
-      <div class="actions dm-meme-actions" style="margin-bottom:10px;">
+      <label>编辑动态正文
+        <textarea id="dynamic-post-text" rows="7" disabled placeholder="选择左侧动态进行审核与编辑..."></textarea>
+      </label>
+      <div id="dynamic-meme-actions" class="actions dm-meme-actions" style="margin-bottom:10px;">
         <button id="dynamic-pick-meme" type="button" class="win-btn" disabled>选择配图表情包</button>
         <button id="dynamic-clear-meme" type="button" class="win-btn" disabled>移除配图</button>
         <a href="#assets" class="win-link-btn">管理表情包图库 →</a>
@@ -39,9 +42,6 @@
         <div id="dynamic-meme-image"></div>
         <p id="dynamic-meme-availability" class="hint"></p>
       </div>
-      <label>编辑动态正文
-        <textarea id="dynamic-post-text" rows="7" disabled placeholder="选择左侧动态进行审核与编辑..."></textarea>
-      </label>
       <div class="actions" style="margin-top:12px;">
         <button id="approve-dynamic" class="primary win-btn" disabled>审核通过</button>
         <button id="reject-dynamic" class="win-btn danger" disabled>拒绝</button>

@@ -102,8 +102,10 @@ export function renderDynamicPost(model, {
   const post = (model.dynamicPosts || []).find(item => item.id === model.dynamicPostId);
   const terminalInPending = model.dynamicPostView !== "history" && ["published", "rejected", "invalidated"].includes(post?.status);
   const editable = !!post && !terminalInPending && ["pending_review", "approved", "rejected"].includes(post.status);
-  const imageInfo = post?.meme_id ? model.dynamicMemeCache.get(`${post.character_id}:${post.meme_id}`) : null;
-  const unavailable = !!post?.meme_id && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
+  const card = post?.comment_card;
+  const memeId = card ? null : post?.meme_id;
+  const imageInfo = memeId ? model.dynamicMemeCache.get(`${post.character_id}:${memeId}`) : null;
+  const unavailable = !!memeId && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
 
   if ($("dynamic-post-status")) {
     if (post) setBadge($("dynamic-post-status"), post.status);
@@ -121,10 +123,11 @@ export function renderDynamicPost(model, {
   if ($("reject-dynamic")) $("reject-dynamic").disabled = !editable || model.dynamicPostPending;
   if ($("publish-dynamic")) {
     $("publish-dynamic").disabled = !post || post.status !== "approved" || model.dynamicPostDirty || model.dynamicPostPending || unavailable || !model.dynamicPolicy?.credentials_configured;
-    $("publish-dynamic").textContent = post?.meme_id ? "发布已审核图文" : "发布已审核动态";
+    $("publish-dynamic").textContent = card || memeId ? "发布已审核图文" : "发布已审核动态";
   }
-  if ($("dynamic-pick-meme")) $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending;
-  if ($("dynamic-clear-meme")) $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || !post?.meme_id;
+  if ($("dynamic-pick-meme")) $("dynamic-pick-meme").disabled = !editable || model.dynamicPostPending || !!card;
+  if ($("dynamic-clear-meme")) $("dynamic-clear-meme").disabled = !editable || model.dynamicPostPending || !memeId;
+  if ($("dynamic-meme-actions")) $("dynamic-meme-actions").hidden = !!card;
 
   if ($("dynamic-posts")) {
     for (const button of $("dynamic-posts").querySelectorAll("button")) {
@@ -132,9 +135,20 @@ export function renderDynamicPost(model, {
     }
   }
   for (const option of $("dynamic-post-views")?.querySelectorAll("input") || []) option.disabled = !!model.dynamicPostPending;
-  if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !post?.meme_id;
-  if (post?.meme_id) {
-    if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = imageInfo?.asset?.title || post.meme_id;
+  if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !card && !memeId;
+  if (card) {
+    if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = "原评论图";
+    if ($("dynamic-meme-availability")) $("dynamic-meme-availability").textContent = "当前草稿附图和原楼链接";
+    const key = `comment-card:${post.id}`;
+    if (model.dynamicMemePreviewKey !== key) {
+      model.dynamicMemePreviewKey = key;
+      const image = node("img", null, "dynamic-comment-card");
+      image.src = `/api/dynamics/posts/${encodeURIComponent(post.id)}/comment-card`;
+      image.alt = "这条动态引用的原评论";
+      $("dynamic-meme-image")?.replaceChildren(image);
+    }
+  } else if (memeId) {
+    if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = imageInfo?.asset?.title || memeId;
     if ($("dynamic-meme-availability")) {
       $("dynamic-meme-availability").textContent = unavailable ?
         "当前配图已禁用或缺失，请更换图片或移除配图。" :
@@ -163,7 +177,17 @@ export function renderDynamicPost(model, {
   }
 
   if ($("dynamic-post-sources")) {
-    appendDynamicSources($("dynamic-post-sources"), post?.sources, { node, display });
+    const sources = $("dynamic-post-sources");
+    appendDynamicSources(sources, post?.sources, { node, display });
+    for (const comment of card?.comments || []) {
+      const quote = node("blockquote", comment.quote, "dynamic-source");
+      const link = node("a", "打开原评论");
+      link.href = comment.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      quote.append(document.createElement("br"), link);
+      sources.append(quote);
+    }
   }
 
   if ($("dynamic-post-receipt")) {
