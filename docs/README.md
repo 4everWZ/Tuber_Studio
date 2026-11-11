@@ -18,5 +18,6 @@
 
 ## 交付计划
 
+- [本地部署交接](handoff.md)
 - [当前交付计划](plans/current.md)
 - [游戏实机契约草案](specs/game-livestream.md) · [模拟现状、实机计划与需求映射](plans/game-livestream.md)
