@@ -17,7 +17,7 @@ from .compaction import (
     needs_compaction,
     wire_messages,
 )
-from .context_delivery import comment_delivery, memory_source_allowed
+from .context_delivery import DELIVERY_SCOPES, delivered_history, memory_source_allowed, operation_delivery
 from .memory import GroundedMemory, extract_facts
 from .operation_text import reply_output_budget
 from .providers import build_messages, public_error
@@ -127,23 +127,7 @@ class ContextManager:
         if history is None:
             row = self.existing(scope, character)
             history = json.loads(row["history"]) if row else []
-        if not scope.startswith("comments:"):
-            return history
-        result = []
-        for item in history:
-            if item.get("role") == "assistant":
-                if comment_delivery(self.store, scope, character, item.get("source_event_id"), item["content"]):
-                    result.append(item)
-            elif is_summary_message(item):
-                provenance = item.get("delivery_provenance") or {}
-                if (isinstance(provenance, dict) and provenance.get("version") == 1 and provenance.get("scope") == scope
-                    and isinstance(provenance.get("sources"), list)
-                    and all(isinstance(source, dict) and comment_delivery(self.store, scope, character, source.get("event_id")) == source
-                            for source in provenance["sources"])):
-                    result.append(item)
-            else:
-                result.append(item)
-        return result
+        return delivered_history(self.store, scope, character, history)
 
     def _archive_history(self, row, reason):
         self.store.execute("INSERT OR IGNORE INTO context_history_audit("
@@ -327,10 +311,10 @@ class ContextManager:
             if not replacement:
                 raise ValueError("当前范围没有可核验历史，保留原摘要审计，请从原文重新准备上下文")
             delivery_sources = {}
-            if row["mode"].startswith("comments:"):
+            if row["mode"].startswith(DELIVERY_SCOPES):
                 for item in replacement:
                     if item.get("role") == "assistant":
-                        source = comment_delivery(self.store, row["mode"], character, item.get("source_event_id"), item["content"])
+                        source = operation_delivery(self.store, row["mode"], character, item.get("source_event_id"), item["content"])
                         if source:
                             delivery_sources[source["event_id"]] = source
                     for source in (item.get("delivery_provenance") or {}).get("sources", []):
@@ -375,7 +359,7 @@ class ContextManager:
             )
             # Both rounds are one atomic install. A second-round failure never
             # leaves a half-completed history replacement in persistent state.
-            if row["mode"].startswith("comments:"):
+            if row["mode"].startswith(DELIVERY_SCOPES):
                 for item in replacement:
                     if is_summary_message(item):
                         item["delivery_provenance"] = {"version": 1, "scope": row["mode"],
