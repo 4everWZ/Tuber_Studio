@@ -33,7 +33,7 @@ async def test_watch_only_records_real_preference_without_fetching_comments_or_g
 
 def test_video_preference_is_independent_of_permission_to_reply():
     wire = response_schema(
-        ["e0"], video_actions=True, allow_public=False, allow_comments=False, allow_handoff=False
+        ["e0"], video_actions=True, allow_public=False, allow_comments=False
     )
     actions = {branch["properties"]["action"]["enum"][0] for branch in wire["oneOf"]}
     assert "finish" in actions and not {"reply_public", "read_comments", "handoff_private"} & actions

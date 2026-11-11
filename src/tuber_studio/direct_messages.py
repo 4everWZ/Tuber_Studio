@@ -634,9 +634,10 @@ class DirectMessages:
             scope = self.comments.account_context_scope(
                 source["video_id"], source["thread_id"], source["platform"], account_id=draft["account_id"]
             )
-            event["public_source_thread"] = self.runtime.context.history_for_model(scope, character)
-            if event.get("video_evidence", {}).get("public_source_thread"):
-                event["public_source_thread"] = event["video_evidence"]["public_source_thread"]
+            event["public_source_thread"] = (
+                event.get("video_evidence", {}).get("public_source_thread")
+                or self.runtime.context.history_for_model(scope, character)
+            )
             invitation = confirmed_invitation(
                 event["public_source_thread"], draft.get("account_id"), draft["platform_user_id"]
             )
@@ -645,7 +646,7 @@ class DirectMessages:
             if trigger.get("contact_trigger") == "agreement" and verified_agreement(draft, event["public_source_thread"]):
                 event["agreement_task"] = {"agreement_id": draft["id"], "purpose": draft.get("purpose") or "",
                     "completion_evidence": self._completion_evidence(draft),
-                    "task": "完成原约定的查找后联系一次；尚未查到时保留约定等待，不把自称查到当完成证据"}
+                    "task": "用查找结果接上原来的约定"}
         else:
             conversation = self._reply_window(draft, source)
             event["conversation"] = conversation.timeline
@@ -942,6 +943,7 @@ class DirectMessages:
                         source_versions=evidence.get("source_versions", []))
         draft["video_evidence"] = json.dumps(evidence, ensure_ascii=False)
         self.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (draft["video_evidence"], draft["id"]))
+        return thread
 
     @staticmethod
     def scope(draft):
@@ -1021,7 +1023,7 @@ class DirectMessages:
             self._schedule(identity, self.policy()["auto_send"])
         return True
 
-    async def _check_outreach(self, draft, event):
+    def _check_outreach(self, draft, event):
         if draft["source_kind"] != "comment":
             return True
         history = self._unanswered_outreach(draft)
@@ -1043,31 +1045,23 @@ class DirectMessages:
                              "reason": "此前主动联系尚未收到回复，等待新的明确交流"}, ensure_ascii=False), time.time(), draft["id"]))
             return False
         completion = self._completion_evidence(draft)
-        character = self.store.character(draft["character_id"], draft["character_version"])
-        payload = self._outgoing(draft, character)
-        checked_draft = dict(draft)
-        if draft.get("message_kind") == "image":
-            asset = self.memes.resolve(draft["meme_id"], character)
-            checked_draft["outgoing_image"] = {key: asset.get(key) for key in ("asset_id", "title", "description", "emotions")}
-        signature = content_hash({"outreach_contract": "program-bound-invitation-v3", "payload": payload, "thread": event.get("public_source_thread"),
-                                  "account": draft["account_id"], "history": history, "completion": completion})
-        previous = json.loads(draft.get("outreach_check") or "null")
-        if previous and previous.get("signature") == signature:
-            return previous.get("action") == "send"
-        assessment, action = await assess_outreach(self.runtime, checked_draft, event, history, completion)
+        assessment, action = assess_outreach(draft, event, history, completion)
         self._require_unchanged_draft(draft)
-        record = {"signature": signature, "action": action, "assessment": assessment.model_dump(),
+        record = {"action": action, "assessment": assessment.model_dump(),
                   "invitation_verified": invitation_anchor(assessment, draft, event.get("public_source_thread")) is not None}
         if action in {"wait", "duplicate"}:
-            record["state"] = "awaiting_response" if history else "awaiting_completion" if assessment.invitation_kind == "agreement" and not completion else "awaiting_content" if not assessment.body_addresses_purpose else "awaiting_invitation"
-        key = invitation_key(draft, assessment) if action == "send" else ""
-        if key and self.store.one("SELECT id FROM dm_drafts WHERE contact_key=? AND id<>?", (key, draft["id"])):
+            record["state"] = "awaiting_response" if history else "awaiting_completion"
+        key = invitation_key(draft, assessment.invitation_comment_id) if action == "send" else ""
+        if key and (earlier := self.store.one("SELECT id FROM dm_drafts WHERE contact_key=? AND id<>?", (key, draft["id"]))):
             record["action"], action, key = "duplicate", "duplicate", ""
+            record.update(state="awaiting_response", previous_draft_id=earlier["id"])
+        status = draft["status"] if action == "send" else "waiting" if action in {"wait", "duplicate"} else "not_initiated"
+        if status == draft["status"] and key == draft.get("contact_key") and json.loads(draft.get("outreach_check") or "null") == record:
+            return action == "send"
         self.store.execute(
             "UPDATE dm_drafts SET purpose=?,outreach_check=?,contact_key=?,status=?,error=NULL,updated_at=? WHERE id=?",
             (assessment.purpose.strip(), json.dumps(record, ensure_ascii=False), key,
-             draft["status"] if action == "send" else "waiting" if action in {"wait", "duplicate"} else "not_initiated",
-             time.time(), draft["id"]),
+             status, time.time(), draft["id"]),
         )
         return action == "send"
 
@@ -1182,11 +1176,16 @@ class DirectMessages:
             return
         authorization_epoch = self.authorizations.pop(identity, None)
         origin = self._origin_round(draft, active=True)
+        character = self.store.character(draft["character_id"], draft["character_version"])
         credential = dict(self.comments.credentials)
         identity_adapter = None
+        actor_snapshot = (
+            await self.runtime.refresh_identity(character, draft["account_id"])
+            if draft["source_kind"] == "comment" else None
+        )
         if not self.injected:
             identity_adapter = await self._adapter()
-            actor = str(await identity_adapter.self_uid())
+            actor = str(actor_snapshot.get("account_uid") or "") if actor_snapshot else str(await identity_adapter.self_uid())
             if (
                 self.adapter is not identity_adapter
                 or self.comments.credentials != credential
@@ -1216,24 +1215,12 @@ class DirectMessages:
                     "UPDATE dm_drafts SET video_evidence=? WHERE id=? AND status='queued'",
                     (draft["video_evidence"], identity),
                 )
-        if draft.get("video_evidence") and browsing and hasattr(browsing, "validate_private_source"):
-            await browsing.validate_private_source(draft)
         if draft["source_kind"] == "comment":
-            # Refresh before the one first-contact check, rather than approving
-            # against stale actor data and then checking a replacement twice.
-            observed = await self.runtime.refresh_identity(
-                self.store.character(draft["character_id"], draft["character_version"]), draft["account_id"]
-            )
-            if observed.get("account_uid") != draft["account_id"]:
+            if actor_snapshot.get("account_uid") != draft["account_id"]:
                 raise ValueError("核对期间账号已变化，未读取旧私密上下文")
-        if draft["source_kind"] == "comment":
-            pending_event = self._event(draft, self.store.character(draft["character_id"], draft["character_version"]))
-            invitation = confirmed_invitation(
-                pending_event.get("public_source_thread"), draft.get("account_id"), draft["platform_user_id"]
-            )
-            if not invitation or invitation["kind"] == "agreement" and not self._completion_evidence(draft):
-                await self._check_outreach(draft, pending_event)
+            if not self._check_outreach(draft, self._event(draft, character)):
                 return
+            draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         async with self.runtime.offline_generation("dm"):
             if draft.get("resume_pending") and not self._processing_authorized():
                 return
@@ -1275,8 +1262,7 @@ class DirectMessages:
             with meter:
                 snapshot = runtime_identity(self.runtime, character, draft["account_id"])
                 proposal_identity = json.loads(draft.get("proposal_identity") or "null")
-                researching = (event.get("agreement_task") or {}).get("completion_evidence") == []
-                if draft.get("proposed_text") and proposal_identity == snapshot and not researching:
+                if draft.get("proposed_text") and proposal_identity == snapshot:
                     reply = OperationReply(spoken_text=draft["proposed_text"], reply_to=[event["event_id"]])
                     generation_id = (json.loads(draft.get("video_evidence") or "null") or {}).get(
                         "generation_continuation_id"
@@ -1293,8 +1279,19 @@ class DirectMessages:
                     if set(refs.values()) != set(reply_ids) | {incoming for incoming, _ in handled}:
                         check["output"]["needs_review"] = True
                 else:
+                    generation_event = event
+                    if draft["source_kind"] == "comment":
+                        thread = event["public_source_thread"]
+                        generation_event = event | {
+                            "public_source_thread": {
+                                key: thread.get(key) for key in ("source", "root", "parent", "timeline", "grouped_comments")
+                            }
+                        }
+                        evidence = generation_event.pop("video_evidence", {})
+                        if evidence.get("segments"):
+                            generation_event["video_evidence"] = {"segments": evidence["segments"]}
                     reply, check = await self.runtime.generate_reply(
-                        self.scope(draft), character, event, relationship, mode="direct_message"
+                        self.scope(draft), character, generation_event, relationship, mode="direct_message"
                     )
                     if draft["source_kind"] == "message":
                         reply_ids = list(refs.values())
@@ -1331,7 +1328,7 @@ class DirectMessages:
             self.store.execute(
                 "UPDATE dm_drafts SET status=?,resume_pending=0,next_attempt_at=0,text=?,answer_check=?,model=?,error=NULL,updated_at=? WHERE id=?",
                 (
-                    "generating" if draft["source_kind"] == "comment" else "pending_review",
+                    "pending_review",
                     reply.spoken_text,
                     json.dumps(check, ensure_ascii=False),
                     self.settings.data["llm"].get("model", "demo"),
@@ -1340,8 +1337,6 @@ class DirectMessages:
                 ),
             )
             if selected:
-                # Model preparation is still in progress for outreach; it is not
-                # a human review action and must not expose an approvable draft.
                 owner = f"dm-draft:{identity}"
                 self.memes.read(selected["asset_id"], character)
                 self.memes.pin(selected["asset_id"], character, owner)
@@ -1360,15 +1355,6 @@ class DirectMessages:
                     ("表情选择失败，已保留待审文字，未自动发送", identity),
                 )
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-            if draft["source_kind"] == "comment":
-                qualified = await self._check_outreach(draft, event)
-                if self._merge_incoming(identity, automatic=automatic):
-                    raise MessageInputChanged("核对期间收到新来信，改为回应来信")
-                if not qualified:
-                    return
-                self._require_unchanged_draft(draft)
-                self.store.execute("UPDATE dm_drafts SET status='pending_review' WHERE id=? AND status='generating'", (identity,))
-                draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if (
             automatic
             and self.policy()["auto_send"]
@@ -1744,13 +1730,6 @@ class DirectMessages:
                 return self._draft_view(draft)
             if approved and not json.loads(draft.get("answer_check") or "{}").get("output", {}).get("needs_review"):
                 self.review(identity, "approve")
-        draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-        if draft["source_kind"] == "comment":
-            await self._refresh_outreach_thread(draft)
-            event = self._event(draft, character)
-            async with self.runtime.offline_generation("dm"):
-                if not await self._check_outreach(draft, event):
-                    return self._draft_view(self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,)))
         return await FeedbackPublication(self.runtime, self.store, self.operations).submit(
             "messages",
             identity,
@@ -1850,12 +1829,17 @@ class DirectMessages:
                 if not source["account_id"] or account_id != source["account_id"]:
                     raise ValueError("当前登录账号与收到该私信的账号不一致，不能回复")
             browsing = getattr(self.runtime, "browsing", None)
+            fresh_thread = None
             if browsing:
-                await browsing.validate_private_source(row)
+                fresh_thread = await self._refresh_outreach_thread(row)
+                if fresh_thread is None:
+                    fresh_thread = await browsing.validate_private_source(row)
             if row["source_kind"] == "comment":
-                async with self.runtime.offline_generation("dm"):
-                    if not await self._check_outreach(row, self._event(row, character)):
-                        return self._draft_view(self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,)))
+                event = self._event(row, character)
+                if fresh_thread is not None:
+                    event["public_source_thread"] = fresh_thread
+                if not self._check_outreach(row, event):
+                    return self._draft_view(self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,)))
             fresh = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
             reviewed_fields = (
                 "status",

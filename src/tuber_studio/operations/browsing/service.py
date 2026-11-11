@@ -24,6 +24,7 @@ from .models import (
 from .notifications import NotificationInbox
 from .publication import BrowsingPublication
 from .round_context import read_round
+from .thread_context import comment_thread_context
 
 
 class BrowsingService:
@@ -673,34 +674,43 @@ class BrowsingService:
                 raise ValueError("视频来源版本已失效")
 
     async def validate_private_source(self, draft):
-        await self._current_account(draft.get("account_id") or None)
         value = json.loads(draft.get("video_evidence") or "null")
-        if not value:
-            # Direct messages without a video association retain their private
-            # conversation context and never inherit the current browsing video.
-            if draft["source_kind"] == "message":
-                return
-            source = self.store.one("SELECT * FROM comments WHERE id=?", (draft["source_id"],))
-            if not source:
-                raise ValueError("移交的公开来源已清理")
-            value = await self.comment_evidence(source, self.runtime.character)
+        if not value and draft["source_kind"] == "message":
+            return
+        if not value or str(value.get("account_id")) != str(draft["account_id"]):
+            raise ValueError("私信缺少当前账号核验过的来源")
         if value.get("origin_round_id"):
             parent = self.repo.round(value["origin_round_id"])
             if not parent or parent["status"] not in {"running", "completed", "partial"}:
                 raise ValueError("移交父轮已停止，保留私信草稿")
-        event = value.get("source_event")
-        if event:
-            fresh = await self._read(self.adapter.read_public_thread, event)
-            original = value["public_source_thread"]
-            if fresh["source"] != original["source"] or fresh.get("public_text") != original.get(
-                "public_text"
-            ):
+        if draft["source_kind"] == "comment":
+            original = value.get("public_source_thread")
+            if not original:
+                raise ValueError("私信缺少核验过的原评论")
+            source, target = original["source"], original["target"]
+            if event := value.get("source_event"):
+                fresh = await self._read(self.adapter.read_public_thread, event)
+                if fresh.get("public_text") != original.get("public_text"):
+                    raise ValueError("公开移交原文已变化或撤销")
+            elif hasattr(self.adapter, "read_video_thread"):
+                fresh = await self._read(self.adapter.read_video_thread, target)
+            else:
+                fresh = {"source": await self._read(self.adapter.read_video_reply, target)}
+            current = fresh["source"]
+            if current["text"] != source["text"] or str(current["author_uid"]) != str(source["author_uid"]):
                 raise ValueError("公开移交原文已变化或撤销")
-        elif thread := value.get("public_source_thread"):
-            source, target = thread["source"], thread["target"]
-            fresh = await self._read(self.adapter.read_video_reply, target)
-            if fresh["text"] != source["text"] or str(fresh["author_uid"]) != str(source["author_uid"]):
-                raise ValueError("公开移交原文已变化或撤销")
+            items = fresh.get("items")
+            if items is None:
+                return original
+            item = next((item for item in items if str(item["comment_id"]) == str(source["comment_id"])), None)
+            if item is None:
+                raise ValueError("当前楼未找到原评论")
+            grouped = {str(item["comment_id"]) for item in original.get("grouped_comments") or []}
+            current_thread = comment_thread_context(
+                item | {"grouped_comments": [item for item in items if str(item["comment_id"]) in grouped]},
+                items, target,
+            )
+            return original | current_thread | {"grouped_comments": current_thread.get("grouped_comments", [])}
         keys = value.get("material_keys", [])
         refresh = False
         for key in keys:

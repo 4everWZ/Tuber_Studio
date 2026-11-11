@@ -94,7 +94,7 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     assert not browsing.store.all("SELECT * FROM browsing_video_progress")
 
 
-async def test_handoff_source_changed_before_generation_is_retained_without_send(browsing, monkeypatch):
+async def test_handoff_source_changed_at_send_is_retained_without_send(browsing, monkeypatch):
     transport = await prepare_handoff(browsing, monkeypatch, automatic=True)
 
     async def changed(target):
@@ -106,7 +106,7 @@ async def test_handoff_source_changed_before_generation_is_retained_without_send
     row = await finished(browsing, automatic=True, interaction_only=True)
     assert row["status"] == "partial"
     draft = browsing.store.one("SELECT * FROM dm_drafts")
-    assert draft["status"] == "failed" and "原文已变化" in draft["error"]
+    assert draft["status"] == "pending_review" and draft["text"]
     assert draft["platform_user_id"] == "300"
     assert not transport.sent and not browsing.adapter.sent
 
@@ -189,14 +189,31 @@ async def test_source_is_checked_again_at_private_send_after_generation(browsing
     async def changing(target):
         nonlocal checks
         checks += 1
-        return {"author_uid": "300", "text": INVITATION if checks == 1 else "评论已经编辑"}
+        return {"author_uid": "300", "text": "评论已经编辑"}
 
     monkeypatch.setattr(browsing.adapter, "read_video_reply", changing)
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
     await finished(browsing, automatic=True, interaction_only=True)
     draft = browsing.store.one("SELECT * FROM dm_drafts")
-    assert checks >= 2 and draft["text"]
+    assert checks == 1 and draft["text"]
     assert draft["status"] == "pending_review"
+    assert not transport.sent and not browsing.adapter.sent
+
+
+async def test_send_rechecks_real_mention_uid_even_when_nickname_and_text_match(browsing, monkeypatch):
+    transport = await prepare_handoff(browsing, monkeypatch, automatic=True)
+    reads = []
+
+    async def read_thread(target):
+        reads.append(target["parent"])
+        item = comment() | {"content": INVITATION, "mentions": [{"uid": "999", "name": "大肥鱼"}]}
+        return {"source": {"author_uid": "300", "text": INVITATION}, "items": [item]}
+
+    monkeypatch.setattr(browsing.adapter, "read_video_thread", read_thread, raising=False)
+    assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
+    await finished(browsing, automatic=True, interaction_only=True)
+    draft = browsing.store.one("SELECT status,text FROM dm_drafts")
+    assert reads == ["601"] and draft["text"] and draft["status"] == "not_initiated"
     assert not transport.sent and not browsing.adapter.sent
 
 

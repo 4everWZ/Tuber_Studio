@@ -19,7 +19,6 @@ from ...operation_text import (
 )
 from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
-from ...persona import built_in_anchor
 from ...providers import SYSTEM_RULES, public_error, reuse_turn_token_counts
 from ...publication_errors import SendLimitReached
 from ...store import dump
@@ -116,14 +115,6 @@ class BrowsingDecisions:
             )
         return bound
 
-    @staticmethod
-    def _handoff_allowed(row, data):
-        if data.get("kind") == "top_level" or not row["config"].get("comment_handoff_enabled", False):
-            return False
-        thread = data.get("thread") or {}
-        recipient = (thread.get("target") or {}).get("recipient") or (thread.get("source") or {}).get("author_uid")
-        return confirmed_invitation(thread, row.get("account_id"), recipient) is not None
-
     def invited_private_response(self, row, thread):
         if not row["config"].get("comment_handoff_enabled"):
             return None
@@ -143,15 +134,12 @@ class BrowsingDecisions:
         )
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
-        character = self.browsing.store.character(row["character_id"], row["character_version"])
-        anchor = built_in_anchor(
-            character, self.browsing.settings.data, for_response=schema is ResponseDecision
+        character = operation_character(
+            self.browsing.store.character(row["character_id"], row["character_version"])
         )
-        if not anchor:
-            character = operation_character(character)
         view = (
             classification_view(self.browsing.settings.root, character)
-            if schema is ContentDecision and not anchor
+            if schema is ContentDecision
             else None
         )
         if schema is ResponseDecision:
@@ -170,7 +158,7 @@ class BrowsingDecisions:
             if schema is ContentDecision
             else dump(data)
         )
-        role = anchor or SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")})
+        role = SYSTEM_RULES + dump({k: character[k] for k in ("core", "style", "rules")})
         if view is not None:
             content = compact_content_input(data)
             role = "角色：" + view["brief"]
@@ -206,7 +194,6 @@ class BrowsingDecisions:
             allowed = response_input.allowed_aliases
             model_schema = response_schema(
                 allowed,
-                allow_handoff=self._handoff_allowed(row, data),
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
                 allow_comments=data.get("allow_comments", True),
@@ -340,7 +327,9 @@ class BrowsingDecisions:
                     raise ValueError("视频行动需要具体的内容偏好与原因")
                 if value.action == "reply_public" and not data.get("allow_public", True):
                     raise ValueError("本次未开放视频主评，可结束观看或补充材料")
-                if value.action in {"reply_public", "handoff_private"} and (
+                if value.action == "handoff_private":
+                    raise ValueError("私信由原评论邀请创建，当前输出为公开回应")
+                if value.action == "reply_public" and (
                     not value.evidence_ids or not value.text
                 ):
                     raise ValueError("回应缺少有效正文或来源引用")
@@ -349,11 +338,6 @@ class BrowsingDecisions:
                     "light_interaction",
                 }:
                     raise ValueError("公开回复渠道与理由不一致")
-                if value.action == "handoff_private" and (
-                    not self._handoff_allowed(row, data)
-                    or value.reason != "user_requested"
-                ):
-                    raise ValueError("私信渠道与来源／理由不一致")
             return value
 
         binding = {
@@ -540,11 +524,7 @@ class BrowsingDecisions:
 
     def _content_presentation(self, material, row):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
-        view = (
-            None
-            if built_in_anchor(character, self.browsing.settings.data, for_response=False)
-            else classification_view(self.browsing.settings.root, operation_character(character))
-        )
+        view = classification_view(self.browsing.settings.root, operation_character(character))
         return ContentDecisionInput(
             material,
             text_renderer=join_content_sources if view else None,
@@ -1086,7 +1066,11 @@ class BrowsingDecisions:
                 source = thread_context["source"]
                 if grouped := thread_context.get("grouped_comments"):
                     source = source | {"grouped_comments": grouped}
-                thread_response = self.comment_progress.get(row, bvid, source)
+                thread_response = self.invited_private_response(row, thread_context)
+                if thread_response is None:
+                    thread_response = self.comment_progress.get(row, bvid, source)
+                    if thread_response and thread_response.action == "handoff_private":
+                        thread_response = None
                 if thread_response is None:
                     try:
                         thread_response = await self._response(

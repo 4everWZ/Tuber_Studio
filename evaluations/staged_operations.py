@@ -155,9 +155,19 @@ def _dump(value):
 
 def decision_schema(data):
     allowed = {item["id"] for item in data.get("evidence", [])} | set(data.get("allowed_evidence_ids", []))
-    schema = response_schema(
-        allowed, maximum=data.get("max_chars", 100), allow_handoff=data.get("kind") != "top_level"
-    )
+    schema = response_schema(allowed, maximum=data.get("max_chars", 100))
+    if allowed and data.get("kind") != "top_level":
+        # Preserve the private branch of this historical model-routing experiment.
+        public = next(branch for branch in schema["oneOf"] if branch["properties"]["action"]["enum"] == ["reply_public"])
+        private = deepcopy(public)
+        private["properties"].update(
+            action={"type": "string", "enum": ["handoff_private"]},
+            reason={"type": "string", "enum": ["user_requested"]},
+            contact_purpose=deepcopy(public["properties"]["explanation"]),
+            contact_trigger={"type": "string", "enum": ["invitation", "agreement"]},
+        )
+        private["required"].extend(["contact_purpose", "contact_trigger"])
+        schema["oneOf"].insert(1, private)
     for branch in schema["oneOf"]:
         branch["properties"].pop("text")
         branch["required"].remove("text")

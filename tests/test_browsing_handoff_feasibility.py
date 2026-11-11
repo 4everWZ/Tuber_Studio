@@ -89,7 +89,7 @@ async def test_first_contact_check_does_not_authorize_from_arbitrary_history(bro
     character = browsing.runtime.character
     draft = {"account_id": "100", "platform_user_id": "300", "character_id": character["id"],
              "character_version": character["version"], "purpose": "查明此事后联系", "text": "当前候选"}
-    assessment, disposition = await assess_outreach(browsing.runtime, draft, {"public_source_thread": value}, [], [])
+    assessment, disposition = assess_outreach(draft, {"public_source_thread": value}, [], [])
     assert disposition == "stay_public" and assessment.invitation_comment_id == ""
     assert assessment.invitation_kind == "none" and not assessment.promise_fulfilled
 
@@ -109,7 +109,7 @@ async def test_native_mask_keeps_public_choices_and_requires_actual_invitation(b
     value["addressing"]["source_mentions"] = [{"uid": "100", "name": "我方"}]
     data["thread"] = value
     _, _, schema = browsing.decisions._model_input(row, ResponseDecision, data, RESPONSE_INSTRUCTION)
-    assert "handoff_private" in actions(schema)
+    assert "handoff_private" not in actions(schema)
     # An identity relation alone does not certify an invitation.
     assessment = OutreachAssessment(action="send", reason="普通聊天", purpose="闲聊", invitation_kind="none",
         invitation_comment_id="601", invitation_quote="当前原话", invited_actor_uid="100", body_addresses_purpose=True)
@@ -134,7 +134,7 @@ async def test_response_without_verified_invitation_keeps_public_model_choice(br
 
     async def skip(row, schema, data, instruction, metrics, **options):
         calls.append(data)
-        assert not browsing.decisions._handoff_allowed(row, data)
+        assert browsing.decisions.invited_private_response(row, data["thread"]) is None
         return ResponseDecision(action="skip", reason="no_interest", explanation="暂时没有要补充的内容")
 
     monkeypatch.setattr(browsing.decisions, "_model", skip)
@@ -156,7 +156,7 @@ async def test_response_history_can_resolve_identities_but_not_create_a_new_invi
     context[location] = [invitation] if location in {"timeline", "items"} else invitation
 
     async def public_choice(row, schema, data, instruction, metrics, **options):
-        assert not browsing.decisions._handoff_allowed(row, data)
+        assert browsing.decisions.invited_private_response(row, data["thread"]) is None
         return ResponseDecision(action="reply_public", reason="light_interaction", text="就在这里聊盐水比例吧。")
 
     monkeypatch.setattr(browsing.decisions, "_model", public_choice)
@@ -184,7 +184,7 @@ async def test_response_unhandled_group_invitation_respects_current_withdrawal(b
 
     async def public_choice(row, schema, data, instruction, metrics, **options):
         calls.append(data)
-        assert withdrawn and not browsing.decisions._handoff_allowed(row, data)
+        assert withdrawn and browsing.decisions.invited_private_response(row, data["thread"]) is None
         return ResponseDecision(action="reply_public", reason="light_interaction", text="好，就在这里接着聊。")
 
     monkeypatch.setattr(browsing.decisions, "_model", public_choice)
@@ -298,4 +298,4 @@ async def test_schema_ignoring_fake_handoff_is_rejected_before_creating_private_
     assert not browsing.store.one("SELECT id FROM browsing_intents WHERE kind='private_handoff'")
     assert not browsing.adapter.sent
     continuation = browsing.store.one("SELECT feedback FROM operation_continuations WHERE channel='generation.browsing' AND json_extract(binding,'$.schema')='ResponseDecision'")
-    assert continuation and "私信渠道与来源" in continuation["feedback"]
+    assert continuation and "私信由原评论邀请创建" in continuation["feedback"]

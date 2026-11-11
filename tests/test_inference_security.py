@@ -67,7 +67,7 @@ def test_native_video_dry_sampling_passes_with_the_same_response_schema(path):
         "max_tokens": 1024,
         "response_format": {
             "type": "json_object",
-            "schema": response_schema({"r1"}, allow_handoff=False, video_actions=True),
+            "schema": response_schema({"r1"}, video_actions=True),
         },
     }
     if path == "completion":

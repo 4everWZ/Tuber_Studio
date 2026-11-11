@@ -8,6 +8,7 @@ import time
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred
+from ...message_outreach import confirmed_invitation
 from ...operation_continuations import content_hash
 from ...operation_turns import operation_lane
 from ...operations_control import canonical_intent
@@ -216,6 +217,9 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     if str(source["comment_id"]) != str(target["parent"]) or str(source["author_uid"]) != str(target["recipient"]):
         raise ValueError("私信移交的评论与收件人不一致")
+    invitation = confirmed_invitation(thread, row["account_id"], target["recipient"])
+    if not invitation:
+        return None
     intent = browsing.publication._intent(row, "private_handoff", target, reply, keys, reply.evidence_ids)
     if not intent or intent["kind"] != "private_handoff":
         return None
@@ -238,26 +242,15 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
     if event is None:
         public_thread["public_text"] = thread.get("public_text") or source["text"]
     evidence.update(public_source_thread=public_thread, origin_round_id=row["id"])
-    if reply._generation_id:
-        evidence["generation_continuation_id"] = reply._generation_id
     if event is not None:
         evidence["source_event"] = event
-    if reply._generation_id:
-        evidence["completion_evidence"] = [
-            {"step_id": record["id"], "continuation_id": reply._generation_id, **json.loads(record["context"] or "{}")}
-            for record in browsing.store.all(
-                "SELECT id,context FROM operation_continuation_steps WHERE continuation_id=? AND phase='web_fetch' AND status='ok'",
-                (reply._generation_id,),
-            )
-        ]
     automatic = bool(intent["auto_authorized"] and policy["auto_send"])
     dm_id = browsing.messages.enqueue(
         "comment", comment["id"], automatic=automatic, reason=reply.reason,
         character=browsing.store.character(row["character_id"], row["character_version"]),
         account_id=row["account_id"], video_evidence=evidence, schedule=False,
-        purpose=reply.contact_purpose,
-        contact_trigger=reply.contact_trigger,
-        proposed_text=reply.text, proposal_identity=reply._generation_identity,
+        purpose=invitation["quote"],
+        contact_trigger=invitation["kind"],
     )
     private = browsing.store.one("SELECT status FROM dm_drafts WHERE id=?", (dm_id,))
     target = target | {"private_draft_id": dm_id, "contact_state": private["status"]}
@@ -510,7 +503,10 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         source["text"],
         account_id=row["account_id"],
     )
-    reply = reply or browsing.decisions.comment_progress.get(row, resource, source)
+    if reply is None:
+        previous = browsing.decisions.comment_progress.get(row, resource, source)
+        if previous and previous.action != "handoff_private":
+            reply = previous
     if reply is None:
         reply = await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
         browsing.decisions.comment_progress.save(row, resource, source, reply)

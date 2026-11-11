@@ -407,7 +407,6 @@ def content_decision_schema(evidence_ids, *, allow_visual=True):
 RESPONSE_INSTRUCTION = (
     "用自己的话接当前话题。text是直接发给对方的正文，explanation写这次选择的具体原因。"
     "评论接对方的原话，视频主评聊看到或听到的细节。想聊就回，想略过选skip，稍后再处理选wait。"
-    "有已核验的私聊邀请时，contact_purpose写要聊的事，contact_trigger按当前邀请或办完约定选择。"
 )
 
 RESPONSE_REFERENCE_INSTRUCTION = (
@@ -419,7 +418,6 @@ def response_schema(
     evidence_ids,
     *,
     maximum=None,
-    allow_handoff=True,
     video_actions=False,
     allow_public=True,
     allow_comments=True,
@@ -429,7 +427,6 @@ def response_schema(
     """Constrain source IDs and channel consistency before the model emits text."""
     reasons = {
         "reply_public": ["specific_detail", "light_interaction"],
-        "handoff_private": ["user_requested"],
         "skip": ["no_interest", "insufficient_evidence", "spam"],
         "wait": ["cooldown", "insufficient_evidence"],
     }
@@ -448,9 +445,9 @@ def response_schema(
             continue
         if action == "reply_public" and not allow_public or action == "read_comments" and not allow_comments:
             continue
-        sending = action in {"reply_public", "handoff_private"}
+        sending = action == "reply_public"
         grouped_reply = action == "reply_public" and grouped_comment_refs
-        if sending and not evidence_ids or action == "handoff_private" and not allow_handoff:
+        if sending and not evidence_ids:
             continue
         branches.append(
             {
@@ -471,9 +468,6 @@ def response_schema(
                     "reason": {"type": "string", "enum": allowed_reasons},
                     "explanation": {"type": "string", "minLength": 1, "maxLength": MAX_DECISION_REASON_CHARACTERS},
                     "action": {"type": "string", "enum": [action]},
-                    **({"contact_purpose": {"type": "string", "minLength": 1, "maxLength": MAX_DECISION_REASON_CHARACTERS},
-                        "contact_trigger": {"type": "string", "enum": ["invitation", "agreement"]}}
-                       if action == "handoff_private" else {}),
                     "evidence_ids": {
                         "type": "array",
                         "minItems": 1 if sending else 0,
@@ -492,7 +486,6 @@ def response_schema(
                     },
                 },
                 "required": ["reason", "explanation", "action", "evidence_ids", "text"]
-                + (["contact_purpose", "contact_trigger"] if action == "handoff_private" else [])
                 + (["video_preference", "preference_reason"] if video_actions else [])
                 + (["covered_comments"] if grouped_reply else []),
             }

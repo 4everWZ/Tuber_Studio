@@ -177,8 +177,6 @@ def validate_outreach(assessment, draft, thread, history, completion_evidence):
         return "stay_public"
     if assessment.action == "wait":
         return "wait"
-    if not assessment.body_addresses_purpose:
-        return "wait"
     if assessment.invitation_kind == "agreement" and not (assessment.promise_fulfilled and completion_evidence):
         return "wait"
     if assessment.same_matter_draft_id is not None:
@@ -188,8 +186,8 @@ def validate_outreach(assessment, draft, thread, history, completion_evidence):
     return "send"
 
 
-async def assess_outreach(runtime, draft, event, history, completion_evidence):
-    """Confirm the source and delivery state without another model decision."""
+def assess_outreach(draft, event, history, completion_evidence):
+    """Resolve the invitation and delivery state before composing a private reply."""
     invitation = confirmed_invitation(
         event.get("public_source_thread"), draft.get("account_id"), draft.get("platform_user_id")
     )
@@ -210,11 +208,11 @@ async def assess_outreach(runtime, draft, event, history, completion_evidence):
     )
 
 
-def invitation_key(draft, assessment):
+def invitation_key(draft, comment_id):
     return content_hash({
         "account_id": draft["account_id"], "character_id": draft["character_id"],
         "platform": draft["platform"], "recipient_uid": draft["platform_user_id"],
-        "invitation_comment_id": assessment.invitation_comment_id,
+        "invitation_comment_id": comment_id,
     })
 
 

@@ -400,7 +400,7 @@ class ResponseReference:
 class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
-    FORMAT_VERSION = "response-reference-lines-v7-ref-namespace"
+    FORMAT_VERSION = "public-response-reference-lines-v8"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))

@@ -11,10 +11,8 @@ from tuber_studio.web_fetch import OperationWebFetch
 def test_new_private_decisions_offer_invited_contact_only_while_old_audits_remain_readable():
     from tuber_studio.operations.browsing.models import ResponseDecision
 
-    schema = response_schema({"r1"}, allow_handoff=True)
-    private = next(branch for branch in schema["oneOf"] if branch["properties"]["action"]["enum"] == ["handoff_private"])
-    assert private["properties"]["reason"]["enum"] == ["user_requested"]
-    assert private["properties"]["contact_trigger"]["enum"] == ["invitation", "agreement"]
+    schema = response_schema({"r1"})
+    assert all(branch["properties"]["action"]["enum"] != ["handoff_private"] for branch in schema["oneOf"])
     historical = ResponseDecision(action="handoff_private", reason="long_followup", text="旧审计正文", evidence_ids=["r1"])
     assert historical.reason == "long_followup"
 
@@ -30,7 +28,7 @@ async def test_long_video_keeps_all_sources_and_actions_through_optional_web_fet
     response_input = ResponseDecisionInput({"evidence": evidence})
     aliases = [reference.alias for reference in response_input.references]
     assert len(aliases) == 691
-    schema = response_schema(aliases, allow_handoff=False, video_actions=True)
+    schema = response_schema(aliases, video_actions=True)
     candidate = {
         "action": "reply_public",
         "reason": "specific_detail",
