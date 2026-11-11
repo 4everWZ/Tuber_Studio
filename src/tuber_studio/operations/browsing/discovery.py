@@ -284,13 +284,17 @@ class BackgroundDiscovery:
         issues = store.all(
             """SELECT t.id,t.round_id,t.bvid,t.error,t.updated_at,t.status
                FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id
-               WHERE (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1) AND t.error IS NOT NULL
-               AND NOT EXISTS (SELECT 1 FROM browsing_batches b WHERE b.round_id=r.id)
-               AND (t.status='retry_wait' OR json_extract(t.payload,'$.consecutive_failures')=3)
+               WHERE t.error IS NOT NULL AND (
+                 (r.preview=1 AND t.status='failed')
+                 OR ((json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)
+                   AND NOT EXISTS (SELECT 1 FROM browsing_batches b WHERE b.round_id=r.id)
+                   AND (t.status='retry_wait' OR json_extract(t.payload,'$.consecutive_failures')=3))
+               )
                AND r.account_id=? AND r.character_id=? AND r.character_version=?
                UNION ALL
                SELECT id,id,NULL,COALESCE(error,json_extract(metrics,'$.source_error')),updated_at,status
-               FROM browsing_rounds WHERE (json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1)
+               FROM browsing_rounds WHERE ((preview=1 AND status='failed')
+                 OR json_extract(config,'$.discovery_publish')=1 OR json_extract(config,'$.autonomous_batch')=1)
                AND account_id=? AND character_id=? AND character_version=?
                AND COALESCE(error,json_extract(metrics,'$.source_error')) IS NOT NULL
                ORDER BY updated_at DESC LIMIT 50""",

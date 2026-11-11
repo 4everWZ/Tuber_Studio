@@ -35,6 +35,17 @@ async def test_clear_acknowledges_existing_errors_and_new_occurrences_still_appe
     assert issue["error"] == "读取失败"
 
 
+async def test_failed_read_only_task_surfaces_and_can_be_acknowledged(browsing):
+    browsing.discovery.remember_account("100")
+    row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
+    task = browsing.repo.task(row["id"], {"bvid": BV, "title": "预览视频"})
+    browsing.store.execute("UPDATE browsing_tasks SET status='failed',error='取材失败' WHERE id=?", (task,))
+    issue, = browsing.discovery.records()["issues"]
+    assert issue["id"] == task and issue["round_id"] == row["id"]
+    assert clear_issues(browsing)["issues"] == []
+    assert browsing.tasks(task_id=task)[0]["error"] == "取材失败"
+
+
 async def test_another_occurrence_in_the_same_clock_tick_remains_unread(browsing, monkeypatch):
     browsing.discovery.remember_account("100")
     clock = time.time()

@@ -16,6 +16,8 @@ from tuber_studio.operations.browsing.repository import BrowsingRepository
     ("你准备开播吗？", "chat"),
     ("发个动态是什么意思？", "chat"),
     ("请发个动态：聊聊白饭", "dynamic"),
+    ("写动态：聊聊白饭，保存为草稿", "dynamic"),
+    ("先别写动态：聊聊白饭", "chat"),
     ("去刷视频看看原神新版本", "browse"),
     ("准备开播", "live"),
 ])

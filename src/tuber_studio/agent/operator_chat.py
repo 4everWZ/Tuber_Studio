@@ -15,7 +15,7 @@ from ..store import dump
 
 _POLITE = r"(?:(?:请|帮我|给我)[ ，]*){0,2}"
 _DYNAMIC = re.compile(
-    _POLITE + r"(?:发个动态|发条动态|发一条动态|发动态|写个动态|写条动态)"
+    _POLITE + r"(?:发个动态|发条动态|发一条动态|发动态|写个动态|写条动态|写动态)"
     r"(?=$|[\s：:，,]|吐槽|分享|聊聊|说说|关于|庆祝|讲讲)(.*)", re.S
 )
 _BROWSE = re.compile(
