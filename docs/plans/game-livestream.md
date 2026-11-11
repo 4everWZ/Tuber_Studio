@@ -1,6 +1,6 @@
 # 游戏直播实施计划
 
-游戏实机在社区运营和直播之后推进，复用现有角色、推理、语音、账号和 OBS 工作台。实机接口与验收由[游戏契约草案](../specs/game-livestream.md)维护，业务与推理归属见[跨主机规范](../specs/distributed-runtime.md)。双机迁移、运营模型和点歌的设备证据保存在[实装报告](../../evaluations/results/distributed-operations-20261102.md)。
+游戏实机在社区运营和直播之后推进，复用现有角色、推理、语音、账号和 OBS 工作台。实机接口与验收由[游戏契约草案](../specs/live/game-livestream.md)维护，业务与推理归属见[跨主机规范](../specs/foundation/distributed-runtime.md)。双机迁移、运营模型和点歌的设备证据保存在[实装报告](../../evaluations/results/distributed-operations-20261102.md)。
 
 ## 现有离线能力
 
@@ -21,33 +21,33 @@
 
 ## 原需求覆盖与实施入口
 
-游戏实机属于后续扩展 TBD，尚未进入当前交付实施范围。原始输入的 v0.2 需求已归入[游戏规范](../specs/game-livestream.md)，临时输入不作为维护依赖。下表保留原 129 个需求 ID 的责任入口。DR、AR 及 AT-013–016 的非游戏部分参见双机实装报告，游戏部分继续按实机证据验收。
+游戏实机属于后续扩展 TBD，尚未进入当前交付实施范围。原始输入的 v0.2 需求已归入[游戏规范](../specs/live/game-livestream.md)，临时输入不作为维护依赖。下表保留原 129 个需求 ID 的责任入口。DR、AR 及 AT-013–016 的非游戏部分参见双机实装报告，游戏部分继续按实机证据验收。
 
 | 原ID | 责任入口 | 阶段／核对重点 |
 | --- | --- | --- |
-| FR-001–005 | [会话与控制权](../specs/game-livestream.md#会话与控制权) | G1：连接、存档／关卡、控制权、断线核对、退出释放。 |
-| FR-010–015 | [状态与观察](../specs/game-livestream.md#状态与观察) | G1–G2：带版本与时间的状态、未知值、按需／事件截图和最新观察。 |
-| FR-020–028 | [动作执行与恢复](../specs/game-livestream.md#动作执行与恢复) | G1：高层动作、参数前置条件、取消、未知先查、无进展可恢复；实时与暂停分开。 |
-| FR-030–034 | [游戏闭环](../specs/game-livestream.md#游戏闭环) | G2–G3：SMAPI优先、农活与跨日；FR-033扩展保留后续，钓鱼／战斗另测。 |
-| FR-040–044 | [游戏闭环](../specs/game-livestream.md#游戏闭环) | G4：具体版本、策略来源、资源／格子操作、胜负、两种时序模式。 |
-| FR-050–056 | [弹幕表达与记忆](../specs/game-livestream.md#弹幕表达与记忆) | G3：建议／投票／挑战、自然人物表达、读档事实；沿用现有角色与播放owner。 |
-| FR-060–064 | [工作台与音画](../specs/game-livestream.md#工作台与音画) | G2–G5：控制入口、电脑OBS合成、实际音频时钟、独立音量与ducking。 |
-| DR-001–007 | [数据权威](../specs/distributed-runtime.md#数据权威与保留)、[恢复](../specs/distributed-runtime.md#迁移备份与恢复)、[在线依赖](../specs/distributed-runtime.md#节点与业务服务中断) | G1、G5：稳定身份与私域隔离、可重建上下文、唯一写入、备份完整性、主机退出与推理失联。 |
-| IR-001–005 | [接口语义](../specs/game-livestream.md#接口语义) | G1：同ID幂等、过期／控制权、配对认证、单调超时及跨机时间偏差、版本能力。 |
-| PR-001–006 | [游戏负载验收](../specs/game-livestream.md#游戏负载验收)、[既有资源owner](../specs/models-and-audio.md) | G2–G5：既有直播Profile／Genie先验，独立模型按需切换，实际参数、滚动上下文、保护阈值、单项与并发。 |
-| PR-010–014 | [游戏负载验收](../specs/game-livestream.md#游戏负载验收) | G1–G5：分布与场景期限；1s确认与实际停止分开；两游戏各60分钟语音／弹幕会话。 |
-| PR-020–023 | [媒体归属与寻址](../specs/distributed-runtime.md#媒体地址与可选组件) | G2、G5：独立缓存、存档／录像保护、采样压缩与带宽、OBS本地采集。 |
-| QR-001–005 | [游戏动作](../specs/game-livestream.md#动作执行与恢复)、[控制权](../specs/game-livestream.md#会话与控制权) | G1–G5：故障分流、本地释放、关联记录不存CoT、按游戏拆适配器、可选安装及旧功能回归。 |
-| QR-006–007 | [现有部署owner](../guides/deployment.md)、[工作台](../specs/game-livestream.md#工作台与音画) | G0、G5：源码／环境分离，缺镜像才拉取；独立存档、本地录制，不自动开播／发送。 |
-| AR-001–007 | [职责与部署模式](../specs/distributed-runtime.md#职责与部署模式) | G0–G1：推荐电脑业务＋独立推理、全本地可选、同一业务实现、可替换端点；C/S仍TBD。 |
-| AR-010–015 | [媒体地址与可选组件](../specs/distributed-runtime.md#媒体地址与可选组件)、[跨主机验收](../specs/distributed-runtime.md#跨主机验收) | G1、G5：Node迁移、直接播放寻址、开关／取消／15GiB语义、分主机占用、保原缓存、实测搬迁收益。 |
+| FR-001–005 | [会话与控制权](../specs/live/game-livestream.md#会话与控制权) | G1：连接、存档／关卡、控制权、断线核对、退出释放。 |
+| FR-010–015 | [状态与观察](../specs/live/game-livestream.md#状态与观察) | G1–G2：带版本与时间的状态、未知值、按需／事件截图和最新观察。 |
+| FR-020–028 | [动作执行与恢复](../specs/live/game-livestream.md#动作执行与恢复) | G1：高层动作、参数前置条件、取消、未知先查、无进展可恢复；实时与暂停分开。 |
+| FR-030–034 | [游戏闭环](../specs/live/game-livestream.md#游戏闭环) | G2–G3：SMAPI优先、农活与跨日；FR-033扩展保留后续，钓鱼／战斗另测。 |
+| FR-040–044 | [游戏闭环](../specs/live/game-livestream.md#游戏闭环) | G4：具体版本、策略来源、资源／格子操作、胜负、两种时序模式。 |
+| FR-050–056 | [弹幕表达与记忆](../specs/live/game-livestream.md#弹幕表达与记忆) | G3：建议／投票／挑战、自然人物表达、读档事实；沿用现有角色与播放owner。 |
+| FR-060–064 | [工作台与音画](../specs/live/game-livestream.md#工作台与音画) | G2–G5：控制入口、电脑OBS合成、实际音频时钟、独立音量与ducking。 |
+| DR-001–007 | [数据权威](../specs/foundation/distributed-runtime.md#数据权威与保留)、[恢复](../specs/foundation/distributed-runtime.md#迁移备份与恢复)、[在线依赖](../specs/foundation/distributed-runtime.md#节点与业务服务中断) | G1、G5：稳定身份与私域隔离、可重建上下文、唯一写入、备份完整性、主机退出与推理失联。 |
+| IR-001–005 | [接口语义](../specs/live/game-livestream.md#接口语义) | G1：同ID幂等、过期／控制权、配对认证、单调超时及跨机时间偏差、版本能力。 |
+| PR-001–006 | [游戏负载验收](../specs/live/game-livestream.md#游戏负载验收)、[既有资源owner](../specs/foundation/models-and-audio.md) | G2–G5：既有直播Profile／Genie先验，独立模型按需切换，实际参数、滚动上下文、保护阈值、单项与并发。 |
+| PR-010–014 | [游戏负载验收](../specs/live/game-livestream.md#游戏负载验收) | G1–G5：分布与场景期限；1s确认与实际停止分开；两游戏各60分钟语音／弹幕会话。 |
+| PR-020–023 | [媒体归属与寻址](../specs/foundation/distributed-runtime.md#媒体地址与可选组件) | G2、G5：独立缓存、存档／录像保护、采样压缩与带宽、OBS本地采集。 |
+| QR-001–005 | [游戏动作](../specs/live/game-livestream.md#动作执行与恢复)、[控制权](../specs/live/game-livestream.md#会话与控制权) | G1–G5：故障分流、本地释放、关联记录不存CoT、按游戏拆适配器、可选安装及旧功能回归。 |
+| QR-006–007 | [现有部署owner](../guides/deployment.md)、[工作台](../specs/live/game-livestream.md#工作台与音画) | G0、G5：源码／环境分离，缺镜像才拉取；独立存档、本地录制，不自动开播／发送。 |
+| AR-001–007 | [职责与部署模式](../specs/foundation/distributed-runtime.md#职责与部署模式) | G0–G1：推荐电脑业务＋独立推理、全本地可选、同一业务实现、可替换端点；C/S仍TBD。 |
+| AR-010–015 | [媒体地址与可选组件](../specs/foundation/distributed-runtime.md#媒体地址与可选组件)、[跨主机验收](../specs/foundation/distributed-runtime.md#跨主机验收) | G1、G5：Node迁移、直接播放寻址、开关／取消／15GiB语义、分主机占用、保原缓存、实测搬迁收益。 |
 | UI-001–005 | [现有共同UI／账号owner](../specs/tuber-studio.md) | G0、G5：复用共享账号状态及持久登录；核吸顶／滚动和切页可见、窄屏不遮挡、设置入口；刷新失败保上次有效资料并标更新时间／具体状态，网络暂错不直接当退出。当前字段与凭据不复制到游戏规范。 |
-| BP-001–008 | [测量约束](#基准与采用门槛)、[游戏负载](../specs/game-livestream.md#游戏负载验收) | G5：功能基线、Gemma慢响应分层、两机资源及阶段时钟、固定条件、重复样本、延迟／吞吐及质量分列。运营问题归[当前交付计划](current.md#运营主线)。 |
-| OP-001–005 | [测量约束](#基准与采用门槛)、[既有上下文owner](../specs/context-and-compaction.md) | G5：重复请求／编码／下载／序列化、稳定引用与版本失效、前缀与KV、背压和并发；能力与预算不隐降。 |
-| OP-010–015 | [测量约束](#基准与采用门槛)、[模型owner](../specs/models-and-audio.md) | G5：实际引擎参数和projector四位可行性／精度／执行位置／回退；同图文字、小目标、格子坐标、UI、复杂图及图像工具决策质量。 |
-| AT-001–006 | [游戏合同](../specs/game-livestream.md) | 双机真实推理、状态／动作、两游戏闭环、自主策略变化、视觉信息及纠错，逐项留证据。 |
-| AT-007–012 | [游戏负载验收](../specs/game-livestream.md#游戏负载验收) | 人工角色评审、建议／投票与记忆、各60分钟、异常恢复、OBS同步和完整退出。 |
-| AT-013–016 | [跨主机验收](../specs/distributed-runtime.md#跨主机验收) | 数据归属与缓存保护、推理节点替换、隔离备份恢复、电脑在线依赖及未知动作核对。 |
+| BP-001–008 | [测量约束](#基准与采用门槛)、[游戏负载](../specs/live/game-livestream.md#游戏负载验收) | G5：功能基线、Gemma慢响应分层、两机资源及阶段时钟、固定条件、重复样本、延迟／吞吐及质量分列。运营问题归[当前交付计划](current.md#运营主线)。 |
+| OP-001–005 | [测量约束](#基准与采用门槛)、[既有上下文owner](../specs/foundation/context-and-compaction.md) | G5：重复请求／编码／下载／序列化、稳定引用与版本失效、前缀与KV、背压和并发；能力与预算不隐降。 |
+| OP-010–015 | [测量约束](#基准与采用门槛)、[模型owner](../specs/foundation/models-and-audio.md) | G5：实际引擎参数和projector四位可行性／精度／执行位置／回退；同图文字、小目标、格子坐标、UI、复杂图及图像工具决策质量。 |
+| AT-001–006 | [游戏合同](../specs/live/game-livestream.md) | 双机真实推理、状态／动作、两游戏闭环、自主策略变化、视觉信息及纠错，逐项留证据。 |
+| AT-007–012 | [游戏负载验收](../specs/live/game-livestream.md#游戏负载验收) | 人工角色评审、建议／投票与记忆、各60分钟、异常恢复、OBS同步和完整退出。 |
+| AT-013–016 | [跨主机验收](../specs/foundation/distributed-runtime.md#跨主机验收) | 数据归属与缓存保护、推理节点替换、隔离备份恢复、电脑在线依赖及未知动作核对。 |
 
 ## 基准与采用门槛
 

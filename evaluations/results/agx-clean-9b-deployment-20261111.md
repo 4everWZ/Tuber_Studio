@@ -1,5 +1,7 @@
 # 大肥鱼 Qwen3.5-9B：AGX 实机部署，2026-11-11
 
+以下记录的是 32,768 上下文的首次装配。后来以原生 262,144 窗口和开启思考运行的条件与结果见[运营审核回放](review-agx-mainline-20261111.md)。
+
 选定的 `checkpoint-38` 已合并到固定的 `Qwen/Qwen3.5-9B` 基座，导出 Q4_K_M 主权重和同基座 Q8_0 视觉投影器。两件 GGUF 从 [Hugging Face 固定版本](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/tree/21ecede9e9a3f07764c8c0ee3bc24d2de7cf5aff/releases/1.0.0) 下载到 AGX，并校验完整 SHA-256。旧 Hugging Face 文件和可见性保持。Workstation 保留版本化 adapter、最终两件 GGUF 和清单，回收本轮合并及 F16 导出中间件 34.24 GiB。文件校验值与精确运行标识见同名 JSON。
 
 AGX 使用 [n8500x Jetson CUDA 镜像](https://hub.docker.com/r/n8500x/llamacpp-jetson) 的 `b10884` 固定 ARM64 manifest。保留校验过的基础层、依赖层和单份运行层，省掉会重复 `/app` 的权限修改层，导入为本项目单独的 Docker 镜像。实际引擎 commit `434ddbb`，加载 33/33 GPU 层，CUDA 架构 `sm_87`，Flash Attention 开启。单槽实报 32,768 token；CUDA0 的 8 层注意力 KV 为 288 MiB，K 与 V 都是 `q4_0`，各 144 MiB。容器重启策略为 `unless-stopped`。运行窗口的 162 次设备采样中，RAM 总量 61.37 GiB，加载前可用 29.69 GiB，最低可用 22.18 GiB，未触发 OOM。模型文件只读挂载；这次部署的服务使用 llama.cpp。

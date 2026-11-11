@@ -1,5 +1,7 @@
 # 2026-11-11 大肥鱼 9B 干净基线
 
+本记录保留训练与离线评估结论。后续装配及运行条件见[AGX 部署](agx-clean-9b-deployment-20261111.md)和[真实视频审核回放](review-agx-mainline-20261111.md)。
+
 ## 训练与开发选择
 
 工作站运行 `dafeiyu-clean-9b-oqbod9bf`。使用 Qwen/Qwen3.5-9B `c202236235762e1c871ad0ccb60c8ee5ba337b9a`，双 RTX 3090 BF16 DoRA，rank 16、alpha 32、seed 42，语言层更新，视觉层冻结。两轮 76 步，训练时间 781.6 秒，进程耗时 805.8 秒。原始语料和历史训练文件仍可独立复现。

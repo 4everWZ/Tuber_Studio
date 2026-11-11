@@ -59,7 +59,7 @@ UC-04：读取／导入指定视频评论 → 受限批次清洗、归类／聚�
 
 comments保存thread_id／parent_comment_id；B站root标识楼、parent标识目标评论，顶层自身comment_id作楼ID，导入可映射两字段，旧顶层行回填自身ID。只读取公开返回中已有的楼内预览，不声称已抓完全部楼内分页。压缩与占用查询须指定单楼；旧整视频窗口保留但不混入新楼。楼内发布使用对应root和parent，不能改成另一个回复对象。
 
-草稿保留生成版本及answer_check：来源原句、fictional标记、所问字段、缺项、是否已补答与warning，供审核判断；warning不伪装为已拒绝／已发布。偶发遗漏可以作为首版限制，明确问题仍须如实标记不完整，闲聊不强求所有旧事实。
+草稿附上原句、虚构标记、所问字段及缺项诊断。提交状态按实际回执记录。
 
 完整OPS批处理按 map → reduce：有界读取／CPU预处理、有限LLMWorker、合并／去重和审核。生命周期 pending → running → completed/failed/cancelled → merged/archived；每项有受限评论集、任务说明、deadline、取消信号、进度及错误，输出引用来源评论ID。主调度器控制资源并合并，子任务不能直接改角色核心或绕过发布策略。
 

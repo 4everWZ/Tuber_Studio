@@ -2,9 +2,9 @@
 
 当前默认演出使用图片／GIF。可选模型按下文安装到 `runtime/live2d/whale` 后生效。要切回 GIF，可将角色模型目录移出 `runtime/live2d/` 并刷新场景。版本化交付包独立留存。
 
-直播适配版 `0.2.0-community` 使用氵六青的「DS 鲸鱼娘」。上游署名记录鲸鱼娘原作与女仆二创来源。直播包保留原模型、贴图和物理，在运行配置里映射待机、说话、开心、困惑和礼物，另加轻点头、偏头和微笑。仓库自填的 CC 标签作为来源信息展示。安装与加载检查模型、贴图、动作映射和 SDK 兼容性。 [来源与署名](https://github.com/xkk6663/dsh-live2d-mao#-许可与致谢)
+直播适配版 `0.2.0-community` 使用氵六青的「DS 鲸鱼娘」。上游署名记录鲸鱼娘原作与女仆二创来源。直播包保留原模型、贴图和物理，在运行配置里映射待机、说话、开心、困惑和礼物，另加轻点头、偏头和微笑。来源与许可字段随模型展示。安装时检查模型、贴图、动作映射和 SDK 兼容性。 [来源与署名](https://github.com/xkk6663/dsh-live2d-mao#-许可与致谢)
 
-本机交付包在 `runtime/releases/dafeiyu-avatar/0.2.0-community`。将包内 `model` 目录交给下文的安装工具，工作台与 OBS 会从角色 `whale` 的运行目录加载它。 `mouth_gain` 可在 `avatar.json` 调整，本版用 2.4。OBS 的每帧口型取当前音频时刻的包络，工作台静音会停播并闭嘴。 [工件清单](../../assets/whale/community-live2d.json) · [OBS 实测](../../evaluations/results/live2d-community-obs-20261111.json)
+本机交付包在 `runtime/releases/dafeiyu-avatar/0.2.0-community`。将包内 `model` 目录交给下文的安装工具，工作台与 OBS 会从角色 `whale` 的运行目录加载它。 `mouth_gain` 可在 `avatar.json` 调整，本版用 2.4。OBS 的每帧口型取当前音频时刻的包络，工作台静音会停播并闭嘴。 [工件清单](../../../assets/whale/community-live2d.json) · [OBS 实测](../../../evaluations/results/live2d-community-obs-20261111.json)
 
 ## 自制立绘的工程文件
 

@@ -1,6 +1,6 @@
 # 共享表情包契约
 
-本文件拥有运营表情包的素材、模型选择和图片传输约束；私信、动态各自保留来源、审核、频率与防重复发布的语义。角色直播表情动画仍由直播与素材规范维护。
+本规范维护共享表情图库、模型选图和图片传输。私信与动态沿用各自的来源、审核、发送频率与回执。直播表情动画见[直播与媒体](../live/live-and-media.md)。
 
 | ID | 要求 |
 | --- | --- |
@@ -16,6 +16,6 @@
 
 管理预览可查看禁用素材。素材和草稿占用保存在本地数据库，预览通过认证后的本地接口提供。共享文件按 SHA 校验。可选生成服务通过 `MemeGenerationService` 复用图库校验，生成图片初始未启用。
 
-实现参考[astrbot_plugin_meme_manager](https://github.com/anka-afk/astrbot_plugin_meme_manager/tree/d5e9475b00669aecd6596bf49af159c889725a3b)的分类、角色图库和受限选择方式；图片传输协议核对[bilibili-api-python 17.4.2](https://pypi.org/project/bilibili-api-python/17.4.2/)，不引入整套机器人框架或SDK依赖。已有鲸鱼素材继续使用assets/whale/manifest.json声明的作者与“大肥鱼项目署名许可1.0”，不是MIT图包。
+实现参考[astrbot_plugin_meme_manager](https://github.com/anka-afk/astrbot_plugin_meme_manager/tree/d5e9475b00669aecd6596bf49af159c889725a3b)的分类、角色图库和受限选择方式；图片传输协议核对[bilibili-api-python 17.4.2](https://pypi.org/project/bilibili-api-python/17.4.2/)，不引入整套机器人框架或SDK依赖。既有鲸鱼素材的作者、来源与声明见[形象清单](../../../assets/whale/manifest.json)。
 
-验收覆盖原图与动图字节保留、跨角色和渠道共享、禁用与删除占用、无效 ID 与篡改、模型选择失败、单条最终发布、上传失败后人工重试，以及结果不确定时核对原提交。新增静态图的上游图集及裁切帧见[素材清单](../../assets/whale/memes/manifest.json)。
+验收覆盖原图与动图字节保留、跨角色和渠道共享、禁用与删除占用、无效 ID 与篡改、模型选择失败、单条最终发布、上传失败后人工重试，以及结果不确定时核对原提交。新增静态图的上游图集及裁切帧见[素材清单](../../../assets/whale/memes/manifest.json)。

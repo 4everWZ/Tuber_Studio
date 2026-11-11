@@ -1,23 +1,27 @@
 # 项目文档
 
-规范维护已接受的行为、接口和验收条件；指南说明当前使用与部署方法；计划只记录未完成工作及待验收范围。实现状态和实测证据不反向降低规范要求。当前模型、程序和环境的历史测量保存在 `evaluations/results/`，不作为新部署自动通过的证明。
-
 ## 使用指南
 
-- [部署与启动](guides/deployment.md)
-- [B 站社区运营](guides/operations.md)
-- [直播工作台与点歌](guides/live.md)
-- [创建 OC](guides/characters.md)
+- [部署、推理节点与数据恢复](guides/deployment.md)
+- [对话、视频、评论、私信与动态](guides/operations.md)
+- [角色卡、音色与形象](guides/characters.md)
+- 直播 · [工作台与点歌](guides/live/workbench.md) · [可选 Live2D](guides/live/avatar.md)
 
 ## 产品与技术规范
 
 - [产品与系统契约](specs/tuber-studio.md)
-- 运营 · [评论](specs/comment-operations.md) · [自主浏览](specs/autonomous-browsing.md) · [私信](specs/private-messages.md) · [动态](specs/dynamic-operations.md) · [任务继续与回执核对](specs/operation-continuations.md)
-- 运行底座 · [跨主机运行与数据归属](specs/distributed-runtime.md) · [角色与记忆](specs/runtime-and-characters.md) · [上下文与压缩](specs/context-and-compaction.md) · [模型、声音与资源](specs/models-and-audio.md)
-- 演出与素材 · [直播与媒体](specs/live-and-media.md) · [表情包](specs/memes.md)
+- 运营 · [自主浏览与调度](specs/operations/autonomous-browsing.md) · [评论](specs/operations/comment-operations.md) · [私信](specs/operations/private-messages.md) · [动态](specs/operations/dynamic-operations.md) · [任务续跑与回执](specs/operations/operation-continuations.md) · [共享表情包](specs/operations/memes.md)
+- 运行底座 · [角色、关系与记忆](specs/foundation/runtime-and-characters.md) · [上下文与压缩](specs/foundation/context-and-compaction.md) · [模型、声音与资源](specs/foundation/models-and-audio.md) · [跨主机运行与数据](specs/foundation/distributed-runtime.md)
+- 直播 · [事件、场景、音乐与播放](specs/live/live-and-media.md) · [游戏实机草案](specs/live/game-livestream.md)
 
-## 交付计划
+## 计划与交接
 
-- [本地部署交接](handoff.md)
-- [当前交付计划](plans/current.md)
-- [游戏实机契约草案](specs/game-livestream.md) · [模拟现状、实机计划与需求映射](plans/game-livestream.md)
+- [当前工作与待验收项](plans/current.md)
+- [游戏模拟和实机计划](plans/game-livestream.md)
+- [当前部署交接](handoff.md)
+
+## 实测记录
+
+- [AGX 运营档部署](../evaluations/results/agx-clean-9b-deployment-20261111.md) · [30 个真实视频审核回放](../evaluations/results/review-agx-mainline-20261111.md)
+- [9B 微调配对评估](../evaluations/results/dafeiyu-clean-9b-20261111.md) · [早期候选持出回放](../evaluations/results/workstation-candidate-replay-20261110.md)
+- [OBS 口型与 GIF 回退](../evaluations/results/live2d-community-obs-20261111.json)

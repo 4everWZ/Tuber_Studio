@@ -2,11 +2,11 @@
 
 大肥鱼 OC 训练覆盖表达、关系和互动，并检查通用能力保留。平台能力、调度、联网取材与发送由业务程序提供。训练输入由既有语料派生，保留原始文本及历史训练集。
 
-## 当前 DoRA 与证据
+## 当前部署
 
-已部署的 1B 版本基座为 `openbmb/MiniCPM-V-4.7-1B`，历史训练使用 612 条 SFT 样本、assistant-only loss、DoRA rank 16／alpha 32，双 RTX 3090 训练五轮。部署工件由推理 Profile 核验主权重与投影器。
+运营档使用 Qwen3.5-9B 的 `checkpoint-38`，部署包包含同一基座的 Q4_K_M 权重和 Q8_0 视觉投影器。AGX 运行 llama.cpp CUDA，当前窗口为 262,144、K/V 为 `q4_0`，思考开启。训练选点、独立评估、导出和运行条件分别见[9B 配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)、[装配实测](../../evaluations/results/agx-clean-9b-deployment-20261111.md)和[运营审核回放](../../evaluations/results/review-agx-mainline-20261111.md)。
 
-工作站真实视频回放、字幕接口限制、画面引用问题及复读样例见[DoRA 实测](../../evaluations/results/authentic-dora-20261107/README.md)。结构完整、资源可运行与角色／内容质量分别判断。先前 V6 系列不作为当前部署或后续训练起点；历史实验保留在 Git 与 `evaluations/results/`。
+MiniCPM-V-4.7-1B 的历史训练使用 612 条 SFT 样本、assistant-only loss 和 DoRA rank 16／alpha 32，在双 RTX 3090 上训练五轮。字幕、帧引用和复读样例见[1B 实测](../../evaluations/results/authentic-dora-20261107/README.md)。
 
 ## Qwen3.5-9B 派生基线
 
@@ -31,16 +31,16 @@ torchrun --standalone --nproc_per_node=2 tools/training/train_dora.py \
 
 编号工件、分片摘要、开发选择与留出回放进度记录在本次实验结果中。[9B 干净基线](../../evaluations/results/dafeiyu-clean-9b-20261111.md)
 
-## 合并与 GGUF 导出
+## 历史 1B 的合并与 GGUF 导出
 
-部署需要同一次合并导出的主权重和视觉投影器。`export_grounded_sft.py` 完成 PEFT 合并、4× 视觉配置、GGUF 转换、Q4_K_M 量化及 `bundle.json` 元数据输出。要求底模快照目录名为 `ad9bf379feb71204c888b22923d63322452407f9`，llama.cpp 固定为 `0ec4027a2a0183de87c007069adddc06e665f7de`，并已构建量化工具。输出目录必须尚不存在。
+复现 MiniCPM 1B 时，`export_grounded_sft.py` 完成 PEFT 合并、4× 视觉配置、GGUF 转换、Q4_K_M 量化及 `bundle.json` 元数据输出。要求底模快照目录名为 `ad9bf379feb71204c888b22923d63322452407f9`，llama.cpp 固定为 `0ec4027a2a0183de87c007069adddc06e665f7de`，并已构建量化工具。输出使用新目录。
 
 ```bash
 python tools/training/export_grounded_sft.py \
   --base "$BASE" --adapter "$ADAPTER" --llama-cpp "$LLAMA_CPP" --output "$EXPORT"
 ```
 
-当前 adapter 使用原始底模合并，不传历史 V6 的 `--reference-model`。导出包含：
+该 1B 适配器与原始底模合并。导出包括以下文件。
 
 - `MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf`
 - `mmproj-4x-f16.gguf`

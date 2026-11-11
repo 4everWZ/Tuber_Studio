@@ -9,8 +9,8 @@ Tuber Studio is a self-hosted AI character workbench for Bilibili community oper
 ## What you can do
 
 - **Work through Bilibili comments.** Read or import comments, organize them by thread and generate replies in character. Review and edit drafts before authorizing a submission, then check the platform receipt.
-- **Run a community workspace.** Use autonomous browsing to find videos and collect subtitles or admitted visual evidence. Direct messages and dynamic posts have their own policies and review queues.
-- **Choose how the character is generated.** The project's fine-tuned Da-Fei-Yu model uses a short identity prompt. Generic local models and compatible APIs use the selected character card. Task material and conversation history remain separate from the character prompt.
+- **Run community operations.** Start video browsing, comments, direct messages and posts from one workspace. Watching uses available captions and sampled frames. The app checks comment invitations against platform user IDs before preparing a direct message. Review and send permissions are configured per channel.
+- **Edit the active character.** Operations, operator chat and live production use the selected character card. Create, edit or activate cards in the character workspace. Saving updates the selected card in place. Direct messages and posts share the sticker library.
 - **Prepare a live show.** Arrange scenes, use the OBS browser source, synthesize speech and play song requests with lyrics and lip sync. The local mock flow lets you exercise the workspace before connecting a real stream.
 
 ## Quick start
@@ -38,11 +38,11 @@ A standalone Jetson installation is also available. It runs the program bundle o
 
 | Area | Status |
 | --- | --- |
-| Community operations | Current delivery priority. Draft workflows are available. Real-account permissions, model decisions and authorized writes have separate acceptance criteria. |
-| Live production | Local workspace, mock events, speech and playback are available. OBS acceptance, real platform adapters and sustained mixed load remain tracked. |
+| Community operations | The AGX operations profile runs a fine-tuned Qwen3.5-9B. A review run covered 30 real videos. Real incoming direct messages and sustained operation remain to be verified. |
+| Live production | Images and GIFs are the default. OBS tests covered optional Live2D lip sync, mute and GIF fallback. Live platform integration, first-audio latency and sustained mixed load remain open. |
 | Games | Stardew Valley and Plants vs. Zombies have offline simulations. Real-game integration follows the live production phase. |
 
-The [shared roadmap](docs/plans/current.md) records the implementation gaps, device evidence and acceptance criteria.
+The [documentation index](docs/README.md) links to the test results and remaining acceptance work.
 
 ## Development
 
