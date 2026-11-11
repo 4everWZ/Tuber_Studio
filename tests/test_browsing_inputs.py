@@ -512,7 +512,7 @@ def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(
             row, ResponseDecision, response, RESPONSE_INSTRUCTION
         )
         assert reply[0]["content"] == GROUNDED_DAFEIYU_CARD
-        assert "ref:是内部引用命名空间，仅用于evidence_ids" in reply[1]["content"]
+        assert "evidence_ids选支撑正文的材料编号" in reply[1]["content"]
         assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
         if kind == "top_level":
             assert "分别引用" in reply[1]["content"]

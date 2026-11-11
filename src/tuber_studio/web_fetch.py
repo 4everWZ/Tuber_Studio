@@ -20,8 +20,7 @@ HTTPS_URL_PATTERN = (
 REDIRECTS = {301, 302, 303, 307, 308}
 HIDDEN_TAGS = {"script", "style", "noscript", "template", "svg", "nav", "header", "footer"}
 WEB_FETCH_INSTRUCTION = (
-    '先决定怎样处理当前交流。如果要看网页原文再答，第一步只返回 {"web_fetch":"该页完整HTTPS链接"}，'
-    "然后会收到真实网页摘录。已有材料足够就直接用原回复格式。"
+    '按当前材料回应。需要补查网页时，用 {"web_fetch":"完整HTTPS链接"} 读取摘录。'
 )
 
 
@@ -81,7 +80,7 @@ class OperationWebFetch:
                 origin = (
                     "" if result["url"] == str(source_url(request.web_fetch)) else f"\n来源 {result['url']}"
                 )
-                content = f"网页已读取。摘录：{excerpt}{origin}\n直接把摘录里与问题相关的内容告诉对方。"
+                content = f"网页摘录：{excerpt}{origin}"
             else:
                 content = "本轮未读到网页正文。结合现有材料回应当前问题。"
             selection = request.model_dump_json().replace("<", "\\u003c").replace(">", "\\u003e")

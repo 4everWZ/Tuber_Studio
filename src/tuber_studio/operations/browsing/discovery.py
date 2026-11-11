@@ -480,7 +480,7 @@ async def discover_candidates(browsing, row, retries):
             row,
             BrowsePlan,
             {"public_interests": browsing.runtime.character["core"], "public_browsing_feedback": feedback},
-            "只提出有界浏览计划。空词默认recommend；search必须明确返回真实关键词；可以wait。不得使用私人记忆。",
+            "根据本次候选来源规划浏览。search填搜索词，recommend看推荐，wait稍后再来。",
         )
         browsing.store.execute(
             "UPDATE browsing_rounds SET metrics=? WHERE id=?",
@@ -665,7 +665,7 @@ async def plan_batch(browsing, row, candidates):
         "already_commented表示已有视频主回复，不再重复发主回复，但可以继续翻评论、回复新留言。"
         "watch_state区分new、started、reading、viewed和complete；只有fully_read=true才表示完整读过可用内容。"
         "choices是以每个候选BV号为唯一键的对象，每项给action、具体explanation和整数priority。"
-        "priority越大越先处理；相同priority按本批候选原顺序处理，不要求每项优先级不同。"
+        "priority越大越先处理，同优先级沿用候选顺序。"
         "从available_actions选择："
         "watch观看视频，comments只逛评论区（未看过的视频也可以），skip略过，later暂后。"
         "explanation结合本条标题或讨论说明为什么选择该行动。"

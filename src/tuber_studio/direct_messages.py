@@ -826,11 +826,10 @@ class DirectMessages:
             {
                 "role": "system",
                 "content": (
-                    "这次只输出text、reason、reply_to、handled。conversation按真实先后列出用户、号主与已确认OC发言。"
-                    "open为待处理来信。若号主已回答某条，handled填incoming与对应的operator发言号outgoing，"
-                    "quote逐字引用真正解答该问题的号主原话。"
-                    "reply_to列出本次text实际接话的open编号，text只回答这些未处理内容。意思相同的几条可一起处理。"
-                    "全答过则text留空；不能判断的来信不填任何一栏，reason写明原因。发言号只放字段，勿写入正文。"
+                    "conversation依次列出用户、号主和你已发送的话。open是待处理来信。"
+                    "把相近的来信一起自然接话，正文放text，实际回复的来信编号放reply_to。"
+                    "号主答过的放handled，填来信incoming、号主发言outgoing和对应原话quote。"
+                    "待判断的来信留在open，在reason说明原因。全答过时text留空。"
                 ),
             }
         )

@@ -1199,14 +1199,12 @@ class BrowsingDecisions:
             data,
             RESPONSE_INSTRUCTION
             + (" grouped_comments是同一用户对同一对象的连续来评。若一并公开回答，"
-               "covered_comments只列正文实际回答的来评ref编号，必须包含当前回复目标。"
+               "covered_comments列当前回复目标和正文一并回答的其他来评编号。"
                if context.get("grouped_comments") else "")
             + (
-                " 这次可直接选择行动并给出正文，无需先做兴趣或渠道分类。"
-                "想继续翻评论选read_comments；想补看画面选watch_frames并引用目标时码附近的材料编号；想补读视频内容选read_more。"
-                "已有材料够用时直接reply_public并给出正文，也可skip或wait。"
-                "看过但不想发言可选finish。video_preference用like/not_interested/neutral表达对视频的真实偏好，"
-                "preference_reason说明具体原因；是否发言与喜欢程度分别决定，不发言也可以喜欢。"
+                "想发主评选reply_public并写正文。翻评论选read_comments，补看画面选watch_frames并引用附近时码，"
+                "补读选read_more，结束观看选finish，略过选skip，稍后处理选wait。"
+                "video_preference填like/not_interested/neutral，preference_reason说说视频里具体哪点影响了你的偏好。"
                 if video_actions
                 else ""
             ),

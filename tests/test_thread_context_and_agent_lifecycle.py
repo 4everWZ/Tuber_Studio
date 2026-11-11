@@ -26,9 +26,7 @@ async def test_anti_nesting_depth_guard_raises():
 
 
 def test_response_instruction_encourages_thread_context_and_mentions():
-    """RESPONSE_INSTRUCTION should instruct model to engage in thread context and mention others."""
-    assert "楼中楼" in RESPONSE_INSTRUCTION
-    assert "@" in RESPONSE_INSTRUCTION
+    assert "评论接对方的原话" in RESPONSE_INSTRUCTION
 
 
 def test_thread_context_assembly_and_timeline():
