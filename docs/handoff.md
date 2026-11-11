@@ -10,7 +10,7 @@
 & tools/deployment/run-business.ps1 -Data runtime -Config runtime/studio.json -Background
 ```
 
-运营档使用 AGX 上的 `dafeiyu-qwen35-9b:1.0.0`。Jetson CUDA Docker 镜像运行 llama.cpp，加载 33 层 GPU、Q4_K_M 权重和 Q8_0 视觉投影器。实报上下文 32,768，K 和 V 均为 `q4_0`。项目接口已验证文本、真实视频画面及三帧取材准入。镜像来源、Hugging Face 固定版本和设备数据见[部署实测](../evaluations/results/agx-clean-9b-deployment-20261111.md)。设备探测、训练分片和配对结果留在本机 `runtime/releases/dafeiyu-qwen35-9b/1.0.0/`。已移除本轮临时工作树，约 1.46 GiB。Workstation 保留 adapter 与最终 GGUF，回收合并和 F16 中间文件 34.24 GiB。
+运营档使用 AGX 上的 `dafeiyu-qwen35-9b:1.0.0`。Jetson CUDA Docker 镜像运行 llama.cpp，加载 33 层 GPU、Q4_K_M 权重和 Q8_0 视觉投影器。现用窗口为模型原生上限 262,144，K 和 V 均为 `q4_0`，CoT 开启。三帧部署测量约 86 秒，最低可用内存约 18.8 GiB，换页增长 2 MiB。实时取材直接使用当前 Provider，部署压测可独立重跑。镜像来源、Hugging Face 固定版本和原 32K 基线见[部署实测](../evaluations/results/agx-clean-9b-deployment-20261111.md)。设备探测、训练分片和配对结果留在本机 `runtime/releases/dafeiyu-qwen35-9b/1.0.0/`。Workstation 保留 adapter 与最终 GGUF，已回收中间文件 34.24 GiB。
 
 默认演出为图片／GIF。社区 Live2D 包及配套 SDK 已留在本机，安装预检通过。仓库自填的 CC 字段是来源信息，安装与运行检查实际素材。 [安装和切换说明](guides/live2d.md)
 
@@ -24,4 +24,4 @@
 
 Python 2,619 通过、4 跳过，前端 60 通过。无上下文的浏览器验收覆盖桌面和窄屏、号主对话、动态草稿、只读运营、评论导入与审核、来信定位和替身回执、告警清除、场景同步与本地歌曲播放。实际 9B 在隔离工作台完成只读轮次，处理 1 个视频并生成 1 条待审评论。部分长动态请求会得到空稿诊断，简短请求成功；活动里的已发私信仍进入私信首页。
 
-真实工作台已用 Edge 打开。运营文本和视觉可用，自动运营待机。真实 B 站单视频轮次在账号核验处被平台拒绝，需重新登录或恢复读取权限。旧推理节点切直播档返回 HTTP 503，业务已回到运营档。正式平台发送、30 个真实视频审核回放及直播首音仍待验。OBS 口型和 GIF 回退沿用已有[实测记录](../evaluations/results/live2d-community-obs-20261111.json)。
+真实 B 站账号已重新登录。真视频有 CC 和无 CC 两例各取得 3 帧。故障注入验证了字幕回退与两种材料均缺的诊断。直播节点保留 MiniCPM5-2B 与 128K，使用 llama.cpp CPU KV 配置解决切档时的 GPU 内存分配失败。Genie 和浏览器播放器的三次首音为 58.2、44.7 和 40.7 秒，超出既有延迟目标。OBS 口型和 GIF 回退沿用已有[实测记录](../evaluations/results/live2d-community-obs-20261111.json)。
