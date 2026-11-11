@@ -154,10 +154,18 @@ class ContinuationCoordinator:
             CREATE TABLE IF NOT EXISTS operation_continuation_steps(
                 id INTEGER PRIMARY KEY,continuation_id TEXT NOT NULL,episode TEXT NOT NULL,
                 recovery INTEGER NOT NULL,phase TEXT NOT NULL,status TEXT NOT NULL,
-                action TEXT,output TEXT,feedback TEXT,context TEXT,created_at REAL NOT NULL);
+                action TEXT,output TEXT,feedback TEXT,context TEXT,created_at REAL NOT NULL,
+                resume_value TEXT);
             CREATE TABLE IF NOT EXISTS operation_continuation_budgets(
                 id TEXT PRIMARY KEY,limits TEXT NOT NULL,budget TEXT NOT NULL);
         """)
+        columns = {column[1] for column in store.db.execute("PRAGMA table_info(operation_continuation_steps)")}
+        if "resume_value" not in columns:
+            store.execute("ALTER TABLE operation_continuation_steps ADD COLUMN resume_value TEXT")
+        store.execute(
+            "CREATE INDEX IF NOT EXISTS operation_steps_resume ON operation_continuation_steps(continuation_id) "
+            "WHERE resume_value IS NOT NULL"
+        )
         # Retire only factory-created totals. Custom task budgets stay explicit;
         # the public settings never offered these former episode-level caps.
         with store.db:
@@ -226,7 +234,9 @@ class ContinuationCoordinator:
             if row["state"] == "awaiting_review":
                 row["can_resume"] = False
         row["revisions"] = self.store.all(
-            "SELECT * FROM operation_continuation_steps WHERE continuation_id=? ORDER BY id", (identity,)
+            "SELECT id,continuation_id,episode,recovery,phase,status,action,output,feedback,context,created_at "
+            "FROM operation_continuation_steps WHERE continuation_id=? ORDER BY id",
+            (identity,),
         )
         for item in row["revisions"]:
             for key in ("output", "feedback", "context"):
@@ -420,26 +430,33 @@ class ContinuationCoordinator:
         return self.get(identity)
 
     def _state(self, identity, state, *, feedback=None, output=None, owner=None):
-        self.store.execute(
-            "UPDATE operation_continuations SET state=?,feedback=COALESCE(?,feedback),"
-            "current_output=COALESCE(?,current_output),updated_at=? WHERE id=?"
-            + (" AND owner=?" if owner is not None else ""),
-            (
-                state,
-                dump(feedback) if feedback is not None else None,
-                dump(visible_payload(output)) if output is not None else None,
-                time.time(),
-                identity,
-                *([owner] if owner is not None else []),
-            ),
-        )
+        with self.store.db:
+            changed = self.store.db.execute(
+                "UPDATE operation_continuations SET state=?,feedback=COALESCE(?,feedback),"
+                "current_output=COALESCE(?,current_output),updated_at=? WHERE id=?"
+                + (" AND owner=?" if owner is not None else ""),
+                (
+                    state,
+                    dump(feedback) if feedback is not None else None,
+                    dump(visible_payload(output)) if output is not None else None,
+                    time.time(),
+                    identity,
+                    *([owner] if owner is not None else []),
+                ),
+            )
+            if changed.rowcount and state in {"invalid", "awaiting_review", "deferred", "completed"}:
+                self.store.db.execute(
+                    "UPDATE operation_continuation_steps SET resume_value=NULL "
+                    "WHERE continuation_id=? AND resume_value IS NOT NULL",
+                    (identity,),
+                )
 
-    def _step(self, row, phase, status, *, action=None, output=None, feedback=None, context=None):
+    def _step(self, row, phase, status, *, action=None, output=None, feedback=None, context=None, resume_value=None):
         if row.get("owner") and self.get(row["id"])["owner"] != row["owner"]:
             raise ContinuationCheckpoint("恢复执行者已变化，拒绝迟到写入")
-        self.store.execute(
+        return self.store.execute(
             "INSERT INTO operation_continuation_steps(continuation_id,episode,recovery,phase,status,action,"
-            "output,feedback,context,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "output,feedback,context,created_at,resume_value) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (
                 row["id"],
                 row["episode"],
@@ -451,8 +468,21 @@ class ContinuationCoordinator:
                 dump(feedback) if feedback is not None else None,
                 dump(context) if context is not None else None,
                 time.time(),
+                dump(visible_payload(resume_value)) if resume_value is not None else None,
             ),
+        ).lastrowid
+
+    def generation_checkpoint(self, identity):
+        steps = self.store.all(
+            "SELECT id,phase,status,output,resume_value FROM operation_continuation_steps "
+            "WHERE continuation_id=? AND resume_value IS NOT NULL ORDER BY id",
+            (identity,),
         )
+        for step in steps:
+            step["resume_value"] = json.loads(step["resume_value"])
+            if step["output"] is not None:
+                step["output"] = json.loads(step["output"])
+        return {step["phase"]: step for step in steps}
 
     def _claim(self, identity, owner):
         with self.store.db:

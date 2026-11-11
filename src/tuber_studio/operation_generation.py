@@ -122,12 +122,12 @@ async def generate_with_recovery(
             coordinator._state(row["id"], "invalid")
             raise GenerationInvalid(coordinator.dto(channel, identity)) from None
 
-    def checked(value):
+    def checked(value, original_output):
         try:
             return validate(value)
         except ValueError as error:
-            raw = getattr(runtime.llm, "last_content", None)
-            raise GenerationFeedback(str(error), original_output=raw if raw is not None else value) from None
+            raw = original_output if original_output is not None else value
+            raise GenerationFeedback(str(error), original_output=raw) from None
 
     if row and row["state"] in {"waiting", "abandoned", "needs_material"} or (
         row and row["state"] == "checkpoint" and row["feedback"].get("kind") in {"validation_error", "output_limit", "style_diagnostic"}
@@ -161,17 +161,13 @@ async def generate_with_recovery(
             deadline=deadline,
             budget_limits=limits,
         )
-    web_fetch = (
-        OperationWebFetch(guard)
-        if allow_web_fetch
+    can_fetch = (
+        allow_web_fetch
         and character["id"] == "whale"
         and getattr(runtime.llm, "supports_operation_web_fetch", False)
-        else None
     )
-    recorded_fetch = False
 
-    async def produce(packet, current):
-        nonlocal recorded_fetch
+    async def invoke(current, web_fetch):
         started = time.perf_counter()
         value = None
         # Preparation may fail before the provider starts a new generation.
@@ -180,22 +176,13 @@ async def generate_with_recovery(
             for name, empty in (("last_content", None), ("last_usage", {}), ("last_finish_reason", None)):
                 setattr(runtime.llm, name, empty)
         try:
-            value = checked(
-                await generate(packet, web_fetch=web_fetch) if web_fetch else await generate(packet)
+            raw = (
+                await generate(messages, web_fetch=web_fetch) if web_fetch else await generate(messages)
             )
+            value = checked(raw, getattr(runtime.llm, "last_content", None))
         except ValueError as error:
             raise recoverable_feedback(error, runtime.llm) from None
         finally:
-            if web_fetch and web_fetch.receipt is not None and not recorded_fetch:
-                coordinator._step(
-                    current, "web_fetch", web_fetch.receipt["status"], context=web_fetch.receipt
-                )
-                recorded_fetch = True
-                event = (context_data or {}).get("event") or {}
-                messages = getattr(getattr(runtime, "browsing", None), "messages", None)
-                if messages and event.get("agreement_id") and web_fetch.receipt.get("status") == "ok":
-                    step = runtime.store.one("SELECT id FROM operation_continuation_steps WHERE continuation_id=? AND phase='web_fetch' ORDER BY id DESC LIMIT 1", (current["id"],))
-                    await messages.fulfill_agreement(event["agreement_id"], step["id"])
             coordinator._step(
                 current,
                 "generation_model",
@@ -207,16 +194,45 @@ async def generate_with_recovery(
                     "elapsed_ms": (time.perf_counter() - started) * 1000,
                     "max_tokens": max_tokens,
                 },
+                resume_value=value,
             )
+        return value
+
+    async def initial(current):
+        saved = coordinator.generation_checkpoint(current["id"])
+        page = saved.get("web_fetch")
+        proof_step = page["id"] if page and page["status"] == "ok" else None
+
+        def record_fetch(receipt, context):
+            nonlocal proof_step
+            step_id = coordinator._step(
+                current, "web_fetch", receipt["status"], context=receipt, resume_value=context
+            )
+            if receipt["status"] == "ok":
+                proof_step = step_id
+
+        try:
+            result = saved.get("generation_model")
+            if result is not None:
+                value = checked(result["resume_value"], result["output"])
+            else:
+                web_fetch = (
+                    OperationWebFetch(guard, context=page["resume_value"] if page else None, record=record_fetch)
+                    if can_fetch else None
+                )
+                value = await invoke(current, web_fetch)
+        finally:
+            if proof_step is not None:
+                event = (context_data or {}).get("event") or {}
+                dm_service = getattr(getattr(runtime, "browsing", None), "messages", None)
+                if event.get("agreement_id") and dm_service:
+                    await dm_service.fulfill_agreement(event["agreement_id"], proof_step)
         issue = diagnose(value) if diagnose else None
         if issue:
             raise GenerationFeedback(
                 issue, original_output=value, kind="style_diagnostic", accepted_value=value
             )
         return value
-
-    async def initial(current):
-        return await produce(messages, current)
 
     try:
         result = await coordinator.run(

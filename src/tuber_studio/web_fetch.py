@@ -45,12 +45,12 @@ def source_url(value):
 
 
 class OperationWebFetch:
-    """One model-selected page, reused if this generation needs revision."""
+    """Offer one model-selected page before generating the task result."""
 
-    def __init__(self, guard):
+    def __init__(self, guard, *, context=None, record=None):
         self.guard = guard
-        self.context = None
-        self.receipt = None
+        self.context = context
+        self.record = record
 
     async def complete(self, messages, schema, invoke):
         if self.context is None:
@@ -71,10 +71,9 @@ class OperationWebFetch:
             self.guard()
             started = time.monotonic()
             result = await self._read(request.web_fetch)
-            self.receipt = {k: v for k, v in result.items() if k != "excerpt"} | {
+            receipt = {k: v for k, v in result.items() if k != "excerpt"} | {
                 "elapsed_ms": round((time.monotonic() - started) * 1000)
             }
-            self.guard()
             if result["status"] == "ok":
                 excerpt = result["excerpt"].replace("<", "\\u003c").replace(">", "\\u003e")
                 origin = (
@@ -88,6 +87,9 @@ class OperationWebFetch:
                 {"role": "assistant", "content": selection},
                 {"role": "user", "content": content},
             ]
+            if self.record is not None:
+                self.record(receipt, self.context)
+            self.guard()
         return await invoke([*messages, *self.context], schema)
 
     async def _read(self, value):

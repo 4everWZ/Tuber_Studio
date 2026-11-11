@@ -42,8 +42,8 @@ async def model_for(
                 {"action": decision, "reason": "继续当前这次交流", "read": ""}, ensure_ascii=False
             )
         else:
-            if failure:
-                raise failure
+            if failure is not None and (error := failure(body)):
+                raise error
             value = (first if first is not None else corrected) if not generated else corrected
             finish = first_finish if not generated else corrected_finish
             generated.append(value)
@@ -113,7 +113,65 @@ async def test_runtime_operation_web_fetch_is_model_selected(
     assert step["context"]["url"] == url and "excerpt" not in step["context"]
 
 
-async def generate(runtime, *, diagnose=None, parent=None):
+@pytest.mark.parametrize("readable", [True, False])
+async def test_interrupted_operation_resumes_with_saved_web_result(runtime, settings, monkeypatch, readable):
+    url = "https://example.org/source"
+    excerpt = "只在本次生成续跑时可见的摘录"
+    failed = False
+
+    def interrupt_followup(body):
+        nonlocal failed
+        if not failed and "oneOf" not in body["response_format"]["schema"]:
+            failed = True
+            return httpx.ReadTimeout("model read timed out after fetching the page")
+
+    requests, generated, corrected = await model_for(
+        runtime, settings, first={"web_fetch": url}, failure=interrupt_followup
+    )
+    fetched = []
+
+    async def fetch(target):
+        fetched.append(target)
+        if not readable:
+            raise OSError("unavailable")
+        return {"url": target, "excerpt": excerpt}
+
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", fetch)
+    event = {"event_id": "source-event", "text": "能看看网页上的说明吗？"}
+
+    async def reply():
+        return await runtime.generate_reply("comment_draft", runtime.character, event, mode="comment_draft")
+
+    with pytest.raises(httpx.ReadTimeout) as failure:
+        await reply()
+    checkpoint = failure.value.continuation
+    assert checkpoint["state"] == "checkpoint"
+    assert excerpt not in json.dumps(checkpoint, ensure_ascii=False)
+    saved = runtime.continuations.generation_checkpoint(checkpoint["id"])["web_fetch"]
+    assert saved["status"] == ("ok" if readable else "unavailable")
+    assert all("resume_value" not in step for step in checkpoint["revisions"])
+
+    value, _ = await reply()
+    assert value.spoken_text == corrected["spoken_text"]
+    assert fetched == [url] and generated == [{"web_fetch": url}, corrected]
+    responses = [body for body in requests if body["max_tokens"] != 1]
+    first, interrupted, resumed = responses
+    assert "oneOf" in first["response_format"]["schema"]
+    assert interrupted["response_format"] == resumed["response_format"]
+    assert "oneOf" not in resumed["response_format"]["schema"]
+    assert interrupted["messages"] == resumed["messages"]
+    expected = excerpt if readable else "本轮未读到网页正文。"
+    assert any(expected in message["content"] for message in resumed["messages"])
+    saved_task = runtime.continuations.get(checkpoint["id"])
+    assert saved_task["state"] == "completed"
+    assert [step["id"] for step in saved_task["revisions"] if step["phase"] == "web_fetch"] == [saved["id"]]
+    assert runtime.continuations.generation_checkpoint(checkpoint["id"]) == {}
+
+    await reply()
+    assert "oneOf" in requests[-1]["response_format"]["schema"]
+
+
+async def generate(runtime, *, diagnose=None, parent=None, guard=lambda: True):
     schema = OperationReply.model_json_schema()
     schema["properties"]["reply_to"]["items"] = {"type": "string", "enum": ["source-event"]}
 
@@ -142,7 +200,7 @@ async def generate(runtime, *, diagnose=None, parent=None):
                 generate=lambda messages: runtime.llm.generate_json(messages, schema, max_tokens=8192),
                 validate=validate,
                 max_tokens=8192,
-                guard=lambda: True,
+                guard=guard,
                 diagnose=diagnose,
                 parent_round_id=parent,
             ),
@@ -243,7 +301,7 @@ async def test_parent_meter_counts_one_probe_and_one_invalid_generation(runtime,
 
 async def test_transport_failure_preserves_checkpoint_without_rewrite_attempt(runtime, settings):
     requests, generated, _ = await model_for(
-        runtime, settings, failure=httpx.ReadTimeout("model read timed out")
+        runtime, settings, failure=lambda body: httpx.ReadTimeout("model read timed out")
     )
     with pytest.raises(httpx.ReadTimeout):
         await generate(runtime)
@@ -256,6 +314,30 @@ async def test_transport_failure_preserves_checkpoint_without_rewrite_attempt(ru
     assert reply.reply_to == ["source-event"] and len(regenerated) == 1
     assert resumed["episode"] != row["episode"] and resumed["state"] == "completed"
     assert len(resumed["revisions"]) > len(row["revisions"])
+
+
+async def test_validated_result_survives_interruption_at_final_guard(runtime, settings):
+    requests, generated, corrected = await model_for(runtime, settings)
+
+    def stop_after_generation():
+        return not generated
+
+    with pytest.raises(asyncio.CancelledError):
+        await generate(runtime, guard=stop_after_generation)
+    checkpoint = runtime.continuations.find("test-generation", "one-source")
+    assert checkpoint["state"] == "cancelled" and checkpoint["current_output"] is None
+    assert len(requests) == 2 and generated == [corrected]
+
+    with pytest.raises(asyncio.CancelledError):
+        await generate(runtime, guard=lambda: False)
+    reply, continuation = await generate(runtime)
+    assert reply.spoken_text == corrected["spoken_text"]
+    assert continuation["state"] == "completed" and len(requests) == 2
+    assert len([step for step in continuation["revisions"] if step["phase"] == "generation_model"]) == 1
+    assert runtime.continuations.generation_checkpoint(checkpoint["id"]) == {}
+
+    await generate(runtime)
+    assert len(generated) == 2
 
 
 async def test_valid_model_wait_is_deferred_without_cross_parent_automatic_reconsideration(runtime, settings):
