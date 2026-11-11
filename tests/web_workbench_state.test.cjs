@@ -295,6 +295,47 @@ test("an inbox link selects only the exact message in the current account and ch
   assert.match(get("[data-conversation-state]").textContent, /来信无法定位/);
 });
 
+test("private policy loads and saves while the inbox page is hidden", async t => {
+  const { get, make } = dom(t);
+  const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
+  const panel = Object.create(MessagesPanel.prototype);
+  const button = get("[data-policy] button");
+  const limit = { name: "max_per_hour", type: "number" };
+  const calls = [];
+  let settingsHidden = false, maxPerHour = 10;
+  button.disabled = true;
+  get("[data-policy]").querySelectorAll = () => [limit];
+  Object.assign(panel, {
+    $: get, root: { closest: () => ({ hidden: true }) }, policyFeedback: make(),
+    policyRoot: { closest: () => settingsHidden ? { hidden: true } : null },
+    refreshRequest: 0, userSignature: "[]", draftView: "pending",
+    renderEditor() {}, renderPrivateContinuations() {},
+    async conversation() { assert.fail("settings should not load a hidden conversation"); },
+    async api(path, options) {
+      calls.push([path, options]);
+      if (path === "/api/messages/policy") {
+        maxPerHour = options.body.max_per_hour;
+        return;
+      }
+      return { policy: { enabled: true, max_per_hour: maxPerHour }, users: [], drafts: [] };
+    },
+  });
+
+  await panel.refresh();
+  assert.equal(button.disabled, false);
+  assert.equal(limit.value, 10);
+  await panel.savePolicy({ max_per_hour: 12 });
+  assert.equal(limit.value, 12);
+  assert.equal(panel.policyFeedback.textContent, "私信策略已保存。");
+  settingsHidden = true;
+  await panel.refresh();
+  assert.deepEqual(calls, [
+    ["/api/messages", undefined],
+    ["/api/messages/policy", { method: "PUT", body: { max_per_hour: 12 } }],
+    ["/api/messages", undefined],
+  ]);
+});
+
 test("private background refresh clears externally completed selection but preserves unsaved local text", async t => {
   const { get } = dom(t);
   const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");

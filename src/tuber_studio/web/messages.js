@@ -52,8 +52,11 @@ export class MessagesPanel {
     this.$('[data-refresh]').onclick=()=>this.refresh();
     this.$('[data-sync]').onclick=()=>this.action(async()=>{const result=await api('/api/messages/sync',{method:'POST'});notify(`读取完成，新增 ${result.imported} 条私信${result.errors.length?'，部分会话读取失败':''}`);await this.refresh();});
     this.$('[data-sync]').disabled=true;this.$('[data-policy] button').disabled=true;
-    this.$('[data-policy]').oninput=()=>{this.policyDirty=true;this.$('[data-status]').textContent='策略有未保存修改。';};
-    this.$('[data-policy]').onsubmit=event=>{event.preventDefault();this.action(async()=>{const value={};for(const input of this.$('[data-policy]').querySelectorAll('input'))value[input.name]=input.type==='checkbox'?input.checked:Number(input.value);await this.savePolicy(value);});};
+    this.policyFeedback=this.element('p','','hint');
+    this.policyFeedback.setAttribute('role','status');
+    this.$('[data-policy] button').after(this.policyFeedback);
+    this.$('[data-policy]').oninput=()=>{this.policyDirty=true;this.policyFeedback.textContent='策略有未保存修改。';};
+    this.$('[data-policy]').onsubmit=event=>{event.preventDefault();return this.action(async()=>{const value={};for(const input of this.$('[data-policy]').querySelectorAll('input'))value[input.name]=input.type==='checkbox'?input.checked:Number(input.value);await this.savePolicy(value);},this.policyFeedback);};
     this.$('[data-users]').onchange=()=>{
       const user=this.$('[data-users]').value;
       this.rememberDraft();
@@ -91,8 +94,8 @@ export class MessagesPanel {
     catch(error){this.$('[data-error]').textContent=error.message;throw error;}
     finally{this.busy=false;this.renderEditor();}
   }
-  async savePolicy(value){await this.api('/api/messages/policy',{method:'PUT',body:value});this.policyDirty=false;await this.refresh();}
-  async action(work){if(this.busy)return;this.busy=true;this.renderEditor();this.$('[data-error]').textContent='';try{await work();}catch(error){this.$('[data-error]').textContent=error.message;}finally{this.busy=false;this.renderEditor();}}
+  async savePolicy(value){await this.api('/api/messages/policy',{method:'PUT',body:value});this.policyDirty=false;this.policyFeedback.textContent='私信策略已保存。';await this.refresh();}
+  async action(work,feedback=this.$('[data-error]')){if(this.busy)return;this.busy=true;this.renderEditor();feedback.textContent='';try{await work();}catch(error){feedback.textContent=error.message;}finally{this.busy=false;this.renderEditor();}}
   element(tag,text,cls){const node=document.createElement(tag);if(text!=null)node.textContent=text;if(cls)node.className=cls;return node;}
   editKey(id=this.selected){return `${this.value?.account_id}/${id}`;}
   rememberDraft(){if(this.dirty&&this.selected!=null)this.edits.set(this.editKey(),this.$('[data-text]').value);}
@@ -118,7 +121,9 @@ export class MessagesPanel {
     await this.refresh();
   }
   async refresh({background=false}={}){
-    if(this.root.closest('[hidden]'))return;
+    const inboxVisible=!this.root.closest('[hidden]');
+    const settingsVisible=this.policyRoot&&!this.policyRoot.closest('[hidden]');
+    if(!inboxVisible&&!settingsVisible)return;
     if(background&&(this.busy||this.backgroundPending||Date.now()-(this.refreshedAt||0)<8000))return;
     if(background)this.backgroundPending=true;
     this.refreshedAt=Date.now();
@@ -142,8 +147,9 @@ export class MessagesPanel {
       }
       const selected=value.drafts.find(row=>row.id===this.selected);
       if(this.selected!=null&&!this.dirty&&(!selected||(this.draftView!=='history'&&this.draftState(selected).history))){this.selected=null;this.closeImagePicker();}
-      this.value=value;this.render();await this.conversation();
-    }catch(error){if(request===this.refreshRequest)this.$('[data-error]').textContent=error.message;}
+      this.value=value;this.render();
+      if(!this.root.closest('[hidden]'))await this.conversation();
+    }catch(error){if(request===this.refreshRequest)(inboxVisible?this.$('[data-error]'):this.policyFeedback).textContent=error.message;}
     finally{if(background)this.backgroundPending=false;}
   }
   policyStatus(p){const base=p.base||p,saved=`已配置${base.auto_poll?'自动读取':'手动读取'} · ${base.auto_send?'自动回复':'审核后发送'}`;if(p.emergency)return `紧急停止；${saved}`;if(p.automation_override===false)return `自主运营已停止；${saved}`;return `${p.auto_poll?'自动读取':'手动读取'} · ${p.auto_send?'自动回复':'审核后发送'}`;}
