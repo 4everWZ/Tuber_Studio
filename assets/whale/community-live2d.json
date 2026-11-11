@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0-community",
+  "artifact_dir": "runtime/releases/dafeiyu-avatar/0.2.0-community",
+  "name": "DS 鲸鱼娘",
+  "model_artist": "氵六青",
+  "original_character": "上善无形",
+  "deepseek_design": "ZipZipPipe",
+  "license": "CC BY-NC-SA 4.0",
+  "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+  "upstream": "https://github.com/xkk6663/dsh-live2d-mao",
+  "revision": "21b9db21d0abfc974fe88b155517563d155e9c51",
+  "model_dir": "澪Agent应用/dist/live2d-pet/models/whale-deepseek",
+  "changes": [
+    "直播动作与表情映射",
+    "对白口型强度",
+    "轻点头和偏头动作"
+  ],
+  "mount": "model/avatar.json",
+  "upstream_moc_sha256": "37d62cc7ebe2fe93350c934a2c023aac44e306833f63d83a130c005e2945ce1c",
+  "runtime_files_sha256": {
+    "avatar.json": "8d279ecc961417c220e5173120785a217a072ec708efd9d8b324952e36fb7bdc",
+    "c_0120.2048/texture_00.png": "d74a8b7ed11f17f086afd22935d27d869b7d6fc19e94486b21445de19483fc0a",
+    "c_0120.2048/texture_01.png": "39a6da7736cbae495494be1dde515874a2e4fe72c21f399c47da33924b3d43b9",
+    "c_0120.cdi3.json": "a04133a70c8676a9e8e6e3773d1bd047333791b1d3b84896e73dc57eb489f1c5",
+    "c_0120.moc3": "37d62cc7ebe2fe93350c934a2c023aac44e306833f63d83a130c005e2945ce1c",
+    "c_0120.model3.json": "15ead63cd61eeb009cc1a205a20075f62e28a97ce6d5148a7e52d970f6c6bc23",
+    "c_0120.physics3.json": "36b71d419c8692e8831641d16e7c16699792531309658b4d71a3f49fc6a00a9c",
+    "expressions/studio-smile.exp3.json": "73d56e514e8bdc86b116b17b51e292dbf4f43d774053377a19aba782c9ffe9cb",
+    "expressions/星星眼.exp3.json": "d4767e003c156c6d7549354dc8caf3ed29925e516b360ab7b9d07da5381ec7f4",
+    "expressions/生气.exp3.json": "ec41aada5b001e9de5cb41cbfd108c7dbed3962fc287e90d6a6ce219d49388ec",
+    "expressions/脸红.exp3.json": "f9c4b846582dfaa5b2ea6f9b502379bbc2594f8d5de0ddf377ef37ecf2fae429",
+    "expressions/问号.exp3.json": "eb50ace022b7544ae09bfef7a0eb7ccc9f58371ddc665ea4319d7b0a438a9c56",
+    "motions/chuipaopao.motion3.json": "c9672aab4e398f7ca096b47511a6b9ad5af65fd3fb62d7388cc6ae5bd67fb820",
+    "motions/idle.motion3.json": "00364b3e9f4502b04a2794b5d2bd455cc50ac0d6876dc3886d04194e37033a38",
+    "motions/studio-talk-happy.motion3.json": "1de5941207e7c2dec516511bcdf3dde714568d715618a186c9de988f36722d5c",
+    "motions/studio-talk.motion3.json": "f3d84ed0d583cbf9397bd8f737de8f650606cdfd258e8947cd417459bd152e82"
+  },
+  "sdk_sha256": {
+    "cubism4.min.js": "0e082fc18df842d1b61c5aff281d357940351f9b0001c003763e3958ec7101c2",
+    "live2dcubismcore.min.js": "25ae938cb4fe282ce189b357bcc97e603d1e1f7ec78bf04150d401c23cdc792f",
+    "pixi.min.js": "712a3e1943b062a907d86c5bb56b67c7b32a3f03b3654768b00b7016d30a24c6"
+  },
+  "evidence": "evaluations/results/live2d-community-obs-20261111.json"
+}

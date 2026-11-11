@@ -1,0 +1,29 @@
+{
+  "obs": "33.0.1",
+  "obs_websocket": "5.7.6",
+  "renderer": "CEF browser_source",
+  "canvas": [
+    1280,
+    720
+  ],
+  "output_active": false,
+  "model": "c_0120",
+  "mouth_gain": 2.4,
+  "dialogue_receipt": "completed",
+  "first_captured_envelope": 0.2502,
+  "muted_receipt": "cancelled",
+  "playback_cleared_on_mute": true,
+  "missing_moc_fallback_dialogue": "completed",
+  "restored": true,
+  "capture_four_corners_alpha": 0,
+  "mouth_frames": [
+    "closed_idle",
+    "open_dialogue",
+    "closed_dialogue_pause",
+    "open_dialogue_resumed",
+    "closed_muted"
+  ],
+  "gif_fallback_rendered": true,
+  "source_model_restored": true,
+  "version": "0.2.0-community"
+}
