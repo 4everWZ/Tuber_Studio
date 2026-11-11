@@ -114,7 +114,7 @@ review验收沿用生产的持久任务、模型行动与2∶2∶1调度。所�
 
 视觉日常请求校验实际 Provider、真实来源、单次图像体积、窗口和超时。设备压测用于部署验收。逐帧和联合请求均将观察绑定到 BV、CID、真实帧和时码。派生缓存按 Provider 身份和取样策略隔离，更换 Provider 后可复用原字幕。自动与预览共用候选数量，指定视频预览直接取该视频。检索游标决定候选轮换，已到期的重试随候选调度。
 
-视觉Provider可独立设置思考开关、输出额度与超时；llama.cpp的显式思考设置进入实际请求。`sampling`子配置支持temperature、top_p、top_k、min_p、presence_penalty、repeat_penalty、seed及reasoning_budget_tokens；温度默认0.2，其余默认None，显式temperature=None时也沿用服务默认。仅llama.cpp适配发送非None值，思考预算放HTTP顶层，思考开关放chat_template_kwargs；完整sampling进入资源配置身份。超时默认60秒，可按实测配置至600秒，只读预览另受其当前轮预算和截止时间约束。
+视觉Provider可独立设置思考开关、输出额度与超时；llama.cpp的显式思考设置进入实际请求。`sampling`子配置支持temperature、top_p、top_k、min_p、presence_penalty、repeat_penalty、seed及reasoning_budget_tokens；温度默认0.2，其余默认None，显式temperature=None时也沿用服务默认。仅llama.cpp适配发送非None值，思考预算放HTTP顶层，思考开关放chat_template_kwargs；完整sampling进入资源配置身份。取帧和视觉推理从各自执行时计时，默认60秒，可配置至600秒。只读预览另受其当前轮预算和截止时间约束。
 
 管理接口沿用本机认证与同源写保护；运营设置展示实际账号、OC及允许的通道和发送方式。支持预览、审核编辑／拒绝、只读重读、停止和诊断。运营活动中的私信记录只取当前账号与OC，供操作者查看，不进入公开来源或公开模型上下文。报告从数据库事实生成，不作为额度或防重依据。
 

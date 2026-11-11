@@ -657,21 +657,28 @@ async def test_visual_deadline_cancels_provider_without_cached_observations(evid
     assert visual.frames == [] and not list(service.directory.iterdir())
 
 
-@pytest.mark.parametrize("configured,parent,expected", [(300, None, 300), (300, 30, 30), (None, None, 60)])
-async def test_visual_preparation_honors_provider_timeout_and_parent_deadline(
-    evidence_factory, config, configured, parent, expected
-):
+@pytest.mark.parametrize("parent", [None, 120])
+async def test_visual_preparation_forwards_only_explicit_parent_deadline(evidence_factory, config, parent):
     visual = TestVisual()
-    if configured is not None:
-        visual.cap["timeout_seconds"] = configured
     service = evidence_factory(await no_cc_adapter(), visual)
-    started = time.time()
-    await service.prepare(
-        BV,
-        config | {"visual_enabled": True},
-        deadline=started + parent if parent is not None else None,
-    )
-    assert visual.deadline - started == pytest.approx(expected, abs=2)
+    deadline = time.time() + parent if parent is not None else None
+    await service.prepare(BV, config, deadline=deadline)
+    assert visual.deadline == deadline
+
+
+async def test_platform_frame_request_has_its_own_timeout(evidence_factory, config):
+    adapter = PublicAdapter()
+    visual = TestVisual()
+    visual.cap["timeout_seconds"] = 0.03
+
+    async def stalled_frames(*args):
+        await asyncio.Event().wait()
+
+    adapter.video_frames = stalled_frames
+    service = evidence_factory(adapter, visual)
+    _, material = await service.prepare(BV, config)
+    assert material["visual_error"] == "读取视频画面超时"
+    assert service.material_mode(material) == "subtitle" and visual.calls == 0
 
 
 async def test_provider_cleanup_failure_still_releases_inline_frames(evidence_factory, config):

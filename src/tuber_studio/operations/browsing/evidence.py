@@ -462,10 +462,8 @@ class BrowsingEvidence:
         timeout = capabilities.get("timeout_seconds", 60)
         if not self._valid_time(timeout) or not 0 < timeout <= 600:
             raise EvidenceUnavailable("visual_unavailable", "视觉超时须大于0且不超过600秒")
-        now = time.time()
-        deadline = min(deadline if deadline is not None else now + timeout, now + timeout)
         try:
-            async with asyncio.timeout(max(0, deadline - time.time())):
+            async with asyncio.timeout(None if deadline is None else max(0, deadline - time.time())):
                 import inspect
 
                 sig = inspect.signature(self.adapter.video_frames)
@@ -484,12 +482,16 @@ class BrowsingEvidence:
                         raise EvidenceUnavailable("visual_unavailable", "平台适配器无法指定要补读的分P")
                 if "timestamps" in sig.parameters and timestamps:
                     call_kwargs["timestamps"] = timestamps
-                if call_kwargs:
-                    frames = await self.reader(
-                        lambda *a: self.adapter.video_frames(*a, **call_kwargs), *call_args
-                    )
-                else:
-                    frames = await self.reader(self.adapter.video_frames, *call_args)
+                try:
+                    async with asyncio.timeout(timeout):
+                        if call_kwargs:
+                            frames = await self.reader(
+                                lambda *a: self.adapter.video_frames(*a, **call_kwargs), *call_args
+                            )
+                        else:
+                            frames = await self.reader(self.adapter.video_frames, *call_args)
+                except TimeoutError:
+                    raise EvidenceUnavailable("deadline", "读取视频画面超时") from None
                 if (
                     not isinstance(frames, list)
                     or not frames
@@ -640,8 +642,8 @@ class BrowsingEvidence:
                         }
                     )
                 return parts, retained
-        except TimeoutError:
-            raise EvidenceUnavailable("deadline", "视觉证据任务达到期限") from None
+        except TimeoutError as error:
+            raise EvidenceUnavailable("deadline", str(error) or "视觉证据任务达到期限") from None
         finally:
             task["cancel_signal"].set()
             try:

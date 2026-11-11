@@ -298,7 +298,11 @@ class ApiVideoEvidenceProvider:
             self._check_properties(props, expected, identity)
             self._check_task(task, deadline)
             before = repository.round(task["round_id"])["budget"].copy() if repository else None
-            value = await operation()
+            try:
+                async with asyncio.timeout(self.config.timeout_seconds):
+                    value = await operation()
+            except TimeoutError:
+                raise TimeoutError("视觉模型请求超时") from None
             self._check_task(task, deadline)
             usage = {"generation": dict(self.api.last_usage), "including_token_probes": None}
             if repository:
@@ -509,7 +513,7 @@ class ApiVideoEvidenceProvider:
         repository = self.runtime.browsing_repository if task.get("round_id") else None
         scope = GenerationMeter(repository, task["round_id"]) if repository else nullcontext()
         before = repository.round(task["round_id"])["budget"].copy() if repository else None
-        async with asyncio.timeout(min(self.config.timeout_seconds, max(0, deadline - time.time()))):
+        async with asyncio.timeout(None if deadline is None else max(0, deadline - time.time())):
             with scope:
                 observe = (
                     self._observe_joint if self.config.frame_strategy == "joint" else self._observe_sequential
@@ -578,7 +582,9 @@ class ApiVideoEvidenceProvider:
 
     @staticmethod
     def _check_task(task, deadline):
-        if type(deadline) not in (int, float) or not math.isfinite(deadline) or deadline <= time.time():
+        if deadline is not None and (
+            type(deadline) not in (int, float) or not math.isfinite(deadline) or deadline <= time.time()
+        ):
             raise TimeoutError("视觉任务已达到期限")
         if task.get("cancel_signal") is not None and task["cancel_signal"].is_set():
             raise asyncio.CancelledError

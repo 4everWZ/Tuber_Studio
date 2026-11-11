@@ -492,6 +492,24 @@ async def test_deadline_and_close_cancel_owned_http_only(provider, runtime):
     assert runtime.llm is not None
 
 
+@pytest.mark.parametrize("provider", [{"timeout_seconds": 0.05}], indirect=True)
+async def test_vision_request_timeout_starts_after_the_generation_queue(provider, runtime):
+    value, state = provider
+    async with runtime.generation_lock:
+        pending = asyncio.create_task(value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=None))
+        await asyncio.sleep(0.1)
+        assert not pending.done()
+        assert not state["requests"]
+
+    result = await asyncio.wait_for(pending, 2)
+    assert result["evidence_ids"] == ["first", "second"]
+
+    state["block"] = True
+    with pytest.raises(TimeoutError, match="视觉模型请求超时"):
+        await value.analyze_video_evidence({}, META, FRAMES, "请求超时", deadline=None)
+    assert state["cancelled"].is_set() and not runtime.generation_lock.locked()
+
+
 async def test_cancel_signal_during_http_collects_the_owned_generation(provider, runtime):
     value, state = provider
     await admit(value)
