@@ -1,6 +1,7 @@
 """Real comment-to-DM execution with SQLite and isolated delivery transport."""
 
 import json
+import time
 
 import pytest
 from test_browsing import browsing as browsing
@@ -107,6 +108,47 @@ async def test_handoff_source_changed_before_generation_is_retained_without_send
     draft = browsing.store.one("SELECT * FROM dm_drafts")
     assert draft["status"] == "failed" and "原文已变化" in draft["error"]
     assert draft["platform_user_id"] == "300"
+    assert not transport.sent and not browsing.adapter.sent
+
+
+async def test_verified_notification_handoff_does_not_require_video_evidence(browsing, monkeypatch):
+    transport = await prepare_handoff(browsing, monkeypatch, automatic=False)
+    await browsing.configure({"mentions_enabled": True, "mention_reply_enabled": True})
+    await browsing.preflight()
+    await browsing.sync_notifications()
+    browsing.adapter.feed["mention"] = [{
+        "event_id": "invitation-notification", "kind": "mention", "resource_type": "video",
+        "account_id": "100", "sender_uid": "300", "comment_id": "502", "timestamp": time.time(),
+    }]
+    original_thread = browsing.adapter.read_public_thread
+    evidence_attempts = []
+
+    async def invited_thread(event):
+        value = await original_thread(event)
+        value["source"]["text"] = INVITATION
+        value["items"] = [comment("502", "501") | {
+            "content": INVITATION, "parent_comment_id": "501", "mentions": [{"uid": "100", "name": "大肥鱼"}],
+        }]
+        return value
+
+    async def unavailable(video, config):
+        evidence_attempts.append(video)
+        raise TimeoutError("视频取材端点暂时不可用")
+
+    monkeypatch.setattr(browsing.adapter, "read_public_thread", invited_thread)
+    monkeypatch.setattr(browsing, "_prepare_evidence", unavailable)
+    row = await finished(browsing, preview=True, notifications_only=True)
+    assert row["status"] == "completed" and not evidence_attempts, row
+    intent, = browsing.intents()
+    draft, = browsing.store.all("SELECT * FROM dm_drafts")
+    assert intent["kind"] == "private_handoff" and intent["text"] == ""
+    assert intent["target"]["private_draft_id"] == draft["id"]
+    assert draft["status"] == "pending_review" and draft["text"], draft
+    assert draft["account_id"] == "100" and draft["platform_user_id"] == "300"
+    evidence = json.loads(draft["video_evidence"])
+    assert evidence["source_event"]["event_id"] == "invitation-notification"
+    assert evidence["public_source_thread"]["source"]["text"] == INVITATION
+    assert evidence["material_keys"] == []
     assert not transport.sent and not browsing.adapter.sent
 
 

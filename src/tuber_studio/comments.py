@@ -607,6 +607,20 @@ class Comments:
         event = self._comment_event(row)
         account_id = await self.account_id() if self.policy()["credentials_configured"] else self.context_account_id()
         event["account_id"] = account_id
+        if self.direct_messages:
+            handoff = await self.direct_messages.route_comment(row, character, event, automatic=automatic)
+            if handoff:
+                now = time.time()
+                self.store.execute(
+                    "INSERT OR IGNORE INTO drafts(comment_id,text,status,character_id,character_version,model,"
+                    "input_summary,created_at,updated_at,account_id) VALUES(?,?,'private_handoff',?,?,?,?,?,?,?)",
+                    (
+                        cid, f"已转私信草稿 #{handoff}", character["id"], character["version"],
+                        self.settings.data["llm"].get("model", "demo"), json.dumps(event, ensure_ascii=False),
+                        now, now, account_id,
+                    ),
+                )
+                return
         if automatic and browsing:
             event["video_evidence"] = await browsing.comment_evidence(row, character)
         scope = self.account_context_scope(row["video_id"], row["thread_id"], row["platform"], account_id=account_id)
@@ -649,40 +663,6 @@ class Comments:
                         row["content"],
                         account_id=account_id,
                     )
-                    handoff = (
-                        await self.direct_messages.route_comment(
-                            row,
-                            character,
-                            relationship,
-                            candidate or context,
-                            scope,
-                            event,
-                            automatic=automatic,
-                        )
-                        if self.direct_messages
-                        else None
-                    )
-                    if handoff:
-                        if candidate:
-                            self._check_sources(sources, row["video_id"], row["thread_id"], row["platform"])
-                            context.install_candidate(scope, character, candidate)
-                        self.store.execute(
-                            "INSERT OR IGNORE INTO drafts(comment_id,text,status,character_id,character_version,model,input_summary,created_at,updated_at) VALUES(?,?,'private_handoff',?,?,?,?,?,?)",
-                            (
-                                cid,
-                                f"已转私信草稿 #{handoff}",
-                                character["id"],
-                                character["version"],
-                                self.settings.data["llm"].get("model", "demo"),
-                                json.dumps(event, ensure_ascii=False),
-                                time.time(),
-                                time.time(),
-                            ),
-                        )
-                        self.store.execute(
-                            "UPDATE drafts SET account_id=? WHERE comment_id=?", (account_id, cid)
-                        )
-                        return
                     generation_identity = runtime_identity(self.runtime, character, account_id or None)
                     reply, check = await self.runtime.generate_reply(
                         scope,

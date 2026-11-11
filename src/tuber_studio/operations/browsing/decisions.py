@@ -124,6 +124,24 @@ class BrowsingDecisions:
         recipient = (thread.get("target") or {}).get("recipient") or (thread.get("source") or {}).get("author_uid")
         return confirmed_invitation(thread, row.get("account_id"), recipient) is not None
 
+    def invited_private_response(self, row, thread):
+        if not row["config"].get("comment_handoff_enabled"):
+            return None
+        policy = self.browsing.messages.policy()
+        if not (policy["enabled"] and policy["allow_comment_handoff"]):
+            return None
+        source = thread.get("source") or {}
+        recipient = (thread.get("target") or {}).get("recipient") or source.get("author_uid")
+        invitation = confirmed_invitation(thread, row.get("account_id"), recipient)
+        if invitation is None:
+            return None
+        return ResponseDecision(
+            action="handoff_private", reason="user_requested",
+            explanation="原评论请求私聊，" + invitation["quote"],
+            contact_purpose=invitation["quote"], contact_trigger=invitation["kind"],
+            evidence_ids=["public:" + str(source["comment_id"])],
+        )
+
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
         anchor = built_in_anchor(
@@ -1146,6 +1164,12 @@ class BrowsingDecisions:
 
     async def _response(self, row, material, context, allowed, kind, metrics, *, video_actions=False):
         context = {key: value for key, value in context.items() if key != "_scroll_progress"}
+        if kind != "top_level":
+            metadata = material.get("metadata", {}) if material else {}
+            if (context.get("target") or {}).get("bvid") == metadata.get("bvid") and metadata.get("owner_uid"):
+                context["resource_author_uid"] = str(metadata["owner_uid"])
+            if invitation := self.invited_private_response(row, context):
+                return invitation
         if uid := (context.get("source") or {}).get("author_uid"):
             context = context | {
                 "confirmed_relationship": self.browsing.runtime.relationships.view(
@@ -1198,18 +1222,6 @@ class BrowsingDecisions:
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
                 "comment_id": str(context["source"]["comment_id"]),
             }
-        data = self._response_actor_data(row, data)
-        policy = self.browsing.messages.policy()
-        if policy["enabled"] and policy["allow_comment_handoff"] and self._handoff_allowed(row, data):
-            thread = data["thread"]
-            recipient = thread["target"].get("recipient") or thread["source"]["author_uid"]
-            invitation = confirmed_invitation(thread, row["account_id"], recipient)
-            return ResponseDecision(
-                action="handoff_private", reason="user_requested",
-                explanation="原评论请求私聊，" + invitation["quote"],
-                contact_purpose=invitation["quote"], contact_trigger=invitation["kind"],
-                evidence_ids=["public:" + str(context["source"]["comment_id"])],
-            )
         return await self._model(
             row,
             ResponseDecision,

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -187,7 +188,8 @@ async def test_uncertain_send_cannot_be_retried_or_edited(messages):
 
 
 @pytest.mark.parametrize("invitation", ["我们可以私信继续讨论吗？", "能不能私信我？", "这个咱们私下聊吧"])
-async def test_confirmed_handoff_never_records_private_reply_in_public_context(messages, monkeypatch, invitation):
+@pytest.mark.parametrize("automatic", [False, True])
+async def test_confirmed_handoff_never_records_private_reply_in_public_context(messages, monkeypatch, invitation, automatic):
     await messages.configure({"enabled": True})
     original_llm = dict(messages.settings.data["llm"])
     comments = messages.comments
@@ -214,9 +216,16 @@ async def test_confirmed_handoff_never_records_private_reply_in_public_context(m
     async def no_channel_decision(*args, **kwargs):
         pytest.fail("确认邀请不调用模型选择渠道或复核邀请")
 
+    async def unavailable_video_evidence(*args):
+        pytest.fail("已确认的邀请可直接使用原评论，不依赖视频取材")
+
     monkeypatch.setattr(messages.runtime, "generate_reply", generate)
     monkeypatch.setattr(messages.runtime.llm, "generate_json", no_channel_decision, raising=False)
-    await comments._process_comment(source, messages.runtime.character, False)
+    with monkeypatch.context() as source_preparation:
+        source_preparation.setattr(messages.runtime, "browsing", SimpleNamespace(
+            has_intent=lambda *_: False, comment_evidence=unavailable_video_evidence,
+        ), raising=False)
+        await comments._process_comment(source, messages.runtime.character, automatic)
     assert messages.settings.data["llm"] == original_llm
     bridge = messages.store.one("SELECT * FROM drafts WHERE comment_id=?", (source["id"],))
     assert bridge["status"] == "private_handoff"

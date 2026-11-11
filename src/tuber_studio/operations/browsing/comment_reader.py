@@ -465,8 +465,23 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             (event_row["id"],),
         )
         return
-    material, keys = None, []
+    items_list = thread.get("items", [])
+    source_row = next((r for r in items_list if str(r.get("comment_id")) == str(source["comment_id"])), None)
+    if source_row is None:
+        source_row = {
+            "comment_id": source["comment_id"], "thread_id": target["root"],
+            "platform_user_id": source["author_uid"],
+            "display_name": source.get("author_name") or source.get("display_name") or event.get("sender_name", ""),
+            "content": source["text"],
+        }
+    discussion = comment_thread_context(source_row, items_list, target)
+    # The original verified event source keeps its existing hash representation.
+    thread.update({key: value for key, value in discussion.items() if key != "source"})
     if event_row["kind"] == "own_comment":
+        thread["resource_author_uid"] = str(row["account_id"])
+    reply = browsing.decisions.invited_private_response(row, thread)
+    material, keys = None, []
+    if reply is not None or event_row["kind"] == "own_comment":
         allowed = {"public:" + str(source["comment_id"])}
     elif thread["resource_type"] == "video":
         progress = browsing.repo.content_progress(row, target["bvid"])
@@ -495,21 +510,7 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         source["text"],
         account_id=row["account_id"],
     )
-    items_list = thread.get("items", [])
-    source_row = next((r for r in items_list if str(r.get("comment_id")) == str(source["comment_id"])), None)
-    if source_row is None:
-        source_row = {
-            "comment_id": source["comment_id"], "thread_id": target["root"],
-            "platform_user_id": source["author_uid"],
-            "display_name": source.get("author_name") or source.get("display_name") or event.get("sender_name", ""),
-            "content": source["text"],
-        }
-    discussion = comment_thread_context(source_row, items_list, target)
-    # The original verified event source keeps its existing hash representation.
-    thread.update({key: value for key, value in discussion.items() if key != "source"})
-    if event_row["kind"] == "own_comment":
-        thread["resource_author_uid"] = str(row["account_id"])
-    reply = browsing.decisions.comment_progress.get(row, resource, source)
+    reply = reply or browsing.decisions.comment_progress.get(row, resource, source)
     if reply is None:
         reply = await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
         browsing.decisions.comment_progress.save(row, resource, source, reply)

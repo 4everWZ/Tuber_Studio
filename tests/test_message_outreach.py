@@ -97,8 +97,7 @@ async def test_route_uses_real_invitation_not_model_channel_choice(messages, mon
         return {"channel": "comment" if mentioned == ACTOR else "direct_message", "reason": "user_requested"}
 
     monkeypatch.setattr(messages.runtime.llm, "generate_json", opposite_model_choice, raising=False)
-    routed = await messages.route_comment(source, messages.runtime.character, {}, messages.runtime.context,
-                                         "confirmed-route", event, automatic=True)
+    routed = await messages.route_comment(source, messages.runtime.character, event, automatic=True)
     await asyncio.wait_for(messages.queue.join(), 2)
     assert not model_requests and not checks
     if mentioned != ACTOR:
@@ -110,8 +109,7 @@ async def test_route_uses_real_invitation_not_model_channel_choice(messages, mon
     assert len(generated) == 1 and len(messages.adapter.sent) == 1
     assert generated[0]["contact_invitation"]["comment_id"] == source["comment_id"]
     assert generated[0]["recipient"]["uid"] == "123"
-    assert await messages.route_comment(source, messages.runtime.character, {}, messages.runtime.context,
-                                        "confirmed-route", event, automatic=True) == routed
+    assert await messages.route_comment(source, messages.runtime.character, event, automatic=True) == routed
     await asyncio.wait_for(messages.queue.join(), 2)
     assert len(generated) == 1 and len(messages.adapter.sent) == 1
 

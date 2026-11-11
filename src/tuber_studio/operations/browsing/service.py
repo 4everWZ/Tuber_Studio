@@ -666,9 +666,8 @@ class BrowsingService:
         evidence = event.get("video_evidence")
         if not evidence or evidence["account_id"] != self.comments.display_account_id():
             raise ValueError("自动评论缺少当前账号的视频证据")
-        if not evidence.get("material_keys") and not evidence.get("public_source_thread", {}).get(
-            "public_text"
-        ):
+        thread = evidence.get("public_source_thread") or {}
+        if not evidence.get("material_keys") and not (thread.get("public_text") or (thread.get("source") or {}).get("text")):
             raise ValueError("视频证据为空")
         for key, version in zip(evidence["material_keys"], evidence["source_versions"], strict=True):
             mat = self.evidence.load(key)

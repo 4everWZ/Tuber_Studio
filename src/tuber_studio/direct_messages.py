@@ -589,12 +589,14 @@ class DirectMessages:
             self._schedule(draft_id, automatic)
         return draft_id
 
-    async def route_comment(self, row, character, relationship, context, scope, event, *, automatic=False):
+    async def route_comment(self, row, character, event, *, automatic=False):
         policy = self.policy()
         if not (policy["enabled"] and policy["allow_comment_handoff"] and row.get("platform_user_id")):
             return None
         evidence = dict(event.get("video_evidence") or {})
         thread = evidence.get("public_source_thread") or event.get("comment_context")
+        if thread is None:
+            thread = self.comments._comment_actors(row, character, event.get("account_id"))["comment_context"]
         invitation = confirmed_invitation(thread, event.get("account_id"), row["platform_user_id"])
         if not invitation:
             return None
