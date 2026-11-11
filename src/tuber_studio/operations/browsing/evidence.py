@@ -16,14 +16,16 @@ from uuid import uuid4
 from ...api_providers import validate_image
 from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
+from ...providers import public_error
 from .local_asr import LocalVideoASR
 from .models import DisabledVideoEvidence, browsing_filter_reason
 from .round_context import read_round
 
 
 class EvidenceUnavailable(ValueError):
-    def __init__(self, kind, message):
+    def __init__(self, kind, message, *, missing_material=False):
         self.kind = kind
+        self.missing_material = missing_material
         super().__init__(message)
 
 
@@ -145,11 +147,19 @@ class BrowsingEvidence:
         return bool(
             parts
             and material.get("visual_sampling_version") == VISUAL_SAMPLING_VERSION
-            and capabilities.get("available")
-            and capabilities.get("admitted")
+            and capabilities.get("images")
             and all(expected.values())
             and all(part.get("visual_provider") == expected for part in parts)
         )
+
+    def has_visual_provider(self):
+        return bool(self.visual.capabilities().get("images"))
+
+    @staticmethod
+    def material_mode(material):
+        subtitles = any(not part.get("visual") and not part.get("asr") for part in material["parts"])
+        visual = bool(material.get("visual_frames"))
+        return "subtitle_visual" if subtitles and visual else "subtitle" if subtitles else "visual" if visual else "audio"
 
     @staticmethod
     def _cc_only(material):
@@ -159,6 +169,7 @@ class BrowsingEvidence:
         result.pop("visual_sampling_version", None)
         result.pop("visual_source_ids", None)
         result.pop("frame_sampling", None)
+        result.pop("visual_error", None)
         result["coverage"] = "partial" if result["missing_parts"] else "all_available_cc"
         return result
 
@@ -170,14 +181,12 @@ class BrowsingEvidence:
         force=False,
         task=None,
         deadline=None,
-        require_visual=False,
         visual_source_ids=(),
     ):
         # Sharing is only for public raw material. OC decisions never enter here.
         if self.closed:
             raise EvidenceUnavailable("cancelled", "浏览证据服务正在停止")
-        if require_visual and not config["visual_enabled"]:
-            raise EvidenceUnavailable("visual_unavailable", "当前浏览配置未启用视觉")
+        visual = self.has_visual_provider()
         visual_source_ids = tuple(sorted(set(visual_source_ids)))
         sampling = config.get("frame_sampling", "baseline")
         cached_cc = None
@@ -197,19 +206,14 @@ class BrowsingEvidence:
                         if reason:
                             raise EvidenceUnavailable("filtered", reason)
                         has_visual = any(part.get("visual") for part in material["parts"])
-                        usable_visual = config["visual_enabled"] and self._current_visual(material)
-                        usable_visual = (
-                            usable_visual
-                            and tuple(material.get("visual_source_ids", ())) == visual_source_ids
-                            and material.get("frame_sampling", "baseline") == sampling
-                        )
-                        if usable_visual or not has_visual and not require_visual:
+                        current_visual = visual and self._current_visual(material) and material.get("frame_sampling", "baseline") == sampling
+                        if current_visual and tuple(material.get("visual_source_ids", ())) == visual_source_ids or not visual and not has_visual:
                             self.hits += 1
                             return row["id"], material
-                        base = self._cc_only(material)
+                        base = material if current_visual and visual_source_ids else self._cc_only(material)
                         if base["parts"] and cached_cc is None:
                             cached_cc = (base, row["expires_at"])
-                            if not require_visual:
+                            if not visual:
                                 self.hits += 1
                                 return await self._store(base, expires_at=row["expires_at"])
                 except EvidenceUnavailable as error:
@@ -223,7 +227,6 @@ class BrowsingEvidence:
                 "visual_followup",
                 video,
                 tuple(config["languages"]),
-                require_visual,
                 visual_source_ids,
                 self._visual_identity(),
                 sampling,
@@ -254,9 +257,8 @@ class BrowsingEvidence:
                 "material",
                 video,
                 tuple(config["languages"]),
-                config["visual_enabled"],
+                visual,
                 sampling,
-                require_visual,
                 visual_source_ids,
                 self._visual_identity(),
             )
@@ -267,16 +269,16 @@ class BrowsingEvidence:
                     config,
                     task=task,
                     deadline=deadline,
-                    require_visual=require_visual,
                     visual_source_ids=visual_source_ids,
                 ),
             ) as result:
                 return result[0], copy.deepcopy(result[1])
 
     async def _prepare(
-        self, metadata, config, *, task=None, deadline=None, require_visual=False, visual_source_ids=()
+        self, metadata, config, *, task=None, deadline=None, visual_source_ids=()
     ):
         parts, missing = [], []
+        subtitle_error = None
         # Reading all parts is allowed only within the shared read/round budget.
         # A missing P remains an explicit limitation, never an empty complete video.
         for part in metadata["parts"]:
@@ -303,11 +305,10 @@ class BrowsingEvidence:
                     for s in segments
                 ]
                 parts.append(evidence)
-            except ValueError as error:
+            except (ValueError, TimeoutError) as error:
                 kind = getattr(error, "kind", "invalid")
-                if kind not in {"no_subtitles", "empty"}:
-                    raise
                 missing.append({"cid": part["cid"], "reason": kind})
+                subtitle_error = subtitle_error or public_error(error)
         have_cc = bool(parts)
         if missing and self.asr.enabled:
             missing_cid = str(missing[0]["cid"])
@@ -319,36 +320,23 @@ class BrowsingEvidence:
                     missing[0]["asr"] = "sampled_audio"
             except (ValueError, OSError, TimeoutError, wave.Error, EOFError):
                 missing[0]["asr"] = "unavailable"
-        visual_frames = []
         sampling = config.get("frame_sampling", "baseline")
-        if not parts or require_visual or (not have_cc and config["visual_enabled"]):
-            if not parts and not config["visual_enabled"]:
-                raise EvidenceUnavailable(
-                    missing[0]["reason"] if missing else "no_subtitles",
-                    "视频无可用字幕或本地转写材料，暂时跳过",
-                )
-            cid, timestamps = self._visual_targets(parts, visual_source_ids, sampling) if have_cc else (None, None)
-            try:
-                visual_parts, visual_frames = await self._visual_parts(
-                    metadata, task, deadline, cid=cid, timestamps=timestamps, sampling=sampling
-                )
-                parts.extend(visual_parts)
-            except Exception:
-                if require_visual or not parts:
-                    raise
         material = {
             "metadata": metadata,
             "parts": parts,
             "missing_parts": missing,
             "languages": config["languages"],
             "fetched_at": time.time(),
-            "coverage": (
-                "sampled_visual" if visual_frames else "sampled_audio" if parts and not have_cc
-                else "partial" if missing else "all_available_cc"
-            ),
+            "coverage": "sampled_audio" if parts and not have_cc else "partial" if missing else "all_available_cc",
         }
-        if visual_frames:
-            self._bind_visual_sampling(material, visual_frames, visual_source_ids, sampling)
+        visual_failure = None
+        if self.has_visual_provider():
+            visual_failure = await self._add_visual(material, task, deadline, visual_source_ids, sampling)
+        if not material["parts"]:
+            subtitle = subtitle_error or "无可用字幕"
+            visual = material.get("visual_error") or "未配置多模态视觉接口"
+            kind = getattr(visual_failure, "kind", None) or (missing[0]["reason"] if missing else "no_subtitles")
+            raise EvidenceUnavailable(kind, f"取材失败 · 字幕：{subtitle} · 画面：{visual}", missing_material=True)
         return await self._store(material)
 
     @staticmethod
@@ -390,18 +378,31 @@ class BrowsingEvidence:
         return str(cid), list(dict.fromkeys((s["start"] + s["end"]) / 2 for s in segments))
 
     async def _with_visual(self, material, *, task, deadline, expires_at, visual_source_ids, sampling):
-        # Only raw CC is shared across provider identities. New observations
-        # belong to the current provider and preserve the original CC tracks.
-        material = self._cc_only(material)
-        cid, timestamps = self._visual_targets(material["parts"], visual_source_ids, sampling)
-        parts, frames = await self._visual_parts(
-            material["metadata"], task, deadline, cid=cid, timestamps=timestamps, sampling=sampling
-        )
-        material["parts"].extend(parts)
-        self._bind_visual_sampling(material, frames, visual_source_ids, sampling)
-        material["coverage"] = "sampled_visual"
+        await self._add_visual(material, task, deadline, visual_source_ids, sampling)
         material["fetched_at"] = time.time()
         return await self._store(material, expires_at=expires_at)
+
+    async def _add_visual(self, material, task, deadline, source_ids, sampling):
+        cid, timestamps = self._visual_targets(material["parts"], source_ids, sampling) if source_ids else (None, None)
+        try:
+            parts, frames = await self._visual_parts(
+                material["metadata"], task, deadline, cid=cid, timestamps=timestamps, sampling=sampling
+            )
+        except Exception as error:
+            material["visual_error"] = public_error(error)
+            return error
+        material.pop("visual_error", None)
+        known = {frame["id"] for frame in material.get("visual_frames", [])}
+        for part in parts:
+            part["segments"] = [segment for segment in part["segments"] if segment["id"].removeprefix("frame:") not in known]
+            part["frame_evidence"] = [frame for frame in part["frame_evidence"] if frame["id"] not in known]
+        material["parts"].extend(part for part in parts if part["segments"])
+        self._bind_visual_sampling(
+            material, [*material.get("visual_frames", []), *(frame for frame in frames if frame["id"] not in known)],
+            source_ids, sampling,
+        )
+        material["coverage"] = "sampled_visual"
+        return None
 
     async def _store(self, material, *, expires_at=None):
         material["source_version"] = self.source_version(material)
@@ -442,9 +443,7 @@ class BrowsingEvidence:
     async def _visual_parts(self, metadata, task, deadline, *, cid=None, timestamps=None, sampling="baseline"):
         capabilities = dict(self.visual.capabilities())
         if not (
-            capabilities.get("available")
-            and capabilities.get("images")
-            and capabilities.get("admitted")
+            capabilities.get("images")
             and capabilities.get("provider_id")
             and capabilities.get("version")
             and all(
@@ -452,7 +451,7 @@ class BrowsingEvidence:
                 for key in ("max_frames", "max_bytes", "max_pixels", "context_tokens")
             )
         ):
-            raise EvidenceUnavailable("visual_unavailable", capabilities.get("reason", "视觉资源未准入"))
+            raise EvidenceUnavailable("visual_unavailable", capabilities.get("reason", "视觉接口未配置"))
         if not hasattr(self.adapter, "video_frames"):
             raise EvidenceUnavailable("visual_unavailable", "平台未提供有实际时间的视频帧")
         task = dict(task or {})

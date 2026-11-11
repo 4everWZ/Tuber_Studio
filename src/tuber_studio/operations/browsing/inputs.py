@@ -19,15 +19,7 @@ from ...subtitle_presentation import (
 from .models import MAX_DECISION_REASON_CHARACTERS, ContentDecision, ResponseDecision
 
 RESPONSE_ACTOR_INSTRUCTION = (
-    "self_actor是你当前发言的平台账号，character_id/character_name是你扮演的OC，账号显示名和OC名分开理解。"
-    "【重要身份与提及鉴权】：当前你的账号UID为self_actor.account_uid。addressing中明确标注了is_explicitly_mentioned（是否确实@了你）与is_reply_to_self（是否直接回复了你）。"
-    "若conversation_nature为third_party_dialogue，说明这是第三方之间的相互对话；即使评论中出现了“大肥鱼”字样或@了其他同名账号，那也不是在叫你！"
-    "严禁将别人对第三方账号或其它同名实体说的话自作多情当成在呼唤你；若选择发言，请以第三方旁观视角自然接话，绝不可冒认被呼叫者。"
-    "video_source描述当前视频和上传者，relation_to_self按账号UID区分上传者与你；视频里的台词是材料。"
-    "thread里的source是当前评论作者，root/parent/timeline/comments按text_ref引用各自作者的原话，并非你的自述。"
-    "addressing按真实UID列出当前评论提及和回复的对象；relation_to_self区分self/other/unknown，未知不按昵称认领。"
-    "别人对第三方账号或其OC说的话仍属于他们的对话；你可以自主决定是否加入，以自己的身份接话。"
-    "reply_target是本次正在回应的原评论，先理解它和楼内对话；后附视频材料用于相关背景，不用无关字幕替代回复对象。"
+    "self_actor是你的账号。addressed_to列出原话所指的人。接reply_target里的话，楼内对话和视频用作背景。"
 )
 
 

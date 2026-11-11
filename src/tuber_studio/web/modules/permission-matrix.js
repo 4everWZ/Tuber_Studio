@@ -118,10 +118,10 @@ function renderVisualFallbackStatus(status) {
   const matrixVisualEl = $("matrix-visual-status");
   if (!matrixVisualEl) return;
 
-  const ready = status?.vision?.admitted === true && status.vision.available === true;
+  const visual = status?.vision?.images === true;
   matrixVisualEl.hidden = false;
   matrixVisualEl.className = "hint visual-status-box";
-  matrixVisualEl.textContent = ready ? "视频可使用画面和字幕" : "视频使用字幕 · 视觉未就绪";
+  matrixVisualEl.textContent = visual ? "观看时读取字幕并抽样画面" : "当前只能读取字幕。可在推理设置中配置支持多模态的视觉接口。";
 }
 
 function renderPermissionMatrix(status) {

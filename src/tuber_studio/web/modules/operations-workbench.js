@@ -536,7 +536,7 @@
         if (task.id === this.selectedTaskId) tr.className = "selected-row";
 
         const title = task.title || task.metadata?.title || task.bvid || `任务 ${task.id?.slice(0, 8)}`;
-        const statusInfo = humanizeStatus(task.status);
+        const statusInfo = humanizeStatus(task.status, task.material_mode);
         const reasonText = humanizeTaskReason(task);
 
         tr.innerHTML = `
@@ -694,7 +694,7 @@
       }
 
       const title = task.title || task.metadata?.title || task.bvid || `任务 ${task.id}`;
-      const statusInfo = humanizeStatus(task.status);
+      const statusInfo = humanizeStatus(task.status, task.material_mode);
       const bvidUrl = task.bvid ? `https://www.bilibili.com/video/${encodeURIComponent(task.bvid)}` : "#";
       const tracks = task.subtitle_tracks || [];
       const evidence = task.evidence || [];
@@ -705,6 +705,7 @@
         sampled_visual: "已读取抽样画面",
       };
       const coverage = coverageLabels[task.coverage] || task.coverage;
+      const material = { subtitle_visual: "字幕＋画面", subtitle: "仅字幕", visual: "仅画面", audio: "语音转写", unavailable: "取材失败" }[task.material_mode];
 
       detailPane.innerHTML = `
         <div class="op-inspector-content">
@@ -723,7 +724,9 @@
           </div>
           <div class="op-ai-reason-card">
             <h4>处理进度与内容结果</h4>
-            <p class="op-reason-text">${escapeHtml(humanizeTaskReason(task))}</p>
+            ${material ? `<p>${escapeHtml(material)}</p>` : ""}
+            <p class="op-reason-text">${escapeHtml(task.material_mode === "unavailable" && task.error ? task.error : humanizeTaskReason(task))}</p>
+            ${task.visual_error ? `<p class="hint">画面：${escapeHtml(task.visual_error)}</p>` : ""}
           </div>
           ${task.consecutive_failures ? `<p class="hint">连续失败 ${escapeHtml(task.consecutive_failures)} 次${task.consecutive_failures === 3 ? " · 已跳过" : ""}</p>` : ""}
           <details class="subsection"><summary>分 P 覆盖与引用材料</summary>

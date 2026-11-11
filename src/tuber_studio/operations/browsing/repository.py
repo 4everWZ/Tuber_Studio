@@ -321,8 +321,9 @@ class BrowsingRepository:
                 "JOIN browsing_rounds parent ON parent.id=t.round_id "
                 "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.failures<3 "
                 "AND COALESCE(json_extract(parent.config,'$.review_session_id'),'')=? "
+                "AND COALESCE(json_extract(t.payload,'$.next_at'),t.updated_at + 60*r.failures)<=? "
                 "ORDER BY t.updated_at LIMIT ?",
-                (*self.retry_scope(row), row["config"].get("review_session_id", ""), row["config"]["inspect_limit"]),
+                (*self.retry_scope(row), row["config"].get("review_session_id", ""), time.time(), row["config"]["candidate_limit"]),
             )
         ]
 

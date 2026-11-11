@@ -92,17 +92,11 @@
           <label>每轮候选视频上限
             <input id="exp-candidate-limit" type="number" min="1" max="20" required>
           </label>
-          <label>只读预览细看视频上限
-            <input id="exp-inspect-limit" type="number" min="1" max="20" required>
-          </label>
           <label>单次决策最大输出 Token
             <input id="exp-decision-max-tokens" type="number" min="512" max="65536" required>
           </label>
           <label>只读预览运行超时（秒）
             <input id="exp-deadline-seconds" type="number" min="10" max="1800" required>
-          </label>
-          <label class="check-field" style="grid-column:1 / -1;">
-            <input id="exp-visual-enabled" type="checkbox"> 启用视频画面分析
           </label>
           <label>取帧策略
             <select id="exp-frame-sampling">

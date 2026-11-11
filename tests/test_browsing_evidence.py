@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 
 from tuber_studio.operations.browsing.evidence import BrowsingEvidence, EvidenceUnavailable
-from tuber_studio.operations.browsing.models import BrowsingPolicy
+from tuber_studio.operations.browsing.models import BrowsingPolicy, DisabledVideoEvidence
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter, PlatformReadError
 
 BV = "BV1d8pU6xEZX"
@@ -369,15 +369,15 @@ async def test_partial_multi_part_cc_does_not_claim_full_coverage(evidence_facto
 
 
 @pytest.mark.parametrize("failure", ["permission", "restricted", "network", "invalid"])
-async def test_platform_errors_do_not_fall_back_to_other_part_or_visual(evidence_factory, config, failure):
+async def test_missing_subtitle_part_keeps_verified_other_sources(evidence_factory, config, failure):
     adapter = PublicAdapter()
     adapter.failures["456"] = failure
     visual = TestVisual()
     service = evidence_factory(adapter, visual)
-    with pytest.raises(PlatformReadError) as caught:
-        await service.prepare(BV, config | {"visual_enabled": True})
-    assert caught.value.kind == failure and visual.calls == 0
-    assert not list(service.directory.iterdir())
+    _, material = await service.prepare(BV, config)
+    assert material["missing_parts"] == [{"cid": "456", "reason": failure}]
+    assert {part["cid"] for part in material["parts"] if not part.get("visual")} == {"457"}
+    assert service.material_mode(material) == "subtitle_visual" and visual.calls == 1
 
 
 @pytest.mark.parametrize("source", ["cid", "credits", "empty"])
@@ -462,16 +462,34 @@ async def test_visual_default_is_unavailable_and_never_creates_fake_evidence(evi
     service = evidence_factory(await no_cc_adapter())
     with pytest.raises(EvidenceUnavailable) as caught:
         await service.prepare(BV, config | {"visual_enabled": True})
-    assert caught.value.kind == "visual_unavailable" and not list(service.directory.iterdir())
+    assert caught.value.kind == "no_subtitles" and caught.value.missing_material
+    assert not list(service.directory.iterdir())
 
 
-async def test_cc_is_preferred_to_visual_even_when_some_parts_have_no_cc(evidence_factory, config):
+async def test_cc_and_real_frames_are_used_without_resource_admission(evidence_factory, config):
     adapter = PublicAdapter()
     adapter.failures["457"] = "no_subtitles"
     visual = TestVisual()
+    visual.cap.update(available=False, admitted=False)
     service = evidence_factory(adapter, visual)
     _, material = await service.prepare(BV, config | {"visual_enabled": True})
-    assert material["parts"] and visual.calls == 0
+    assert service.material_mode(material) == "subtitle_visual" and visual.calls == 1
+    assert material["visual_frames"][0]["actual_time"] == 8
+
+
+@pytest.mark.parametrize("has_cc", [True, False])
+async def test_visual_failure_preserves_cc_or_marks_material_unavailable(evidence_factory, config, has_cc):
+    visual = TestVisual()
+    visual.cancel_error = ValueError("视觉接口暂时无法返回结果")
+    service = evidence_factory(PublicAdapter() if has_cc else await no_cc_adapter(), visual)
+    if has_cc:
+        _, material = await service.prepare(BV, config)
+        assert service.material_mode(material) == "subtitle"
+        assert "暂时无法返回结果" in material["visual_error"]
+    else:
+        with pytest.raises(EvidenceUnavailable, match="取材失败.*暂时无法返回结果") as error:
+            await service.prepare(BV, config)
+        assert error.value.missing_material
 
 
 async def test_frame_policy_changes_actual_request_without_reusing_baseline(evidence_factory, config):
@@ -668,6 +686,7 @@ async def test_provider_cleanup_failure_still_releases_inline_frames(evidence_fa
 async def test_disabling_visual_cannot_reuse_previous_visual_only_cache(evidence_factory, config):
     service = evidence_factory(await no_cc_adapter(), TestVisual())
     await service.prepare(BV, config | {"visual_enabled": True})
+    service.visual = DisabledVideoEvidence()
     with pytest.raises(EvidenceUnavailable) as caught:
         await service.prepare(BV, config)
     assert caught.value.kind == "no_subtitles"
@@ -701,49 +720,50 @@ async def test_requested_visual_appends_to_cached_cc_without_refetching_original
     first_expiry = service.store.one("SELECT expires_at FROM browsing_materials WHERE id=?", (first_key,))[
         "expires_at"
     ]
-    assert visual.calls == 0
-    key, material = await service.prepare(BV, enabled, require_visual=True, task={"id": "followup"})
-    assert key != first_key and visual.calls == 1
+    assert visual.calls == 1
+    adapter.frames[0].update(id="second", actual_time=10)
+    target = ["456:1:0"]
+    key, material = await service.prepare(BV, enabled, visual_source_ids=target, task={"id": "followup"})
+    assert key != first_key and visual.calls == 2
     assert (
         service.store.one("SELECT expires_at FROM browsing_materials WHERE id=?", (key,))["expires_at"]
         == first_expiry
     )
-    assert material["parts"][:2] == first["parts"]
+    assert material["parts"][:3] == first["parts"]
     assert material["parts"][2]["visual_provider"] == {"provider_id": "controlled-test", "version": "1"}
     assert material["parts"][2]["segments"][0]["start"] == 8
     assert len([call for call in adapter.calls if call[0] == "subtitles"]) == 2
     assert len([call for call in adapter.calls if call[0] == "metadata"]) == 1
-    cached, _ = await service.prepare(BV, enabled, require_visual=True)
-    assert cached == key and visual.calls == 1
+    assert material["parts"][3]["segments"][0]["start"] == 10
+    cached, _ = await service.prepare(BV, enabled, visual_source_ids=target)
+    assert cached == key and visual.calls == 2
 
 
-async def test_visual_request_is_separate_from_concurrent_cc_only_flight(evidence_factory, config):
+async def test_followup_and_initial_visual_requests_keep_distinct_targets(evidence_factory, config):
     adapter, visual = PublicAdapter(), TestVisual()
     adapter.subtitle_gate = asyncio.Event()
     service = evidence_factory(adapter, visual)
     enabled = config | {"visual_enabled": True}
     ordinary = asyncio.create_task(service.prepare(BV, enabled))
     await adapter.entered.wait()
-    requested = asyncio.create_task(service.prepare(BV, enabled, require_visual=True))
+    requested = asyncio.create_task(service.prepare(BV, enabled, visual_source_ids=["456:1:0"]))
     await asyncio.sleep(0)
     adapter.subtitle_gate.set()
     plain, augmented = await asyncio.gather(ordinary, requested)
-    assert not any(part.get("visual") for part in plain[1]["parts"])
+    assert any(part.get("visual") for part in plain[1]["parts"])
     assert any(part.get("visual") for part in augmented[1]["parts"])
-    assert visual.calls == 1
+    assert visual.calls == 2 and plain[1]["visual_source_ids"] != augmented[1]["visual_source_ids"]
 
 
 async def test_other_provider_visual_is_not_reused_but_original_cc_is_shared(evidence_factory, config):
     adapter, visual = PublicAdapter(), TestVisual()
     service = evidence_factory(adapter, visual)
     enabled = config | {"visual_enabled": True}
-    _, first = await service.prepare(BV, enabled, require_visual=True)
+    _, first = await service.prepare(BV, enabled)
     visual.cap["version"] = "2"
     visual.returned = {"version": "2", "frame_observations": {"first": "新模型看到的是透明容器"}}
-    _, cc = await service.prepare(BV, enabled)
-    assert visual.calls == 1 and not any(part.get("visual") for part in cc["parts"])
-    assert cc["parts"] == [part for part in first["parts"] if not part.get("visual")]
-    _, current = await service.prepare(BV, enabled, require_visual=True)
+    _, current = await service.prepare(BV, enabled)
+    assert current["parts"][:2] == first["parts"][:2]
     assert visual.calls == 2
     assert current["parts"][-1]["segments"][0]["text"] == "新模型看到的是透明容器"
     assert current["parts"][-1]["visual_provider"]["version"] == "2"
@@ -768,12 +788,14 @@ async def test_cc_visual_followup_cancel_or_deadline_collects_children(evidence_
     service = evidence_factory(PublicAdapter(), visual)
     enabled = config | {"visual_enabled": True}
     original, _ = await service.prepare(BV, enabled)
+    visual.started.clear()
+    visual.cancelled.clear()
     visual.gate = asyncio.Event()
     task = asyncio.create_task(
         service.prepare(
             BV,
             enabled,
-            require_visual=True,
+            visual_source_ids=["456:1:0"],
             task={"id": "followup"},
             deadline=time.time() + (30 if cancel else 0.03),
         )
@@ -782,7 +804,10 @@ async def test_cc_visual_followup_cancel_or_deadline_collects_children(evidence_
     if cancel:
         task.cancel()
     outcome = (await asyncio.gather(task, return_exceptions=True))[0]
-    assert isinstance(outcome, asyncio.CancelledError if cancel else EvidenceUnavailable)
+    if cancel:
+        assert isinstance(outcome, asyncio.CancelledError)
+    else:
+        assert "期限" in outcome[1]["visual_error"]
     assert not service.pending and visual.frames == []
     assert visual.cancelled == ["followup"]
-    assert not any(part.get("visual") for part in service.load(original)["parts"])
+    assert any(part.get("visual") for part in service.load(original)["parts"])

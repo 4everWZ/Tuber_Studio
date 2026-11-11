@@ -1,7 +1,7 @@
-"""Explicitly probed, resource-admitted video-frame JSON evidence provider.
+"""Video-frame observations from a configured visual endpoint.
 
-This module owns an API client, never a model process or a production setting.
-It is disabled until configured and cannot route platform writes or call tools.
+This module owns the API client and validates actual requests and source frames.
+Resource measurements are used for deployment diagnostics and live admission.
 """
 
 import asyncio
@@ -126,13 +126,14 @@ class ApiVideoEvidenceProvider:
 
     def capabilities(self):
         probe = self._probe or {}
-        available = bool(self.api and probe.get("images"))
+        configured = self.api is not None
+        available = bool(configured and probe.get("images"))
         admitted = bool(available and self._admission)
         return {
             "available": available,
-            "images": available,
+            "images": configured,
             "admitted": admitted,
-            "multiple_images": available and probe.get("tested_frames", 0) >= self.config.max_frames,
+            "multiple_images": configured and self.config.max_frames > 1,
             "provider_id": self.config.model or "disabled",
             "version": self.version,
             "max_frames": self.config.max_frames,
@@ -141,13 +142,7 @@ class ApiVideoEvidenceProvider:
             "context_tokens": self.config.context_tokens,
             "timeout_seconds": self.config.timeout_seconds,
             "runtime_context_tokens": probe.get("context_tokens"),
-            "reason": ""
-            if admitted
-            else "视觉接口默认关闭"
-            if not self.api
-            else "未完成真实图像接口探测"
-            if not available
-            else "设备资源实测尚未准入",
+            "reason": "" if configured else "未配置多模态视觉接口",
         }
 
     async def _runtime_properties(self):
@@ -287,7 +282,9 @@ class ApiVideoEvidenceProvider:
     def _check_properties(self, props, expected, identity):
         if self.identity() != identity or expected is not None and props != expected:
             self._probe = self._admission = None
-            raise VideoVisionAdmissionRequired("视觉服务实际模型／窗口或配置已变化，须重新探测和准入")
+            raise VideoVisionAdmissionRequired("视觉服务实际模型、窗口或配置在取材时发生变化")
+        if self._probe and props != self._probe["properties"]:
+            self._probe = self._admission = None
 
     async def _stage(self, task, deadline, identity, expected, repository, operation):
         started = time.monotonic()
@@ -508,7 +505,7 @@ class ApiVideoEvidenceProvider:
             raise ValueError("视觉问题须为1至8000字")
         started = time.monotonic()
         identity = self.identity()
-        expected = None if probe else self._probe["properties"]
+        expected = None
         repository = self.runtime.browsing_repository if task.get("round_id") else None
         scope = GenerationMeter(repository, task["round_id"]) if repository else nullcontext()
         before = repository.round(task["round_id"])["budget"].copy() if repository else None
@@ -633,8 +630,8 @@ class ApiVideoEvidenceProvider:
         return {"capabilities": self.capabilities(), "result": result, "properties": props}
 
     async def analyze_video_evidence(self, task, metadata, frames, question, *, deadline):
-        if not self.capabilities()["admitted"]:
-            raise ValueError("视觉接口未完成真实探测与设备资源准入")
+        if not self.api:
+            raise ValueError("未配置多模态视觉接口")
         if task.get("cancel_signal") is not None and task["cancel_signal"].is_set():
             raise asyncio.CancelledError
         result, _ = await self._owned(

@@ -176,14 +176,12 @@ async def test_default_disabled_never_opens_client_or_admits_by_name(runtime):
     await value.close()
 
 
-async def test_enabled_model_name_alone_is_not_capability(provider):
+async def test_normal_visual_request_runs_without_admission(provider):
     value, state = provider
     assert not value.capabilities()["available"]
-    with pytest.raises(ValueError, match="准入"):
-        await value.analyze_video_evidence({}, META, FRAMES, "查看", deadline=time.time() + 10)
-    assert not state["requests"]
-    observed = await value.probe(FRAMES, metadata=META)
-    assert observed["capabilities"]["images"] and not observed["capabilities"]["admitted"]
+    result = await value.analyze_video_evidence({}, META, FRAMES, "查看", deadline=time.time() + 10)
+    assert result["evidence_ids"] == ["first", "second"]
+    assert value.capabilities()["images"] and not value.capabilities()["admitted"]
     assert len(generations(state)) == 6
 
 
@@ -284,14 +282,13 @@ async def test_resource_proof_must_match_measured_configuration_and_bounds(provi
     assert report["capabilities"]["images"] and not report["capabilities"]["admitted"]
 
 
-async def test_runtime_change_revokes_prior_admission_before_generation(provider):
+async def test_runtime_change_invalidates_benchmark_and_still_reads_at_supported_capacity(provider):
     value, state = provider
     await admit(value)
     before = len(generations(state))
     state["window"] *= 2
-    with pytest.raises(ValueError, match="变化"):
-        await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
-    assert len(generations(state)) == before and not value.capabilities()["admitted"]
+    await value.analyze_video_evidence({}, META, FRAMES, "观察", deadline=time.time() + 10)
+    assert len(generations(state)) > before and not value.capabilities()["admitted"]
 
 
 @pytest.mark.parametrize(
@@ -747,9 +744,8 @@ async def test_endpoint_switch_with_identical_model_properties_revokes_admission
     await admit(value)
     value.api.client.base_url = "http://127.0.0.1:18081/v1/"
     before = len(generations(state))
-    with pytest.raises(ValueError, match="变化"):
-        await value.analyze_video_evidence({}, META, FRAMES, "端点切换", deadline=time.time() + 10)
-    assert len(generations(state)) == before and not value.capabilities()["admitted"]
+    await value.analyze_video_evidence({}, META, FRAMES, "端点切换", deadline=time.time() + 10)
+    assert len(generations(state)) > before and not value.capabilities()["admitted"]
 
 
 async def test_public_probe_and_analysis_share_real_parent_meter_for_all_stages(provider, runtime):

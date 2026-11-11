@@ -18,7 +18,6 @@ async def prepare_evidence(
     force=False,
     task=None,
     deadline=None,
-    require_visual=False,
     visual_source_ids=(),
 ):
     """Keep visual generation and token probes inside their parent round."""
@@ -40,7 +39,6 @@ async def prepare_evidence(
         force=force,
         task=task,
         deadline=deadline,
-        require_visual=require_visual,
         visual_source_ids=visual_source_ids,
     )
 
@@ -155,7 +153,10 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
                     item | {"reason": "daily_watch_limit", "next_at": daily["next_at"]},
                 )
                 return None
-            if progress and not row["config"].get("force_read"):
+            prior_material = progress["material"] if progress else None
+            if prior_material and not row["config"].get("force_read") and (
+                not browsing.evidence.has_visual_provider() or browsing.evidence._current_visual(prior_material)
+            ):
                 material_key, material = await browsing.evidence._store(progress["material"])
                 browsing.evidence.hits += 1
             else:
@@ -173,7 +174,7 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
             reason = browsing.filter_reason(material["metadata"], row["config"])
             if reason:
                 raise EvidenceUnavailable("filtered", reason)
-            if not progress or row["config"].get("force_read"):
+            if not prior_material or prior_material.get("source_version") != material["source_version"]:
                 browsing.repo.save_content_progress(row, material, [])
             browsing.repo.complete(
                 identity,
@@ -185,6 +186,8 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
                     "metadata": browsing.decisions._metadata_summary(material["metadata"]),
                     "coverage": material["coverage"],
                     "missing_parts": material["missing_parts"],
+                    "material_mode": browsing.evidence.material_mode(material),
+                    "visual_error": material.get("visual_error"),
                 },
                 material_key,
             )
@@ -202,8 +205,9 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
         except ValueError as error:
             kind = getattr(error, "kind", "")
             deferred = isinstance(error, BrowsingBudgetDeferred)
+            missing_material = getattr(error, "missing_material", False)
             metrics["failures"] += int(
-                kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
+                not missing_material and kind not in {"no_subtitles", "empty", "filtered", "visual_unavailable"}
             )
             browsing.repo.complete(
                 identity,
@@ -212,6 +216,7 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
                 "checkpoint" if deferred else "skipped" if kind else "failed",
                 item
                 | {"reason": kind or "preparation_failed"}
+                | ({"material_mode": "unavailable"} if missing_material else {})
                 | ({"retry_kind": "round_budget"} if deferred else {}),
                 error=public_error(error),
             )

@@ -524,7 +524,7 @@ async def discover_candidates(browsing, row, retries):
         for keyword in keywords if source == "search" else [""]:
             cursor_key = f"browsing_source_page:{row['account_id']}:{row['character_id']}:{source}:{keyword}"
             query_key = dump([source, keyword])
-            start_page = 1
+            start_page = (max(1, int(browsing.store.get(cursor_key, 1))) - 1) % MAX_SOURCE_PAGE + 1
             if batch:
                 saved_start = retrieval.setdefault("starts", {}).setdefault(
                     query_key, max(1, int(browsing.store.get(cursor_key, 1)))
@@ -582,20 +582,13 @@ async def discover_candidates(browsing, row, retries):
 
 async def select_batch_candidates(browsing, row, retries, candidates):
     config = row["config"]
-    cursor_key = "browsing_rotation:" + row["account_id"] + ":" + row["character_id"]
     batch = browsing.repo.batches.get(row)
-    offset = batch["retrieval"].get("rotation") if batch else None
-    if offset is None:
-        offset = browsing.store.get(cursor_key, 0) % max(1, len(candidates))
-        if batch:
-            browsing.repo.batches.retrieval(row, batch["retrieval"] | {"rotation": offset})
-    candidates = candidates[offset:] + candidates[:offset]
-    browsing.store.set(cursor_key, offset + config["inspect_limit"])
-    selected = retries[: config["inspect_limit"]]
+    if batch and candidates:
+        offset = sum(page - 1 for page in batch["retrieval"].get("starts", {}).values()) % len(candidates)
+        candidates = candidates[offset:] + candidates[:offset]
+    selected = list(retries)
     selected_ids = {item["bvid"] for item in selected}
     for item in candidates:
-        if row["preview"] and len(selected) >= config["inspect_limit"]:
-            break
         if item["bvid"] in selected_ids or (
             config.get("autonomous_batch") and browsing.repo.video_retry(row, item["bvid"])
         ):
@@ -641,8 +634,6 @@ async def select_batch_candidates(browsing, row, retries, candidates):
             continue
         selected.append(item)
         selected_ids.add(item["bvid"])
-        if row["preview"] and len(selected) >= config["inspect_limit"]:
-            break
     return await browsing._plan_batch(row, selected)
 
 
@@ -659,7 +650,7 @@ async def plan_batch(browsing, row, candidates):
     if row["preview"] or not candidates:
         if row["config"].get("batch_id"):
             browsing.repo.batches.save_plan(row, {"videos": [], "workers": 1}, presented=[])
-        return candidates[: row["config"]["inspect_limit"]]
+        return candidates
     plan = await browsing.decisions._model(
         row,
         CandidateBatchPlan,

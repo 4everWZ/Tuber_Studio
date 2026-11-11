@@ -162,7 +162,9 @@ async def test_live_response_packet_binds_current_account_before_reference_forma
     assert header["self_actor"]["account_bio"] is None
     assert header["reply_target"]["addressed_to"][0]["relation_to_self"] == "other"
     assert [message["role"] for message in calls[0]] == ["system", "system", "user"]
-    assert "以自己的身份接话" in calls[0][1]["content"]
+    instruction = calls[0][1]["content"]
+    assert "接reply_target里的话" in instruction
+    assert all(term not in instruction for term in ("提及鉴权", "严禁", "冒认"))
     assert result.evidence_ids == [data["evidence"][0]["id"]]
     assert not browsing.adapter.sent
 

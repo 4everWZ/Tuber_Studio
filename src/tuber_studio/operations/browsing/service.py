@@ -446,7 +446,6 @@ class BrowsingService:
         force=False,
         task=None,
         deadline=None,
-        require_visual=False,
         visual_source_ids=(),
     ):
         return await progress_tasks.prepare_evidence(
@@ -456,7 +455,6 @@ class BrowsingService:
             force=force,
             task=task,
             deadline=deadline,
-            require_visual=require_visual,
             visual_source_ids=visual_source_ids,
         )
 

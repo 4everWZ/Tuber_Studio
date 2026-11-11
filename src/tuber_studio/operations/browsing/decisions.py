@@ -175,10 +175,10 @@ class BrowsingDecisions:
             content = compact_content_input(data)
             role = "角色：" + view["brief"]
             instruction = CLASSIFICATION_INSTRUCTION
-        allow_visual = data.get("coverage") != "sampled_visual" and not data.get("has_visual")
+        allow_visual = data.get("allow_visual", self.browsing.evidence.has_visual_provider())
         if schema is ContentDecision:
             instruction += (
-                "需要补看画面时选visual。"
+                "需要补看时选visual，并引用最接近想补看时码的材料编号。"
                 if allow_visual
                 else "本次取样画面已到齐。请用现有材料判断，材料仍不足时可以暂不发言。"
             )
@@ -210,6 +210,7 @@ class BrowsingDecisions:
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
                 allow_comments=data.get("allow_comments", True),
+                allow_visual=allow_visual,
                 grouped_comment_refs=response_input.grouped_comment_refs,
             )
         elif schema is CandidateBatchPlan:
@@ -562,6 +563,7 @@ class BrowsingDecisions:
                 decisions.extend(restore_stored_content_decisions(material, [stored]))
                 continue
             data, aliases = presentation.present(chunk)
+            data["allow_visual"] = self.browsing.evidence.has_visual_provider() and not material.get("visual_source_ids")
             decision = await self._model(
                 row,
                 ContentDecision,
@@ -580,70 +582,36 @@ class BrowsingDecisions:
 
     async def _followup_visual(self, result, row, metrics, decisions, followup):
         identity, material = result["id"], result["material"]
-        if any(decision.coverage_required == "visual" for decision in decisions) and not any(
-            part.get("visual") for part in material["parts"]
-        ):
-            followup.update(
-                status="requested" if row["config"]["visual_enabled"] else "disabled",
-                decisions_before=[decision.model_dump() for decision in decisions],
-                source_material_key=result["material_key"],
-            )
-            if row["config"]["visual_enabled"]:
-                initial = json.loads(
-                    self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))[
-                        "payload"
-                    ]
-                ) | {"decisions": followup["decisions_before"], "visual_followup": followup}
-                self.browsing.repo.complete(
-                    identity,
-                    result["owner"],
-                    result["generation"],
-                    "evidence_ready",
-                    initial,
-                    result["material_key"],
-                )
-                try:
-                    key, material = await self.browsing._prepare_evidence(
-                        material["metadata"]["bvid"],
-                        row["config"],
-                        require_visual=True,
-                        visual_source_ids={
-                            ref
-                            for decision in decisions
-                            if decision.coverage_required == "visual"
-                            for ref in decision.evidence_ids
-                        },
-                        task={"id": identity},
-                        deadline=row["deadline"],
-                    )
-                    result.update(material_key=key, material=material)
-                    followup.update(status="prepared", material_key=key)
-                    self.browsing.repo.complete(
-                        identity,
-                        result["owner"],
-                        result["generation"],
-                        "evidence_ready",
-                        initial
-                        | {
-                            "coverage": material["coverage"],
-                            "missing_parts": material["missing_parts"],
-                            "visual_followup": followup,
-                        },
-                        key,
-                    )
-                    decisions = await self._content_decisions(material, row, metrics)
-                    followup.update(
-                        status="completed",
-                        needs_visual_again=any(
-                            decision.coverage_required == "visual" for decision in decisions
-                        ),
-                    )
-                except Exception as error:
-                    followup.update(status="failed", error=public_error(error))
-                    if getattr(error, "kind", None) == "visual_unavailable":
-                        return material, decisions
-                    raise
-        return material, decisions
+        requested = [decision for decision in decisions if decision.coverage_required == "visual"]
+        if not requested or not self.browsing.evidence.has_visual_provider() or material.get("visual_source_ids"):
+            return material, decisions
+        source_ids = {ref for decision in requested for ref in decision.evidence_ids}
+        if not source_ids:
+            source_ids = {self.browsing._segments(material)[0]["id"]}
+        followup.update(
+            status="requested",
+            decisions_before=[decision.model_dump() for decision in decisions],
+            source_material_key=result["material_key"],
+        )
+        key, enriched = await self.browsing._prepare_evidence(
+            material["metadata"]["bvid"], row["config"], visual_source_ids=source_ids,
+            task={"id": identity}, deadline=row["deadline"],
+        )
+        result.update(material_key=key, material=enriched)
+        if error := enriched.get("visual_error"):
+            followup.update(status="failed", error=error)
+            return enriched, decisions
+        followup.update(status="prepared", material_key=key)
+        payload = json.loads(self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
+        self.browsing.repo.complete(
+            identity, result["owner"], result["generation"], "evidence_ready",
+            payload | {"coverage": enriched["coverage"], "missing_parts": enriched["missing_parts"],
+                       "material_mode": self.browsing.evidence.material_mode(enriched), "visual_followup": followup},
+            key,
+        )
+        decisions = await self._content_decisions(enriched, row, metrics)
+        followup["status"] = "completed"
+        return enriched, decisions
 
     async def _evaluate_task(self, result, row, metrics):
         if result.get("comment_only"):
@@ -766,6 +734,8 @@ class BrowsingDecisions:
             ) | {
                 "metadata": self._metadata_summary(material["metadata"]),
                 "coverage": material["coverage"],
+                "material_mode": self.browsing.evidence.material_mode(material),
+                "visual_error": material.get("visual_error"),
                 "decisions": [d.model_dump() for d in decisions],
                 "reason": "；".join(dict.fromkeys(decision_explanation(d, material) for d in decisions)),
                 "subtitle_tracks": [
@@ -1197,7 +1167,8 @@ class BrowsingDecisions:
             "thread": {} if kind == "top_level" else context,
             **({"video_source": self._metadata_summary(material["metadata"])} if material else {}),
             "coverage": material["coverage"] if material else "public_text",
-            **({"video_actions": True} if video_actions else {}),
+            **({"video_actions": True, "allow_visual": self.browsing.evidence.has_visual_provider()
+                and not material.get("visual_source_ids")} if video_actions else {}),
             **(
                 {
                     "allow_public": row["config"]["top_level_enabled"],
@@ -1232,7 +1203,7 @@ class BrowsingDecisions:
                if context.get("grouped_comments") else "")
             + (
                 " 这次可直接选择行动并给出正文，无需先做兴趣或渠道分类。"
-                "想继续翻评论选read_comments；想补看画面选watch_frames；想补读视频内容选read_more。"
+                "想继续翻评论选read_comments；想补看画面选watch_frames并引用目标时码附近的材料编号；想补读视频内容选read_more。"
                 "已有材料够用时直接reply_public并给出正文，也可skip或wait。"
                 "看过但不想发言可选finish。video_preference用like/not_interested/neutral表达对视频的真实偏好，"
                 "preference_reason说明具体原因；是否发言与喜欢程度分别决定，不发言也可以喜欢。"

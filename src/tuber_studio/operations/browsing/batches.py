@@ -582,6 +582,9 @@ async def run_discovery_video(browsing, row, candidate, metrics):
         return
     if task["status"] == "deferred_daily":
         return
+    if payload.get("material_mode") == "unavailable":
+        browsing.repo.finish_video_attempt(row, candidate, identity, failures + 1)
+        return
     if task["status"] in {"selected", "viewed_without_comment", "comments_checked"} or (
         task["status"] == "skipped"
         and reason in {"no_subtitles", "empty", "filtered", "visual_unavailable"}

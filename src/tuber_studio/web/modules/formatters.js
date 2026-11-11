@@ -67,7 +67,8 @@
     }
   }
 
-  function humanizeStatus(status) {
+  function humanizeStatus(status, materialMode) {
+    if (materialMode === "unavailable") return { label: "取材失败", className: "status-slate", priority: 9 };
     switch (status) {
       case "pending_review":
         return { label: "⏳ 待审核", className: "status-amber", priority: 1 };
@@ -137,7 +138,8 @@
       "specific_detail": "深入呼应视频中的核心观点与亮点细节",
       "private_details": "涉及更深话题，引导至私信交流",
       "no_subtitles": "视频无可用字幕，已跳过",
-      "visual_unavailable": "视频暂无可用字幕且视觉未就绪，已安全跳过（待后续接入ASR）",
+      "visual_unavailable": "当前无法读取视频画面",
+      "material_unavailable": "取材失败，暂无字幕或画面",
       "platform_error": "B站接口网络波动或频控限制",
       "spam": "过滤掉广告营销或低俗刷屏发言",
       "short_comment": "评论内容过短，缺少展开互动的价值",

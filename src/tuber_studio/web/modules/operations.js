@@ -1,5 +1,5 @@
 import { $, safeMessage, notice } from "./core.js";
-import { initPermissionMatrix, renderPermissionStatus, saveMatrixSettings } from "./permission-matrix.js?v=20261107.12";
+import { initPermissionMatrix, renderPermissionStatus, saveMatrixSettings } from "./permission-matrix.js?v=20261111.05";
 import { renderOperationCapabilities } from "./operation-capabilities.js?v=20261107.17";
 
 let currentAutomationStatus = null;
@@ -32,7 +32,6 @@ const roundNumberFields = [
   ["interval_seconds", "op-interval", 300],
   ["workers", "op-workers", 4],
   ["candidate_limit", "exp-candidate-limit", 20],
-  ["inspect_limit", "exp-inspect-limit", 4],
   ["decision_max_tokens", "exp-decision-max-tokens", 8192],
   ["deadline_seconds", "exp-deadline-seconds", 1800],
 ];
@@ -43,7 +42,6 @@ export function renderOperationsQuickBar(status) {
   const settings = status.settings || {};
   if (!roundSettingsDirty) {
     for (const [name, id, fallback] of roundNumberFields) $(id).value = settings[name] ?? fallback;
-    $("exp-visual-enabled").checked = settings.visual_enabled !== false;
     $("exp-frame-sampling").value = settings.frame_sampling || "baseline";
     $("op-business-timezone").value = settings.business_timezone || "Asia/Taipei";
   }
@@ -105,7 +103,6 @@ export function initOperationsModule(api, accountPanel) {
       if (save.disabled) return;
       const payload = Object.fromEntries(roundNumberFields.map(([name, id]) => [name, Number($(id).value)]));
       payload.business_timezone = $("op-business-timezone").value.trim() || "Asia/Taipei";
-      payload.visual_enabled = $("exp-visual-enabled").checked;
       payload.frame_sampling = $("exp-frame-sampling").value;
       const fields = [...roundForm.querySelectorAll("input, select")];
       roundSettingsSaving = true;

@@ -78,11 +78,9 @@ class BrowsingPolicy(StrictModel):
     mention_reply_enabled: bool = False
     replies_enabled: bool = False
     comment_handoff_enabled: bool = False
-    visual_enabled: bool = False
     frame_sampling: Literal["baseline", "adaptive"] = "baseline"
     workers: int = Field(default=4, ge=1, le=8)
     candidate_limit: int = Field(default=MAX_BATCH_CANDIDATES, ge=1, le=MAX_BATCH_CANDIDATES)
-    inspect_limit: int = Field(default=4, ge=1, le=20)
     max_search_terms: int = Field(default=2, ge=1, le=20)
     max_pages: int = Field(default=2, ge=1, le=2)
     max_reads: int = Field(default=64, ge=0, le=128)
@@ -126,9 +124,12 @@ class BrowsingPolicy(StrictModel):
 
     @model_validator(mode="before")
     @classmethod
-    def retire_public_length_preference(cls, value):
+    def retire_obsolete_preferences(cls, value):
         if isinstance(value, dict):
-            return {key: item for key, item in value.items() if key != "public_max_chars"}
+            return {
+                key: item for key, item in value.items()
+                if key not in {"public_max_chars", "inspect_limit", "visual_enabled"}
+            }
         return value
 
     @model_validator(mode="after")
@@ -404,28 +405,13 @@ def content_decision_schema(evidence_ids, *, allow_visual=True):
 
 
 RESPONSE_INSTRUCTION = (
-    "explanation结合本条标题、材料或评论说明这次行动的具体理由。"
-    "以当前角色接着这段交流，选择行动、理由、相关内容ID和台词。"
-    "台词必须紧密贴合视频或评论的具体内容与看点，像活生生的ACG同好网友一样自然表达，"
-    "用自己的话接当前话题，口癖随着交流自然使用。"
-    "每一条回应围绕当前被回复的内容与楼内话题，语言生活化自然，自称或常规词汇（如本鱼、小鱼、白饭、摸鱼）直接使用。"
-    "严禁每句无脑机械复读口癖；避免把口癖当万能句首，重在交流的灵性与内容实质。"
-    "严禁仅看标题臆测脑补；发言须基于实际字幕与画面材料，有具体讨论点，不胡言乱语。"
-    "普通公开话题在楼里回复（reply_public）；对方明确邀请我方私聊，"
-    "或有真实约定且已完成时，与当前作者私聊（handoff_private）。"
-    "主动私聊须有指向我方账号的真实邀请或约定，contact_purpose说明具体交流事项；"
-    "contact_trigger用invitation表示现在邀请私聊，agreement表示办完约定事项后联系。"
-    "有兴趣、长篇跟进、历史聊过或@别人不构成主动私聊依据，普通话题继续在楼里聊。"
-    "reply_public的正文接当前公开话题，不把普通交流引向私聊。"
-    "根据当前问题、楼内上下文及提供的内容作答；需要更多信息时，可以自然追问。"
-    "在楼中楼互动时，结合楼首话题与上下文，你可以自然@其他人或呼应楼内大家的讨论。"
-    "想略过这次交流选skip，准备稍后接话选wait。"
-    "公开回应理由用specific_detail/light_interaction；真实邀请或完成约定后的私聊理由用user_requested。"
+    "用自己的话接当前话题。text是直接发给对方的正文，explanation写这次选择的具体原因。"
+    "评论接对方的原话，视频主评聊看到或听到的细节。想聊就回，想略过选skip，稍后再处理选wait。"
+    "有已核验的私聊邀请时，contact_purpose写要聊的事，contact_trigger按当前邀请或办完约定选择。"
 )
 
 RESPONSE_REFERENCE_INSTRUCTION = (
-    "所选材料以[ref:1|起止秒]逐段呈现；ref:是内部引用命名空间，仅用于evidence_ids，text写给对方的自然正文。"
-    "每个编号对应一条原始引用，最多选择8条；当前公开来源的编号对应thread中的原文。"
+    "evidence_ids选支撑正文的材料编号，text写直接说出口的话。"
 )
 
 
@@ -437,6 +423,7 @@ def response_schema(
     video_actions=False,
     allow_public=True,
     allow_comments=True,
+    allow_visual=True,
     grouped_comment_refs=(),
 ):
     """Constrain source IDs and channel consistency before the model emits text."""
@@ -457,6 +444,8 @@ def response_schema(
         )
     branches = []
     for action, allowed_reasons in reasons.items():
+        if action == "watch_frames" and not allow_visual:
+            continue
         if action == "reply_public" and not allow_public or action == "read_comments" and not allow_comments:
             continue
         sending = action in {"reply_public", "handoff_private"}
@@ -538,7 +527,7 @@ class DisabledVideoEvidence:
             "max_bytes": 0,
             "context_tokens": None,
             "admitted": False,
-            "reason": "未配置视频视觉后端；首期只使用CC字幕",
+            "reason": "未配置多模态视觉接口，可读取字幕",
         }
 
     async def analyze_video_evidence(self, *args, **kwargs):
