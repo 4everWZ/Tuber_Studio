@@ -1,6 +1,6 @@
 # Q 版大肥鱼 Live2D 接入
 
-当前默认演出使用图片／GIF。已安装的可选模型移至本机 `runtime/inactive-live2d/whale`，刷新场景后使用现有 GIF。版本化交付包继续留存，重新启用时按下文安装到 `runtime/live2d/whale`。
+当前默认演出使用图片／GIF。可选模型按下文安装到 `runtime/live2d/whale` 后生效。要切回 GIF，可将角色模型目录移出 `runtime/live2d/` 并刷新场景。版本化交付包独立留存。
 
 直播适配版 `0.2.0-community` 使用氵六青的「DS 鲸鱼娘」。上游署名记录鲸鱼娘原作与女仆二创来源。直播包保留原模型、贴图和物理，在运行配置里映射待机、说话、开心、困惑和礼物，另加轻点头、偏头和微笑。仓库自填的 CC 标签作为来源信息展示。安装与加载检查模型、贴图、动作映射和 SDK 兼容性。 [来源与署名](https://github.com/xkk6663/dsh-live2d-mao#-许可与致谢)
 
@@ -33,8 +33,6 @@ Windows 从官方页面安装 Cubism Editor，并由使用者确认其协议。�
 ```json
 {
   "model": "dafeiyu-q.model3.json",
-  "license": "原创大肥鱼 Q 版，仅本机自用及非商业演出",
-  "commercial_allowed": false,
   "mouth_parameter": "ParamMouthOpenY",
   "motions": {
     "idle": {"group": "Idle", "index": 0},
