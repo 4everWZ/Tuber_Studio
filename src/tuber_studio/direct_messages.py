@@ -2105,6 +2105,7 @@ class DirectMessages:
             return {
                 "policy": self.policy(),
                 "account_id": "",
+                "character_id": character["id"],
                 "users": [],
                 "drafts": [],
                 "private_continuations": [],
@@ -2129,6 +2130,7 @@ class DirectMessages:
         return {
             "policy": self.policy(),
             "account_id": account_id,
+            "character_id": character["id"],
             "users": [
                 {
                     **user,
@@ -2158,17 +2160,31 @@ class DirectMessages:
             )
         return result
 
-    def conversation(self, platform, uid):
+    def conversation(self, platform=None, uid=None, *, inbox_id=None):
         character = self.runtime.character
         account_id = self.display_account_id()
+        target = None
+        if inbox_id is not None:
+            target = account_id and self.store.one(
+                "SELECT * FROM dm_inbox WHERE id=? AND account_id=? AND character_id=?",
+                (inbox_id, account_id, character["id"]),
+            )
+            if not target:
+                raise ValueError("当前账号和角色下找不到这条来信")
+            platform, uid = target["platform"], target["platform_user_id"]
         if not account_id:
-            return {"account_id": "", "messages": [], "drafts": [], "relationship": {}}
+            return {"account_id": "", "character_id": character["id"], "messages": [], "drafts": [], "relationship": {}}
+        incoming = self.store.all(
+            "SELECT * FROM dm_inbox WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? "
+            "ORDER BY sequence DESC,sent_at DESC,id DESC LIMIT 100",
+            (platform, uid, character["id"], account_id),
+        )
+        if target and not any(row["id"] == inbox_id for row in incoming):
+            incoming.append(target)
         return {
             "account_id": account_id,
-            "messages": self._ordered_messages(self.store.all(
-                "SELECT * FROM dm_inbox WHERE platform=? AND platform_user_id=? AND character_id=? AND account_id=? ORDER BY sequence DESC,sent_at DESC,id DESC LIMIT 100",
-                (platform, uid, character["id"], account_id),
-            )),
+            "character_id": character["id"],
+            "messages": self._ordered_messages(incoming),
             "drafts": [
                 self._draft_view(row)
                 for row in self.store.all(

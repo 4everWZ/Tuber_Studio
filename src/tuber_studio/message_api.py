@@ -1,8 +1,8 @@
 """Administrator-only inbox, policy, source-bound preparation and delivery."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import Depends
+from fastapi import Depends, Path
 from pydantic import Field
 
 from .direct_messages import MessagePolicy
@@ -35,6 +35,10 @@ def register_message_api(app, messages, require_admin):
         if len(platform) > 32 or len(user_id) > 100:
             raise ValueError("用户身份无效")
         return messages.conversation(platform, user_id)
+
+    @app.get("/api/messages/inbox/{identity}/conversation", dependencies=auth)
+    async def inbox_conversation(identity: Annotated[int, Path(ge=1, le=2**63 - 1)]):
+        return messages.conversation(inbox_id=identity)
 
     @app.post("/api/messages/inbox/{identity}/reply", dependencies=auth)
     async def prepare(identity: int):

@@ -1,4 +1,16 @@
 export function inferenceDisplay(status, settings) {
+  if (status.providers?.llm === "demo") {
+    return { connected: undefined, loaded: false, connection: "离线演示", modelState: "", text: "离线演示" };
+  }
+  if (status.providers?.llm_route === "direct") {
+    const context = status.context || {};
+    const connected = context.profile_error || status.error ? false : context.verified === true ? true : undefined;
+    const loaded = connected === true && context.is_sleeping !== true;
+    const connection = connected === true ? "已连接" : connected === false ? "连接异常" : "连接待确认";
+    const modelState = loaded ? "模型已加载" : connected ? "模型未加载" : "";
+    const model = loaded ? status.persona?.configured_model || settings?.llm?.model : "";
+    return { connected, loaded, connection, modelState, text: [`独立推理 ${connection}`, modelState, model].filter(Boolean).join(" · ") };
+  }
   const inference = status.inference || {};
   const connected = inference.error ? false : ["active", "idle", "cold"].includes(inference.state) ? true : undefined;
   const provider = inference.providers?.[inference.active_provider || inference.active || inference.selected_provider];

@@ -1,7 +1,7 @@
 "use strict";
 
 import { $ } from "./core.js";
-import { inferenceDisplay } from "./inference-status.js?v=20261107.15";
+import { inferenceDisplay } from "./inference-status.js?v=20261111.02";
 import { inferenceModeChanging } from "./live-controls.js?v=20261107.12";
 
 export function liveEnabled(model) {
@@ -22,18 +22,21 @@ function resourceModeName(mode) {
 }
 
 export function renderModeControls(inference = {}, model) {
-  const currentMode = inference.state && inference.state !== "error" ? resourceMode(inference) : null;
   const hasBroker = model.settings?.inference_broker?.enabled === true;
+  const directText = model.status?.providers?.llm_route === "direct" &&
+    inference.mode === "text" && model.status?.operations_waiting === false;
+  const currentMode = directText || (inference.state && inference.state !== "error") ? resourceMode(inference) : null;
   const transitioning = resourcesTransitioning(model);
   document.querySelectorAll("[data-inference-mode]").forEach(button => {
     const target = button.dataset.inferenceMode;
     button.setAttribute("aria-pressed", String(target === currentMode));
     button.disabled = !hasBroker || transitioning || target === currentMode || (target === "live" && !liveEnabled(model));
+    button.hidden = !hasBroker;
   });
   const pending = model.modeSwitch?.target || inference.operation?.mode;
   const feedback = $("resource-mode-feedback");
   feedback.textContent = transitioning ? `正在切换至${resourceModeName(pending)}…` :
-    model.modeResult?.text || (!hasBroker ? "请先连接推理节点" :
+    model.modeResult?.text || (!hasBroker ? "" :
       !liveEnabled(model) ? "当前配置未启用直播" : !currentMode ? "等待设备确认模式" : "");
   feedback.classList.toggle("error-text", !transitioning && model.modeResult?.error === true);
 }

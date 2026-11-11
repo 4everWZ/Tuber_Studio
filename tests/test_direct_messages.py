@@ -445,6 +445,40 @@ def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings)
         ).status_code in {404, 405}
 
 
+def test_inbox_link_resolves_an_old_message_in_its_original_account_and_role(settings, monkeypatch):
+    app = create_app(settings, message_adapter=Delivery())
+    messages, store = app.state.messages, app.state.store
+    character = messages.runtime.character
+    account = "100"
+    monkeypatch.setattr(messages, "display_account_id", lambda: account)
+    identity = incoming(messages, account_id=account, text="链接指向的早期来信")
+    with store.db:
+        store.db.executemany(
+            "INSERT INTO dm_inbox(platform,message_id,platform_user_id,display_name,content,sent_at,character_id,account_id) "
+            "VALUES('bilibili',?,'123','鱼宝','后来收到的来信',?,?,'100')",
+            [(f"later-{index}", time.time() + index, character["id"]) for index in range(101)],
+        )
+    with TestClient(app) as client:
+        path = f"/api/messages/inbox/{identity}/conversation"
+        assert client.get(path).status_code == 401
+        client.post("/api/auth", json={"token": settings.admin_token})
+        latest = client.get("/api/messages/conversation?platform=bilibili&user_id=123").json()
+        assert len(latest["messages"]) == 100 and all(row["id"] != identity for row in latest["messages"])
+        located = client.get(path).json()
+        assert located["account_id"] == account and located["character_id"] == character["id"]
+        assert len(located["messages"]) == 101
+        target = next(row for row in located["messages"] if row["id"] == identity)
+        assert target["platform_user_id"] == "123" and target["content"] == "链接指向的早期来信"
+        account = "200"
+        incoming(messages, account_id=account, text="另一账号的同一收件人来信")
+        assert client.get(path).status_code == 400
+        account = "100"
+        other = store.save_character(character | {"id": "other-oc", "name": "其他角色"})
+        store.activate(other["id"])
+        incoming(messages, account_id=account, key="other-role", text="另一角色的同一收件人来信")
+        assert client.get(path).status_code == 400
+
+
 async def test_failed_public_body_generation_preserves_source_without_any_handoff(messages, monkeypatch):
     comments = messages.comments
     comments.import_items(

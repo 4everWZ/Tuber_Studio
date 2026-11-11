@@ -56,8 +56,9 @@ export function initOperationsActivity(api) {
       const title = node(item.href || itemKind === "video" ? "a" : "strong", label);
       title.dataset.activityControl = "title";
       if (item.href || itemKind === "video") {
-        title.href = item.href || `https://www.bilibili.com/video/${encodeURIComponent(item.bvid)}`;
-        if (title.href.startsWith("http")) { title.target = "_blank"; title.rel = "noreferrer"; }
+        const href = item.href || `https://www.bilibili.com/video/${encodeURIComponent(item.bvid)}`;
+        title.href = href;
+        if (/^https?:\/\//i.test(href)) { title.target = "_blank"; title.rel = "noreferrer"; }
       }
       const read = item.fully_read === true ? "完整阅读" :
         item.fully_read === false && ["complete", "full", "fully_read"].includes(item.read_state) ? "已看过" :

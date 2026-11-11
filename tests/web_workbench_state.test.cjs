@@ -262,6 +262,39 @@ test("an earlier private conversation response cannot overwrite a newer request 
   assert.equal(get("[data-inbox]").children[0].children[1].textContent, "新响应");
 });
 
+test("an inbox link selects only the exact message in the current account and character", async t => {
+  const { get, make } = dom(t);
+  const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");
+  const finish = [], paths = [];
+  const panel = Object.create(MessagesPanel.prototype);
+  let focused;
+  Object.assign(panel, { value: { account_id: "900", character_id: "whale", users: [] }, user: null,
+    inboxId: "7", conversationRequest: 0, root: { closest: () => null }, $: get, render() {},
+    element(tag, text) { return { ...make(), textContent: text, focus() { focused = this; }, scrollIntoView() {} }; },
+    api: path => { paths.push(path); return new Promise(resolve => finish.push(resolve)); } });
+  const earlier = panel.conversation();
+  panel.inboxId = "8";
+  const latest = panel.conversation();
+  const response = (id, uid, character = "whale") => ({ account_id: "900", character_id: character,
+    relationship: {}, drafts: [], messages: [{ id, platform: "bilibili", platform_user_id: uid, content: `来信 ${id}`, sent_at: 0 }] });
+  finish[1](response(8, "902"));
+  await latest;
+  finish[0](response(7, "901"));
+  await earlier;
+  assert.deepEqual(paths, ["/api/messages/inbox/7/conversation", "/api/messages/inbox/8/conversation"]);
+  assert.equal(panel.user, "bilibili|902");
+  assert.equal(focused.dataset.messageId, "8");
+  assert.equal(focused.getAttribute("aria-current"), "true");
+  assert.equal(get("[data-inbox]").children[0].children[1].textContent, "来信 8");
+  panel.value = { account_id: "900", character_id: "other-oc", users: [] };
+  const switched = panel.conversation();
+  finish[2](response(8, "902"));
+  await switched;
+  assert.equal(panel.user, null);
+  assert.equal(get("[data-inbox]").children.length, 0);
+  assert.match(get("[data-conversation-state]").textContent, /来信无法定位/);
+});
+
 test("private background refresh clears externally completed selection but preserves unsaved local text", async t => {
   const { get } = dom(t);
   const { MessagesPanel } = await import("../src/tuber_studio/web/messages.js");

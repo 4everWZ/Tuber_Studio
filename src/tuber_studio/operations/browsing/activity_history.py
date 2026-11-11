@@ -500,7 +500,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 identity=f"message/inbox/{row['id']}",
                 text=row["content"],
                 title=f"收到 {row['display_name'] or row['platform_user_id']} 的私信",
-                href="#messages",
+                href=f"#messages/inbox/{row['id']}",
                 direction="incoming",
                 source_kind="message",
                 contact_type="incoming",

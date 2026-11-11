@@ -167,6 +167,7 @@ def test_private_receive_send_days_cutoff_and_draft_states_are_real(channels):
     first = activity(channels, day="2026-11-07", kind="messages")
     second = activity(channels, day="2026-11-08", kind="messages")
     assert first["items"][0]["direction"] == "incoming" and first["items"][0]["status"] == "received"
+    assert first["items"][0]["href"] == "#messages/inbox/1"
     assert second["total"] == 1 and second["counts"]["sent"] == 1
     assert second["items"][0]["direction"] == "outgoing"
     assert {"2026-11-07", "2026-11-08"} <= set(second["days"])

@@ -6,6 +6,7 @@ export class MessagesPanel {
   constructor(root,api,notify,openProfile) {
     this.root=root;this.api=api;this.notify=notify;this.value=null;this.selected=null;this.user=null;this.dirty=false;this.policyDirty=false;this.busy=false;
     this.unsavedByAccount=new Map();this.edits=new Map();this.draftView='pending';this.refreshRequest=0;this.conversationRequest=0;this.memeCache=new Map();this.pickerContext=null;
+    this.inboxId=null;this.focusedInboxId=null;
     root.innerHTML=`<div class="page-heading"><div><p class="eyebrow">PRIVATE MESSAGES</p><h1>私信工作台</h1></div><div class="actions"><button data-sync>读取最新私信</button><button data-refresh>刷新</button><a href="#message-policy-settings">私信设置 →</a></div></div>
       <p class="hint">回复对方主动发来的私信；收到真实私聊邀请或完成约定后，可主动联系一次，无回应则等待。收件人绑定原消息作者，不能由模型改成其他用户。同一OC与平台用户共享好感度，评论与私信正文各自保留。</p>
       <p data-override class="feature-note" hidden><span data-override-text></span> <a href="#automation">自主浏览与互动 →</a></p>
@@ -53,7 +54,17 @@ export class MessagesPanel {
     this.$('[data-sync]').disabled=true;this.$('[data-policy] button').disabled=true;
     this.$('[data-policy]').oninput=()=>{this.policyDirty=true;this.$('[data-status]').textContent='策略有未保存修改。';};
     this.$('[data-policy]').onsubmit=event=>{event.preventDefault();this.action(async()=>{const value={};for(const input of this.$('[data-policy]').querySelectorAll('input'))value[input.name]=input.type==='checkbox'?input.checked:Number(input.value);await this.savePolicy(value);});};
-    this.$('[data-users]').onchange=()=>{this.rememberDraft();this.user=this.$('[data-users]').value;this.selected=null;this.dirty=false;this.inboxSignature=null;++this.conversationRequest;this.$('[data-inbox]').replaceChildren();this.$('[data-conversation-state]').textContent=this.user?'正在读取会话…':'';this.$('[data-relation]').textContent='';this.$('[data-error]').textContent='';this.render();this.conversation();};
+    this.$('[data-users]').onchange=()=>{
+      const user=this.$('[data-users]').value;
+      this.rememberDraft();
+      if(this.inboxId)history.replaceState(null,'','#messages');
+      this.inboxId=null;
+      this.clearConversation(user?'正在读取会话…':'');
+      this.user=user;
+      this.$('[data-error]').textContent='';
+      this.render();
+      this.conversation();
+    };
     this.$('[data-text]').oninput=()=>{const row=this.value?.drafts.find(item=>item.id===this.selected);this.dirty=this.$('[data-text]').value!==(row?.text||'');if(this.dirty)this.rememberDraft();else this.edits.delete(this.editKey());this.renderEditor();};
     for(const button of root.querySelectorAll('[data-review]'))button.onclick=()=>this.action(async()=>{const id=this.selected;const result=await api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:button.dataset.review,text:this.$('[data-text]').value}});this.applyDraftResult(result,id);await this.refresh();});
     this.$('[data-copy]').onclick=()=>this.action(async()=>{const id=this.selected;await navigator.clipboard.writeText(this.$('[data-text]').value);const result=await api(`/api/messages/drafts/${id}/review`,{method:'POST',body:{action:'copy'}});this.applyDraftResult(result,id);await this.refresh();});
@@ -88,6 +99,24 @@ export class MessagesPanel {
   selectDraft(id){this.rememberDraft();this.selected=id;const key=this.editKey();this.dirty=this.edits.has(key);if(this.dirty)this.$('[data-text]').value=this.edits.get(key);this.$('[data-error]').textContent='';this.render();}
   applyDraftResult(result,id){if(!result?.status)return;this.edits.delete(this.editKey(id));if(this.selected!==id)return;this.dirty=false;if(this.draftState(result).history){this.selected=null;this.closeImagePicker();}}
   hasUnsaved(){return this.dirty||this.policyDirty||this.unsavedByAccount.size>0||this.edits.size>0;}
+  clearConversation(message=''){
+    ++this.conversationRequest;
+    this.user=null;this.selected=null;this.dirty=false;this.inboxSignature=null;this.focusedInboxId=null;
+    this.$('[data-inbox]').replaceChildren();
+    this.$('[data-relation]').textContent='';
+    this.$('[data-conversation-state]').textContent=message;
+  }
+  async open(inboxId=null){
+    if(inboxId){this.inboxSignature=null;this.focusedInboxId=null;}
+    if(this.inboxId!==inboxId){
+      this.rememberDraft();
+      this.inboxId=inboxId;
+      this.clearConversation(inboxId?'正在定位来信…':'');
+      this.$('[data-error]').textContent='';
+      if(this.value)this.render();
+    }
+    await this.refresh();
+  }
   async refresh({background=false}={}){
     if(this.root.closest('[hidden]'))return;
     if(background&&(this.busy||this.backgroundPending||Date.now()-(this.refreshedAt||0)<8000))return;
@@ -97,16 +126,19 @@ export class MessagesPanel {
     try{
       const value=await this.api('/api/messages');
       if(request!==this.refreshRequest)return;
-      if(this.value&&this.value.account_id!==value.account_id){
+      if(this.value&&(this.value.account_id!==value.account_id||this.value.character_id!==value.character_id)){
         this.privateSelected=null;this.privateContinuation.render(null);this.$('[data-private-generation-list]').replaceChildren();
         this.closeImagePicker();
-        if(this.dirty&&this.selected)this.unsavedByAccount.set(this.value.account_id,{selected:this.selected,user:this.user,text:this.$('[data-text]').value});
-        this.selected=null;this.user=null;this.dirty=false;this.$('[data-text]').value='';this.inboxSignature=null;
-        const saved=this.unsavedByAccount.get(value.account_id);
-        if(saved&&value.drafts.some(row=>row.id===saved.selected)){
-          this.selected=saved.selected;this.user=saved.user;this.dirty=true;this.$('[data-text]').value=saved.text;this.unsavedByAccount.delete(value.account_id);
+        const oldScope=JSON.stringify([this.value.account_id,this.value.character_id]);
+        const scope=JSON.stringify([value.account_id,value.character_id]);
+        if(this.dirty&&this.selected)this.unsavedByAccount.set(oldScope,{selected:this.selected,user:this.user,text:this.$('[data-text]').value});
+        this.clearConversation(this.inboxId?'正在定位来信…':'');
+        this.$('[data-text]').value='';
+        const saved=this.unsavedByAccount.get(scope);
+        if(!this.inboxId&&saved&&value.drafts.some(row=>row.id===saved.selected)){
+          this.selected=saved.selected;this.user=saved.user;this.dirty=true;this.$('[data-text]').value=saved.text;this.unsavedByAccount.delete(scope);
         }
-        this.$('[data-error]').textContent='账号范围已变化，已隐藏旧会话。未保存编辑只留在当前浏览器对应账号内，不会写入其他账号。';
+        this.$('[data-error]').textContent='账号或角色已变化，已隐藏旧会话。未保存编辑仍留在原账号和角色。';
       }
       const selected=value.drafts.find(row=>row.id===this.selected);
       if(this.selected!=null&&!this.dirty&&(!selected||(this.draftView!=='history'&&this.draftState(selected).history))){this.selected=null;this.closeImagePicker();}
@@ -180,9 +212,88 @@ export class MessagesPanel {
     this.$('[data-retry]').disabled=!canRetry||this.busy;
     this.$('[data-retry]').hidden=!canRetry||(!state.continueAgreement&&row?.continuation?.phase==='generation');
   }
-  async conversation(){const request=++this.conversationRequest;const profile=this.$('[data-user-profile]');profile.hidden=!this.user||!this.value?.account_id;if(!this.user){this.$('[data-conversation-state]').textContent='';this.$('[data-inbox]').replaceChildren();this.$('[data-relation]').textContent='';return;}const account=this.value.account_id;const [platform,user_id]=this.user.split('|');let value;try{value=await this.api(`/api/messages/conversation?platform=${encodeURIComponent(platform)}&user_id=${encodeURIComponent(user_id)}`);}catch(error){if(request===this.conversationRequest){this.$('[data-error]').textContent=error.message;this.$('[data-conversation-state]').textContent='会话读取失败，可点击刷新重试。';}return;}if(request!==this.conversationRequest||this.user!==`${platform}|${user_id}`||this.value.account_id!==account||('account_id' in value&&value.account_id!==account))return;
-    const r=value.relationship;this.$('[data-relation]').textContent=typeof r.affinity==='number'?`与当前OC的好感度 ${r.affinity} / 100 · ${r.stage}（评论／私信共享）`:'个性化未启用';this.$('[data-conversation-state]').textContent=value.messages.length?'':'此会话暂无来信。';
-    const signature=JSON.stringify([this.user,value.messages,value.drafts.map(draft=>[draft.id,draft.source_kind,draft.source_id])]);if(signature===this.inboxSignature)return;this.inboxSignature=signature;
-    this.$('[data-inbox]').replaceChildren(...value.messages.map(row=>{const item=this.element('article',null,'message-incoming');item.dataset.messageId=String(row.id);item.dataset.platformUserId=String(row.platform_user_id||user_id);item.append(this.element('small',new Date(row.sent_at*1000).toLocaleString()),this.element('p',row.content));const known=value.drafts.find(draft=>draft.source_kind==='message'&&draft.source_id===row.id);const button=this.element('button',known?'查看已有回复':'生成私信回复');button.onclick=()=>this.action(async()=>{const result=known?{draft_id:known.id}:await this.api(`/api/messages/inbox/${row.id}/reply`,{method:'POST'});this.draftView=known&&this.draftState(known).history?'history':'pending';await this.refresh();this.selectDraft(result.draft_id);});item.append(button);return item;}));
+  async conversation(){
+    const request=++this.conversationRequest;
+    const profile=this.$('[data-user-profile]');
+    const inboxId=this.inboxId,user=this.user;
+    profile.hidden=!user||!this.value?.account_id;
+    if(!user&&!inboxId){
+      this.$('[data-conversation-state]').textContent='';
+      this.$('[data-inbox]').replaceChildren();
+      this.$('[data-relation]').textContent='';
+      return;
+    }
+    const {account_id:account,character_id:character}=this.value;
+    const current=()=>request===this.conversationRequest&&this.inboxId===inboxId&&this.user===user&&
+      this.value.account_id===account&&this.value.character_id===character;
+    const [platform,userId]=(user||'').split('|');
+    const path=inboxId?`/api/messages/inbox/${encodeURIComponent(inboxId)}/conversation`:
+      `/api/messages/conversation?platform=${encodeURIComponent(platform)}&user_id=${encodeURIComponent(userId)}`;
+    let value;
+    try{
+      value=await this.api(path);
+      if(!current())return;
+      if(('account_id' in value&&value.account_id!==account)||('character_id' in value&&value.character_id!==character)){
+        throw new Error('账号或角色已变化，请刷新私信工作台。');
+      }
+      if(inboxId){
+        const target=value.messages.find(row=>String(row.id)===inboxId);
+        if(!target)throw new Error('当前账号和角色下找不到这条来信');
+        this.user=`${target.platform}|${target.platform_user_id}`;
+        if(!this.value.users.some(row=>`${row.platform}|${row.platform_user_id}`===this.user)){
+          const {platform,platform_user_id,display_name}=target;
+          this.value.users.push({platform,platform_user_id,display_name});
+        }
+        profile.hidden=false;
+        this.render();
+      }
+    }catch(error){
+      if(current()){
+        if(inboxId){
+          this.rememberDraft();
+          this.clearConversation('来信无法定位，可选择当前账号和角色的其他会话。');
+          profile.hidden=true;
+          this.render();
+        }else this.$('[data-conversation-state]').textContent='会话读取失败，可点击刷新重试。';
+        this.$('[data-error]').textContent=error.message;
+      }
+      return;
+    }
+    const relationship=value.relationship;
+    this.$('[data-relation]').textContent=typeof relationship.affinity==='number'?
+      `与当前OC的好感度 ${relationship.affinity} / 100 · ${relationship.stage}（评论／私信共享）`:'个性化未启用';
+    this.$('[data-conversation-state]').textContent=value.messages.length?'':'此会话暂无来信。';
+    const signature=JSON.stringify([this.user,inboxId,value.messages,value.drafts.map(draft=>[draft.id,draft.source_kind,draft.source_id])]);
+    if(signature===this.inboxSignature)return;
+    this.inboxSignature=signature;
+    let selected;
+    this.$('[data-inbox]').replaceChildren(...value.messages.map(row=>{
+      const item=this.element('article',null,'message-incoming');
+      item.dataset.messageId=String(row.id);
+      item.dataset.platformUserId=String(row.platform_user_id||userId);
+      const timestamp=new Date(row.sent_at*1000).toLocaleString();
+      const isTarget=String(row.id)===inboxId;
+      if(isTarget){
+        selected=item;
+        item.tabIndex=-1;
+        item.setAttribute('aria-current','true');
+      }
+      item.append(this.element('small',isTarget?`来源来信 · ${timestamp}`:timestamp),this.element('p',row.content));
+      const known=value.drafts.find(draft=>draft.source_kind==='message'&&draft.source_id===row.id);
+      const button=this.element('button',known?'查看已有回复':'生成私信回复');
+      button.onclick=()=>this.action(async()=>{
+        const result=known?{draft_id:known.id}:await this.api(`/api/messages/inbox/${row.id}/reply`,{method:'POST'});
+        this.draftView=known&&this.draftState(known).history?'history':'pending';
+        await this.refresh();
+        this.selectDraft(result.draft_id);
+      });
+      item.append(button);
+      return item;
+    }));
+    if(selected&&this.focusedInboxId!==inboxId&&!this.root.closest('[hidden]')){
+      this.focusedInboxId=inboxId;
+      selected.focus({preventScroll:true});
+      selected.scrollIntoView({block:'nearest'});
+    }
   }
 }

@@ -5,11 +5,11 @@ import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.21";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.23";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261110.01";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261107.20";
+import { MessagesPanel } from "./messages.js?v=20261111.02";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
@@ -38,7 +38,7 @@ import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
 import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261111.01";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.01";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.02";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#chat";
@@ -368,7 +368,7 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     issueLog.render();
     await issueLog.refresh();
   } else if (model.page === "messages") {
-    await messagesPanel.refresh();
+    await messagesPanel.open(routeKind === "inbox" ? routeId : null);
   } else if (model.page === "dynamics") {
     await refreshDynamics();
   } else if (model.page === "assets") {

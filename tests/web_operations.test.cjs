@@ -526,6 +526,16 @@ test("a cold node remains connected while the selected model sleeps", async () =
   assert.equal(state.text, "Jetson 已连接 · 模型未加载");
 });
 
+test("a loaded independent model keeps its own connection status", async () => {
+  const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
+  const status = { providers: { llm: "llama_cpp", llm_route: "direct" },
+    inference: { state: "error", error: "语音节点暂不可达" },
+    context: { verified: true, is_sleeping: false }, persona: { configured_model: "selected-9B" } };
+  assert.equal(inferenceDisplay(status).text, "独立推理 已连接 · 模型已加载 · selected-9B");
+  status.context.profile_error = "连接中断";
+  assert.equal(inferenceDisplay(status).text, "独立推理 连接异常");
+});
+
 test("new generation shows only this task and selects its first actual draft", async t => {
   const byId = setupDOM(t);
   const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");

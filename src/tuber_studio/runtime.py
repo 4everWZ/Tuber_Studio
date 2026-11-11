@@ -192,13 +192,18 @@ class Runtime:
         char = self.character
         self.daily_memory.check_and_record_downtime(char["id"], char["version"])
         await self.live.online_songs.open()
-        try:
-            if self.settings.data.get("work_mode_profiles") and self.inference.client:
+        if self.settings.data.get("work_mode_profiles") and self.inference.client:
+            try:
                 observed = await self.inference.refresh()
                 async with self.generation_lock:
                     await apply_mode_profile(self, observed["mode"])
                 if observed.get("provider_alignment_error"):
                     await self.inference.refresh()
+            except Exception as error:
+                self.inference.status = self.inference.status | {
+                    "state": "error", "active": None, "error": public_error(error),
+                }
+        try:
             await self.llm.health()
             self.error = None
         except Exception as error:
@@ -267,7 +272,11 @@ class Runtime:
             "current_job": self.store.job(self.live.current_id) if self.live.current_id else None,
             "error": self.error,
             "last_played": self.live.last_played,
-            "providers": {"llm": self.settings.data["llm"]["kind"], "tts": self.settings.data["tts"]["kind"]},
+            "providers": {
+                "llm": self.settings.data["llm"]["kind"],
+                "llm_route": "node" if uses_broker_llm(self.settings.data) else "direct",
+                "tts": self.settings.data["tts"]["kind"],
+            },
             "resources": {
                 "cpu_percent": psutil.cpu_percent(),
                 "ram_used_mb": round(memory.used / 2**20),
