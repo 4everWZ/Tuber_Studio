@@ -38,7 +38,7 @@ import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
 import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261111.01";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.02";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.03";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#chat";

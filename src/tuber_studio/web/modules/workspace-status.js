@@ -1,9 +1,9 @@
 import { $ } from "./core.js";
 import { renderPersona } from "./character-studio.js?v=20261107.12";
-import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261111.02";
+import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261111.03";
 import { renderVoicePreview } from "./voices.js";
 import { describe, label, occupancyText, tokenCount } from "./workspace-display.js";
-import { inferenceDisplay } from "./inference-status.js?v=20261111.02";
+import { inferenceDisplay } from "./inference-status.js?v=20261111.03";
 
 export function renderWorkspaceStatus(model, status) {
   model.status = status;

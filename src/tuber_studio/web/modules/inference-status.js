@@ -4,7 +4,7 @@ export function inferenceDisplay(status, settings) {
   }
   if (status.providers?.llm_route === "direct") {
     const context = status.context || {};
-    const connected = context.profile_error || status.error ? false : context.verified === true ? true : undefined;
+    const connected = context.profile_error ? false : context.verified === true ? true : undefined;
     const loaded = connected === true && context.is_sleeping !== true;
     const connection = connected === true ? "已连接" : connected === false ? "连接异常" : "连接待确认";
     const modelState = loaded ? "模型已加载" : connected ? "模型未加载" : "";

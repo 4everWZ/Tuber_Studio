@@ -532,6 +532,8 @@ test("a loaded independent model keeps its own connection status", async () => {
     inference: { state: "error", error: "语音节点暂不可达" },
     context: { verified: true, is_sleeping: false }, persona: { configured_model: "selected-9B" } };
   assert.equal(inferenceDisplay(status).text, "独立推理 已连接 · 模型已加载 · selected-9B");
+  status.error = "浏览器播放失败";
+  assert.equal(inferenceDisplay(status).text, "独立推理 已连接 · 模型已加载 · selected-9B");
   status.context.profile_error = "连接中断";
   assert.equal(inferenceDisplay(status).text, "独立推理 连接异常");
 });
