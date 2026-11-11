@@ -1,0 +1,88 @@
+{
+  "entries": [
+    {
+      "id": "snack-time",
+      "title": "吃一口",
+      "path": "snack-time.png",
+      "emotions": [
+        "cheerful"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-eat.png",
+      "note": "图集帧 19（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "nap",
+      "title": "先睡一会儿",
+      "path": "nap.png",
+      "emotions": [
+        "idle"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-sleep.png",
+      "note": "图集帧 23（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "twirl",
+      "title": "转个圈",
+      "path": "twirl.png",
+      "emotions": [
+        "cheerful",
+        "excited"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-dance.png",
+      "note": "图集帧 23（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "sneak",
+      "title": "悄悄伸手",
+      "path": "sneak.png",
+      "emotions": [
+        "shy"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-sneak.png",
+      "note": "图集帧 7（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "jump",
+      "title": "开心蹦一下",
+      "path": "jump.png",
+      "emotions": [
+        "cheerful",
+        "excited"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/dense-jump.png",
+      "note": "图集帧 11（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "sulk",
+      "title": "哼，抱手",
+      "path": "sulk.png",
+      "emotions": [
+        "angry"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/expressions.png",
+      "note": "图集帧 8（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "rub-eyes",
+      "title": "揉揉眼睛",
+      "path": "rub-eyes.png",
+      "emotions": [
+        "idle",
+        "confused"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/expressions.png",
+      "note": "图集帧 14（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    },
+    {
+      "id": "startled",
+      "title": "咦？",
+      "path": "startled.png",
+      "emotions": [
+        "confused",
+        "excited"
+      ],
+      "source": "https://github.com/YunYueSama/codex-deepseek-pet/blob/7661c8b304c5400701f91da01b1a643a207331de/assets/whale/actions.png",
+      "note": "图集帧 14（行优先，从 0 编号），裁去透明外边后等比缩放，居中放置于 384×384 透明 PNG。"
+    }
+  ]
+}

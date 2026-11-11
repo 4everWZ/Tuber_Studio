@@ -22,14 +22,15 @@ def login(client, settings):
     client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
 
 
-def test_catalog_requires_admin_and_binds_actual_role_state(client, settings):
+def test_catalog_requires_admin_and_exposes_shared_reaction_pack(client, settings):
     assert client.get("/api/memes").status_code == 401
     login(client, settings)
     listing = client.get("/api/memes").json()
     assert listing["max_file_bytes"] == MAX_BYTES
     assert listing["character_id"] == "whale"
-    assert len(listing["items"]) == 6
-    asset = listing["items"][0]
+    assert len(listing["items"]) == 14
+    assert sum(item["enabled"] and item["mime_type"] == "image/png" for item in listing["items"]) == 8
+    asset = next(item for item in listing["items"] if item["animated"])
     assert not asset["enabled"]
     assert "path" not in asset
     identity = asset["asset_id"]

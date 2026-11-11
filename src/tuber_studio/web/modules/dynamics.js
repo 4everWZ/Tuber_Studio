@@ -36,7 +36,7 @@ export function renderDynamicPolicy(model, describe, display) {
   const character = model.status?.character;
   if ($("dynamic-policy-status")) {
     describe($("dynamic-policy-status"), [
-      ["当前角色", character ? `${character.name} · v${character.version}` : "未报告"],
+      ["当前角色", character ? character.name : "未报告"],
       ["共用B站账号", policy.credentials_configured ? "已配置（不回显）" : "未配置，可手动生成草稿"],
       ["下次评估（当地时间）", localDateTime(policy.next_evaluation_at, display)],
       ["退避至（当地时间）", localDateTime(policy.backoff_until, display)],
@@ -159,7 +159,7 @@ export function renderDynamicPost(model, {
     const key = `${post.id}:${post.character_id}:${post.meme_id}`;
     if (model.dynamicMemePreviewKey !== key && typeof memePreview === "function") {
       model.dynamicMemePreviewKey = key;
-      $("dynamic-meme-image")?.replaceChildren(memePreview({ asset_id: post.meme_id, title: imageInfo?.asset?.title || "动态配图" }, post.character_id));
+      $("dynamic-meme-image")?.replaceChildren(memePreview({ asset_id: post.meme_id, title: imageInfo?.asset?.title || "动态配图" }));
     }
   } else if (model.dynamicMemePreviewKey) {
     model.dynamicMemePreviewKey = null;
@@ -169,7 +169,7 @@ export function renderDynamicPost(model, {
   if ($("dynamic-post-meta")) {
     describe($("dynamic-post-meta"), post ? [
       ["动态ID", post.id],
-      ["角色", `${post.character_id} · v${post.character_version}`],
+      ["角色", post.character_id],
       ["模型", post.model],
       ["决策原因", post.reason || "未报告"],
       ["发布时间（当地时间）", localDateTime(post.published_at, display)]
@@ -238,7 +238,7 @@ export function renderDynamicPosts(model, {
     body.replaceChildren();
     posts.forEach(post => {
       const row = node("tr", null, post.id === model.dynamicPostId ? "selected-row" : "");
-      cell(row, localDateTime(post.created_at, display), `${post.character_id} · v${post.character_version}`);
+      cell(row, localDateTime(post.created_at, display), post.character_id);
       const button = node("button", post.content || "查看动态", "comment-link");
       button.onclick = () => {
         if (model.dynamicPostDirty) model.dynamicDraftEdits?.set(model.dynamicPostId, $("dynamic-post-text").value);
@@ -280,7 +280,7 @@ export function renderDynamicDecisions(model, {
   body.replaceChildren();
   model.dynamicDecisions.forEach(decision => {
     const row = node("tr");
-    cell(row, localDateTime(decision.created_at, display), `${decision.character_id} · v${decision.character_version}${decision.manual ? " · 手动" : " · 后台"}`);
+    cell(row, localDateTime(decision.created_at, display), `${decision.character_id}${decision.manual ? " · 手动" : " · 后台"}`);
     cell(row, badge(decision.action), label(decision.status));
     const reason = cell(row, decision.reason || "未报告", decision.error || "");
     if (decision.continuation?.phase === "generation") {
@@ -351,7 +351,7 @@ export function renderDynamicMemories(model, {
       }
     };
     cell(row, check);
-    cell(row, memory.text, `${memory.character_id} · v${memory.character_version} · ${memory.id}`);
+    cell(row, memory.text, `${memory.character_id} · ${memory.id}`);
     cell(row, memory.fictional || memory.kind === "role_story" ? "虚构角色故事" : label(memory.kind), localDateTime(memory.created_at, display));
     body.append(row);
   });
@@ -373,7 +373,7 @@ export function renderDynamicMemorySummary(summary, {
   }
   if ($("dynamic-summary-meta")) {
     describe($("dynamic-summary-meta"), [
-      ["角色", summary.character_id ? `${summary.character_id} · v${summary.character_version}` : "未报告"],
+      ["角色", summary.character_id ? summary.character_id : "未报告"],
       ["实际用量 / 摘要上限", `${tokenCount(summary.token_count)} / ${tokenCount(summary.max_tokens)}`],
       ["最近更新（当地时间）", localDateTime(summary.updated_at, display)]
     ]);
@@ -486,7 +486,7 @@ export function initDynamicsModule(model, {
     if (model.dynamicMemePending.has(key) || (cached && Date.now() - cached.at < 30000)) return;
     model.dynamicMemePending.add(key);
     try {
-      const value = await api(`/api/memes?character=${encodeURIComponent(post.character_id)}`);
+      const value = await api("/api/memes");
       model.dynamicMemeCache.set(key, { asset: list(value).find(item => item.asset_id === post.meme_id) || null, at: Date.now() });
     } catch (error) {
       model.dynamicMemeCache.set(key, { error: safeMessage(error.message), at: Date.now() });
@@ -731,7 +731,7 @@ export function initDynamicsModule(model, {
     const post = (model.dynamicPosts || []).find(item => item.id === model.dynamicPostId);
     if (!post || !dynamicMemePicker) return;
     model.dynamicMemeContext = { id: post.id, character: post.character_id, version: post.character_version };
-    dynamicMemePicker.open(post.character_id, post.meme_id);
+    dynamicMemePicker.open(post.meme_id);
   });
 
   $("dynamic-clear-meme")?.addEventListener("click", () => busy($("dynamic-clear-meme"), async () => {

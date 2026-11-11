@@ -13,7 +13,7 @@ MAX_REQUEST = ((MAX_BYTES + 2) // 3) * 4 + 65536
 
 
 class MemeUpload(StrictModel):
-    character: str = Field(min_length=1, max_length=50)
+    character: str | None = Field(default=None, min_length=1, max_length=50)
     title: str = Field(min_length=1, max_length=120)
     emotions: list[str] = Field(min_length=1, max_length=20)
     source: MemeSource
@@ -21,22 +21,19 @@ class MemeUpload(StrictModel):
     content_base64: str = Field(min_length=4, max_length=((MAX_BYTES + 2) // 3) * 4)
 
 
-class MemeBinding(StrictModel):
-    character: str = Field(min_length=1, max_length=50)
+class MemeAvailability(StrictModel):
+    character: str | None = Field(default=None, min_length=1, max_length=50)
     enabled: bool
 
 
 def register_meme_api(app, catalog, runtime, require_admin):
     auth = [Depends(require_admin)]
 
-    def dto(asset, character):
-        return asset | {"enabled": asset["enabled"] and character in asset["character_ids"]}
-
     @app.get("/api/memes", dependencies=auth)
     async def listing(character: str | None = None):
         await catalog.seed_existing()
         identity = character or runtime.character["id"]
-        items = [dto(item, identity) for item in catalog.list(identity, include_disabled=True)]
+        items = catalog.list(identity, include_disabled=True)
         return {
             "items": items,
             "character_id": identity,
@@ -50,7 +47,7 @@ def register_meme_api(app, catalog, runtime, require_admin):
         except (ValueError, binascii.Error):
             raise ValueError("图片base64无效") from None
         return await catalog.register(
-            body.character,
+            body.character or runtime.character["id"],
             content,
             title=body.title,
             emotions=body.emotions,
@@ -59,20 +56,14 @@ def register_meme_api(app, catalog, runtime, require_admin):
         )
 
     @app.get("/api/memes/{asset_id}/preview", dependencies=auth)
-    async def preview(asset_id: str, character: str):
-        result = catalog.read(asset_id, character, allow_disabled=True)
+    async def preview(asset_id: str, character: str | None = None):
+        result = catalog.read(asset_id, character or runtime.character["id"], allow_disabled=True)
         return Response(result["content"], media_type=result["mime_type"])
 
     @app.put("/api/memes/{asset_id}", dependencies=auth)
-    async def binding(asset_id: str, body: MemeBinding):
-        # Separate role bindings remain available to replaceable providers.
-        asset = catalog.bind(asset_id, body.character, enabled=body.enabled)
-        if body.enabled or not asset["character_ids"]:
-            asset = catalog.enable(asset_id, body.enabled)
-        return dto(asset, body.character)
+    async def availability(asset_id: str, body: MemeAvailability):
+        return catalog.enable(asset_id, body.enabled)
 
     @app.delete("/api/memes/{asset_id}", dependencies=auth)
-    async def delete(asset_id: str, character: str):
-        if not any(item["asset_id"] == asset_id for item in catalog.list(character, include_disabled=True)):
-            raise ValueError("表情未绑定当前角色")
+    async def delete(asset_id: str):
         return catalog.delete(asset_id)

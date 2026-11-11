@@ -85,18 +85,15 @@ async def test_disabled_assets_are_manageable_but_not_selectable(catalog, image)
     assert catalog.select({"asset_id": asset["asset_id"]}, "whale")
 
 
-async def test_role_binding_is_required_even_for_management_preview(catalog, image, store):
+async def test_uploaded_asset_is_shared_with_new_roles(catalog, image, store):
     asset = await register(catalog, image)
-    other = next(c["id"] for c in store.characters() if c["id"] != "whale")
-    assert catalog.list(other) == []
-    with pytest.raises(ValueError):
-        catalog.read(asset["asset_id"], other, allow_disabled=True)
-    catalog.bind(asset["asset_id"], other)
+    other = store.save_character(store.character() | {"id": "another", "name": "另一个角色"})["id"]
+    assert catalog.list(other) == [asset]
     assert catalog.read(asset["asset_id"], other)["content"] == image
-    catalog.bind(asset["asset_id"], other, enabled=False)
+    catalog.enable(asset["asset_id"], False)
     with pytest.raises(ValueError):
         catalog.read(asset["asset_id"], other)
-    assert catalog.read(asset["asset_id"], "whale")["content"] == image
+    assert catalog.read(asset["asset_id"], "whale", allow_disabled=True)["content"] == image
 
 
 @pytest.mark.parametrize(
@@ -229,8 +226,11 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
         pytest.skip("真实ffprobe未安装")
     original = {p.name: p.read_bytes() for p in (settings.root / "assets/whale").glob("*.gif")}
     rows = await catalog.seed_existing()
-    assert len(rows) == 6 and all(not row["enabled"] and row["animated"] for row in rows)
-    row = rows[0]
+    gifs = [row for row in rows if row["animated"]]
+    reactions = [row for row in rows if not row["animated"]]
+    assert len(gifs) == 6 and all(not row["enabled"] for row in gifs)
+    assert len(reactions) == 8 and all(row["enabled"] for row in reactions)
+    row = gifs[0]
     assert row["source"]["kind"] == "existing_user_assets" and row["source"]["author"] == "YunYueSama"
     assert row["license"]["name"] == "大肥鱼项目署名许可 1.0" and "第三方" in row["license"]["note"]
     assert (
@@ -240,8 +240,8 @@ async def test_bootstrap_preserves_disabled_deleted_preferences_and_original_fil
     catalog.delete(row["asset_id"])
     reopened = MemeCatalog(settings, store)
     await reopened.seed_existing(enabled=True)
-    assert len(reopened.list("whale", include_disabled=True)) == 5
-    assert not reopened.list("whale")  # bootstrapping never flips existing disabled choices
+    assert len(reopened.list("whale", include_disabled=True)) == 13
+    assert reopened.list("whale") == reactions
     assert {p.name: p.read_bytes() for p in (settings.root / "assets/whale").glob("*.gif")} == original
 
 
@@ -369,7 +369,7 @@ async def test_selector_inherits_parent_budget_and_counts_actual_native_usage(
         await model.close()
 
 
-def test_management_dto_and_disable_are_scoped_to_character(settings):
+def test_management_dto_and_disable_use_one_shared_catalog(settings):
     class Platform:
         async def close(self):
             pass
@@ -380,23 +380,22 @@ def test_management_dto_and_disable_are_scoped_to_character(settings):
         assert app.state.messages.memes is app.state.memes is app.state.dynamics.memes
         item = client.get("/api/memes?character=whale").json()["items"][0]
         identity = item["asset_id"]
-        other = next(c["id"] for c in app.state.store.characters() if c["id"] != "whale")
-        for character in ("whale", other):
-            result = client.put(f"/api/memes/{identity}", json={"character": character, "enabled": True})
-            assert result.status_code == 200 and result.json()["enabled"]
-        disabled = client.put(f"/api/memes/{identity}", json={"character": "whale", "enabled": False})
+        other = app.state.store.save_character(
+            app.state.store.character() | {"id": "another", "name": "另一个角色"}
+        )["id"]
+        assert client.put(f"/api/memes/{identity}", json={"enabled": True}).json()["enabled"]
+        assert app.state.memes.read(identity, other)["content"]
+        assert client.delete(f"/api/memes/{identity}").status_code == 400
+        disabled = client.put(f"/api/memes/{identity}", json={"enabled": False})
         assert disabled.status_code == 200 and not disabled.json()["enabled"]
-        for character, expected in (("whale", False), (other, True)):
+        for character in ("whale", other):
             result = client.get("/api/memes", params={"character": character}).json()
             current = next(row for row in result["items"] if row["asset_id"] == identity)
-            assert current["enabled"] is expected
+            assert not current["enabled"]
         assert client.get(f"/api/memes/{identity}/preview?character=whale").status_code == 200
         with pytest.raises(ValueError, match="未启用"):
             app.state.memes.read(identity, "whale")
-        assert app.state.memes.read(identity, other)["content"]
-        assert client.delete(f"/api/memes/{identity}?character=whale").status_code == 400
-        client.put(f"/api/memes/{identity}", json={"character": other, "enabled": False}).raise_for_status()
-        assert client.delete(f"/api/memes/{identity}?character=whale").json()["deleted"]
+        assert client.delete(f"/api/memes/{identity}").json()["deleted"]
 
 
 def test_management_can_delete_a_missing_unpinned_library_entry(settings):
