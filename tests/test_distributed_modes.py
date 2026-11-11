@@ -417,3 +417,7 @@ async def test_external_api_profile_is_not_rejected_for_a_different_node_local_m
     assert runtime.llm.config["model"] == "External-Model"
     assert runtime.inference.status["model"] == "Gemma4-E2B" and not runtime.operations_waiting()
     assert all(request.url.host != "cloud.invalid" for request in state["requests"])
+    runtime.inference.status["state"] = "error"
+    assert not runtime.operations_waiting()
+    runtime.inference.status["mode"] = "live"
+    assert runtime.operations_waiting()

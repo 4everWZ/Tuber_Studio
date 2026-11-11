@@ -191,13 +191,14 @@ async def restore_admission(runtime):
     configuration = provider.identity()
     if proof.get("passed") is not True or proof.get("configuration") != configuration:
         return
-    capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=15)
-    key = (
-        GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
-    )
-    profile = capabilities.get("profiles", {}).get(key, {})
-    if not profile.get("loaded") and capabilities.get("state") != "active":
-        return
+    if runtime.settings.broker_key_for(provider.config.base_url):
+        capabilities = await response_json(owner.client, "GET", "/capabilities", timeout=15)
+        key = (
+            GROUNDED_DAFEIYU_KEY if llm_resource_key(provider.config.model) == GROUNDED_DAFEIYU_KEY else GEMMA_KEY
+        )
+        profile = capabilities.get("profiles", {}).get(key, {})
+        if not profile.get("loaded") and capabilities.get("state") != "active":
+            return
     current = await provider._runtime_properties()
     if not isinstance(current, dict) or current.get("context_tokens", 0) < provider.config.context_tokens:
         return
@@ -267,6 +268,8 @@ async def probe_visual(runtime, *, client_factory=None):
     provider = runtime.browsing.visual_provider
     if not isinstance(provider, ApiVideoEvidenceProvider) or not runtime.inference.client:
         raise ValueError("请先配置运营视觉端点")
+    if not runtime.settings.broker_key_for(provider.config.base_url):
+        raise ValueError("独立视觉端点使用对应设备的资源实测记录")
     if runtime.inference.status.get("mode") != "text" or runtime.inference.mode_lock.locked():
         raise ValueError("请先切到运营模式")
     if runtime.generation_lock.locked():

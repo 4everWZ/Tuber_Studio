@@ -292,6 +292,32 @@ async def test_successful_admission_can_be_restored_with_matching_actual_node_id
     assert fresh.capabilities()["admitted"] and fresh._admission["configuration"] == provider.identity()
 
 
+async def test_standalone_visual_admission_uses_its_own_runtime_properties(visual_runtime, monkeypatch):
+    runtime, provider, state = visual_runtime
+    await video_vision_service.probe_visual(runtime)
+    fresh = ApiVideoEvidenceProvider(runtime, provider.config.model_dump() | {
+        "base_url": "http://127.0.0.1:11436/v1",
+    })
+    runtime.browsing.visual_provider = fresh
+    properties = provider._probe["properties"] | {"endpoint": str(fresh.api.client.base_url)}
+
+    async def actual_properties():
+        return properties
+
+    monkeypatch.setattr(fresh, "_runtime_properties", actual_properties)
+    atomic_json(runtime.settings.runtime / "video-vision-admission.json", {
+        "proof": provider._admission | {"configuration": fresh.identity()},
+        "probe": provider._probe | {"properties": properties},
+    })
+    old_reads = state["capability_calls"]
+    await video_vision_service.restore_admission(runtime)
+    assert fresh.capabilities()["admitted"] and state["capability_calls"] == old_reads
+    properties["context_tokens"] -= 1
+    fresh._admission = fresh._probe = None
+    await video_vision_service.restore_admission(runtime)
+    assert not fresh.capabilities()["admitted"]
+
+
 @pytest.mark.parametrize("field", ["model_revision", "projector_revision", "runtime_profile"])
 async def test_restore_rejects_proof_for_a_different_provider_configuration(visual_runtime, field):
     runtime, _, state = visual_runtime

@@ -9,6 +9,7 @@ import psutil
 
 from .agent_tools import build_default_tool_registry
 from .api_providers import VisionService, create_llm
+from .config import uses_broker_llm
 from .context import ContextManager
 from .daily_memory import DailyMemoryService
 from .generation_meter import budgeted_call
@@ -177,10 +178,12 @@ class Runtime:
 
     def operations_waiting(self):
         profiles = self.settings.data.get("work_mode_profiles")
+        node = self.inference.status
         if profiles and (
-            self.inference.status.get("mode") != "text"
-            or self.inference.status.get("state") in {"error", "loading", "starting", "switching"}
-            or profile_alignment_error(self, self.inference.status)
+            node.get("mode") != "text"
+            or node.get("state") in {"loading", "starting", "switching"}
+            or (node.get("state") == "error" and uses_broker_llm(self.settings.data))
+            or profile_alignment_error(self, node)
         ):
             return True
         return self.live.state in {"live", "paused"} and self.live.busy

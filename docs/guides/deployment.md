@@ -189,6 +189,10 @@ Dockerfile 的 program-base／ready 目标用于构建环境。构建上下文�
 
 ## Provider与上下文设置
 
+AGX 运营档采用独立的 llama.cpp CUDA 容器。`dafeiyu-qwen35-9b:1.0.0` 使用同版 Q4_K_M 权重与 Q8_0 投影器，窗口 32768，K/V 为 `q4_0`，关闭思考。业务本地配置保存该端点，视频字幕和实际抽样帧随来源进入运营流程。直播模式使用原有语音节点。 [AGX 部署实测](../../evaluations/results/agx-clean-9b-deployment-20261111.md)
+
+独立视觉端点的准入记录绑定实际模型、投影器、引擎和本机采样设置。启动时由该端点自己的 `/props` 核对记录。重新测量应采集同一设备的可用内存与换页，并走实际帧请求；已配对语音节点的资源统计用于它自己的服务。
+
 设置页分别选择本地llama、兼容LLM API、预录／保留的GPT-SoVITS／兼容语音API。API Base URL包含服务自己的版本前缀，例如https://服务域名/v1；公网用HTTPS，本地端点可用HTTP。LLM兼容Chat Completions、max_tokens、JSON对象输出及usage.prompt_tokens；语音兼容audio/speech并返回WAV。模型ID与voice ID由服务提供，不把任意API都当同一模型。
 
 Jetson 节点先配对，LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，模型名以实际节点报告为准。「检查连接」读取已配对节点状态，「高级诊断与维护」显示设备内存及缓存信息。自定义服务的模型列表和地址检查使用表单地址及对应凭证。`/api/providers/local-models`只列实际本地模型目录与状态；保存LLM配置不会安装权重。资产准备统一使用节点／portable初始化与固定下载清单，不再提供业务端独立大肥鱼下载器。接口及旧分路见[推理接口规范](../specs/models-and-audio.md#jetson-推理接口)。
