@@ -22,6 +22,7 @@ class AvatarManifest(StrictModel):
     license: str = Field(min_length=1, max_length=500)
     commercial_allowed: bool = False
     mouth_parameter: str = Field(default="ParamMouthOpenY", pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    mouth_gain: float = Field(default=5.0, gt=0, le=10)
     motions: dict[Animation, AvatarMotion] = Field(default_factory=dict)
     expressions: dict[Emotion, str] = Field(default_factory=dict)
 
@@ -119,6 +120,7 @@ class LiveAvatar:
             "model": f"{PREFIX}/model/{quote(character_id)}/{quote(manifest.model)}",
             "scripts": [f"{PREFIX}/sdk/{name}" for name in SDK],
             "mouth_parameter": manifest.mouth_parameter,
+            "mouth_gain": manifest.mouth_gain,
             "motions": {key: motion.model_dump() for key, motion in manifest.motions.items()},
             "expressions": manifest.expressions,
             "license": manifest.license,

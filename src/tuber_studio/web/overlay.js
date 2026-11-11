@@ -1,13 +1,13 @@
 "use strict";
 (() => {
   const get = id => document.getElementById(id), audio = new Audio(); audio.preload = "auto";
-  const renderer = new LiveScene(get("scene"));
+  const renderer = new LiveScene(get("scene"), {readMouth: () => mouth(active)});
   let socket, active, knownOwner = false, generation = 0, reconnectTimer, view = null, loading = false;
   function status(text, error = false) { get("connection").textContent = text; get("connection").classList.toggle("error",error); }
   function send(data) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }
   function valid(job) { return job && active === job && job.generation === generation; }
   function acknowledge(type, job, error) { if (valid(job)) send({type,job_id:job.job_id,playback_token:job.playback_token,...(error ? {error:String(error).slice(0,300)} : {})}); }
-  function mouth(job) { if (!job?.started || audio.paused || audio.ended || audio.volume === 0) return 0; const activity = job.activity; return activity?.envelope[Math.floor(audio.currentTime / activity.step)] || 0; }
+  function mouth(job) { if (!job?.started || audio.paused || audio.ended || audio.muted || audio.volume === 0) return 0; const activity = job.activity; return activity?.envelope[Math.floor(audio.currentTime / activity.step)] || 0; }
   function report() {
     if (!active?.started || !knownOwner) return;
     send({type:"progress",job_id:active.job_id,playback_token:active.playback_token,position:audio.currentTime,paused:audio.paused,mouth:mouth(active)});

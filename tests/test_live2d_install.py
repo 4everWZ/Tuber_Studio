@@ -1,9 +1,10 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from tools.deployment.install_live2d_avatar import preflight
-from tuber_studio.live.avatar import SDK
+from tuber_studio.live.avatar import SDK, LiveAvatar
 
 
 def write_json(path, value):
@@ -18,6 +19,7 @@ def export(tmp_path):
     write_json(package / "avatar.json", {
         "model": "rig/dafeiyu.model3.json",
         "license": "Local noncommercial test fixture",
+        "mouth_gain": 2.4,
         "motions": {"idle": {"group": "Idle"}},
         "expressions": {"cheerful": "Smile"},
     })
@@ -51,6 +53,8 @@ def test_install_copies_only_runtime_closure(export, tmp_path):
     assert (installed / "avatar.json").is_file()
     assert (installed / "rig" / "idle.motion3.json").is_file()
     assert not (installed / "editable.cmo3").exists()
+    projection = LiveAvatar(SimpleNamespace(runtime=runtime, data={})).projection("whale")
+    assert projection["mouth_gain"] == 2.4
     with pytest.raises(ValueError, match="已有"):
         preflight(export, runtime, "whale", install=True)
 

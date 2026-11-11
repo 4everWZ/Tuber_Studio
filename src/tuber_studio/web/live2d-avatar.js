@@ -14,16 +14,16 @@
   }
 
   window.Live2DAvatar = class {
-    constructor(parent, manifest, onState) {
+    constructor(parent, manifest, onState, readMouth) {
       this.parent = parent;
       this.manifest = manifest;
       this.onState = onState;
+      this.readMouth = readMouth;
       this.canvas = document.createElement("canvas");
       this.canvas.className = "live2d-avatar";
       this.canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
       this.canvas.setAttribute("aria-hidden", "true");
       this.canvas.addEventListener("webglcontextlost", () => this.fallback());
-      this.mouth = 0;
       this.load();
     }
 
@@ -44,7 +44,11 @@
         const core = internal.coreModel;
         const index = core.getModel().parameters.ids.indexOf(this.manifest.mouth_parameter);
         if (index < 0) throw new Error("缺少嘴部参数");
-        internal.on("beforeModelUpdate", () => core.setParameterValueByIndex(index, this.mouth));
+        internal.on("beforeModelUpdate", () => {
+          const level = this.readMouth?.() ?? this.lastPlayback?.mouth ?? 0;
+          const opening = Math.min(1, Math.max(0, level) * (this.manifest.mouth_gain ?? 5));
+          core.setParameterValueByIndex(index, opening);
+        });
         this.parent.append(this.canvas);
         this.observer = new ResizeObserver(() => this.fit());
         this.observer.observe(this.parent);
@@ -73,7 +77,6 @@
 
     update(playback) {
       this.lastPlayback = playback;
-      this.mouth = Math.min(1, 5 * Math.max(0, playback?.mouth || 0));
       const animation = playback?.animation_id || "idle", emotion = playback?.emotion || "idle";
       if (!this.model) return;
       if (animation !== this.animation) {

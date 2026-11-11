@@ -2,9 +2,10 @@
 
 // The same renderer is used by the silent editor and the playback-only OBS page.
 window.LiveScene = class {
-  constructor(viewport, {editable = false, onChange = () => {}, onSelect = () => {}, onWarning = () => {}} = {}) {
+  constructor(viewport, {editable = false, onChange = () => {}, onSelect = () => {}, onWarning = () => {}, readMouth} = {}) {
     this.viewport = viewport; this.editable = editable; this.onChange = onChange; this.onSelect = onSelect; this.onWarning = onWarning;
     this.failedAssets = new Set();
+    this.readMouth = readMouth;
     this.avatars = new Map();
     this.canvas = document.createElement("div"); this.canvas.className = "scene-canvas";
     viewport.classList.add("scene-viewport"); viewport.replaceChildren(this.canvas);
@@ -151,7 +152,7 @@ window.LiveScene = class {
           entry.ready = ready;
           if (!ready) this.onWarning("Live2D 加载失败，使用角色 GIF");
           this.update(this.state);
-        });
+        }, this.readMouth);
       } else if (manifest?.message) this.onWarning(manifest.message);
     }
     for (const fallback of body.querySelectorAll("img,.avatar-empty")) fallback.hidden = entry.ready;
