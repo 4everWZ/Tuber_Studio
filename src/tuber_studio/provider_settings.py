@@ -11,9 +11,10 @@ from .deployment_profiles import select_local_voice
 from .inference_profiles import LLM_MODELS, llm_resource_key
 from .providers import VoiceService, public_error
 from .runtime_modes import require_model_idle
+from .video_vision import ApiVideoEvidenceProvider
 
 FIELDS = {
-    "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens"},
+    "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens", "enable_thinking"},
     "tts": {"kind", "base_url", "model", "voice"},
     "vision": {"kind", "location", "base_url", "model"},
 }
@@ -160,7 +161,14 @@ def proposal(settings, body):
             select_local_voice(after, data.get("inference_broker", {}))
         after.update(patch)
         if name == "llm":
+            if "native_context_tokens" in patch and "context_tokens" not in patch:
+                after["context_tokens"] = after["native_context_tokens"]
             normalize_broker_llm(data)
+            video = data.get("video_vision", {})
+            if "enable_thinking" in patch and video.get("enabled") and video.get("model") == after["model"] and (
+                video["base_url"].rstrip("/").removesuffix("/v1") == after["base_url"].rstrip("/").removesuffix("/v1")
+            ):
+                video["enable_thinking"] = after["enable_thinking"]
         if (
             (
                 after.get("base_url", "").rstrip("/") != before.get("base_url", "").rstrip("/")
@@ -190,7 +198,7 @@ def _update_model_profiles(data, previous_llm):
     broker.setdefault(
         "context_tokens", previous_llm["context_tokens"] if previous_llm["kind"] == "llama_cpp" else 131072
     )
-    if data["llm"]["kind"] == "llama_cpp":
+    if uses_broker_llm(data):
         broker.update(model=data["llm"]["model"], context_tokens=data["llm"]["context_tokens"])
     profiles = data.get("work_mode_profiles")
     mode = broker.get("mode")
@@ -216,6 +224,7 @@ async def apply_settings(runtime, body):
     staged = copy.copy(settings)
     staged.data, staged.provider_keys = data, keys
     created = []
+    video = None
     try:
         if model_update:
             llm = create_llm(staged)
@@ -226,11 +235,18 @@ async def apply_settings(runtime, body):
         if model_update:
             vision = VisionService(data["vision"], staged.endpoint_key("vision"))
             created.append(vision)
+            if getattr(runtime, "browsing", None) and data.get("video_vision") != settings.data.get("video_vision"):
+                visual_config = data["video_vision"]
+                video = ApiVideoEvidenceProvider(
+                    runtime, visual_config, api_key=staged.broker_key_for(visual_config["base_url"]) or staged.provider_key("vision")
+                )
+                created.append(video)
     except BaseException:
         await _settle_cleanup(_close_clients(created))
         raise
     previous_data = settings.data
-    was_local = previous_data["llm"]["kind"] == "llama_cpp"
+    was_local = uses_broker_llm(previous_data)
+    is_local = uses_broker_llm(data)
     old_window = (
         previous_data["llm"]["context_tokens"]
         if was_local
@@ -247,7 +263,7 @@ async def apply_settings(runtime, body):
             previous_private = (
                 settings.credentials_path.read_bytes() if settings.credentials_path.exists() else None
             )
-            if model_update and runtime.inference.client:
+            if model_update and runtime.inference.client and (was_local or is_local):
                 try:
                     snapshot = await _broker_snapshot(runtime.inference.client, old_window)
                 except (httpx.ConnectError, httpx.ConnectTimeout):
@@ -256,7 +272,7 @@ async def apply_settings(runtime, body):
                     # A lost response can follow a committed RPC. Record ownership
                     # before sending, never infer "not executed" from an exception.
                     broker_attempted = True
-                    if data["llm"]["kind"] == "llama_cpp":
+                    if is_local:
                         window = data["llm"]["context_tokens"]
                         target = llm_resource_key(data["llm"]["model"]) if uses_broker_llm(data) else None
                         model = target if target != snapshot["selected"] else None
@@ -330,6 +346,8 @@ async def apply_settings(runtime, body):
             runtime.llm, runtime.vision = llm, vision
             runtime.context.provider = llm
             runtime.error = None
+            if video is not None:
+                old_clients.append(runtime.browsing.replace_visual_provider(video))
             broker_conf = data.get("inference_broker", {})
             if broker_conf.get("enabled"):
                 old_inference = runtime.inference.client

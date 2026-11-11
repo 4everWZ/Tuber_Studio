@@ -49,8 +49,8 @@ export function readProviderPayload() {
     return value;
   };
 
-  const context = integer("llm-context-tokens", "上下文窗口");
   const native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
+  const context = $("llm-context-tokens").value.trim() ? integer("llm-context-tokens", "上下文窗口") : native;
   if (context > native) {
     throw new Error("上下文窗口不能超过模型原生 / 服务声明上限。请按实际服务能力填写。");
   }
@@ -71,6 +71,9 @@ export function readProviderPayload() {
     credentials: {},
     clear_credentials: [],
   };
+  if (llmKind === "llama_cpp" && $("llm-enable-thinking")) {
+    payload.llm.enable_thinking = $("llm-enable-thinking").checked;
+  }
 
   const key = $("llm-key");
   const clear = $("llm-clear-key").checked;
@@ -231,7 +234,7 @@ function providerFormFromSettings(settings, status) {
     "llm-kind": llm.kind || "llama_cpp",
     "llm-base-url": llm.base_url || "",
     "llm-model": llm.model || "",
-    "llm-context-tokens": llm.context_tokens ?? 131072,
+    "llm-context-tokens": llm.context_tokens ?? "",
     "llm-native-tokens": llm.native_context_tokens ?? status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
   };
@@ -239,6 +242,7 @@ function providerFormFromSettings(settings, status) {
     const el = $(id);
     if (el) el.value = String(value);
   });
+  if ($("llm-enable-thinking")) $("llm-enable-thinking").checked = llm.enable_thinking !== false;
   if ($("llm-live-output-budget")) {
     $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
   }
@@ -257,6 +261,7 @@ function renderProviderForm(settings, status, dirty, saving) {
     settings ? "已保存配置" : "正在读取已保存配置…";
   $("llm-key-state").textContent = settings?.provider_credentials?.llm ? "已保存密钥" : "未保存密钥";
   const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
+  if ($("llm-enable-thinking")) $("llm-enable-thinking").disabled = external || demo || saving;
   ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
     $(id).disabled = demo || saving;
   });

@@ -6,7 +6,7 @@ import { initOperatorChat } from "./modules/operator-chat.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.21";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.23";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
-import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261107.12";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261111.05";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js";
 import { MessagesPanel } from "./messages.js?v=20261111.04";
@@ -14,7 +14,7 @@ import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261110.01";
+} from "./modules/operations.js?v=20261111.05";
 import {
   renderPersona,
   initCharacterStudioUI,

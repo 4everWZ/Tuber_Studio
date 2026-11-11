@@ -67,6 +67,9 @@ class Settings:
         self.data["tts"].setdefault("voice", "")
         self.data["tts"].setdefault("local_backend", "compact")
         self.data["llm"].setdefault("operations_max_tokens", 8192)
+        self.data["llm"].setdefault("context_tokens", self.data["llm"].get("native_context_tokens", 131072))
+        if self.data["llm"]["kind"] == "llama_cpp":
+            self.data["llm"].setdefault("enable_thinking", True)
         self._validate()
         self.path = path
         self.admin_token = os.getenv("TUBER_ADMIN_TOKEN") or self._secret("admin-token")
@@ -108,6 +111,8 @@ class Settings:
         operations = llm.get("operations_max_tokens", 8192)
         if type(operations) is not int or not 1 <= operations <= 65536:
             raise ValueError("运营输出额度须为1到65536 tokens，实际生成仍受真实输入与窗口约束")
+        if "enable_thinking" in llm and type(llm["enable_thinking"]) is not bool:
+            raise ValueError("思考开关须为布尔值")
         if llm["kind"] != "demo":
             endpoint(llm["base_url"])
             if not isinstance(llm.get("model"), str) or not llm["model"].strip():

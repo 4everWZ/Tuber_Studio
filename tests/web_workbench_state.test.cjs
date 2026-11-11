@@ -139,6 +139,12 @@ test("saving text model settings leaves independent vision configuration untouch
   const payload = readProviderPayload();
   assert.equal(payload.llm.model, "Dafeiyu-DoRA");
   assert.equal(Object.hasOwn(payload, "vision"), false);
+  get("llm-context-tokens").value = "";
+  get("llm-enable-thinking").checked = true;
+  assert.equal(readProviderPayload().llm.context_tokens, 262144);
+  assert.equal(readProviderPayload().llm.enable_thinking, true);
+  get("llm-enable-thinking").checked = false;
+  assert.equal(readProviderPayload().llm.enable_thinking, false);
 });
 
 test("main and standalone live controls share session, feature and mode-transition rules", async () => {

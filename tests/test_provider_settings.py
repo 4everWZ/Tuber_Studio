@@ -26,6 +26,18 @@ def test_paired_provider_settings_survive_restart_and_live_round_trip(settings):
     assert returned["work_mode_profiles"]["live"] == live
 
 
+def test_direct_provider_default_window_and_thinking_keep_paired_node_settings(settings):
+    data = business_configuration(settings.data, "http://127.0.0.1:9012")
+    direct = {"kind": "llama_cpp", "base_url": "http://127.0.0.1:11436", "model": "selected-9b",
+              "native_context_tokens": 262144, "enable_thinking": True}
+    settings.data = data | {"llm": data["llm"] | direct}
+    proposed, _ = proposal(settings, {"llm": direct})
+    assert proposed["llm"]["context_tokens"] == 262144
+    assert proposed["llm"]["enable_thinking"] is True
+    assert proposed["inference_broker"] == data["inference_broker"]
+    assert proposed["work_mode_profiles"]["text"]["llm"] == proposed["llm"]
+
+
 def api_patch(**extra):
     return {
         "llm": {

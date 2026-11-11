@@ -54,10 +54,11 @@
             <p id="llm-endpoint-help" class="hint">支持任意本地工作站 (如 vLLM, Ollama, llama-server) 或外部兼容端点；Base URL 通常以 /v1 结尾。</p>
 
             <div class="form-grid" style="margin-top:10px;">
-              <label>上下文窗口上限（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" value="131072" required aria-describedby="llm-capacity-help"></label>
+              <label>上下文窗口（tokens）<input id="llm-context-tokens" type="number" min="4096" step="1" placeholder="留空用模型上限" aria-describedby="llm-capacity-help"></label>
               <label id="llm-native-label">服务声明容量（tokens）<input id="llm-native-tokens" type="number" min="4096" step="1" required></label>
             </div>
             <p id="llm-capacity-help" class="hint"></p>
+            <label class="check-field"><input id="llm-enable-thinking" type="checkbox" checked> 启用思维链（CoT）</label>
 
             <label style="margin-top:10px;">单次运营输出配额（tokens，含思考）
               <input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help">
