@@ -36,8 +36,15 @@ def export(tmp_path):
     return package
 
 
-def test_install_copies_only_runtime_closure(export, tmp_path):
+@pytest.mark.parametrize("license_label", [None, "CC BY-NC-SA 4.0"])
+def test_install_copies_only_runtime_closure(export, tmp_path, license_label):
     runtime = tmp_path / "runtime"
+    manifest_path = export / "avatar.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("license")
+    if license_label is not None:
+        manifest["license"] = license_label
+    write_json(manifest_path, manifest)
     check = preflight(export, runtime, "whale")
     assert set(check["sdk_missing"]) == set(SDK)
     assert not runtime.exists()
@@ -53,8 +60,9 @@ def test_install_copies_only_runtime_closure(export, tmp_path):
     assert (installed / "avatar.json").is_file()
     assert (installed / "rig" / "idle.motion3.json").is_file()
     assert not (installed / "editable.cmo3").exists()
-    projection = LiveAvatar(SimpleNamespace(runtime=runtime, data={})).projection("whale")
+    projection = LiveAvatar(SimpleNamespace(runtime=runtime, data={"commercial_mode": True})).projection("whale")
     assert projection["mouth_gain"] == 2.4
+    assert projection["license"] == (license_label or "")
     with pytest.raises(ValueError, match="已有"):
         preflight(export, runtime, "whale", install=True)
 

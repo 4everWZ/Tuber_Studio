@@ -1,4 +1,4 @@
-"""Preflight and install a locally authorized Cubism Editor runtime export."""
+"""Preflight and install a local Cubism runtime export."""
 
 import argparse
 import json
@@ -33,7 +33,7 @@ def preflight(package: Path, runtime: Path, character: str, *, install: bool = F
         if root.resolve() != root:
             raise ValueError("Live2D 安装目录不能重定向")
         if missing_sdk:
-            raise ValueError("请先安装授权的 Live2D SDK 文件 " + "、".join(missing_sdk))
+            raise ValueError("请先安装所需的 Live2D SDK 文件 " + "、".join(missing_sdk))
         if target.exists() or target.is_symlink():
             raise ValueError("此角色已有 Live2D 目录。请先移出备份。")
         with TemporaryDirectory(prefix=".avatar-stage-", dir=root) as staging:

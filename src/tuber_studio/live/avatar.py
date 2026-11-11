@@ -19,7 +19,7 @@ class AvatarMotion(StrictModel):
 
 class AvatarManifest(StrictModel):
     model: str = Field(min_length=1, max_length=160)
-    license: str = Field(min_length=1, max_length=500)
+    license: str = Field(default="", max_length=500)
     commercial_allowed: bool = False
     mouth_parameter: str = Field(default="ParamMouthOpenY", pattern=r"^[A-Za-z0-9_-]{1,80}$")
     mouth_gain: float = Field(default=5.0, gt=0, le=10)
@@ -52,12 +52,10 @@ def load_object(path, limit):
     return value
 
 
-def avatar_package(root, *, commercial_mode=False):
+def avatar_package(root):
     """Return a local export manifest and its complete runtime file closure."""
     root = root.resolve()
     manifest = AvatarManifest.model_validate(load_object(checked_file(root, "avatar.json"), 32768))
-    if not manifest.license.strip() or (commercial_mode and not manifest.commercial_allowed):
-        raise ValueError("Live2D 素材用途尚未确认")
     if not manifest.model.endswith(".model3.json"):
         raise ValueError("需要 Cubism model3.json 模型")
     model = load_object(checked_file(root, manifest.model), 256 * 1024)
@@ -96,14 +94,13 @@ def avatar_package(root, *, commercial_mode=False):
 
 class LiveAvatar:
     def __init__(self, settings):
-        self.settings = settings
         self.root = (settings.runtime / "live2d").resolve()
 
     def installed(self, character_id):
         root = self.root / character_id
         if root.resolve() != root:
             raise ValueError("Live2D 角色目录不能重定向")
-        manifest, allowed = avatar_package(root, commercial_mode=self.settings.data.get("commercial_mode"))
+        manifest, allowed = avatar_package(root)
         for name in SDK:
             checked_file(self.root / "sdk", name)
         return root, manifest, allowed
