@@ -9,7 +9,7 @@ from difflib import SequenceMatcher
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
-from ...message_outreach import invitation_possibility
+from ...message_outreach import confirmed_invitation
 from ...operation_continuations import content_hash
 from ...operation_generation import GenerationInvalid, generate_with_recovery
 from ...operation_identity import captured_identity
@@ -122,7 +122,7 @@ class BrowsingDecisions:
             return False
         thread = data.get("thread") or {}
         recipient = (thread.get("target") or {}).get("recipient") or (thread.get("source") or {}).get("author_uid")
-        return invitation_possibility(thread, row.get("account_id"), recipient) != "impossible"
+        return confirmed_invitation(thread, row.get("account_id"), recipient) is not None
 
     def _model_input(self, row, schema, data, instruction, *, response_input=None):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
@@ -1114,7 +1114,9 @@ class BrowsingDecisions:
                                 "current_candidate": error.continuation.get("current_output")})
                         return None
                     self.comment_progress.save(row, bvid, source, thread_response)
-                if thread_response.action not in {"reply_public", "handoff_private"} or not thread_response.text:
+                if thread_response.action not in {"reply_public", "handoff_private"}:
+                    return None
+                if thread_response.action == "reply_public" and not thread_response.text:
                     return None
                 target.update(
                     recipient=author_uid,
@@ -1196,6 +1198,18 @@ class BrowsingDecisions:
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
                 "comment_id": str(context["source"]["comment_id"]),
             }
+        data = self._response_actor_data(row, data)
+        policy = self.browsing.messages.policy()
+        if policy["enabled"] and policy["allow_comment_handoff"] and self._handoff_allowed(row, data):
+            thread = data["thread"]
+            recipient = thread["target"].get("recipient") or thread["source"]["author_uid"]
+            invitation = confirmed_invitation(thread, row["account_id"], recipient)
+            return ResponseDecision(
+                action="handoff_private", reason="user_requested",
+                explanation="原评论请求私聊，" + invitation["quote"],
+                contact_purpose=invitation["quote"], contact_trigger=invitation["kind"],
+                evidence_ids=["public:" + str(context["source"]["comment_id"])],
+            )
         return await self._model(
             row,
             ResponseDecision,

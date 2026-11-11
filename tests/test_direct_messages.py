@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.comments import Comments
-from tuber_studio.direct_messages import ChannelDecision, DirectMessages
+from tuber_studio.direct_messages import DirectMessages
 from tuber_studio.platforms.bilibili import PublishUncertain
 
 
@@ -186,9 +186,9 @@ async def test_uncertain_send_cannot_be_retried_or_edited(messages):
     assert len(messages.adapter.sent) == 1
 
 
-@pytest.mark.parametrize("budget", [2048, 4096])
-async def test_model_handoff_never_records_private_reply_in_public_context(messages, monkeypatch, budget):
-    await messages.configure({"enabled": True, "channel_max_tokens": budget})
+@pytest.mark.parametrize("invitation", ["我们可以私信继续讨论吗？", "能不能私信我？", "这个咱们私下聊吧"])
+async def test_confirmed_handoff_never_records_private_reply_in_public_context(messages, monkeypatch, invitation):
+    await messages.configure({"enabled": True})
     original_llm = dict(messages.settings.data["llm"])
     comments = messages.comments
     comments.credentials = {"sessdata": "test", "csrf": "test"}
@@ -199,64 +199,45 @@ async def test_model_handoff_never_records_private_reply_in_public_context(messa
         return "injected-test-account"
 
     monkeypatch.setattr(comments, "account_id", account)
-    comments.import_items(
-        "import-private",
-        [
-            {
-                "comment_id": "c1",
-                "platform_user_id": "123",
-                "display_name": "鱼宝",
-                "content": "我们可以私信继续讨论吗？",
-            }
-        ],
-    )
+    comments.import_items("import-private", [{"comment_id": "c1", "platform_user_id": "123",
+        "display_name": "鱼宝", "content": invitation,
+        "mentions": [{"uid": "injected-test-account", "name": "大肥鱼"}]}])
     source = messages.store.one("SELECT * FROM comments")
-    decisions = []
-    original_event = messages._event
+    generated = []
+    original_generate = messages.runtime.generate_reply
 
-    def verified_event(draft, character):
-        value = original_event(draft, character)
-        if draft["source_kind"] == "comment":
-            value["public_source_thread"] = {
-                "source": {"comment_id": "c1", "author_uid": "123", "text": source["content"]},
-                "parent": {"comment_id": "original", "author_uid": draft["account_id"], "text": "原公开交流"},
-                "addressing": {"source_parent_comment_id": "original", "source_mentions": []},
-            }
-        return value
+    async def generate(*args, **kwargs):
+        generated.append(args[2])
+        assert kwargs["mode"] == "direct_message"
+        return await original_generate(*args, **kwargs)
 
-    monkeypatch.setattr(messages, "_event", verified_event)
+    async def no_channel_decision(*args, **kwargs):
+        pytest.fail("确认邀请不调用模型选择渠道或复核邀请")
 
-    async def decide(prompt, schema, *, max_tokens):
-        if schema["title"] == "OutreachAssessment":
-            data = json.loads(prompt[-1]["content"])
-            assert data["public_thread"]["source"]["comment_id"] == "c1"
-            return {"action": "send", "reason": "对方邀请我方继续私下讨论", "purpose": "讨论原先提到的个人事项",
-                "invitation_kind": "invitation", "invitation_comment_id": "c1", "invitation_quote": source["content"], "invited_actor_uid": data["self_account_uid"], "body_addresses_purpose": True}
-        assert max_tokens == budget
-        assert schema["properties"]["reason"]["enum"] == ["public_topic", "user_requested"]
-        decisions.extend(prompt)
-        return {"channel": "direct_message", "reason": "user_requested"}
-
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", decide)
+    monkeypatch.setattr(messages.runtime, "generate_reply", generate)
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", no_channel_decision, raising=False)
     await comments._process_comment(source, messages.runtime.character, False)
     assert messages.settings.data["llm"] == original_llm
     bridge = messages.store.one("SELECT * FROM drafts WHERE comment_id=?", (source["id"],))
     assert bridge["status"] == "private_handoff"
     draft = messages.store.one("SELECT * FROM dm_drafts")
     await finished(messages, draft["id"])
-    actual = messages.store.one("SELECT status,error,account_id,outreach_check FROM dm_drafts WHERE id=?", (draft["id"],))
+    actual = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (draft["id"],))
     assert actual["status"] == "pending_review", actual
-    assert any('"affinity": 1' in message["content"] for message in decisions)
+    assert len(generated) == 1
+    assert generated[0]["contact_invitation"]["actor_uid"] == actual["account_id"]
+    assert generated[0]["recipient"]["uid"] == source["platform_user_id"]
     public_scope = comments.account_context_scope(source["video_id"], source["thread_id"], account_id=actual["account_id"])
     public = messages.runtime.context.existing(public_scope, messages.runtime.character)
-    assert not public or "先来一碗白饭" not in public["history"]
+    assert not public or actual["text"] not in public["history"]
     with pytest.raises(ValueError):
         comments.review(bridge["id"], "approve")
     messages.review(draft["id"], "approve")
     await messages.send(draft["id"])
-    assert messages.adapter.sent[0][0] == source["platform_user_id"]
+    assert len(messages.adapter.sent) == 1 and messages.adapter.sent[0][0] == source["platform_user_id"]
+    assert len(generated) == 1
     public_after = messages.runtime.context.existing(public_scope, messages.runtime.character)
-    assert not public_after or "先来一碗白饭" not in public_after["history"]
+    assert not public_after or actual["text"] not in public_after["history"]
 
 
 async def test_affinity_is_shared_per_oc_and_stable_uid_not_nickname(messages):
@@ -436,13 +417,6 @@ async def test_generation_waits_for_pending_live_work(messages):
     assert (await finished(messages, identity))["status"] == "pending_review"
 
 
-def test_schema_cannot_choose_an_arbitrary_recipient():
-    with pytest.raises(ValueError):
-        ChannelDecision.model_validate(
-            {"channel": "direct_message", "reason": "user_requested", "recipient": "999"}
-        )
-
-
 def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings):
     with TestClient(create_app(settings, message_adapter=Delivery())) as client:
         assert client.get("/api/messages").status_code == 401
@@ -462,7 +436,7 @@ def test_message_routes_are_admin_only_and_do_not_offer_arbitrary_send(settings)
         ).status_code in {404, 405}
 
 
-async def test_failed_channel_generation_preserves_source_without_any_handoff(messages, monkeypatch):
+async def test_failed_public_body_generation_preserves_source_without_any_handoff(messages, monkeypatch):
     comments = messages.comments
     comments.import_items(
         "import-budget",
@@ -479,7 +453,7 @@ async def test_failed_channel_generation_preserves_source_without_any_handoff(me
     async def incomplete(*args, **kwargs):
         raise ValueError("模型结构化输出未完整结束；未采用结果")
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", incomplete)
+    monkeypatch.setattr(messages.runtime, "generate_reply", incomplete)
     with pytest.raises(ValueError, match="未完整结束"):
         await comments._process_comment(source, messages.runtime.character, False)
     assert (

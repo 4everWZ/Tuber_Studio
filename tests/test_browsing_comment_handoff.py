@@ -78,7 +78,7 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     assert evidence["public_source_thread"]["source"]["text"] == INVITATION
     assert evidence["public_source_thread"]["target"]["parent"] == "601"
     assert evidence["origin_round_id"] == reply_round["id"]
-    assert intent["reason"] == "想接着聊盐水如何把鸡蛋托起来"
+    assert "原评论请求私聊" in intent["reason"] and INVITATION.rstrip("。！？!?；;\n") in intent["reason"]
     assert intent["target"]["private_draft_id"] == draft["id"]
     assert draft["text"] not in json.dumps(browsing.inbox(), ensure_ascii=False)
     assert not browsing.adapter.sent

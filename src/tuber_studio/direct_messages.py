@@ -6,15 +6,15 @@ import re
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Literal
 
 import httpx
-from pydantic import Field, StrictInt, model_validator
+from pydantic import Field, StrictInt
 
 from .generation_meter import GenerationMeter, budgeted_json
 from .meme_selection import select_meme
 from .message_outreach import (
     assess_outreach,
+    confirmed_invitation,
     contact_state,
     invitation_anchor,
     invitation_key,
@@ -26,7 +26,6 @@ from .operation_feedback import (
     FeedbackPublication,
     PublicationContext,
     continuation_view,
-    coordinator_for,
     generation_view,
     private_generation_views,
     publication_binding,
@@ -66,25 +65,6 @@ class IncomingMessage(StrictModel):
     text: str = Field(min_length=1, max_length=4000)
     timestamp: float = Field(ge=0)
     account_id: str = Field(default="", max_length=100)
-
-
-class ChannelDecision(StrictModel):
-    channel: Literal["comment", "direct_message"]
-    reason: Literal["public_topic", "user_requested", "private_details", "long_followup"]
-
-    @model_validator(mode="after")
-    def consistent_reason(self):
-        if (self.channel == "comment") != (self.reason == "public_topic"):
-            raise ValueError("回复渠道与理由分类不一致")
-        return self
-
-
-CHANNEL_REASONS = {
-    "public_topic": "普通公开讨论",
-    "user_requested": "对方希望私下继续",
-    "private_details": "涉及不宜公开的个人细节",
-    "long_followup": "长篇跟进适合移入私信",
-}
 
 
 class MessageInputChanged(ValueError):
@@ -613,113 +593,17 @@ class DirectMessages:
         policy = self.policy()
         if not (policy["enabled"] and policy["allow_comment_handoff"] and row.get("platform_user_id")):
             return None
-        binding = reply_generation_binding(scope, character, event, "comment_channel_decision")
-        if profile_revision := self.runtime.relationships.event_profile_revision(character["id"], event):
-            binding["profile_revision"] = profile_revision
-        binding.update(
-            account_id=str(event.get("account_id", "") or ""),
-            schema="invitation_channel_v2",
-            recipient_uid=str(row["platform_user_id"]),
-        )
-        identity = content_hash(binding)
-        credential = dict(self.comments.credentials)
-        source_fields = ("platform", "video_id", "thread_id", "comment_id", "platform_user_id", "content")
-
-        def guard():
-            current = self.runtime.character
-            fresh = self.store.one("SELECT * FROM comments WHERE id=?", (row["id"],))
-            actual = self.policy()
-            if (
-                {key: current[key] for key in ("id", "version")} != binding["character"]
-                or self.comments.credentials != credential
-                or not fresh
-                or any(fresh.get(key) != row.get(key) for key in source_fields)
-                or not (actual["enabled"] and actual["allow_comment_handoff"])
-            ):
-                raise ValueError("渠道分类期间账号、角色、原评论或私信授权已变化")
-
-        messages = []
-        model_context = {"task": "comment_channel_decision", "event": event, "relationship": relationship}
-
-        async def invoke(packet):
-            if not messages:
-                prepared = await context.prepare(
-                    scope,
-                    character,
-                    event,
-                    relationship,
-                    "comment_channel_decision",
-                    output_tokens=policy["channel_max_tokens"],
-                )
-                prepared.append(
-                    {
-                        "role": "system",
-                        "content": "根据真实来源选择接话渠道。普通问题、个人细节或长篇讨论仍选comment、public_topic；只有对方实际邀请当前账号私聊或有真实联系约定，才选direct_message、user_requested。邀请对象根据真实UID、@与回复关系识别，不能从昵称相似或感兴趣推断。填写channel与reason。",
-                    }
-                )
-                messages.extend(prepared)
-                model_context["public_context"] = [
-                    message for message in messages if message["role"] != "system"
-                ]
-                if packet is not messages:
-                    packet = [*messages, *packet]
-            guard()
-            schema = ChannelDecision.model_json_schema()
-            # Historical decisions remain readable; new channel choices follow
-            # the current invitation contract instead of reviving old heuristics.
-            schema["properties"]["reason"]["enum"] = ["public_topic", "user_requested"]
-            return await budgeted_json(
-                self.runtime.llm,
-                packet,
-                schema,
-                max_tokens=policy["channel_max_tokens"],
-            )
-
-        def validate(value):
-            return ChannelDecision.model_validate(
-                value.model_dump() if hasattr(value, "model_dump") else value
-            )
-
-        try:
-            decision, audit = await generate_with_recovery(
-                self.runtime,
-                channel="generation.comment_channel",
-                identity=identity,
-                binding=binding,
-                character=character,
-                messages=messages,
-                generate=invoke,
-                validate=validate,
-                max_tokens=policy["channel_max_tokens"],
-                guard=guard,
-                context_data=model_context,
-                reuse_completed=True,
-            )
-        except Exception as error:
-            if getattr(error, "continuation", None):
-                self.runtime.continuations.bind_source_view(
-                    error.continuation["id"], "comments", row["id"], "评论渠道生成记录"
-                )
-            raise
-        if audit or decision.channel == "direct_message":
-            record = coordinator_for(self.runtime, self.store, self.operations).find(
-                "generation.comment_channel", identity
-            )
-            self.runtime.continuations.bind_source_view(
-                record["id"], "comments", row["id"], "评论渠道生成记录"
-            )
-        if decision.channel == "comment":
+        evidence = dict(event.get("video_evidence") or {})
+        thread = evidence.get("public_source_thread") or event.get("comment_context")
+        invitation = confirmed_invitation(thread, event.get("account_id"), row["platform_user_id"])
+        if not invitation:
             return None
-        draft_id = self.enqueue(
-            "comment",
-            row["id"],
-            automatic=automatic,
-            reason=CHANNEL_REASONS[decision.reason],
-            character=character,
-            account_id=event.get("account_id", ""),
-            video_evidence=event.get("video_evidence"),
+        evidence["public_source_thread"] = thread
+        return self.enqueue(
+            "comment", row["id"], automatic=automatic, reason="user_requested", character=character,
+            account_id=event.get("account_id", ""), video_evidence=evidence,
+            purpose=invitation["quote"], contact_trigger=invitation["kind"],
         )
-        return draft_id
 
     def _event(self, draft, character):
         source = self._source(draft["source_kind"], draft["source_id"], character)
@@ -733,6 +617,8 @@ class DirectMessages:
             "platform": draft["platform"],
             "platform_user_id": draft["platform_user_id"],
             "display_name": draft["display_name"],
+            "recipient": {"uid": draft["platform_user_id"], "name": draft["display_name"]},
+            "self_actor": runtime_identity(self.runtime, character, draft.get("account_id")),
             "delivery_channel": "private_message",
             "account_id": draft.get("account_id", ""),
             "contact_type": "reply" if draft["source_kind"] == "message" else "outreach",
@@ -749,6 +635,11 @@ class DirectMessages:
             event["public_source_thread"] = self.runtime.context.history_for_model(scope, character)
             if event.get("video_evidence", {}).get("public_source_thread"):
                 event["public_source_thread"] = event["video_evidence"]["public_source_thread"]
+            invitation = confirmed_invitation(
+                event["public_source_thread"], draft.get("account_id"), draft["platform_user_id"]
+            )
+            if invitation:
+                event["contact_invitation"] = invitation
             if trigger.get("contact_trigger") == "agreement" and verified_agreement(draft, event["public_source_thread"]):
                 event["agreement_task"] = {"agreement_id": draft["id"], "purpose": draft.get("purpose") or "",
                     "completion_evidence": self._completion_evidence(draft),
@@ -1025,7 +916,10 @@ class DirectMessages:
             return
         evidence = json.loads(draft.get("video_evidence") or "{}")
         thread = evidence.get("public_source_thread")
-        if isinstance(thread, dict) and "addressing" in thread:
+        if (
+            isinstance(thread, dict) and "addressing" in thread
+            and (thread.get("target") or {}).get("oid") and evidence.get("account_id") == draft["account_id"]
+        ):
             return
         from .operations.browsing.thread_context import comment_thread_context
 
@@ -1043,7 +937,7 @@ class DirectMessages:
         thread = comment_thread_context(selected, refreshed["items"], target)
         thread["public_text"] = actual["text"]
         thread["resource_author_uid"] = str(metadata.get("owner_uid") or "")
-        evidence.update(public_source_thread=thread, material_keys=evidence.get("material_keys", []),
+        evidence.update(account_id=draft["account_id"], public_source_thread=thread, material_keys=evidence.get("material_keys", []),
                         source_versions=evidence.get("source_versions", []))
         draft["video_evidence"] = json.dumps(evidence, ensure_ascii=False)
         self.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (draft["video_evidence"], draft["id"]))
@@ -1087,8 +981,9 @@ class DirectMessages:
                 continue
             saved = self.store.one("SELECT s.context,s.status,s.phase,c.binding FROM operation_continuation_steps s JOIN operation_continuations c ON c.id=s.continuation_id WHERE s.id=?", (proof["step_id"],))
             binding = json.loads(saved["binding"]) if saved else {}
-            actor = binding.get("account_id") or binding.get("source", {}).get("account_id")
-            if saved and saved["phase"] == "web_fetch" and saved["status"] == "ok" and str(actor) == draft["account_id"] and binding.get("character", {}).get("id") == draft["character_id"]:
+            source = binding.get("source") or {}
+            actor = binding.get("account_id") or source.get("account_id")
+            if saved and saved["phase"] == "web_fetch" and saved["status"] == "ok" and source.get("agreement_id") == draft["id"] and str(actor) == draft["account_id"] and binding.get("character", {}).get("id") == draft["character_id"]:
                 result.append({"step_id": proof["step_id"], **json.loads(saved["context"] or "{}")})
         for row in self.store.all(
             "SELECT s.id,s.context FROM operation_continuation_steps s JOIN operation_continuations c "
@@ -1153,23 +1048,12 @@ class DirectMessages:
         if draft.get("message_kind") == "image":
             asset = self.memes.resolve(draft["meme_id"], character)
             checked_draft["outgoing_image"] = {key: asset.get(key) for key in ("asset_id", "title", "description", "emotions")}
-        signature = content_hash({"outreach_contract": "source-bound-invitation-v2", "payload": payload, "thread": event.get("public_source_thread"),
+        signature = content_hash({"outreach_contract": "program-bound-invitation-v3", "payload": payload, "thread": event.get("public_source_thread"),
                                   "account": draft["account_id"], "history": history, "completion": completion})
         previous = json.loads(draft.get("outreach_check") or "null")
         if previous and previous.get("signature") == signature:
             return previous.get("action") == "send"
-        try:
-            assessment, action = await assess_outreach(self.runtime, checked_draft, event, history, completion)
-        except (ValueError, httpx.HTTPError, TimeoutError) as error:
-            self._require_unchanged_draft(draft)
-            transient = isinstance(error, (httpx.HTTPError, TimeoutError))
-            self.store.execute(
-                "UPDATE dm_drafts SET status=?,resume_pending=?,next_attempt_at=?,outreach_check=?,error=NULL WHERE id=?",
-                ("queued" if transient else "waiting", int(transient),
-                 time.time() + self.policy()["poll_interval_seconds"] if transient else 0,
-                 json.dumps({"action": "wait", "state": "check_pending", "reason": "首发来源核对尚未完成", "error_type": type(error).__name__}, ensure_ascii=False), draft["id"]),
-            )
-            return False
+        assessment, action = await assess_outreach(self.runtime, checked_draft, event, history, completion)
         self._require_unchanged_draft(draft)
         record = {"signature": signature, "action": action, "assessment": assessment.model_dump(),
                   "invitation_verified": invitation_anchor(assessment, draft, event.get("public_source_thread")) is not None}
@@ -1256,17 +1140,23 @@ class DirectMessages:
             transient = isinstance(
                 error, (httpx.HTTPError, TimeoutError, ConnectionError, OSError)
             ) or getattr(error, "kind", None) in {"network", "timeout", "rate_limited", "anti_bot"}
-            self.store.execute(
-                "UPDATE dm_drafts SET status=?,resume_pending=?,next_attempt_at=?,error=?,updated_at=? WHERE id=? AND status IN ('queued','generating')",
+            continuation = getattr(error, "continuation", None)
+            updated = self.store.execute(
+                "UPDATE dm_drafts SET status=?,resume_pending=?,next_attempt_at=?,error=?,generation_continuation_id=COALESCE(?,generation_continuation_id),updated_at=? WHERE id=? AND status IN ('queued','generating')",
                 (
                     "queued" if transient else "failed",
                     int(transient),
                     time.time() + self.policy()["poll_interval_seconds"] if transient else 0,
                     public_error(error),
+                    continuation["id"] if continuation else None,
                     time.time(),
                     identity,
                 ),
             )
+            if updated.rowcount and continuation:
+                self.runtime.continuations.bind_source_view(
+                    continuation["id"], "messages", identity, "私信回复生成"
+                )
             raise
 
     async def _generate_owned(self, identity, automatic):
@@ -1335,6 +1225,14 @@ class DirectMessages:
             )
             if observed.get("account_uid") != draft["account_id"]:
                 raise ValueError("核对期间账号已变化，未读取旧私密上下文")
+        if draft["source_kind"] == "comment":
+            pending_event = self._event(draft, self.store.character(draft["character_id"], draft["character_version"]))
+            invitation = confirmed_invitation(
+                pending_event.get("public_source_thread"), draft.get("account_id"), draft["platform_user_id"]
+            )
+            if not invitation or invitation["kind"] == "agreement" and not self._completion_evidence(draft):
+                await self._check_outreach(draft, pending_event)
+                return
         async with self.runtime.offline_generation("dm"):
             if draft.get("resume_pending") and not self._processing_authorized():
                 return
@@ -2416,18 +2314,9 @@ class DirectMessages:
             try:
                 await self._generate(identity, automatic)
             except asyncio.CancelledError:
-                self.store.execute(
-                    "UPDATE dm_drafts SET status='queued',resume_pending=1,error='进度已保存，等待恢复' WHERE id=? AND status IN ('queued','generating')",
-                    (identity,),
-                )
                 raise
             except Exception as error:
                 self.error = public_error(error)
-                continuation = getattr(error, "continuation", None)
-                self.store.execute(
-                    "UPDATE dm_drafts SET status=CASE WHEN resume_pending=1 THEN 'queued' ELSE 'failed' END,error=?,generation_continuation_id=COALESCE(?,generation_continuation_id),updated_at=? WHERE id=? AND status IN ('queued','generating')",
-                    (self.error, continuation["id"] if continuation else None, time.time(), identity),
-                )
             finally:
                 self._scheduled.discard(identity)
                 self.queue.task_done()

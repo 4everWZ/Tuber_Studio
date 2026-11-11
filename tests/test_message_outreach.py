@@ -45,29 +45,22 @@ async def setup_delivery(messages, monkeypatch, *, auto_send=True):
             "output": {"needs_review": False},
         }
 
-    async def assess(packet, schema, *, max_tokens):
+    async def conversation(packet, schema, *, max_tokens):
         if schema["title"] == "ConversationReply":
             event = next(json.loads(message["content"].split("：", 1)[1]) for message in packet
                          if message["content"].startswith("当前观众消息："))
             generated.append(event)
             return {"text": "鱼鱼一起回答你刚才的两条消息。", "reason": "合并回答两条来信",
                     "reply_to": [item["message"] for item in event["conversation"] if item.get("open")], "handled": []}
-        assert schema["title"] == "OutreachAssessment" and max_tokens == 1024
-        data = json.loads(packet[-1]["content"])
-        checked.append(data)
-        source = data["public_thread"]["source"]
-        agreement = source["text"] == "查到了私信告诉我"
-        return {"action": "wait" if agreement and not data["completion_evidence"] else "send", "reason": "对方邀请当前账号私聊这项具体配置", "purpose": "讨论你问的配置位置",
-            "invitation_kind": "agreement" if agreement else "invitation",
-            "invitation_comment_id": source["comment_id"], "invitation_quote": source["text"],
-            "invited_actor_uid": ACTOR, "promise_fulfilled": bool(data["completion_evidence"]), "new_matter": False, "body_addresses_purpose": True}
+        checked.append(schema["title"])
+        pytest.fail("邀请和渠道由程序绑定，不应请求模型：" + schema["title"])
 
     monkeypatch.setattr(messages.runtime, "generate_reply", generate)
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", assess, raising=False)
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", conversation, raising=False)
     return generated, checked
 
 
-def invite(messages, *, cid="701", root="700", mentioned=ACTOR, trigger="invitation", proposal=True):
+def invitation_source(messages, *, cid="701", root="700", mentioned=ACTOR, trigger="invitation"):
     text = "请把我问的那项配置私信告诉我" if trigger != "agreement" else "查到了私信告诉我"
     messages.comments.import_items("BV1d8pU6xEZX", [{"comment_id": cid, "thread_id": root,
         "parent_comment_id": root, "platform_user_id": "123", "display_name": "鱼宝", "content": text}])
@@ -77,6 +70,11 @@ def invite(messages, *, cid="701", root="700", mentioned=ACTOR, trigger="invitat
         "root": {"comment_id": root, "author_uid": ACTOR, "text": "我方此前的公开讨论"},
         "parent": {"comment_id": root, "author_uid": ACTOR, "text": "我方此前的公开讨论"},
         "addressing": {"source_mentions": [{"uid": mentioned, "name": "同名大肥鱼"}], "source_parent_comment_id": root}}
+    return source, thread
+
+
+def invite(messages, *, cid="701", root="700", mentioned=ACTOR, trigger="invitation", proposal=True):
+    source, thread = invitation_source(messages, cid=cid, root=root, mentioned=mentioned, trigger=trigger)
     identity = messages.enqueue("comment", source["id"], automatic=True, account_id=ACTOR,
         purpose="讨论你问的配置位置", contact_trigger=trigger, schedule=False,
         proposed_text="配置在设置页，我来接着说。" if proposal else "",
@@ -85,18 +83,51 @@ def invite(messages, *, cid="701", root="700", mentioned=ACTOR, trigger="invitat
     return identity
 
 
+@pytest.mark.parametrize("mentioned", [ACTOR, "third-party-oc"])
+async def test_route_uses_real_invitation_not_model_channel_choice(messages, monkeypatch, mentioned):
+    generated, checks = await setup_delivery(messages, monkeypatch)
+    source, thread = invitation_source(messages, mentioned=mentioned)
+    # Both mentions have the same name; only their actual UID determines the route.
+    event = messages.comments._comment_event(source) | {"account_id": ACTOR,
+        "video_evidence": {"material_keys": [], "source_versions": [], "public_source_thread": thread}}
+    model_requests = []
+
+    async def opposite_model_choice(packet, schema, *, max_tokens):
+        model_requests.append(schema["title"])
+        return {"channel": "comment" if mentioned == ACTOR else "direct_message", "reason": "user_requested"}
+
+    monkeypatch.setattr(messages.runtime.llm, "generate_json", opposite_model_choice, raising=False)
+    routed = await messages.route_comment(source, messages.runtime.character, {}, messages.runtime.context,
+                                         "confirmed-route", event, automatic=True)
+    await asyncio.wait_for(messages.queue.join(), 2)
+    assert not model_requests and not checks
+    if mentioned != ACTOR:
+        assert routed is None and not generated and not messages.adapter.sent
+        assert not messages.store.all("SELECT * FROM dm_drafts")
+        return
+    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (routed,))
+    assert row["status"] == "published" and row["source_id"] == source["id"]
+    assert len(generated) == 1 and len(messages.adapter.sent) == 1
+    assert generated[0]["contact_invitation"]["comment_id"] == source["comment_id"]
+    assert generated[0]["recipient"]["uid"] == "123"
+    assert await messages.route_comment(source, messages.runtime.character, {}, messages.runtime.context,
+                                        "confirmed-route", event, automatic=True) == routed
+    await asyncio.wait_for(messages.queue.join(), 2)
+    assert len(generated) == 1 and len(messages.adapter.sent) == 1
+
+
 async def test_valid_invitation_automatically_sends_once_and_reuses_proposal(messages, monkeypatch):
     generated, checks = await setup_delivery(messages, monkeypatch)
     identity = invite(messages)
     await messages._generate(identity, True)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == "published" and row["contact_key"]
-    assert len(checks) == 1 and generated == []
+    assert not checks and generated == []
     assert messages.adapter.sent == [("123", "配置在设置页，我来接着说。")]
     assert messages._draft_view(row)["type"] == "outreach"
     with pytest.raises(ValueError):
         await messages.send(identity)
-    assert len(checks) == 1 and len(messages.adapter.sent) == 1
+    assert not checks and len(messages.adapter.sent) == 1
 
 
 @pytest.mark.parametrize("invited", [True, False])
@@ -107,22 +138,23 @@ async def test_review_mode_still_checks_invitation_and_never_queues_uninvited_dr
     await messages._generate(identity, True)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == ("pending_review" if invited else "not_initiated")
-    assert json.loads(row["outreach_check"])["assessment"]["invitation_comment_id"] == "701"
-    assert len(checks) == 1 and not generated and not messages.adapter.sent
+    assessment = json.loads(row["outreach_check"])["assessment"]
+    assert assessment["invitation_comment_id"] == ("701" if invited else "")
+    assert not checks and not generated and not messages.adapter.sent
 
 
-async def test_outreach_is_not_reviewable_until_the_first_contact_check_finishes(messages, monkeypatch):
+async def test_outreach_is_not_reviewable_until_body_generation_finishes(messages, monkeypatch):
     _, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
-    identity = invite(messages)
+    identity = invite(messages, proposal=False)
     entered, release = asyncio.Event(), asyncio.Event()
-    original = messages.runtime.llm.generate_json
+    original = messages.runtime.generate_reply
 
-    async def delayed(packet, schema, *, max_tokens):
+    async def delayed(*args, **kwargs):
         entered.set()
         await release.wait()
-        return await original(packet, schema, max_tokens=max_tokens)
+        return await original(*args, **kwargs)
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", delayed)
+    monkeypatch.setattr(messages.runtime, "generate_reply", delayed)
     task = asyncio.create_task(messages._generate(identity, True))
     await asyncio.wait_for(entered.wait(), 2)
     try:
@@ -134,47 +166,26 @@ async def test_outreach_is_not_reviewable_until_the_first_contact_check_finishes
         release.set()
         await task
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "pending_review"
-    assert len(checks) == 1 and not messages.adapter.sent
+    assert not checks and not messages.adapter.sent
 
 
-async def test_incoming_during_review_contact_check_replaces_the_cold_candidate(messages, monkeypatch):
+async def test_incoming_during_outreach_generation_replaces_the_cold_candidate(messages, monkeypatch):
     generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
-    identity = invite(messages)
-    original = messages.runtime.llm.generate_json
+    identity = invite(messages, proposal=False)
+    original = messages.runtime.generate_reply
 
-    async def arrival(packet, schema, *, max_tokens):
+    async def arrival(*args, **kwargs):
         incoming(messages, key="during-first-check", account_id=ACTOR, text="先别讲配置了，我补一句")
-        return await original(packet, schema, max_tokens=max_tokens)
+        return await original(*args, **kwargs)
 
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", arrival)
+    monkeypatch.setattr(messages.runtime, "generate_reply", arrival)
     await messages._generate(identity, True)
     await asyncio.wait_for(messages.queue.join(), 2)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     assert row["status"] == "waiting" and json.loads(row["outreach_check"])["state"] == "reply_received"
     reply = messages.store.one("SELECT * FROM dm_drafts WHERE source_kind='message'")
-    assert reply["status"] == "pending_review" and len(generated) == 1
-    assert len(checks) == 1 and not messages.adapter.sent
-
-
-async def test_delayed_legacy_send_check_cannot_overwrite_a_new_rejection(messages, monkeypatch):
-    await setup_delivery(messages, monkeypatch, auto_send=False)
-    identity = invite(messages)
-    await messages._generate(identity, False)
-    messages.review(identity, "edit", text="接着解释你邀请讨论的那项设置")
-    messages.review(identity, "approve")
-    old_check = messages.store.one("SELECT outreach_check FROM dm_drafts WHERE id=?", (identity,))["outreach_check"]
-    original = messages.runtime.llm.generate_json
-
-    async def reject_while_checking(packet, schema, *, max_tokens):
-        messages.review(identity, "reject")
-        return await original(packet, schema, max_tokens=max_tokens)
-
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", reject_while_checking)
-    with pytest.raises(ValueError, match="草稿已变化"):
-        await messages.send(identity)
-    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-    assert row["status"] == "rejected" and row["outreach_check"] == old_check
-    assert not messages.adapter.sent
+    assert reply["status"] == "pending_review" and len(generated) == 2
+    assert not checks and not messages.adapter.sent
 
 
 async def test_review_activation_does_not_send_existing_approved_published_or_unknown_drafts(messages, monkeypatch):
@@ -197,32 +208,7 @@ async def test_invitation_to_another_uid_cannot_be_claimed_by_model_reason(messa
     identity = invite(messages, mentioned="another-oc-account")
     await messages._generate(identity, True)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-    assert len(checks) == 1 and row["status"] == "not_initiated" and row["error"] is None
-    assert not messages.adapter.sent
-
-
-async def test_first_check_reviews_actual_image_instead_of_unsent_candidate_text(messages, monkeypatch):
-    await setup_delivery(messages, monkeypatch)
-    identity = invite(messages)
-    messages.memes = SimpleNamespace(resolve=lambda *args: {
-        "asset_id": "image-1", "title": "一张表情", "description": "只是一张招手图", "sha256": "fixture-image", "emotions": ["cheerful"],
-    })
-    messages.store.execute("UPDATE dm_drafts SET message_kind='image',meme_id='image-1' WHERE id=?", (identity,))
-    original = messages.runtime.llm.generate_json
-
-    async def check(packet, schema, *, max_tokens):
-        data = json.loads(packet[-1]["content"])
-        assert data["outgoing_text"] is None
-        assert data["outgoing_image"]["asset_id"] == "image-1"
-        value = await original(packet, schema, max_tokens=max_tokens)
-        value["body_addresses_purpose"] = False
-        return value
-
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", check)
-    await messages._generate(identity, True)
-    row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-    assert row["status"] == "waiting"
-    assert messages._draft_view(row)["contact_state"] == "awaiting_content"
+    assert not checks and row["status"] == "not_initiated" and row["error"] is None
     assert not messages.adapter.sent
 
 
@@ -250,7 +236,7 @@ async def test_unanswered_contact_is_not_repeated_from_another_comment(messages,
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (second,))
     assert row["status"] == "waiting" and row["error"] is None
     assert json.loads(row["outreach_check"])["previous_draft_id"] == first
-    assert len(checks) == 1 and len(messages.adapter.sent) == 1
+    assert not checks and len(messages.adapter.sent) == 1
 
 
 async def test_unknown_outreach_receipt_fences_same_matter_from_another_entry(messages, monkeypatch):
@@ -263,7 +249,7 @@ async def test_unknown_outreach_receipt_fences_same_matter_from_another_entry(me
     second = invite(messages, cid="702")
     await messages._generate(second, True)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (second,))["status"] == "waiting"
-    assert len(messages.adapter.sent) == 1 and len(checks) == 1
+    assert len(messages.adapter.sent) == 1 and not checks
 
 
 async def test_legacy_published_outreach_does_not_recontact_without_new_incoming(messages, monkeypatch):
@@ -274,30 +260,23 @@ async def test_legacy_published_outreach_does_not_recontact_without_new_incoming
     second = invite(messages, cid="702")
     await messages._generate(second, True)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (second,))["status"] == "waiting"
-    assert len(messages.adapter.sent) == 1 and len(checks) == 1
+    assert len(messages.adapter.sent) == 1 and not checks
 
 
 async def test_different_comment_thread_is_not_itself_a_new_matter(messages, monkeypatch):
     _, checks = await setup_delivery(messages, monkeypatch)
     first = invite(messages)
     await messages._generate(first, True)
-    original = messages.runtime.llm.generate_json
-
-    async def renamed_matter(packet, schema, *, max_tokens):
-        value = await original(packet, schema, max_tokens=max_tokens)
-        return value | {"purpose": "同一配置请求的另一种说法", "new_matter": True}
-
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", renamed_matter)
     second = invite(messages, cid="702", root="800")
     await messages._generate(second, True)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (second,))
     assert row["status"] == "waiting" and json.loads(row["outreach_check"])["previous_draft_id"] == first
     history = messages._unanswered_outreach(row)
     assert history[0]["id"] == first and history[0]["public_source"]["text"] == "请把我问的那项配置私信告诉我"
-    assert "text" not in history[0] and len(checks) == 1 and len(messages.adapter.sent) == 1
+    assert "text" not in history[0] and not checks and len(messages.adapter.sent) == 1
 
 
-async def test_new_invitation_check_receives_real_old_public_source_instead_of_only_model_purpose(messages, monkeypatch):
+async def test_new_invitation_retains_real_old_public_source_instead_of_only_purpose(messages, monkeypatch):
     _, checks = await setup_delivery(messages, monkeypatch)
     first = invite(messages)
     await messages._generate(first, True)
@@ -310,8 +289,8 @@ async def test_new_invitation_check_receives_real_old_public_source_instead_of_o
     messages.store.execute("UPDATE comments SET content=? WHERE id=?", (source, row["source_id"]))
     messages.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (json.dumps(evidence, ensure_ascii=False), second))
     await messages._generate(second, True)
-    assert len(checks) == 2
-    prior = checks[-1]["previous_unanswered_contacts"][0]
+    assert not checks
+    prior = messages._unanswered_outreach(messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (second,)))[0]
     assert prior["id"] == first and prior["public_source"]["text"] == "请把我问的那项配置私信告诉我"
     assert prior["public_source"]["author_uid"] == "123" and "text" not in prior
     assert len(messages.adapter.sent) == 1
@@ -331,7 +310,7 @@ async def test_nickname_only_mention_without_real_uid_does_not_invite_this_accou
     messages.store.execute("UPDATE comments SET content=? WHERE id=?", (text, row["source_id"]))
     messages.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (json.dumps(evidence, ensure_ascii=False), identity))
     await messages._generate(identity, True)
-    assert len(checks) == 1 and not messages.adapter.sent
+    assert not checks and not messages.adapter.sent
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "not_initiated"
 
 
@@ -422,30 +401,9 @@ async def test_legacy_outreach_recovers_real_participants_without_watching_video
         (json.dumps({"generation_identity": messages.runtime.identity_snapshot(messages.runtime.character, ACTOR)}), identity))
     result = await messages.send(identity)
     assert result["status"] == "not_initiated" and not messages.adapter.sent
-    assert calls == ["metadata", "thread"] and len(checks) == 1
-    assert checks[0]["public_thread"]["addressing"]["source_mentions"][0]["uid"] == "different-account"
-
-
-async def test_revised_outreach_payload_cannot_bypass_the_actual_body_check(messages, monkeypatch):
-    _, checks = await setup_delivery(messages, monkeypatch)
-    identity = invite(messages)
-    await messages._generate(identity, False)
-    assert len(checks) == 1
-    messages.review(identity, "edit", text="与邀请事项无关的修订")
-    messages.review(identity, "approve")
-    original = messages.runtime.llm.generate_json
-
-    async def check(packet, schema, *, max_tokens):
-        data = json.loads(packet[-1]["content"])
-        assert data["outgoing_text"] == "与邀请事项无关的修订"
-        value = await original(packet, schema, max_tokens=max_tokens)
-        value["body_addresses_purpose"] = False
-        return value
-
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", check)
-    result = await messages._send_once(identity)
-    assert result["contact_state"] == "awaiting_content" and not messages.adapter.sent
-    assert len(checks) == 2
+    assert calls == ["metadata", "thread"] and not checks
+    recovered = json.loads(messages.store.one("SELECT video_evidence FROM dm_drafts WHERE id=?", (identity,))["video_evidence"])
+    assert recovered["public_source_thread"]["addressing"]["source_mentions"][0]["uid"] == "different-account"
 
 
 async def test_send_refreshes_real_conversation_then_merges_before_transport(messages, monkeypatch):
@@ -550,12 +508,42 @@ async def test_profile_change_at_actual_submit_requeues_without_sending_old_iden
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "queued"
 
 
+async def test_other_agreements_successful_fetch_cannot_complete_this_invitation(messages, monkeypatch):
+    generated, checks = await setup_delivery(messages, monkeypatch)
+    identity = invite(messages, trigger="agreement", proposal=False)
+    other = invite(messages, cid="702", trigger="agreement", proposal=False)
+    coordinator = messages.runtime.continuations
+    record = coordinator.begin("test-agreement-lookup", "other-agreement",
+        {"task": "generation", "character": {"id": messages.runtime.character["id"],
+            "version": messages.runtime.character["version"]},
+         "source": {"account_id": ACTOR, "agreement_id": other}},
+        {"kind": "generation_start"})
+    coordinator._step(record, "web_fetch", "ok", context={
+        "status": "ok", "url": "https://example.org/config", "title": "其他约定的配置说明"})
+    step = messages.store.one("SELECT id FROM operation_continuation_steps WHERE continuation_id=? AND phase='web_fetch'",
+                              (record["id"],))
+    draft = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    evidence = json.loads(draft["video_evidence"])
+    evidence["completion_evidence"] = [{"step_id": step["id"]}]
+    messages.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?",
+                           (json.dumps(evidence, ensure_ascii=False), identity))
+    await messages._generate(identity, True)
+    draft = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
+    assert draft["status"] == "waiting" and not draft["text"] and draft["receipt"] is None
+    assert messages._completion_evidence(draft) == []
+    check = json.loads(draft["outreach_check"])
+    assert check["state"] == "awaiting_completion" and check["invitation_verified"] is True
+    assert not generated and not checks and not messages.adapter.sent
+    assert not messages.store.all("SELECT * FROM dm_attempts")
+    assert not await messages.fulfill_agreement(identity, step["id"])
+
+
 async def test_agreement_is_checked_before_waiting_and_rechecks_actual_result_after_bound_fetch(messages, monkeypatch):
     _, checks = await setup_delivery(messages, monkeypatch)
     identity = invite(messages, trigger="agreement")
     await messages._generate(identity, True)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "waiting"
-    assert len(checks) == 1 and not messages.adapter.sent
+    assert not checks and not messages.adapter.sent
     first = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     first_check = json.loads(first["outreach_check"])
     assert first_check["invitation_verified"] is True and first_check["state"] == "awaiting_completion"
@@ -601,12 +589,11 @@ async def test_agreement_is_checked_before_waiting_and_rechecks_actual_result_af
         messages.runtime.browsing = None
         messages.operations_resumed = True
     await messages._generate(identity, True)
-    assert len(checks) == 2 and len(messages.adapter.sent) == 1
+    assert not checks and len(messages.adapter.sent) == 1
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "published"
 
 
-@pytest.mark.parametrize("decision_action", ["send", "wait", "duplicate"])
-async def test_real_third_party_comment_cannot_become_an_agreement_even_if_model_proposes_wait(messages, monkeypatch, decision_action):
+async def test_real_third_party_comment_cannot_become_an_agreement(messages, monkeypatch):
     generated, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
     identity = invite(messages, cid="319387030577", root="319387030577", trigger="agreement", mentioned="3707027413010556")
     source_text = "@点就睡觉sj 正常男大，这条是给咱俩照镜子：翻 60 个号 2368 次到访，8 个号扛了 97%，插件教程最能钓鱼。看完心虚三秒，然后我继续刷 (￣ー￣)"
@@ -620,18 +607,11 @@ async def test_real_third_party_comment_cannot_become_an_agreement_even_if_model
     thread["addressing"]["source_parent_comment_id"] = None
     messages.store.execute("UPDATE comments SET content=?,platform_user_id=? WHERE id=?", (source_text, "3747574395702579", row["source_id"]))
     messages.store.execute("UPDATE dm_drafts SET platform_user_id=?,video_evidence=? WHERE id=?", ("3747574395702579", json.dumps(evidence, ensure_ascii=False), identity))
-    original = messages.runtime.llm.generate_json
-
-    async def fabricated_agreement(packet, schema, *, max_tokens):
-        result = await original(packet, schema, max_tokens=max_tokens)
-        return result | {"action": decision_action, "invitation_kind": "agreement"}
-
-    monkeypatch.setattr(messages.runtime.llm, "generate_json", fabricated_agreement)
     await messages._generate(identity, True)
     row = messages.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
     check = json.loads(row["outreach_check"])
     assert row["status"] == "not_initiated" and check["invitation_verified"] is False
-    assert check["action"] == "stay_public" and len(checks) == 1
+    assert check["action"] == "stay_public" and not checks
     assert "agreement_task" not in messages._event(row, messages.runtime.character)
     assert not generated and not messages.adapter.sent
     with pytest.raises(ValueError):

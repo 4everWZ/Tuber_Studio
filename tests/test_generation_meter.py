@@ -225,7 +225,7 @@ async def test_private_child_is_owned_and_cancelled_by_parent_without_independen
     messages = DirectMessages(settings, store, runtime, comments, Delivery())
     await messages.configure({"enabled": True})
     comments.import_items(
-        "BV1d8pU6xEZX", [{"comment_id": "42", "platform_user_id": "123", "content": "私下继续聊"}]
+        "BV1d8pU6xEZX", [{"comment_id": "42", "platform_user_id": "123", "content": "私信我继续聊"}]
     )
     source = store.one("SELECT id FROM comments")["id"]
     identity = messages.enqueue(
@@ -233,7 +233,13 @@ async def test_private_child_is_owned_and_cancelled_by_parent_without_independen
         source,
         account_id="900",
         schedule=False,
-        video_evidence={"origin_round_id": row["id"], "material_keys": []},
+        video_evidence={
+            "origin_round_id": row["id"], "material_keys": [],
+            "public_source_thread": {
+                "source": {"comment_id": "42", "author_uid": "123", "text": "私信我继续聊"},
+                "addressing": {"source_mentions": [{"uid": "900", "name": "大肥鱼"}]},
+            },
+        },
     )
     entered = asyncio.Event()
 

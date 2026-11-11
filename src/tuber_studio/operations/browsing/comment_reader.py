@@ -221,7 +221,8 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
         return None
     browsing.store.execute(
         "INSERT OR IGNORE INTO comments(platform,video_id,comment_id,thread_id,parent_comment_id,platform_user_id,display_name,content,category,created_at,imported_at) VALUES('bilibili',?,?,?,?,?,?,?,'interaction',?,?)",
-        (resource, str(source["comment_id"]), str(target["root"]), str(target["parent"]),
+        (resource, str(source["comment_id"]), str(target["root"]),
+         (thread.get("addressing") or {}).get("source_parent_comment_id"),
          str(source["author_uid"]), source.get("author_name") or source.get("display_name") or (event or {}).get("sender_name", ""),
          source["text"], str((event or {}).get("timestamp", created_at) or ""), time.time()),
     )

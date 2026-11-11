@@ -264,9 +264,10 @@ async def test_same_twelve_cases_use_real_native_provider_json_with_isolated_ove
             if raw["reason"] == "explicit_private_request":
                 expected["reason"] = "user_requested"
             assert canonical == expected
-        # Deliberately wrong model choices remain wrong; the adapter never forces public.
+        # Missing account relationships remove private routing from the native
+        # choices. The label adapter still preserves the model's wrong skip.
         assert any(
-            "reply_public" in case["expected_actions"] and item["actual"]["action"] == "handoff_private"
+            "handoff_private" in case["expected_actions"] and item["actual"]["action"] == "skip"
             for item, case in zip(
                 result["results"], json.loads(args.cases.read_text(encoding="utf-8")), strict=True
             )
