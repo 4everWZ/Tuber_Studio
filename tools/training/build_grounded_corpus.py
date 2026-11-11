@@ -6,19 +6,25 @@ import argparse
 import json
 import re
 import subprocess
+import time
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 
 from grounded_sft import EXPECTED, read_corpus, read_jsonl
 
+from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.operations.browsing.decisions import BrowsingDecisions
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput, format_content_input
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
-from tuber_studio.persona import DAFEIYU_IDENTITY, GROUNDED_DAFEIYU_MODEL
+from tuber_studio.operations.browsing.models import RESPONSE_REFERENCE_INSTRUCTION
 
 HERE = Path(__file__).parent
-ANCHOR = DAFEIYU_IDENTITY
+ANCHOR = "你是大肥鱼。"
+RESPONSE_INSTRUCTION = (
+    "用自己的话接当前话题。text是直接发给对方的正文，explanation写这次选择的具体原因。"
+    "评论接对方的原话，视频主评聊看到或听到的细节。想聊就回，想略过选skip，稍后再处理选wait。"
+    "有已核验的私聊邀请时，contact_purpose写要聊的事，contact_trigger按当前邀请或办完约定选择。"
+)
 OPERATIONS_SCENES = (
     ("烤面包", "吐司先回温，随后烤到边缘微脆。", "边缘那一圈最容易先脆，切开听一声就知道值不值啦。"),
     (
@@ -88,6 +94,62 @@ def historical_grounded_character(character):
         "fine_tuned_model": GROUNDED_DAFEIYU_MODEL,
         "compact_system_prompt": ANCHOR,
     }
+
+
+def historical_replay_anchor(character):
+    """Resolve the short card used by the older MiniCPM-V benchmark."""
+    bound = historical_grounded_character(character)
+    if bound is character:
+        return bound["compact_system_prompt"].strip()
+    path = HERE.parents[1] / "src/tuber_studio/prompts/dafeiyu-grounded.md"
+    return path.read_text(encoding="utf-8").strip()
+
+
+def historical_parts(event, mode, anchor):
+    """Reproduce the original anchored conversation prompt for historical experiments."""
+    prefix = [
+        {"role": "system", "content": anchor.strip()},
+        {"role": "system", "content": "当前交流场景：" + mode},
+    ]
+    initial = [
+        {"role": "user", "kind": "context", "content": '上下文数据：{"active_lore": [], "confirmed_relationship": {}}'}
+    ]
+    pending = {
+        "role": "user", "kind": "viewer", "source_event_id": event["event_id"], "source_complete": True,
+        "content": "当前观众消息：" + json.dumps(event, ensure_ascii=False), "created_at": time.time(),
+    }
+    length = "用1到60字回答。" if mode == "live" else "按当前交流自然决定篇幅。"
+    suffix = [{
+        "role": "system",
+        "content": (
+            "回应当前观众，spoken_text填写你的角色台词。" + length
+            + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
+            "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
+        ),
+    }]
+    return prefix, initial, pending, suffix
+
+
+def historical_dynamic_messages(anchor, sources, *, current_time):
+    return [
+        {
+            "role": "system",
+            "content": (
+                "给第一次听到这件事的关注者写一条独立动态。挑一件事，说清起因、你当时做了什么、后来怎样。"
+                "public_incident给出经过和原评论；published_reply给出原评论及你当时发出的回复。"
+                "海底小剧场用讲故事的口吻。讲完再接自己的感想或梗，篇幅随这件事决定。"
+                "想分享选post，content写正文，source_ids填这件事对应的一项来源。"
+                "留待下次选wait，content留空。reason写选择缘由，next_evaluation_seconds填300到86400。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps({
+                "character": anchor.strip(), "current_time": current_time, "recent_public_posts": [],
+                "public_sources": sources,
+            }, ensure_ascii=False, sort_keys=True),
+        },
+    ]
 
 
 def exchange(question, answer, instruction=ANCHOR):

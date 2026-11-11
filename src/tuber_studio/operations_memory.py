@@ -116,11 +116,8 @@ class OperationsMemory:
             {
                 "role": "system",
                 "content": (
-                    "为虚构角色整理独立的公开运营记忆。这是摘录选择任务，不是改写、续写或补全。"
-                    "从public_sources选取值得回忆的公开原句。输出JSON："
-                    '{"entries":[{"source_id":"提供的ID","quote":"该来源text中的逐字连续原文"}]}。'
-                    "每个来源可逐字摘录一条简短、完整的句子，fictional沿用来源标记。"
-                    "按指定token预算选最有用的句子。"
+                    "从public_sources挑选值得日后分享的原句，按给定token预算取舍。"
+                    "entries每项填source_id和该来源text中的连续原文quote。每个来源选一条简短、完整的摘录。"
                 ),
             },
             {

@@ -10,7 +10,7 @@ from fastapi import Body, Depends, HTTPException
 
 from ..inference_node_client import pair_node, refresh_capabilities
 from ..inference_node_client import status as inference_node_status
-from ..inference_profiles import DAFEIYU_KEY, GROUNDED_DAFEIYU_KEY, LLM_MODELS, VISION_ROUTES
+from ..inference_profiles import DAFEIYU_KEY, LLM_MODELS, VISION_ROUTES
 from ..provider_diagnostics import register_provider_diagnostics
 from ..provider_settings import ProviderConfigurationError, apply_settings
 from ..providers import public_error
@@ -130,20 +130,17 @@ def register_model_api(app, settings, runtime, require_admin):
         """Known node profiles; installation comes from the observed node inventory."""
         capabilities = runtime.inference.capabilities or {}
         profiles = {} if capabilities.get("monitoring_error") else capabilities.get("profiles", {})
-        result = {"fine_tuned": [], "base": []}
-        for key, model in LLM_MODELS.items():
-            if key == DAFEIYU_KEY:
-                continue
-            fine_tuned = key == GROUNDED_DAFEIYU_KEY
-            result["fine_tuned" if fine_tuned else "base"].append(
+        return {
+            "models": [
                 {
                     "id": model,
-                    "name": f"{model} (大肥鱼 DoRA)" if fine_tuned else model,
+                    "name": model,
                     "installed": profiles.get(key, {}).get("installed"),
                     "multimodal": key in VISION_ROUTES.values(),
-                    "tag": "微调人设" if fine_tuned else "通用模型",
                 }
-            )
-        return result
+                for key, model in LLM_MODELS.items()
+                if key != DAFEIYU_KEY
+            ]
+        }
 
     register_provider_diagnostics(app, settings, require_admin)

@@ -100,7 +100,7 @@ async def evaluate(config_path, character_id, seed=42):
         for case in cases["reply_cases"]:
             event = {"event_id": "evaluation:" + case["id"], "text": case["text"]}
             prefix, initial, pending, suffix = ContextManager.parts(
-                character, event, {}, "comment_draft", settings=config
+                character, event, {}, "comment_draft"
             )
             messages = ContextManager.render(prefix, initial, [], pending, suffix)
             try:
@@ -117,7 +117,7 @@ async def evaluate(config_path, character_id, seed=42):
                 results.append({"case": case["id"], "passed": False, "error": public_error(error)})
         event = {"event_id": "evaluation:recall", "text": cases["recall_question"]}
         prefix, initial, pending, suffix = ContextManager.parts(
-            character, event, {}, "comment_draft", settings=config
+            character, event, {}, "comment_draft"
         )
         try:
             messages = ContextManager.render(prefix, initial, cases["history"], pending, suffix)

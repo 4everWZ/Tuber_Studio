@@ -10,13 +10,9 @@ def test_get_local_models_endpoint(settings):
         headers = {"Authorization": "Bearer " + settings.admin_token}
         res = client.get("/api/providers/local-models", headers=headers)
         assert res.status_code == 200
-        data = res.json()
-        assert "fine_tuned" in data
-        assert "base" in data
-        assert any("MiniCPM-V-4.7-1B" in m["name"] for m in data["fine_tuned"])
-        assert any("MiniCPM5-2B" in m["name"] for m in data["base"])
-        assert any(m["multimodal"] is True for m in data["fine_tuned"])
-        assert any(m["id"] == "MiniCPM5-2B" and m["multimodal"] is False for m in data["base"])
+        models = res.json()["models"]
+        assert any("MiniCPM-V-4.7-1B" in item["id"] and item["multimodal"] for item in models)
+        assert any(item["id"] == "MiniCPM5-2B" and item["multimodal"] is False for item in models)
 
 
 def test_get_remote_models_endpoint_error_handling(settings):
@@ -141,20 +137,21 @@ def test_model_catalog_uses_current_profile_and_observed_inventory(settings):
     app = create_app(settings)
     with TestClient(app) as client:
         headers = {"Authorization": "Bearer " + settings.admin_token}
-        data = client.get("/api/providers/local-models", headers=headers).json()
-        assert data["fine_tuned"][0]["id"] == GROUNDED_DAFEIYU_MODEL
-        assert all(item["installed"] is None for group in data.values() for item in group)
+        def catalog():
+            data = client.get("/api/providers/local-models", headers=headers).json()
+            return {item["id"]: item for item in data["models"]}
+
+        models = catalog()
+        assert GROUNDED_DAFEIYU_MODEL in models
+        assert all(item["installed"] is None for item in models.values())
         app.state.runtime.inference.capabilities = {
             "profiles": {GROUNDED_DAFEIYU_KEY: {"installed": True}, "llm2b": {"installed": False}}
         }
-        data = client.get("/api/providers/local-models", headers=headers).json()
-        assert data["fine_tuned"][0]["installed"] is True
-        assert next(item for item in data["base"] if item["id"] == "MiniCPM5-2B")["installed"] is False
+        models = catalog()
+        assert models[GROUNDED_DAFEIYU_MODEL]["installed"] is True
+        assert models["MiniCPM5-2B"]["installed"] is False
         app.state.runtime.inference.capabilities["monitoring_error"] = "node disconnected"
-        assert (
-            client.get("/api/providers/local-models", headers=headers).json()["fine_tuned"][0]["installed"]
-            is None
-        )
+        assert catalog()[GROUNDED_DAFEIYU_MODEL]["installed"] is None
 
 
 def test_saving_provider_settings_has_no_implicit_download_result(settings, monkeypatch):

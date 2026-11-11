@@ -93,7 +93,7 @@ def test_game_livestream_service():
     # Context prompt
     prompt = service.get_context_prompt()
     assert "当前正在直播游戏: 星露谷物语" in prompt
-    assert "若观众问你在干嘛" in prompt
+    assert service.get_active_adapter().get_status()["summary"] in prompt
 
     # Handle gift action
     act_res = service.handle_gift_action("water_crops", "浇水", "观众小明", "小心心")

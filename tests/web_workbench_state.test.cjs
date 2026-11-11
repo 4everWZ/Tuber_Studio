@@ -176,33 +176,36 @@ test("node pairing preserves newer credential edits made while its request is pe
 });
 
 test("an older character request cannot replace the last selected character", async t => {
-  const { get, make } = dom(t);
+  const { get } = dom(t);
   const { selectCharacter } = await import("../src/tuber_studio/web/modules/character-studio.js");
-  const model = { characters: [] };
+  const model = {};
   let finishOld;
-  const dependencies = { list: value => value, node: (_, text) => Object.assign(make(), { textContent: text }),
-    api: async url => url.includes("first") ? new Promise(resolve => { finishOld = resolve; }) : [{ id: "second", name: "第二角色", version: 1 }] };
-  const first = selectCharacter("first", null, model, dependencies);
-  await selectCharacter("second", null, model, dependencies);
-  finishOld([{ id: "first", name: "第一角色", version: 1 }]);
+  const dependencies = { api: async url => {
+    if (url === "/api/characters/first") return new Promise(resolve => { finishOld = resolve; });
+    assert.equal(url, "/api/characters/second");
+    return { id: "second", name: "第二角色", version: 1 };
+  } };
+  const first = selectCharacter("first", model, dependencies);
+  await selectCharacter("second", model, dependencies);
+  finishOld({ id: "first", name: "第一角色", version: 1 });
   await first;
   assert.equal(model.characterId, "second");
-  assert.equal(get("editor-title").textContent, "第二角色 · v1");
+  assert.equal(get("editor-title").textContent, "编辑角色卡 · 第二角色");
+  assert.equal(Object.hasOwn(JSON.parse(get("character-editor").value), "version"), false);
 });
 
-test("canceling a character version switch retains both selection and unsaved edits", async t => {
-  const { get } = dom(t);
-  const { initCharacterStudioUI } = await import("../src/tuber_studio/web/modules/character-studio.js");
+test("canceling a character switch retains both selection and unsaved edits", async t => {
+  const { get, make } = dom(t);
+  const { renderCharacterList } = await import("../src/tuber_studio/web/modules/character-studio.js");
   const current = { id: "whale", version: 2 };
-  const model = { character: current, characterDirty: true, versions: [{ id: "whale", version: 1 }, current] };
+  const model = { character: current, characterId: "whale", characterDirty: true, characters: [current, { id: "radio" }] };
   globalThis.confirm = () => false;
   t.after(() => { delete globalThis.confirm; });
-  initCharacterStudioUI(model, {});
-  get("character-version").value = "1";
+  renderCharacterList(model, { node: make, busy: (_, action) => action(), onSelect: () => assert.fail("changed selection") });
   get("oc-background").value = "还未保存的背景";
   get("character-editor").value = "未保存的 JSON";
-  get("character-version").listeners.change[0]();
-  assert.equal(get("character-version").value, "2");
+  await get("character-list").children[1].listeners.click[0]();
+  assert.equal(model.characterId, "whale");
   assert.equal(get("oc-background").value, "还未保存的背景");
   assert.equal(get("character-editor").value, "未保存的 JSON");
   assert.equal(model.character, current);

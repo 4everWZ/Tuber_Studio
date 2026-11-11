@@ -395,7 +395,8 @@ async def test_changed_source_or_character_invalidates_before_write(service, cha
     elif change == "version":
         service.store.save_character(service.store.character())
     else:
-        service.store.set("active_character", "whale_calm")
+        other = service.store.save_character(service.store.character() | {"id": "other-dynamic-role"})
+        service.store.set("active_character", other["id"])
     with pytest.raises(ValueError, match="来源已变化"):
         await service.publish(result["post_id"])
     assert service.list_posts()[0]["status"] == "invalidated" and not service.sent

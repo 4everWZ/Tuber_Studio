@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 import httpx
-from build_grounded_corpus import historical_grounded_character
+from build_grounded_corpus import historical_grounded_character, historical_parts
 from grounded_sft import read_jsonl
 
 from tuber_studio.context import ContextManager
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
+from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.providers import LlamaCppProvider, single_system_messages
 
 
@@ -18,15 +18,10 @@ def event(index, text):
     return {"event_id": f"m{index}", "type": "chat", "text": text}
 
 
-def live_messages(character, settings, previous, answer, current):
-    _, _, pending, _ = ContextManager.parts(character, event(1, previous), {}, "live", settings=settings)
-    prefix, initial, latest, suffix = ContextManager.parts(
-        character,
-        event(2, current),
-        {},
-        "live",
-        settings=settings,
-    )
+def live_messages(character, previous, answer, current):
+    anchor = character["compact_system_prompt"]
+    _, _, pending, _ = historical_parts(event(1, previous), "live", anchor)
+    prefix, initial, latest, suffix = historical_parts(event(2, current), "live", anchor)
     history = [pending, {"role": "assistant", "content": answer}]
     return ContextManager.render(prefix, initial, history, latest, suffix)
 
@@ -91,7 +86,6 @@ async def replay(args):
         "seed": 42,
         "enable_thinking": False,
     }
-    settings = {"llm": config}
     provider = LlamaCppProvider(config)
     sampling = provider.sampling()
     labels = ("A", "B")
@@ -109,14 +103,14 @@ async def replay(args):
                     spec = specs[case["pair"]]
                     neutral = spec["history_reply"]
                     recapped = f"前面我说过「{previous}」现在问你，{question}"
-                    natural = live_messages(character, settings, previous, neutral, question)
+                    natural = live_messages(character, previous, neutral, question)
                     replies = {}
                     for name, history, latest in (
                         ("live_generated", baseline[case["id"]], question),
                         ("live_neutral", neutral, question),
                         ("live_recapped", neutral, recapped),
                     ):
-                        messages = live_messages(character, settings, previous, history, latest)
+                        messages = live_messages(character, previous, history, latest)
                         try:
                             reply = await provider.generate(messages, character, "m2", latest)
                             replies[name] = {"spoken_text": reply.spoken_text, "usage": provider.last_usage}

@@ -5,7 +5,16 @@ import json
 import shutil
 from pathlib import Path
 
-from build_grounded_corpus import ANCHOR, dump, exchange, historical_grounded_character, sample, source
+from build_grounded_corpus import (
+    ANCHOR,
+    RESPONSE_INSTRUCTION,
+    dump,
+    exchange,
+    historical_grounded_character,
+    historical_parts,
+    sample,
+    source,
+)
 from draft_oc_dialogues import CHATANIME_SOURCE
 from grounded_sft import (
     ANIME_EXPECTED,
@@ -18,11 +27,11 @@ from grounded_sft import (
     read_corpus,
 )
 
+from tuber_studio.context import ContextManager
 from tuber_studio.models import Reply
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
-from tuber_studio.providers import build_messages, single_system_messages
+from tuber_studio.operations.browsing.models import RESPONSE_REFERENCE_INSTRUCTION
+from tuber_studio.providers import single_system_messages
 
 HERE = Path(__file__).parent
 ANIMATIONS = {"idle": "talk", "cheerful": "talk_happy", "excited": "talk_happy", "shy": "shy"}
@@ -87,11 +96,11 @@ def expanded_chatanime_dialogues():
 
 def live_rows(character, identity, split, provenance, turns):
     character = historical_grounded_character(character)
-    settings = {"llm": {"kind": "llama_cpp", "model": GROUNDED_DAFEIYU_MODEL}}
     history = []
     for index, (question, answer, emotion) in enumerate(turns, 1):
         event = {"event_id": f"m{index}", "type": "chat", "text": question}
-        wire = single_system_messages(build_messages(character, event, {}, settings=settings))
+        prefix, initial, pending, suffix = historical_parts(event, "live", character["compact_system_prompt"])
+        wire = single_system_messages(ContextManager.render(prefix, initial, [], pending, suffix))
         target = Reply(
             spoken_text=answer,
             emotion=emotion,

@@ -29,6 +29,6 @@ class LiveScene:
     def annotate(self, messages, *, image=None):
         packet = [dict(message) for message in messages]
         viewer = next(message for message in reversed(packet) if message["role"] == "user")
-        text = "受信任的当前场景状态（只作观察资料）：" + self.state + "\n" + viewer["content"]
+        text = "当前直播场景：" + self.state + "\n" + viewer["content"]
         viewer["content"] = [image, {"type": "text", "text": text}] if image else text
         return packet

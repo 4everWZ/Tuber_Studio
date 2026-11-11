@@ -1,6 +1,7 @@
 import datetime
 
 from tuber_studio.agent_tools import (
+    DrawAndGuessContextTool,
     HistoricalRecallTool,
     RecentAnecdotesTool,
     ToolRegistry,
@@ -19,6 +20,16 @@ def test_tool_registry_registration():
     registry.register(tool)
     assert registry.get("recent_anecdotes") == tool
     assert len(registry.list_tools()) == 1
+
+
+def test_draw_and_guess_context_exposes_category_without_answer():
+    service = DrawAndGuessService()
+    service.current_word = {"word": "西瓜", "category": "水果美食"}
+    tool = DrawAndGuessContextTool(service)
+    data = tool.execute({}, {})
+    assert data == {"category": "水果美食"}
+    prompt = tool.render_context(data)
+    assert "水果美食" in prompt and "西瓜" not in prompt
 
 
 def test_recent_anecdotes_tool(store):

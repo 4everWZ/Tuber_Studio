@@ -4,18 +4,20 @@ import argparse
 import json
 from pathlib import Path
 
-from build_grounded_corpus import historical_grounded_character
+from build_grounded_corpus import (
+    RESPONSE_INSTRUCTION,
+    historical_dynamic_messages,
+    historical_grounded_character,
+    historical_parts,
+)
 from grounded_sft import read_jsonl
 
 from tuber_studio.context import ContextManager
-from tuber_studio.dynamics import dynamic_decision_messages
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
-from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, RESPONSE_REFERENCE_INSTRUCTION
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
+from tuber_studio.operations.browsing.models import RESPONSE_REFERENCE_INSTRUCTION
 from tuber_studio.providers import single_system_messages
 
 HERE = Path(__file__).parent
-SETTINGS = {"llm": {"kind": "llama_cpp", "model": GROUNDED_DAFEIYU_MODEL}}
 TRIPLES = {"rain-signal", "countdown", "wrong-switch", "extra-button", "silent-show", "new-time", "visit-day"}
 VIDEO_PAIRS = (
     ("caminandes-00", "caminandes-05"),
@@ -73,10 +75,10 @@ def chat_prompt(character, mode, first, final, triple):
     history = []
     for index, (question, answer) in enumerate(turns, 1):
         event = {"event_id": f"m{index}", "type": event_type, "text": question}
-        _, _, pending, _ = ContextManager.parts(character, event, {}, mode, settings=SETTINGS)
+        _, _, pending, _ = historical_parts(event, mode, character["compact_system_prompt"])
         history.extend([pending, {"role": "assistant", "content": answer}])
     event = {"event_id": f"m{len(turns) + 1}", "type": event_type, "text": final}
-    prefix, initial, current, suffix = ContextManager.parts(character, event, {}, mode, settings=SETTINGS)
+    prefix, initial, current, suffix = historical_parts(event, mode, character["compact_system_prompt"])
     wire = single_system_messages(ContextManager.render(prefix, initial, history, current, suffix))
     return wire, {
         "spoken_text": "",
@@ -108,10 +110,8 @@ def authored(character):
         for arm, first, chosen, rejected in (("a", a, good_a, good_b), ("b", b, good_b, good_a)):
             if mode == "dynamic":
                 source = {"id": "public1", "text": first, "fictional": "小剧场" in first}
-                messages = dynamic_decision_messages(
-                    character,
-                    SETTINGS,
-                    [],
+                messages = historical_dynamic_messages(
+                    character["compact_system_prompt"],
                     [source],
                     current_time="2026-11-05T22:00:00+08:00",
                 )

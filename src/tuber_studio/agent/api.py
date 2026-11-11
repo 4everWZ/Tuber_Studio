@@ -7,6 +7,7 @@ from fastapi import Body, Depends, HTTPException, Path, Query
 
 from ..models import Character
 from ..relationships import UserProfile
+from ..store import character_card
 
 
 def register_agent_api(app, settings, runtime, store, comments, require_admin):
@@ -55,15 +56,11 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
 
     @app.get("/api/characters", dependencies=[Depends(require_admin)])
     async def characters():
-        return store.characters()
+        return [character_card(character) for character in store.characters()]
 
     @app.get("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def character(character_id: str):
-        return store.character(character_id)
-
-    @app.get("/api/characters/{character_id}/versions", dependencies=[Depends(require_admin)])
-    async def versions(character_id: str):
-        return store.versions(character_id)
+        return character_card(store.character(character_id))
 
     @app.put("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def save_character(character_id: str, data: Character):
@@ -72,18 +69,15 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         settings.voice(data.voice_profile)
         if not settings.assets(data.model_dump()):
             raise ValueError("素材清单无效或为空")
-        active = runtime.character["id"] == character_id
-        if active:
-            runtime.live.clear_queue("角色配置更新")
-            await runtime.live.cancel_current("角色配置更新")
-        result = store.save_character(data.model_dump())
-        if active:
-            await runtime.activate(character_id, result["version"])
-        return result
+        active = runtime.character
+        result = store.replace_character(data.model_dump())
+        if active["id"] == character_id and character_card(active) != character_card(result):
+            await runtime.activate(character_id)
+        return character_card(result)
 
     @app.post("/api/characters/{character_id}/activate", dependencies=[Depends(require_admin)])
-    async def activate(character_id: str, data: dict = Body(default={})):
-        return await runtime.activate(character_id, data.get("version"))
+    async def activate(character_id: str):
+        return character_card(await runtime.activate(character_id))
 
     @app.post("/api/characters/{character_id}/clone", dependencies=[Depends(require_admin)])
     async def clone(character_id: str, data: dict = Body(...)):
@@ -91,7 +85,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
             raise ValueError("角色ID已存在")
         seed = store.character(character_id)
         seed.update(id=data.get("id"), name=data.get("name"))
-        return store.save_character(seed)
+        return character_card(store.save_character(seed))
 
     @app.get("/api/assets", dependencies=[Depends(require_admin)])
     async def assets():

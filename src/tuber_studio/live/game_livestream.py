@@ -528,8 +528,7 @@ class GameLivestreamService:
         st = adapter.get_status()
         return (
             f"[当前正在直播游戏: {st['display_name']}]\n"
-            f"游戏状态: {st['summary']}\n"
-            f"（若观众问你在干嘛或聊到当前游戏，请结合该游戏状态自然回应，不用重复机械套话）"
+            f"游戏状态: {st['summary']}"
         )
 
     def step_game(self) -> dict[str, Any]:

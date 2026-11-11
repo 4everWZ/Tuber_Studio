@@ -506,8 +506,10 @@ test("clearing read alerts clears local and remote counts and stays clear after 
 test("node connection and model load state are separate from stopped livestream state", async () => {
   const { inferenceDisplay } = await import("../src/tuber_studio/web/modules/inference-status.js");
   const settings = { inference_broker: { deployment: "remote" } };
-  const status = { state: "stopped", inference: { state: "active", active_provider: "pet", providers: { pet: { running: true, is_sleeping: false } } } };
-  assert.match(inferenceDisplay(status, settings).text, /Jetson 已连接.*模型已加载/);
+  const status = { state: "stopped", providers: { llm_model: "selected-9B" },
+    persona: { source: "fine_tuned" },
+    inference: { state: "active", active_provider: "pet", providers: { pet: { running: true, is_sleeping: false } } } };
+  assert.equal(inferenceDisplay(status, settings).text, "Jetson 已连接 · 模型已加载 · selected-9B");
   assert.doesNotMatch(inferenceDisplay(status, settings).text, /已停止/);
   status.inference.state = "idle";
   status.inference.providers.pet.running = false;

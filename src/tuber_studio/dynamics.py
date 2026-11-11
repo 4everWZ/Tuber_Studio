@@ -30,7 +30,6 @@ from .operation_text import (
 )
 from .operations_control import OperationsControl, canonical_intent
 from .operations_memory import OperationsMemory
-from .persona import built_in_anchor
 from .platforms.bilibili import PublishUncertain
 from .platforms.bilibili_dynamics import (
     PublishCancelled,
@@ -57,27 +56,27 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def dynamic_decision_messages(character, settings, recent_posts, public_sources, *, current_time):
+def dynamic_decision_messages(character, recent_posts, public_sources, *, current_time):
     return [
         {
             "role": "system",
             "content": (
-                "给第一次听到这件事的关注者写一条独立动态。挑一件事，说清起因、你当时做了什么、后来怎样。"
-                "public_incident给出经过和原评论；published_reply给出原评论及你当时发出的回复。"
-                "海底小剧场用讲故事的口吻。讲完再接自己的感想或梗，篇幅随这件事决定。"
-                "想分享选post，content写正文，source_ids填这件事对应的一项来源。"
-                "留待下次选wait，content留空。reason写选择缘由，next_evaluation_seconds填300到86400。"
+                "挑一件值得分享的事，以角色的口吻讲给刚听说这件事的关注者。"
+                "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
+                "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
+                "按材料说清起因、你做了什么和后来怎样，篇幅随话题。"
+                "分享时选post，content写动态正文，source_ids填一项来源。暂缓时选wait，content留空。"
+                "reason说明决定，next_evaluation_seconds是下次评估间隔。"
             ),
         },
         {
             "role": "user",
             "content": _json(
                 {
-                    "character": built_in_anchor(character, settings)
-                    or {
+                    "character": {
                         key: value
                         for key, value in operation_character(character).items()
-                        if key in ("id", "version", "name", "core", "style", "rules")
+                        if key in ("name", "core", "style", "rules")
                     },
                     "current_time": current_time,
                     "recent_public_posts": recent_posts,
@@ -620,7 +619,6 @@ class Dynamics:
         messages = identity_messages(
             dynamic_decision_messages(
                 character,
-                self.settings.data,
                 [
                     {"content": post["content"], "published_at": post["published_at"]}
                     for post in self.list_posts("published", 5)
@@ -1206,11 +1204,11 @@ class Dynamics:
                 return self._post(existing["id"])
             identity = runtime_identity(self.runtime, character)
             messages = dynamic_decision_messages(
-                character, self.settings.data, [], [source], current_time=datetime.now().astimezone().isoformat()
+                character, [], [source], current_time=datetime.now().astimezone().isoformat()
             )
             messages.append({
                 "role": "system",
-                "content": "operator_topic 是号主明确指定的本次公开动态主题，请按它起草，返回 post 并引用其来源。",
+                "content": "为号主在 operator_topic 提出的主题写一条动态草稿，选 post 并引用这项来源。",
             })
             async with self.runtime.offline_generation("video"):
                 result = await budgeted_json(
@@ -1266,7 +1264,6 @@ class Dynamics:
             ]
             messages = dynamic_decision_messages(
                 char,
-                self.settings.data,
                 recent_posts,
                 [],
                 current_time=current_time,
@@ -1295,7 +1292,7 @@ class Dynamics:
                             and self._character()["version"] == char["version"]
                             and self._summary_sources() == sources
                             and self._summary_model() == model_identity
-                            and runtime_identity(self.runtime, char)["identity_version"]
+                            and runtime_identity(self.runtime, self._character())["identity_version"]
                             == generation_identity["identity_version"]
                             and self.policy()["memory_summary_max_tokens"] == budget
                             and (not include_enabled or manual or self.policy()["enabled"])

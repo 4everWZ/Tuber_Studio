@@ -21,8 +21,9 @@ def identity_snapshot(account_actor, character):
         "character_name": character["name"],
         "character_version": character["version"],
     }
+    identity = value | {"edit": character["_edit_identity"]} if "_edit_identity" in character else value
     value["identity_version"] = hashlib.sha256(
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     return value
 

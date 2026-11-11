@@ -67,9 +67,9 @@ AGX Orin 64 GB 的 CPU／GPU 共享内存。本项目按约 32 GB 的共驻预�
 
 ## Profile 选择与准入
 
-默认运营路线是 Jetson 上的自有微调模型，按[内建 OC 方式](runtime-and-characters.md#角色生成方式)组装角色输入。实际权重、投影器、窗口、KV、采样和能力须按该模型在目标设备上核验，沿用同一运营、来源与资源验收要求。通用本地模型／VLM 和兼容 API 由操作者显式选择。运营不要求 TTS 共驻；直播继续以已准入的 MiniCPM5＋Genie 为基线。
+默认运营路线是 Jetson 上的 9B 微调模型，读取[当前角色卡](runtime-and-characters.md#角色生成方式)。实际权重、投影器、窗口、KV、采样和能力须按该模型在目标设备上核验，沿用同一运营、来源与资源验收要求。通用本地模型／VLM 和兼容 API 由操作者显式选择。运营不要求 TTS 共驻；直播继续以已准入的 MiniCPM5＋Genie 为基线。
 
-大肥鱼 DoRA 的运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`。节点核对 Q4_K_M 主权重、同批导出的 4× F16 投影器及固定 llama.cpp 引擎，默认窗口为 131072，KV 使用 q4_0。文本请求走 `/llm/v1/chat/completions`，图像请求走 `/vlm/dafeiyu/v1/chat/completions`，两个端点共享运营资源与认证。业务配对使用实开的窗口，视频取材按同一组权重、投影器、引擎和图片配置独立测量资源。旧版 `MiniCPM-V-4.7-1B` 提供文本。统一视觉直播档另验真实长输入、Genie 共驻和浏览器可听音频延迟。[视觉微调实验](../../tools/training/README.md) · [装配与回退](../guides/deployment.md#电脑业务主机与独立推理节点)
+历史 DoRA 回退档的运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`。节点核对 Q4_K_M 主权重、同批导出的 4× F16 投影器及固定 llama.cpp 引擎，默认窗口为 131072，KV 使用 q4_0。文本请求走 `/llm/v1/chat/completions`，图像请求走 `/vlm/dafeiyu/v1/chat/completions`，两个端点共享运营资源与认证。业务配对使用实开的窗口，视频取材按同一组权重、投影器、引擎和图片配置独立测量资源。旧版 `MiniCPM-V-4.7-1B` 提供文本。统一视觉直播档另验真实长输入、Genie 共驻和浏览器可听音频延迟。[视觉微调实验](../../tools/training/README.md) · [装配与回退](../guides/deployment.md#电脑业务主机与独立推理节点)
 
 通用模型路线可用 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出）。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。长输入实验分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。[性能复核](../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型) · [双机实测](../../evaluations/results/distributed-operations-20261102.md)
 

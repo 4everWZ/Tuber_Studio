@@ -13,7 +13,6 @@ from .config import uses_broker_llm
 from .context import ContextManager
 from .daily_memory import DailyMemoryService
 from .generation_meter import budgeted_call
-from .inference_profiles import DAFEIYU_KEY, DAFEIYU_MODEL, GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
 from .live.scene import LiveScene
 from .live.session import LiveSession
 from .media_cache import MediaCache
@@ -27,11 +26,11 @@ from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane
 from .operations.browsing.repository import BrowsingRepository
 from .operations_control import OperationsControl
-from .persona import uses_built_in_persona
 from .providers import VoiceService, public_error, reuse_turn_token_counts
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 from .runtime_modes import apply_mode_profile, profile_alignment_error
+from .store import character_card
 from .video_vision_service import restore_admission
 
 
@@ -264,8 +263,7 @@ class Runtime:
         return {
             "state": self.live.state,
             "muted": self.live.muted,
-            "character": self.character,
-            "persona": self.persona_status(),
+            "character": character_card(self.character),
             "session_id": self.live.session_id,
             "queue_length": len(self.live.queue),
             "overlay_connected": self.live.overlay is not None,
@@ -274,6 +272,7 @@ class Runtime:
             "last_played": self.live.last_played,
             "providers": {
                 "llm": self.settings.data["llm"]["kind"],
+                "llm_model": self.settings.data["llm"].get("model"),
                 "llm_route": "node" if uses_broker_llm(self.settings.data) else "direct",
                 "tts": self.settings.data["tts"]["kind"],
             },
@@ -296,36 +295,6 @@ class Runtime:
             },
             "playback": self.live.playback,
             "operations_waiting": self.operations_waiting(),
-        }
-
-    def persona_status(self):
-        node_model_state = "unknown"
-        health = self.inference.status
-        capabilities = self.inference.capabilities or {}
-        data = self.settings.data
-        operations = data.get("work_mode_profiles", {}).get("text", {}).get("llm", data["llm"])
-        grounded = operations["model"] != DAFEIYU_MODEL
-        model_key = GROUNDED_DAFEIYU_KEY if grounded else DAFEIYU_KEY
-        if self.inference.client and health.get("state") != "error":
-            running = health.get("providers", {}).get(model_key, {}).get("running")
-            if (
-                health.get("state") == "active"
-                and health.get("selected_provider") == model_key
-                and running is True
-            ):
-                node_model_state = "active"
-            elif not capabilities.get("monitoring_error"):
-                profile = capabilities.get("profiles", {}).get(model_key, {})
-                installed = profile.get("installed")
-                if installed is True:
-                    node_model_state = "installed"
-                elif installed is False:
-                    node_model_state = "not_installed"
-        return {
-            "source": "fine_tuned" if uses_built_in_persona(data) else "character_card",
-            "configured_model": data["llm"]["model"],
-            "fine_tuned_model": GROUNDED_DAFEIYU_MODEL if grounded else DAFEIYU_MODEL,
-            "node_model_state": node_model_state,
         }
 
     @reuse_turn_token_counts
@@ -371,7 +340,8 @@ class Runtime:
             def guard():
                 current = self.store.character()
                 if (
-                    (current["id"], current["version"]) != (character["id"], character["version"])
+                    (current["id"], current["version"], current.get("_edit_identity"))
+                    != (character["id"], character["version"], character.get("_edit_identity"))
                     or reply_generation_binding(scope, character, event, mode) != source_binding
                     or self.relationships.event_profile_revision(character["id"], event) != profile_revision
                 ):

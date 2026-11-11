@@ -166,7 +166,7 @@ async def evaluate(args):
                     question = cases["llm_prompts"][(cycle // 5 - 1) % len(cases["llm_prompts"])]
                     event = {"event_id": f"evaluation:endurance:{cycle}", "text": question}
                     prefix, initial, pending, suffix = ContextManager.parts(
-                        character, event, {}, "live", settings=config
+                        character, event, {}, "live"
                     )
                     messages = ContextManager.render(prefix, initial, [], pending, suffix)
                     llm_started = time.monotonic()

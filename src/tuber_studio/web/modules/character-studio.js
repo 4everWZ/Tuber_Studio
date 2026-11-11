@@ -2,32 +2,8 @@
 
 import { $ } from "./core.js";
 
-export function renderPersona(model) {
-  const persona = model.status?.persona;
-  const builtIn = persona?.source === "fine_tuned";
-  const view = model.personaView ?? (!persona || builtIn ? "model" : "cards");
-  const cardName = model.status?.character?.name;
-  $("persona-current").textContent = !persona ? "正在读取当前角色" :
-    builtIn ? "大肥鱼 · 模型内建" : ["角色卡", cardName].filter(Boolean).join(" · ");
-  $("persona-model-view").hidden = view !== "model";
-  $("persona-card-view").hidden = view !== "cards";
-  $("show-persona-model").setAttribute("aria-pressed", String(view === "model"));
-  $("show-persona-cards").setAttribute("aria-pressed", String(view === "cards"));
-
-  const states = { active: "节点已加载", installed: "节点已安装", not_installed: "节点未安装" };
-  $("persona-model-state").textContent = states[persona?.node_model_state] ??
-    "节点状态待确认";
-  $("persona-model-detail").textContent = persona?.fine_tuned_model ?? "";
-  const modeAction = $("persona-mode-action");
-  const textMode = document.querySelector('[data-inference-mode="text"]');
-  modeAction.hidden = !persona || builtIn || !textMode ||
-    textMode.getAttribute("aria-pressed") === "true" ||
-    model.settings?.work_mode_profiles?.text?.llm?.model !== persona.fine_tuned_model;
-  modeAction.disabled = !textMode || textMode.disabled;
-}
-
 function editableCard(character) {
-  const { persona_type, fine_tuned_model, compact_system_prompt, ...card } = character;
+  const { version, persona_type, fine_tuned_model, compact_system_prompt, ...card } = character;
   return card;
 }
 
@@ -94,7 +70,7 @@ export function setCharacterEditor(character, model) {
   ["character-editor", "save-character", "reset-character", "activate-character"].forEach(id => {
     if ($(id)) $(id).disabled = false;
   });
-  $("editor-title").textContent = `${character.name || character.id} · v${character.version}`;
+  $("editor-title").textContent = `编辑角色卡 · ${character.name || character.id}`;
   $("character-dirty").textContent = "";
   syncCharacterJsonToVisual(character);
 }
@@ -109,7 +85,7 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
   }
   model.characters.forEach(character => {
     const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
-    button.append(node("small", `v${character.version ?? character.active_version ?? "—"}${character.id === model.status?.character?.id ? " · 已选用" : ""}`));
+    if (character.id === model.status?.character?.id) button.append(node("small", " · 已激活"));
     button.addEventListener("click", () => busy(button, async () => {
       if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换所选角色？")) return;
       await onSelect(character.id);
@@ -118,40 +94,20 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
   });
 }
 
-export async function selectCharacter(id, version, model, { api, list, node, busy, onRenderList }) {
+export async function selectCharacter(id, model, { api, onRenderList }) {
   const request = (model.characterSelection || 0) + 1;
   model.characterSelection = request;
-  const versions = list(await api(`/api/characters/${encodeURIComponent(id)}/versions`));
+  const character = await api(`/api/characters/${encodeURIComponent(id)}`);
   if (request !== model.characterSelection) return;
+  if (!character) throw new Error("角色配置不可用");
   model.characterId = id;
-  model.versions = versions;
-  const select = $("character-version");
-  if (select) {
-    select.replaceChildren();
-    versions.slice().sort((a, b) => b.version - a.version).forEach(character => {
-      const option = node("option", `v${character.version}${character.name ? ` · ${character.name}` : ""}`);
-      option.value = character.version;
-      select.append(option);
-    });
-  }
-  const target = versions.find(character => character.version === Number(version)) ||
-    versions.slice().sort((a, b) => b.version - a.version)[0] ||
-    model.characters.find(character => character.id === id);
-  if (!target) throw new Error("角色配置不可用");
-  if (select) {
-    select.disabled = false;
-    select.value = String(target.version);
-  }
-  setCharacterEditor(target, model);
-  if (typeof onRenderList === "function") onRenderList();
+  setCharacterEditor(character, model);
+  onRenderList?.();
 }
 
-export async function loadCharacters(model, { api, list, memeGallery, selectCharacterFn, renderCharacterListFn }) {
+export async function loadCharacters(model, { api, list, selectCharacterFn, renderCharacterListFn }) {
   model.characters = list(await api("/api/characters"));
   renderCharacterListFn();
-  if (memeGallery && typeof memeGallery.setCharacters === "function") {
-    memeGallery.setCharacters(model.characters, model.status?.character?.id);
-  }
   if (!model.characterId && model.characters.length) {
     await selectCharacterFn(model.status?.character?.id || model.characters[0].id);
   }
@@ -163,18 +119,8 @@ export function initCharacterStudioUI(model, {
   notice,
   node,
   list,
-  memeGallery,
   renderStatus,
 }) {
-  for (const [id, view] of [["show-persona-model", "model"], ["show-persona-cards", "cards"]]) {
-    $(id).addEventListener("click", () => {
-      model.personaView = view;
-      renderPersona(model);
-    });
-  }
-  $("persona-mode-action").addEventListener("click", () => {
-    document.querySelector('[data-inference-mode="text"]').click();
-  });
   const tabs = [...document.querySelectorAll(".oc-tab-btn")];
   tabs.forEach((btn, index) => {
     btn.addEventListener("click", () => {
@@ -229,12 +175,9 @@ export function initCharacterStudioUI(model, {
     }
   });
 
-  const doSelect = async (id, version) => {
-    await selectCharacter(id, version, model, {
+  const doSelect = async id => {
+    await selectCharacter(id, model, {
       api,
-      list,
-      node,
-      busy,
       onRenderList: () => renderCharacterList(model, { busy, node, onSelect: doSelect }),
     });
   };
@@ -245,21 +188,10 @@ export function initCharacterStudioUI(model, {
     await loadCharacters(model, {
       api,
       list,
-      memeGallery,
-      selectCharacterFn: doSelect,
+          selectCharacterFn: doSelect,
       renderCharacterListFn: doRenderList,
     });
   };
-
-  $("character-version")?.addEventListener("change", () => {
-    if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换历史版本？")) {
-      $("character-version").value = String(model.character.version);
-      return;
-    }
-    const version = Number($("character-version").value);
-    const character = model.versions.find(item => item.version === version);
-    if (character) setCharacterEditor(character, model);
-  });
 
   $("reset-character")?.addEventListener("click", () => {
     if (!model.characterDirty || confirm("放弃未保存的角色修改？")) {
@@ -270,38 +202,42 @@ export function initCharacterStudioUI(model, {
   $("character-form")?.addEventListener("submit", event => {
     event.preventDefault();
     busy(event.submitter, async () => {
+      const editor = $("character-editor");
+      const input = editor.value;
       let character;
       try {
-        character = JSON.parse($("character-editor").value);
+        character = JSON.parse(input);
       } catch (error) {
         throw new Error(`角色 JSON 格式错误：${error.message}`);
       }
       if (!character || typeof character !== "object" || Array.isArray(character)) {
         throw new Error("角色配置必须为 JSON 对象");
       }
+      const id = model.characterId;
+      const selection = model.characterSelection;
       const { persona_type, fine_tuned_model, compact_system_prompt } = model.character;
-      const result = await api(`/api/characters/${encodeURIComponent(model.characterId)}`, {
+      const result = await api(`/api/characters/${encodeURIComponent(id)}`, {
         method: "PUT",
         body: { ...editableCard(character), persona_type, fine_tuned_model, compact_system_prompt },
       });
-      notice(`角色已保存为 v${result.version}。`);
+      if (model.characterSelection === selection && editor.value === input) setCharacterEditor(result, model);
+      notice("角色已保存。");
+      if (model.status?.character?.id === id && renderStatus) renderStatus(await api("/api/status"));
       await doLoadCharacters();
-      await doSelect(model.characterId, result.version);
     });
   });
 
   $("activate-character")?.addEventListener("click", () => busy($("activate-character"), async () => {
-    if (model.characterDirty) throw new Error("请先保存或放弃未保存的角色修改，再激活版本。");
-    if (!confirm(`激活 ${model.character.name} v${model.character.version}？旧角色尚未播报的任务将被取消。`)) return;
+    if (model.characterDirty) throw new Error("请先保存或放弃未保存的角色修改，再激活角色。");
+    if (!confirm(`激活 ${model.character.name}？旧角色尚未播报的任务将被取消。`)) return;
     await api(`/api/characters/${encodeURIComponent(model.characterId)}/activate`, {
       method: "POST",
-      body: { version: model.character.version },
     });
     if (typeof renderStatus === "function") {
       renderStatus(await api("/api/status"));
     }
     await doLoadCharacters();
-    notice("角色版本已激活。");
+    notice("角色已激活。");
   }));
 
   return {

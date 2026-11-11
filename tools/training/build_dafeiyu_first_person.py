@@ -7,17 +7,23 @@ import shutil
 from pathlib import Path
 
 from augment_grounded_persona import ANIMATIONS, authored
-from build_grounded_corpus import dump, exchange, historical_grounded_character, sample, source
+from build_grounded_corpus import (
+    dump,
+    exchange,
+    historical_dynamic_messages,
+    historical_grounded_character,
+    historical_parts,
+    sample,
+    source,
+)
 from draft_oc_dialogues import CHATANIME_SOURCE
 from grounded_sft import FIRST_PERSON_EXPECTED, PAIRED_EXPECTED, read_corpus
 
 from tuber_studio.context import ContextManager
-from tuber_studio.dynamics import Dynamics, dynamic_decision_messages
+from tuber_studio.dynamics import Dynamics
 from tuber_studio.models import OperationReply, Reply
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.providers import single_system_messages
 
-SETTINGS = {"llm": {"kind": "llama_cpp", "model": GROUNDED_DAFEIYU_MODEL}}
 CHANNELS = {
     "live": ("live", "chat", Reply, "live_reply"),
     "comment": ("comment_draft", "comment", OperationReply, "operation_reply"),
@@ -62,7 +68,7 @@ def dialogue_rows(character, channel, identity, provenance, fields):
         ((question, reply, first_mood), (followup, answer, second_mood)), 1
     ):
         event = {"event_id": f"m{index}", "type": event_type, "text": text}
-        prefix, initial, pending, suffix = ContextManager.parts(character, event, {}, mode, settings=SETTINGS)
+        prefix, initial, pending, suffix = historical_parts(event, mode, character["compact_system_prompt"])
         messages = single_system_messages(ContextManager.render(prefix, initial, history, pending, suffix))
         target = schema(
             spoken_text=spoken,
@@ -89,8 +95,8 @@ def dynamic_row(character, identity, fields):
         {"id": f"public{index}", "text": text, "fictional": kind == "fiction"}
         for index, text in enumerate(filter(None, (first, second)), 1)
     ]
-    messages = dynamic_decision_messages(
-        character, SETTINGS, [], sources, current_time="2026-11-06T20:00:00+08:00"
+    messages = historical_dynamic_messages(
+        character["compact_system_prompt"], sources, current_time="2026-11-06T20:00:00+08:00"
     )
     target = Dynamics._parse(
         {

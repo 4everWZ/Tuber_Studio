@@ -164,7 +164,7 @@ import { LiveDesk } from "./modules/live-desk.js?v=20261111.1";
         state = view;
         if (!scene.scene || (!dirty && JSON.stringify(state.scene) !== scene.signature)) loadScene(state.scene);
         scene.update(state);
-        $("character-name").textContent = `${state.character.name} · v${state.character.version}`;
+        $("character-name").textContent = state.character.name;
         $("voice-state").textContent = `说话音色：${status.character.voice_profile}`;
       } else {
         state = await api("/api/live/view");

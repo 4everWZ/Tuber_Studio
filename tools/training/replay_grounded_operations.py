@@ -6,26 +6,31 @@ import json
 from pathlib import Path
 
 import httpx
+from build_grounded_corpus import (
+    RESPONSE_INSTRUCTION,
+    historical_dynamic_messages,
+    historical_parts,
+    historical_replay_anchor,
+)
 from grounded_sft import read_jsonl
 from replay_grounded_endpoint import image_part
 
 from tuber_studio.context import ContextManager
-from tuber_studio.dynamics import Dynamics, dynamic_decision_messages
+from tuber_studio.dynamics import Dynamics
+from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.operation_text import operation_output_diagnostics
 from tuber_studio.operations.browsing.inputs import ResponseDecisionInput
 from tuber_studio.operations.browsing.models import (
-    RESPONSE_INSTRUCTION,
     RESPONSE_REFERENCE_INSTRUCTION,
     response_schema,
 )
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL, built_in_anchor
 from tuber_studio.providers import LlamaCppProvider
 
 BUDGET = 8192
 DATE = "2026-11-05T22:00:00+08:00"
 
 
-async def conversation(provider, character, settings, case):
+async def conversation(provider, character, anchor, case):
     mode = case["mode"]
     history, replies = [], []
     for index, question in enumerate(case["turns"], 1):
@@ -34,7 +39,7 @@ async def conversation(provider, character, settings, case):
             "type": "comment" if mode == "comment_draft" else "message",
             "text": question,
         }
-        prefix, initial, current, suffix = ContextManager.parts(character, event, {}, mode, settings=settings)
+        prefix, initial, current, suffix = historical_parts(event, mode, anchor)
         packet = ContextManager.render(prefix, initial, history, current, suffix)
         value = await provider.generate_operation(packet, character, event["event_id"], question)
         text = value.spoken_text
@@ -84,7 +89,7 @@ async def video(provider, client, anchor, root, row):
             "chat_template_kwargs": {"enable_thinking": False},
             "response_format": {
                 "type": "json_object",
-                "schema": response_schema(material.allowed_aliases, allow_handoff=False),
+                "schema": response_schema(material.allowed_aliases),
             },
         },
     )
@@ -116,9 +121,8 @@ async def replay(args):
         "enable_thinking": False,
         "operations_max_tokens": BUDGET,
     }
-    settings = {"llm": config}
     provider = LlamaCppProvider(config)
-    anchor = built_in_anchor(character, settings)
+    anchor = historical_replay_anchor(character)
     try:
         async with httpx.AsyncClient(base_url=args.endpoint, timeout=360) as client:
             with args.output.open("w", encoding="utf-8") as output:
@@ -126,9 +130,7 @@ async def replay(args):
                     try:
                         if case["mode"] == "dynamic":
                             sources = case["sources"]
-                            messages = dynamic_decision_messages(
-                                character, settings, [], sources, current_time=DATE
-                            )
+                            messages = historical_dynamic_messages(anchor, sources, current_time=DATE)
                             value = await provider.generate_json(
                                 messages, Dynamics.decision_schema(sources), max_tokens=BUDGET
                             )
@@ -139,7 +141,7 @@ async def replay(args):
                                 "diagnostics": operation_output_diagnostics(parsed["content"]),
                             }
                         else:
-                            result = await conversation(provider, character, settings, case)
+                            result = await conversation(provider, character, anchor, case)
                     except (ValueError, RuntimeError, httpx.HTTPError) as error:
                         result = {
                             "error": str(error),

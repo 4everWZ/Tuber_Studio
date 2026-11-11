@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
+from uuid import uuid4
 
 from .character_presets import upgrade_bundled_characters
 from .models import Character
@@ -11,6 +12,19 @@ from .models import Character
 
 def dump(value):
     return json.dumps(value, ensure_ascii=False)
+
+
+def editable_character(config):
+    return {
+        key: value for key, value in config.items()
+        if key not in {"_edit_identity", "persona_type", "fine_tuned_model", "compact_system_prompt"}
+    }
+
+
+def character_card(config):
+    card = editable_character(config)
+    card.pop("version", None)
+    return card
 
 
 class Store:
@@ -170,7 +184,7 @@ class Store:
         ]
 
     def save_character(self, config):
-        data = Character.model_validate(config).model_dump()
+        data = Character.model_validate(editable_character(config)).model_dump()
         row = self.one("SELECT MAX(version) AS v FROM character_versions WHERE character_id=?", (data["id"],))
         data["version"] = (row["v"] or 0) + 1
         with self.db:
@@ -180,6 +194,32 @@ class Store:
             )
             self.db.execute("INSERT OR REPLACE INTO characters VALUES(?,?)", (data["id"], data["version"]))
         return data
+
+    def replace_character(self, config):
+        data = Character.model_validate(config).model_dump()
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            current = self.character(data["id"])
+            data["version"] = current["version"]
+            original = Character.model_validate(editable_character(current)).model_dump()
+            if data == original:
+                return data
+            data["_edit_identity"] = uuid4().hex
+            self.db.execute(
+                "UPDATE character_versions SET config=? WHERE character_id=? AND version=?",
+                (dump(data), data["id"], data["version"]),
+            )
+            binding = self.get("operations_binding", {})
+            policy = self.get("operations_policy", {})
+            if policy.get("enabled") and binding.get("character_id") == data["id"]:
+                self.db.executemany(
+                    "UPDATE kv SET value=? WHERE key=?",
+                    (
+                        (dump(policy | {"enabled": False}), "operations_policy"),
+                        (dump(binding | {"epoch": binding["epoch"] + 1}), "operations_binding"),
+                    ),
+                )
+        return editable_character(data)
 
     def activate(self, character_id, version=None):
         character = self.character(character_id, version)

@@ -3,42 +3,39 @@
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261107.21";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261111.08";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.23";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
-import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261111.05";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261111.07";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
-import { MemeGallery, MemePicker, memePreview } from "./memes.js";
-import { MessagesPanel } from "./messages.js?v=20261111.04";
+import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";
+import { MessagesPanel } from "./messages.js?v=20261111.08";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261111.05";
-import {
-  renderPersona,
-  initCharacterStudioUI,
-} from "./modules/character-studio.js?v=20261107.12";
+import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261111.07";
 import {
   selectedThread,
   initCommentsModule,
 } from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261111.06";
+} from "./modules/dynamics.js?v=20261111.08";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";
 import {
   renderControls,
   initLiveModule,
-} from "./modules/live.js?v=20261111.01";
+} from "./modules/live.js?v=20261111.07";
 
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
 import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261111.01";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.03";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.07";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#chat";
@@ -52,7 +49,7 @@ const api = async (path, options = {}) => {
 const updatePermissionCapsule = options => updateCapsuleModule(api, accountPanel, options);
 
 const model = {
-  authenticated: false, status: null, page: "chat", characters: [], versions: [],
+  authenticated: false, status: null, page: "chat", characters: [],
   characterId: null, character: null, characterDirty: false, assets: [], voices: [],
   settings: null, socket: null, polling: false, comments: [], selectedComments: new Set(),
   commentId: null, policy: null,
@@ -379,7 +376,6 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   } else if (model.page === "live-interaction") {
     await interactiveGamesUI.refresh();
   } else if (model.page === "characters") {
-    renderPersona(model);
     await dailyMemoryUI.refresh();
   } else if (model.page === "overview") {
     await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
@@ -419,7 +415,6 @@ characterStudio = initCharacterStudioUI(model, {
   notice,
   node,
   list,
-  memeGallery,
   renderStatus,
 });
 
@@ -527,7 +522,7 @@ $("clone-form")?.addEventListener("submit", event => {
     await api(`/api/characters/${encodeURIComponent(model.characterId)}/clone`, { method: "POST", body: { id, name } });
     await characterStudio?.loadCharacters();
     await characterStudio?.selectCharacter(id);
-    notice("已创建新角色，可以编辑人格、风格和音色。");
+    notice("角色卡已创建。");
   });
 });
 

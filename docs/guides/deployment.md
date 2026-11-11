@@ -66,7 +66,9 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
 节点配置位于自身`runtime/inference-node.json`，仅含模型路径、模式、窗口和资源设置；该目录使用独立`inference-token`，不挂载业务数据库或平台凭据。所选Profile的引擎需要完整`build/bin`共享库目录，不能只复制`llama-server`可执行文件。模型、引擎、Genie包、词典及与该模型配对的投影器按已核验路径只读挂载，节点日志和可清推理缓存写入自己的runtime；原生模型端口留在容器内部，只发布受认证的节点端口。具体安装与恢复证据见[双机实测](../../evaluations/results/distributed-operations-20261102.md)。
 
-部署大肥鱼 DoRA 时，把同一发布的 Q4_K_M 和 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/authentic-dora-20261107/`。主权重在节点命名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf`，Hub文件名为 `MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf`；固定下载清单负责映射名称。使用 llama.cpp `0ec4027a2a0183de87c007069adddc06e665f7de` 的完整 `build/bin` 和对应的节点程序；DoRA档使用节点的 `GEMMA_ENGINE` 引擎路径配置，名称不表示模型是Gemma。原Docker环境自带的旧文本引擎不能代替此版本。运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`，现有节点继续读取 `operations_model`。更换后对同一节点重新配对，并执行设置中的视觉资源验证。配对读取实际模型与窗口，刷视频的语义质量按原视频证据核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。[DoRA 权重、投影器与清单](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/68f9542e3c7dee1b41a1be12fe97f3095819b952)
+当前运营档见 [AGX 9B 部署实测](../../evaluations/results/agx-clean-9b-deployment-20261111.md)。下面的 MiniCPM 说明用于复现历史 DoRA 回退档。
+
+复现历史 DoRA 档时，把同一发布的 Q4_K_M 和 `mmproj-4x-f16.gguf` 放入 `MODEL_DATA/models/authentic-dora-20261107/`。主权重在节点命名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf`，Hub文件名为 `MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf`；固定下载清单负责映射名称。使用 llama.cpp `0ec4027a2a0183de87c007069adddc06e665f7de` 的完整 `build/bin` 和对应的节点程序；DoRA档使用节点的 `GEMMA_ENGINE` 引擎路径配置，名称不表示模型是Gemma。原Docker环境自带的旧文本引擎不能代替此版本。运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`，现有节点继续读取 `operations_model`。更换后对同一节点重新配对，并执行设置中的视觉资源验证。配对读取实际模型与窗口，刷视频的语义质量按原视频证据核对。直播模式先加载 Genie，再加载 MiniCPM5-2B。[DoRA 权重、投影器与清单](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/68f9542e3c7dee1b41a1be12fe97f3095819b952)
 
 维护前保存节点配置和旧容器。若要退回旧文本档，在运营模式选择 `MiniCPM-V-4.7-1B`，再重新配对。回退程序需要对应程序、配置和权重，核对 `/llm/props` 的别名与窗口。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。切换后用浏览器试听。
 

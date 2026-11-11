@@ -59,14 +59,14 @@ def test_startup_does_not_reintroduce_an_archived_preset(tmp_path):
     store.close()
 
 
-def test_enriched_presets_keep_character_assets_and_night_radio():
+def test_enriched_preset_keeps_character_assets_without_retired_radio():
     before, after = clean_legacy(), presets()
     assert _fingerprint(before[0]) == "c502c1ff0d81547625a819dd59aec9f2073a3610a51c86a4b75ddebd070df598"
     for item in after:
         Character.model_validate(item)
     for field in ("id", "name", "voice_profile", "avatar_manifest", "license_status"):
         assert after[0][field] == before[0][field]
-    assert after[1] == before[1]
+    assert [item["id"] for item in after] == ["whale"]
     main = after[0]
     assert main["style"]["min_chars"] == 1
     assert main["style"]["max_chars"] == 120
@@ -93,6 +93,7 @@ def test_character_sources_stay_out_of_prompt_and_lore_is_bounded():
     assert role["license_status"] not in "\n".join(m["content"] for m in messages)
     fixed = json.loads(messages[0]["content"].split("角色设定：", 1)[1])
     assert fixed["identity"] == role["core"]
+    assert "\n".join(msg["content"] for msg in messages).count(role["core"]["examples"][0]["reply"]) == 1
     event["text"] = " ".join(item["keywords"][0] for item in role["lore"])
     messages = build_messages(role, event, {})
     context = json.loads(messages[2]["content"].removeprefix("上下文数据："))

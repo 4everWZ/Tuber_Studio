@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .operation_text import validate_operation_text
 
@@ -87,9 +87,16 @@ class Character(BaseModel):
     avatar_manifest: str = "assets/whale/manifest.json"
     sources: list[str] = Field(default_factory=list)
     license_status: str = "unknown"
-    persona_type: str = Field(default="prompt_oc")
-    fine_tuned_model: str | None = None
-    compact_system_prompt: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_legacy_character(cls, value):
+        if isinstance(value, dict):
+            return {
+                key: field for key, field in value.items()
+                if key not in {"persona_type", "fine_tuned_model", "compact_system_prompt"}
+            }
+        return value
 
     @field_validator("style")
     @classmethod

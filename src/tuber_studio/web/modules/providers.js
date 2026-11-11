@@ -9,24 +9,11 @@ function syncModelSelectWithInput() {
 async function loadLocalModelsDropdown(api) {
   try {
     const data = await api("/api/providers/local-models");
-    const ftGroup = $("fine-tuned-models-group");
-    const baseGroup = $("base-models-group");
-    if (ftGroup && Array.isArray(data.fine_tuned) && data.fine_tuned.length) {
-      ftGroup.replaceChildren();
-      data.fine_tuned.forEach(m => {
-        const opt = node("option", m.name || m.id);
-        opt.value = m.id;
-        ftGroup.append(opt);
-      });
-    }
-    if (baseGroup && Array.isArray(data.base) && data.base.length) {
-      baseGroup.replaceChildren();
-      data.base.forEach(m => {
-        const opt = node("option", m.name || m.id);
-        opt.value = m.id;
-        baseGroup.append(opt);
-      });
-    }
+    $("local-models-group").replaceChildren(...data.models.map(model => {
+      const option = node("option", model.name || model.id);
+      option.value = model.id;
+      return option;
+    }));
     syncModelSelectWithInput();
   } catch (err) {
     console.warn("Failed to load local models dropdown:", err);

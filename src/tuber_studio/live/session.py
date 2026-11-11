@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from ..models import Event, Reply
 from ..providers import public_error
+from ..store import character_card
 from .activity_filter import ActivitySummary, LiveActivityFilter
 from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService
@@ -222,7 +223,7 @@ class LiveSession:
         if self.state != "stopped":
             self.new_session()
         await self.send_overlay(
-            {"type": "character", "character": result, "assets": self.settings.assets(result)}
+            {"type": "character", "character": character_card(result), "assets": self.settings.assets(result)}
         )
         self.wake.set()
         return result
@@ -899,7 +900,7 @@ class LiveSession:
                 "animation_id": animation,
                 "audio_ref": self.store.job(job_id)["audio_ref"],
                 "duration": audio.duration,
-                "character": character,
+                "character": character_card(character),
                 "assets": self.settings.assets(character),
                 "media": media,
                 "activity": activity,
@@ -936,7 +937,7 @@ class LiveSession:
         await websocket.send_json(
             {
                 "type": "hello",
-                "character": self.runtime.character,
+                "character": character_card(self.runtime.character),
                 "assets": self.settings.assets(self.runtime.character),
             }
         )

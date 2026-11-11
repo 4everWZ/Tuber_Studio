@@ -10,6 +10,7 @@ from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
 from tuber_studio.dynamics import dynamic_decision_messages
+from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.operation_text import operation_character
 from tuber_studio.operations.browsing.inputs import (
     CLASSIFICATION_INSTRUCTION,
@@ -30,14 +31,7 @@ from tuber_studio.operations.browsing.models import (
     BrowsingPolicy,
     ContentDecision,
     ResponseDecision,
-    VideoEngagementDecision,
     content_decision_schema,
-)
-from tuber_studio.persona import (
-    DAFEIYU_IDENTITY,
-    GROUNDED_DAFEIYU_CARD,
-    GROUNDED_DAFEIYU_MODEL,
-    built_in_anchor,
 )
 from tuber_studio.providers import LlamaCppProvider, build_messages
 
@@ -478,53 +472,27 @@ def test_content_view_does_not_replace_full_persona_for_response_generation(brow
     assert character["core"]["examples"][0]["reply"] in body_messages[0]["content"]
 
 
-def test_grounded_model_shares_response_card_and_keeps_browsing_decisions_short(browsing):
-    settings = browsing.settings.data
-    settings["llm"].update(kind="llama_cpp", model=GROUNDED_DAFEIYU_MODEL)
+@pytest.mark.parametrize("model", ["dafeiyu-qwen35-9b:1.0.0", GROUNDED_DAFEIYU_MODEL])
+def test_runtime_generation_uses_selected_card_with_either_model(browsing, model):
+    browsing.settings.data["llm"].update(kind="llama_cpp", model=model)
     character = browsing.runtime.character
+    identity = character["core"]["identity"]
     row = {"character_id": character["id"], "character_version": character["version"], "config": {}}
     event = {"event_id": "m1", "text": "刚才画面里发生了什么？"}
     for mode in ("live", "comment_draft", "direct_message"):
-        messages = build_messages(character, event, {}, mode, settings=settings)
-        assert messages[0]["content"] == GROUNDED_DAFEIYU_CARD
-    channel = build_messages(character, event, {}, "comment_channel_decision", settings=settings)
-    assert channel[0]["content"] == DAFEIYU_IDENTITY
-    dynamic = dynamic_decision_messages(character, settings, [], [], current_time="2026-11-06T10:00:00Z")
-    assert json.loads(dynamic[-1]["content"])["character"] == GROUNDED_DAFEIYU_CARD
+        messages = build_messages(character, event, {}, mode)
+        assert identity in messages[0]["content"]
+    dynamic = dynamic_decision_messages(character, [], [], current_time="2026-11-06T10:00:00Z")
+    assert json.loads(dynamic[-1]["content"])["character"]["core"]["identity"] == identity
 
-    value = material()
-    data, _ = browsing.decisions._content_presentation(value, row).present(segments(value))
-    _, classify, _ = browsing.decisions._model_input(
-        row, ContentDecision, data, browsing.decisions._content_instruction()
-    )
-    _, engagement, _ = browsing.decisions._model_input(
-        row, VideoEngagementDecision, {"title": "盐水实验"}, "判断是否点赞"
-    )
-    assert classify[0]["content"] == engagement[0]["content"] == DAFEIYU_IDENTITY
-
-    for kind in ("top_level", "thread_reply"):
-        response = {
-            "kind": kind,
-            "coverage": "sampled_visual",
-            "evidence": [{"id": "source", "text": "原始素材", "start": 0, "end": 2}],
-        }
-        _, reply, schema = browsing.decisions._model_input(
-            row, ResponseDecision, response, RESPONSE_INSTRUCTION
-        )
-        assert reply[0]["content"] == GROUNDED_DAFEIYU_CARD
-        assert "evidence_ids选支撑正文的材料编号" in reply[1]["content"]
-        assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
-        if kind == "top_level":
-            assert "分别引用" in reply[1]["content"]
-
-    custom = character | {
-        "persona_type": "fine_tuned",
-        "fine_tuned_model": GROUNDED_DAFEIYU_MODEL,
-        "compact_system_prompt": "一张明确绑定的角色短卡。",
+    response = {
+        "kind": "thread_reply",
+        "coverage": "sampled_visual",
+        "evidence": [{"id": "source", "text": "原始素材", "start": 0, "end": 2}],
     }
-    assert built_in_anchor(custom, settings) == custom["compact_system_prompt"]
-    settings["llm"]["model"] = "MiniCPM-V-4.7-1B"
-    assert build_messages(character, event, {}, settings=settings)[0]["content"].startswith("以当前角色")
+    _, reply, schema = browsing.decisions._model_input(row, ResponseDecision, response, RESPONSE_INSTRUCTION)
+    assert identity in reply[0]["content"]
+    assert "原始素材" in reply[-1]["content"] and schema["title"] == "ResponseDecision"
 
 
 def test_chunk_local_aliases_bind_to_different_originals_and_reject_other_chunk_refs():

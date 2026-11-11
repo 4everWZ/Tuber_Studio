@@ -1,15 +1,15 @@
 import { $ } from "./core.js";
-import { renderPersona } from "./character-studio.js?v=20261107.12";
-import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261111.03";
+import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261111.07";
 import { renderVoicePreview } from "./voices.js";
 import { describe, label, occupancyText, tokenCount } from "./workspace-display.js";
-import { inferenceDisplay } from "./inference-status.js?v=20261111.03";
+import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 
 export function renderWorkspaceStatus(model, status) {
   model.status = status;
   renderServiceStatusCapsule(status, model.settings);
   renderControls(model);
-  renderPersona(model);
+  const character = status.character?.name || status.character?.id;
+  $("persona-current").textContent = character || "正在读取当前角色";
   $("overview-live-state").textContent = label(status.state);
   $("overview-queue").textContent = status.queue_length ?? "—";
   $("overview-player").textContent = status.overlay_connected ? "已连接" : "未连接";
@@ -18,12 +18,9 @@ export function renderWorkspaceStatus(model, status) {
   }[status.providers?.tts] || "待确认";
   if (status.context) renderContext(status.context);
   renderVoicePreview(model);
-  if ($("character-version")) {
-    $("character-version").title = `当前运行角色：${status.character?.name || "—"} v${status.character?.version ?? "—"}`;
-  }
   // Keep the workspace status bar aligned with the live panel.
   if ($("sb-status-mode")) $("sb-status-mode").textContent = status.mode === "live" ? "直播模式" : "运营模式";
-  if ($("sb-status-char")) $("sb-status-char").textContent = `${status.character?.name || "大肥鱼"} v${status.character?.version ?? 1}`;
+  if ($("sb-status-char")) $("sb-status-char").textContent = character || "—";
   if ($("sb-status-engine")) $("sb-status-engine").textContent = `${inferenceDisplay(status, model.settings).text} · 直播${label(status.state)}`;
 }
 

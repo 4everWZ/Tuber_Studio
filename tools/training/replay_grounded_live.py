@@ -6,11 +6,12 @@ import json
 import time
 from pathlib import Path
 
+from build_grounded_corpus import historical_parts, historical_replay_anchor
 from grounded_sft import read_jsonl
 
 from tuber_studio.context import ContextManager
+from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.models import Reply
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
 from tuber_studio.providers import LlamaCppProvider
 
 
@@ -28,6 +29,7 @@ async def replay(args):
     character = next(
         row for row in json.loads(args.characters.read_text(encoding="utf-8")) if row["id"] == "whale"
     )
+    anchor = historical_replay_anchor(character)
     provider = LlamaCppProvider(config)
     try:
         with args.output.open("w", encoding="utf-8") as output:
@@ -36,13 +38,7 @@ async def replay(args):
                 for turn, question in enumerate(case["turns"], 1):
                     event_id = f"m{turn}"
                     event = {"event_id": event_id, "type": "chat", "text": question}
-                    prefix, initial, pending, suffix = ContextManager.parts(
-                        character,
-                        event,
-                        {},
-                        "live",
-                        settings={"llm": config},
-                    )
+                    prefix, initial, pending, suffix = historical_parts(event, "live", anchor)
                     if args.instruction:
                         prefix[0]["content"] += "\n" + args.instruction
                     if args.with_trusted_state and turn == len(case["turns"]):

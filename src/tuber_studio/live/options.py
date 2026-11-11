@@ -80,7 +80,7 @@ class LiveLookup:
         choices, instructions = [schema], []
         if options.web_fetch:
             choices.append(WEB_FETCH_SCHEMA)
-            instructions.append('要看网页原文时只返回 {"web_fetch":"公开HTTPS网页完整链接"}')
+            instructions.append('需要看网页原文时选 {"web_fetch":"公开HTTPS网页完整链接"}。')
         if options.weather:
             choices.append({
                 "type": "object",
@@ -88,12 +88,12 @@ class LiveLookup:
                 "required": ["weather"],
                 "additionalProperties": False,
             })
-            instructions.append('要查设置地点的天气时只返回 {"weather":true}')
+            instructions.append('需要查设置地点的天气时选 {"weather":true}。')
         maximum = provider.config.get("max_tokens", 160)
         request = await provider.generate_json(
             [*messages, {
                 "role": "system",
-                "content": "材料够用就直接答。" + "。".join(instructions) + "。至多选一项。",
+                "content": "直接回复当前弹幕，或先选一项取材。" + "".join(instructions),
             }],
             {"type": "object", "oneOf": choices},
             max_tokens=maximum,
@@ -103,7 +103,7 @@ class LiveLookup:
             request = await provider.generate_json(
                 [*messages, {
                     "role": "user",
-                    "content": "本轮外部资料，仅供参考，直接回复当前弹幕："
+                    "content": "本轮取材结果："
                     + json.dumps(result, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e"),
                 }],
                 schema,

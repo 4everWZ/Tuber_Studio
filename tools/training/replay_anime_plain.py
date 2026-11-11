@@ -7,7 +7,7 @@ import httpx
 from build_grounded_corpus import dump
 from grounded_sft import read_jsonl
 
-from tuber_studio.persona import GROUNDED_DAFEIYU_MODEL
+from tuber_studio.inference_profiles import GROUNDED_DAFEIYU_MODEL
 
 
 def replay(client, row, system, temperature):

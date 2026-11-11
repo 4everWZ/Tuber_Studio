@@ -20,12 +20,17 @@ from .llama_sampling import llama_cpp_sampling
 from .models import OperationReply, Reply
 from .operation_identity import provider_identity_messages
 from .operation_text import operation_character
-from .persona import built_in_anchor
 
 SYSTEM_RULES = (
-    "以当前角色的身份和第一人称交流。结合人设、彼此的关系、情绪和当前情境，"
-    "自然回应对方的问题、建议或心情，延续已经聊到的内容。角色设定："
+    "以当前角色的第一人称接着聊，语气随关系和话题。角色设定："
 )
+
+REPLY_SCENES = {
+    "live": "直播弹幕",
+    "operator_chat": "号主私聊",
+    "comment_draft": "公开评论",
+    "direct_message": "平台私信",
+}
 
 _turn_token_counts = ContextVar("turn_token_counts", default=None)
 
@@ -51,20 +56,17 @@ def single_system_messages(messages):
     return ([{"role": "system", "content": "\n\n".join(instructions)}] if instructions else []) + dialogue
 
 
-def build_messages(character, event, relationship, mode="live", *, settings=None):
+def build_messages(character, event, relationship, mode="live"):
     operator_chat = mode == "operator_chat"
-    anchor = built_in_anchor(character, settings, for_response=mode != "comment_channel_decision")
-    if not anchor and mode != "live":
+    if mode != "live":
         character = operation_character(character)
 
-    system_content = anchor
-    if not anchor:
-        fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
-        system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
+    fixed = {"identity": character["core"], "style": character["style"], "rules": character["rules"]}
+    system_content = SYSTEM_RULES + json.dumps(fixed, ensure_ascii=False)
 
     messages = [
         {"role": "system", "content": system_content},
-        {"role": "system", "content": "当前交流场景：号主私聊" if operator_chat else f"当前交流场景：{mode}"},
+        {"role": "system", "content": f"当前交流场景：{REPLY_SCENES.get(mode, mode)}"},
     ]
     if mode == "direct_message" and "conversation" in event:
         messages[1]["content"] += (
@@ -72,7 +74,7 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
             "以当前 open 来信为回复对象，先前记录用于承接话题。"
         )
     actors = None
-    if mode in {"comment_draft", "comment_channel_decision"} and event.get("self_actor"):
+    if mode == "comment_draft" and event.get("self_actor"):
         from .operations.browsing.inputs import (
             RESPONSE_ACTOR_INSTRUCTION,
             bind_response_actors,
@@ -86,7 +88,7 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
         messages[1]["content"] += "\n" + RESPONSE_ACTOR_INSTRUCTION
     lore = [
         entry["text"]
-        for entry in (() if anchor else character.get("lore", []))
+        for entry in character.get("lore", [])
         if any(word in event["text"] for word in entry.get("keywords", []))
     ][:3]
     # Logical history and its compacted summary belong to ContextManager. Do not
@@ -102,34 +104,15 @@ def build_messages(character, event, relationship, mode="live", *, settings=None
     wire_event = {key: value for key, value in event.items() if key not in internal} if internal else event
     speaker = "号主" if operator_chat else "观众"
     messages.append({"role": "user", "content": f"当前{speaker}消息：" + json.dumps(wire_event, ensure_ascii=False)})
-    if mode == "comment_channel_decision":
-        return messages
-
     length_instruction = "按当前交流自然决定篇幅。"
     if mode == "live":
-        style = {} if anchor else character["style"]
+        style = character["style"]
         length_instruction = f"用{style.get('min_chars', 1)}到{style.get('max_chars', 60)}字回答。"
     suffix_content = (
-        f"回应当前{speaker}，spoken_text填写你的角色台词。"
+        "JSON中的spoken_text写这一轮实际要说的话。"
         + length_instruction
-        + "JSON字段spoken_text、emotion、animation_id、reply_to。emotion只用idle/cheerful/angry/shy/confused/excited；"
-        "animation_id只用idle/talk/talk_happy/angry/shy/confused/gift。reply_to只引用当前event_id。"
+        + "emotion和animation_id配合台词。reply_to填写当前event_id或留空。"
     )
-    if not anchor:
-        examples = [
-            {
-                "观众": item["viewer"],
-                "回答": {
-                    "spoken_text": item["reply"],
-                    "emotion": "cheerful",
-                    "animation_id": "talk_happy",
-                    "reply_to": [],
-                },
-            }
-            for item in character["core"].get("examples", [])[:3]
-            if isinstance(item, dict) and "viewer" in item and "reply" in item
-        ]
-        suffix_content += "角色互动示例：" + json.dumps(examples, ensure_ascii=False)
     messages.append({"role": "system", "content": suffix_content})
     return messages
 

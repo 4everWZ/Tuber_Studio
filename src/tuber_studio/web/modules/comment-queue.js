@@ -119,7 +119,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     const target = row.target || {}, video = row.video_id || target.bvid;
     const original = row.source_text || target.source_text;
     const metadata = [video, row.author || target.recipient_name, row.thread_id && `楼 ${row.thread_id}`,
-      row.character_id && `${row.character_id} · v${row.character_version}`].filter(Boolean);
+      row.character_id].filter(Boolean);
     if (metadata.length) detail.append(node("p", metadata.join(" · "), "hint"));
     if (original) detail.append(node("blockquote", original, "quoted-text"));
     if (video && /^BV[a-zA-Z0-9]+$/.test(video)) {

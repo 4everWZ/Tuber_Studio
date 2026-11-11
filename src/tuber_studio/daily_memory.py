@@ -116,33 +116,13 @@ SCAFFOLDING_WORDS = {
     "这个",
 }
 
-DISTILLATION_PROMPT = """你叫{name}，是一只活泼机灵、爱吐槽又有点傲娇的深海鲸鱼娘虚拟主播。
-请审阅今天在社群评论区与直播间发生的真实互动素材，从中提炼出最多 3 个值得当作日常谈资的【每日趣事与社群高光】。素材不足可以留空。
-
-【输入素材列表】
-{candidates_json}
-
-【提炼规则】
-1. 每个趣事选一条素材，quote 摘录该素材的原句。
-2. 角色自述（anecdote）：必须用{name}典型的第一人称口吻进行生动、富有趣味的生活感吐槽或回忆（每条 30~70 字，例如：“昨天在视频底下被吐槽尾巴太胖游得慢，气得我昨晚多盛了一碗热白饭！”）。
-3. 严格精炼：避免长篇大论，方便后续作为轻量谈资随口提及。
-4. 分类规范：category 限用 comment_anecdote（评论区趣事）、live_highlight（直播战报/高光）、community_meme（社群新梗）。
-
-请以 JSON 格式输出，格式如下：
-{{
-  "highlights": [
-    {{
-      "category": "comment_anecdote",
-      "headline": "简明标题（15字以内）",
-      "source_ref": "素材对应的source_ref",
-      "source_user": "观众昵称（不含敏感UID）",
-      "quote": "从content中一字不差摘录的关键句子",
-      "anecdote": "{name}第一人称视角的人设自述吐槽台词",
-      "tags": ["关键词1", "关键词2"]
-    }}
-  ]
-}}
-"""
+DISTILLATION_PROMPT = (
+    "从今天的互动中挑最多三件适合日后聊起的趣事，返回包含 highlights 数组的 JSON。"
+    "每项填 category、headline、source_ref、quote、anecdote 和 tags。"
+    "评论区趣事用 comment_anecdote，直播高光用 live_highlight，社群新梗用 community_meme。"
+    "headline 用十五字以内，quote 摘录所选素材的连续原文。"
+    "anecdote 以当前角色的第一人称，用三十到七十字聊聊素材中的事情。"
+)
 
 
 def desensitize_user(display_name: str | None) -> str:
@@ -605,21 +585,24 @@ class DailyMemoryService:
         """Distill highlights from daily candidates using LLM with grounded quote validation."""
         character_id = character.get("id", "whale")
         character_version = character.get("version", 1)
-        name = character.get("name", "大飞鱼")
 
         candidates = candidates if candidates is not None else self.candidate_sources(date_str, character_id)
         if not candidates:
             return []
 
         candidates_map = {c["source_ref"]: c for c in candidates}
-        prompt = DISTILLATION_PROMPT.format(
-            name=name,
-            candidates_json=json.dumps(candidates, ensure_ascii=False, indent=2),
-        )
-
         messages = [
-            {"role": "system", "content": "你是一个严格按照 JSON 格式输出结构化摘要的助手。"},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": DISTILLATION_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "character": {key: character[key] for key in ("name", "core", "style") if key in character},
+                        "sources": candidates,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
         ]
 
         schema = {

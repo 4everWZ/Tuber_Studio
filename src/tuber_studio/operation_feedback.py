@@ -22,7 +22,6 @@ from .operation_text import (
     operation_output_diagnostics,
     validate_operation_text,
 )
-from .persona import built_in_anchor
 from .providers import SYSTEM_RULES, public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 from .store import dump
@@ -185,10 +184,8 @@ class FeedbackModel:
         self.generation_context = generation_context
 
     def messages(self):
-        persona = built_in_anchor(self.character, self.runtime.settings.data)
-        if persona is None:
-            card = operation_character(self.character)
-            persona = SYSTEM_RULES + dump({key: card[key] for key in ("core", "style", "rules")})
+        card = operation_character(self.character)
+        persona = SYSTEM_RULES + dump({key: card[key] for key in ("core", "style", "rules")})
         return identity_messages(continuation_messages(
             [
                 {

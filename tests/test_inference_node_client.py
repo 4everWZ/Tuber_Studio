@@ -101,37 +101,10 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
     else:
         assert runtime.settings.data["vision"]["kind"] == "disabled"
     status = runtime.status()
-    assert status["character"].get("persona_type", "prompt_oc") == "prompt_oc"
-    assert status["persona"] == {
-        "source": "fine_tuned",
-        "configured_model": model,
-        "fine_tuned_model": model,
-        "node_model_state": "active",
-    }
+    assert status["providers"]["llm_model"] == model
+    assert "persona" not in status
     await asyncio.gather(*runtime.inference.cleanup_tasks)
     await runtime.browsing.visual_provider.close()
-
-
-async def test_persona_status_distinguishes_local_install_node_inventory_and_offline(
-    distributed, monkeypatch
-):
-    runtime, state = distributed
-    initial = runtime.status()["persona"]
-    assert initial["source"] == "character_card"
-    assert initial["configured_model"] == "Gemma4-E2B"
-    assert initial["node_model_state"] == "unknown"
-    assert "local_model_installed" not in initial
-
-    profile = {"installed": True}
-    runtime.inference.capabilities = {"profiles": {GROUNDED_DAFEIYU_KEY: profile}}
-    assert runtime.status()["persona"]["node_model_state"] == "installed"
-    profile["installed"] = False
-    assert runtime.status()["persona"]["node_model_state"] == "not_installed"
-
-    profile["installed"] = True
-    runtime.inference.status["state"] = "error"
-    assert runtime.status()["persona"]["node_model_state"] == "unknown"
-    assert state["requests"] == []
 
 
 async def test_pair_rebinds_text_vision_and_tts_clients_to_the_new_endpoint_and_token(distributed):

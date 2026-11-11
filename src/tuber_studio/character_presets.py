@@ -22,11 +22,9 @@ _LEGACY = {
         "f25a6c06fce9d128c76ed3d69dd3de5c3d118e83893dcb06f8f0efe8e1b36c52",
         "fcee2e6ac6f43e51e044561b1e6033261f8a299555640bcf54dc86f85f711fb6",
     },
-    "whale_calm": {"494f4d61137e6354758c0acdb358471f4c5bada61263093a2deef94366c314d7"},
 }
 _REPLACEMENTS = {
     "whale": "3e16a9d1dfa4065b0c5545e0f29857bcedc84460594d8d127b77155364efacfe",
-    "whale_calm": "a59012ed87a55ee2a8bb0284dc66b0d5de29b298b0fcbcfc40e7d58991ed96d3",
 }
 _CONTENT_FIELDS = ("core", "style", "rules", "lore", "sources", "license_status")
 
@@ -38,9 +36,6 @@ def _fingerprint(config):
         # Unknown fields and malformed historical/custom configs are left alone.
         return None
     data.pop("version", None)
-    data.pop("persona_type", None)
-    data.pop("fine_tuned_model", None)
-    data.pop("compact_system_prompt", None)
     canonical = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
