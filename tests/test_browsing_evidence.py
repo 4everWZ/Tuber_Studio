@@ -785,9 +785,11 @@ async def test_visual_only_cache_is_reobserved_after_provider_changes(evidence_f
 @pytest.mark.parametrize("cancel", [True, False])
 async def test_cc_visual_followup_cancel_or_deadline_collects_children(evidence_factory, config, cancel):
     visual = TestVisual()
-    service = evidence_factory(PublicAdapter(), visual)
+    adapter = PublicAdapter()
+    service = evidence_factory(adapter, visual)
     enabled = config | {"visual_enabled": True}
     original, _ = await service.prepare(BV, enabled)
+    adapter.frames[0].update(id="second", actual_time=10)
     visual.started.clear()
     visual.cancelled.clear()
     visual.gate = asyncio.Event()

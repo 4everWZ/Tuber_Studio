@@ -135,7 +135,7 @@ def test_default_disabled_visual_unavailable_and_semantics_still_require_review(
     status = admin.get("/api/automation").json()
     assert status["policy"]["enabled"] is False
     assert status["policy"]["emergency"] is False
-    assert status["settings"]["visual_enabled"] is False
+    assert "visual_enabled" not in status["settings"] and "inspect_limit" not in status["settings"]
     assert status["vision"]["available"] is False
     assert status["vision"]["reason"]
     assert status["automatic_sending_ready"] is False

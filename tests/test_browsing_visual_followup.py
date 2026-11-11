@@ -1,4 +1,4 @@
-"""CC-first requests may add one budgeted observation to the same task."""
+"""An initial subtitle and frame read can be followed by one targeted observation."""
 
 import asyncio
 import base64
@@ -9,6 +9,7 @@ from test_browsing import browsing as browsing
 from test_browsing import finished, model_packet
 
 from tuber_studio.generation_meter import GenerationMeter, reserve_generation, settle_generation
+from tuber_studio.operations.browsing.models import DisabledVideoEvidence
 
 
 class FollowupVisual:
@@ -58,23 +59,22 @@ class FollowupVisual:
         pass
 
 
-def install_visual(service, *, ask=True, ask_again=False):
+def install_visual(service, *, ask=True, ask_again=False, initial_time=8):
     image = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jHtkAAAAASUVORK5CYII="
     )
     visual = FollowupVisual(service.runtime)
     visual.prompts = []
     service.evidence.visual = visual
-    service.store.set("browsing_policy", service.policy() | {"visual_enabled": True})
-
-    async def frames(metadata, count):
+    async def frames(metadata, count, *, cid=None, timestamps=None):
         service.adapter.calls.append(("frames", count))
+        actual = initial_time if not timestamps else timestamps[0]
         return [
             {
-                "id": "11:5",
-                "cid": "11",
-                "actual_time": 5,
-                "requested_time": 6,
+                "id": f"{cid or '11'}:{actual:g}",
+                "cid": cid or "11",
+                "actual_time": actual,
+                "requested_time": actual,
                 "width": 1,
                 "height": 1,
                 "image": image,
@@ -87,6 +87,12 @@ def install_visual(service, *, ask=True, ask_again=False):
     inputs = []
 
     async def generate(messages, schema, *, max_tokens):
+        if schema["title"] == "ResponseDecision":
+            result = await original(messages, schema, max_tokens=max_tokens)
+            latest_frame = re.findall(r"(?m)^\[(ref:\d+)\|[^\]]+\]P\d+ 画面", messages[-1]["content"])
+            if latest_frame:
+                result["evidence_ids"] = latest_frame[-1:]
+            return result
         if schema["title"] != "ContentDecision":
             return await original(messages, schema, max_tokens=max_tokens)
         data = model_packet(messages[-1]["content"])
@@ -96,12 +102,12 @@ def install_visual(service, *, ask=True, ask_again=False):
         inputs.append(data)
         for branch in schema["oneOf"]:
             fields = branch["properties"]
-            if data["coverage"] == "sampled_visual":
+            if len(inputs) > 1:
                 assert "visual" not in fields["coverage_required"]["enum"]
                 assert "visual_required" not in fields["reason"]["enum"]
         visual_text = data["content"].partition("画面观察\n")[2]
         visual_ids = re.findall(r"(?m)^\[(e\d+)\|", visual_text)
-        if ask and (not visual_ids or ask_again):
+        if ask and (len(inputs) == 1 or ask_again):
             return {
                 "interest": "need_more",
                 "worth_commenting": False,
@@ -131,43 +137,49 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     visual, inputs = install_visual(browsing, ask_again=ask_again)
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
-    assert row["status"] == "completed" and visual.generated == 1 and len(inputs) == 2
-    assert inputs[0]["segments"] == [{"id": "e1"}]
+    assert row["status"] == "completed" and visual.generated == 2 and len(inputs) == 2
+    assert [segment["id"] for segment in inputs[0]["segments"]] == ["e1", "e2"]
     assert "[e1|00:00]加盐之后，鸡蛋浮了起来。" in inputs[0]["content"]
-    assert [segment["id"] for segment in inputs[1]["segments"]] == ["e1", "e2"]
+    assert [segment["id"] for segment in inputs[1]["segments"]] == ["e1", "e2", "e3"]
     assert inputs[1]["segments"][0] == inputs[0]["segments"][0]
-    assert "[e2|00:05]" in inputs[1]["content"]
+    assert "[e2|00:08]" in inputs[1]["content"]
+    assert "[e3|00:05]" in inputs[1]["content"]
     assert inputs[1]["content"].count("P1") == 1
     assert "parts" not in inputs[1]
-    assert inputs[0]["has_visual"] is False and inputs[0]["source_kinds"] == ["subtitle"]
+    assert inputs[0]["has_visual"] and inputs[0]["source_kinds"] == ["subtitle", "visual_observation"]
     assert inputs[1]["has_visual"] is True
     assert inputs[1]["source_kinds"] == ["subtitle", "visual_observation"]
     assert inputs[1]["coverage"] == "sampled_visual"
     assert all(field in visual.prompts[1] for field in ("source_kinds", "has_visual", "coverage_required"))
-    assert "需要补看画面时选visual" in visual.prompts[0]
-    assert "需要补看画面时选visual" not in visual.prompts[1]
+    assert "需要补看时选visual" in visual.prompts[0]
+    assert "需要补看时选visual" not in visual.prompts[1]
     assert "本次取样画面已到齐" in visual.prompts[1]
     assert visual.task["round_id"] == row["id"] and visual.task["id"] == task["id"]
     assert visual.deadline <= row["deadline"]
     assert task["input_version"] == task["material_key"]
     assert task["material_key"] != task["visual_followup"]["source_material_key"]
-    assert task["visual_followup"]["needs_visual_again"] is ask_again
     assert task["visual_followup"]["decisions_before"][0]["coverage_required"] == "visual"
     assert task["visual_followup"]["decisions_before"][0]["evidence_ids"] == ["11:0"]
     if ask_again:
         assert task["status"] == "viewed_without_comment" and not browsing.intents()
     else:
-        assert browsing.intents()[0]["evidence"] == ["frame:11:5"]
+        assert "frame:11:5" in browsing.intents()[0]["evidence"]
         assert browsing.intents()[0]["material_keys"] == [task["material_key"]]
     assert len([call for call in browsing.adapter.calls if call[0] == "subtitles"]) == 1
     assert not browsing.adapter.sent
 
 
-async def test_no_request_keeps_zero_visual_generations(browsing):
+async def test_no_followup_keeps_initial_visual_generation(browsing):
     visual, inputs = install_visual(browsing, ask=False)
     await finished(browsing, preview=True)
-    assert visual.generated == 0 and len(inputs) == 1
-    assert not any(call[0] == "frames" for call in browsing.adapter.calls)
+    assert visual.generated == 1 and len(inputs) == 1
+
+
+async def test_followup_reuses_an_already_observed_frame(browsing):
+    visual, inputs = install_visual(browsing, initial_time=5)
+    await finished(browsing, preview=True)
+    assert visual.generated == 1 and len(inputs) == 1
+    assert browsing.tasks()[0]["material_mode"] == "subtitle_visual"
 
 
 async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(browsing):
@@ -191,10 +203,11 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
             data["segments"][0].update(start=60, end=70, text="第二P的字幕。")
         return data
 
-    async def part_frames(metadata, count, *, cid, timestamps):
+    async def part_frames(metadata, count, *, cid=None, timestamps=None):
         frame_requests.append((cid, timestamps))
         result = await frames(metadata, count)
-        result[0].update(id="22:65", cid="22", actual_time=65, requested_time=65)
+        if cid == "22":
+            result[0].update(id="22:65", cid="22", actual_time=65, requested_time=65)
         return result
 
     async def cite_second_part(messages, schema, *, max_tokens):
@@ -204,7 +217,7 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
         if schema["title"] == "ResponseDecision":
             data = model_packet(messages[-1]["content"])
             response_inputs.append(data["content"])
-            result["evidence_ids"] = [data["evidence"][0]["id"]]
+            result["evidence_ids"] = re.findall(r"(?m)^\[(ref:\d+)\|[^\]]+\]P2 画面", data["content"])
         return result
 
     browsing.adapter.video_metadata = two_parts
@@ -213,33 +226,32 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
     browsing.runtime.llm.generate_json = cite_second_part
     await finished(browsing, preview=True)
 
-    assert frame_requests == [("22", [65.0])]
-    assert visual.generated == 1
+    assert frame_requests == [(None, None), ("22", [65.0])]
+    assert visual.generated == 2
     assert len(response_inputs) == 1
     assert "P2 画面 蓝色液体位于透明杯中。" in response_inputs[0]
     assert "P2 字幕 第二P的字幕。" in response_inputs[0]
-    assert "P1 字幕" not in response_inputs[0]
     assert browsing.intents()[0]["evidence"] == ["frame:22:65"]
 
 
-async def test_visual_request_respects_disabled_switch(browsing):
+async def test_missing_visual_provider_reads_subtitles_without_followup(browsing):
     visual, inputs = install_visual(browsing)
-    browsing.store.set("browsing_policy", browsing.policy() | {"visual_enabled": False})
+    browsing.evidence.visual = DisabledVideoEvidence()
     await finished(browsing, preview=True)
     assert visual.generated == 0 and len(inputs) == 1
-    assert browsing.tasks()[0]["visual_followup"]["status"] == "disabled"
+    assert browsing.tasks()[0]["material_mode"] == "subtitle"
     assert not browsing.intents()
 
 
 async def test_exhausted_parent_budget_never_generates_followup(browsing):
     visual, inputs = install_visual(browsing)
-    browsing.store.set("browsing_policy", browsing.policy() | {"max_model_calls": 1})
+    browsing.store.set("browsing_policy", browsing.policy() | {"max_model_calls": 2})
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
-    assert row["budget"]["model_calls"] == 1 and visual.generated == 0
+    assert row["budget"]["model_calls"] == 2 and visual.generated == 1
     assert row["status"] == "partial" and task["status"] == "checkpoint"
     assert task["payload"]["retry_kind"] == "round_budget"
-    assert task["visual_followup"]["status"] == "failed" and len(inputs) == 1
+    assert task["visual_followup"]["status"] == "requested" and len(inputs) == 1
     assert task["decisions"][0]["coverage_required"] == "visual"
     assert not browsing.intents() and not browsing.adapter.sent
 

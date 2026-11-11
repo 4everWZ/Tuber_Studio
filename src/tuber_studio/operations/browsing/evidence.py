@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ...api_providers import validate_image
+from ...generation_meter import BrowsingBudgetDeferred
 from ...media_cache import linked
 from ...platforms.bilibili_browsing import CREDIT
 from ...providers import public_error
@@ -384,23 +385,22 @@ class BrowsingEvidence:
 
     async def _add_visual(self, material, task, deadline, source_ids, sampling):
         cid, timestamps = self._visual_targets(material["parts"], source_ids, sampling) if source_ids else (None, None)
+        previous = {frame["id"]: frame for frame in material.get("visual_frames", [])}
+        observed = {frame["id"] for part in material["parts"] for frame in part.get("frame_evidence", [])}
         try:
             parts, frames = await self._visual_parts(
-                material["metadata"], task, deadline, cid=cid, timestamps=timestamps, sampling=sampling
+                material["metadata"], task, deadline, cid=cid, timestamps=timestamps, sampling=sampling,
+                known_frames=observed,
             )
+        except BrowsingBudgetDeferred:
+            raise
         except Exception as error:
             material["visual_error"] = public_error(error)
             return error
         material.pop("visual_error", None)
-        known = {frame["id"] for frame in material.get("visual_frames", [])}
-        for part in parts:
-            part["segments"] = [segment for segment in part["segments"] if segment["id"].removeprefix("frame:") not in known]
-            part["frame_evidence"] = [frame for frame in part["frame_evidence"] if frame["id"] not in known]
-        material["parts"].extend(part for part in parts if part["segments"])
-        self._bind_visual_sampling(
-            material, [*material.get("visual_frames", []), *(frame for frame in frames if frame["id"] not in known)],
-            source_ids, sampling,
-        )
+        material["parts"].extend(parts)
+        previous.update((frame["id"], frame) for frame in frames)
+        self._bind_visual_sampling(material, list(previous.values()), source_ids, sampling)
         material["coverage"] = "sampled_visual"
         return None
 
@@ -440,7 +440,9 @@ class BrowsingEvidence:
     def _valid_time(value):
         return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
-    async def _visual_parts(self, metadata, task, deadline, *, cid=None, timestamps=None, sampling="baseline"):
+    async def _visual_parts(
+        self, metadata, task, deadline, *, cid=None, timestamps=None, sampling="baseline", known_frames=frozenset(),
+    ):
         capabilities = dict(self.visual.capabilities())
         if not (
             capabilities.get("images")
@@ -552,6 +554,12 @@ class BrowsingEvidence:
                             "image_base64": base64.b64encode(image).decode("ascii"),
                         }
                     )
+                if known_frames:
+                    frame_map = {identity: frame for identity, frame in frame_map.items() if identity not in known_frames}
+                    retained = [frame for frame in retained if frame["id"] in frame_map]
+                if not frame_map:
+                    return [], []
+                frames[:] = frame_map.values()
                 result = await self.visual.analyze_video_evidence(
                     task,
                     metadata,
