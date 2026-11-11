@@ -1,5 +1,7 @@
 # Q 版大肥鱼 Live2D 接入
 
+当前默认演出使用图片／GIF。已安装的可选模型移至本机 `runtime/inactive-live2d/whale`，刷新场景后使用现有 GIF。版本化交付包继续留存，重新启用时按下文安装到 `runtime/live2d/whale`。
+
 直播适配版 `0.2.0-community` 使用氵六青的「DS 鲸鱼娘」。鲸鱼娘原作为上善无形，DeepSeek 女仆二创为 ZipZipPipe。直播包保留原模型、贴图和物理，在运行配置里映射待机、说话、开心、困惑和礼物，另加轻点头、偏头和微笑。角色模型依 CC BY-NC-SA 4.0 用于非商业演出。 [来源与署名](https://github.com/xkk6663/dsh-live2d-mao#-许可与致谢) · [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 本机交付包在 `runtime/releases/dafeiyu-avatar/0.2.0-community`。将包内 `model` 目录交给下文的安装工具，工作台与 OBS 会从角色 `whale` 的运行目录加载它。 `mouth_gain` 可在 `avatar.json` 调整，本版用 2.4。OBS 的每帧口型取当前音频时刻的包络，工作台静音会停播并闭嘴。 [工件清单](../../assets/whale/community-live2d.json) · [OBS 实测](../../evaluations/results/live2d-community-obs-20261111.json)
