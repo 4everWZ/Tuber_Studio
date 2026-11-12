@@ -12,7 +12,7 @@ def _identity(issue):
     return json.dumps([issue.get("bvid"), issue.get("error")], ensure_ascii=False)
 
 
-def unread_issues(browsing, issues):
+def issue_history(browsing, issues):
     ack = browsing.store.get(_key(browsing), {})
     result = []
     for issue in issues:
@@ -29,8 +29,11 @@ def unread_issues(browsing, issues):
             # aggregate. Do not carry its previous counter into this window.
             count = total if total < seen else max(1, total - seen)
         else:
-            continue
-        result.append(issue | {"occurrences": count, "total_occurrences": total})
+            count = 0
+        result.append(issue | {
+            "unread_occurrences": count,
+            "severity": "warning" if issue.get("status") in {"retry_wait", "recovered"} else "error",
+        })
     return result
 
 
@@ -42,6 +45,4 @@ def clear_issues(browsing):
         key = _identity(issue)
         counts[key] = issue.get("total_occurrences", counts.get(key, 0) + issue.get("occurrences", 1))
     browsing.store.set(_key(browsing), {"at": time.time(), "counts": counts})
-    browsing.last_error = None
-    browsing.discovery.error = None
     return browsing.discovery.records()

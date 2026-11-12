@@ -4,7 +4,7 @@ import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261111.08";
-import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261107.23";
+import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261112.01";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261111.07";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
@@ -14,7 +14,7 @@ import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261111.05";
+} from "./modules/operations.js?v=20261112.01";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261111.07";
 import {
   selectedThread,
@@ -355,7 +355,11 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     else await commentQueue.open(anchor || routeKind === "sources" ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
   } else if (model.page === "automation") {
     if (routeKind === "video") { history.replaceState(null, "", "#automation"); refreshOperationsActivity.setKind("videos"); }
-    await Promise.allSettled([updatePermissionCapsule(), discoveryPanel.refresh(), refreshOperationsActivity()]);
+    const showIssues = routeKind === "issues";
+    $("operation-activity-history").hidden = showIssues;
+    $("operation-activity-issues").hidden = !showIssues;
+    await Promise.allSettled([updatePermissionCapsule(), discoveryPanel.refresh(),
+      showIssues ? issueLog.refresh() : refreshOperationsActivity()]);
   } else if (model.page === "automation-records") {
     const round = routeKind === "round" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
     await Promise.allSettled([updatePermissionCapsule(), automationPanel.openRound(round, /^[\w-]+$/.test(taskId || "") ? taskId : null), issueLog.refresh()]);
@@ -391,7 +395,7 @@ async function poll() {
   model.polling = true;
   try {
     const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh(), updatePermissionCapsule({ background: true })];
-    if (model.page === "automation") updates.push(refreshOperationsActivity());
+    if (model.page === "automation") updates.push($("operation-activity-issues").hidden ? refreshOperationsActivity() : issueLog.refresh());
     if (model.page === "comments") updates.push(commentQueue.refresh());
     if (model.page === "messages") updates.push(messagesPanel.refresh({ background: true }));
     if (model.page === "dynamics") updates.push(dynamicsModule?.refreshDynamics({ background: true }));

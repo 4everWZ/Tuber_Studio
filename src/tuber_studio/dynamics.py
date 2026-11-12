@@ -1487,7 +1487,9 @@ class Dynamics:
             policy = self.policy()
             if policy["enabled"]:
                 try:
-                    await self.evaluate()
+                    async with self.operations.automatic_work() as admitted:
+                        if admitted:
+                            await self.evaluate()
                 except asyncio.CancelledError:
                     raise
                 except Exception:

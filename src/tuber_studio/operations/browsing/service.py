@@ -57,8 +57,10 @@ class BrowsingService:
         self.discovery = BackgroundDiscovery(self)
         self.decisions = BrowsingDecisions(self)
         self.publication = BrowsingPublication(self)
-        self.starting = False
+        self.drain_task = None
+        self.abort_task = None
         self.control_generation = 0
+        self.status_sequence = 0
         if hasattr(self.adapter, "request_gate"):
             self.adapter.request_gate = self._gate
 
@@ -140,25 +142,31 @@ class BrowsingService:
             ]
         )
 
+    def control_state(self, control):
+        if control["emergency"]:
+            return "emergency"
+        if self.closed:
+            return "stopping"
+        if self.operations.draining:
+            return "draining"
+        if self.operations.starting:
+            return "starting"
+        if self.blockers and (control["enabled"] or self.last_error):
+            return "blocked"
+        return "running" if control["enabled"] else "off"
+
     def status(self):
         control = self.operations.policy()
         rounds = [self.repo.round(i) for i in self.active]
+        self.status_sequence += 1
         return {
+            "status_sequence": self.status_sequence,
+            "started_at": self.started_at,
             "policy": control,
             "settings": self.policy(),
             "permissions": self.permissions(),
             "review_session": self.store.get("browsing_review_session", {}),
-            "state": "stopping"
-            if self.closed
-            else "blocked"
-            if control["enabled"] and self.blockers
-            else "running"
-            if rounds
-            else "paused"
-            if control["emergency"]
-            else "off"
-            if not control["enabled"]
-            else "running",
+            "state": self.control_state(control),
             "account_id": self.account or control["account_id"],
             "character": {k: self.runtime.character[k] for k in ("id", "version")},
             "base": {
@@ -321,12 +329,12 @@ class BrowsingService:
 
     async def start_review_session(self, *, resume_session_id=None):
         """Start fresh review batches without discarding older paused progress."""
-        if self.operations.policy()["enabled"] or self.active or self.starting:
+        if self.operations.policy()["enabled"] or self.active or self.operations.starting:
             raise ValueError("请先停止当前运营，再开始新的review验收")
         if "auto" in self.permissions().values():
             raise ValueError("请先将已启用渠道设为审核模式，再开始review验收")
         account = await self._current_account()
-        if self.operations.policy()["enabled"] or self.active or self.starting:
+        if self.operations.policy()["enabled"] or self.active or self.operations.starting:
             raise ValueError("自主运营正在启动，请等待当前启动完成")
         if "auto" in self.permissions().values():
             raise ValueError("请先将已启用渠道设为审核模式，再开始review验收")
@@ -366,11 +374,14 @@ class BrowsingService:
             return await self.stop()
         if self.operations.policy()["emergency"]:
             raise ValueError("紧急停止仍有效")
+        if self.operations.draining:
+            raise ValueError("当前批次正在收尾")
+        if self.operations.starting:
+            raise ValueError("自主运营正在启动")
         if self.operations.policy()["enabled"]:
             return self.status()
-        if self.starting:
-            raise ValueError("自主运营正在启动")
-        self.starting = True
+        self.operations.starting = True
+        self.last_error = None
         self.control_generation += 1
         generation = self.control_generation
         try:
@@ -384,8 +395,17 @@ class BrowsingService:
             )
             self.discovery.remember_account(self.account)
             await self.messages.resume_pending()
+            if generation != self.control_generation:
+                raise ValueError("自主运营启动已取消")
+        except (Exception, asyncio.CancelledError) as error:
+            if generation == self.control_generation:
+                self.operations.configure({"enabled": False})
+                self.last_error = public_error(error)
+                if not self.blockers:
+                    self.blockers = [self.last_error]
+            raise
         finally:
-            self.starting = False
+            self.operations.starting = False
         self.comments.policy_changed.set()
         self.messages.changed.set()
         self.dynamics.changed.set()
@@ -394,29 +414,70 @@ class BrowsingService:
         return self.status()
 
     async def stop(self, *, emergency=False):
-        self.control_generation += 1
+        if emergency or self.closed:
+            await self._abort_operations(emergency=emergency)
+        elif not self.operations.draining:
+            self.control_generation += 1
+            if self.operations.policy()["enabled"] and not self.operations.starting:
+                self.operations.draining = True
+                admitted = tuple(task for identity, task in self.active.items() if not self.repo.round(identity)["preview"])
+                admitted += self.operations.admitted_work
+                if admitted:
+                    self.drain_task = asyncio.create_task(self._drain(admitted))
+                else:
+                    self._finish_stop()
+            else:
+                # The same endpoint still cancels a stand-alone read-only preview.
+                await self._abort_operations()
+        return self.status()
+
+    def _finish_stop(self):
+        self.operations.configure({"enabled": False})
         review = self.store.get("browsing_review_session", {})
         if review and review.get("state") in {None, "starting", "running"}:
             self.store.set("browsing_review_session", review | {"state": "stopped", "ended_at": time.time()})
-        self.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
-        await self.messages.pause()
-        await self.dynamics.pause()
-        for event in (
-            self.comments.policy_changed,
-            self.messages.changed,
-            self.dynamics.changed,
-            self.changed,
-            self.interactions_changed,
-        ):
-            event.set()
-        children = list(self.active.values())
-        for child in children:
-            child.cancel()
-        await asyncio.gather(*children, return_exceptions=True)
+        self.operations.draining = False
+        self.last_error = None
         self.notifications.pause(self.account)
         if self.account:
             self.store.set("browsing_discovery_pending:" + self.account, False)
-        return self.status()
+
+    async def _drain(self, admitted):
+        try:
+            await asyncio.gather(*(asyncio.shield(task) for task in admitted), return_exceptions=True)
+            self._finish_stop()
+        finally:
+            self.drain_task = None
+
+    async def _abort_operations(self, *, emergency=False):
+        self.control_generation += 1
+        self.operations.draining = True
+        self.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
+        if self.abort_task is None:
+            self.abort_task = asyncio.create_task(self._cancel_active())
+        await asyncio.shield(self.abort_task)
+
+    async def _cancel_active(self):
+        try:
+            if self.drain_task:
+                self.drain_task.cancel()
+                await asyncio.gather(self.drain_task, return_exceptions=True)
+                self.drain_task = None
+            children = list(self.active.values())
+            for child in children:
+                child.cancel()
+            await asyncio.gather(self.messages.pause(), self.dynamics.pause(), *children, return_exceptions=True)
+            for event in (
+                self.comments.policy_changed,
+                self.messages.changed,
+                self.dynamics.changed,
+                self.changed,
+                self.interactions_changed,
+            ):
+                event.set()
+            self._finish_stop()
+        finally:
+            self.abort_task = None
 
     async def _gate(self):
         identity = read_round.get()
@@ -487,7 +548,7 @@ class BrowsingService:
                 request_id, self.runtime.character, selection, self.comments.display_account_id()
             ):
                 return {"id": existing["id"], "status": existing["status"], "reused": True, "preview": True}
-        if automatic and not self.operations.policy()["enabled"]:
+        if automatic and not self.operations.accepting_work:
             raise ValueError("请先启动自主运营")
         if interaction_only:
             if not automatic or not self.operations.policy()["enabled"] or not self.account:
@@ -500,7 +561,7 @@ class BrowsingService:
                 if self.active:
                     if self.discovery.enabled:
                         raise ValueError("自动刷视频本轮进行中，请稍后再预览")
-                    await self.stop()
+                    await self._abort_operations()
                 await self.preflight()
             if not automatic and self.discovery.round_id:
                 raise ValueError("自动刷视频本轮进行中，请稍后再预览")
@@ -533,6 +594,8 @@ class BrowsingService:
             < self.store.get("browsing_next:" + self.account + ":" + self.runtime.character["id"], 0)
         ):
             return {"status": "deferred", "reason": "OC有界延后计划尚未到期"}
+        if automatic and not self.operations.accepting_work:
+            raise ValueError("自主运营已停止接纳新轮次")
         row, created = self.repo.create_round(
             self.account, self.runtime.character, config, self.operations.policy()["epoch"], preview,
             request_id=request_id,
@@ -858,7 +921,7 @@ class BrowsingService:
             self.changed.clear()
             try:
                 if (
-                    self.operations.policy()["enabled"]
+                    self.operations.accepting_work
                     and self.effective()["discovery_enabled"]
                     and not self.discovery_tasks()
                 ):
@@ -874,7 +937,7 @@ class BrowsingService:
         while True:
             self.interactions_changed.clear()
             try:
-                if self.operations.policy()["enabled"] and self.has_interactions():
+                if self.operations.accepting_work and self.has_interactions():
                     await self.run(automatic=True, interaction_only=True)
             except Exception as error:
                 self.last_error = public_error(error)

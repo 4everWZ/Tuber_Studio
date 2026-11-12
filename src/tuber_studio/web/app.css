@@ -590,7 +590,7 @@ tr:hover td {
 #queue-list .queue-row strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: .93rem; font-weight: 550; line-height: 1.45; }
 #queue-list .queue-row > .hint { font-size: .8rem; }
 .history-day-label { display: inline-flex; gap: 8px; align-items: center; margin: 0; }
-.history-day-label input { width: auto; }
+.history-day-label :is(input, select) { width: auto; }
 .daily-video-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 5px 20px; padding-block: 12px; border-top: 1px solid var(--line); }
 .daily-video-heading { display: flex; gap: 8px; align-items: start; }
 .daily-video-heading > a { flex: 1; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }

@@ -182,7 +182,7 @@
           return [this.activeTab, this.intentFilter, this.selectedIntentId, rows];
         }
         case "rounds":
-          return [this.activeTab, this.rounds.map(r => [r.id, r.status, r.budget, r.error])];
+          return [this.activeTab, this.rounds.map(r => [r.id, r.status, r.metrics, r.budget, r.public_drafts, r.public_published, r.public_uncertain, r.error])];
         case "tasks":
           return [this.activeTab, this.taskFilter, this.selectedTaskId, this.tasks.map(t => [
             t.id, t.status, t.title || t.metadata?.title, taskReason(t),
@@ -466,8 +466,8 @@
         return;
       }
 
-      items.forEach((round, idx) => {
-        const report = humanizeRoundReport(round, this.rounds.length - ((this.roundPaginator.currentPage - 1) * this.roundPaginator.pageSize + idx));
+      items.forEach(round => {
+        const report = humanizeRoundReport(round);
         const card = document.createElement("div");
         card.className = "op-round-card";
 
@@ -478,6 +478,8 @@
           </div>
           <p class="op-round-narrative">${escapeHtml(report.narrative)}</p>
           ${report.interactionOnly ? '<button type="button" data-open-inbox>查看互动收件箱</button>' : `<a href="#automation/round/${encodeURIComponent(round.id)}">查看本轮视频</a>`}
+          <details>
+          <summary>读取和模型用量</summary>
           <div class="op-round-metrics-grid">
             <div class="op-metric-chip">
               <span class="op-metric-k">读取请求</span>
@@ -496,6 +498,7 @@
               <strong class="op-metric-v">${report.metrics.tokens}</strong>
             </div>
           </div>
+          </details>
         `;
 
         const inboxButton = card.querySelector("[data-open-inbox]");

@@ -17,7 +17,7 @@
       <p id="discovery-result" role="status"></p><p id="discovery-counts" class="hint"></p>
       <div id="discovery-attention" hidden><ul id="discovery-actions"></ul></div>
     </details>
-  <section class="discovery-history" style="margin-top:16px;">
+  <section id="operation-activity-history" class="discovery-history" style="margin-top:16px;">
     <div class="panel-heading">
       <h2>运营活动</h2>
       <div class="actions">
@@ -32,6 +32,7 @@
       <button type="button" data-activity-kind="comments" aria-pressed="false">评论</button>
       <button type="button" data-activity-kind="messages" aria-pressed="false">私信</button>
       <button type="button" data-activity-kind="dynamics" aria-pressed="false">动态</button>
+      <a href="#automation/issues" class="button quiet">异常</a>
     </div>
     <p id="discovery-history-counts" class="hint"></p>
     <p id="discovery-history-feedback" class="error-text" role="status"></p>
@@ -41,6 +42,18 @@
       <span id="discovery-history-page" class="hint"></span>
       <button id="discovery-history-next" type="button" disabled>下一页</button>
     </div>
+  </section>
+  <section id="operation-activity-issues" class="discovery-history" hidden>
+    <div class="panel-heading">
+      <h2>运营异常</h2>
+      <div class="actions">
+        <label class="history-day-label">级别 <select id="activity-issue-severity"><option value="all">全部</option><option value="warning">告警</option><option value="error">错误</option></select></label>
+        <button id="mark-activity-issues" type="button">全部标为已读</button>
+        <a href="#automation" class="button quiet">返回运营活动</a>
+      </div>
+    </div>
+    <p id="activity-issue-feedback" class="hint" role="status"></p>
+    <div id="activity-issue-list" class="win-group-box"></div>
   </section>
   </section>
 </section>

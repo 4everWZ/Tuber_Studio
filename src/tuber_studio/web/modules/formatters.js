@@ -190,10 +190,9 @@
     return stages[task.status] || "此历史记录未保存具体原因，可查看来源与处理详情。";
   }
 
-  function humanizeRoundReport(round, roundIndex) {
+  function humanizeRoundReport(round) {
     const statusInfo = humanizeStatus(round.status);
     const dateStr = formatRelativeTime(round.created_at);
-    const title = `第 ${roundIndex || round.epoch || round.id?.slice(0, 6) || "1"} 轮巡航 · ${dateStr}`;
 
     let budget = {};
     if (typeof round.budget === 'string') {
@@ -215,11 +214,15 @@
     const outputTokens = budget.output_tokens ?? 0;
     const totalTokens = inputTokens + outputTokens;
     const interactionOnly = config.interaction_only === true;
-    const kind = interactionOnly ? "互动收件箱" : config.discovery_id ? "自动刷视频" : round.preview ? "只读预览" : "全渠道运营";
+    const kind = interactionOnly ? "互动收件箱" : round.preview ? "只读预览" :
+      config.discovery_id || config.autonomous_batch ? "自主刷视频" : "自主运营";
+    const title = `${kind} · ${dateStr}`;
     const viewed = round.metrics?.viewed;
     const drafts = round.public_drafts;
-    const narrative = [kind, viewed == null ? "" : `已处理 ${viewed} 条`,
-      drafts == null ? "" : `评论草稿 ${drafts} 条`, round.error || ""].filter(Boolean).join(" · ");
+    const narrative = [!interactionOnly && viewed != null ? `已读 ${viewed} 个视频的材料` : "",
+      drafts ? `生成评论 ${drafts} 条` : "", round.public_published ? `确认发布 ${round.public_published} 条` : "",
+      round.public_uncertain ? `待核对 ${round.public_uncertain} 条` : "",
+      round.error || round.metrics?.source_error || ""].filter(Boolean).join(" · ");
 
     const tokenFormatted = totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : `${totalTokens}`;
 

@@ -329,7 +329,7 @@ class DirectMessages:
                 except (ValueError, KeyError, TypeError) as error:
                     errors.append(f"UID {uid}：{public_error(error)}")
             require_current_account()
-            if automatic and self.policy()["auto_poll"]:
+            if automatic and self.policy()["auto_poll"] and self.operations.accepting_work:
                 self._queue_newest_messages(str(own_uid))
             self.last_sync = time.time()
             self.error = "；".join(errors)[:500] or None
@@ -469,7 +469,7 @@ class DirectMessages:
 
     def _queue_newest_messages(self, account_id):
         cutoff = self._inbox_cutoff(account_id)
-        if not self._processing_authorized():
+        if not self._processing_authorized() or not self.operations.accepting_work:
             return
         slots = self.queue.maxsize - self.queue.qsize()
         if not slots:
@@ -2207,7 +2207,7 @@ class DirectMessages:
 
     async def _resume_pending(self):
         """Restore a few retained drafts after explicit activation, for review."""
-        if self.closed or not self._processing_authorized() or self.queue.qsize() >= 2:
+        if self.closed or not self._processing_authorized() or not self.operations.accepting_work or self.queue.qsize() >= 2:
             return
         if not self.store.one(
             "SELECT id FROM dm_drafts WHERE status='queued' AND resume_pending=1 AND next_attempt_at<=? "
@@ -2223,7 +2223,7 @@ class DirectMessages:
             if self.adapter is not adapter or self.comments.credentials != credential:
                 return
             self.active_account_id, self.active_credential = str(account_id), credential
-        if self.closed or not self._processing_authorized():
+        if self.closed or not self._processing_authorized() or not self.operations.accepting_work:
             return
         scope = "account_id=?" if not self.injected else "account_id IN (?, '')"
         rows = self.store.all(
@@ -2312,8 +2312,20 @@ class DirectMessages:
     async def _work(self):
         while True:
             identity, automatic = await self.queue.get()
+            managed = automatic
             try:
-                await self._generate(identity, automatic)
+                queued = self.store.one("SELECT resume_pending,trigger_source FROM dm_drafts WHERE id=?", (identity,))
+                managed = automatic or bool(queued and (
+                    queued["resume_pending"] or json.loads(queued["trigger_source"] or "{}").get("continuous")
+                ))
+                if managed:
+                    async with self.operations.automatic_work() as admitted:
+                        if admitted:
+                            await self._generate(identity, automatic)
+                        else:
+                            self.store.execute("UPDATE dm_drafts SET resume_pending=1 WHERE id=? AND status='queued'", (identity,))
+                else:
+                    await self._generate(identity, automatic)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -2324,7 +2336,9 @@ class DirectMessages:
                 if not self.closed:
                     try:
                         retained = self.store.one("SELECT status,resume_pending,next_attempt_at FROM dm_drafts WHERE id=?", (identity,))
-                        if retained and retained["status"] == "queued" and retained["resume_pending"] and retained["next_attempt_at"] <= time.time() and (not automatic or self._processing_authorized()):
+                        can_resume = not managed or self.operations.accepting_work and self._processing_authorized()
+                        if (can_resume and retained and retained["status"] == "queued"
+                                and retained["resume_pending"] and retained["next_attempt_at"] <= time.time()):
                             self._schedule(identity, automatic)
                         await self._resume_pending()
                     except Exception as error:
@@ -2336,7 +2350,9 @@ class DirectMessages:
             policy = self.policy()
             if policy["enabled"] and policy["auto_poll"]:
                 try:
-                    await self.sync(automatic=True)
+                    async with self.operations.automatic_work() as admitted:
+                        if admitted:
+                            await self.sync(automatic=True)
                 except Exception as error:
                     self.error = public_error(error)
             if policy["enabled"]:

@@ -1,7 +1,9 @@
 """Account-scoped write admission, including authorized rejected-write revisions."""
 
+import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from pydantic import Field
@@ -44,6 +46,9 @@ def canonical_intent(platform, resource, source, character_id):
 class OperationsControl:
     def __init__(self, store):
         self.store = store
+        self.starting = False
+        self.draining = False
+        self._admitted = set()
         store.db.executescript("""
             CREATE TABLE IF NOT EXISTS account_writes(
                 token TEXT PRIMARY KEY,account_id TEXT NOT NULL,character_id TEXT NOT NULL,
@@ -73,6 +78,27 @@ class OperationsControl:
             review = store.get("browsing_review_session", {})
             if review.get("state") in {"starting", "running"}:
                 store.set("browsing_review_session", review | {"state": "paused", "paused_at": time.time()})
+
+    @property
+    def accepting_work(self):
+        return not (self.starting or self.draining) and self.policy()["enabled"]
+
+    @property
+    def admitted_work(self):
+        return tuple(self._admitted)
+
+    @asynccontextmanager
+    async def automatic_work(self):
+        if not self.accepting_work:
+            yield False
+            return
+        done = asyncio.get_running_loop().create_future()
+        self._admitted.add(done)
+        try:
+            yield True
+        finally:
+            self._admitted.discard(done)
+            done.set_result(None)
 
     def policy(self):
         value = OperationsPolicy.model_validate(self.store.get("operations_policy", {})).model_dump()

@@ -149,7 +149,11 @@ def rounds(browsing):
         browsing.repo.decode(r)
         for r in browsing.store.all(
             """SELECT r.*, (SELECT COUNT(*) FROM browsing_intents i
-                   WHERE i.round_id=r.id AND i.kind IN ('top_level','reply_public')) AS public_drafts
+                   WHERE i.round_id=r.id AND i.kind IN ('top_level','reply_public')) AS public_drafts,
+                   (SELECT COUNT(*) FROM browsing_intents i WHERE i.round_id=r.id
+                    AND i.kind IN ('top_level','reply_public') AND i.status='published') AS public_published,
+                   (SELECT COUNT(*) FROM browsing_intents i WHERE i.round_id=r.id
+                    AND i.kind IN ('top_level','reply_public') AND i.status='publish_uncertain') AS public_uncertain
                FROM browsing_rounds r WHERE r.created_at>=? ORDER BY r.created_at DESC LIMIT 30""",
             (browsing.store.get("browsing_history_visible_since", 0),),
         )

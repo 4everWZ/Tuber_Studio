@@ -1,5 +1,7 @@
 """Review batches use normal scheduling without replaying an older failed run."""
 
+import asyncio
+
 import pytest
 from test_browsing import BV, finished
 from test_browsing import browsing as browsing
@@ -17,6 +19,99 @@ async def test_review_runs_same_decisions_and_keeps_drafts_without_sending(brows
     assert browsing.intents()[0]["status"] == "pending_review"
     assert not browsing.adapter.sent
     assert not browsing.store.all("SELECT * FROM account_writes")
+
+
+async def test_stop_drains_admitted_batch_and_keeps_review_fence_until_completion(browsing, monkeypatch):
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = browsing.adapter.subtitles
+
+    async def blocked_subtitles(*args):
+        entered.set()
+        await release.wait()
+        return await original(*args)
+
+    monkeypatch.setattr(browsing.adapter, "subtitles", blocked_subtitles)
+    await browsing.configure({"discovery_enabled": True, "top_level_auto_publish": False})
+    await browsing.start_review_session()
+    result = await browsing.run(automatic=True, video_only=True)
+    await asyncio.wait_for(entered.wait(), 3)
+    status = await browsing.stop()
+    drain = browsing.drain_task
+    assert status["state"] == status["discovery"]["state"] == "draining"
+    assert status["policy"]["enabled"] and not browsing.operations.accepting_work
+    with pytest.raises(ValueError, match="review验收"):
+        browsing.operations.reserve("100", browsing.runtime.character, "review-write", "comments")
+    with pytest.raises(ValueError, match="先启动"):
+        await browsing.run(automatic=True, interaction_only=True)
+    release.set()
+    await asyncio.wait_for(drain, 3)
+    assert browsing.repo.round(result["id"])["status"] == "completed"
+    assert browsing.intents()[0]["status"] == "pending_review" and not browsing.adapter.sent
+    assert browsing.status()["state"] == "off"
+    assert browsing.status()["review_session"]["state"] == "stopped"
+
+
+async def test_emergency_can_interrupt_drain_and_revokes_writes_before_cancel(browsing, monkeypatch):
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def blocked_subtitles(*args):
+        entered.set()
+        try:
+            await asyncio.Future()
+        finally:
+            assert not browsing.operations.policy()["enabled"]
+            cancelled.set()
+
+    monkeypatch.setattr(browsing.adapter, "subtitles", blocked_subtitles)
+    await browsing.configure({"discovery_enabled": True})
+    await browsing.set_enabled(True)
+    result = await browsing.run(automatic=True, video_only=True)
+    await asyncio.wait_for(entered.wait(), 3)
+    assert (await browsing.stop())["state"] == "draining"
+    assert (await browsing.stop(emergency=True))["state"] == "emergency"
+    assert cancelled.is_set() and browsing.repo.round(result["id"])["status"] == "paused"
+    assert not browsing.adapter.sent and browsing.drain_task is None
+    with pytest.raises(ValueError, match="紧急停止"):
+        await browsing.set_enabled(True)
+
+
+async def test_inflight_submission_finishes_during_ordinary_stop(browsing):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def before_submit():
+        entered.set()
+        await release.wait()
+
+    browsing.adapter.before_submit = before_submit
+    await browsing.configure({"discovery_enabled": True, "top_level_auto_publish": True})
+    await browsing.set_enabled(True)
+    round_ = await browsing.run(automatic=True, video_only=True)
+    await asyncio.wait_for(entered.wait(), 3)
+    assert (await browsing.stop())["state"] == "draining"
+    drain = browsing.drain_task
+    release.set()
+    await asyncio.wait_for(drain, 3)
+    assert browsing.repo.round(round_["id"])["status"] == "completed"
+    assert browsing.intents()[0]["status"] == "published" and len(browsing.adapter.sent) == 1
+    assert browsing.status()["state"] == "off"
+
+
+async def test_emergency_fences_a_late_start_confirmation(browsing, monkeypatch):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def check():
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr(browsing, "check_browsing_model", check)
+    start = asyncio.create_task(browsing.set_enabled(True))
+    await asyncio.wait_for(entered.wait(), 3)
+    assert browsing.status()["state"] == "starting" and not browsing.operations.accepting_work
+    assert (await browsing.stop(emergency=True))["state"] == "emergency"
+    release.set()
+    with pytest.raises(ValueError, match="启动已取消"):
+        await start
+    assert browsing.status()["state"] == "emergency" and not browsing.operations.policy()["enabled"]
 
 
 @pytest.mark.parametrize("channel", ["comments", "messages", "dynamics"])

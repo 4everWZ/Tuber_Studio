@@ -4,7 +4,7 @@ import { evidenceList } from "./comment-queue.js?v=20261107.21";
 const states = {
   off: "待命", starting: "启动检查", discovering: "正在找视频", reading: "正在取材",
   judging: "正在判断与写稿", publishing: "正在发送", reconciling: "正在查询原回执", finishing: "正在结束本轮",
-  waiting: "轮间等待", blocked: "需要处理", stopping: "正在停止", emergency: "已紧急停止",
+  waiting: "轮间等待", blocked: "需要处理", draining: "当前批次收尾", stopping: "正在停止", emergency: "已紧急停止",
 };
 const roundStates = { completed: "已完成", partial: "部分完成", failed: "未完成", invalid: "输出无效，诊断已保存", cancelled: "已停止", paused: "已暂停，进度保留", deferred_daily: "今日观看次数已用完" };
 const time = seconds => new Date(seconds * 1000).toLocaleString("zh-CN");
@@ -18,28 +18,40 @@ function link(label, href) {
 export function initIssueLog(api, page) {
   const entries = new Map();
   let remote = [], request = 0;
+  const views = [
+    ["workspace-issue-list", "workspace-issue-severity", "clear-workspace-issues", "workspace-issue-feedback"],
+    ["activity-issue-list", "activity-issue-severity", "mark-activity-issues", "activity-issue-feedback"],
+  ];
 
   function applyRecords(data) {
-    remote = (data.issues || []).map(item => ({
-      text: `${item.status === "recovered" ? "已恢复" : item.status === "retry_wait" ? "告警" : "错误"} · ${item.bvid ? item.bvid + " · " : ""}${item.error}${item.occurrences > 1 ? `（记录 ${item.occurrences} 次）` : ""}`,
-      time: item.updated_at, href: item.href || `#automation/round/${item.round_id}${item.bvid ? "/" + item.id : ""}`,
-    }));
+    remote = (data.issue_history || data.issues || []).map(item => {
+      const severity = item.severity || (["retry_wait", "recovered"].includes(item.status) ? "warning" : "error");
+      return {
+        severity, unread: item.unread_occurrences ?? item.occurrences ?? 1,
+        text: `${severity === "warning" ? "告警" : "错误"} · ${item.bvid ? item.bvid + " · " : ""}${item.error}${item.occurrences > 1 ? `（记录 ${item.occurrences} 次）` : ""}`,
+        time: item.updated_at, href: item.href || (item.round_id ? `#automation/round/${item.round_id}${item.bvid ? "/" + item.id : ""}` : null),
+      };
+    });
     render();
   }
 
   function render() {
     const items = [...entries.values(), ...remote].sort((a, b) => b.time - a.time);
-    $("workspace-issues").textContent = items.length ? `告警与错误 · ${items.length}` : "告警与错误";
-    if (page() !== "issues") return;
-    const root = $("workspace-issue-list");
+    const unread = items.filter(item => item.unread > 0).length;
+    $("workspace-issues").textContent = unread ? `告警与错误 · ${unread}` : "告警与错误";
+    if (page() !== "issues" && (page() !== "automation" || $("operation-activity-issues")?.hidden !== false)) return;
+    const [rootId, filterId] = views[page() === "issues" ? 0 : 1];
+    const root = $(rootId);
+    const filter = $(filterId)?.value || "all";
+    const filtered = items.filter(item => filter === "all" || item.severity === filter);
     root.replaceChildren();
-    for (const item of items) {
+    for (const item of filtered) {
       const row = node("article", null, "issue-row");
-      row.append(node("p", item.text), node("span", time(item.time), "hint"));
+      row.append(node("p", item.text), node("span", `${item.unread ? `未读 ${item.unread} 次` : "已读"} · ${time(item.time)}`, "hint"));
       if (item.href && item.href !== "#issues") row.append(link("打开相关位置", item.href));
       root.append(row);
     }
-    if (!items.length) root.append(node("p", "暂无告警或错误。", "hint"));
+    if (!filtered.length) root.append(node("p", "暂无匹配的告警或错误。", "hint"));
   }
 
   function record(message, href = location.hash || "#automation") {
@@ -47,7 +59,7 @@ export function initIssueLog(api, page) {
     if (!text) return;
     const key = JSON.stringify([text, href]);
     if (entries.has(key)) return;
-    entries.set(key, { text, href, time: Date.now() / 1000 });
+    entries.set(key, { text, href, time: Date.now() / 1000, unread: 1, severity: "error" });
     if (entries.size > 50) entries.delete(entries.keys().next().value);
     render();
   }
@@ -88,25 +100,29 @@ export function initIssueLog(api, page) {
     }
   }
 
-  $("clear-workspace-issues").onclick = async event => {
+  async function acknowledge(event, feedbackId) {
     const button = event.currentTarget;
     button.disabled = true;
     ++request;
     const acknowledged = new Set(entries.keys());
-    const feedback = $("workspace-issue-feedback");
-    feedback.textContent = "正在清除已读告警…";
+    const feedback = $(feedbackId);
+    feedback.textContent = "正在标为已读…";
     try {
       const data = await api("/api/automation/issues/clear", { method: "POST" });
       ++request;
       for (const key of acknowledged) entries.delete(key);
       applyRecords(data.records || data);
-      feedback.textContent = "已清除已读告警。";
+      feedback.textContent = "已标为已读，历史仍可查看。";
     } catch (error) {
       feedback.textContent = `清除失败：${safeMessage(error.message)}`;
     } finally {
       button.disabled = false;
     }
-  };
+  }
+  for (const [, filterId, buttonId, feedbackId] of views) {
+    if ($(filterId)) $(filterId).onchange = render;
+    if ($(buttonId)) $(buttonId).onclick = event => acknowledge(event, feedbackId);
+  }
   return { record, refresh, render };
 }
 

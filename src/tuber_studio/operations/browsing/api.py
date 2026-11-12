@@ -98,6 +98,8 @@ def register_browsing_api(app, browsing, require_admin):
 
     @app.post("/api/automation/reset-stop", dependencies=dependencies)
     async def reset():
+        if browsing.operations.draining:
+            raise ValueError("当前停运尚未收齐任务")
         browsing.operations.configure({"emergency": False})
         return browsing.status()
 

@@ -79,7 +79,7 @@ export function initWorkspaceNavigation(model, loadPage) {
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     });
-    const selectedOperation = model.page === "automation" ? "overview" : model.page === "automation-records" ? "overview" : model.page;
+    const selectedOperation = model.page === "automation" ? "overview" : model.page;
     document.querySelectorAll("[data-operations-tab]").forEach(link => {
       const active = link.dataset.operationsTab === selectedOperation;
       link.classList.toggle("active", active);

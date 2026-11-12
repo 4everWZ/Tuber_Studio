@@ -10,7 +10,7 @@ from ...operations_control import canonical_intent
 from ...providers import public_error
 from ...store import dump
 from .evidence import EvidenceUnavailable
-from .issues import unread_issues
+from .issues import issue_history
 from .models import BrowsePlan, CandidateBatchPlan
 
 ACTIVE_TASKS = ("discovered", "claimed", "preparing", "evidence_ready")
@@ -65,10 +65,10 @@ class BackgroundDiscovery:
 
     @property
     def state(self):
-        if self.browsing.closed:
-            return "stopping"
-        if self.browsing.starting:
-            return "starting"
+        control = self.browsing.operations.policy()
+        state = self.browsing.control_state(control)
+        if state != "running":
+            return state
         return "running" if self.round_id else "waiting" if self.enabled else "off"
 
     @property
@@ -314,8 +314,10 @@ class BackgroundDiscovery:
             )
         since = store.get("browsing_history_visible_since", 0)
         sent = [item for item in sent if item["updated_at"] >= since]
-        issues = unread_issues(self.browsing, [item for item in issues if item.get("updated_at", 0) >= since])
-        return {"sent": sent, "issues": issues, "activity": self.activity(scope)}
+        history = issue_history(self.browsing, [item for item in issues if item.get("updated_at", 0) >= since])
+        issues = [item | {"total_occurrences": item.get("occurrences", 1), "occurrences": item["unread_occurrences"]}
+                  for item in history if item["unread_occurrences"]]
+        return {"sent": sent, "issues": issues, "issue_history": history, "activity": self.activity(scope)}
 
     @staticmethod
     def merge_issues(items):

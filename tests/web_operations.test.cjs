@@ -747,6 +747,24 @@ test("parent start prevents duplicate submissions and releases its button after 
   assert.equal(button.textContent, "停止自主运营");
 });
 
+test("a delayed stop response cannot overwrite the newer stopped state", async t => {
+  const byId = setupDOM(t);
+  const { initOperationsModule, updatePermissionCapsule } = await import("../src/tuber_studio/web/modules/operations.js");
+  const snapshot = (state, sequence) => ({ state, started_at: 100, status_sequence: sequence,
+    policy: { enabled: state !== "off" }, settings: {}, permissions: {} });
+  let current = snapshot("running", 1), reply;
+  const api = (path, options) => options ? new Promise(resolve => { reply = resolve; }) : Promise.resolve(current);
+  initOperationsModule(api, null);
+  await updatePermissionCapsule(api, null);
+  const stopping = byId("op-toggle-auto").onclick();
+  current = snapshot("off", 3);
+  await updatePermissionCapsule(api, null);
+  reply(snapshot("draining", 2));
+  await stopping;
+  assert.equal(byId("discovery-top-state").textContent, "自主运营已停止");
+  assert.equal(byId("op-toggle-auto").disabled, false);
+});
+
 test("matrix uses the stored message policy and displays partial failure", async t => {
   const byId = setupDOM(t);
   const { savePermissionMatrix } = await import("../src/tuber_studio/web/modules/operations.js");

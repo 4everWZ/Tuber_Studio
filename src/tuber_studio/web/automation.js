@@ -17,7 +17,7 @@ class AutomationPanel {
     this.intents = [];
     this.inbox = [];
     this.refreshing = false;
-    this.roundId = null;
+    this.roundId = undefined;
     this.refreshedAt = 0;
 
     // Build Host Container
@@ -53,7 +53,7 @@ class AutomationPanel {
     const previous = this.roundId;
     this.roundId = roundId;
     if (previous !== roundId) {
-      if (roundId) this.workbench?.switchTab("tasks");
+      this.workbench?.switchTab(roundId ? "tasks" : "rounds");
       this.workbench?.setRoundFilter(roundId);
     }
     if (taskId && this.workbench) {

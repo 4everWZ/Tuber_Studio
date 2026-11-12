@@ -27,12 +27,16 @@ async def test_clear_acknowledges_existing_errors_and_new_occurrences_still_appe
     add_error(browsing, "old", now - 5)
     assert len(browsing.discovery.records()["issues"]) == 1
     assert clear_issues(browsing)["issues"] == []
-    assert browsing.discovery.records()["issues"] == []
+    records = browsing.discovery.records()
+    assert records["issues"] == []
+    historical, = records["issue_history"]
+    assert historical["id"] == "old" and historical["severity"] == "error" and historical["unread_occurrences"] == 0
     assert browsing.store.one("SELECT error FROM browsing_rounds WHERE id='old'")["error"] == "读取失败"
     add_error(browsing, "new", now + 5)
     issue = browsing.discovery.records()["issues"][0]
     assert issue["occurrences"] == 1
     assert issue["error"] == "读取失败"
+    assert browsing.discovery.records()["issue_history"][0]["occurrences"] == 2
 
 
 async def test_failed_read_only_task_surfaces_and_can_be_acknowledged(browsing):

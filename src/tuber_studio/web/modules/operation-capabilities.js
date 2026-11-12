@@ -24,6 +24,10 @@ export function operationCapabilities(status) {
     if (mode === "off") return { id, label, color: "gray", state: "关闭", detail: "此功能未开放。可在运营设置中调整。" };
     if (blocked) return { id, label, color: "red", state: emergency ? "已紧停" : "受阻", detail: reason };
     const configured = mode === "auto" ? "已允许自动运行" : "已允许生成待审内容";
+    if (status.state === "starting" || status.state === "draining") {
+      const state = status.state === "starting" ? "检查中" : "收尾中";
+      return { id, label, color: "gray", state, detail: `${configured}，自主运营${state}。` };
+    }
     if (!running) return { id, label, color: "gray", state: status.state === "stopping" ? "停止中" : "待启动", detail: `${configured}；${status.state === "stopping" ? "自主运营正在停止" : "自主运营尚未运行"}。` };
     return mode === "review" ? { id, label, color: "yellow", state: "生成待审", detail: "自主运营已启用此功能，生成的内容需要人工审核。" } :
       { id, label, color: "green", state: "自动运行", detail: "自主运营已启用此功能，按已保存设置自动执行。" };
