@@ -684,16 +684,16 @@ test("one parent start action uses saved permissions without enabling additional
 test("capability lamps separate saved permissions from actual runtime and private polling", async () => {
   const { operationCapabilities } = await import("../src/tuber_studio/web/modules/operation-capabilities.js");
   const permissions = { video_enabled: true, top_level: "auto", replies: "review", private_poll: false,
-    private_messages: "auto", dynamics: "review", video_like: "off", video_fav: "off" };
+    private_messages: "auto", dynamics: "review", video_like: "off", video_fav: "off", comment_like: "review" };
   const off = operationCapabilities({ policy: { enabled: false }, state: "off", permissions });
-  assert.equal(off.length, 8);
+  assert.equal(off.length, 9);
   assert.ok(off.every(item => item.color === "gray"));
   assert.equal(off.find(item => item.id === "videos").state, "待启动");
   assert.equal(off.find(item => item.id === "message_poll").state, "关闭");
   const active = Object.fromEntries(operationCapabilities({ policy: { enabled: true }, state: "running", permissions })
     .map(item => [item.id, item]));
   for (const key of ["videos", "top_level", "message_reply"]) assert.equal(active[key].color, "green");
-  for (const key of ["comments", "dynamics"]) assert.equal(active[key].color, "yellow");
+  for (const key of ["comments", "dynamics", "comment-like"]) assert.equal(active[key].color, "yellow");
   for (const key of ["message_poll", "like", "favorite"]) assert.equal(active[key].color, "gray");
 });
 

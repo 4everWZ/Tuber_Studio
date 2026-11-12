@@ -196,6 +196,7 @@ class BrowsingDecisions:
                 allowed,
                 video_actions=data.get("video_actions", False),
                 allow_public=data.get("allow_public", True),
+                allow_comment_like=data.get("allow_comment_like", False),
                 allow_comments=data.get("allow_comments", True),
                 allow_visual=allow_visual,
                 grouped_comment_refs=response_input.grouped_comment_refs,
@@ -754,12 +755,13 @@ class BrowsingDecisions:
                 (row["account_id"], row["character_id"], source_key),
             )
             chosen = {ref for d in actionable for ref in d.evidence_ids} if actionable else set()
-            if not chosen and row["config"].get("reply_enabled"):
+            comment_actions = row["config"].get("reply_enabled") or row["config"].get("comment_like_enabled")
+            if not chosen and comment_actions:
                 chosen = {segment["id"] for segment in self.browsing._segments(material)}
 
             # Pre-fetch comments to verify if account already left a top-level comment on Bilibili
             need_comments = actionable and (
-                row["config"]["top_level_enabled"] or row["config"].get("reply_enabled", False)
+                row["config"]["top_level_enabled"] or comment_actions
             )
             if need_comments and not existing and context is None:
                 context = await self.browsing.video_comment_context(row, bvid)
@@ -883,7 +885,7 @@ class BrowsingDecisions:
             defer_comments = (
                 row["config"].get("batch_id")
                 and payload.get("task_kind", "new_video") == "new_video"
-                and row["config"].get("reply_enabled", False)
+                and comment_actions
                 and chosen
                 and may_discuss
             )
@@ -1117,7 +1119,10 @@ class BrowsingDecisions:
         return comment_thread_context(item, items, target)
 
     async def _response(self, row, material, context, allowed, kind, metrics, *, video_actions=False):
-        context = {key: value for key, value in context.items() if key != "_scroll_progress"}
+        context = dict(context)
+        context.pop("_scroll_progress", None)
+        allow_public = context.pop("_allow_public", True)
+        allow_comment_like = context.pop("_allow_comment_like", False)
         if kind != "top_level":
             metadata = material.get("metadata", {}) if material else {}
             if (context.get("target") or {}).get("bvid") == metadata.get("bvid") and metadata.get("owner_uid"):
@@ -1151,12 +1156,14 @@ class BrowsingDecisions:
             "thread": {} if kind == "top_level" else context,
             **({"video_source": self._metadata_summary(material["metadata"])} if material else {}),
             "coverage": material["coverage"] if material else "public_text",
+            **({"allow_public": allow_public, "allow_comment_like": allow_comment_like}
+               if allow_comment_like or not allow_public else {}),
             **({"video_actions": True, "allow_visual": self.browsing.evidence.has_visual_provider()
                 and not material.get("visual_source_ids")} if video_actions else {}),
             **(
                 {
                     "allow_public": row["config"]["top_level_enabled"],
-                    "allow_comments": row["config"].get("reply_enabled", False),
+                    "allow_comments": bool(row["config"].get("reply_enabled") or row["config"].get("comment_like_enabled")),
                 }
                 if video_actions
                 else {}
@@ -1182,6 +1189,8 @@ class BrowsingDecisions:
             ResponseDecision,
             data,
             RESPONSE_INSTRUCTION
+            + (" 想给当前评论点个赞时选like_comment，引用该评论，正文留空。"
+               if allow_comment_like else "")
             + (" grouped_comments是同一用户对同一对象的连续来评。若一并公开回答，"
                "covered_comments列当前回复目标和正文一并回答的其他来评编号。"
                if context.get("grouped_comments") else "")

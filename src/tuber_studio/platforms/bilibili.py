@@ -307,6 +307,7 @@ class BilibiliAdapter:
             "display_name": str(member["uname"]),
             "content": str(content["message"]),
             "like_count": max(0, int(reply.get("like", 0))),
+            **({"liked_by_self": reply["action"] == 1} if type(reply.get("action")) is int else {}),
             "created_at": str(int(reply.get("ctime", 0))),
             "mentions": mentions,
         }

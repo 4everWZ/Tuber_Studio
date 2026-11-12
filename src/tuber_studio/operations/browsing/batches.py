@@ -498,7 +498,7 @@ async def defer_comment_visit(browsing, row, bvid, metrics):
 
 
 async def process_comment_visits(browsing, row, metrics):
-    if not row["config"]["reply_enabled"]:
+    if not (row["config"]["reply_enabled"] or row["config"].get("comment_like_enabled")):
         return
     async def visit(candidate, key):
         try:

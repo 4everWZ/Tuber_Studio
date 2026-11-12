@@ -630,7 +630,7 @@ async def select_batch_candidates(browsing, row, retries, candidates):
                 time.time() - 21600,
             ),
         )
-        if previous and not config.get("force_read") and not config.get("reply_enabled"):
+        if previous and not (config.get("force_read") or config.get("reply_enabled") or config.get("comment_like_enabled")):
             if config.get("batch_id"):
                 browsing.repo.batches.omit_candidate(row, item, reason="已完成内容处理，本轮未开启评论回访")
             continue
@@ -707,7 +707,7 @@ def candidate_view(browsing, row, item):
     return {key: item.get(key) for key in ("bvid", "title", "owner", "duration", "sources")} | {
         "watch_state": progress["read_state"] if progress else "started" if started else "new",
         "available_actions": ["watch", "comments", "skip", "later"]
-        if row["config"].get("reply_enabled")
+        if row["config"].get("reply_enabled") or row["config"].get("comment_like_enabled")
         else ["watch", "skip", "later"],
         "fully_read": bool(progress and progress["fully_read"]),
         "main_decision": progress.get("main_decision") if progress else None,

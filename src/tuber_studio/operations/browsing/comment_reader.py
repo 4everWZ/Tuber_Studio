@@ -298,13 +298,14 @@ async def handoff_comment(browsing, row, reply, target, thread, material, keys, 
 
 
 async def run_interactions(browsing, row, metrics):
-    if hasattr(browsing.adapter, "own_uploads") and row["config"]["reply_enabled"]:
+    public_enabled = row["config"]["reply_enabled"] or row["config"].get("comment_like_enabled")
+    if hasattr(browsing.adapter, "own_uploads") and public_enabled:
         try:
             await browsing._collect_own_comments(row)
         except (ValueError, TimeoutError) as error:
             metrics["own_upload_error"] = public_error(error)
             metrics["failures"] += 1
-    if hasattr(browsing.adapter, "own_dynamics") and row["config"]["reply_enabled"]:
+    if hasattr(browsing.adapter, "own_dynamics") and public_enabled:
         try:
             await collect_own_dynamics(browsing, row)
         except (ValueError, TimeoutError) as error:
@@ -366,6 +367,11 @@ async def process_events(browsing, row, metrics, *, own_only=False):
 
 
 async def process_event_batch(browsing, row, metrics, own_only):
+    browsing.store.execute(
+        "UPDATE browsing_events SET status='received' WHERE account_id=? AND status='reply_deferred' "
+        "AND json_extract(error,'$.next_at')<=?",
+        (row["account_id"], time.time()),
+    )
     events = browsing.store.all(
         "WITH pending AS (SELECT *,CASE WHEN json_valid(payload) THEN payload ELSE '{}' END AS data "
         "FROM browsing_events WHERE account_id=? AND status='received' AND (?=0 OR kind='own_comment') "
@@ -462,6 +468,7 @@ async def attempt_event(browsing, event_row, row, metrics):
         elif isinstance(error, (DailyReplyLimitReached, SendLimitReached)) or getattr(error, "kind", None) in {
             "network",
             "timeout",
+            "restricted",
             "rate_limited",
             "anti_bot",
             "thread_pending",
@@ -497,13 +504,14 @@ async def attempt_event(browsing, event_row, row, metrics):
         else:
             raise
     if task_id and intent:
+        field = "$.like_intent_ids" if intent["kind"] == "comment_like" else "$.reply_intent_ids"
         browsing.store.execute(
             "UPDATE browsing_tasks SET status='selected', "
-            "payload=json_insert(payload,'$.reply_intent_ids',json('[]')),updated_at=? WHERE id=?",
-            (time.time(), task_id),
+            "payload=json_insert(payload,?,json('[]')),updated_at=? WHERE id=?",
+            (field, time.time(), task_id),
         )
-        browsing.store.execute("UPDATE browsing_tasks SET payload=json_insert(payload,'$.reply_intent_ids[#]',?) WHERE id=?",
-                               (intent["id"], task_id))
+        browsing.store.execute("UPDATE browsing_tasks SET payload=json_insert(payload,?,?) WHERE id=?",
+                               (field + "[#]", intent["id"], task_id))
     elif task_id and generation:
         diagnostic = {"comment_id": json.loads(event_row["payload"])["comment_id"],
                       "continuation_id": generation["id"], "state": generation["state"],
@@ -516,8 +524,11 @@ async def attempt_event(browsing, event_row, row, metrics):
 
 async def event(browsing, event_row, row, metrics):
     event = json.loads(event_row["payload"])
+    event.setdefault("kind", event_row["kind"])
     config = row["config"]
-    if event_row["kind"] == "mention" and not config["mention_reply_enabled"] or not config["reply_enabled"]:
+    if event_row["kind"] == "mention" and not config["mention_reply_enabled"] or not (
+        config["reply_enabled"] or config.get("comment_like_enabled")
+    ):
         return
     thread = await read_event_thread(browsing, event)
     target = thread["target"]
@@ -539,12 +550,11 @@ async def read_event_thread(browsing, event):
     target = {key: event[key] for key in ("type", "resource_type", "oid", "bvid", "root", "parent")}
     if hasattr(browsing.adapter, "read_video_thread"):
         thread = await read_scoped_thread(browsing, browsing.adapter.read_video_thread, target, event)
+        thread = {"target": target} | thread
+        thread["source"] = {"comment_id": target["parent"]} | thread["source"]
     else:
         item = next(item for item in event["items"] if str(item["comment_id"]) == target["parent"])
-        source = comment_source(item)
-        if hasattr(browsing.adapter, "read_video_reply"):
-            source.update(await browsing._read(browsing.adapter.read_video_reply, target))
-        thread = {"target": target, "source": source, "items": event["items"]}
+        thread = {"target": target, "source": comment_source(item), "items": event["items"]}
     return thread | {"account_id": event["account_id"], "resource_type": "video",
                      "resource_author_uid": event.get("resource_author_uid")}
 
@@ -566,7 +576,7 @@ def settle_aliases(browsing, event_row, row, target, source):
         return
     browsing.store.execute(
         "UPDATE browsing_events SET status='skipped',error='同一公开评论已处理' WHERE account_id=? "
-        "AND status='received' AND id<>? AND json_extract(payload,'$.resource_type')=? "
+        "AND status IN ('received','reply_deferred') AND id<>? AND json_extract(payload,'$.resource_type')=? "
         "AND CAST(json_extract(payload,'$.oid') AS TEXT)=? AND CAST(json_extract(payload,'$.parent') AS TEXT)=? "
         "AND CAST(json_extract(payload,'$.sender_uid') AS TEXT)=? AND (kind<>'comment_visit' OR "
         "(json_extract(payload,'$.character_id')=? AND json_extract(payload,'$.review_session_id') IS ?))",
@@ -589,7 +599,9 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     canonical = canonical_intent("bilibili", resource, source["comment_id"], row["character_id"])
     items_list = thread.get("items", [])
-    if matched := operator_reply(items_list, target, row["account_id"]):
+    existing = browsing.publication.source_intent(row, canonical)
+    matched = operator_reply(items_list, target, row["account_id"])
+    if matched and (not existing or existing["status"] != "published"):
         browsing.store.execute(
             "UPDATE browsing_events SET status='operator_replied',source_key=?,"
             "payload=json_set(payload,'$.account_reply',json(?)),error=NULL WHERE id=?",
@@ -597,11 +609,12 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         )
         settle_aliases(browsing, event_row, row, target, source)
         return
-    if browsing.publication.source_intent(row, canonical):
+    if existing:
         browsing.store.execute(
             "UPDATE browsing_events SET status='skipped',error='同源回应意图已存在' WHERE id=?",
             (event_row["id"],),
         )
+        settle_aliases(browsing, event_row, row, target, source)
         return
     if browsing.publication.has_manual_draft(
         row, resource, source["comment_id"],
@@ -623,6 +636,23 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         event.get("sender_uid") and str(source["author_uid"]) != str(event["sender_uid"])
     ):
         raise ValueError("评论原文或作者已变化，未使用旧候选")
+    like_enabled = config.get("comment_like_enabled", False)
+    like_intent = browsing.publication.comment_like_intent(row, target) if like_enabled else None
+    if like_intent:
+        if (like_intent["auto_authorized"] and like_intent["epoch"] == row["epoch"]
+                and like_intent["status"] == "pending_review"
+                and browsing.publication._action_allowed("comment_like", browsing.effective())):
+            await browsing.publish(like_intent["id"], automatic=True)
+        browsing.store.execute(
+            "UPDATE browsing_events SET status='drafted',source_key=?,error=NULL WHERE id=?",
+            (canonical, event_row["id"]),
+        )
+        settle_aliases(browsing, event_row, row, target, source)
+        return like_intent
+    reply_limited = bool(target.get("bvid") and config["reply_enabled"] and
+                         browsing.repo.video_reply_limit_reached(row, target["bvid"]))
+    allow_public = config["reply_enabled"] and not (like_enabled and reply_limited)
+    allow_like = like_enabled and not source_row.get("liked_by_self")
     group_ids = event.get("grouped_ids") or []
     if group_ids:
         grouped = [item for item in items_list if str(item["comment_id"]) in group_ids
@@ -643,7 +673,7 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     reply = browsing.decisions.invited_private_response(row, thread)
     material, keys = None, []
     allowed = {"public:" + str(source["comment_id"])}
-    if reply is None and thread["resource_type"] == "video":
+    if thread["resource_type"] == "video":
         progress = browsing.repo.content_progress(row, target["bvid"])
         if progress:
             key, material = await browsing.evidence._store(progress["material"])
@@ -666,11 +696,29 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     )
     if reply is None:
         previous = browsing.decisions.comment_progress.get(row, resource, source, legacy_source=legacy_source)
-        if previous and previous.action != "handoff_private":
+        if previous and (
+            previous.action == "reply_public" and allow_public
+            or previous.action == "like_comment" and allow_like
+            or previous.action == "skip" and not allow_like
+        ):
             reply = previous
     if reply is None:
-        reply = await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
-        browsing.decisions.comment_progress.save(row, resource, source, reply)
+        thread["_allow_public"] = allow_public
+        thread["_allow_comment_like"] = allow_like
+        reply = (await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
+                 if allow_public or allow_like else ResponseDecision(action="skip", reason="no_interest"))
+        if reply.action != "skip" or allow_public:
+            browsing.decisions.comment_progress.save(row, resource, source, reply)
+    if reply.action == "reply_public" and not allow_public or reply.action == "like_comment" and not allow_like:
+        raise ValueError("回应动作未获当前任务授权")
+    if like_enabled and reply_limited and reply.action in {"skip", "wait"}:
+        limit = DailyReplyLimitReached(day_window(config.get("business_timezone", "Asia/Taipei")))
+        browsing.store.execute(
+            "UPDATE browsing_events SET status='reply_deferred',error=? WHERE id=?",
+            (dump({"message": str(limit), "next_at": limit.next_at}), event_row["id"]),
+        )
+        settle_aliases(browsing, event_row, row, target, source)
+        return
     if reply.action in {"skip", "wait"}:
         browsing.store.execute(
             "UPDATE browsing_events SET status=?,error=? WHERE id=?",
@@ -695,9 +743,11 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     if event_row["kind"] != "comment_visit":
         target["source_event"] = event
     if reply.action == "handoff_private":
-        intent = await handoff_comment(browsing, row, reply, target, thread, material, keys, event=event)
+        intent = await handoff_comment(browsing, row, reply, target, thread, material, keys,
+                                       event=target.get("source_event"), created_at=event_row.get("timestamp", ""))
     else:
-        intent = browsing.publication._intent(row, "reply_public", target, reply, keys, reply.evidence_ids)
+        kind = "comment_like" if reply.action == "like_comment" else "reply_public"
+        intent = browsing.publication._intent(row, kind, target, reply, keys, reply.evidence_ids)
         if not intent:
             if target.get("bvid") and browsing.repo.video_reply_limit_reached(row, target["bvid"]):
                 raise DailyReplyLimitReached(day_window(config.get("business_timezone", "Asia/Taipei")))

@@ -56,6 +56,8 @@
         return { label: "💬 楼内跟帖", icon: "💬", type: "reply_public" };
       case "video_like":
         return { label: "👍 视频点赞", icon: "👍", type: "video_like" };
+      case "comment_like":
+        return { label: "👍 评论点赞", icon: "👍", type: "comment_like" };
       case "video_fav":
         return { label: "⭐ 视频收藏", icon: "⭐", type: "video_fav" };
       case "private_handoff":

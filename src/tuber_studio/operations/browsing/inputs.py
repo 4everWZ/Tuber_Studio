@@ -444,6 +444,8 @@ class ResponseDecisionInput:
         self._by_alias = {ref.alias: ref for ref in refs}
         thread = data.get("thread") or {}
         self.recipient_name = (thread.get("source") or {}).get("author_name") or ""
+        self.allow_public = data.get("allow_public", True)
+        self.allow_comment_like = data.get("allow_comment_like", False)
         group = {"public:" + str(item["comment_id"]) for item in thread.get("grouped_comments", [])}
         self.grouped_comment_refs = frozenset(ref.alias for ref in refs if ref.canonical_id in group)
         self.anchor_alias = next((ref.alias for ref in refs if ref.canonical_id ==
@@ -517,6 +519,12 @@ class ResponseDecisionInput:
             raise ValueError("回应引用不属于本次短编号")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
+        if value.action == "reply_public" and not self.allow_public:
+            raise ValueError("当前任务未提供公开回复")
+        if value.action == "like_comment" and (
+            not self.allow_comment_like or self.anchor_alias not in value.evidence_ids or value.text
+        ):
+            raise ValueError("点赞只接受本次已核验的目标评论")
         if value.action == "reply_public" and self.grouped_comment_refs:
             covered = set(value.covered_comments)
             if self.anchor_alias not in covered or not covered <= self.grouped_comment_refs:

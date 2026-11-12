@@ -95,7 +95,7 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
                 browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"]
             )
             if item.get("task_kind") == "comment_visit" or row["config"].get("comment_visit"):
-                if not row["config"]["reply_enabled"]:
+                if not (row["config"]["reply_enabled"] or row["config"].get("comment_like_enabled")):
                     browsing.repo.complete(
                         identity, owner, generation, "comments_checked",
                         item | {"task_kind": "comment_visit", "reason": "评论功能已关闭"},

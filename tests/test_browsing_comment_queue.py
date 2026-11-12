@@ -19,14 +19,14 @@ async def test_comment_backlog_does_not_barrier_next_video_batch(browsing, monke
     assert not browsing.intents()
 
     entered, release = asyncio.Event(), asyncio.Event()
-    original = browsing.decisions._reply_to_video_comment
+    original = browsing._event_unlocked
 
     async def blocked(*args, **kwargs):
         entered.set()
         await release.wait()
         return await original(*args, **kwargs)
 
-    monkeypatch.setattr(browsing.decisions, "_reply_to_video_comment", blocked)
+    monkeypatch.setattr(browsing, "_event_unlocked", blocked)
     reply = await browsing.run(automatic=True, interaction_only=True)
     reply_worker = browsing.active[reply["id"]]
     try:
@@ -37,7 +37,8 @@ async def test_comment_backlog_does_not_barrier_next_video_batch(browsing, monke
         assert second["id"] != first["id"] and second["status"] == "completed"
         assert not reply_worker.done()
         assert browsing.store.one("SELECT bvid FROM browsing_watch_starts")["bvid"] == "BV1xx411c7mD"
-        assert browsing.store.one("SELECT status FROM browsing_batch_items WHERE bvid=?", (BV,))["status"] == "running"
+        assert browsing.store.one("SELECT status FROM browsing_batch_items WHERE bvid=?", (BV,))["status"] == "completed"
+        assert browsing.store.one("SELECT status FROM browsing_events WHERE kind='comment_visit'")["status"] == "received"
         assert len([item for item in browsing.intents() if item["kind"] == "top_level"]) == 1
     finally:
         release.set()
@@ -87,16 +88,16 @@ async def test_stopped_comment_page_resumes_cursor_without_repeating_finished_fl
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
     await finished(browsing, automatic=True, video_only=True)
     entered = asyncio.Event()
-    original = browsing.decisions._reply_to_video_comment
+    original = browsing._event_unlocked
     block = True
 
-    async def blocked(*args, **kwargs):
-        if args[4]["comment_id"] == "602" and block:
+    async def blocked(event_row, row, metrics, event, thread):
+        if thread["source"]["comment_id"] == "602" and block:
             entered.set()
             await asyncio.Event().wait()
-        return await original(*args, **kwargs)
+        return await original(event_row, row, metrics, event, thread)
 
-    monkeypatch.setattr(browsing.decisions, "_reply_to_video_comment", blocked)
+    monkeypatch.setattr(browsing, "_event_unlocked", blocked)
     reply = await browsing.run(automatic=True, interaction_only=True)
     worker = browsing.active[reply["id"]]
     await asyncio.wait_for(entered.wait(), 2)
@@ -104,14 +105,15 @@ async def test_stopped_comment_page_resumes_cursor_without_repeating_finished_fl
     worker.cancel()
     await asyncio.gather(worker, return_exceptions=True)
     key = "browsing_comment_page:100:whale:" + BV
-    assert browsing.store.get(key) is None  # The unfinished page is not acknowledged.
+    assert browsing.store.get(key) == 2
+    assert browsing.store.one("SELECT status FROM browsing_events WHERE source_key='602'")["status"] == "received"
     assert not browsing.comment_active
     browsing.repo.recover()
     block = False
     resumed = await finished(browsing, automatic=True, interaction_only=True)
     assert resumed["status"] == "completed"
     assert browsing.store.get(key) == 2
-    assert calls == [(1, True), (1, False), (1, True), (1, False)]
+    assert calls == [(1, True), (1, False)]
     assert {item["target"]["parent"] for item in browsing.intents()} == {"601", "602"}
     assert len(browsing.intents()) == 2
     assert sum(title == "ResponseDecision" for title, _ in browsing.runtime.llm.calls) == 2
@@ -176,25 +178,27 @@ async def test_finishing_video_batch_does_not_pause_independent_comment_owner(br
     attach_comment_source(browsing, monkeypatch)
     main = await finished(browsing, automatic=True, video_only=True)
     entered, release = asyncio.Event(), asyncio.Event()
-    original = browsing.decisions._reply_to_video_comment
+    original = browsing._event_unlocked
 
     async def blocked(*args, **kwargs):
         entered.set()
         await release.wait()
         return await original(*args, **kwargs)
 
-    monkeypatch.setattr(browsing.decisions, "_reply_to_video_comment", blocked)
+    monkeypatch.setattr(browsing, "_event_unlocked", blocked)
     reply = await browsing.run(automatic=True, interaction_only=True)
     worker = browsing.active[reply["id"]]
     try:
         await asyncio.wait_for(entered.wait(), 2)
         browsing.store.execute("UPDATE browsing_batches SET plan=NULL WHERE round_id=?", (main["id"],))
         assert browsing.repo.batches.finish(main, status="cancelled")
-        assert browsing.store.one("SELECT status FROM browsing_batch_items")["status"] == "running"
+        assert browsing.store.one("SELECT status FROM browsing_batch_items")["status"] == "completed"
+        assert browsing.store.one("SELECT status FROM browsing_events WHERE kind='comment_visit'")["status"] == "received"
         assert browsing.repo.batches.pending_comment_visits(main) == []
     finally:
         release.set()
         await asyncio.wait_for(worker, 2)
+    assert browsing.store.one("SELECT status FROM browsing_events WHERE kind='comment_visit'")["status"] == "drafted"
 
 
 async def test_saved_comment_decision_keeps_review_provenance_before_intent_creation(browsing, monkeypatch):

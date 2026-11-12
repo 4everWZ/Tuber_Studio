@@ -66,6 +66,8 @@ class BrowsingPolicy(StrictModel):
     top_level_auto_publish: bool = False
     reply_enabled: bool = False
     reply_auto_publish: bool = False
+    comment_like_enabled: bool = False
+    comment_like_auto_publish: bool = False
     video_like_enabled: bool = False
     video_like_auto_publish: bool = False
     video_fav_enabled: bool = False
@@ -307,6 +309,7 @@ class ResponseDecision(StrictModel):
     preference_reason: str = ""
     action: Literal[
         "reply_public",
+        "like_comment",
         "handoff_private",
         "skip",
         "wait",
@@ -420,6 +423,7 @@ def response_schema(
     maximum=None,
     video_actions=False,
     allow_public=True,
+    allow_comment_like=False,
     allow_comments=True,
     allow_visual=True,
     grouped_comment_refs=(),
@@ -430,6 +434,8 @@ def response_schema(
         "skip": ["no_interest", "insufficient_evidence", "spam"],
         "wait": ["cooldown", "insufficient_evidence"],
     }
+    if allow_comment_like and evidence_ids:
+        reasons["like_comment"] = ["specific_detail", "light_interaction"]
     if video_actions:
         reasons.update(
             {
@@ -470,7 +476,7 @@ def response_schema(
                     "action": {"type": "string", "enum": [action]},
                     "evidence_ids": {
                         "type": "array",
-                        "minItems": 1 if sending else 0,
+                        "minItems": 1 if sending or action == "like_comment" else 0,
                         "maxItems": 8,
                         "items": {"$ref": "#/$defs/evidence_id"}
                         if evidence_ids

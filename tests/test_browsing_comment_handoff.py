@@ -206,14 +206,16 @@ async def test_send_rechecks_real_mention_uid_even_when_nickname_and_text_match(
 
     async def read_thread(target):
         reads.append(target["parent"])
-        item = comment() | {"content": INVITATION, "mentions": [{"uid": "999", "name": "大肥鱼"}]}
+        item = comment() | {"content": INVITATION, "mentions": [
+            {"uid": "100" if len(reads) == 1 else "999", "name": "大肥鱼"},
+        ]}
         return {"source": {"author_uid": "300", "text": INVITATION}, "items": [item]}
 
     monkeypatch.setattr(browsing.adapter, "read_video_thread", read_thread, raising=False)
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
     await finished(browsing, automatic=True, interaction_only=True)
     draft = browsing.store.one("SELECT status,text FROM dm_drafts")
-    assert reads == ["601"] and draft["text"] and draft["status"] == "not_initiated"
+    assert reads == ["601", "601"] and draft["text"] and draft["status"] == "not_initiated"
     assert not transport.sent and not browsing.adapter.sent
 
 

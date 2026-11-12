@@ -6,6 +6,7 @@ let matrixSaveTimeout = null;
 function hasAutomaticRules(settings) {
   return (settings.top_level_enabled && settings.top_level_auto_publish) ||
     (settings.reply_enabled && settings.reply_auto_publish) ||
+    (settings.comment_like_enabled && settings.comment_like_auto_publish) ||
     (settings.video_like_enabled && settings.video_like_auto_publish) ||
     (settings.video_fav_enabled && settings.video_fav_auto_publish) ||
     (settings.comment_handoff_enabled && settings.handoff_auto_send);
@@ -32,6 +33,7 @@ function calculatePermissionTier(status, account, hasCsrf) {
   const allDisabled = (
     !settings.top_level_enabled &&
     !settings.reply_enabled &&
+    !settings.comment_like_enabled &&
     !settings.video_like_enabled &&
     !settings.video_fav_enabled &&
     !settings.mentions_enabled
@@ -92,6 +94,7 @@ function applyPermissionTierUI(tierInfo) {
 function getOptimisticSettingsFromDOM() {
   const topVal = document.querySelector('input[name="matrix_top_level"]:checked')?.value || "1";
   const replyVal = document.querySelector('input[name="matrix_reply"]:checked')?.value || "1";
+  const commentLikeVal = document.querySelector('input[name="matrix_comment_like"]:checked')?.value || "0";
   const dmVal = document.querySelector('input[name="matrix_dm"]:checked')?.value || "1";
   const likeVal = document.querySelector('input[name="matrix_video_like"]:checked')?.value || "1";
   const favVal = document.querySelector('input[name="matrix_video_fav"]:checked')?.value || "1";
@@ -104,6 +107,8 @@ function getOptimisticSettingsFromDOM() {
     top_level_auto_publish: topVal === "2",
     reply_enabled: replyVal !== "0",
     reply_auto_publish: replyVal === "2",
+    comment_like_enabled: commentLikeVal !== "0",
+    comment_like_auto_publish: commentLikeVal === "2",
     comment_handoff_enabled: dmVal !== "0",
     handoff_auto_send: dmVal === "2",
     video_like_enabled: likeVal !== "0",
@@ -141,6 +146,9 @@ function renderPermissionMatrix(status) {
   const replyVal = !settings.reply_enabled ? "0" : settings.reply_auto_publish ? "2" : "1";
   const replyRadio = document.querySelector(`input[name="matrix_reply"][value="${replyVal}"]`);
   if (replyRadio && document.activeElement?.name !== "matrix_reply") replyRadio.checked = true;
+  const commentLikeVal = !settings.comment_like_enabled ? "0" : settings.comment_like_auto_publish ? "2" : "1";
+  const commentLikeRadio = document.querySelector(`input[name="matrix_comment_like"][value="${commentLikeVal}"]`);
+  if (commentLikeRadio && document.activeElement?.name !== "matrix_comment_like") commentLikeRadio.checked = true;
 
   // 3. DM
   const messages = status.base?.messages;

@@ -30,6 +30,7 @@ from .round_context import read_round
 from .thread_context import comment_source, operator_reply
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
+_ENGAGEMENT_KINDS = {"video_like", "video_fav", "comment_like"}
 
 
 class BrowsingPublication:
@@ -43,12 +44,25 @@ class BrowsingPublication:
         scope = (row["account_id"], row["character_id"], key)
         store = self.browsing.store
         return store.one(
-            "SELECT id FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=? "
-            "UNION ALL SELECT i.id FROM browsing_reply_coverage c JOIN browsing_intents i ON i.id=c.intent_id "
+            "SELECT id,status FROM browsing_intents WHERE account_id=? AND character_id=? AND source_key=? "
+            "UNION ALL SELECT i.id,i.status FROM browsing_reply_coverage c JOIN browsing_intents i ON i.id=c.intent_id "
             "WHERE c.account_id=? AND c.character_id=? AND c.source_key=? "
             "AND i.status IN ('pending_review','approved','publishing','publish_uncertain','published') LIMIT 1",
             (*scope, *scope),
         )
+
+    @staticmethod
+    def _comment_like_key(target):
+        resource_type = target.get("resource_type") or ("video" if target.get("bvid") else "dynamic")
+        return canonical_intent("bilibili", f"{resource_type}:{target['oid']}", target["parent"], "comment_like")
+
+    def comment_like_intent(self, row, target):
+        return self.browsing.repo.decode(self.browsing.store.one(
+            "SELECT * FROM browsing_intents WHERE account_id=? AND source_key=? AND kind='comment_like' "
+            "AND (status NOT IN ('pending_review','approved','rejected') OR character_id=?) "
+            "ORDER BY created_at LIMIT 1",
+            (row["account_id"], self._comment_like_key(target), row["character_id"]),
+        ))
 
     def _reserve_daily_reply(self, token, row):
         bvid = row["target"].get("bvid")
@@ -80,7 +94,8 @@ class BrowsingPublication:
             source = "favorite"
         else:
             source = str(target.get("parent", "0"))
-        source_key = canonical_intent("bilibili", resource, source, row["character_id"])
+        source_key = (self._comment_like_key(target) if kind == "comment_like"
+                      else canonical_intent("bilibili", resource, source, row["character_id"]))
         if kind == "reply_public" and (
             target.get("bvid")
             and self.browsing.repo.video_reply_limit_reached(row, target["bvid"])
@@ -179,7 +194,7 @@ class BrowsingPublication:
         if text is not None and not isinstance(text, str):
             raise ValueError("正文须为字符串")
         text = row["text"] if text is None else text.strip()
-        text = validate_operation_text(text)
+        text = "" if row["kind"] == "comment_like" else validate_operation_text(text)
         issue = None
         if row["kind"] in _COMMENT_KINDS:
             recipient_name = json.loads(row["target"]).get("recipient_name") or ""
@@ -208,7 +223,7 @@ class BrowsingPublication:
             else [{key: item.get(key) for key in ("bvid", "aid")} for item in metadata]
         )
         return publication_binding(
-            "comments",
+            "comment_likes" if row["kind"] == "comment_like" else "comments",
             row["account_id"],
             character,
             row["source_key"],
@@ -243,6 +258,7 @@ class BrowsingPublication:
         keys = {
             "top_level": ("top_level_enabled", "top_level_auto_publish"),
             "reply_public": ("reply_enabled", "reply_auto_publish"),
+            "comment_like": ("comment_like_enabled", "comment_like_auto_publish"),
             "video_like": ("video_like_enabled", "video_like_auto_publish"),
             "video_fav": ("video_fav_enabled", "video_fav_auto_publish"),
         }.get(kind)
@@ -468,7 +484,7 @@ class BrowsingPublication:
             if event:
                 policy = self.browsing.configured()
                 if (
-                    not policy["reply_enabled"]
+                    not (policy["reply_enabled"] or policy["comment_like_enabled"])
                     or source["kind"] == "mention"
                     and not policy["mention_reply_enabled"]
                 ):
@@ -520,15 +536,26 @@ class BrowsingPublication:
                         )
 
         async def read(row, attempt):
-            intent_row = self.browsing.store.one("SELECT kind FROM browsing_intents WHERE id=?", (identity,))
+            intent_row = self.browsing.repo.decode(
+                self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+            )
             if intent_row and intent_row.get("kind") in ("video_like", "video_fav"):
-                return {"status": "unsupported"}
-            if not hasattr(self.browsing.adapter, "reconcile_publication"):
                 return {"status": "unsupported"}
             try:
                 await self.browsing._current_account(row["binding"]["account_id"])
             except ValueError:
                 return {"status": "check_failed", "reason": "account_unavailable"}
+            if intent_row and intent_row["kind"] == "comment_like":
+                target = intent_row["target"]
+                try:
+                    source = await self._verify_reply_source(target, intent_row["account_id"])
+                except ValueError:
+                    return {"status": "check_failed"}
+                if self._liked_target(source, target):
+                    return {"status": "visible", "receipt": self._like_observation(target)}
+                return {"status": "not_found"}
+            if not hasattr(self.browsing.adapter, "reconcile_publication"):
+                return {"status": "unsupported"}
             return await self.browsing.adapter.reconcile_publication(
                 row["binding"]["target"],
                 author_uid=row["binding"]["account_id"],
@@ -546,8 +573,10 @@ class BrowsingPublication:
         return await feedback.reconcile("browsing", identity, read, commit)
 
     async def publish(self, identity, *, automatic=False):
-        row = self.browsing.store.one("SELECT epoch,round_id FROM browsing_intents WHERE id=?", (identity,))
+        row = self.browsing.store.one("SELECT epoch,round_id,kind FROM browsing_intents WHERE id=?", (identity,))
         try:
+            if row and row["kind"] == "comment_like":
+                return await self._publish_once(identity, automatic=automatic)
             return await FeedbackPublication(
                 self.browsing.runtime, self.browsing.store, self.browsing.operations
             ).submit(
@@ -569,6 +598,32 @@ class BrowsingPublication:
             # not a failure to read this video or its other discussion threads.
             return {"status": "publish_uncertain", "id": identity}
 
+    async def _verify_reply_source(self, target, account):
+        if target.get("source_event"):
+            verified = await read_scoped_thread(
+                self.browsing, self.browsing.adapter.read_public_thread, target["source_event"], target["source_event"],
+            )
+        elif hasattr(self.browsing.adapter, "read_video_thread"):
+            verified = await read_scoped_thread(self.browsing, self.browsing.adapter.read_video_thread,
+                                               target, target | {"account_id": account, "resource_type": "video"})
+        else:
+            verified = {"source": await self.browsing._read(self.browsing.adapter.read_video_reply, target)}
+        if (verified["source"]["text"] != target["source_text"]
+                or str(verified["source"]["author_uid"]) != str(target["recipient"])):
+            raise ValueError("原始互动已删除或变化")
+        return verified
+
+    @staticmethod
+    def _liked_target(thread, target):
+        return any(str(item["comment_id"]) == str(target["parent"]) and item.get("liked_by_self") is True
+                   for item in thread.get("items", []))
+
+    @staticmethod
+    def _like_observation(target):
+        return {"platform": "bilibili", "action": "comment_like", "oid": str(target["oid"]),
+                "resource_type": target.get("resource_type", "video"), "rpid": str(target["parent"]),
+                "observed": True}
+
     async def _publish_once(
         self, identity, *, automatic=False, revision_ticket=None, binding=None, body_hash=None
     ):
@@ -582,6 +637,10 @@ class BrowsingPublication:
                 raise ValueError("候选未获授权或已提交")
             if automatic and not row["auto_authorized"]:
                 raise ValueError("该候选不能自动发送")
+            is_like = row["kind"] == "comment_like"
+            channel = "comment_likes" if is_like else "comments"
+            if is_like and not self.browsing.effective().get("comment_like_enabled"):
+                raise ValueError("评论点赞授权已关闭")
             if row["kind"] in _COMMENT_KINDS:
                 validate_comment_body(row["text"], recipient_name=row["target"].get("recipient_name") or "")
             character = self.browsing.store.character(row["character_id"], row["character_version"])
@@ -598,25 +657,23 @@ class BrowsingPublication:
             )
             if row["kind"] not in ("top_level", "video_like", "video_fav"):
                 target = row["target"]
-                if target.get("source_event"):
-                    verified = await read_scoped_thread(
-                        self.browsing, self.browsing.adapter.read_public_thread, target["source_event"],
-                        target["source_event"],
-                    )
-                elif hasattr(self.browsing.adapter, "read_video_thread"):
-                    verified = await read_scoped_thread(self.browsing, self.browsing.adapter.read_video_thread,
-                                                       target, target | {"account_id": account, "resource_type": "video"})
+                verified = await self._verify_reply_source(target, account)
+                if is_like:
+                    if self._liked_target(verified, target):
+                        receipt = self._like_observation(target)
+                        self.browsing.store.execute(
+                            "UPDATE browsing_intents SET status='published',receipt=?,visibility='visible',"
+                            "error=NULL,updated_at=? WHERE id=?", (dump(receipt), time.time(), identity),
+                        )
+                        return self.browsing.repo.decode(
+                            self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
+                        )
                 else:
-                    verified = {"source": await self.browsing._read(self.browsing.adapter.read_video_reply, target)}
-                if verified["source"]["text"] != row["target"]["source_text"] or str(
-                    verified["source"]["author_uid"]
-                ) != str(row["target"]["recipient"]):
-                    raise ValueError("原始互动已删除或变化")
-                if handled := operator_reply(verified.get("items", []), target, account):
-                    return self._record_account_reply(row, handled)
-                name = verified["source"].get("author_name")
-                if name and name != target.get("recipient_name"):
-                    validate_comment_body(row["text"], recipient_name=name)
+                    if handled := operator_reply(verified.get("items", []), target, account):
+                        return self._record_account_reply(row, handled)
+                    name = verified["source"].get("author_name")
+                    if name and name != target.get("recipient_name"):
+                        validate_comment_body(row["text"], recipient_name=name)
             materials = self._intent_materials(row)
             actual_binding = self._publication_binding(
                 row, character, [item["metadata"] for item in materials]
@@ -660,9 +717,11 @@ class BrowsingPublication:
                     raise ValueError("准备期间候选或审核状态已变化，保留最新状态")
                 if automatic and not self._action_allowed(row["kind"], self.browsing.effective()):
                     raise ValueError("自动回应授权已停止")
+                if is_like and not self.browsing.effective().get("comment_like_enabled"):
+                    raise ValueError("评论点赞授权已关闭")
                 self.browsing.operations.assert_allowed(
                     automatic=automatic,
-                    channel="comments",
+                    channel=channel,
                     account_id=account,
                     character=character,
                     epoch=row["epoch"] if automatic else None,
@@ -673,10 +732,10 @@ class BrowsingPublication:
                     account,
                     character,
                     row["source_key"],
-                    "comments",
-                    recipient=row["target"].get("recipient", ""),
+                    channel,
+                    recipient="" if is_like else row["target"].get("recipient", ""),
                     automatic=automatic,
-                    limits=self.browsing.comments.publication_limits(),
+                    limits=None if is_like else self.browsing.comments.publication_limits(),
                     epoch=row["epoch"] if automatic else None,
                     binding=actual_binding,
                     content_hash=content_hash({"text": row["text"]}),
@@ -689,7 +748,9 @@ class BrowsingPublication:
                 )
 
             try:
-                if row["kind"] == "video_like":
+                if is_like:
+                    receipt = await self.browsing.adapter.like_comment(row["target"], before_send=before_send)
+                elif row["kind"] == "video_like":
                     receipt = await self.browsing.adapter.like_video(
                         row["target"], like=True, before_send=before_send
                     )
@@ -739,7 +800,7 @@ class BrowsingPublication:
                             "publish_uncertain"
                             if uncertain
                             else row["status"]
-                            if isinstance(error, PlatformRejected)
+                            if isinstance(error, PlatformRejected) and not is_like
                             else "rejected_by_platform",
                             public_error(error),
                             time.time(),
@@ -778,7 +839,7 @@ class BrowsingPublication:
                     (identity,),
                 )
                 raise UnknownPublication("平台提交结果需人工核对，禁止重发", token) from None
-            if row["kind"] in ("video_like", "video_fav"):
+            if row["kind"] in _ENGAGEMENT_KINDS:
                 self.browsing.store.execute(
                     "UPDATE browsing_intents SET visibility='visible' WHERE id=?", (identity,)
                 )

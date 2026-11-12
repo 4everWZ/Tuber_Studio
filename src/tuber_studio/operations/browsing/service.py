@@ -116,6 +116,7 @@ class BrowsingService:
             "video_enabled": config["discovery_enabled"],
             "top_level": mode(config["top_level_enabled"], config["top_level_auto_publish"]),
             "replies": mode(config["reply_enabled"], config["reply_auto_publish"]),
+            "comment_like": mode(config["comment_like_enabled"], config["comment_like_auto_publish"]),
             "private_messages": mode(messages.enabled, messages.auto_send),
             "private_poll": messages.enabled and messages.auto_poll,
             "mentions": config["mentions_enabled"],
@@ -127,7 +128,9 @@ class BrowsingService:
 
     def has_interactions(self, config=None):
         config = config or self.effective()
-        return bool(config["reply_enabled"] or config["mentions_enabled"] or config["replies_enabled"])
+        return any(config.get(key) for key in (
+            "reply_enabled", "comment_like_enabled", "mentions_enabled", "replies_enabled",
+        ))
 
     def model_signature(self):
         llm, character = self.settings.data["llm"], self.runtime.character
@@ -275,10 +278,12 @@ class BrowsingService:
             required.update(("discover", "video_metadata", "subtitles"))
             if config["top_level_enabled"] and config["top_level_auto_publish"]:
                 required.add("publish_top_level")
-        if config["reply_enabled"]:
+        if config["reply_enabled"] or config["comment_like_enabled"]:
             required.update(("read_public_thread", "fetch"))
             if config["reply_auto_publish"]:
                 required.add("publish_resource_reply")
+            if config["comment_like_enabled"]:
+                required.add("like_comment")
         if config["mentions_enabled"] or config["replies_enabled"]:
             required.update(("notifications", "read_public_thread"))
         self.blockers.extend(

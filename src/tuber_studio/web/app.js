@@ -14,7 +14,7 @@ import { UserMemoryEditor } from "./user-memory.js";
 import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261112.01";
+} from "./modules/operations.js?v=20261113.01";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261111.07";
 import {
   selectedThread,

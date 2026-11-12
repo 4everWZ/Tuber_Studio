@@ -17,7 +17,8 @@ export function operationCapabilities(status) {
     ["message_poll", "私信收取", binaryMode(permissions.private_poll)],
     ["message_reply", "私信回复", permissions.private_messages],
     ["dynamics", "动态", permissions.dynamics],
-    ["like", "点赞", permissions.video_like],
+    ["like", "视频点赞", permissions.video_like],
+    ["comment-like", "评论点赞", permissions.comment_like],
     ["favorite", "收藏", permissions.video_fav],
   ].map(([id, label, mode]) => {
     if (!modes.has(mode)) return { id, label, color: "gray", state: "待确认", detail: "尚未取得此功能的权限状态。" };

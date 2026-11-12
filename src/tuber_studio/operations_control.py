@@ -272,8 +272,9 @@ class OperationsControl:
                     },
                 )
             elif db.execute(
-                "SELECT 1 FROM account_writes WHERE account_id=? AND character_id=? AND intent=?",
-                (str(account_id), character["id"], intent),
+                "SELECT 1 FROM account_writes WHERE account_id=? AND intent=? AND "
+                "(character_id=? OR (channel='comment_likes' AND ?='comment_likes'))",
+                (str(account_id), intent, character["id"], channel),
             ).fetchone():
                 raise ValueError("此回应意图已尝试提交，禁止重复发送")
             for seconds, maximum in ((3600, policy["max_per_hour"]), (86400, policy["max_per_day"])):

@@ -620,6 +620,32 @@ async def test_write_top_level_and_reply_have_different_roots_and_valid_receipt(
     assert sent[0]["message"] == [text]
 
 
+async def test_comment_like_sends_only_verified_target_and_action(adapter_factory):
+    posts = []
+    checked = []
+
+    def handle(request):
+        if request.url.path == "/x/web-interface/nav":
+            return nav()
+        assert checked == [True]
+        assert request.method == "POST" and request.url.path == "/x/v2/reply/action"
+        posts.append(parse_qs(request.content.decode()))
+        return result(None)
+
+    adapter = await adapter_factory(handle)
+    receipt = await adapter.like_comment(
+        {"resource_type": "dynamic", "oid": "123", "root": "100", "parent": "101"},
+        before_send=lambda: checked.append(True),
+    )
+    assert receipt == {"platform": "bilibili", "code": 0, "action": "comment_like",
+                       "oid": "123", "type": 17, "rpid": "101"}
+    payload, = posts
+    assert {key: value for key, value in payload.items() if key not in {"csrf", "csrf_token"}} == {
+        "oid": ["123"], "type": ["17"], "rpid": ["101"], "action": ["1"],
+    }
+    assert payload["csrf"] == payload["csrf_token"]
+
+
 async def test_final_authorization_prevents_post_after_preparing_signature(adapter_factory):
     seen = []
 

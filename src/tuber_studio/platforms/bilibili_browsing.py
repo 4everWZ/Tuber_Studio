@@ -767,6 +767,29 @@ class BrowsingAdapter(BilibiliAdapter):
         target = self._target(target)
         return await self._publish_target(target, text, before_send)
 
+    async def like_comment(self, target, *, before_send=None):
+        target = self._target(target)
+        if not self._sessdata or not self._csrf:
+            raise ValueError("评论点赞需要当前账号SESSDATA及CSRF")
+        params = await self.wbi_params()
+        if before_send is not None:
+            before_send()
+        try:
+            response = await self.client.post("/x/v2/reply/action", params=params, data={
+                "oid": target["oid"], "type": target["type"], "rpid": target["parent"],
+                "action": 1, "csrf": self._csrf, "csrf_token": self._csrf,
+            })
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise PublishUncertain("评论点赞结果不确定，禁止自动重试") from None
+        if not isinstance(payload, dict) or type(payload.get("code")) is not int:
+            raise PublishUncertain("评论点赞回执无效，禁止自动重试")
+        if payload["code"] != 0:
+            raise platform_rejection(payload, fallback="平台明确拒绝了本次评论点赞")
+        return {"platform": "bilibili", "code": 0, "action": "comment_like", "oid": target["oid"],
+                "type": target["type"], "rpid": target["parent"]}
+
     async def like_video(self, target, *, like: bool = True, before_send=None):
         video_id = target["bvid"] if isinstance(target, dict) else str(target)
         return await super().like_video(video_id, like=like, before_send=before_send)
