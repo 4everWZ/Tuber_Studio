@@ -16,6 +16,7 @@ from evaluations.dafeiyu_holdout import (
     replay_protocol,
     run_endpoint,
     score_packet,
+    select_replay_cases,
     structured_check,
     write_jsonl,
 )
@@ -81,11 +82,12 @@ def replay_bundle(cases, holdout, condition, suites):
 def test_paired_scoring_honors_general_per_category_and_oc_thresholds():
     cases, digest = load_frozen(DEFAULT_CASES, DEFAULT_MANIFEST)
     base = replay_bundle(cases, digest, "base", {"general"})
-    deployed = replay_bundle(cases, digest, "deployed", {"oc", "operations"})
-    candidate = replay_bundle(cases, digest, "candidate", {"general", "oc", "operations"})
+    deployed = replay_bundle(cases, digest, "deployed", {"oc"})
+    candidate = replay_bundle(cases, digest, "candidate", {"general", "oc"})
     packet, key = prepare_blind(cases, digest, base, deployed, candidate, seed=1)
+    assert [row["id"] for row in packet] == [row["id"] for row in select_replay_cases(cases)]
     assert all("candidate_position" not in row for row in packet)
-    assert sum(evidence["candidate_position"] == "a" for evidence in key["cases"].values()) == 86
+    assert sum(evidence["candidate_position"] == "a" for evidence in key["cases"].values()) == 80
     with pytest.raises(ValueError, match="missing"):
         score_packet(cases, digest, packet, key)
 
@@ -105,19 +107,45 @@ def test_paired_scoring_honors_general_per_category_and_oc_thresholds():
     assert report["general"]["categories"]["reading"]["additional_errors"] == 3
     assert not report["general"]["pass"]
     assert report["oc"] == {"wins": 24, "ties": 16, "losses": 0, "pass": True}
-    assert not report["offline_quality_gate_pass"]
+    assert not report["release_holdout_gate_pass"]
 
     row = packet[0]
     row["grading"][f"{key['cases'][row['id']]['candidate_position']}_correct"] = True
     report = score_packet(cases, digest, packet, key)
     assert report["general"]["additional_errors"] == 2
-    assert report["offline_quality_gate_pass"]
-    assert len(report["details"]) == 172
+    assert report["release_holdout_gate_pass"]
+    assert len(report["details"]) == 160
+    assert "synthetic_operations" not in report
 
     changed = copy.deepcopy(packet)
     changed[0]["a"][0] = "替换了实际输出"
     with pytest.raises(ValueError, match="changed"):
         score_packet(cases, digest, changed, key)
+
+
+def test_historical_operations_are_opt_in_and_cannot_change_release_gate():
+    cases, digest = load_frozen(DEFAULT_CASES, DEFAULT_MANIFEST)
+    base = replay_bundle(cases, digest, "base", {"general"})
+    deployed = replay_bundle(cases, digest, "deployed", {"oc", "operations"})
+    candidate = replay_bundle(cases, digest, "candidate", {"general", "oc", "operations"})
+    packet, _ = prepare_blind(cases, digest, base, deployed, candidate, seed=1)
+    assert len(packet) == 160
+    assert len(select_replay_cases(cases, ["operations"])) == 12
+    packet, key = prepare_blind(
+        cases, digest, base, deployed, candidate, seed=1, include_historical_operations=True,
+    )
+    for row in packet:
+        if row["suite"] == "oc":
+            row["grading"]["preference"] = key["cases"][row["id"]]["candidate_position"]
+        else:
+            passed = row["suite"] == "general"
+            row["grading"] = {"a_correct": passed, "b_correct": passed}
+    with pytest.raises(ValueError, match="selected holdout"):
+        score_packet(cases, digest, packet, key)
+    report = score_packet(cases, digest, packet, key, include_historical_operations=True)
+    assert report["release_holdout_gate_pass"]
+    assert not report["synthetic_operations"]["pass"]
+    assert len(report["synthetic_operations"]["failed_cases"]) == 12
 
 
 def test_structured_evidence_requires_correct_action_and_refs():

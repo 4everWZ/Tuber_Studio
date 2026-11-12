@@ -15,6 +15,7 @@ from evaluations.dafeiyu_holdout import (
     load_frozen,
     messages_for_turn,
     replay_protocol,
+    select_replay_cases,
     write_json,
 )
 
@@ -108,7 +109,10 @@ def main():
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--characters", type=Path, default=DEFAULT_CHARACTERS)
-    parser.add_argument("--suite", choices=tuple(SUITE_COUNTS), action="append")
+    parser.add_argument(
+        "--suite", choices=(*SUITE_COUNTS, "all"), action="append",
+        help="default: general and OC; operations and all include historical synthetic cases",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-tokens", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -120,8 +124,7 @@ def main():
     from transformers import AutoModelForImageTextToText, AutoTokenizer, set_seed
 
     cases, holdout_sha = load_frozen(args.cases, args.manifest)
-    if args.suite:
-        cases = [case for case in cases if case["suite"] in args.suite]
+    cases = select_replay_cases(cases, args.suite)
     protocol = replay_protocol(args.characters, args.max_tokens)
     set_seed(protocol["seed"])
     source = {"revision": args.revision, "local_files_only": True}

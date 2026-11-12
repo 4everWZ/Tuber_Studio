@@ -20,6 +20,7 @@ DEFAULT_MANIFEST = DEFAULT_CASES.with_suffix(".manifest.json")
 DEFAULT_CHARACTERS = ROOT / "config/characters.json"
 GENERAL_CATEGORIES = ("reading", "numeracy", "practical", "instruction", "coding", "continuity")
 SUITE_COUNTS = {"general": 120, "oc": 40, "operations": 12}
+RELEASE_SUITES = ("general", "oc")
 NEAR_RATIO = 0.88
 
 
@@ -287,6 +288,11 @@ def checked_result(result, cases, holdout_sha):
     return by_id
 
 
+def select_replay_cases(cases, suites=None):
+    selected = suites or RELEASE_SUITES
+    return [case for case in cases if "all" in selected or case["suite"] in selected]
+
+
 def structured_check(case, replies):
     try:
         value = json.loads(replies[-1]["text"])
@@ -305,8 +311,15 @@ def structured_check(case, replies):
         return False
 
 
-def prepare_blind(cases, holdout_sha, base, deployed, candidate, *, seed=None):
+def prepare_blind(cases, holdout_sha, base, deployed, candidate, *, seed=None, include_historical_operations=False):
     results = {"base": base, "deployed": deployed, "candidate": candidate}
+    historical_ids = {case["id"] for case in cases if case["suite"] == "operations"}
+    if not include_historical_operations:
+        cases = select_replay_cases(cases)
+        results = {
+            label: result | {"rows": [row for row in result["rows"] if row["id"] not in historical_ids]}
+            for label, result in results.items()
+        }
     indexed = {label: checked_result(result, cases, holdout_sha) for label, result in results.items()}
     protocols = {result["protocol_sha256"] for result in results.values()}
     if len(protocols) != 1:
@@ -376,11 +389,13 @@ def paired_interval(differences, samples=10000):
     return [round(resamples[lower], 4), round(resamples[upper], 4)]
 
 
-def score_packet(cases, holdout_sha, packet, key):
+def score_packet(cases, holdout_sha, packet, key, *, include_historical_operations=False):
     if holdout_sha != key["holdout_sha256"] or packet_digest(packet) != key["packet_sha256"]:
         raise ValueError("grading packet was changed or belongs to a different run")
+    if not include_historical_operations:
+        cases = select_replay_cases(cases)
     if [row["id"] for row in packet] != [case["id"] for case in cases]:
-        raise ValueError("grading packet does not cover the complete holdout")
+        raise ValueError("grading packet does not cover the selected holdout suites")
     cases_by_id = {case["id"]: case for case in cases}
     general, oc, ops, details = defaultdict(list), Counter(), [], []
     for row in packet:
@@ -420,7 +435,7 @@ def score_packet(cases, holdout_sha, packet, key):
                                 "additional_errors": reference - candidate}
     paired = [int(a) - int(b) for pairs in general.values() for a, b in pairs]
     gen_ok = sum(paired) >= -3 and all(value["additional_errors"] <= 2 for value in categories.values())
-    return {
+    result = {
         "holdout_sha256": holdout_sha,
         "protocol_sha256": key["protocol_sha256"],
         "conditions": key["conditions"],
@@ -428,10 +443,12 @@ def score_packet(cases, holdout_sha, packet, key):
                     "candidate_minus_base_rate_95pct_paired_bootstrap": paired_interval(paired),
                     "categories": categories, "pass": gen_ok},
         "oc": {"wins": oc["win"], "losses": oc["loss"], "ties": oc["tie"], "pass": oc["win"] >= 24},
-        "synthetic_operations": {"failed_cases": ops, "pass": not ops},
-        "offline_quality_gate_pass": gen_ok and oc["win"] >= 24 and not ops,
+        "release_holdout_gate_pass": gen_ok and oc["win"] >= 24,
         "details": details,
     }
+    if any(case["suite"] == "operations" for case in cases):
+        result["synthetic_operations"] = {"failed_cases": ops, "pass": not ops}
+    return result
 
 
 def main():
@@ -453,13 +470,17 @@ def main():
     replay.add_argument("--base-revision", required=True)
     replay.add_argument("--characters", type=Path, default=DEFAULT_CHARACTERS)
     replay.add_argument("--max-tokens", type=int, default=256)
-    replay.add_argument("--suite", choices=(*SUITE_COUNTS, "all"), action="append")
+    replay.add_argument(
+        "--suite", choices=(*SUITE_COUNTS, "all"), action="append",
+        help="default: general and OC; operations and all include historical synthetic cases",
+    )
     replay.add_argument("--output", type=Path, required=True)
     blind = commands.add_parser("blind")
     score = commands.add_parser("score")
     for command in (blind, score):
         command.add_argument("--packet", type=Path, required=True)
         command.add_argument("--key", type=Path, required=True)
+        command.add_argument("--include-historical-operations", action="store_true")
     for name in ("base", "deployed", "candidate"):
         blind.add_argument(f"--{name}", type=Path, required=True)
     blind.add_argument("--seed", type=int, help="optional private seed for reproducing an existing pairing")
@@ -477,9 +498,8 @@ def main():
     else:
         rows, digest = load_frozen(args.cases, args.manifest)
         if args.command == "replay":
-            selected = args.suite or ["all"]
             run_endpoint(
-                [row for row in rows if "all" in selected or row["suite"] in selected],
+                select_replay_cases(rows, args.suite),
                 digest, replay_protocol(args.characters, args.max_tokens),
                 endpoint=args.endpoint, model=args.model, artifact=args.artifact,
                 base_revision=args.base_revision, output=args.output,
@@ -489,7 +509,10 @@ def main():
                 raise ValueError("choose distinct new paths for the grading packet and private key")
             conditions = [json.loads(path.read_text(encoding="utf-8"))
                           for path in (args.base, args.deployed, args.candidate)]
-            packet, key = prepare_blind(rows, digest, *conditions, seed=args.seed)
+            packet, key = prepare_blind(
+                rows, digest, *conditions, seed=args.seed,
+                include_historical_operations=args.include_historical_operations,
+            )
             write_jsonl(args.packet, packet)
             write_json(args.key, key)
         else:
@@ -497,6 +520,7 @@ def main():
                 raise ValueError("choose a new scoring report path")
             report = score_packet(
                 rows, digest, read_jsonl(args.packet), json.loads(args.key.read_text(encoding="utf-8")),
+                include_historical_operations=args.include_historical_operations,
             )
             write_json(args.output, report)
 

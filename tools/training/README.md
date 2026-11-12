@@ -31,6 +31,10 @@ torchrun --standalone --nproc_per_node=2 tools/training/train_dora.py \
 
 编号工件、分片摘要、开发选择与留出回放进度记录在本次实验结果中。[9B 干净基线](../../evaluations/results/dafeiyu-clean-9b-20261111.md)
 
+冻结持出默认回放和评分 120 条通用题及 40 个 OC 场景。复现旧 12 条合成运营时，在回放加 `--suite all`，匿名配对和评分均加 `--include-historical-operations`。合成结果单列，现行 `release_holdout_gate_pass` 取通用与 OC 的结果。真实运营从业务库只读复算，并用本地评审包核对逐条语义反馈。 [真实运营评估入口](../../evaluations/results/operations-feedback-20261112.md#真实运营的模型评估)
+
+历史批量训练和 18 题文本初筛可用退役前提交 `744ddd7` 的 `tools/training/run_model_queue.py` 复现。现行入口使用上文的分组编译、固定基座训练与配对持出。
+
 ## 历史 1B 的合并与 GGUF 导出
 
 复现 MiniCPM 1B 时，`export_grounded_sft.py` 完成 PEFT 合并、4× 视觉配置、GGUF 转换、Q4_K_M 量化及 `bundle.json` 元数据输出。要求底模快照目录名为 `ad9bf379feb71204c888b22923d63322452407f9`，llama.cpp 固定为 `0ec4027a2a0183de87c007069adddc06e665f7de`，并已构建量化工具。输出使用新目录。
