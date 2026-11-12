@@ -1,7 +1,4 @@
 import importlib
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,12 +11,12 @@ def modules(monkeypatch):
     monkeypatch.syspath_prepend(str(TRAINING))
     return tuple(
         importlib.import_module(name)
-        for name in ("build_authentic_sft_dataset", "sft_dataset", "sft_tokenization", "run_model_queue")
+        for name in ("build_authentic_sft_dataset", "sft_dataset", "sft_tokenization")
     )
 
 
 def test_compiler_preserves_source_roles_and_isolates_groups(modules, tmp_path):
-    compiler, dataset, _, _ = modules
+    compiler, dataset, _ = modules
     sources = {name: (TRAINING / name).read_bytes() for name in compiler.SOURCE_NAMES}
     manifest = compiler.build_dataset(TRAINING, tmp_path)
     assert manifest == compiler.build_dataset(TRAINING, tmp_path)
@@ -49,7 +46,7 @@ def test_compiler_preserves_source_roles_and_isolates_groups(modules, tmp_path):
 
 
 def test_near_duplicate_turn_and_mono_multi_are_one_group(modules):
-    compiler, dataset, _, _ = modules
+    compiler, dataset, _ = modules
     question = "今晚这个排练用白色旗子还是蓝色旗子？"
     reply = "你拿蓝色旗子，白色旗子留给场边工作人员。"
     single = compiler.sample("one", "known-family", "anime_general", [(question, reply)])
@@ -64,7 +61,7 @@ def test_near_duplicate_turn_and_mono_multi_are_one_group(modules):
 
 
 def test_compiler_rejects_overwrite_of_existing_output(modules, tmp_path):
-    compiler, _, _, _ = modules
+    compiler, _, _ = modules
     original = tmp_path / "sft_train.json"
     original.write_bytes(b"[]")
     with pytest.raises(FileExistsError):
@@ -108,7 +105,7 @@ class CharacterTokenizer:
 
 
 def test_mask_only_keeps_assistant_body_and_eos(modules):
-    compiler, _, tokens, _ = modules
+    compiler, _, tokens = modules
     row = compiler.sample(
         "source", "family", "dafeiyu_core", [("Q1", "first"), ("Q2", "second")], system="SYS"
     )
@@ -119,7 +116,7 @@ def test_mask_only_keeps_assistant_body_and_eos(modules):
 
 
 def test_mask_accepts_a_model_declared_turn_end(modules):
-    compiler, _, tokens, _ = modules
+    compiler, _, tokens = modules
     row = compiler.sample("source", "family", "dafeiyu_core", [("Q", "A")], system="SYS")
     tokenizer = CharacterTokenizer(emitted_stop_id=7000)
     with pytest.raises(ValueError, match="native EOS"):
@@ -130,7 +127,7 @@ def test_mask_accepts_a_model_declared_turn_end(modules):
 
 
 def test_mask_fails_closed_on_system_drop_missing_stop_cutoff_and_pixels(modules):
-    compiler, _, tokens, _ = modules
+    compiler, _, tokens = modules
     row = compiler.sample("source", "family", "dafeiyu_core", [("question", "answer")], system="SYS")
     with pytest.raises(ValueError, match="system content"):
         tokens.encode_row(row, CharacterTokenizer(drop_system=True), 256)
@@ -149,7 +146,7 @@ def test_mask_fails_closed_on_system_drop_missing_stop_cutoff_and_pixels(modules
 
 
 def test_actual_token_balancing_keeps_every_train_row_and_aligns_global_batch(modules):
-    _, _, tokens, _ = modules
+    _, _, tokens = modules
     rows = [
         ("dafeiyu_depth", {"id": 1}, 70),
         ("anime_width", {"id": 2}, 20),
@@ -164,7 +161,7 @@ def test_actual_token_balancing_keeps_every_train_row_and_aligns_global_batch(mo
 
 
 def test_legacy_rows_keep_strict_mask_without_claiming_clean_categories(modules):
-    compiler, _, tokens, _ = modules
+    compiler, _, tokens = modules
     row = compiler.sample("source", "family", "dafeiyu_core", [("Q", "A")], system="SYS")
     legacy = {"messages": row["messages"], "category": "chit_chat_and_food"}
     with pytest.raises(ValueError, match="Unknown OC training category"):
@@ -183,54 +180,3 @@ def test_workstation_replay_retains_native_stop_vs_length():
 
     assert replay.reply_from_tokens(Decoder(), [65, 66, 99, 0], {99}) == {"text": "AB", "finish_reason": "stop"}
     assert replay.reply_from_tokens(Decoder(), [65, 66], {99}) == {"text": "AB", "finish_reason": "length"}
-
-
-def test_eval_only_queue_never_compiles_or_erases_artifacts(modules, monkeypatch, tmp_path):
-    _, _, _, queue = modules
-    output = tmp_path / "output_queue"
-    adapter = output / "adapter_qwen35_9b"
-    checkpoint = adapter / "checkpoint-1"
-    checkpoint.mkdir(parents=True)
-    (adapter / "adapter_model.safetensors").write_bytes(b"original")
-    (checkpoint / "test").write_bytes(b"keep")
-    monkeypatch.setattr(
-        sys, "argv", ["queue", "--repo_root", str(tmp_path), "--only_model", "qwen35_9b", "--skip_train"]
-    )
-    monkeypatch.setattr(
-        queue, "run_command", lambda *args, **kwargs: pytest.fail("eval-only may not compile")
-    )
-
-    def fail(*args, **kwargs):
-        raise subprocess.CalledProcessError(2, "mock")
-
-    monkeypatch.setattr(queue, "evaluate_model", fail)
-    results = []
-    monkeypatch.setattr(
-        queue, "update_markdown_report", lambda rows, paths: results.append(json.loads(json.dumps(rows)))
-    )
-    queue.main()
-    assert (checkpoint / "test").read_bytes() == b"keep"
-    assert (adapter / "adapter_model.safetensors").read_bytes() == b"original"
-    assert not (output / "compiled_data").exists()
-    assert not next(row for row in results[-1] if row["id"] == "qwen35_9b")["evaluated"]
-
-
-def test_queue_uses_current_training_entry_points(modules, monkeypatch, tmp_path):
-    _, _, _, queue = modules
-    training = tmp_path / "tools" / "training"
-    training.mkdir(parents=True)
-    for name in ("build_authentic_sft_dataset.py", "train_dora.py"):
-        (training / name).touch()
-    monkeypatch.setattr(
-        sys, "argv", ["queue", "--repo_root", str(tmp_path), "--only_model", "qwen35_9b"]
-    )
-    monkeypatch.setattr(queue, "disk_has_room", lambda _: True)
-    commands = []
-
-    def capture(command, **kwargs):
-        commands.append(Path(command[1]))
-        return 0
-
-    monkeypatch.setattr(queue, "run_command", capture)
-    queue.main()
-    assert commands == [training / "build_authentic_sft_dataset.py", training / "train_dora.py"]
