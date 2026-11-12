@@ -23,6 +23,7 @@
 ## 实测记录
 
 - [AGX 运营档部署](../evaluations/results/agx-clean-9b-deployment-20261111.md) · [30 个真实视频审核回放](../evaluations/results/review-agx-mainline-20261111.md)
+- [11 月 11–12 日运营实跑核查](../evaluations/results/operations-feedback-20261112.md)
 - [9B 微调配对评估](../evaluations/results/dafeiyu-clean-9b-20261111.md) · [早期候选持出回放](../evaluations/results/workstation-candidate-replay-20261110.md)
 - [OBS 口型与 GIF 回退](../evaluations/results/live2d-community-obs-20261111.json)
 - 历史初筛 · [微调与训练资源](../evaluations/results/candidate-finetune-probes-20261110.md) · [文本探针与设备初测](../evaluations/results/model-matrix-text-probes-20261110.md)

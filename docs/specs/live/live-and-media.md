@@ -35,6 +35,10 @@ UC-02：礼物按唯一ID、档位和冷却选预录或语音／特效并记录�
 
 P1可调建议为普通弹幕60%／礼物25%／主动话题15%，以实际音频时长记账；空队列可借余量，结合aging与同用户冷却防饿死。该比例不是未经测试的公平性结论。优先级依次为人工控制、时效反馈／礼物、选中普通互动、冷场／预录、离线分析／维护。
 
+### 直播推理额度
+
+直播可独立配置思考额度，默认 1,024 tokens，应用到支持该能力的实际 Provider 请求。关闭思考时沿用关闭状态。界面分别显示思考与总输出额度及 Provider 支持状态，生成时为最终结构化台词保留空间，思考内容不进入语音或字幕。当前 1,024 tokens 是直播总输出默认值，独立思考额度和耗尽时的台词、首音行为待[验收](../../plans/current.md#直播点歌与部署验收)。
+
 ## 事件与播放状态
 
 PlatformConnector.events() → AsyncIterator[NormalizedEvent]。事件至少包含 event_id／platform／room_id／session_id／type／platform_user_id／display_name／timestamp／text／metadata，时间含时区。平台无稳定ID时生成注明来源的组合去重键，不假设绝对唯一；昵称不决定身份。Scheduler.submit(event) → JobID 不承诺每条消息获得Speech Slot。
