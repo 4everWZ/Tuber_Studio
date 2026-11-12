@@ -1,4 +1,4 @@
-"""Bind the frozen replay questions to cached public CC and sampled storyboard frames."""
+"""Bind historical Grounded replay questions to cached CC and storyboard frames."""
 
 import argparse
 import json

@@ -59,3 +59,5 @@ python tools/training/export_grounded_sft.py \
 `evaluate_finetuned_model.py`使用固定旧SYSTEM_PROMPT（含旧自称与AI OC描述），`evaluate_4groups.py`也使用固定题目和判据；它们仅供原条件离线对照，不读取当前角色卡，旧评分不代表当前`characters.json`或当前运营服务已通过。主线验收须通过实际服务，使用当前人格和真实caption／frame回放，覆盖多轮回复、引用、连续复读、未完成输出和工具补读。报告须保留素材、模型／引擎、采样、上下文与输出设置，以及失败原答；小集合通过不宣称 100% 稳定。
 
 `grounded_sft.py`、`train_grounded_preference.py` 及 `build_grounded_*`／`augment_grounded_*` 是独立视觉与偏好实验工具，其语料、起始权重和判据不自动替代当前 OC 数据。历史条件和逐例结果见[视觉实验](../../evaluations/results/grounded-persona-v6-20261105/README.md)、[后续回放](../../evaluations/results/grounded-persona-v7-20261105/README.md)、[偏好实验](../../evaluations/results/grounded-preference-20261105/README.md)。这些记录用于比较与追查，不作为当前部署说明。
+
+`prepare_grounded_replay.py`、`evaluate_grounded_sft.py` 和 `replay_grounded_operations.py` 服务于旧 Grounded 实验。旧 endpoint 的逐帧、证据先行和来源笔记协议，以及旧八题合成运营集 `evaluations/cases/operations-heldout.json`，可在提交 `744ddd7` 复现。早期评估随结果保留当时实际用的[八题副本](../../evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/operations-heldout.json)。现行冻结回放默认读取 `evaluations/cases/dafeiyu-next-holdout-v1.jsonl` 的通用与 OC 题，实跑模型评估从业务库提取。

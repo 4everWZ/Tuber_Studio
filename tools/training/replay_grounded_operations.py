@@ -1,7 +1,8 @@
-"""Replay native operations generation on isolated material, retaining complete prose."""
+"""Replay the historical 1B Grounded operations condition on an isolated endpoint."""
 
 import argparse
 import asyncio
+import base64
 import json
 from pathlib import Path
 
@@ -13,7 +14,6 @@ from build_grounded_corpus import (
     historical_replay_anchor,
 )
 from grounded_sft import read_jsonl
-from replay_grounded_endpoint import image_part
 
 from tuber_studio.context import ContextManager
 from tuber_studio.dynamics import Dynamics
@@ -28,6 +28,13 @@ from tuber_studio.providers import LlamaCppProvider
 
 BUDGET = 8192
 DATE = "2026-11-05T22:00:00+08:00"
+
+
+def image_part(path):
+    return {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(path.read_bytes()).decode("ascii")},
+    }
 
 
 async def conversation(provider, character, anchor, case):

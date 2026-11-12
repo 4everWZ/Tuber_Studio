@@ -1,4 +1,4 @@
-"""Replay held-out OC turns and independent frame cases in the workstation."""
+"""Replay the historical Grounded SFT OC and frame conditions on the workstation."""
 
 from __future__ import annotations
 
@@ -55,32 +55,6 @@ def evaluate_oc(model, processor, cases, prompt):
                 output[index]["replies"].append(reply)
                 histories[index].append({"role": "assistant", "content": reply["text"]})
     return output
-
-
-def replay_schema(aliases):
-    def branch(action, reason, minimum, maximum):
-        fields = {
-            "action": {"type": "string", "enum": [action]},
-            "reason": {"type": "string", "enum": [reason]},
-            "text": {"type": "string", "minLength": minimum, "maxLength": 120 if minimum else 0},
-            "evidence_ids": {
-                "type": "array",
-                "minItems": minimum,
-                "maxItems": maximum,
-                "items": {"type": "string", "enum": aliases} if aliases else {"type": "string"},
-            },
-        }
-        return {
-            "type": "object",
-            "properties": fields,
-            "required": list(fields),
-            "additionalProperties": False,
-        }
-
-    options = [branch("wait", "insufficient_evidence", 0, 0)]
-    if aliases:
-        options.insert(0, branch("reply_public", "specific_detail", 1, 8))
-    return {"anyOf": options}
 
 
 def main():
