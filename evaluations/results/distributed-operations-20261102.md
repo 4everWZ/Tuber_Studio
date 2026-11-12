@@ -14,7 +14,7 @@
 | 视觉 | 同一模型／引擎，原厂280预处理，图前，T1／top_p0.95／top_k40／min_p0／repeat1，8192输出与思考开启。逐帧观察及汇总保留各自用量。 |
 | 直播 | MiniCPM5-2B Q4_K_M＋原Genie音色，131072／q4_0；先加载、暖机Genie，再加载Mini。 |
 
-模型、投影器与引擎身份由[固定Profile](../../src/tuber_studio/inference_profiles.py)核验；模型对照、优缺点和未解决的细节识别问题见[选型报告](operations-vlm-20261102-performance.md)与[同卡对照](operations-vlm-20261101-shared-persona.md)。本次没有更改正文词语、口头禅或长度验收条件。
+模型、投影器与引擎身份由[固定 Profile](../../src/tuber_studio/inference_profiles.py)核验。同期模型选型与同卡对照保存在提交 `58652d3` 的 `evaluations/results/operations-vlm-20261102-performance.md` 和 `evaluations/results/operations-vlm-20261101-shared-persona.md`。本次沿用原正文词语、口头禅和长度验收条件。
 
 ## 数据与恢复
 

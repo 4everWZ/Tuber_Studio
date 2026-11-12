@@ -2,7 +2,7 @@
 
 本规范维护 Provider、声音身份／缓存、设备 Profile 和推理封装；具体设备测量及准入记录由证据文件维护。
 
-非直播评论、可配置的 LLM API 与本地 Mock 直播均可用。既有直播基线为 MiniCPM5-2B／真实131072／q4_0 与 Genie TTS 共驻，已验证动态语音、浏览器实际播放ACK及真实长输入接收后同进程继续合成。资源优化以整机峰值 RAM 为首要指标，音质与生成速度均须保留原正式 compact 声音后端的至少90%。源码模板默认text且关闭直播，独立程序启动器的新安装另用获准声音的live预设，首次下载与准备完成后才加载；真实平台接入与持续运行须独立验收。当前声音与共驻测量见[瑶瑶正式验收](../../../evaluations/results/yaoyao-v2-voice-20261030.json)，原引擎优化对照见[Genie资源实验](../../../evaluations/results/genie-live-optimization-20261029.json)。外部语音 API 可独立配置，不因此启用本地 TTS 或直播。
+运营和直播默认使用大肥鱼 Qwen3.5-9B。源码模板默认文本模式并关闭直播，独立程序启动器的新安装使用 9B＋Genie 的直播资源预设，资产准备完成后才加载。现行 9B 已验证 AGX 运营，直播首音、同节点共驻和持续负载见[当前计划](../../plans/current.md#直播点歌与部署验收)。声音资源优化以整机峰值 RAM 为首要指标，音质与生成速度须保留 compact 声音后端的至少 90%。外部语音 API 可独立配置。 [瑶瑶语音验收](../../../evaluations/results/yaoyao-v2-voice-20261030.json)
 
 初始大肥鱼的目标声线为清亮柔软、略带奶气的普通话少女音，避免明显电音／金属感；已接受的声音绑定为yaoyao_sovits_v2，角色设定和形象继续由whale角色卡维护。原素材和实际合成须分别试听；模型版本、干净参考、来源和运行包身份分别核验。声音替换重新验证质量、速度与整机RAM，旧声线的相对试听通过不转移为新声线准入，也不以强行升调代替声音选择。
 
@@ -25,7 +25,7 @@
 
 运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)；本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断；通用兼容API使用JSON模式与程序schema校验。输入和输出仍受真实窗口、单次输出与完整结束约束；非直播运营可选择已注册的网页取材工具，不获得任意执行或发布权限。自动批次不额外设置隐藏的累计调用／token上限；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
 
-本地 MiniCPM 的 Think 模式通过原生 chat template 和 reasoning_format=deepseek 分离推理与正式内容；所有 Provider 只解析 message.content 进入台词／摘要。直播短句模板默认输出预算1024 tokens，包含推理与最终JSON，并沿用直播角色的短句设置；运营使用独立的8192输出额度，正文长短由Agent按情境选择。摘要预算独立；运营遇到未完整stop时保留实际输出进入续处理，直播短句按失败处理。延迟按实际思考配置测量。
+本地 9B 使用原生聊天模板分离思考和可见正文。Provider 使用 `message.content` 生成台词、正文或摘要。支持独立思考额度的直播接口默认另预留 1,024 tokens 思考空间，台词沿用直播结构与上限。运营默认使用 8,192 输出 tokens，摘要预算独立。未完整结束的运营输出留诊断供继续，未完整结束的直播输出按失败处理。延迟按实际思考设置记录。 [直播推理额度](../live/live-and-media.md#直播推理额度)
 
 预录限于允许资产目录，字幕对应实际录音，不冒充动态台词。缓存还覆盖 Provider 和参考音频内容，防止同路径换文件串用。合成失败按配置退回预录／静音且显示原因，不伪造成功。动态TTS的全静音结果必须拒绝，即使上游返回HTTP200；缓存命中也检查，静音缓存删除后重新合成，不能算成功播报。音色持久语义含 ID、Provider、版本、权重、参考资产、许可和有效参数；音频、训练数据、权重及下游用途分别核对，原型允许现有内容不授额外商用权。
 
@@ -49,7 +49,7 @@ LLM API 使用操作者指定的 Base URL／model 和 OpenAI-compatible Chat Com
 
 语音 API 使用独立的 external_api voice_profile，通过 audio/speech 请求 WAV；有效格式、有限大小、非静音和缓存身份仍须检查。其声音身份包括 endpoint、model、API voice 和配置作用域，不能串用本地 GPT-SoVITS 缓存，也不能因设置 API 自动替换角色原 voice_id。操作者须显式选择 API 音色。
 
-MiniCPM5-2B 是文本模型。未配置视觉端点时，运营工作台显示字幕模式。视频通过当前视觉 Provider 传入有界的内联图片，按实际请求结果记录画面或失败原因。模型、投影器、窗口与整机资源的检查用于部署验收，日常取帧直接使用当前配置。取帧和来源归属见[自主浏览](../operations/autonomous-browsing.md#视觉与管理接口)。
+未配置视觉端点时，运营工作台显示字幕模式。配置 9B 视觉时使用同版 Q8_0 投影器，视频通过当前视觉 Provider 传入有界的内联图片，记录实际画面或失败原因。模型、投影器、窗口与整机资源在部署时验收，日常取帧使用当前配置。取帧和来源归属见[自主浏览](../operations/autonomous-browsing.md#视觉与管理接口)。
 
 LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json，使用 0600 私有权限；管理接口只返回是否已配置，不回显密钥，不把凭证放入模型上下文、公开配置或日志。修改 endpoint 时须重新填写或明确清除对应 key，避免旧凭证发送到新服务；公网 endpoint 使用 HTTPS，禁止跟随重定向泄露凭证。内部 broker token 只用于受控本地 broker，不发送给外部 API。设置修改须经过认证，并在停止直播、无生成作业且自动浏览／回复关闭时原子应用；失败恢复原配置／客户端／本地资源，恢复未确认须可见报错，历史会话保留并按新 Provider 重新计数。
 
@@ -61,7 +61,7 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 ### AGX Orin 候选验收
 
-AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算验收。用目标运营或直播档实际运行，记录权重、配套视觉资产、4-bit K/V、服务模板、实开窗口、整机峰值和换页。早期 8K 文本探针和 32K 首次装配的条件保留在原报告。 [初次装配](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [独立持出回放](../../../evaluations/results/workstation-candidate-replay-20261110.md)
+AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算验收。用目标运营或直播档实际运行，记录权重、配套视觉资产、4-bit K/V、服务模板、实开窗口、整机峰值和换页。 [9B 装配证据](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [9B 配对评估](../../../evaluations/results/dafeiyu-clean-9b-20261111.md)
 
 状态探测遵守同一凭证绑定。临时输入的凭证不进入 URL 或日志，保存的凭证仅用于其绑定端点，内部 broker token 仅用于已配对节点的受控路径。检查临时地址使用明确提供给该地址的凭证，或执行无凭证探测。
 
@@ -69,27 +69,11 @@ AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算
 
 运营和直播默认使用 `dafeiyu-qwen35-9b:1.0.0`，配置为 Q4_K_M 主权重、Q8_0 投影器、262,144 上下文及 `q4_0` K/V，默认开启思考。模型读取当前角色卡。本地模型与兼容 API 都可以另行配置。运营 9B 已实测，直播 9B 与 Genie 的共驻和首音待验收。换模型或运行参数后，在实际设备上核对窗口、图像、采样、内存和耗时。 [当前角色卡](runtime-and-characters.md#角色生成方式) · [运营审核回放](../../../evaluations/results/review-agx-mainline-20261111.md)
 
-历史 DoRA 回退档的运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`。节点核对 Q4_K_M 主权重、同批导出的 4× F16 投影器及固定 llama.cpp 引擎，默认窗口为 131072，KV 使用 q4_0。文本请求走 `/llm/v1/chat/completions`，图像请求走 `/vlm/dafeiyu/v1/chat/completions`，两个端点共享运营资源与认证。业务配对使用实开的窗口，视频取材按同一组权重、投影器、引擎和图片配置独立测量资源。旧版 `MiniCPM-V-4.7-1B` 提供文本。统一视觉直播档另验真实长输入、Genie 共驻和浏览器可听音频延迟。[视觉微调实验](../../../tools/training/README.md) · [装配与回退](../../guides/deployment.md#电脑业务主机与独立推理节点)
-
-通用模型路线可用 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出）。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。长输入实验分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。[性能复核](../../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型) · [双机实测](../../../evaluations/results/distributed-operations-20261102.md)
-
-源码模板和节点默认采用 9B 原生窗口。操作者可在 4,096 到所选模型原生上限之间调整。备选的 MiniCPM5-2B 原生窗口为 131,072。本地从 GGUF 和运行时核对原生窗口与实际 n_ctx，API 显示操作者声明的远端容量。容量预算和压缩由上下文规范维护，切换 Provider 或窗口后重新计数。角色、摘要与长输入质量分别验收。
-
-[MiniCPM5-2B 官方配置](https://huggingface.co/openbmb/MiniCPM5-2B/blob/f97400052a43d642bbc6e9975e2397e3ae6a6b52/config.json)声明 LlamaForCausalLM 和 max_position_embeddings=131072，是文本 CausalLM；多模态接入遵守独立视觉 Provider 契约。
+本地从 GGUF 和运行实报核对原生窗口与实际 `n_ctx`，操作者可在 4,096 到所选模型原生上限之间调整。兼容 API 显示操作者声明的远端容量。切换 Provider 或窗口后重新计数，角色、摘要与长输入质量分别验收。已有安装可继续使用显式配置的已装模型。
 
 固定 llama.cpp d749821 的 [KV 类型白名单](https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/common/arg.cpp#L391)没有 2／3 bit 类型；q4_0 与 iq4_nl 的 [块布局](https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-common.h#L184)均为每 32 个值 18 字节，即 4.5 bit/value，直接改名不会继续减少 KV 字节。保留 q4_0 默认；显式减小实际窗口可相应减少 KV，但这是容量选择，不是同一 128K 配置下的压缩收益。
 
-首版接受明确记录的偶发遗漏，单次漏地点不等于整个模型不可用；该次明确问了地点的回答仍须记为不完整。选型综合实际任务质量、事实错配、延迟和 RAM，不把小集合字面分数当自动淘汰器。获准候选须与 MiniCPM5 使用可比较的语义用例评估，不得为修分数删证据、改 gold 或宣称更短就是更好；既有 Qwen 比较不要求当前继续下载或切换模型。来源检索与缺项诊断见[角色与记忆规范](runtime-and-characters.md#来源记忆与核对线索)。
-
-既有 MiniCPM5-2B 直播质量基线采用 Think 参数 temperature=1.0、top_p=0.95、min_p=0.0；当时的 NoThink 对照只证明该实验条件。大肥鱼 DoRA 的运营参数和质量另按其实际模型评估，不继承这份2B实验结论。外部 API 采用显式配置，不因接入服务而放宽角色／摘要语义要求。模型、量化或精度替换应保留可比质量判据与真实结果；不因参数规模直接认定合格或不合格，也不把语义评测变成未配置的运行时发送门槛。更换 Profile 或窗口须分别验证 LLM／TTS 共驻、冷／热启动和持续运行；互斥加载不能冒称共驻，未准入时保留文本工作。长输入接收只证明容量，不证明长文召回或长期稳定。
-
-Qwen3.5-2B 是可显式准备的历史候选。各次测试沿用当时的配置。 [候选质量结果](../../../evaluations/results/qwen35-2b-single-system-seed42.json) · [来源检索对照](../../../evaluations/results/grounded-qwen35-2b-seed42.json) · [资源测量](../../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json) · [长输入与恢复](../../../evaluations/results/qwen35-2b-live-context-f35d061.json) · [播放测量](../../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)
-
-历史 compact Profile 的容量测量、共驻分配失败与恢复记录保留在[原链路设备证据](../../../evaluations/results/compact-live-runtime-20261029.json)，不覆盖当前 Genie Profile 的准入结论。
-
-早期原句检索及补答实验见[MiniCPM对照](../../../evaluations/results/grounded-minicpm5-2b-seed42.json)及上述Qwen对照；外围证据层补全个例不证明模型原始记忆已改善。
-
-候选源模型为[Qwen固定版本](https://huggingface.co/Qwen/Qwen3.5-2B/tree/15852e8c16360a2fea060d615a32b45270f8a8fc)，量化来自[Bartowski固定版本](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF/tree/7d26695454df6de5fbcce2e58681e62dae06ce43)，不能冒称Qwen官方GGUF。下载按固定revision、大小、SHA256及真实GGUF架构／窗口验证，可通过独立文本候选准备工具显式安装Qwen而不切默认，该候选不附带视觉权重；portable固定清单初始化的范围见下文交付契约。
+模型、量化或精度更换使用同一质量判据，按任务记录事实错配、时延和内存。下一次发布沿用现行 9B、固定基座和独立持出，公开互动另看真实运营结果。更换 Profile 或窗口时分别检查长输入接收、召回、LLM／TTS 共驻、冷／热启动及持续运行。来源缺项诊断见[角色与记忆规范](runtime-and-characters.md#来源记忆与核对线索)。 [微调与评估](../../../tools/training/README.md)
 
 共驻仅表示权重可同时保留，不放开生成并发。默认 active_llm_generations=1、active_tts_jobs=1，需要时串行；直播、评论和试听共享配额，直播高于离线工作。逻辑 subagent 不加载独立驻留模型；外部 API 接入不改变业务生成和提交的并发约束。
 
@@ -149,13 +133,13 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 环境标识由依赖声明／锁文件、Dockerfile、TTS依赖及固定Genie源码计算，CI仅在对应env-<指纹>尚未发布时构建；同环境的程序更新复用已有镜像。本地缺少指定镜像才拉取，解析一次ID后所有运行使用--pull=never；依赖不匹配须在替换旧容器前拒绝，不静默升级。环境和程序构建不得依赖旧runtime、生产凭证、模型权重或设备连接。固定镜像与程序版本共同用于回退，不假定数据库自动回退；交付命令与CI由[部署指南](../../guides/deployment.md)维护。
 
-节点／portable 初始化按固定下载清单准备大肥鱼 9B 主权重和投影器、DoRA 备用模型和投影器、瑶瑶原始 GPT／SoVITS 与参考、BERT／HuBERT 和 NLTK。独立直播默认加载 9B＋Genie。准备资产会保留已保存的 Profile，工作台保存模型或 API 时使用已安装模型或外部服务。资产进入持久 runtime，完整校验固定版本、字节数和 SHA256 后才发布。可用 HTTPS origin 形式的 `TUBER_HF_BASE` 替换 Hugging Face 源站，文件身份仍使用固定清单。下载或转换失败时报告实际错误。 [固定下载清单](../../../config/jetson/downloads.json)
+节点／portable 默认准备大肥鱼 9B 主权重和投影器、瑶瑶原始 GPT／SoVITS 与参考、BERT／HuBERT 和 NLTK。独立直播默认加载 9B＋Genie。已保存的 Profile 继续使用显式选中的已装模型或外部服务。资产进入持久 runtime，按固定版本、字节数和 SHA256 校验。`TUBER_HF_BASE` 支持配置 HTTPS 下载源。下载或转换失败时报告实际错误。 [固定下载清单](../../../config/jetson/downloads.json)
 
-下载后固定短命bootstrap顺序完成权重净化、参考处理／NPZ、转换、原采样恢复、INT8图准备和bundle安装；整个准备期间不得驻留LLM，结束并释放准备资源后才进入常驻TTS预热及Mini131072／q4_0共驻。初始化与健康检查不得pip安装依赖、创建新运行环境或改变原生Torch。首次准备成本与冷加载、热态合成分别测量；转换不在业务／直播常驻进程中进行。
+下载后由短命准备进程依次完成语音权重净化、参考处理、转换、原采样恢复、INT8 图准备和音色包安装。准备进程结束后先预热 TTS，再按配置加载 LLM。初始化与健康检查使用已安装环境。首次准备成本与冷加载、热态合成分别测量。
 
 重启验证并复用已下载及生成产物，不重复下载／转换，也不覆盖已有studio.json、TTS YAML、令牌或数据库。不可变源资产或声音包身份不符时拒绝并保留原文件，不静默修补；原BERT／HuBERT checkpoint、sanitized权重、参考及NPZ保留声音身份依赖，inode和时间戳在冷启动重新建立签名。镜像不携带生产凭证、数据库、日志、普通缓存或实验环境；新数据目录独立生成私有令牌与空业务数据库。
 
-新安装默认features.live_enabled=true及inference_broker.mode=live，业务仍stopped且自动浏览／回复关闭；已有Operator配置优先。模型就绪须观察实际窗口、驻留与bundle身份，HTTP可达不算就绪，健康检查只读，不触发下载、转换或加载。全新空数据卷下载／顺序准备、真实Mini131072／q4_0与Genie合成、断网重启复用及配置／令牌／数据库保留已有[设备验收](../../../evaluations/results/ready-program-image-20261030.json)；同一CI镜像已由正式启动包部署到原runtime，复用已接受的瑶瑶包并验证真实回复／音频、配置与令牌保留，业务保持停止／自动关闭。历史内置程序镜像证据不替代新环境／外部程序挂载的设备验收；显式维护新声音的流程继续保留，构建、交付与启动命令由[部署指南](../../guides/deployment.md)维护。
+独立启动器的新安装启用直播资源模式，业务仍为停止，自动运营关闭。已有配置优先。就绪检查读取实际窗口、进程驻留和音色包身份。空数据卷下载、顺序准备、断网复用及业务数据保留曾在此前设备档验证。现行 9B 同节点部署按当前计划复验。 [设备记录](../../../evaluations/results/ready-program-image-20261030.json) · [部署指南](../../guides/deployment.md)
 
 工作台为本地声音计算缓存内容身份时，只可读取已配置gpt_sovits音色的assets或runtime/tts/ref内有效WAV；拒绝绝对路径、穿越、链接和其他runtime／系统文件。该专用读取不扩展通用素材路由，也不给模型或观众文件读取权限。
 
@@ -182,7 +166,7 @@ ZRAM／SSD Swap 仅兜底，不以持续换页维持低延迟。过载依次暂�
 | AC-07 | 当前本地／API LLM 返回完整合法结构，非法情绪／动作被拒绝并可见失败／回退；动态 TTS／预录遵守声音、非静音与播放契约，不作为非直播评论的前置。 |
 | AC-08 | 声音接入时切音色不串缓存，API 音色不自动替换角色本地声线，商业配置不直接启用开发专用声音。 |
 
-实现依据 [MiniCPM官方llama.cpp部署](https://github.com/OpenBMB/MiniCPM/blob/main/docs/deployment/llama_cpp.md)、[GPT-SoVITS API v2](https://github.com/RVC-Boss/GPT-SoVITS/blob/main/api_v2.py)；设备依据 [Orin Nano Super](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/nano-super-developer-kit/) 与 [Orin Nano软件编码](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Multimedia/SoftwareEncodeInOrinNano.html)。接入时核对版本兼容和许可。
+推理与声音接口参考 [llama.cpp](https://github.com/ggml-org/llama.cpp) 和 [GPT-SoVITS API v2](https://github.com/RVC-Boss/GPT-SoVITS/blob/main/api_v2.py)。设备限制见 [Orin Nano Super](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/nano-super-developer-kit/) 和 [Orin Nano 软件编码](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Multimedia/SoftwareEncodeInOrinNano.html)。
 
 
 ## 媒体磁盘缓存

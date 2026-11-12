@@ -5,6 +5,7 @@
 - [部署、推理节点与数据恢复](guides/deployment.md)
 - [对话、视频、评论、私信与动态](guides/operations.md)
 - [角色卡、音色与形象](guides/characters.md)
+- 模型 · [9B 发布卡](model-card.md) · [微调与评估](../tools/training/README.md)
 - 直播 · [工作台与点歌](guides/live/workbench.md) · [可选 Live2D](guides/live/avatar.md)
 
 ## 产品与技术规范
@@ -24,6 +25,5 @@
 
 - [AGX 运营档部署](../evaluations/results/agx-clean-9b-deployment-20261111.md) · [30 个真实视频审核回放](../evaluations/results/review-agx-mainline-20261111.md)
 - [11 月 11–12 日运营实跑核查](../evaluations/results/operations-feedback-20261112.md)
-- [9B 微调配对评估](../evaluations/results/dafeiyu-clean-9b-20261111.md) · [早期候选持出回放](../evaluations/results/workstation-candidate-replay-20261110.md)
+- [9B 微调配对评估](../evaluations/results/dafeiyu-clean-9b-20261111.md)
 - [OBS 口型与 GIF 回退](../evaluations/results/live2d-community-obs-20261111.json)
-- 历史初筛 · [微调与训练资源](../evaluations/results/candidate-finetune-probes-20261110.md) · [文本探针与设备初测](../evaluations/results/model-matrix-text-probes-20261110.md)

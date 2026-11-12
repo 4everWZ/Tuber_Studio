@@ -42,7 +42,7 @@
 | AR-001–007 | [职责与部署模式](../specs/foundation/distributed-runtime.md#职责与部署模式) | G0–G1：推荐电脑业务＋独立推理、全本地可选、同一业务实现、可替换端点；C/S仍TBD。 |
 | AR-010–015 | [媒体地址与可选组件](../specs/foundation/distributed-runtime.md#媒体地址与可选组件)、[跨主机验收](../specs/foundation/distributed-runtime.md#跨主机验收) | G1、G5：Node迁移、直接播放寻址、开关／取消／15GiB语义、分主机占用、保原缓存、实测搬迁收益。 |
 | UI-001–005 | [现有共同UI／账号owner](../specs/tuber-studio.md) | G0、G5：复用共享账号状态及持久登录；核吸顶／滚动和切页可见、窄屏不遮挡、设置入口；刷新失败保上次有效资料并标更新时间／具体状态，网络暂错不直接当退出。当前字段与凭据不复制到游戏规范。 |
-| BP-001–008 | [测量约束](#基准与采用门槛)、[游戏负载](../specs/live/game-livestream.md#游戏负载验收) | G5：功能基线、Gemma慢响应分层、两机资源及阶段时钟、固定条件、重复样本、延迟／吞吐及质量分列。运营问题归[当前交付计划](current.md#运营主线)。 |
+| BP-001–008 | [测量约束](#基准与采用门槛)、[游戏负载](../specs/live/game-livestream.md#游戏负载验收) | G5：功能基线、当前模型慢响应分层、两机资源及阶段时钟、固定条件、重复样本、延迟／吞吐及质量分列。运营问题归[当前交付计划](current.md#运营主线)。 |
 | OP-001–005 | [测量约束](#基准与采用门槛)、[既有上下文owner](../specs/foundation/context-and-compaction.md) | G5：重复请求／编码／下载／序列化、稳定引用与版本失效、前缀与KV、背压和并发；能力与预算不隐降。 |
 | OP-010–015 | [测量约束](#基准与采用门槛)、[模型owner](../specs/foundation/models-and-audio.md) | G5：实际引擎参数和projector四位可行性／精度／执行位置／回退；同图文字、小目标、格子坐标、UI、复杂图及图像工具决策质量。 |
 | AT-001–006 | [游戏合同](../specs/live/game-livestream.md) | 双机真实推理、状态／动作、两游戏闭环、自主策略变化、视觉信息及纠错，逐项留证据。 |

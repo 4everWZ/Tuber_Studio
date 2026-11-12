@@ -32,6 +32,8 @@ For Bilibili operations, configure and verify the account under **Settings → A
 
 The default product setup keeps business data on a PC and uses a Jetson on the local network for inference. The PC owns the database, platform credentials, task queues, song requests and OBS playback. The Jetson owns model weights and inference caches. Pairing uses the node address and its own credential. Follow the [PC and Jetson guide](docs/guides/deployment.md#电脑业务主机与独立推理节点).
 
+Both operations and live production default to Da-Fei-Yu Qwen3.5-9B GGUF 1.0.0. The fixed release includes a language model and its matching vision projector. The workbench can use other configured providers. [Hugging Face model card](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf)
+
 A standalone Jetson installation is also available. It runs the program bundle or a source checkout with a separate reusable environment image and a persistent data directory. See [standalone Jetson setup](docs/guides/deployment.md#全本地jetson可选部署).
 
 ## Project status
@@ -54,10 +56,10 @@ uv run --locked python tools/ci/check_style.py
 uv run --locked pytest tests/test_comments.py
 ```
 
-For a change, run the tests that cover the affected flow. See the [documentation index](docs/README.md) for guides, specifications and the game implementation plan.
+For a change, run the tests that cover the affected flow. See the [documentation index](docs/README.md) for guides, specifications and the game implementation plan, and the [9B training guide](tools/training/README.md) for training and model evaluation.
 
 ## Acknowledgements
 
-Tuber Studio uses MiniCPM, llama.cpp, GPT-SoVITS and Genie-TTS. See the [Genie-TTS license](third_party/Genie-TTS/LICENSE) and [Codex notices](third_party/openai-codex/NOTICE).
+Tuber Studio uses Qwen3.5, llama.cpp, GPT-SoVITS and Genie-TTS. See the [Genie-TTS license](third_party/Genie-TTS/LICENSE) and [Codex notices](third_party/openai-codex/NOTICE).
 
 The included Da-Fei-Yu character uses artwork by YunYueSama. Sources and terms are recorded in the [artwork notes](third_party/whale-avatar/UPSTREAM.md), [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json).

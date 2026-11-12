@@ -1,1 +1,0 @@
-{"live": {"model": "MiniCPM5-2B", "mode": "live", "tts": "genie_onnx_int8", "tts_status": "ready"}, "after": {"model": "MiniCPM-V-4.7-1B-Dafeiyu-Grounded", "mode": "text", "state": "active"}}

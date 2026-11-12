@@ -32,6 +32,8 @@ uv run python -m tuber_studio --port 8020
 
 默认由电脑承载工作台、业务数据库、平台凭据、点歌和 OBS，局域网内的 Jetson 提供推理并保管模型及推理缓存。配对使用节点实际地址和独立凭据。安装和迁移步骤见[电脑与 Jetson 部署](docs/guides/deployment.md#电脑业务主机与独立推理节点)。
 
+运营和直播默认使用大肥鱼 Qwen3.5-9B GGUF 1.0.0。固定发布包含主权重和配套视觉投影器，工作台可以更换 Provider。 [Hugging Face 模型卡](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf)
+
 也可以在 Jetson 上运行完整工作台。全本地启动使用程序包或源码目录，环境镜像和持久数据独立管理。见[全本地 Jetson 部署](docs/guides/deployment.md#全本地jetson可选部署)。
 
 ## 项目进度
@@ -54,10 +56,10 @@ uv run --locked python tools/ci/check_style.py
 uv run --locked pytest tests/test_comments.py
 ```
 
-按改动范围运行对应流程的测试。使用指南、技术规范和游戏计划见[文档索引](docs/README.md)。
+按改动范围运行对应流程的测试。使用指南、技术规范和游戏计划见[文档索引](docs/README.md)，微调与评估见 [9B 训练指南](tools/training/README.md)。
 
 ## 致谢
 
-项目使用 MiniCPM、llama.cpp、GPT-SoVITS 和 Genie-TTS。第三方条款见 [Genie-TTS 许可证](third_party/Genie-TTS/LICENSE)和 [Codex 声明](third_party/openai-codex/NOTICE)。
+项目使用 Qwen3.5、llama.cpp、GPT-SoVITS 和 Genie-TTS。第三方条款见 [Genie-TTS 许可证](third_party/Genie-TTS/LICENSE)和 [Codex 声明](third_party/openai-codex/NOTICE)。
 
 内置大肥鱼形象源于 YunYueSama 的作品。来源、许可与修改见[形象说明](third_party/whale-avatar/UPSTREAM.md)、[素材清单](assets/whale/manifest.json)和[音色配置](config/voices.json)。
