@@ -42,6 +42,48 @@ async def test_exact_token_count_reuse_is_bound_to_the_current_wire_and_turn(set
         await provider.close()
 
 
+async def test_live_thinking_budget_is_separate_from_spoken_and_ordinary_output(settings, store):
+    config = settings.data["llm"] | {"kind": "llama_cpp", "max_tokens": 160, "enable_thinking": True}
+    provider = LlamaCppProvider(config)
+    await provider.client.aclose()
+    requests = []
+    build = "b1-d749821"
+
+    def handler(request):
+        if request.url.path == "/props":
+            return httpx.Response(200, json={
+                "build_info": build, "default_generation_settings": {"n_ctx": config["context_tokens"]},
+            })
+        if request.url.path == "/apply-template":
+            return httpx.Response(200, json={"prompt": "compiled"})
+        if request.url.path == "/tokenize":
+            return httpx.Response(200, json={"tokens": [1, 2, 3]})
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "stop", "message": {
+                "content": json.dumps({"spoken_text": "本鱼听见啦。", "reply_to": ["mock:1"]}),
+                "reasoning_content": "这段只属于思考",
+            },
+        }]})
+
+    provider.client = httpx.AsyncClient(base_url="http://model", transport=httpx.MockTransport(handler))
+    args = ([{"role": "user", "content": "鱼鱼好"}], store.character(), "mock:1")
+    try:
+        assert (await provider.generate_live(*args)).spoken_text == "本鱼听见啦。"
+        await provider.generate(*args)
+        config["enable_thinking"] = False
+        await provider.generate_live(*args)
+        config["enable_thinking"] = True
+        build = "unverified"
+        await provider.generate_live(*args)
+    finally:
+        await provider.close()
+    assert [body["max_tokens"] for body in requests] == [1184, 160, 160, 160]
+    assert [body.get("thinking_budget_tokens") for body in requests] == [1024, None, None, None]
+    assert requests[2]["chat_template_kwargs"]["enable_thinking"] is False
+    assert provider.live_thinking_budget_supported is False
+
+
 @pytest.mark.parametrize(
     "properties,reason",
     [

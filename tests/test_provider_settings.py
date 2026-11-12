@@ -38,6 +38,21 @@ def test_direct_provider_default_window_and_thinking_keep_paired_node_settings(s
     assert proposed["work_mode_profiles"]["text"]["llm"] == proposed["llm"]
 
 
+def test_live_thinking_preference_survives_saved_mode_switches(settings):
+    settings.data = business_configuration(settings.data, "http://127.0.0.1:9012")
+    proposed, _ = proposal(settings, {"llm": {"live_thinking_tokens": 256}})
+    settings.save_public(proposed)
+    reloaded = Settings(runtime=settings.runtime)
+    live = mode_configuration(reloaded.data, "live")
+    assert live["llm"]["live_thinking_tokens"] == 256
+    assert mode_configuration(live, "text")["llm"]["live_thinking_tokens"] == 256
+    reloaded.data = live
+    proposed, _ = proposal(reloaded, {"llm": {"live_thinking_tokens": 512}})
+    assert mode_configuration(proposed, "text")["llm"]["live_thinking_tokens"] == 512
+    with pytest.raises(ValueError, match="0.*8192"):
+        proposal(reloaded, {"llm": {"live_thinking_tokens": 8193}})
+
+
 def api_patch(**extra):
     return {
         "llm": {

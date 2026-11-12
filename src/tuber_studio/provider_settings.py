@@ -14,7 +14,8 @@ from .runtime_modes import require_model_idle
 from .video_vision import ApiVideoEvidenceProvider
 
 FIELDS = {
-    "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens", "enable_thinking"},
+    "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens",
+            "enable_thinking", "live_thinking_tokens"},
     "tts": {"kind", "base_url", "model", "voice"},
     "vision": {"kind", "location", "base_url", "model"},
 }
@@ -204,6 +205,9 @@ def _update_model_profiles(data, previous_llm):
     mode = broker.get("mode")
     if profiles and mode in profiles:
         profiles[mode] = {name: copy.deepcopy(data[name]) for name in ("llm", "vision")}
+        if "live_thinking_tokens" in data["llm"]:
+            for profile in profiles.values():
+                profile["llm"]["live_thinking_tokens"] = data["llm"]["live_thinking_tokens"]
 
 
 async def apply_settings(runtime, body):

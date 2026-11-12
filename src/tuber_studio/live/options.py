@@ -90,7 +90,8 @@ class LiveLookup:
             })
             instructions.append('需要查设置地点的天气时选 {"weather":true}。')
         maximum = provider.config.get("max_tokens", 160)
-        request = await provider.generate_json(
+        generate = getattr(provider, "generate_live_json", provider.generate_json)
+        request = await generate(
             [*messages, {
                 "role": "system",
                 "content": "直接回复当前弹幕，或先选一项取材。" + "".join(instructions),
@@ -100,7 +101,7 @@ class LiveLookup:
         )
         if "weather" in request or "web_fetch" in request:
             result = await self.read(options, request)
-            request = await provider.generate_json(
+            request = await generate(
                 [*messages, {
                     "role": "user",
                     "content": "本轮取材结果："

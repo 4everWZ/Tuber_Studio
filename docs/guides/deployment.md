@@ -228,7 +228,7 @@ Linux设备的真实长输入接收探针为docker exec tuber-studio python tool
 
 与正式预热／线程协议一致的PCM数值对照使用tools/evaluate_tts_parity.py --voice whale_sovits_v2 --output runtime/evaluations/tts-parity-<新目录>。外层维护监督器先受控卸载Mini并在finally恢复；工具自身只检查业务停止、自动关闭、GPUworker均已退出，不控制broker或改原缓存。原版／精简版各用新进程与单个工作线程执行生产预热、三句各两遍，记录完整参数、源文件／权重身份和整机守护。同序六组配对、自身重复及可选--legacy-dir旧WAV分别报告；旧协议hash不作为本轮质量门槛，形状／文件不完整不得判一致，数值一致不代表任意文本确定性或人工音质已通过。
 
-正式链路的持续运行入口为tools/evaluate_live.py --output /workspace/tuber/runtime/tmp/live-evaluation，默认两小时且至少100次语音请求：先无额外节拍地完成100次，之后每轮完成后间隔60秒，每第五轮用真实角色／MiniCPM结构回复作为合成文字；其余轮次使用evaluations/speech-cases.json。需先在工作台切到直播资源模式，保持业务停止及自动策略关闭。工具不改模式、不写业务数据库、不发布、不伪造播放回执；记录非静音WAV、无效LLM回复、同进程连续性与整机守护，单纯保活不计作完成合成。瑶瑶声线的已验范围及持续运行、平台与OBS验收见[当前计划](../plans/current.md#直播点歌与部署验收)。
+正式链路的持续运行入口为 `tools/evaluate_live.py --output runtime/tmp/live-evaluation`，每轮使用新目录。在推理节点运行，先从工作台切到已配置的节点直播档，保持直播场次与自主运营停止。工具核对该档的真实模型、窗口、K/V、TTS 和进程身份。默认先完成 100 次语音请求，再每轮间隔 60 秒，持续至少两小时。每第五轮通过当前直播 Provider 生成结构化台词，其余轮次使用 `evaluations/speech-cases.json`。记录非静音 WAV、无效模型回复、进程连续性与整机内存。播放器首音和平台事件分别验收。 [当前计划](../plans/current.md#直播点歌与部署验收)
 
 轻量／量化对照由tools/evaluate_tts_candidates.py执行，inspect只读包元数据／源码，不导入Torch或初始化CUDA。候选离线包放runtime/evaluations/tts-candidates，用tools/jetson/tts/install-candidates.py --bundle <该目录>安装到它自己的venv；只安装已校验的本地wheel，复用原生Torch／Audio／Vision／TorchAO／Transformers，不升级正式环境。缺少依赖或离线资产时明确失败，不在计时过程中下载。
 

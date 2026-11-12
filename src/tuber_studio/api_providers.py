@@ -77,14 +77,15 @@ class APIProvider:
             self.profile_error = public_error(error)
             raise
 
-    async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None):
+    async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
+                        enable_thinking=None, thinking_budget=None):
         payload = {
             "model": self.config["model"],
             "messages": single_system_messages(provider_identity_messages(self, messages)),
             "max_tokens": budget,
             "stream": False,
         }
-        thinking = self.config.get("enable_thinking")
+        thinking = self.config.get("enable_thinking") if enable_thinking is None else enable_thinking
         if self.adapter == "llama_cpp" and thinking is not None:
             if type(thinking) is not bool:
                 raise ValueError("llama.cpp思考设置须为布尔值或None")
@@ -104,6 +105,8 @@ class APIProvider:
             payload["response_format"] = {"type": "json_object"}
             if self.adapter == "llama_cpp" and schema is not None:
                 payload["response_format"]["schema"] = schema
+        if thinking_budget is not None:
+            payload.update(thinking_budget_tokens=thinking_budget, reasoning_format="deepseek")
         reservation = (
             reserve_generation(
                 self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
@@ -227,12 +230,13 @@ class APIProvider:
     async def generate_operation(self, messages, character, event_id, source_text=None, *, web_fetch=None):
         return await generate_operation_reply(self, messages, event_id, web_fetch=web_fetch)
 
-    async def complete_admitted_live_image(self, messages, schema, budget):
+    async def complete_admitted_live_image(self, messages, schema, budget, *, enable_thinking=None, thinking_budget=None):
         """Direct call for an already admitted device with context shifting disabled."""
         if self.adapter != "llama_cpp":
             raise ValueError("直播画面需要已准入的 llama.cpp 视觉节点")
         json_schema_text(schema, budget)
-        return await self._complete(messages, budget=budget, structured=True, schema=schema)
+        return await self._complete(messages, budget=budget, structured=True, schema=schema,
+                                    enable_thinking=enable_thinking, thinking_budget=thinking_budget)
 
     def prepare_json_messages(self, messages, schema, *, max_tokens):
         schema_text = json_schema_text(schema, max_tokens)

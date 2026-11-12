@@ -58,11 +58,16 @@
             </div>
             <p id="llm-capacity-help" class="hint"></p>
             <label class="check-field"><input id="llm-enable-thinking" type="checkbox" checked> 启用思维链（CoT）</label>
+            <label>直播思考额度（tokens）
+              <input id="llm-live-thinking-tokens" type="number" min="0" max="8192" step="1" value="1024"
+                     aria-describedby="llm-live-output-budget">
+            </label>
+            <p id="llm-live-output-budget" class="hint"></p>
 
             <label style="margin-top:10px;">单次运营输出配额（tokens，含思考）
               <input id="llm-operations-tokens" type="number" min="1" max="65536" step="1" value="8192" required aria-describedby="llm-operations-help">
             </label>
-            <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考过程与正文。<span id="llm-live-output-budget"></span></p>
+            <p id="llm-operations-help" class="hint">评论、私信和动态共用，包含思考过程与正文。</p>
 
             <div class="provider-credential" style="margin-top:10px;">
               <label>API Key（可选）<input id="llm-key" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" spellcheck="false"></label>

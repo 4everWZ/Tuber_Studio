@@ -6,7 +6,7 @@ import { initOperatorChat } from "./modules/operator-chat.js?v=20261113.03";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261112.01";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
-import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261111.07";
+import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261113.02";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";
 import { MessagesPanel } from "./messages.js?v=20261111.08";

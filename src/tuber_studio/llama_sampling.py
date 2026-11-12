@@ -2,6 +2,22 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+DEFAULT_LIVE_THINKING_TOKENS = 1024
+# These builds expose the per-request budget and have been checked at the source
+# or on the deployed 9B. Other compatible endpoints can declare the same capability.
+_LIVE_THINKING_BUILDS = ("d749821", "434ddbb")
+
+
+def supports_live_thinking_budget(properties):
+    build = str(properties.get("build_info") or "").split("-")[-1]
+    return properties.get("supports_thinking_budget") is True or build.startswith(_LIVE_THINKING_BUILDS)
+
+
+def live_thinking_budget(config):
+    if config.get("kind") != "llama_cpp" or not config.get("enable_thinking"):
+        return 0
+    return config.get("live_thinking_tokens", DEFAULT_LIVE_THINKING_TOKENS)
+
 
 class LlamaCppSampling(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)

@@ -273,6 +273,10 @@ class Runtime:
             "providers": {
                 "llm": self.settings.data["llm"]["kind"],
                 "llm_model": self.settings.data["llm"].get("model"),
+                "live_thinking_budget_supported": (
+                    getattr(self.llm, "live_thinking_budget_supported", None)
+                    if self.settings.data["llm"]["kind"] == "llama_cpp" else False
+                ),
                 "llm_route": "node" if uses_broker_llm(self.settings.data) else "direct",
                 "tts": self.settings.data["tts"]["kind"],
             },

@@ -16,13 +16,13 @@ import httpx
 from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
 from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, models_health, response_bytes
-from .llama_sampling import llama_cpp_sampling
+from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
 from .models import OperationReply, Reply
 from .operation_identity import provider_identity_messages
 from .operation_text import operation_character
 
 SYSTEM_RULES = (
-    "以当前角色的第一人称接着聊，语气随关系和话题。角色设定："
+    "你是运行于大肥鱼工坊的 AI 角色。以当前角色的第一人称接着聊，语气随关系和话题。角色设定："
 )
 
 REPLY_SCENES = {
@@ -150,6 +150,7 @@ class LlamaCppProvider:
         self.server_tokens = None
         self.profile_error = None
         self.is_sleeping = None
+        self.live_thinking_budget_supported = None
 
     def sampling(self, *, summary=False):
         return llama_cpp_sampling(self.config, summary=summary, local_defaults=True)
@@ -212,8 +213,10 @@ class LlamaCppProvider:
                 raise ValueError("实际模型服务与配置的model别名不一致；拒绝错误标记模型生成结果")
             if self.server_tokens < window:
                 raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}")
+            self.live_thinking_budget_supported = supports_live_thinking_budget(properties)
             self.profile_error = None
         except Exception as error:
+            self.live_thinking_budget_supported = None
             self.profile_error = public_error(error)
             raise
 
@@ -327,10 +330,22 @@ class LlamaCppProvider:
         return content
 
     async def generate(self, messages, character, event_id, source_text=None):
+        return await self._generate_reply(messages, character, event_id, source_text, live=False)
+
+    async def generate_live(self, messages, character, event_id, source_text=None):
+        return await self._generate_reply(messages, character, event_id, source_text, live=True)
+
+    def _live_budget(self, visible, live):
+        if not live or not self.live_thinking_budget_supported or not self.config.get("enable_thinking"):
+            return visible, {}
+        thinking = live_thinking_budget(self.config)
+        return visible + thinking, {"thinking_budget_tokens": thinking}
+
+    async def _generate_reply(self, messages, character, event_id, source_text, *, live):
         self._begin_generation_observation()
         await self.ensure_capacity()
         messages = single_system_messages(provider_identity_messages(self, messages))
-        output_budget = self.config.get("max_tokens", 160)
+        output_budget, live_parameters = self._live_budget(self.config.get("max_tokens", 160), live)
         budget = self.config["context_tokens"] * 95 // 100 - output_budget
         self.last_tokens = await self.count_tokens(messages)
         if self.last_tokens > budget:
@@ -346,6 +361,7 @@ class LlamaCppProvider:
                 "messages": messages,
                 **self.sampling(),
                 "max_tokens": output_budget,
+                **live_parameters,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
                 **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),
                 "response_format": {"type": "json_object", "schema": schema},
@@ -378,6 +394,9 @@ class LlamaCppProvider:
         """A bounded schema-constrained task, independent of compaction output."""
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling())
 
+    async def generate_live_json(self, messages, schema, *, max_tokens):
+        return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling(), live=True)
+
     async def generate_video_response(self, messages, schema, *, max_tokens):
         sampling = self.sampling() | {
             "dry_multiplier": 0.8,
@@ -386,10 +405,11 @@ class LlamaCppProvider:
         }
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=sampling)
 
-    async def _generate_json(self, messages, schema, *, max_tokens, sampling):
+    async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False):
         self._begin_generation_observation()
         json_schema_text(schema, max_tokens)
         await self.ensure_capacity()
+        max_tokens, live_parameters = self._live_budget(max_tokens, live)
         messages = single_system_messages(provider_identity_messages(self, messages))
         tokens = await self.count_tokens(messages)
         self.last_tokens = tokens
@@ -403,6 +423,7 @@ class LlamaCppProvider:
                 "messages": messages,
                 **sampling,
                 "max_tokens": max_tokens,
+                **live_parameters,
                 "stream": False,
                 "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
                 **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),

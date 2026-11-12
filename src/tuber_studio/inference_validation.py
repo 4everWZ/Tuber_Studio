@@ -24,6 +24,7 @@ GENERATION_FIELDS = {
     "response_format",
     "chat_template_kwargs",
     "reasoning_format",
+    "thinking_budget_tokens",
     "repeat_penalty",
     "presence_penalty",
     "frequency_penalty",
@@ -123,6 +124,11 @@ def validate_llm_request(path, body, *, context_tokens=131072):
     for key in ("max_tokens", "n_predict"):
         if key in body and (type(body[key]) is not int or not 1 <= body[key] <= context_tokens):
             raise ValueError("Output token budget must fit the configured context window")
+    if "thinking_budget_tokens" in body and (
+        type(body["thinking_budget_tokens"]) is not int
+        or not 0 <= body["thinking_budget_tokens"] < body.get("max_tokens", body.get("n_predict", context_tokens))
+    ):
+        raise ValueError("Thinking budget must leave room for the visible answer")
     if "dry_multiplier" in body:
         value = body["dry_multiplier"]
         if type(value) not in (int, float) or value < 0:

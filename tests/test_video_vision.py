@@ -96,7 +96,7 @@ async def provider(runtime, request):
                     "default_generation_settings": {"n_ctx": state["window"]},
                     "modalities": {"vision": state["vision"]},
                     "model_alias": state["aliases"],
-                    "build_info": "tested-runtime",
+                    "build_info": state.get("build_info", "tested-runtime"),
                     "model_path": "tested-weights.gguf",
                 },
             )
@@ -220,8 +220,10 @@ async def test_joint_observation_binds_frames_and_rejects_missing_caption(provid
         await value.analyze_video_evidence({}, META, FRAMES, "观察画面", deadline=time.time() + 10)
 
 
-async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(provider):
+@pytest.mark.parametrize("thinking", [False, True])
+async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(provider, thinking):
     value, state = provider
+    state["build_info"] = "b1-434ddbb"
     await admit(value)
     state["requests"].clear()
     state["result"] = {"spoken_text": "画面中是圆形。", "reply_to": ["live-1"]}
@@ -232,6 +234,8 @@ async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(pr
         "model": "actual-vlm",
         "context_tokens": 131072,
         "base_url": "http://127.0.0.1:18080",
+        "enable_thinking": thinking,
+        "live_thinking_tokens": 8,
     }
     assert await value.generate_live_reply(scene, messages, config | {"model": "other"}, "live-1") is None
     assert (
@@ -242,7 +246,12 @@ async def test_admitted_live_scene_uses_one_generation_and_matches_live_model(pr
     )
     result = await value.generate_live_reply(scene, messages, config, "live-1")
     assert result.spoken_text == "画面中是圆形。"
-    assert len(generations(state)) == 1 and messages[-1]["content"] == "你看到了什么？"
+    request, = generations(state)
+    payload = json.loads(request.content)
+    assert messages[-1]["content"] == "你看到了什么？"
+    assert payload["max_tokens"] == (1032 if thinking else 1024)
+    assert payload["chat_template_kwargs"] == {"enable_thinking": thinking}
+    assert payload.get("thinking_budget_tokens") == (8 if thinking else None)
 
 
 async def test_real_inline_image_probe_and_distinct_frame_evidence(provider):

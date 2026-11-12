@@ -60,6 +60,9 @@ export function readProviderPayload() {
   };
   if (llmKind === "llama_cpp" && $("llm-enable-thinking")) {
     payload.llm.enable_thinking = $("llm-enable-thinking").checked;
+    if ($("llm-live-thinking-tokens")) {
+      payload.llm.live_thinking_tokens = boundedInteger("llm-live-thinking-tokens", "直播思考额度", 0, 8192);
+    }
   }
 
   const key = $("llm-key");
@@ -224,15 +227,13 @@ function providerFormFromSettings(settings, status) {
     "llm-context-tokens": llm.context_tokens ?? "",
     "llm-native-tokens": llm.native_context_tokens ?? status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
+    "llm-live-thinking-tokens": llm.live_thinking_tokens ?? 1024,
   };
   Object.entries(fields).forEach(([id, value]) => {
     const el = $(id);
     if (el) el.value = String(value);
   });
   if ($("llm-enable-thinking")) $("llm-enable-thinking").checked = llm.enable_thinking !== false;
-  if ($("llm-live-output-budget")) {
-    $("llm-live-output-budget").textContent = `直播台词使用独立额度：${tokenCount(llm.max_tokens)}。`;
-  }
   $("llm-key").value = "";
   $("llm-clear-key").checked = false;
   syncModelSelectWithInput();
@@ -249,6 +250,19 @@ function renderProviderForm(settings, status, dirty, saving) {
   $("llm-key-state").textContent = settings?.provider_credentials?.llm ? "已保存密钥" : "未保存密钥";
   const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
   if ($("llm-enable-thinking")) $("llm-enable-thinking").disabled = external || demo || saving;
+  if ($("llm-live-thinking-tokens")) $("llm-live-thinking-tokens").disabled = external || demo || saving;
+  const outputBudget = $("llm-live-output-budget");
+  if (outputBudget) {
+    const visible = settings?.llm?.max_tokens ?? 160;
+    const thinking = Number($("llm-live-thinking-tokens")?.value ?? 1024);
+    const supported = status?.providers?.live_thinking_budget_supported;
+    const thinkingEnabled = $("llm-enable-thinking")?.checked !== false;
+    outputBudget.textContent = external || demo || supported === false
+      ? `当前接口未提供可核验的独立思考额度，输出上限 ${tokenCount(visible)}。`
+      : !thinkingEnabled ? `思考已关闭，台词额度 ${tokenCount(visible)}。`
+      : supported === true ? `台词额度 ${tokenCount(visible)}，总输出上限 ${tokenCount(visible + thinking)}。`
+      : "等待当前模型报告思考额度支持状态。";
+  }
   ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
     $(id).disabled = demo || saving;
   });

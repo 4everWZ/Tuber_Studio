@@ -22,7 +22,7 @@ from .api_providers import APIProvider, validate_image
 from .generation_meter import GenerationMeter
 from .http_api import response_json
 from .image_preprocessing import prepare_image
-from .llama_sampling import LlamaCppSampling
+from .llama_sampling import LlamaCppSampling, live_thinking_budget, supports_live_thinking_budget
 from .models import Reply, StrictModel
 from .providers import validate_reply
 
@@ -172,6 +172,7 @@ class ApiVideoEvidenceProvider:
             "model_alias": aliases,
             "model_path": props.get("model_path"),
             "build_info": props.get("build_info"),
+            "supports_thinking_budget": props.get("supports_thinking_budget") is True,
             "modalities": props["modalities"],
         }
 
@@ -364,8 +365,13 @@ class ApiVideoEvidenceProvider:
         schema = Reply.model_json_schema()
         schema["properties"]["reply_to"] |= {"items": {"type": "string", "enum": [event_id]}, "maxItems": 1}
         budget = llm.get("max_tokens", 1024)
+        options = {"enable_thinking": llm.get("enable_thinking")}
+        if supports_live_thinking_budget(props) and llm.get("enable_thinking"):
+            thinking = live_thinking_budget(llm)
+            budget += thinking
+            options["thinking_budget"] = thinking
         async with asyncio.timeout(self.config.timeout_seconds):
-            content, tokens = await self.api.complete_admitted_live_image(messages, schema, budget)
+            content, tokens = await self.api.complete_admitted_live_image(messages, schema, budget, **options)
         self._check_properties(props, expected, identity)
         if tokens + budget > self.config.context_tokens * 95 // 100:
             raise ValueError("直播画面输入超出实际窗口预算")

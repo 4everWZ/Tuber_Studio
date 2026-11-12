@@ -531,7 +531,8 @@ class LiveSession:
         provider = self.runtime.llm
         if (options.web_fetch or options.weather) and getattr(provider, "supports_operation_web_fetch", False):
             return await self.lookup.generate(provider, messages, event["event_id"], options)
-        return await generate(messages, character, event["event_id"], event["text"])
+        generate_live = getattr(provider, "generate_live", generate)
+        return await generate_live(messages, character, event["event_id"], event["text"])
 
     def start_poll(self, request):
         if self.state not in {"live", "paused"}:

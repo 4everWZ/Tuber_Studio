@@ -9,6 +9,7 @@ from pathlib import Path
 from .http_api import endpoint
 from .inference_profiles import LLM_MODELS, VISION_ROUTES
 from .inference_validation import project_wav
+from .llama_sampling import live_thinking_budget
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -113,6 +114,12 @@ class Settings:
             raise ValueError("运营输出额度须为1到65536 tokens，实际生成仍受真实输入与窗口约束")
         if "enable_thinking" in llm and type(llm["enable_thinking"]) is not bool:
             raise ValueError("思考开关须为布尔值")
+        if "live_thinking_tokens" in llm and (
+            type(llm["live_thinking_tokens"]) is not int or not 0 <= llm["live_thinking_tokens"] <= 8192
+        ):
+            raise ValueError("直播思考额度须为0到8192 tokens")
+        if llm.get("max_tokens", 1024) + live_thinking_budget(llm) >= window * 95 // 100:
+            raise ValueError("直播思考与台词额度之和须小于有效上下文")
         if llm["kind"] != "demo":
             endpoint(llm["base_url"])
             if not isinstance(llm.get("model"), str) or not llm["model"].strip():

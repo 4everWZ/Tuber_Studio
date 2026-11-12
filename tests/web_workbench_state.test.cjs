@@ -133,11 +133,13 @@ test("daily memory extraction reloads results before releasing its busy state", 
 test("saving text model settings leaves independent vision configuration untouched", async t => {
   const { get } = dom(t);
   const { readProviderPayload } = await import("../src/tuber_studio/web/modules/providers.js");
-  const values = { "llm-kind": "llama_cpp", "llm-base-url": "http://node:9012/llm", "llm-model": "Dafeiyu-DoRA",
-    "llm-context-tokens": "131072", "llm-native-tokens": "262144", "llm-operations-tokens": "8192" };
+  const values = { "llm-kind": "llama_cpp", "llm-base-url": "http://node:9012/llm", "llm-model": "dafeiyu-qwen35-9b:1.0.0",
+    "llm-context-tokens": "131072", "llm-native-tokens": "262144", "llm-operations-tokens": "8192",
+    "llm-live-thinking-tokens": "0" };
   for (const [id, value] of Object.entries(values)) get(id).value = value;
   const payload = readProviderPayload();
-  assert.equal(payload.llm.model, "Dafeiyu-DoRA");
+  assert.equal(payload.llm.model, "dafeiyu-qwen35-9b:1.0.0");
+  assert.equal(payload.llm.live_thinking_tokens, 0);
   assert.equal(Object.hasOwn(payload, "vision"), false);
   get("llm-context-tokens").value = "";
   get("llm-enable-thinking").checked = true;

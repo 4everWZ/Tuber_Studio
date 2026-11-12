@@ -1,4 +1,4 @@
-"""Guarded live-residency endurance: real WAVs and real structured MiniCPM turns.
+"""Guarded live-residency endurance using the configured node LLM and TTS.
 
 No database writes, platform requests, publishing, playback ACKs or mode changes.
 The operator establishes live mode first. Default: an unpaced initial 100 speech
@@ -23,6 +23,9 @@ from evaluate_context import MemoryWatch
 
 from tuber_studio.config import normalize_broker_llm, uses_broker_llm
 from tuber_studio.context import ContextManager
+from tuber_studio.deployment_profiles import mode_configuration
+from tuber_studio.inference import resource_cache_type
+from tuber_studio.inference_profiles import LLM_MODELS, llm_resource_key
 from tuber_studio.providers import LlamaCppProvider, public_error, wav_duration
 
 ROOT = Path(os.getenv("TUBER_ROOT", Path(__file__).resolve().parents[1])).resolve()
@@ -42,27 +45,30 @@ def process_ids():
     return {key: sorted(value) for key, value in result.items()}
 
 
-async def check_profile(client, backend, *, expected_identity=None):
+async def check_profile(client, backend, llm_config, cache_type, *, expected_identity=None):
+    key = llm_resource_key(llm_config["model"])
+    model = LLM_MODELS[key]
+    window = llm_config["context_tokens"]
     response = await client.get("/health", timeout=10)
     response.raise_for_status()
     health = response.json()
     if (
         health["mode"] != "live"
-        or health["selected_provider"] != "llm2b"
+        or health["selected_provider"] != key
         or health["busy"]
         or health["error"]
         or not health["providers"]["tts"]["running"]
-        or not health["providers"]["llm2b"]["running"]
-        or health["kv_cache_type"] != "q4_0"
+        or not health["providers"][key]["running"]
+        or health["kv_cache_type"] != resource_cache_type(key, cache_type)
     ):
-        raise RuntimeError("Requires idle MiniCPM5-2B/q4_0 + the configured local TTS in live mode")
+        raise RuntimeError("Requires the configured LLM and local TTS ready in live mode")
     response = await client.get("/llm/props", timeout=10)
     response.raise_for_status()
     props = response.json()
     aliases = props.get("model_alias")
     aliases = [aliases] if isinstance(aliases, str) else aliases
-    if "MiniCPM5-2B" not in (aliases or []) or props["default_generation_settings"]["n_ctx"] != 131072:
-        raise RuntimeError("Actual LLM profile is not MiniCPM5-2B with a 131072 context")
+    if model not in (aliases or []) or props["default_generation_settings"]["n_ctx"] != window:
+        raise RuntimeError("Actual LLM model or context differs from the configured live profile")
     processes = process_ids()
     if len(processes["llm"]) != 1 or len(processes["tts"]) != 1:
         raise RuntimeError("Expected one formal TTS and one LLM process")
@@ -81,8 +87,8 @@ async def check_profile(client, backend, *, expected_identity=None):
     ):
         raise RuntimeError("Genie bundle identity is missing or changed during the workload")
     return {
-        "model": "MiniCPM5-2B",
-        "context": 131072,
+        "model": model,
+        "context": window,
         "kv": health["kv_cache_type"],
         "pids": processes,
         "tts_backend": backend,
@@ -94,12 +100,11 @@ async def check_profile(client, backend, *, expected_identity=None):
 async def evaluate(args):
     config = json.loads((ROOT / "runtime/studio.json").read_text(encoding="utf-8"))
     normalize_broker_llm(config)
-    if (
-        not uses_broker_llm(config)
-        or config["llm"]["model"] != "MiniCPM5-2B"
-        or config["llm"]["context_tokens"] != 131072
-    ):
-        raise ValueError("Keep the authorized MiniCPM5-2B/131072 profile")
+    config = mode_configuration(config, "live")
+    llm, broker = config["llm"], config.get("inference_broker", {})
+    if not uses_broker_llm(config) or not llm_resource_key(llm["model"]) or config["tts"]["kind"] != "gpt_sovits":
+        raise ValueError("Select the paired node LLM and local TTS live profile for this workload")
+    cache_type = broker.get("kv_cache_type", "q4_0")
     token = (ROOT / "runtime/inference-token").read_text().strip()
     admin = (ROOT / "runtime/admin-token").read_text().strip()
     cases = json.loads((ROOT / "evaluations/speech-cases.json").read_text(encoding="utf-8"))
@@ -111,33 +116,35 @@ async def evaluate(args):
         if c["voice_profile"] == voice["id"]
     )
     config["llm"]["seed"] = cases["seed"]
-    provider = LlamaCppProvider(config["llm"], token, broker_model_routing=True)
     records, profile, error = [], None, None
     args.output.mkdir(parents=True, exist_ok=True)
+    if (args.output / "cycles.jsonl").exists() or (args.output / "result.json").exists():
+        raise ValueError("Choose a fresh output directory for this workload")
     watch = MemoryWatch(args.seconds + 900)
     headers = {"X-Tuber-Inference-Key": token}
     async with httpx.AsyncClient(
-        base_url="http://127.0.0.1:9012", headers=headers, trust_env=False
-    ) as client:
-        response = await client.get(
-            "http://127.0.0.1:9020/api/status", headers={"Authorization": "Bearer " + admin}, timeout=10
-        )
-        response.raise_for_status()
-        status = response.json()
+        base_url=broker["base_url"], headers=headers, trust_env=False
+    ) as client, httpx.AsyncClient(
+        base_url="http://127.0.0.1:9020", headers={"Authorization": "Bearer " + admin}, trust_env=False, timeout=10,
+    ) as business:
+        status_response, operations_response = await asyncio.gather(business.get("/api/status"), business.get("/api/automation"))
+        status = status_response.raise_for_status().json()
+        operations = operations_response.raise_for_status().json()
         if (
             status["state"] != "stopped"
             or status["queue_length"]
             or status["current_job"]
-            or status["comment_policy"]["auto_browse"]
-            or status["comment_policy"]["auto_reply"]
+            or operations["state"] not in {"off", "emergency"}
+            or operations.get("active_round")
         ):
-            raise RuntimeError("Stop production and automatic comment jobs before endurance evaluation")
+            raise RuntimeError("Stop the live session and autonomous operations before endurance evaluation")
         backend = (
             "genie_onnx_int8"
             if config["tts"].get("local_backend") == "genie_onnx_int8"
             else "gpt_sovits_v2_compact"
         )
-        profile = await check_profile(client, backend)
+        profile = await check_profile(client, backend, llm, cache_type)
+        provider = LlamaCppProvider(llm, token, broker_model_routing=True)
 
         async def monitor():
             next_report = time.monotonic() + 30
@@ -171,7 +178,7 @@ async def evaluate(args):
                     messages = ContextManager.render(prefix, initial, [], pending, suffix)
                     llm_started = time.monotonic()
                     try:
-                        reply = await provider.generate(messages, character, event["event_id"], question)
+                        reply = await provider.generate_live(messages, character, event["event_id"], question)
                         text = reply.spoken_text
                         row["llm"] = {
                             "schema_valid": True,
@@ -225,7 +232,7 @@ async def evaluate(args):
                     remaining = args.seconds - (time.monotonic() - watch.started)
                     if remaining > 0:
                         await asyncio.sleep(min(args.interval, remaining))
-            return await check_profile(client, backend, expected_identity=profile["bundle_identity"])
+            return await check_profile(client, backend, llm, cache_type, expected_identity=profile["bundle_identity"])
 
         work = asyncio.create_task(workload())
         guard = asyncio.create_task(monitor())
