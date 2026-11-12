@@ -14,7 +14,33 @@ VIDEO = re.compile(r"https://www\.bilibili\.com/video/(BV[0-9A-Za-z]{10})/?")
 MAX_QUOTES = 6
 
 
+def _references(source):
+    if source.get("type") == "public_incident":
+        return source.get("public_sources") or []
+    if source.get("type") == "published_reply" and (video := VIDEO.fullmatch(source.get("source_url", ""))):
+        original = source.get("original_comment") or {}
+        return [{"bvid": video[1], "comment_id": original.get("id"), "quote": original.get("text")}]
+    return []
+
+
+def _legacy_card(sources):
+    for source in sources:
+        comments, links = [], {}
+        for ref in _references(source):
+            bvid, comment_id, quote = (ref.get(key) for key in ("bvid", "comment_id", "quote"))
+            url = public_discussion_url(bvid, comment_id) if COMMENT_ID.fullmatch(str(comment_id)) else None
+            if url and isinstance(quote, str) and quote.strip():
+                comments.append({"quote": quote.strip(), "url": url, "author": "作者资料未保存"})
+                links.setdefault(url, {"bvid": bvid, "url": url})
+        if comments:
+            return {"comments": comments, "links": list(links.values()), "omitted": 0, "legacy": True}
+    return None
+
+
 def comment_card(sources, *, store=None, actor=None, legacy=False):
+    sources = sorted(sources, key=lambda item: item.get("type") != "public_incident")
+    if legacy:
+        return _legacy_card(sources)
     entries, links = {}, {}
     actor = actor or {}
 
@@ -31,18 +57,11 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
         })
         return url
 
-    for source in sorted(sources, key=lambda item: item.get("type") != "public_incident"):
-        if source.get("type") == "public_incident":
-            refs = source.get("public_sources") or []
-        elif source.get("type") == "published_reply" and (video := VIDEO.fullmatch(source.get("source_url", ""))):
-            original = source.get("original_comment") or {}
-            refs = [{"bvid": video[1], "comment_id": original.get("id"), "quote": original.get("text")}]
-        else:
-            continue
-        for ref in refs:
+    for source in sources:
+        published = _published(store, source) if source.get("type") == "published_reply" else {}
+        for ref in _references(source):
             bvid, comment_id, quote = (ref.get(key) for key in ("bvid", "comment_id", "quote"))
             original = _original(store, bvid, comment_id, quote, ref.get("thread_id"))
-            published = _published(store, source) if source.get("type") == "published_reply" and not legacy else {}
             captured = published.get("source_discussion") or {}
             anchor = captured.get("source") or {}
             if str(anchor.get("comment_id")) != str(comment_id) or anchor.get("text") != quote:
@@ -66,7 +85,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
             if anchor and str(parent.get("comment_id")) == str(anchor.get("parent_comment_id")):
                 add(bvid, parent.get("comment_id"), parent.get("text"), author=parent.get("author_name"),
                     uid=parent.get("author_uid"), created_at=parent.get("created_at"), parent=parent.get("parent_comment_id"))
-            if source.get("type") == "published_reply" and not legacy:
+            if source.get("type") == "published_reply":
                 identity = published.get("generation_identity") or {}
                 author = identity.get("account_display_name")
                 uid = identity.get("account_uid") or published.get("account_id")
@@ -74,8 +93,6 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
                     author = actor.get("account_display_name")
                 add(bvid, source.get("receipt_id"), source.get("text"), author=author, uid=uid,
                     created_at=published.get("published_at"), parent=comment_id)
-        if legacy and entries:
-            return {"comments": list(entries.values()), "links": list(links.values()), "omitted": 0, "legacy": True}
     if not entries:
         return None
     # Numeric platform IDs preserve ordering when historical sources lack timestamps.

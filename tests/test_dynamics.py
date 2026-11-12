@@ -207,6 +207,19 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
     )]
 
 
+def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation():
+    from tuber_studio.dynamic_comment_card import comment_card
+
+    sources = [{"type": "public_incident", "public_sources": [
+        {"bvid": "BV1d8pU6xEZX", "comment_id": "42", "quote": "原来的原话"},
+        {"bvid": "BV1d8pU6xEZX", "comment_id": "41", "quote": "之前的原话"},
+        {"bvid": "BV1d8pU6xEZX", "comment_id": "42", "quote": "同楼补充引用"},
+    ]}]
+    card = comment_card(sources, legacy=True)
+    assert [item["quote"] for item in card["comments"]] == ["原来的原话", "之前的原话", "同楼补充引用"]
+    assert len(card["links"]) == 2
+
+
 def test_dynamic_decision_picks_one_episode(service):
     sources = [{"id": "incident:1"}, {"id": "reply:2"}]
     assert service.decision_schema(sources)["properties"]["source_ids"]["maxItems"] == 1

@@ -436,9 +436,7 @@ class Dynamics:
     def _post_view(self, row):
         post = self._decode(row)
         snapshot = post.pop("comment_card_snapshot", None)
-        post["comment_card"] = json.loads(snapshot) if snapshot else comment_card(
-            post["sources"], legacy=bool(post.get("attempted_at")),
-        )
+        post["comment_card"] = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
         return continuation_view(self.runtime, "dynamics", post)
 
     def comment_card_image(self, post_id):
