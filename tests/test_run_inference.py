@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -36,11 +37,12 @@ def deployment(tmp_path, monkeypatch):
         p.write_text("# public source")
     for name in launcher.ASSET_PATHS:
         (assets / name).mkdir(parents=True)
-    for key in ("gemma_model", "gemma_engine", "gemma_projector"):
-        parts = Path(launcher.DEFAULT_NODE[key]).parts[1:]
-        p = assets.joinpath(*parts)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(b"fixed-model-asset")
+    download_manifest = source / "config/jetson/downloads.json"
+    download_manifest.parent.mkdir(parents=True)
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "config/jetson/downloads.json", download_manifest)
+    for entry in json.loads(download_manifest.read_text(encoding="utf-8"))["files"]:
+        if entry["path"].endswith(".gguf"):
+            (assets / entry["path"]).write_bytes(b"fixed-model-asset")
     args = launcher.parser().parse_args(
         [
             "--source",
@@ -108,9 +110,20 @@ def test_command_mounts_only_public_source_and_read_only_assets(deployment):
 def test_new_node_uses_the_same_9b_in_both_modes(deployment):
     deployment.dry_run = True
     (Path(deployment.assets) / "models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").touch()
-    node = launcher.setup(deployment)["node"]
+    plan = launcher.setup(deployment)
+    node = plan["node"]
     assert node["operations_model"] == node["live_model"] == "dafeiyu-qwen35-9b:1.0.0"
     assert node["context_tokens"] == 262144
+    assert not any(key.startswith("gemma_") for key in node)
+    assert "node-assets" not in plan["mounts"]
+
+
+def test_9b_preflight_rejects_a_missing_projector_before_starting_docker(deployment):
+    deployment.dry_run = True
+    projector, = deployment.assets.glob("models/mmproj-*.gguf")
+    projector.unlink()
+    with pytest.raises(ValueError, match="mmproj-dafeiyu"):
+        launcher.setup(deployment)
 
 
 @pytest.mark.parametrize(
@@ -176,7 +189,7 @@ def test_existing_data_node_assets_are_reused(deployment):
     deployment.data.mkdir()
     node_assets = deployment.data / "node-assets"
     node_assets.mkdir()
-    name = Path(launcher.DEFAULT_NODE["gemma_projector"]).name
+    name = Path(launcher.GEMMA_NODE_ASSETS["gemma_projector"]).name
     (node_assets / name).write_bytes(b"projector")
     assert launcher.setup(deployment)["mounts"]["node-assets"] == node_assets
 
@@ -189,7 +202,9 @@ class DockerFixture:
             self.containers[args.name] = self.container("old", running=True)
         monkeypatch.setattr(launcher, "docker", self.docker)
         monkeypatch.setattr(launcher.subprocess, "run", self.run)
-        monkeypatch.setattr(launcher, "wait_ready", lambda *a: {"state": "active", "model": "Gemma4-E2B"})
+        monkeypatch.setattr(launcher, "wait_ready", lambda *a: {
+            "state": "active", "model": launcher.DEFAULT_NODE["operations_model"],
+        })
 
     def container(self, identity, *, running=False):
         return {
@@ -330,7 +345,12 @@ def test_dry_run_never_outputs_the_persistent_token(deployment, monkeypatch):
 def test_configured_absolute_container_assets_and_ipv6_interface(deployment):
     deployment.data.mkdir()
     settings = copy.deepcopy(launcher.DEFAULT_NODE)
-    settings["gemma_model"] = "/workspace/tuber/" + settings["gemma_model"]
+    settings["operations_model"] = "Gemma4-E2B"
+    for relative in launcher.GEMMA_NODE_ASSETS.values():
+        asset = deployment.assets.joinpath(*Path(relative).parts[1:])
+        asset.parent.mkdir(parents=True, exist_ok=True)
+        asset.write_bytes(b"fixed-compatible-asset")
+    settings["gemma_model"] = "/workspace/tuber/" + launcher.GEMMA_NODE_ASSETS["gemma_model"]
     (deployment.data / "inference-node.json").write_text(json.dumps(settings))
     deployment.host = "::1"
     command = launcher.run_command(launcher.setup(deployment), IMAGE, deployment)
@@ -363,7 +383,10 @@ def test_ready_check_rejects_a_wrong_loaded_context(deployment, monkeypatch):
     import io
 
     launcher.initialize_data(launcher.setup(deployment))
-    status = {"state": "active", "mode": "text", "model": "Gemma4-E2B", "requested_context_tokens": 4096}
+    status = {
+        "state": "active", "mode": "text", "model": launcher.DEFAULT_NODE["operations_model"],
+        "requested_context_tokens": 4096,
+    }
 
     class Opener:
         def open(self, request, timeout):

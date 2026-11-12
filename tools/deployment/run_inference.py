@@ -34,7 +34,7 @@ PUBLIC_PATHS = (
     "evaluations/semantic-cases.json",
     "evaluations/speech-cases.json",
 )
-ASSET_PATHS = ("models", "engines", "tts", "nltk_data", "node-assets")
+ASSET_PATHS = ("models", "engines", "tts", "nltk_data")
 BUSINESS_FILES = {
     "admin-token",
     "overlay-token",
@@ -54,13 +54,14 @@ DEFAULT_NODE = {
     "cuda_managed_memory": False,
     "min_available_mib": 384,
     "max_swap_growth_mib": 128,
-    "gemma_vision_only": True,
+    "tts": {"local_backend": "genie_onnx_int8", "voice_id": "yaoyao_sovits_v2"},
+}
+GEMMA_NODE_ASSETS = {
     "gemma_model": "runtime/models/operations-vlm/gemma-4-E2B-it-Q4_0.gguf",
     "gemma_projector": "runtime/node-assets/mmproj-gemma-4-E2B-it-Q8_0-visiononly.gguf",
     "gemma_engine": (
         "runtime/engines/llama.cpp-0ec4027a2a0183de87c007069adddc06e665f7de/build/bin/llama-server"
     ),
-    "tts": {"local_backend": "genie_onnx_int8", "voice_id": "yaoyao_sovits_v2"},
 }
 
 
@@ -132,40 +133,16 @@ def setup(args):
     node_assets = args.node_assets or (
         data / "node-assets" if (data / "node-assets").is_dir() else assets / "node-assets"
     )
-    mounts = {
-        name: checked_path(node_assets if name == "node-assets" else assets / name) for name in ASSET_PATHS
-    }
+    mounts = {name: checked_path(assets / name) for name in ASSET_PATHS}
+    if args.node_assets or node_assets.exists():
+        mounts["node-assets"] = checked_path(node_assets)
     if any(not path.is_dir() for path in mounts.values()):
         raise ValueError("Inference assets must be directories")
     if any(data == path or data.is_relative_to(path) for path in mounts.values()):
         raise ValueError("Writable data cannot be inside a read-only asset directory")
     node_file = data / "inference-node.json"
     node = load_json(node_file) if node_file.exists() else json.loads(json.dumps(DEFAULT_NODE))
-    gemma_assets = (
-        ("gemma_model", {"models"}),
-        ("gemma_engine", {"engines"}),
-        ("gemma_projector", {"models", "node-assets"}),
-    )
-    if "Gemma4-E2B" not in (node.get("operations_model", DEFAULT_NODE["operations_model"]),
-                           node.get("live_model", DEFAULT_NODE["live_model"])):
-        gemma_assets = ()
-    for field, allowed in gemma_assets:
-        path = PurePosixPath(node.get(field, DEFAULT_NODE[field]))
-        if path.is_absolute():
-            try:
-                path = path.relative_to(ROOT)
-            except ValueError:
-                raise ValueError("Configured inference asset is outside the container root") from None
-        if (
-            ".." in path.parts
-            or len(path.parts) < 3
-            or path.parts[0] != "runtime"
-            or path.parts[1] not in allowed
-        ):
-            raise ValueError("Configured model assets must use read-only asset mounts")
-        target = checked_path(mounts[path.parts[1]].joinpath(*path.parts[2:]))
-        if not target.is_file():
-            raise ValueError("Configured inference asset must be a regular file")
+    check_model_assets(source, mounts, node)
     image = args.image
     if not image:
         reference = source / "environment-image.txt"
@@ -199,6 +176,35 @@ def setup(args):
         "user": identity,
         "host": host,
     }
+
+
+def check_model_assets(source, mounts, node):
+    selected = {node.get(key, DEFAULT_NODE[key]) for key in ("operations_model", "live_model")}
+    if DEFAULT_NODE["operations_model"] in selected:
+        manifest = load_json(source / "config/jetson/downloads.json")
+        weights = {PurePosixPath(entry["path"]) for entry in manifest["files"] if entry["path"].endswith(".gguf")}
+        if len(weights) != 2 or any(path.parent != PurePosixPath("models") for path in weights):
+            raise ValueError("The default 9B requires the fixed model and projector from the download manifest")
+        for path in sorted(weights):
+            if not checked_path(mounts["models"] / path.name).is_file():
+                raise ValueError("The default 9B assets must be regular files")
+    if "Gemma4-E2B" not in selected:
+        return
+    for field, allowed in (("gemma_model", {"models"}), ("gemma_engine", {"engines"}),
+                           ("gemma_projector", {"models", "node-assets"})):
+        path = PurePosixPath(node.get(field, GEMMA_NODE_ASSETS[field]))
+        if path.is_absolute():
+            try:
+                path = path.relative_to(ROOT)
+            except ValueError:
+                raise ValueError("Configured inference asset is outside the container root") from None
+        if ".." in path.parts or len(path.parts) < 3 or path.parts[0] != "runtime" or path.parts[1] not in allowed:
+            raise ValueError("Configured model assets must use read-only asset mounts")
+        if path.parts[1] not in mounts:
+            raise ValueError("Configured inference asset mount is missing")
+        target = checked_path(mounts[path.parts[1]].joinpath(*path.parts[2:]))
+        if not target.is_file():
+            raise ValueError("Configured inference asset must be a regular file")
 
 
 def bind(path, destination, *, readonly=True):
