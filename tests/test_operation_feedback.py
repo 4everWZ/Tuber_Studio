@@ -26,6 +26,7 @@ async def prepared_service(
     max_tokens=8192,
     unknown=False,
     delivered=False,
+    operator_replied=False,
     revision_text="这锅饭我先替你闻香，火候放慢一点。",
 ):
     credentials = {"sessdata": "isolated-session", "csrf": "isolated-csrf"}
@@ -40,21 +41,24 @@ async def prepared_service(
                 200, json={"code": 0, "data": {"bvid": BV, "aid": 12, "title": "真实隔离视频"}}
             )
         if request.url.path == "/x/v2/reply/reply":
-            service.reconciliation_requests.append(request)
-            rows = (
-                [
-                    {
-                        "rpid": 321,
-                        "root": 120,
-                        "parent": 123,
-                        "member": {"mid": 100},
-                        "content": {"message": posted[0]["message"][0]},
-                        "ctime": int(time.time()),
-                    }
-                ]
-                if delivered
-                else []
-            )
+            if posted and unknown:
+                service.reconciliation_requests.append(request)
+            rows = [{
+                "rpid": 123, "root": 120, "parent": 120,
+                "member": {"mid": 200, "uname": "观众"},
+                "content": {"message": "今天煮饭怎么做？"},
+            }]
+            if posted and delivered:
+                rows.append({
+                    "rpid": 321, "root": 120, "parent": 123,
+                    "member": {"mid": 100, "uname": "大肥鱼"},
+                    "content": {"message": posted[0]["message"][0]}, "ctime": int(time.time()),
+                })
+            if operator_replied:
+                rows.append({
+                    "rpid": 777, "root": 120, "parent": 123, "member": {"mid": 100, "uname": "大肥鱼"},
+                    "content": {"message": "锅里的饭已经煮好啦。"},
+                })
             return httpx.Response(200, json={"code": 0, "data": {"replies": rows}})
         assert request.url.path == "/x/v2/reply/add" and request.method == "POST"
         posted.append(parse_qs(request.content.decode()))
@@ -137,6 +141,17 @@ async def prepared_service(
     await runtime.llm.close()
     runtime.llm = provider
     return service, identity, posted, model_requests
+
+
+async def test_operator_reply_closes_manual_draft_before_any_post(settings, store, runtime):
+    service, identity, posted, requests = await prepared_service(settings, store, runtime, operator_replied=True)
+    try:
+        result = await service.publish(identity)
+        assert result["status"] == "operator_replied" and not posted and not requests
+        assert json.loads(result["answer_check"])["account_reply"]["comment_id"] == "777"
+        assert not store.all("SELECT * FROM account_writes")
+    finally:
+        await service.close()
 
 
 async def test_unversioned_legacy_draft_regenerates_before_the_feedback_write(settings, store, runtime, monkeypatch):

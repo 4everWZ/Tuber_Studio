@@ -1,5 +1,23 @@
 """Verified discussion participants and reply relationships for model context."""
 
+import inspect
+from functools import partial
+
+from ...operation_continuations import content_hash
+
+
+async def read_scoped_thread(store, reader, target, scope, *, invoke=None):
+    call = partial(invoke, reader) if invoke else reader
+    if "checkpoint" not in inspect.signature(reader).parameters:
+        return await call(target)
+    resource = scope.get("oid") or scope.get("bvid")
+    key = "browsing_thread_scan:" + content_hash([
+        scope.get("account_id"), scope.get("resource_type"), resource, scope.get("root"), scope.get("parent"),
+    ])
+    result = await call(target, resume=store.get(key), checkpoint=lambda value: store.set(key, value))
+    store.execute("DELETE FROM kv WHERE key=?", (key,))
+    return result
+
 
 def comment_source(item):
     # These four fields are the durable CommentProgress source-hash contract.

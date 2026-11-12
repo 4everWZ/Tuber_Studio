@@ -699,9 +699,14 @@ class BrowsingAdapter(BilibiliAdapter):
 
     async def read_video_thread(self, target, *, resume=None, checkpoint=None):
         """Refresh one discussion without moving the video's browsing cursor."""
-        root, parent = str(target["root"]), str(target["parent"])
-        items, coverage = await self._thread_items({"oid": target["oid"], "type": 1, "root": root},
-                                                  resume=resume, checkpoint=checkpoint)
+        if not target.get("oid"):
+            video = await self._video(target["bvid"])
+            if video["bvid"] != target["bvid"]:
+                raise PlatformReadError("invalid", "原始视频与评论来源不一致")
+            target = target | {"oid": video["aid"]}
+        scoped = self._target(target | {"resource_type": "video"})
+        items, coverage = await self._thread_items(scoped, resume=resume, checkpoint=checkpoint)
+        parent = scoped["parent"]
         source = next((row for row in items if row["comment_id"] == parent), None)
         if source is None:
             raise PlatformReadError("not_found", "当前楼未找到原评论")

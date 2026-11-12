@@ -22,7 +22,12 @@ from .operation_feedback import (
 from .operation_identity import runtime_identity
 from .operation_text import validate_comment_body, validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
-from .operations.browsing.thread_context import comment_source, comment_thread_context, operator_reply
+from .operations.browsing.thread_context import (
+    comment_source,
+    comment_thread_context,
+    operator_reply,
+    read_scoped_thread,
+)
 from .operations_control import OperationsControl, canonical_intent
 from .platforms.bilibili import BilibiliAdapter, PublishUncertain
 from .providers import public_error
@@ -1087,12 +1092,18 @@ class Comments:
                 raise ValueError("该草稿属于其他账号，不能由当前账号发送")
             adapter, credential = self.adapter, dict(self.credentials)
             if hasattr(adapter, "read_video_thread"):
-                video = await adapter.video_metadata(row["video_id"])
-                target = {"bvid": row["video_id"], "oid": str(video["aid"]), "root": row["thread_id"],
+                target = {"bvid": row["video_id"], "root": row["thread_id"],
                           "parent": row["platform_comment_id"]}
-                thread = await adapter.read_video_thread(target)
+                thread = await read_scoped_thread(
+                    self.store, adapter.read_video_thread, target, target | {"account_id": account_id, "resource_type": "video"},
+                )
                 if adapter is not self.adapter or credential != self.credentials:
                     raise ValueError("核验期间账号已变化，保留草稿")
+                source = thread["source"]
+                if source["text"] != row["content"] or (
+                    row["platform_user_id"] and str(source["author_uid"]) != str(row["platform_user_id"])
+                ):
+                    raise ValueError("原始评论或作者已变化，保留草稿")
                 if matched := operator_reply(thread["items"], target, account_id):
                     changed = self.store.execute(
                         "UPDATE drafts SET status='operator_replied',answer_check=json_set(COALESCE(answer_check,'{}'),"

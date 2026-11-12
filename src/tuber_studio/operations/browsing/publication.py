@@ -23,11 +23,10 @@ from ...platforms.bilibili import PublishUncertain
 from ...providers import public_error
 from ...publication_errors import PlatformRejected, UnknownPublication
 from ...store import dump
-from .comment_reader import read_scoped_thread
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import read_round
-from .thread_context import comment_source, operator_reply
+from .thread_context import comment_source, operator_reply, read_scoped_thread
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
 _ENGAGEMENT_KINDS = {"video_like", "video_fav", "comment_like"}
@@ -601,11 +600,14 @@ class BrowsingPublication:
     async def _verify_reply_source(self, target, account):
         if target.get("source_event"):
             verified = await read_scoped_thread(
-                self.browsing, self.browsing.adapter.read_public_thread, target["source_event"], target["source_event"],
+                self.browsing.store, self.browsing.adapter.read_public_thread, target["source_event"], target["source_event"],
+                invoke=self.browsing._read,
             )
         elif hasattr(self.browsing.adapter, "read_video_thread"):
-            verified = await read_scoped_thread(self.browsing, self.browsing.adapter.read_video_thread,
-                                               target, target | {"account_id": account, "resource_type": "video"})
+            verified = await read_scoped_thread(
+                self.browsing.store, self.browsing.adapter.read_video_thread, target,
+                target | {"account_id": account, "resource_type": "video"}, invoke=self.browsing._read,
+            )
         else:
             verified = {"source": await self.browsing._read(self.browsing.adapter.read_video_reply, target)}
         if (verified["source"]["text"] != target["source_text"]

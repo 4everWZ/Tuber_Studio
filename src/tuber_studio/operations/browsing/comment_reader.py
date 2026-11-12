@@ -17,7 +17,7 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
-from .thread_context import comment_source, comment_thread_context, operator_reply
+from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
 
 
 def _extract_timestamp(item):
@@ -546,10 +546,12 @@ async def event(browsing, event_row, row, metrics):
 
 async def read_event_thread(browsing, event):
     if event["kind"] != "comment_visit":
-        return await read_scoped_thread(browsing, browsing.adapter.read_public_thread, event, event)
+        return await read_scoped_thread(browsing.store, browsing.adapter.read_public_thread, event, event,
+                                        invoke=browsing._read)
     target = {key: event[key] for key in ("type", "resource_type", "oid", "bvid", "root", "parent")}
     if hasattr(browsing.adapter, "read_video_thread"):
-        thread = await read_scoped_thread(browsing, browsing.adapter.read_video_thread, target, event)
+        thread = await read_scoped_thread(browsing.store, browsing.adapter.read_video_thread, target, event,
+                                          invoke=browsing._read)
         thread = {"target": target} | thread
         thread["source"] = {"comment_id": target["parent"]} | thread["source"]
     else:
@@ -557,18 +559,6 @@ async def read_event_thread(browsing, event):
         thread = {"target": target, "source": comment_source(item), "items": event["items"]}
     return thread | {"account_id": event["account_id"], "resource_type": "video",
                      "resource_author_uid": event.get("resource_author_uid")}
-
-
-async def read_scoped_thread(browsing, reader, target, scope):
-    if "checkpoint" not in inspect.signature(reader).parameters:
-        return await browsing._read(reader, target)
-    key = "browsing_thread_scan:" + content_hash([scope.get(field) for field in (
-        "account_id", "resource_type", "oid", "root", "parent",
-    )])
-    result = await browsing._read(reader, target, resume=browsing.store.get(key),
-                                  checkpoint=lambda value: browsing.store.set(key, value))
-    browsing.store.execute("DELETE FROM kv WHERE key=?", (key,))
-    return result
 
 
 def settle_aliases(browsing, event_row, row, target, source):
