@@ -22,7 +22,7 @@ from .operation_feedback import (
 from .operation_identity import runtime_identity
 from .operation_text import validate_comment_body, validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
-from .operations.browsing.thread_context import comment_thread_context
+from .operations.browsing.thread_context import comment_source, comment_thread_context, operator_reply
 from .operations_control import OperationsControl, canonical_intent
 from .platforms.bilibili import BilibiliAdapter, PublishUncertain
 from .providers import public_error
@@ -743,7 +743,7 @@ class Comments:
         row = self._draft_source(draft_id)
         if not row:
             raise ValueError("草稿不存在")
-        if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff"}:
+        if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff", "operator_replied"}:
             raise ValueError("已发布或结果不确定的回复不能覆盖；请核对平台")
         if action not in {"approve", "reject"}:
             raise ValueError("未知审核动作")
@@ -1085,6 +1085,23 @@ class Comments:
             account_id = await self.account_id()
             if row["account_id"] and row["account_id"] != account_id:
                 raise ValueError("该草稿属于其他账号，不能由当前账号发送")
+            adapter, credential = self.adapter, dict(self.credentials)
+            if hasattr(adapter, "read_video_thread"):
+                video = await adapter.video_metadata(row["video_id"])
+                target = {"bvid": row["video_id"], "oid": str(video["aid"]), "root": row["thread_id"],
+                          "parent": row["platform_comment_id"]}
+                thread = await adapter.read_video_thread(target)
+                if adapter is not self.adapter or credential != self.credentials:
+                    raise ValueError("核验期间账号已变化，保留草稿")
+                if matched := operator_reply(thread["items"], target, account_id):
+                    changed = self.store.execute(
+                        "UPDATE drafts SET status='operator_replied',answer_check=json_set(COALESCE(answer_check,'{}'),"
+                        "'$.account_reply',json(?)),error=NULL,updated_at=? WHERE id=? AND text=? AND status=?",
+                        (json.dumps(comment_source(matched), ensure_ascii=False), time.time(), draft_id, row["text"], row["status"]),
+                    )
+                    if changed.rowcount != 1:
+                        raise ValueError("核验期间草稿已更新")
+                    return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
             character = self.store.character(row["character_id"], row["character_version"])
             fresh = self._draft_source(draft_id)
             if not fresh or any(
@@ -1112,7 +1129,6 @@ class Comments:
                 and body_hash != content_hash({"text": row["text"]})
             ):
                 raise ValueError("发送前原始绑定或正文已变化")
-            adapter, credential = self.adapter, dict(self.credentials)
             token = None
 
             def before_send():

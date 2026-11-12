@@ -5,7 +5,7 @@ const pageSize = 10;
 const sources = { manual: "手动", interaction: "公开互动", discovery: "自主浏览" };
 const statuses = {
   pending_review: "待审核", approved: "已审核 · 待提交", publish_uncertain: "待核对",
-  publishing: "提交中", published: "平台已受理", rejected: "已拒绝", copied: "已复制",
+  publishing: "提交中", published: "平台已受理", rejected: "已拒绝", copied: "已复制", operator_replied: "账号已在原楼回复",
   private_handoff: "已转私信", pending: "排队中", queued: "排队中", running: "处理中", completed: "已完成",
   failed: "失败", partial: "部分完成", cancelled: "已取消",
 };

@@ -424,7 +424,7 @@ async def test_interaction_round_replies_to_own_upload_while_discovery_reads(bro
         assert [target["parent"] for target, _ in browsing.adapter.sent] == ["801", "802"], (
             browsing.store.all("SELECT id,status,error FROM browsing_events")
         )
-        await browsing.set_enabled(False)
+        await browsing.stop(emergency=True)
         assert not browsing.discovery.enabled and browsing.repo.round(reading)["status"] == "paused"
     release.set()
     await browsing.set_enabled(False)
@@ -466,7 +466,7 @@ async def test_background_discovery_uses_shared_worker_limit(browsing, monkeypat
         await full.wait()
         assert len(reading) == workers
         if cancel:
-            await browsing.set_enabled(False)
+            await browsing.stop(emergency=True)
             assert not reading and not browsing.active and not browsing.heartbeats
             assert next(
                 row for row in browsing.rounds() if not row["config"].get("interaction_only")
@@ -547,6 +547,8 @@ async def test_background_discovery_publishes_top_level_and_thread_replies(brows
             await asyncio.sleep(0.01)
     assert browsing.discovery.enabled
     await browsing.set_enabled(False)
+    if draining := browsing.drain_task:
+        await draining
 
     rows = browsing.rounds()
     video_rows = [row for row in rows if not row["config"].get("interaction_only")]

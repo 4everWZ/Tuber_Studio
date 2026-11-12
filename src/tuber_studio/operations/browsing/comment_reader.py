@@ -17,7 +17,7 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
-from .thread_context import comment_thread_context
+from .thread_context import comment_source, comment_thread_context, operator_reply
 
 
 def _extract_timestamp(item):
@@ -79,13 +79,14 @@ class CommentProgress:
     def identity(row, bvid, source):
         return (row["account_id"], row["character_id"], bvid, str(source["comment_id"]))
 
-    def get(self, row, bvid, source):
+    def get(self, row, bvid, source, *, legacy_source=None):
         value = self.store.one(
             "SELECT decision,source_hash FROM browsing_comment_progress "
             "WHERE account_id=? AND character_id=? AND bvid=? AND comment_id=?",
             self.identity(row, bvid, source),
         )
-        if value and value["source_hash"] == content_hash(source):
+        if value and (value["source_hash"] == content_hash(source) or
+                      legacy_source is not None and value["source_hash"] == content_hash(legacy_source)):
             saved = json.loads(value["decision"])
             generation = saved.pop("generation", {})
             decision = ResponseDecision.model_validate(saved)
@@ -143,6 +144,32 @@ def commit_comment_context(browsing, context):
         browsing.store.set(progress["key"], progress["next_page"])
 
 
+def enqueue_comment_visit(browsing, row, task_id, metadata, items):
+    bvid, oid = metadata["bvid"], str(metadata["aid"])
+    scope = [row["account_id"], row["character_id"], row["config"].get("review_session_id"), oid]
+    for item in merge_continuous_comments(items):
+        source = comment_source(item)
+        if not source["author_uid"] or source["author_uid"] == str(row["account_id"]):
+            continue
+        root = str(item.get("thread_id") or source["comment_id"])
+        identity = "visit:" + content_hash([*scope, source["comment_id"]])
+        event = {
+            "event_id": identity, "kind": "comment_visit", "account_id": row["account_id"],
+            "character_id": row["character_id"], "review_session_id": scope[2],
+            "resource_type": "video", "type": 1, "oid": oid, "bvid": bvid,
+            "root": root, "parent": source["comment_id"], "comment_id": source["comment_id"],
+            "sender_uid": source["author_uid"], "sender_name": source["author_name"],
+            "source_text": source["text"], "resource_author_uid": metadata.get("owner_uid"),
+            "visit_task_id": task_id, "grouped_ids": [str(x["comment_id"]) for x in item.get("grouped_comments", [])],
+            "items": [x for x in items if str(x.get("thread_id") or x["comment_id"]) == root],
+        }
+        browsing.store.db.execute(
+            "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,'received',?,NULL,?)",
+            (identity, row["account_id"], event["kind"], source["comment_id"], _extract_timestamp(item) or 0,
+             dump(event), time.time()),
+        )
+
+
 async def evaluate_comment_visit(browsing, result, row, metrics):
     """Browse a video's discussions without starting or updating its viewing task."""
     identity, metadata = result["id"], result["metadata"]
@@ -155,6 +182,12 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
         browsing._check_round(row)
         context = await browsing.video_comment_context(row, metadata["bvid"])
         items = context.get("items", [])
+        if row["config"].get("interaction_only") and not row["preview"]:
+            with browsing.store.db:
+                enqueue_comment_visit(browsing, row, identity, metadata, items)
+            browsing.repo.complete(identity, result["owner"], result["generation"], status, payload, key)
+            browsing.commit_comment_context(context)
+            return
         chosen = {segment["id"] for segment in browsing._segments(material)} if material else set()
         for item in merge_continuous_comments(items):
             if browsing.repo.video_reply_limit_reached(row, metadata["bvid"]):
@@ -271,13 +304,17 @@ async def run_interactions(browsing, row, metrics):
         except (ValueError, TimeoutError) as error:
             metrics["own_upload_error"] = public_error(error)
             metrics["failures"] += 1
-    await browsing._process_events(row, metrics, own_only=True)
+    if hasattr(browsing.adapter, "own_dynamics") and row["config"]["reply_enabled"]:
+        try:
+            await collect_own_dynamics(browsing, row)
+        except (ValueError, TimeoutError) as error:
+            metrics["own_dynamic_error"] = public_error(error)
+            metrics["failures"] += 1
     try:
         await browsing.sync_notifications(row)
     except (ValueError, TimeoutError) as error:
         metrics["notification_error"] = public_error(error)
         metrics["failures"] += 1
-    await browsing._process_events(row, metrics)
 
 
 async def collect_own_comments(browsing, row):
@@ -286,39 +323,37 @@ async def collect_own_comments(browsing, row):
     for video in await browsing._read(browsing.adapter.own_uploads, account):
         result = await browsing._read(lambda bvid: browsing.adapter.fetch(bvid, newest=True), video["bvid"])
         browsing._check_round(row)
-        for comment in result["items"]:
-            timestamp = int(comment["created_at"])
-            author = str(comment["platform_user_id"])
-            if timestamp < cutoff or author == account or category(comment["content"]) == "spam":
-                continue
-            identity = f"own:{account}:{video['aid']}:{comment['comment_id']}"
-            event = {
-                "event_id": identity,
-                "kind": "own_comment",
-                "account_id": account,
-                "sender_uid": author,
-                "sender_name": comment["display_name"],
-                "resource_type": "video",
-                "oid": video["aid"],
-                "bvid": video["bvid"],
-                "root": comment["thread_id"],
-                "parent": comment["comment_id"],
-                "comment_id": comment["comment_id"],
-                "timestamp": timestamp,
-                "source_text": comment["content"],
-            }
-            browsing.store.execute(
-                "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,'received',?,NULL,?)",
-                (
-                    identity,
-                    account,
-                    "own_comment",
-                    str(comment["comment_id"]),
-                    timestamp,
-                    dump(event),
-                    time.time(),
-                ),
-            )
+        enqueue_own_comments(browsing, account, cutoff, {"resource_type": "video", "oid": video["aid"],
+                                                      "bvid": video["bvid"]}, result["items"])
+
+
+async def collect_own_dynamics(browsing, row):
+    account = row["account_id"]
+    cutoff = max(int(browsing.started_at), int(browsing.operations.policy()["enabled_at"] or 0))
+    for target in await browsing._read(browsing.adapter.own_dynamics, account):
+        items = await browsing._read(browsing.adapter.fetch_dynamic_comments, target)
+        browsing._check_round(row)
+        enqueue_own_comments(browsing, account, cutoff, target, items)
+
+
+def enqueue_own_comments(browsing, account, cutoff, target, items):
+    for comment in items:
+        timestamp = int(comment["created_at"])
+        author = str(comment["platform_user_id"])
+        if timestamp < cutoff or author == account or category(comment["content"]) == "spam":
+            continue
+        comment_id = str(comment["comment_id"])
+        identity = "own:" + content_hash([account, target["resource_type"], str(target["oid"]), comment_id])
+        event = target | {
+            "event_id": identity, "kind": "own_comment", "account_id": account,
+            "sender_uid": author, "sender_name": comment["display_name"],
+            "root": str(comment["thread_id"]), "parent": comment_id, "comment_id": comment_id,
+            "timestamp": timestamp, "source_text": comment["content"],
+        }
+        browsing.store.execute(
+            "INSERT OR IGNORE INTO browsing_events VALUES(?,?,?,?,?,'received',?,NULL,?)",
+            (identity, account, "own_comment", comment_id, timestamp, dump(event), time.time()),
+        )
 
 
 async def process_events(browsing, row, metrics, *, own_only=False):
@@ -333,84 +368,150 @@ async def process_events(browsing, row, metrics, *, own_only=False):
 async def process_event_batch(browsing, row, metrics, own_only):
     events = browsing.store.all(
         "WITH pending AS (SELECT *,CASE WHEN json_valid(payload) THEN payload ELSE '{}' END AS data "
-        "FROM browsing_events WHERE account_id=? AND status='received' AND (?=0 OR kind='own_comment')), "
+        "FROM browsing_events WHERE account_id=? AND status='received' AND (?=0 OR kind='own_comment') "
+        "AND (kind<>'mention' OR ?=1) AND (kind<>'comment_visit' OR (?=0 "
+        "AND json_extract(payload,'$.character_id')=? AND json_extract(payload,'$.review_session_id') IS ?))), "
         "scoped AS (SELECT *,ROW_NUMBER() OVER (PARTITION BY "
         "COALESCE(json_extract(data,'$.resource_type'),'unknown'),"
-        "COALESCE(json_extract(data,'$.oid'),json_extract(data,'$.bvid'),source_key,id),"
+        "COALESCE(CAST(json_extract(data,'$.oid') AS TEXT),json_extract(data,'$.bvid'),source_key,id),"
         "COALESCE(NULLIF(NULLIF(CAST(json_extract(data,'$.root') AS TEXT),'0'),''),"
         "NULLIF(NULLIF(CAST(json_extract(data,'$.parent') AS TEXT),'0'),''),"
-        "json_extract(data,'$.comment_id'),source_key,id) ORDER BY timestamp,id) AS position FROM pending), "
+        "json_extract(data,'$.comment_id'),source_key,id) ORDER BY timestamp,created_at,id) AS position, "
+        "MAX(kind='comment_visit') OVER (PARTITION BY json_extract(data,'$.resource_type'), "
+        "CAST(json_extract(data,'$.oid') AS TEXT),CAST(json_extract(data,'$.root') AS TEXT)) AS has_visit FROM pending), "
         "eligible AS (SELECT * FROM scoped WHERE position=1 AND COALESCE(CASE WHEN json_valid(error) THEN "
         "json_extract(error,'$.next_at') END,0)<=?), "
-        "newest AS (SELECT id FROM eligible ORDER BY (kind='own_comment') DESC,timestamp DESC,id LIMIT 1), "
-        "oldest AS (SELECT id FROM eligible ORDER BY (kind='own_comment') DESC,timestamp,id LIMIT 1) "
-        "SELECT * FROM eligible WHERE id IN (SELECT id FROM newest UNION SELECT id FROM oldest) "
-        "ORDER BY (kind='own_comment') DESC,timestamp DESC,id LIMIT 2",
-        (row["account_id"], own_only, time.time()),
+        "priority AS (SELECT id,ROW_NUMBER() OVER (PARTITION BY (kind='own_comment') ORDER BY timestamp DESC,id) AS fresh, "
+        "ROW_NUMBER() OVER (PARTITION BY (kind='own_comment') ORDER BY timestamp,id) AS aged "
+        "FROM eligible WHERE kind<>'comment_visit') "
+        "SELECT * FROM eligible WHERE has_visit=1 OR id IN (SELECT id FROM priority WHERE fresh=1 OR aged=1) "
+        "ORDER BY CASE kind WHEN 'own_comment' THEN 0 WHEN 'comment_visit' THEN 2 ELSE 1 END,timestamp DESC,id",
+        (row["account_id"], own_only, row["config"]["mention_reply_enabled"], row["preview"],
+         row["character_id"], row["config"].get("review_session_id"), time.time()),
     )
     for event_row in events:
-        try:
-            await browsing._event(event_row, row, metrics)
-        except Exception as error:
-            continuation = getattr(error, "continuation", None)
-            if continuation:
-                browsing.runtime.continuations.bind_source_view(
-                    error.continuation["id"],
-                    "browsing",
-                    "event:" + str(event_row["id"]),
-                    "通知回应生成记录",
-                )
-                browsing.store.execute(
-                    "UPDATE browsing_events SET status=?,error=? WHERE id=?",
-                    (
-                        "invalid" if continuation["state"] == "invalid" else "checkpoint",
-                        dump(
-                            {
-                                "message": "输出无效，保留原答供检查" if continuation["state"] == "invalid"
-                                else "生成进度已保存，可继续",
-                                "generation_continuation_id": error.continuation["id"],
-                            }
-                        ),
-                        event_row["id"],
+        await attempt_event(browsing, event_row, row, metrics)
+        if event_row["has_visit"]:
+            await continue_visit_thread(browsing, event_row, row, metrics)
+
+
+async def continue_visit_thread(browsing, event_row, row, metrics):
+    data = json.loads(event_row["payload"])
+    current = browsing.store.one("SELECT status FROM browsing_events WHERE id=?", (event_row["id"],))
+    if current["status"] == "received":
+        return
+    pending = browsing.store.all(
+        "SELECT * FROM browsing_events WHERE account_id=? AND status='received' AND kind='comment_visit' "
+        "AND json_extract(payload,'$.character_id')=? AND json_extract(payload,'$.review_session_id') IS ? "
+        "AND CAST(json_extract(payload,'$.oid') AS TEXT)=? AND json_extract(payload,'$.root')=? "
+        "ORDER BY timestamp,created_at,id",
+        (row["account_id"], row["character_id"], row["config"].get("review_session_id"),
+         str(data.get("oid")), str(data.get("root"))),
+    )
+    for queued in pending:
+        error = queued.get("error") or ""
+        if error.startswith("{") and json.loads(error).get("next_at", 0) > time.time():
+            break
+        # Notifications can arrive for earlier comments in this same discussion.
+        earlier = browsing.store.one(
+            "SELECT 1 FROM browsing_events WHERE account_id=? AND status='received' AND kind<>'comment_visit' "
+            "AND (kind<>'mention' OR ?=1) AND timestamp<=? AND json_extract(payload,'$.resource_type')='video' "
+            "AND CAST(json_extract(payload,'$.oid') AS TEXT)=? AND CAST(json_extract(payload,'$.root') AS TEXT)=? LIMIT 1",
+            (row["account_id"], row["config"]["mention_reply_enabled"], queued["timestamp"],
+             str(data.get("oid")), str(data.get("root"))),
+        )
+        if earlier:
+            break
+        await attempt_event(browsing, queued, row, metrics)
+        status = browsing.store.one("SELECT status FROM browsing_events WHERE id=?", (queued["id"],))["status"]
+        if status == "received":
+            break
+
+
+async def attempt_event(browsing, event_row, row, metrics):
+    task_id = json.loads(event_row["payload"]).get("visit_task_id")
+    intent, generation = None, None
+    try:
+        intent = await browsing._event(event_row, row, metrics)
+    except Exception as error:
+        continuation = getattr(error, "continuation", None)
+        if continuation:
+            generation = continuation
+            browsing.runtime.continuations.bind_source_view(
+                error.continuation["id"],
+                "browsing",
+                "event:" + str(event_row["id"]),
+                "通知回应生成记录",
+            )
+            browsing.store.execute(
+                "UPDATE browsing_events SET status=?,error=? WHERE id=?",
+                (
+                    "invalid" if continuation["state"] == "invalid" else "checkpoint",
+                    dump(
+                        {
+                            "message": "输出无效，保留原答供检查" if continuation["state"] == "invalid"
+                            else "生成进度已保存，可继续",
+                            "generation_continuation_id": error.continuation["id"],
+                        }
                     ),
-                )
+                    event_row["id"],
+                ),
+            )
+            if not (task_id and continuation["state"] == "invalid"):
                 metrics["failures"] += 1
-            elif isinstance(error, DailyReplyLimitReached) or getattr(error, "kind", None) in {
-                "network",
-                "timeout",
-                "rate_limited",
-                "anti_bot",
-            }:
-                previous = event_row.get("error")
-                try:
-                    occurrences = json.loads(previous or "{}").get("occurrences", 0) + 1
-                except (ValueError, TypeError, AttributeError):
-                    occurrences = 1
-                browsing.store.execute(
-                    "UPDATE browsing_events SET status='received',error=? WHERE id=?",
-                    (
-                        dump(
-                            {
-                                "message": public_error(error),
-                                "occurrences": occurrences,
-                                "next_at": getattr(
-                                    error,
-                                    "next_at",
-                                    time.time() + row["config"]["notification_interval_seconds"],
-                                ),
-                            }
-                        ),
-                        event_row["id"],
+        elif isinstance(error, (DailyReplyLimitReached, SendLimitReached)) or getattr(error, "kind", None) in {
+            "network",
+            "timeout",
+            "rate_limited",
+            "anti_bot",
+            "thread_pending",
+        }:
+            previous = event_row.get("error")
+            try:
+                occurrences = json.loads(previous or "{}").get("occurrences", 0) + 1
+            except (ValueError, TypeError, AttributeError):
+                occurrences = 1
+            browsing.store.execute(
+                "UPDATE browsing_events SET status='received',error=? WHERE id=?",
+                (
+                    dump(
+                        {
+                            "message": public_error(error),
+                            "occurrences": occurrences,
+                            "next_at": getattr(
+                                error,
+                                "next_at",
+                                time.time() + row["config"]["notification_interval_seconds"],
+                            ),
+                        }
                     ),
-                )
-            elif isinstance(error, ValueError):
-                browsing.store.execute(
-                    "UPDATE browsing_events SET status='skipped',error=? WHERE id=?",
-                    (public_error(error), event_row["id"]),
-                )
-                metrics["failures"] += 1
-            else:
-                raise
+                    event_row["id"],
+                ),
+            )
+        elif isinstance(error, ValueError):
+            browsing.store.execute(
+                "UPDATE browsing_events SET status='skipped',error=? WHERE id=?",
+                (public_error(error), event_row["id"]),
+            )
+            metrics["failures"] += 1
+        else:
+            raise
+    if task_id and intent:
+        browsing.store.execute(
+            "UPDATE browsing_tasks SET status='selected', "
+            "payload=json_insert(payload,'$.reply_intent_ids',json('[]')),updated_at=? WHERE id=?",
+            (time.time(), task_id),
+        )
+        browsing.store.execute("UPDATE browsing_tasks SET payload=json_insert(payload,'$.reply_intent_ids[#]',?) WHERE id=?",
+                               (intent["id"], task_id))
+    elif task_id and generation:
+        diagnostic = {"comment_id": json.loads(event_row["payload"])["comment_id"],
+                      "continuation_id": generation["id"], "state": generation["state"],
+                      "feedback": generation["feedback"], "original_candidate": generation["original_output"],
+                      "current_candidate": generation["current_output"]}
+        browsing.store.execute("UPDATE browsing_tasks SET payload=json_insert(payload,'$.repetition_decisions',json('[]')) WHERE id=?", (task_id,))
+        browsing.store.execute("UPDATE browsing_tasks SET payload=json_insert(payload,'$.repetition_decisions[#]',json(?)) WHERE id=?",
+                               (dump(diagnostic), task_id))
 
 
 async def event(browsing, event_row, row, metrics):
@@ -418,7 +519,7 @@ async def event(browsing, event_row, row, metrics):
     config = row["config"]
     if event_row["kind"] == "mention" and not config["mention_reply_enabled"] or not config["reply_enabled"]:
         return
-    thread = await browsing._read(browsing.adapter.read_public_thread, event)
+    thread = await read_event_thread(browsing, event)
     target = thread["target"]
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     root = str(target.get("root") or thread["source"]["comment_id"])
@@ -428,8 +529,51 @@ async def event(browsing, event_row, row, metrics):
     async with browsing.runtime.conversation_turn(scope) as waited:
         if waited:
             browsing._check_round(row)
-            thread = await browsing._read(browsing.adapter.read_public_thread, event)
+            thread = await read_event_thread(browsing, event)
         return await browsing._event_unlocked(event_row, row, metrics, event, thread)
+
+
+async def read_event_thread(browsing, event):
+    if event["kind"] != "comment_visit":
+        return await read_scoped_thread(browsing, browsing.adapter.read_public_thread, event, event)
+    target = {key: event[key] for key in ("type", "resource_type", "oid", "bvid", "root", "parent")}
+    if hasattr(browsing.adapter, "read_video_thread"):
+        thread = await read_scoped_thread(browsing, browsing.adapter.read_video_thread, target, event)
+    else:
+        item = next(item for item in event["items"] if str(item["comment_id"]) == target["parent"])
+        source = comment_source(item)
+        if hasattr(browsing.adapter, "read_video_reply"):
+            source.update(await browsing._read(browsing.adapter.read_video_reply, target))
+        thread = {"target": target, "source": source, "items": event["items"]}
+    return thread | {"account_id": event["account_id"], "resource_type": "video",
+                     "resource_author_uid": event.get("resource_author_uid")}
+
+
+async def read_scoped_thread(browsing, reader, target, scope):
+    if "checkpoint" not in inspect.signature(reader).parameters:
+        return await browsing._read(reader, target)
+    key = "browsing_thread_scan:" + content_hash([scope.get(field) for field in (
+        "account_id", "resource_type", "oid", "root", "parent",
+    )])
+    result = await browsing._read(reader, target, resume=browsing.store.get(key),
+                                  checkpoint=lambda value: browsing.store.set(key, value))
+    browsing.store.execute("DELETE FROM kv WHERE key=?", (key,))
+    return result
+
+
+def settle_aliases(browsing, event_row, row, target, source):
+    if row["preview"]:
+        return
+    browsing.store.execute(
+        "UPDATE browsing_events SET status='skipped',error='同一公开评论已处理' WHERE account_id=? "
+        "AND status='received' AND id<>? AND json_extract(payload,'$.resource_type')=? "
+        "AND CAST(json_extract(payload,'$.oid') AS TEXT)=? AND CAST(json_extract(payload,'$.parent') AS TEXT)=? "
+        "AND CAST(json_extract(payload,'$.sender_uid') AS TEXT)=? AND (kind<>'comment_visit' OR "
+        "(json_extract(payload,'$.character_id')=? AND json_extract(payload,'$.review_session_id') IS ?))",
+        (row["account_id"], event_row["id"], target.get("resource_type") or ("video" if target.get("bvid") else "dynamic"),
+         str(target["oid"]), str(source["comment_id"]), str(source["author_uid"]), row["character_id"],
+         row["config"].get("review_session_id")),
+    )
 
 
 async def event_unlocked(browsing, event_row, row, metrics, event, thread):
@@ -444,6 +588,15 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         raise ValueError("账号来源无效、本人循环或广告互动")
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     canonical = canonical_intent("bilibili", resource, source["comment_id"], row["character_id"])
+    items_list = thread.get("items", [])
+    if matched := operator_reply(items_list, target, row["account_id"]):
+        browsing.store.execute(
+            "UPDATE browsing_events SET status='operator_replied',source_key=?,"
+            "payload=json_set(payload,'$.account_reply',json(?)),error=NULL WHERE id=?",
+            (canonical, dump(comment_source(matched)), event_row["id"]),
+        )
+        settle_aliases(browsing, event_row, row, target, source)
+        return
     if browsing.publication.source_intent(row, canonical):
         browsing.store.execute(
             "UPDATE browsing_events SET status='skipped',error='同源回应意图已存在' WHERE id=?",
@@ -458,7 +611,6 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             (event_row["id"],),
         )
         return
-    items_list = thread.get("items", [])
     source_row = next((r for r in items_list if str(r.get("comment_id")) == str(source["comment_id"])), None)
     if source_row is None:
         source_row = {
@@ -467,28 +619,37 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             "display_name": source.get("author_name") or source.get("display_name") or event.get("sender_name", ""),
             "content": source["text"],
         }
+    if comment_source(source_row)["text"] != source["text"] or (
+        event.get("sender_uid") and str(source["author_uid"]) != str(event["sender_uid"])
+    ):
+        raise ValueError("评论原文或作者已变化，未使用旧候选")
+    group_ids = event.get("grouped_ids") or []
+    if group_ids:
+        grouped = [item for item in items_list if str(item["comment_id"]) in group_ids
+                   and comment_source(item)["author_uid"] == str(source["author_uid"])
+                   and not operator_reply(items_list, target | {"parent": item["comment_id"]}, row["account_id"])
+                   and not browsing.publication.source_intent(
+                       row, canonical_intent("bilibili", resource, item["comment_id"], row["character_id"])
+                   )]
+        if len(grouped) > 1:
+            source_row = source_row | {"grouped_comments": grouped}
     discussion = comment_thread_context(source_row, items_list, target)
-    # The original verified event source keeps its existing hash representation.
     thread.update({key: value for key, value in discussion.items() if key != "source"})
+    legacy_source, source = source, discussion["source"]
+    if grouped := thread.get("grouped_comments"):
+        source = source | {"grouped_comments": grouped}
     if event_row["kind"] == "own_comment":
         thread["resource_author_uid"] = str(row["account_id"])
     reply = browsing.decisions.invited_private_response(row, thread)
     material, keys = None, []
-    if reply is not None or event_row["kind"] == "own_comment":
-        allowed = {"public:" + str(source["comment_id"])}
-    elif thread["resource_type"] == "video":
+    allowed = {"public:" + str(source["comment_id"])}
+    if reply is None and thread["resource_type"] == "video":
         progress = browsing.repo.content_progress(row, target["bvid"])
         if progress:
             key, material = await browsing.evidence._store(progress["material"])
-        else:
-            key, material = await browsing._prepare_evidence(target["bvid"], config)
-        keys = [key]
-        allowed = {s["id"] for s in browsing._segments(material)}
-    elif thread["resource_type"] == "dynamic":
-        if not thread.get("public_text"):
-            raise ValueError("原文字动态不可访问")
-        allowed = {"public:" + str(source["comment_id"])}
-    else:
+            keys = [key]
+            allowed.update(s["id"] for s in browsing._segments(material))
+    elif thread["resource_type"] not in {"video", "dynamic"}:
         raise ValueError("未支持通知资源类型")
     browsing.store.execute(
         "UPDATE browsing_events SET status='context_ready',source_key=? WHERE id=?",
@@ -504,7 +665,7 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         account_id=row["account_id"],
     )
     if reply is None:
-        previous = browsing.decisions.comment_progress.get(row, resource, source)
+        previous = browsing.decisions.comment_progress.get(row, resource, source, legacy_source=legacy_source)
         if previous and previous.action != "handoff_private":
             reply = previous
     if reply is None:
@@ -526,9 +687,13 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
                 event_row["id"],
             ),
         )
+        if reply.action == "skip":
+            settle_aliases(browsing, event_row, row, target, source)
         return
     target.update(recipient=str(source["author_uid"]), recipient_name=source.get("author_name") or "",
-                  source_text=source["text"], source_event=event)
+                  source_text=source["text"])
+    if event_row["kind"] != "comment_visit":
+        target["source_event"] = event
     if reply.action == "handoff_private":
         intent = await handoff_comment(browsing, row, reply, target, thread, material, keys, event=event)
     else:
@@ -544,3 +709,5 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         if intent["auto_authorized"]:
             await browsing.publish(intent["id"], automatic=True)
     browsing.store.execute("UPDATE browsing_events SET status='drafted' WHERE id=?", (event_row["id"],))
+    settle_aliases(browsing, event_row, row, target, source)
+    return intent

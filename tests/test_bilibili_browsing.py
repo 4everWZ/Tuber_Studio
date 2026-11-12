@@ -505,6 +505,30 @@ async def test_video_discussion_refresh_reads_one_thread_without_notification_or
     assert len(requests) == 2
 
 
+async def test_thread_resumes_older_pages_and_still_reads_latest_page(adapter_factory):
+    pages, checkpoint = [], {}
+    failed = True
+
+    def handle(request):
+        nonlocal failed
+        page = int(request.url.params["pn"])
+        pages.append(page)
+        if page == 3 and failed:
+            failed = False
+            return httpx.Response(503)
+        replies = [comment(page * 100 + i, 7, 100, "楼内讨论") for i in range(1, 21 if page < 3 else 2)]
+        return result({"root": comment(author=88), "replies": replies, "page": {"count": 41, "size": 20}})
+
+    adapter = await adapter_factory(handle)
+    target = {"oid": "123", "bvid": BV, "type": 1, "root": "100", "parent": "301"}
+    with pytest.raises(ValueError):
+        await adapter.read_video_thread(target, checkpoint=checkpoint.update)
+    assert checkpoint["next_page"] == 3 and pages == [1, 2, 3]
+    read = await adapter.read_video_thread(target, resume=checkpoint)
+    assert pages == [1, 2, 3, 1, 3] and read["coverage"]["complete"]
+    assert read["source"]["comment_id"] == "301" and len(read["items"]) == 42
+
+
 async def test_real_reply_source_must_match_actor_and_own_original_comment(adapter_factory):
     def handle(request):
         if request.url.path == "/x/web-interface/nav":

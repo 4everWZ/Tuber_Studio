@@ -196,6 +196,39 @@ class BrowsingAdapter(BilibiliAdapter):
             if isinstance(row, dict) and row.get("bvid") and row.get("aid")
         ]
 
+    async def own_dynamics(self, account, limit=3):
+        if str(account) != await self.self_uid():
+            raise PlatformReadError("permission", "只能扫描当前账号的动态")
+        signed = await self.wbi_params({"host_mid": str(account), "timezone_offset": -480})
+        data = await self._get("/x/polymer/web-dynamic/v1/feed/space", signed)
+        items = data.get("items") or []
+        if not isinstance(items, list):
+            raise PlatformReadError("invalid", "个人动态列表结构无效")
+        targets = []
+        for item in items:
+            if item.get("type") not in {"DYNAMIC_TYPE_WORD", "DYNAMIC_TYPE_DRAW"}:
+                continue
+            author = ((item.get("modules") or {}).get("module_author") or {}).get("mid")
+            basic = item.get("basic") or {}
+            if str(author) != str(account) or str(basic.get("comment_type")) != "17":
+                continue
+            targets.append({"resource_type": "dynamic", "oid": _identifier(basic.get("comment_id_str")),
+                            "dynamic_id": _identifier(item.get("id_str"))})
+            if len(targets) == limit:
+                break
+        return targets
+
+    async def fetch_dynamic_comments(self, target):
+        data = await self._get("/x/v2/reply", {"oid": _identifier(target["oid"]), "type": 17,
+                                              "pn": 1, "ps": 20, "sort": 0})
+        items = []
+        for reply in data.get("replies") or []:
+            root = self._comment(reply)
+            items.append(root)
+            items.extend(self._comment(item, thread_id=root["thread_id"], parent_comment_id=root["comment_id"])
+                         for item in reply.get("replies") or [])
+        return items
+
     async def discover(self, source, keyword="", page=1, limit=20):
         _integer(page, minimum=1, maximum=10)
         _integer(limit, minimum=1, maximum=20)
@@ -511,6 +544,13 @@ class BrowsingAdapter(BilibiliAdapter):
                 "target_id": _identifier(item["target_id"]) if item.get("target_id") else None,
                 "bvid": None,
             }
+            if resource == "dynamic":
+                uri = urlsplit(str(item.get("uri") or ""))
+                path = uri.path.strip("/").split("/")
+                if uri.hostname == "t.bilibili.com" and len(path) == 1 and path[0].isdigit():
+                    event["dynamic_id"] = _identifier(path[0])
+                elif uri.hostname == "www.bilibili.com" and len(path) == 2 and path[0] in {"opus", "dynamic"} and path[1].isdigit():
+                    event["dynamic_id"] = _identifier(path[1])
             events.append(event)
         next_cursor = data.get("cursor")
         if not isinstance(next_cursor, dict) or type(next_cursor.get("is_end")) not in {bool, int}:
@@ -551,35 +591,53 @@ class BrowsingAdapter(BilibiliAdapter):
             "bvid": target.get("bvid"),
         }
 
-    async def read_public_thread(self, event):
+    async def _thread_items(self, target, *, resume=None, checkpoint=None):
+        root_id = target["root"]
+        items, head, page = {}, None, 1
+        for _ in range(8):
+            data = await self._get("/x/v2/reply/reply", {
+                "oid": target["oid"], "type": target["type"], "root": root_id, "pn": page, "ps": 20,
+            })
+            replies = data.get("replies") or []
+            root = data.get("root")
+            if not isinstance(replies, list):
+                raise PlatformReadError("invalid", "原始楼回复结构无效")
+            try:
+                normalized = ([self._comment(root, thread_id=root_id)] if root else []) + [
+                    self._comment(item, thread_id=root_id) for item in replies
+                ]
+            except (ValueError, TypeError, KeyError, AttributeError):
+                raise PlatformReadError("invalid", "原始楼关系无效") from None
+            metadata = data.get("page") or {}
+            count = metadata.get("count")
+            size = metadata.get("size") or 20
+            has_more = bool(replies) and (page * size < count if type(count) is int and type(size) is int
+                                           else len(replies) >= 20)
+            if page == 1:
+                # A shifted head invalidates old offsets. Keep the current page
+                # authoritative even when resuming older pages.
+                head = [count, [item["comment_id"] for item in normalized]]
+                if has_more and resume and resume.get("head") == head:
+                    items = {item["comment_id"]: item for item in resume["items"]}
+                    page = resume["next_page"] - 1
+            items.update((item["comment_id"], item) for item in normalized)
+            if not has_more:
+                return list(items.values()), {"complete": type(count) is int, "page": page,
+                                              "reason": "thread_pages"}
+            page += 1
+            if checkpoint:
+                checkpoint({"head": head, "next_page": page, "items": list(items.values())})
+        raise PlatformReadError("thread_pending", "讨论楼分页尚未读完，保存游标后继续核对")
+
+    async def read_public_thread(self, event, *, resume=None, checkpoint=None):
         account = await self.self_uid()
         own_comment = event.get("kind") == "own_comment"
         if event.get("account_id") != account or event.get("kind") not in {"mention", "reply", "own_comment"}:
             raise PlatformReadError("permission", "通知不属于当前账号或来源类型不受支持")
         target = self._target(event)
-        if own_comment and target["resource_type"] != "video":
-            raise PlatformReadError("invalid", "投稿评论来源须为视频")
-        data = await self._get(
-            "/x/v2/reply/reply",
-            {
-                "oid": target["oid"],
-                "type": target["type"],
-                "root": target["root"],
-                "pn": 1,
-                "ps": 20,
-            },
-        )
-        root = data.get("root")
-        replies = data.get("replies")
-        if replies is not None and not isinstance(replies, list):
-            raise PlatformReadError("invalid", "原始楼回复结构无效")
-        raw = ([root] if root else []) + (replies or [])
-        if not raw:
+        items, coverage = await self._thread_items(target, resume=resume, checkpoint=checkpoint)
+        if not items:
             raise PlatformReadError("not_found", "原始楼不可读或已删除")
-        try:
-            items = [self._comment(row) for row in raw]
-        except (ValueError, TypeError, KeyError, AttributeError):
-            raise PlatformReadError("invalid", "原始楼关系无效") from None
         source = next((row for row in items if row["comment_id"] == event["comment_id"]), None)
         if source is None or source["platform_user_id"] != event["sender_uid"]:
             raise PlatformReadError("not_found", "当前页未核验到通知原文与作者，不猜测回复对象")
@@ -588,7 +646,7 @@ class BrowsingAdapter(BilibiliAdapter):
         if event.get("source_text") and source["content"] != event["source_text"]:
             raise PlatformReadError("invalid", "通知原文已变化，需要重新核验")
         if event["kind"] == "reply":
-            original_id = source["parent_comment_id"] or target["root"]
+            original_id = source["parent_comment_id"]
             original = next((row for row in items if row["comment_id"] == original_id), None)
             if original is None or original["platform_user_id"] != account:
                 raise PlatformReadError("permission", "收到回复未关联当前账号的真实评论")
@@ -603,17 +661,22 @@ class BrowsingAdapter(BilibiliAdapter):
                 public_text = _text(info.get("title") or "", 1000)
             target["bvid"] = info["bvid"]
         else:
-            signed = await self.wbi_params({"id": target["oid"], "timezone_offset": -480})
+            dynamic_id = _identifier(event.get("dynamic_id") or target["oid"])
+            signed = await self.wbi_params({"id": dynamic_id, "timezone_offset": -480})
             dynamic = await self._get("/x/polymer/web-dynamic/v1/detail", signed)
             item = dynamic.get("item")
-            if not isinstance(item, dict) or str(item.get("id_str")) != target["oid"]:
+            if not isinstance(item, dict) or str(item.get("id_str")) != dynamic_id:
                 raise PlatformReadError("not_found", "原始文字动态不可读或对象不一致")
-            if item.get("type") != "DYNAMIC_TYPE_WORD":
-                raise PlatformReadError("unsupported", "仅支持文字动态评论，其他动态类型需单独适配")
+            if item.get("type") not in {"DYNAMIC_TYPE_WORD", "DYNAMIC_TYPE_DRAW"}:
+                raise PlatformReadError("unsupported", "仅支持文字和图文动态评论")
+            basic = item.get("basic") or {}
+            if str(basic.get("comment_id_str") or dynamic_id) != target["oid"]:
+                raise PlatformReadError("invalid", "动态评论区与来源不一致")
             modules = item.get("modules") or {}
+            if own_comment and str((modules.get("module_author") or {}).get("mid")) != account:
+                raise PlatformReadError("permission", "该动态不属于当前账号")
             public_text = _text(((modules.get("module_dynamic") or {}).get("desc") or {}).get("text"))
-            if not public_text.strip():
-                raise PlatformReadError("empty", "原始文字动态没有有效正文")
+            target["dynamic_id"] = dynamic_id
         return {
             "account_id": account,
             "resource_type": target["resource_type"],
@@ -626,7 +689,7 @@ class BrowsingAdapter(BilibiliAdapter):
             },
             "items": items,
             "public_text": public_text,
-            "coverage": {"complete": False, "page": 1, "reason": "bounded_thread_page"},
+            "coverage": coverage,
         }
 
     async def read_video_reply(self, target):
@@ -634,17 +697,11 @@ class BrowsingAdapter(BilibiliAdapter):
         thread = await self.read_video_thread(target)
         return {key: thread["source"][key] for key in ("author_uid", "text")}
 
-    async def read_video_thread(self, target):
+    async def read_video_thread(self, target, *, resume=None, checkpoint=None):
         """Refresh one discussion without moving the video's browsing cursor."""
         root, parent = str(target["root"]), str(target["parent"])
-        data = await self._get(
-            "/x/v2/reply/reply", {"oid": target["oid"], "type": 1, "root": root, "pn": 1, "ps": 20}
-        )
-        rows = ([data["root"]] if data.get("root") else []) + (data.get("replies") or [])
-        try:
-            items = [self._comment(row, thread_id=root) for row in rows]
-        except (TypeError, KeyError, AttributeError, ValueError):
-            raise PlatformReadError("invalid", "原始楼关系无效") from None
+        items, coverage = await self._thread_items({"oid": target["oid"], "type": 1, "root": root},
+                                                  resume=resume, checkpoint=checkpoint)
         source = next((row for row in items if row["comment_id"] == parent), None)
         if source is None:
             raise PlatformReadError("not_found", "当前楼未找到原评论")
@@ -657,6 +714,7 @@ class BrowsingAdapter(BilibiliAdapter):
                 "text": source["content"],
             },
             "items": items,
+            "coverage": coverage,
         }
 
     async def _publish_target(self, target, text, before_send):

@@ -23,9 +23,11 @@ from ...platforms.bilibili import PublishUncertain
 from ...providers import public_error
 from ...publication_errors import PlatformRejected, UnknownPublication
 from ...store import dump
+from .comment_reader import read_scoped_thread
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import read_round
+from .thread_context import comment_source, operator_reply
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
 
@@ -597,17 +599,21 @@ class BrowsingPublication:
             if row["kind"] not in ("top_level", "video_like", "video_fav"):
                 target = row["target"]
                 if target.get("source_event"):
-                    verified = await self.browsing._read(
-                        self.browsing.adapter.read_public_thread, target["source_event"]
+                    verified = await read_scoped_thread(
+                        self.browsing, self.browsing.adapter.read_public_thread, target["source_event"],
+                        target["source_event"],
                     )
                 elif hasattr(self.browsing.adapter, "read_video_thread"):
-                    verified = await self.browsing._read(self.browsing.adapter.read_video_thread, target)
+                    verified = await read_scoped_thread(self.browsing, self.browsing.adapter.read_video_thread,
+                                                       target, target | {"account_id": account, "resource_type": "video"})
                 else:
                     verified = {"source": await self.browsing._read(self.browsing.adapter.read_video_reply, target)}
                 if verified["source"]["text"] != row["target"]["source_text"] or str(
                     verified["source"]["author_uid"]
                 ) != str(row["target"]["recipient"]):
                     raise ValueError("原始互动已删除或变化")
+                if handled := operator_reply(verified.get("items", []), target, account):
+                    return self._record_account_reply(row, handled)
                 name = verified["source"].get("author_name")
                 if name and name != target.get("recipient_name"):
                     validate_comment_body(row["text"], recipient_name=name)
@@ -790,3 +796,14 @@ class BrowsingPublication:
             return self.browsing.repo.decode(
                 self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
             )
+
+    def _record_account_reply(self, row, handled):
+        target = row["target"] | {"account_reply": comment_source(handled)}
+        self.browsing.store.execute(
+            "UPDATE browsing_intents SET status='operator_replied',target=?,error=NULL,auto_authorized=0,updated_at=? "
+            "WHERE id=? AND status=? AND text=?",
+            (dump(target), time.time(), row["id"], row["status"], row["text"]),
+        )
+        return self.browsing.repo.decode(
+            self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (row["id"],))
+        )

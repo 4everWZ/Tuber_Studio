@@ -852,6 +852,7 @@ class BrowsingService:
     async def _run_interactions(self, row, metrics):
         await comment_reader_tasks.run_interactions(self, row, metrics)
         await batches_tasks.process_comment_visits(self, row, metrics)
+        await self._process_events(row, metrics)
 
     async def _collect_own_comments(self, row):
         return await comment_reader_tasks.collect_own_comments(self, row)

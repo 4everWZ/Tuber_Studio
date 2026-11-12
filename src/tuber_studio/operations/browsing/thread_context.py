@@ -11,6 +11,17 @@ def comment_source(item):
     }
 
 
+def operator_reply(items, target, account):
+    """Only an observed same-account reply addressed directly to this source counts."""
+    root, parent = str(target["root"]), str(target["parent"])
+    return next((item for item in items if (
+        str(item.get("thread_id")) == root
+        and str(item.get("parent_comment_id")) == parent
+        and item.get("parent_verified") is not False
+        and comment_source(item)["author_uid"] == str(account)
+    )), None)
+
+
 def comment_thread_context(item, items, target):
     comment_id, root_id = str(item["comment_id"]), str(target["root"])
     by_id = {str(row["comment_id"]): row for row in items if row.get("comment_id")}
