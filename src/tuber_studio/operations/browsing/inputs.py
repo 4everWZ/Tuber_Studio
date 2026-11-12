@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...operation_generation import hold_comment_body
 from ...subtitle_presentation import (
     CitationBlock,
     SourcePart,
@@ -442,6 +443,7 @@ class ResponseDecisionInput:
         self.allowed_aliases = frozenset(ref.alias for ref in refs)
         self._by_alias = {ref.alias: ref for ref in refs}
         thread = data.get("thread") or {}
+        self.recipient_name = (thread.get("source") or {}).get("author_name") or ""
         group = {"public:" + str(item["comment_id"]) for item in thread.get("grouped_comments", [])}
         self.grouped_comment_refs = frozenset(ref.alias for ref in refs if ref.canonical_id in group)
         self.anchor_alias = next((ref.alias for ref in refs if ref.canonical_id ==
@@ -524,7 +526,9 @@ class ResponseDecisionInput:
         return value
 
     def diagnose(self, value):
-        """A prose defect is review evidence, never an invalid citation or a retry."""
+        """Keep a defective body editable without admitting it to automatic send."""
+        if value.action == "reply_public":
+            hold_comment_body(value, value.text, recipient_name=self.recipient_name)
         aliases = {alias.casefold() for alias in re.findall(
             r"(?<![A-Za-z0-9_])ref:[1-9][0-9]*(?![A-Za-z0-9_])", value.text, re.IGNORECASE,
         )}

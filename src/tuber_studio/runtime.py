@@ -20,7 +20,7 @@ from .memory import missing_slots
 from .model_runtime.session import InferenceRuntime
 from .models import OperationReply
 from .operation_continuations import ContinuationCoordinator, content_hash
-from .operation_generation import generate_with_recovery, reply_generation_binding
+from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
 from .operation_identity import identity_messages, identity_snapshot
 from .operation_text import operation_output_diagnostics
 from .operation_turns import OperationTurns, operation_lane
@@ -348,6 +348,8 @@ class Runtime:
                     raise ValueError("生成期间角色或原始事件已变化")
 
             def diagnose(value):
+                if mode == "comment_draft":
+                    hold_comment_body(value, value.spoken_text, recipient_name=event.get("display_name") or "")
                 return (
                     "正文包含大量重复内容，保留原文待审"
                     if operation_output_diagnostics(value.spoken_text)["needs_review"]
@@ -425,6 +427,9 @@ class Runtime:
             }
             if audit["output"]["needs_review"]:
                 audit["warning"] = "长正文含大量重复段落，保留原文待审"
+            if continuation and continuation["feedback"].get("kind") == "body_integrity":
+                audit["output"]["needs_review"] = True
+                audit["warning"] = continuation["feedback"]["message"]
             audit["continuation"] = continuation
         return reply, audit
 

@@ -21,7 +21,7 @@ from urllib.parse import urlencode, urlsplit
 
 import httpx
 
-from ..operation_text import validate_operation_text
+from ..operation_text import validate_comment_body
 from ..publication_errors import PublishUncertain as PublishUncertain
 from ..publication_errors import platform_rejection
 
@@ -377,7 +377,7 @@ class BilibiliAdapter:
     ) -> dict:
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要配置 SESSDATA 和 CSRF；当前仅可生成或复制草稿")
-        text = validate_operation_text(text, label="回复")
+        text = validate_comment_body(text)
         parent = _positive_id(comment_id)
         root = _positive_id(thread_id) if thread_id is not None else parent
         info = await self._video(video_id)

@@ -125,7 +125,7 @@ async def test_repeated_main_reply_stays_reviewable_without_parking_the_batch(br
     assert main_intents[0]["status"] == "pending_review"
 
 
-async def isolated_output_limit_provider(browsing, *, comments=False, network=False, private=None):
+async def isolated_output_limit_provider(browsing, *, comments=False, network=False, private=None, malformed_body=None):
     """Exercise the real HTTP provider, feedback coordinator and task executor."""
     original = browsing.runtime.llm
     calls = []
@@ -173,6 +173,8 @@ async def isolated_output_limit_provider(browsing, *, comments=False, network=Fa
                     if private is not None:
                         value.update(action="handoff_private", text="仅供私信查看的实际生成草稿", reason="private_details")
                     finish = "length" if fault["pending"] else "stop"
+                    if malformed_body is not None:
+                        value["text"], finish = malformed_body, "stop"
                     fault["pending"] = False
                 text = json.dumps(value, ensure_ascii=False)
                 if title == "ResponseDecision" and private == "unresolved":
@@ -190,6 +192,40 @@ async def isolated_output_limit_provider(browsing, *, comments=False, network=Fa
     provider.client = httpx.AsyncClient(base_url="https://isolated.invalid/v1", transport=httpx.MockTransport(respond))
     browsing.runtime.llm = provider
     return original, provider, calls
+
+
+async def test_valid_outer_json_with_protocol_in_comment_body_requires_an_edit(browsing):
+    text = '看完啦？”}、explanation:“接着聊一下”，reply_target:{'
+    await browsing.configure({"sources": ["specified"], "watch_videos": [BV]})
+    await authorize(browsing)
+    original, provider, calls = await isolated_output_limit_provider(browsing, malformed_body=text)
+    try:
+        row = await finished(browsing, automatic=True, video_only=True)
+        assert row["status"] == "completed"
+        intent = browsing.intents()[0]
+        assert intent["status"] == "pending_review" and not intent["auto_authorized"]
+        assert intent["text"] == text and "结构" in intent["error"]
+        audit = browsing.runtime.continuations.get(intent["target"]["generation_continuation_id"])
+        model = next(step for step in audit["revisions"] if step["phase"] == "generation_model")
+        assert model["context"]["finish_reason"] == "stop" and json.loads(model["output"])["text"] == text
+        assert audit["feedback"]["kind"] == "body_integrity" and audit["recoveries"] == 0
+        assert calls == ["CandidateBatchPlan", "ResponseDecision"] and not browsing.adapter.sent
+        with pytest.raises(ValueError, match="结构"):
+            browsing.review(intent["id"], "approve")
+
+        # Older pending candidates could already have automatic authorization.
+        browsing.store.execute("UPDATE browsing_intents SET auto_authorized=1 WHERE id=?", (intent["id"],))
+        with pytest.raises(ValueError, match="结构"):
+            await browsing.publish(intent["id"], automatic=True)
+        assert not browsing.store.all("SELECT * FROM operation_write_attempts")
+        corrected = "盐水里的鸡蛋浮起来啦！（本鱼看懂了）"
+        browsing.review(intent["id"], "approve", corrected)
+        sent = await browsing.publish(intent["id"])
+        assert sent["status"] == "published" and sent["receipt"]["rpid"] == "900"
+        assert [body for _, body in browsing.adapter.sent] == [corrected]
+    finally:
+        await provider.close()
+        browsing.runtime.llm = original
 
 
 @pytest.mark.parametrize("comments", [False, True])

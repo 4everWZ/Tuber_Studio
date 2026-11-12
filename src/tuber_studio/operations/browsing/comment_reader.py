@@ -527,7 +527,8 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             ),
         )
         return
-    target.update(recipient=str(source["author_uid"]), source_text=source["text"], source_event=event)
+    target.update(recipient=str(source["author_uid"]), recipient_name=source.get("author_name") or "",
+                  source_text=source["text"], source_event=event)
     if reply.action == "handoff_private":
         intent = await handoff_comment(browsing, row, reply, target, thread, material, keys, event=event)
     else:

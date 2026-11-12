@@ -21,6 +21,7 @@ from tuber_studio.models import OperationReply, Reply
 from tuber_studio.operation_text import (
     MAX_OPERATION_TEXT_BYTES,
     operation_output_diagnostics,
+    validate_comment_body,
     validate_operation_text,
 )
 from tuber_studio.operations.browsing.models import BrowsingPolicy
@@ -29,6 +30,28 @@ from tuber_studio.providers import build_messages
 from tuber_studio.video_vision import VideoVisionConfig
 
 LONG_TEXT = "\n".join(f"第{i}段，鱼鱼顺着这件事聊一聊自己的想法，也听听你接下来怎么说。" for i in range(80))
+
+
+@pytest.mark.parametrize("text", [
+    '看完啦？”}、explanation:“接着聊一下”，reply_target:{',
+    '这段看懂了。”}{',
+    '这个画面很好看，evidence_ids:[',
+    '{"action":"reply_public","text":"看懂啦","reason":"specific_detail"}',
+])
+def test_comment_body_rejects_response_protocol(text):
+    with pytest.raises(ValueError, match="结构"):
+        validate_comment_body(text)
+
+
+@pytest.mark.parametrize("text", [
+    '本鱼想试试！（哈哈）你说的“括号”是 {x} 吧？',
+    '注释里用了 `reply_target: {`，结尾补 `}` 就好了。',
+    '原句是“reply_target: {}”，可以翻成回复目标。',
+    '他说“这行是右花括号 }”。',
+    'JSON 示例是 {"name":"小鲸"}。',
+])
+def test_comment_body_preserves_prose_and_technical_literals(text):
+    assert validate_comment_body(text) == text
 
 
 @pytest.mark.parametrize(

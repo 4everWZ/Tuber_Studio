@@ -14,6 +14,8 @@ from ...operation_feedback import (
 from ...operation_generation import generate_with_recovery, generation_requires_review
 from ...operation_identity import runtime_identity
 from ...operation_text import (
+    comment_body_issue,
+    validate_comment_body,
     validate_operation_text,
 )
 from ...operations_control import canonical_intent
@@ -24,6 +26,8 @@ from ...store import dump
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import read_round
+
+_COMMENT_KINDS = {"top_level", "reply_public"}
 
 
 class BrowsingPublication:
@@ -82,8 +86,13 @@ class BrowsingPublication:
         ):
             return None
         identity, now = str(uuid4()), time.time()
+        body_issue = (
+            comment_body_issue(response.text, recipient_name=target.get("recipient_name") or "")
+            if kind in _COMMENT_KINDS else None
+        )
         auto = (
             not row["preview"]
+            and not body_issue
             and self.browsing.operations.policy()["enabled"]
             and self.browsing.operations.policy()["epoch"] == row["epoch"]
             and self._action_allowed(kind, self.browsing.effective())
@@ -123,7 +132,7 @@ class BrowsingPublication:
                     dump([self.browsing.evidence.load(k)["source_version"] for k in material_keys]),
                     None,
                     "not_checked",
-                    None,
+                    body_issue,
                     now,
                     now,
                 ),
@@ -169,14 +178,20 @@ class BrowsingPublication:
             raise ValueError("正文须为字符串")
         text = row["text"] if text is None else text.strip()
         text = validate_operation_text(text)
+        issue = None
+        if row["kind"] in _COMMENT_KINDS:
+            recipient_name = json.loads(row["target"]).get("recipient_name") or ""
+            issue = comment_body_issue(text, recipient_name=recipient_name)
+            if issue and action == "approve":
+                raise ValueError(issue)
         new_status = (
-            row["status"]
+            ("pending_review" if issue else row["status"])
             if action in {"edit", "save"}
             else ("approved" if action == "approve" else "rejected")
         )
         self.browsing.store.execute(
-            "UPDATE browsing_intents SET status=?,text=?,auto_authorized=0,updated_at=? WHERE id=?",
-            (new_status, text, time.time(), identity),
+            "UPDATE browsing_intents SET status=?,text=?,auto_authorized=0,error=?,updated_at=? WHERE id=?",
+            (new_status, text, issue if row["kind"] in _COMMENT_KINDS else row["error"], time.time(), identity),
         )
         return self.browsing.repo.decode(
             self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
@@ -320,6 +335,7 @@ class BrowsingPublication:
         row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
         if not row or row["kind"] not in {"top_level", "reply_public"} or row["status"] not in {"approved", "pending_review"}:
             return
+        validate_comment_body(row["text"], recipient_name=row["target"].get("recipient_name") or "")
         character = browsing.store.character(row["character_id"], row["character_version"])
         account = await browsing._current_account(row["account_id"])
         current = await refresh(character, account)
@@ -339,6 +355,7 @@ class BrowsingPublication:
             source = thread["source"]
             if source["text"] != target["source_text"] or str(source["author_uid"]) != str(target["recipient"]):
                 raise ValueError("原始互动已删除或变化，保留草稿")
+            target = target | {"recipient_name": source.get("author_name") or target.get("recipient_name", "")}
             thread = thread | {"target": {key: value for key, value in target.items() if key != "generation_identity"}}
         else:
             thread = {"target": {key: value for key, value in target.items() if key != "generation_identity"},
@@ -563,6 +580,8 @@ class BrowsingPublication:
                 raise ValueError("候选未获授权或已提交")
             if automatic and not row["auto_authorized"]:
                 raise ValueError("该候选不能自动发送")
+            if row["kind"] in _COMMENT_KINDS:
+                validate_comment_body(row["text"], recipient_name=row["target"].get("recipient_name") or "")
             character = self.browsing.store.character(row["character_id"], row["character_version"])
             account = await self.browsing._current_account(row["account_id"])
             signature = self.browsing.credential_signature()
@@ -577,17 +596,21 @@ class BrowsingPublication:
             )
             if row["kind"] not in ("top_level", "video_like", "video_fav"):
                 target = row["target"]
-                verified = (
-                    await self.browsing._read(
+                if target.get("source_event"):
+                    verified = await self.browsing._read(
                         self.browsing.adapter.read_public_thread, target["source_event"]
                     )
-                    if target.get("source_event")
-                    else {"source": await self.browsing._read(self.browsing.adapter.read_video_reply, target)}
-                )
+                elif hasattr(self.browsing.adapter, "read_video_thread"):
+                    verified = await self.browsing._read(self.browsing.adapter.read_video_thread, target)
+                else:
+                    verified = {"source": await self.browsing._read(self.browsing.adapter.read_video_reply, target)}
                 if verified["source"]["text"] != row["target"]["source_text"] or str(
                     verified["source"]["author_uid"]
                 ) != str(row["target"]["recipient"]):
                     raise ValueError("原始互动已删除或变化")
+                name = verified["source"].get("author_name")
+                if name and name != target.get("recipient_name"):
+                    validate_comment_body(row["text"], recipient_name=name)
             materials = self._intent_materials(row)
             actual_binding = self._publication_binding(
                 row, character, [item["metadata"] for item in materials]

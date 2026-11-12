@@ -11,6 +11,7 @@ from .operation_continuations import (
 )
 from .operation_feedback import coordinator_for, episode_limits
 from .operation_identity import captured_identity, identity_messages, runtime_identity
+from .operation_text import comment_body_issue
 from .web_fetch import OperationWebFetch
 
 
@@ -79,6 +80,11 @@ def recoverable_feedback(error, provider):
     if raw is None:
         raise error
     return GenerationFeedback(str(error), original_output=raw)
+
+
+def hold_comment_body(value, text, *, recipient_name=""):
+    if issue := comment_body_issue(text, recipient_name=recipient_name):
+        raise GenerationFeedback(issue, original_output=value, kind="body_integrity", accepted_value=value)
 
 
 async def generate_with_recovery(

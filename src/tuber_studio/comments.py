@@ -20,7 +20,7 @@ from .operation_feedback import (
     publication_binding,
 )
 from .operation_identity import runtime_identity
-from .operation_text import validate_operation_text
+from .operation_text import validate_comment_body, validate_operation_text
 from .operations.browsing.models import BrowsingPolicy
 from .operations.browsing.thread_context import comment_thread_context
 from .operations_control import OperationsControl, canonical_intent
@@ -740,7 +740,7 @@ class Comments:
         )
 
     def review(self, draft_id, action, text=None):
-        row = self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
+        row = self._draft_source(draft_id)
         if not row:
             raise ValueError("草稿不存在")
         if row["status"] in {"published", "publishing", "publish_uncertain", "private_handoff"}:
@@ -748,7 +748,10 @@ class Comments:
         if action not in {"approve", "reject"}:
             raise ValueError("未知审核动作")
         text = text if text is not None else row["text"]
-        text = validate_operation_text(text, label="回复")
+        if action == "approve":
+            text = validate_comment_body(text, recipient_name=row["display_name"] or "")
+        else:
+            text = validate_operation_text(text, label="回复")
         status = "approved" if action == "approve" else "rejected"
         self.store.execute(
             "UPDATE drafts SET text=?,status=?,error=NULL,updated_at=? WHERE id=?",
@@ -795,7 +798,7 @@ class Comments:
 
     def _draft_source(self, draft_id):
         return self.store.one(
-            "SELECT d.*,c.video_id,c.thread_id,c.platform_user_id,c.content,c.comment_id AS platform_comment_id FROM drafts d "
+            "SELECT d.*,c.video_id,c.thread_id,c.platform_user_id,c.display_name,c.content,c.comment_id AS platform_comment_id FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.id=?",
             (draft_id,),
         )
@@ -856,6 +859,7 @@ class Comments:
         allowed = {"pending_review"} if automatic else {"approved", "copied"}
         if not row or row["status"] not in allowed:
             return
+        validate_comment_body(row["text"], recipient_name=row["display_name"] or "")
         character = self.store.character(row["character_id"], row["character_version"])
         account = self.display_account_id() or await self.account_id()
         if row["account_id"] and row["account_id"] != account:
@@ -1059,14 +1063,11 @@ class Comments:
                 raise ValueError("自动回复已停止，草稿保留待审核")
             if not policy["credentials_configured"]:
                 raise ValueError("未配置B站账号写入凭证；草稿可人工审核复制")
-            row = self.store.one(
-                "SELECT d.*,c.video_id,c.thread_id,c.platform_user_id,c.content,c.comment_id AS platform_comment_id FROM drafts d "
-                "JOIN comments c ON c.id=d.comment_id WHERE d.id=?",
-                (draft_id,),
-            )
+            row = self._draft_source(draft_id)
             allowed = {"pending_review"} if automatic else {"approved", "copied"}
             if not row or row["status"] not in allowed:
                 raise ValueError("当前草稿状态不能发布，或已发布／结果未确认")
+            validate_comment_body(row["text"], recipient_name=row["display_name"] or "")
             if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
                 raise ValueError("正文诊断尚待审核，未自动发布")
             for seconds, cap in (
@@ -1097,6 +1098,7 @@ class Comments:
                     "content",
                     "platform_comment_id",
                     "platform_user_id",
+                    "display_name",
                     "thread_id",
                     "video_id",
                 )
@@ -1120,14 +1122,17 @@ class Comments:
                     self.runtime, character, account_id
                 )["identity_version"]:
                     raise ValueError("发送前身份资料已更新，保留草稿重新生成")
-                fresh = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
+                fresh = self._draft_source(draft_id)
                 if (
                     self.adapter is not adapter
                     or credential != self.credentials
                     or not fresh
                     or fresh["content"] != row["content"]
-                    or fresh["comment_id"] != row["platform_comment_id"]
+                    or fresh["platform_comment_id"] != row["platform_comment_id"]
                     or fresh["platform_user_id"] != row["platform_user_id"]
+                    or fresh["display_name"] != row["display_name"]
+                    or fresh["status"] != "publishing"
+                    or fresh["text"] != row["text"]
                     or (automatic and not self.policy()["auto_reply"])
                 ):
                     raise ValueError("发送前账号、来源或授权已变化，保留草稿")

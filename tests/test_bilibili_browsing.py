@@ -588,10 +588,12 @@ async def test_write_top_level_and_reply_have_different_roots_and_valid_receipt(
     if not top_level:
         target |= {"root": "100", "parent": "101"}
     method = adapter.publish_top_level if top_level else adapter.publish_resource_reply
-    output = await method(target, "具体内容留言", before_send=lambda: checkpoints.append("checked"))
+    text = "具体内容留言" if top_level else "@同名用户 本鱼也想问！（哈哈）"
+    output = await method(target, text, before_send=lambda: checkpoints.append("checked"))
     assert output["rpid"] == "555" and len(sent) == 1
     assert sent[0]["root"] == ["0" if top_level else "100"]
     assert sent[0]["parent"] == ["0" if top_level else "101"]
+    assert sent[0]["message"] == [text]
 
 
 async def test_final_authorization_prevents_post_after_preparing_signature(adapter_factory):

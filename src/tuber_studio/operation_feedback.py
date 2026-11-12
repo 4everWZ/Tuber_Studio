@@ -20,6 +20,7 @@ from .operation_identity import identity_messages, runtime_identity
 from .operation_text import (
     operation_character,
     operation_output_diagnostics,
+    validate_comment_body,
     validate_operation_text,
 )
 from .providers import SYSTEM_RULES, public_error
@@ -347,7 +348,8 @@ class FeedbackModel:
         if not isinstance(value, dict) or set(value) != {"text"}:
             raise GenerationFeedback("修订结果需要唯一text正文", original_output=value)
         try:
-            text = validate_operation_text(value["text"])
+            validate_body = validate_comment_body if row["binding"].get("channel") == "comments" else validate_operation_text
+            text = validate_body(value["text"])
         except ValueError as error:
             raise GenerationFeedback(str(error), original_output=value) from None
         if row["trigger_feedback"].get("content_hash") == content_hash({"text": text}):

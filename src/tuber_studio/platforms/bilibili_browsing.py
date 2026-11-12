@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from ..operation_text import validate_operation_text
+from ..operation_text import validate_comment_body
 from ..publication_errors import platform_rejection
 from ..subtitle_presentation import deduplicate_subtitles
 from .bilibili import _BV, BilibiliAdapter, PublishUncertain, _positive_id, _video_params
@@ -662,7 +662,7 @@ class BrowsingAdapter(BilibiliAdapter):
     async def _publish_target(self, target, text, before_send):
         if not self._sessdata or not self._csrf:
             raise ValueError("发布需要当前账号SESSDATA及CSRF")
-        text = validate_operation_text(text, label="评论正文")
+        text = validate_comment_body(text)
         params = await self.wbi_params()
         if before_send is not None:
             before_send()

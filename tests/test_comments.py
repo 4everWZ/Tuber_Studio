@@ -71,6 +71,26 @@ async def test_default_review_and_manual_approval_never_sends(comments, store):
     assert store.one("SELECT status FROM drafts")["status"] == "copied"
 
 
+async def test_legacy_approved_comment_stays_editable_without_using_a_publish_attempt(comments, store):
+    comments.credentials = {"sessdata": "test", "csrf": "test"}
+    row = await draft(comments, store)
+    store.execute("UPDATE comments SET display_name='小鲸' WHERE id=?", (row["comment_id"],))
+    text = '答完了。”}{'
+    store.execute("UPDATE drafts SET status='approved',text=? WHERE id=?", (text, row["id"]))
+    with pytest.raises(ValueError, match="结构"):
+        await comments.publish(row["id"])
+    assert not comments.adapter.sent and not store.all("SELECT * FROM publish_attempts")
+    assert store.one("SELECT text FROM drafts WHERE id=?", (row["id"],))["text"] == text
+
+    with pytest.raises(ValueError, match="空格"):
+        comments.review(row["id"], "approve", "@小鲸本鱼同意！")
+    corrected = "@小鲸 本鱼同意！（哈哈）"
+    comments.review(row["id"], "approve", corrected)
+    sent = await comments.publish(row["id"])
+    assert sent["status"] == "published"
+    assert comments.adapter.sent == [("BV1d8pU6xEZX", "123", corrected)]
+
+
 async def test_pending_draft_is_not_speech_and_receipt_records_only_final_approved_body(comments, store, runtime):
     comments.credentials = {"sessdata": "test", "csrf": "test"}
     row = await draft(comments, store)
