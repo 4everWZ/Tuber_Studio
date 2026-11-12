@@ -159,7 +159,7 @@ async def execute(browsing, row, metrics):
         )
 
         def pending(result):
-            return result is None or retry and result["state"] == "retry"
+            return result is None or retry and result["state"] in {"retry", "unavailable", "gap"}
 
         for selected in prior["parts"]:
             part = by_cid[selected["cid"]]

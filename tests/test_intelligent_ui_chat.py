@@ -273,3 +273,42 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
         assert app.state.store.one("SELECT COUNT(*) AS n FROM browsing_tasks WHERE round_id=?", (result["id"],))["n"] == 1
         browsing.comments.verified_account_id = "200"
         assert client.get(turn_url).json()["card"]["data"]["status"] == "unavailable"
+
+
+def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear(settings, monkeypatch):
+    from tuber_studio.operations.browsing.evidence import EvidenceUnavailable
+
+    platform = ControlledPlatform()
+    app = create_app(settings, adapter=platform)
+    browsing = app.state.browsing
+    browsing.read_interval = 0
+    original = browsing.evidence.subtitle_part
+    available = False
+
+    async def subtitles(*args):
+        if not available:
+            raise EvidenceUnavailable("no_subtitles", "当前没有字幕")
+        return await original(*args)
+
+    monkeypatch.setattr(browsing.evidence, "subtitle_part", subtitles)
+    monkeypatch.delenv("TUBER_VIDEO_ASR_CLI", raising=False)
+    path, identity = "/api/chat/intelligent", str(uuid4())
+    turn = f"{path}/turns/{identity}"
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        assert client.post(path, json={"request_id": identity, "message": "看完整视频：" + BV}).status_code == 200
+
+        def wait_for(status):
+            for _ in range(200):
+                data = client.get(turn).json()["card"]["data"]
+                if data["status"] == status:
+                    return data
+                time.sleep(0.01)
+            pytest.fail(f"视频任务没有进入 {status}：{data}")
+
+        partial = wait_for("partial")
+        assert partial["coverage"]["parts"][0]["ranges"][0]["subtitle"]["state"] == "unavailable"
+        available = True
+        assert client.post(turn + "/resume-video").status_code == 200
+        resumed = wait_for("completed")
+        assert resumed["id"] == partial["id"] == identity
+        assert resumed["coverage"]["parts"][0]["ranges"][0]["subtitle"]["state"] == "available"
