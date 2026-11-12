@@ -284,28 +284,7 @@ class BrowsingEvidence:
         # A missing P remains an explicit limitation, never an empty complete video.
         for part in metadata["parts"]:
             try:
-                evidence = await self.reader(
-                    self.adapter.subtitles, metadata["bvid"], part["cid"], config["languages"]
-                )
-                segments = evidence.get("segments", [])
-                if not segments or not any(s.get("text", "").strip() for s in segments):
-                    raise EvidenceUnavailable("empty", "CC无有效正文")
-                if all(CREDIT.match(s.get("text", "").strip()) for s in segments):
-                    raise EvidenceUnavailable("empty", "CC仅署名，不是有效视频内容")
-                if str(evidence.get("cid")) != str(part["cid"]) or evidence.get("bvid") != metadata["bvid"]:
-                    raise EvidenceUnavailable("invalid", "字幕CID／视频不匹配")
-                evidence = dict(evidence)
-                evidence.pop("url", None)
-                evidence["segments"] = [
-                    dict(
-                        s,
-                        id=str(s["id"])
-                        if str(s["id"]).startswith(f"{part['cid']}:")
-                        else f"{part['cid']}:{s['id']}",
-                    )
-                    for s in segments
-                ]
-                parts.append(evidence)
+                parts.append(await self.subtitle_part(metadata, part, config["languages"]))
             except (ValueError, TimeoutError) as error:
                 kind = getattr(error, "kind", "invalid")
                 missing.append({"cid": part["cid"], "reason": kind})
@@ -339,6 +318,23 @@ class BrowsingEvidence:
             kind = getattr(visual_failure, "kind", None) or (missing[0]["reason"] if missing else "no_subtitles")
             raise EvidenceUnavailable(kind, f"取材失败 · 字幕：{subtitle} · 画面：{visual}", missing_material=True)
         return await self._store(material)
+
+    async def subtitle_part(self, metadata, part, languages):
+        evidence = await self.reader(self.adapter.subtitles, metadata["bvid"], part["cid"], languages)
+        segments = evidence.get("segments", [])
+        if not segments or not any(s.get("text", "").strip() for s in segments):
+            raise EvidenceUnavailable("empty", "CC无有效正文")
+        if all(CREDIT.match(s.get("text", "").strip()) for s in segments):
+            raise EvidenceUnavailable("empty", "CC仅署名，不是有效视频内容")
+        if str(evidence.get("cid")) != str(part["cid"]) or evidence.get("bvid") != metadata["bvid"]:
+            raise EvidenceUnavailable("invalid", "字幕CID／视频不匹配")
+        result = {key: value for key, value in evidence.items() if key != "url"}
+        prefix = f"{part['cid']}:"
+        result["segments"] = []
+        for segment in segments:
+            identity = str(segment["id"])
+            result["segments"].append(dict(segment, id=identity if identity.startswith(prefix) else prefix + identity))
+        return result
 
     @staticmethod
     def _bind_visual_sampling(material, frames, source_ids, sampling):

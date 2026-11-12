@@ -132,17 +132,27 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
 
     @app.put("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
     async def update_daily_memory(item_id: int, data: dict = Body(...)):
-        updated = runtime.daily_memory.update_highlight(item_id, data)
-        if not updated:
-            raise HTTPException(404, "未找到该记忆条目")
-        return updated
+        async with runtime.generation_lock:
+            current_highlight(item_id)
+            updated = runtime.daily_memory.update_highlight(item_id, data)
+            if not updated:
+                raise HTTPException(404, "未找到该记忆条目")
+            return updated
 
     @app.delete("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
     async def delete_daily_memory(item_id: int):
-        success = runtime.daily_memory.delete_highlight(item_id)
-        if not success:
-            raise HTTPException(404, "未找到该记忆条目")
-        return {"ok": True, "id": item_id}
+        async with runtime.generation_lock:
+            current_highlight(item_id)
+            runtime.daily_memory.delete_highlight(item_id)
+            return {"ok": True, "id": item_id}
+
+    def current_highlight(item_id):
+        char = runtime.character
+        if not store.one(
+            "SELECT id FROM daily_highlights WHERE id=? AND character_id=? AND character_version=?",
+            (item_id, char["id"], char["version"]),
+        ):
+            raise HTTPException(404, "未找到当前角色的记忆条目")
 
     @app.get("/api/context/status", dependencies=[Depends(require_admin)])
     async def context_status(video_id: str | None = None, thread_id: str | None = None):

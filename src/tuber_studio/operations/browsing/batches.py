@@ -13,6 +13,7 @@ from ...operation_turns import operation_lane
 from ...providers import public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
+from . import full_video
 from .quotas import DailyReplyLimitReached
 from .round_context import read_round
 
@@ -355,6 +356,9 @@ async def execute(browsing, row, notifications_only):
             else None
         ):
             browsing._check_round(row)
+            if row["config"].get("full_video"):
+                status = await full_video.execute(browsing, row, metrics)
+                return
             if row["config"].get("interaction_only"):
                 await browsing._run_interactions(row, metrics)
                 status = "partial" if metrics["failures"] else "completed"

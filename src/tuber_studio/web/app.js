@@ -2,7 +2,7 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261113.03";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261112.01";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
@@ -12,9 +12,11 @@ import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";
 import { MessagesPanel } from "./messages.js?v=20261111.08";
 import { UserMemoryEditor } from "./user-memory.js";
 import {
+  applyAutomationStatus,
+  getAutomationStatus,
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261113.01";
+} from "./modules/operations.js?v=20261113.03";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261111.07";
 import {
   selectedThread,
@@ -98,7 +100,9 @@ const messagesPanel = new MessagesPanel($("messages-panel"), api, notice, scope 
 messagesPanel.mountSettings($("message-policy-settings"));
 const automationPanel = new AutomationPanel($("automation-panel"), api, notice);
 const issueLog = initIssueLog(api, () => model.page);
-const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin));
+const operatorChat = initOperatorChat((path, options) => baseApi(path, options, showLogin), {
+  getAutomationStatus, applyAutomationStatus: status => applyAutomationStatus(status, accountPanel),
+});
 document.addEventListener("workspace-issue", event => {
   event.preventDefault();
   issueLog.record(event.detail);
@@ -343,6 +347,7 @@ async function compactContext(scope, videoId, threadId) {
 
 async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
   if (model.page !== "comments") commentQueue.leave();
+  if (model.page !== "chat") operatorChat.leave();
   if (!model.authenticated) return;
   if (model.page === "chat") {
     await operatorChat.refresh();
@@ -394,7 +399,9 @@ async function poll() {
   if (!model.authenticated || model.polling || document.hidden) return;
   model.polling = true;
   try {
-    const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh(), updatePermissionCapsule({ background: true })];
+    const automationRefresh = updatePermissionCapsule({ background: true });
+    const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh(), automationRefresh];
+    if (model.page === "chat") updates.push(automationRefresh.then(operatorChat.refreshCards));
     if (model.page === "automation") updates.push($("operation-activity-issues").hidden ? refreshOperationsActivity() : issueLog.refresh());
     if (model.page === "comments") updates.push(commentQueue.refresh());
     if (model.page === "messages") updates.push(messagesPanel.refresh({ background: true }));

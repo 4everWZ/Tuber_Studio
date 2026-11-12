@@ -1,22 +1,38 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
-    <div>
-      <h1 id="operator-chat-title">与大肥鱼对话</h1>
-      <p class="muted">私聊留存在工作台。动态草稿和只读浏览也可以从这里开始。</p>
-    </div>
+    <h1 id="operator-chat-title">与大肥鱼对话</h1>
     <button id="operator-chat-clear" type="button">清空私聊</button>
   </header>
-  <div id="operator-chat-feed" class="operator-chat-feed" role="log" aria-label="私聊消息" aria-live="polite"></div>
+  <div id="operator-chat-timeline" class="operator-chat-timeline">
+    <div class="operator-chat-older">
+      <button id="operator-chat-older" type="button" hidden>加载更早消息</button>
+      <p id="operator-chat-history-note" class="hint" role="status" hidden></p>
+    </div>
+    <div id="operator-chat-feed" class="operator-chat-feed" role="log" aria-label="私聊消息"></div>
+  </div>
   <form id="operator-chat-form" class="operator-chat-compose">
     <div class="operator-chat-suggestions">
       <button type="button" data-chat-prompt="发个动态：">写动态</button>
       <button type="button" data-chat-prompt="去刷视频：">刷视频</button>
+      <button type="button" id="operator-chat-full-video" aria-pressed="false">看完整视频</button>
+      <button type="button" data-chat-prompt="查看公开经历" data-chat-query>公开经历</button>
+      <button type="button" data-chat-prompt="今天刷了多少视频" data-chat-query>今日观看</button>
+      <button type="button" data-chat-prompt="自主运营" data-chat-query>自主运营</button>
       <button type="button" data-chat-prompt="查看直播状态">直播状态</button>
     </div>
-    <label for="operator-chat-input">给大肥鱼发消息</label>
+    <label id="operator-chat-input-label" for="operator-chat-input">给大肥鱼发消息</label>
     <textarea id="operator-chat-input" rows="2" maxlength="2000" required></textarea>
+    <fieldset id="operator-chat-video-fields" class="operator-chat-video-fields" hidden disabled>
+      <legend>指定视频</legend>
+      <label>视频 BV 号或链接<input id="operator-chat-video-id" required placeholder="BV… 或视频链接"></label>
+      <div id="operator-chat-video-ranges"></div>
+      <div class="actions">
+        <button id="operator-chat-add-range" type="button">限定分 P 和时段</button>
+        <button id="operator-chat-text-mode" type="button">返回对话输入</button>
+      </div>
+    </fieldset>
     <div class="operator-chat-actions">
-      <span id="operator-chat-status" role="status"></span>
+      <span id="operator-chat-status" class="operator-chat-status" role="status"></span>
       <button class="primary" id="operator-chat-send" type="submit">发送</button>
     </div>
   </form>

@@ -26,9 +26,9 @@ class DailyMemoryUI {
     }[cat] || "📌 每日高光";
   }
 
-  statusBadge(status) {
-    if (status === "active") return '<span class="status-badge success">已启用谈资</span>';
-    if (status === "pending_review") return '<span class="status-badge warning">待审核</span>';
+  statusBadge(status, publicExperience) {
+    if (status === "active") return `<span class="status-badge success">${publicExperience ? "可公开使用" : "已启用谈资"}</span>`;
+    if (status === "pending_review") return `<span class="status-badge warning">${publicExperience ? "待确认公开资格" : "待审核"}</span>`;
     return '<span class="status-badge muted">已归档</span>';
   }
 
@@ -114,6 +114,9 @@ class DailyMemoryUI {
 
     listEl.innerHTML = "";
     this.data.forEach(item => {
+      const confirmed = item.source_ref?.startsWith("operator-public:");
+      const runtime = item.source_ref?.startsWith("system:downtime:");
+      const publicExperience = confirmed || runtime || item.category === "public_incident";
       const card = document.createElement("div");
       card.className = `daily-memory-item ${item.status}`;
       card.dataset.id = item.id;
@@ -121,10 +124,10 @@ class DailyMemoryUI {
       const header = document.createElement("div");
       header.className = "item-header";
       header.innerHTML = `
-        <span class="category-chip">${this.categoryLabel(item.category)}</span>
+        <span class="category-chip">${confirmed ? "号主确认的事实" : runtime ? "运行经历" : this.categoryLabel(item.category)}</span>
         <strong class="item-headline">${escapeHtml(item.headline)}</strong>
         <span class="item-date">${escapeHtml(item.highlight_date)}</span>
-        ${this.statusBadge(item.status)}
+        ${this.statusBadge(item.status, publicExperience)}
       `;
 
       const body = document.createElement("div");
@@ -135,7 +138,7 @@ class DailyMemoryUI {
           <p class="anecdote-text">${escapeHtml(item.anecdote)}</p>
         </div>
         <div class="item-quote">
-          <small class="hint">📌 真实溯源 [${escapeHtml(item.source_user || "观众")}]: "${escapeHtml(item.quote)}"</small>
+          <small class="hint">${escapeHtml(confirmed ? "号主确认" : runtime ? "运行记录" : item.source_user || "公开来源")} · ${escapeHtml(item.quote)}</small>
         </div>
       `;
       if (item.category === "public_incident") {
@@ -158,7 +161,7 @@ class DailyMemoryUI {
       if (item.status === "pending_review") {
         const approveBtn = document.createElement("button");
         approveBtn.className = "primary small";
-        approveBtn.textContent = "✓ 批准为谈资";
+        approveBtn.textContent = publicExperience ? "确认公开" : "✓ 批准为谈资";
         approveBtn.onclick = () => this.toggleStatus(item.id, "active");
         actions.append(approveBtn);
       } else if (item.status === "active") {
@@ -173,6 +176,13 @@ class DailyMemoryUI {
         reactivateBtn.textContent = "重新激活";
         reactivateBtn.onclick = () => this.toggleStatus(item.id, "active");
         actions.append(reactivateBtn);
+      }
+      if (publicExperience && item.status !== "pending_review") {
+        const revoke = document.createElement("button");
+        revoke.className = "quiet small";
+        revoke.textContent = "撤销公开";
+        revoke.onclick = () => this.toggleStatus(item.id, "pending_review");
+        actions.append(revoke);
       }
 
       const deleteBtn = document.createElement("button");

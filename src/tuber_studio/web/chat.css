@@ -1,11 +1,15 @@
-.operator-chat { width: min(100%, 52rem); margin-inline: auto; padding-block: 1.5rem 2rem; }
+.win-main-shell:has(.operator-chat:not([hidden])) { height: var(--operator-chat-height, 100dvh); min-height: 0; overflow-y: auto; }
+.win-content:has(> .operator-chat:not([hidden])) { display: flex; min-height: 0; padding-block: clamp(8px, 2vh, 20px); }
+.operator-chat { display: grid; grid-template-rows: auto minmax(3rem, 1fr) auto; gap: .75rem; width: min(100%, 52rem); min-height: 0; margin-inline: auto; }
 .operator-chat-heading, .operator-chat-actions, .operator-chat-suggestions {
   display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
 }
 .operator-chat-heading, .operator-chat-actions { justify-content: space-between; }
 .operator-chat-heading h1 { margin: 0; }
-.operator-chat-heading p { margin-block: .25rem 0; }
-.operator-chat-feed { display: grid; gap: 1.25rem; margin-block: 1.5rem; overflow-wrap: anywhere; }
+.operator-chat-timeline { min-height: 0; overflow-y: auto; overflow-anchor: none; overscroll-behavior-y: contain; }
+.operator-chat-older { display: grid; justify-items: center; }
+.operator-chat-older button { margin-bottom: .75rem; }
+.operator-chat-feed { display: grid; gap: 1.25rem; padding-block: .25rem; overflow-wrap: anywhere; }
 .operator-chat-turn { display: grid; gap: .75rem; }
 .operator-chat-turn p { margin: 0; white-space: pre-wrap; }
 .operator-chat-user {
@@ -19,6 +23,29 @@
 }
 .operator-chat-card h2 { margin: 0; font-size: 1.05rem; }
 .operator-chat-card textarea, .operator-chat-compose textarea { width: 100%; resize: vertical; }
+.operator-chat-compose { background: var(--panel); }
+.operator-chat-compose > label { margin-top: 0; }
+.operator-chat-compose textarea { max-height: 8rem; }
 .operator-chat-card details form { display: grid; gap: .5rem; margin-block: .5rem; }
+.operator-chat-card details summary { cursor: pointer; }
+.operator-chat-card ul { margin-block: .25rem; padding-inline-start: 1.25rem; }
+.operator-chat-card .operator-chat-memory + .operator-chat-memory { border-top: 1px solid var(--line); padding-top: .65rem; }
+.operator-chat-card .operator-chat-memory p { margin-block: .35rem; }
+.operator-chat-video-fields { display: grid; gap: .5rem; border: 0; margin: 0; padding: 0; min-width: 0; max-height: min(44vh, 22rem); overflow: auto; }
+.operator-chat-video-fields legend { font-weight: 650; }
+.operator-chat-range { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: .5rem; margin-block: .5rem; }
+.operator-chat-range label, .operator-chat-policy label { margin: 0; }
+.operator-chat-policy { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: .5rem; }
 .operator-chat-actions button { margin-inline-start: auto; }
 .operator-chat-status-error { color: var(--danger, #a21c21); }
+.operator-chat-status[data-pending="true"]::before { content: ""; display: inline-block; width: .75em; height: .75em; margin-inline-end: .5em; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: operator-chat-wait .8s linear infinite; }
+@keyframes operator-chat-wait { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .operator-chat-status[data-pending="true"]::before { animation: none; } }
+@media (max-width: 520px) {
+  .operator-chat { gap: .5rem; }
+  .operator-chat-compose { padding: .6rem; }
+  .operator-chat-suggestions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; }
+  .operator-chat-suggestions button { min-height: 40px; padding-inline: 4px; font-size: .82rem; white-space: normal; }
+  .operator-chat-range { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .operator-chat-range button { justify-self: start; }
+}

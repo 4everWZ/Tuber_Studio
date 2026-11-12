@@ -458,6 +458,11 @@ class BrowsingService:
         self.control_generation += 1
         self.operations.draining = True
         self.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
+        if emergency:
+            self.store.execute(
+                "UPDATE browsing_rounds SET status='paused',error='紧急停止，取材进度已保存',updated_at=? "
+                "WHERE status='waiting' AND json_extract(config,'$.full_video')=1", (time.time(),),
+            )
         if self.abort_task is None:
             self.abort_task = asyncio.create_task(self._cancel_active())
         await asyncio.shield(self.abort_task)
@@ -524,6 +529,114 @@ class BrowsingService:
             deadline=deadline,
             visual_source_ids=visual_source_ids,
         )
+
+    async def queue_full_video(self, request_id, character, selection):
+        if self.closed:
+            raise ValueError("浏览服务已停止")
+        if self.operations.policy()["emergency"]:
+            raise ValueError("紧急停止仍有效")
+        account, _, _ = self.discovery.history_scope()
+        if not account:
+            account = await self._current_account()
+            self.discovery.remember_account(account)
+        if self.runtime.character != character:
+            raise ValueError("当前角色已变化")
+        if self.operations.policy()["emergency"]:
+            raise ValueError("紧急停止仍有效")
+        row, _ = self.repo.create_round(
+            str(account), character, self.policy() | {
+                "full_video": True, "video_only": True, "operator_selection": selection,
+            }, self.operations.policy()["epoch"], True, request_id=request_id,
+        )
+        self.changed.set()
+        return self.full_video_status(row)
+
+    def full_video_status(self, row):
+        task = self.repo.decode(self.store.one(
+            "SELECT payload,error FROM browsing_tasks WHERE round_id=?", (row["id"],)
+        ))
+        return {
+            "id": row["id"], "status": row["status"], "preview": True, "full_video": True,
+            "selection": row["config"]["operator_selection"],
+            "coverage": task["payload"].get("full_coverage") if task else None,
+            "error": row["error"] or (task["error"] if task else None),
+            "can_resume": row["status"] in {"paused", "cancelled", "partial", "failed"},
+        }
+
+    async def update_full_video(self, request_id, *, resume):
+        row = self.repo.round(request_id)
+        account, character, version = self.discovery.history_scope()
+        if (
+            not row or not row["config"].get("full_video") or not account
+            or (row["account_id"], row["character_id"], row["character_version"]) != (str(account), character, version)
+        ):
+            raise ValueError("当前账号和角色下找不到指定视频任务")
+        if resume:
+            if self.operations.policy()["emergency"]:
+                raise ValueError("紧急停止仍有效")
+            if self.full_video_status(row)["can_resume"]:
+                config = row["config"] | {
+                    key: value for key, value in self.policy().items()
+                    if key in {"max_reads", "max_model_calls", "max_input_tokens", "max_output_tokens", "deadline_seconds"}
+                }
+                self.store.execute(
+                    "UPDATE browsing_rounds SET status='waiting',config=?,budget=?,deadline=NULL,error=NULL,updated_at=? "
+                    "WHERE id=? AND status=?",
+                    (dump(config), dump(dict.fromkeys(row["budget"], 0)), time.time(), request_id, row["status"]),
+                )
+                self.changed.set()
+        elif row["status"] in {"waiting", "queued", "running"}:
+            if child := self.active.get(request_id):
+                child.cancel()
+                await asyncio.gather(child, return_exceptions=True)
+            self.store.execute(
+                "UPDATE browsing_rounds SET status='cancelled',error='已取消，取材进度已保存',updated_at=? "
+                "WHERE id=? AND status IN ('waiting','queued','running')", (time.time(), request_id),
+            )
+        return self.full_video_status(self.repo.round(request_id))
+
+    async def _start_full_video(self):
+        if self.operations.draining or self.operations.policy()["emergency"]:
+            return False
+        account, character, version = self.discovery.history_scope()
+        item = self.store.one(
+            "SELECT id FROM browsing_rounds WHERE status='waiting' AND json_extract(config,'$.full_video')=1 "
+            "AND account_id=? AND character_id=? AND character_version=? ORDER BY created_at,id LIMIT 1",
+            (account, character, version),
+        )
+        if not item:
+            return False
+        row = self.repo.round(item["id"])
+        try:
+            if self.account != account or self.adapter is not self.comments.adapter:
+                await self._current_account(account)
+            row["operator_credential"] = self.credential_signature()
+            self._check_round(row)
+        except ValueError as error:
+            self.repo.finish_round(row["id"], "paused", error=public_error(error))
+            return False
+        if self.operations.draining or self.operations.policy()["emergency"]:
+            return False
+        admitted = self.repo.admit_full_video(row["id"])
+        if not admitted:
+            return False
+        self._start_round(admitted | {"operator_credential": row["operator_credential"]}, False)
+        return True
+
+    def _start_round(self, row, notifications_only):
+        identity = row["id"]
+        task = self.active[identity] = asyncio.create_task(self._execute(row, notifications_only))
+
+        def finished(_):
+            self.active.pop(identity, None)
+            if self.store.one(
+                "SELECT 1 FROM browsing_rounds WHERE status='waiting' "
+                "AND account_id=? AND character_id=? AND character_version=? LIMIT 1",
+                self.discovery.history_scope(),
+            ):
+                self.changed.set()
+
+        task.add_done_callback(finished)
 
     async def run(
         self,
@@ -608,9 +721,7 @@ class BrowsingService:
         if automatic and not notifications_only and not interaction_only:
             self.store.set("browsing_discovery_pending:" + self.account, True)
         if created:
-            task = asyncio.create_task(self._execute(row, notifications_only))
-            self.active[row["id"]] = task
-            task.add_done_callback(lambda done: self.active.pop(row["id"], None))
+            self._start_round(row, notifications_only)
         return {
             "id": row["id"],
             "status": row["status"],
@@ -624,7 +735,10 @@ class BrowsingService:
             raise ValueError("本轮角色版本已变化")
         if str(row["account_id"]) != str(self.account):
             raise ValueError("本轮账号身份已变化")
-        if self.credential_signature() != self.ready_signature:
+        if row["config"].get("full_video"):
+            if row["operator_credential"] != self.credential_signature():
+                raise ValueError("本轮账号凭证已变化")
+        elif self.credential_signature() != self.ready_signature:
             raise ValueError("本轮账号凭证已变化")
         if not row["preview"]:
             self.operations.assert_authorized(
@@ -926,12 +1040,10 @@ class BrowsingService:
         while True:
             self.changed.clear()
             try:
-                if (
-                    self.operations.accepting_work
-                    and self.effective()["discovery_enabled"]
-                    and not self.discovery_tasks()
-                ):
-                    await self.run(automatic=True, video_only=True)
+                if not self.discovery_tasks():
+                    started = await self._start_full_video()
+                    if not started and self.operations.accepting_work and self.effective()["discovery_enabled"]:
+                        await self.run(automatic=True, video_only=True)
             except Exception as error:
                 self.last_error = public_error(error)
             try:

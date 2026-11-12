@@ -8,7 +8,7 @@ let statusRequestedAt = 0;
 let controlPending = false;
 let controlRequest = 0;
 
-function applyStatus(status, accountPanel) {
+export function applyAutomationStatus(status, accountPanel) {
   const previous = currentAutomationStatus;
   if (status.started_at < previous?.started_at || (status.started_at === previous?.started_at &&
       status.status_sequence < previous?.status_sequence)) return false;
@@ -18,6 +18,8 @@ function applyStatus(status, accountPanel) {
   return true;
 }
 
+export const getAutomationStatus = () => currentAutomationStatus;
+
 export async function updatePermissionCapsule(api, accountPanel, { background = false } = {}) {
   const now = Date.now();
   if (background && now - statusRequestedAt < 8000) return;
@@ -26,7 +28,7 @@ export async function updatePermissionCapsule(api, accountPanel, { background = 
   try {
     const status = await api("/api/automation");
     if (request !== statusRequest) return;
-    applyStatus(status, accountPanel);
+    applyAutomationStatus(status, accountPanel);
   } catch (e) {
     console.warn("Failed to update permission capsule:", e);
   }
@@ -114,7 +116,7 @@ export function initOperationsModule(api, accountPanel) {
       const status = await api(url, { method: "POST", body });
       if (command !== controlRequest) return;
       ++statusRequest;
-      if (applyStatus(status, accountPanel)) {
+      if (applyAutomationStatus(status, accountPanel)) {
         notice(status.state === "draining" ? "当前批次收尾后停止。" : success);
       }
     } catch (error) {
@@ -149,7 +151,7 @@ export function initOperationsModule(api, accountPanel) {
         const status = await api("/api/automation/settings", { method: "PUT", body: payload });
         ++statusRequest;
         roundSettingsDirty = false;
-        applyStatus(status, accountPanel);
+        applyAutomationStatus(status, accountPanel);
         feedback.textContent = "轮次参数已保存。";
       } catch (err) {
         feedback.textContent = `保存失败：${safeMessage(err.message)}`;

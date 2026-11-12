@@ -77,7 +77,9 @@ class BrowsingRepository:
         now = time.time()
         with self.store.db:
             self.store.db.execute(
-                "UPDATE browsing_rounds SET status=CASE WHEN json_extract(config,'$.batch_id') IS NOT NULL THEN 'paused' ELSE 'cancelled' END,error='服务重启，进度已保存',updated_at=? WHERE status IN ('queued','running')",
+                "UPDATE browsing_rounds SET status=CASE WHEN json_extract(config,'$.batch_id') IS NOT NULL "
+                "OR json_extract(config,'$.full_video')=1 THEN 'paused' ELSE 'cancelled' END,"
+                "error='服务重启，进度已保存',updated_at=? WHERE status IN ('waiting','queued','running')",
                 (now,),
             )
             self.store.db.execute(
@@ -142,7 +144,7 @@ class BrowsingRepository:
                 "AND COALESCE(json_extract(config,'$.interaction_only'),0)=?",
                 (account, int(bool(config.get("interaction_only")))),
             )
-            if previous:
+            if previous and not config.get("full_video"):
                 if request_id:
                     raise ValueError("已有浏览轮次正在运行")
                 return self.decode(previous), False
@@ -190,11 +192,11 @@ class BrowsingRepository:
                     account,
                     character["id"],
                     character["version"],
-                    "queued",
+                    "waiting" if config.get("full_video") else "queued",
                     int(preview),
                     epoch,
                     str(uuid4()),
-                    None if not preview else now + config["deadline_seconds"],
+                    None if not preview or config.get("full_video") else now + config["deadline_seconds"],
                     dump(config),
                     dump(budget),
                     dump({}),
@@ -206,6 +208,20 @@ class BrowsingRepository:
         row = self.round(identity)
         self.batches.ensure(row)
         return row, True
+
+    def admit_full_video(self, identity):
+        now = time.time()
+        with self.store.db:
+            self.store.db.execute("BEGIN IMMEDIATE")
+            row = self.round(identity)
+            admitted = self.store.db.execute(
+                "UPDATE browsing_rounds SET status='queued',deadline=?,error=NULL,updated_at=? "
+                "WHERE id=? AND status='waiting' AND NOT EXISTS(SELECT 1 FROM browsing_rounds "
+                "WHERE account_id=? AND status IN ('queued','running') "
+                "AND COALESCE(json_extract(config,'$.interaction_only'),0)=0)",
+                (now + row["config"]["deadline_seconds"], now, identity, row["account_id"]),
+            )
+            return self.round(identity) if admitted.rowcount else None
 
     def reserve_budget(self, identity, **amounts):
         with self.store.db:
