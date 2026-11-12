@@ -10,8 +10,12 @@ from tuber_studio.store import Store
 @pytest.fixture
 def settings(tmp_path):
     config = Settings(runtime=tmp_path)
-    config.data["llm"]["kind"] = "demo"
-    config.data["inference_broker"]["enabled"] = False
+    # Controlled providers in this fixture use the 128K profile and its compaction thresholds.
+    config.data["llm"].update(
+        kind="demo", model="MiniCPM5-2B", context_tokens=131072, native_context_tokens=131072,
+        auto_compact_token_limit=117964,
+    )
+    config.data["inference_broker"].update(enabled=False, model="MiniCPM5-2B", context_tokens=131072)
     config.data["tts"]["kind"] = "prerecorded"
     # These legacy worker tests explicitly exercise the retained live subsystem.
     config.data["features"]["live_enabled"] = True
