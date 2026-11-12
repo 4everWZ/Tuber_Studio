@@ -10,6 +10,12 @@ from collections import deque
 from uuid import uuid4
 
 from .bilibili_account import cached_account_actor
+from .comment_materials import (
+    model_comment_materials,
+    prepare_comment_materials,
+    validate_comment_material_sources,
+    without_article_links,
+)
 from .config import atomic_json
 from .media_cache import linked
 from .operation_continuations import content_hash
@@ -37,8 +43,9 @@ CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
 THREAD_WORKERS = 4
 
 
-def category(text):
-    if re.search(r"加[微vV]|兼职|代刷|代充|https?://", text) or len(set(text.strip())) <= 1:
+def category(text, attachments=()):
+    message = without_article_links(text, attachments)
+    if re.search(r"加[微vV]|兼职|代刷|代充|https?://", message) or (not attachments and len(set(text.strip())) <= 1):
         return "spam"
     if re.search(r"建议|希望|应该|改进|投诉|问题是", text):
         return "suggestion"
@@ -92,6 +99,8 @@ class Comments:
             store.execute("ALTER TABLE comments ADD COLUMN generation_continuation_id TEXT")
         if "mentions" not in {row[1] for row in store.db.execute("PRAGMA table_info(comments)")}:
             store.execute("ALTER TABLE comments ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]'")
+        if "attachments" not in {row[1] for row in store.db.execute("PRAGMA table_info(comments)")}:
+            store.execute("ALTER TABLE comments ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
         if "generation_task_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(drafts)")}:
             store.execute("ALTER TABLE drafts ADD COLUMN generation_task_id TEXT")
         if "comment_ids" not in {row[1] for row in store.db.execute("PRAGMA table_info(comment_tasks)")}:
@@ -178,7 +187,7 @@ class Comments:
     def display_account_id(self):
         return self.verified_account_id if self.verified_credential == self.credentials else ""
 
-    def prepare_import(self, video_id, items=None, csv_text=None, field_mapping=None):
+    def prepare_import(self, video_id, items=None, csv_text=None, field_mapping=None, *, platform_fetch=False):
         if not isinstance(video_id, str) or not re.fullmatch(
             r"(?:BV[0-9A-Za-z]{10}|av[0-9]+|import-[\w-]{1,60})", video_id
         ):
@@ -216,9 +225,11 @@ class Comments:
                 raise ValueError("评论必须是对象")
             if None in item:
                 raise ValueError("CSV行字段数与表头不一致")
+            attachments = (item.get("attachments") or []) if platform_fetch else []
             item = {field: item.get(mapping.get(field, field)) for field in fields}
             cid, content = str(item.get("comment_id") or ""), item.get("content")
-            if not cid or len(cid) > 100 or not isinstance(content, str) or not 1 <= len(content) <= 4000:
+            if (not cid or len(cid) > 100 or not isinstance(content, str) or len(content) > 4000
+                    or not content and not attachments):
                 raise ValueError("每条评论需要comment_id与1到4000字content")
             thread_id = self._thread_identifier(item.get("thread_id"), cid)
             parent_id = self._thread_identifier(item.get("parent_comment_id"))
@@ -251,16 +262,17 @@ class Comments:
                     "platform_user_id": uid,
                     "display_name": name,
                     "content": content,
-                    "category": category(content),
+                    "category": category(content, attachments),
                     "like_count": likes,
                     "created_at": created,
                     "mentions": mentions,
+                    **({"attachments": attachments} if platform_fetch else {}),
                 }
             )
         return normalized
 
-    def import_items(self, video_id, items=None, csv_text=None, field_mapping=None):
-        prepared = self.prepare_import(video_id, items, csv_text, field_mapping)
+    def import_items(self, video_id, items=None, csv_text=None, field_mapping=None, *, platform_fetch=False):
+        prepared = self.prepare_import(video_id, items, csv_text, field_mapping, platform_fetch=platform_fetch)
         normalized = [
             (
                 r["video_id"],
@@ -275,6 +287,7 @@ class Comments:
                 r["created_at"],
                 time.time(),
                 json.dumps(r["mentions"], ensure_ascii=False),
+                json.dumps(r.get("attachments", []), ensure_ascii=False),
             )
             for r in prepared
         ]
@@ -282,7 +295,8 @@ class Comments:
         with self.store.db:
             self.store.db.executemany(
                 "INSERT OR IGNORE INTO comments(video_id,comment_id,thread_id,parent_comment_id,platform_user_id,"
-                "display_name,content,category,like_count,created_at,imported_at,mentions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "display_name,content,category,like_count,created_at,imported_at,mentions,attachments) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 normalized,
             )
             # Re-reading an existing comment enriches participant metadata;
@@ -292,6 +306,13 @@ class Comments:
                     self.store.db.execute(
                         "UPDATE comments SET mentions=? WHERE platform='bilibili' AND video_id=? AND comment_id=?",
                         (json.dumps(item["mentions"], ensure_ascii=False), video_id, item["comment_id"]),
+                    )
+                if platform_fetch:
+                    self.store.db.execute(
+                        "UPDATE comments SET attachments=?,category=CASE WHEN category_source='operator' THEN category ELSE ? END "
+                        "WHERE platform='bilibili' AND video_id=? AND comment_id=? AND platform_user_id=? AND content=?",
+                        (json.dumps(item["attachments"], ensure_ascii=False), item["category"], video_id,
+                         item["comment_id"], item["platform_user_id"], item["content"]),
                     )
         after = self.store.one("SELECT COUNT(*) AS n FROM comments")["n"]
         return {
@@ -307,7 +328,7 @@ class Comments:
             data = await self.adapter.fetch(video, max_pages)
         if not data["items"]:
             return {"imported": 0, "duplicates": 0, "video_id": data["video_id"], "detail": "未读到评论"}
-        return self.import_items(data["video_id"], data["items"]) | {"title": data.get("title")}
+        return self.import_items(data["video_id"], data["items"], platform_fetch=True) | {"title": data.get("title")}
 
     @staticmethod
     def _thread_identifier(value, fallback=None):
@@ -386,11 +407,13 @@ class Comments:
 
     def analyze(self, video_id=None):
         where, args = (" WHERE video_id=?", (video_id,)) if video_id else ("", ())
-        rows = self.store.all("SELECT id,content,category,category_source FROM comments" + where, args)
+        rows = self.store.all("SELECT id,content,category,category_source,attachments FROM comments" + where, args)
         counts = {c: 0 for c in CATEGORIES}
         with self.store.db:
             for row in rows:
-                value = row["category"] if row["category_source"] == "operator" else category(row["content"])
+                value = row["category"] if row["category_source"] == "operator" else category(
+                    row["content"], json.loads(row.get("attachments") or "[]"),
+                )
                 counts[value] += 1
                 if row["category_source"] != "operator":
                     self.store.db.execute("UPDATE comments SET category=? WHERE id=?", (value, row["id"]))
@@ -558,6 +581,18 @@ class Comments:
         if any(row["id"] not in current or current[row["id"]]["content"] != row["content"] for row in rows):
             raise ValueError("楼原文在重建期间已清理或变化，未安装上下文")
 
+    @staticmethod
+    async def _attach_current_materials(browsing, row, event):
+        attachments = json.loads(row.get("attachments") or "[]")
+        if not attachments:
+            return []
+        materials = await prepare_comment_materials(
+            browsing, {"parent": row["comment_id"]}, row | {"attachments": attachments},
+        )
+        if materials:
+            event["comment_materials"] = model_comment_materials(materials)
+        return materials
+
     async def rebuild_context(self, video_id, thread_id, character=None, *, platform="bilibili"):
         """Caller owns generation_lock; rebuild only retained originals, never old drafts."""
         character = character or self.runtime.character
@@ -628,6 +663,11 @@ class Comments:
                 return
         if automatic and browsing:
             event["video_evidence"] = await browsing.comment_evidence(row, character)
+        materials = await self._attach_current_materials(browsing, row, event) if browsing else []
+        if not event["text"].strip() and not event.get("video_evidence") and not any(
+            item["status"] == "read" for item in materials
+        ):
+            raise ValueError("评论没有可读正文，附件也未能读取")
         scope = self.account_context_scope(row["video_id"], row["thread_id"], row["platform"], account_id=account_id)
         while True:
             while self._live_pending():
@@ -678,6 +718,8 @@ class Comments:
                         **({"context": candidate} if candidate else {}),
                     )
                     check.setdefault("generation_identity", generation_identity)
+                    if materials:
+                        check["comment_materials"] = materials
                     if candidate:
                         self._check_sources(sources, row["video_id"], row["thread_id"], row["platform"])
                         candidate.record_source(
@@ -876,6 +918,8 @@ class Comments:
         source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
         event = self._comment_event(source) | {"account_id": account}
         event.update(self._comment_actors(source, character, account))
+        browsing = getattr(self.runtime, "browsing", None)
+        materials = await self._attach_current_materials(browsing, source, event) if browsing else []
         scope = self.account_context_scope(row["video_id"], row["thread_id"], "bilibili", account_id=account)
         async with self.runtime.offline_generation("reply"):
             fresh = self._draft_source(draft_id)
@@ -893,6 +937,8 @@ class Comments:
                 if runtime_identity(self.runtime, character, account)["identity_version"] != current["identity_version"]:
                     raise ValueError("生成期间账号身份再次变化，保留草稿")
                 check["generation_identity"] = current
+                if materials:
+                    check["comment_materials"] = materials
                 changed = self.store.execute(
                     "UPDATE drafts SET text=?,input_summary=?,answer_check=?,error=NULL,updated_at=? "
                     "WHERE id=? AND status=? AND text=?",
@@ -1113,6 +1159,8 @@ class Comments:
                     if changed.rowcount != 1:
                         raise ValueError("核验期间草稿已更新")
                     return self.store.one("SELECT * FROM drafts WHERE id=?", (draft_id,))
+                validate_comment_material_sources(json.loads(row["answer_check"] or "{}").get("comment_materials", []),
+                                                  thread["items"], row["platform_comment_id"])
             character = self.store.character(row["character_id"], row["character_version"])
             fresh = self._draft_source(draft_id)
             if not fresh or any(

@@ -21,6 +21,7 @@ from urllib.parse import urlencode, urlsplit
 
 import httpx
 
+from ..comment_materials import comment_attachments
 from ..operation_text import validate_comment_body
 from ..publication_errors import PublishUncertain as PublishUncertain
 from ..publication_errors import platform_rejection
@@ -289,6 +290,7 @@ class BilibiliAdapter:
         if thread_id is not None and root != thread_id:
             raise ValueError("评论楼标识不一致")
         member, content = reply["member"], reply["content"]
+        attachments = comment_attachments(content)
         mentioned = content.get("members") or []
         if not isinstance(mentioned, list):
             raise ValueError("评论提及列表格式无效")
@@ -310,6 +312,7 @@ class BilibiliAdapter:
             **({"liked_by_self": reply["action"] == 1} if type(reply.get("action")) is int else {}),
             "created_at": str(int(reply.get("ctime", 0))),
             "mentions": mentions,
+            **({"attachments": attachments} if attachments else {}),
         }
 
     async def fetch(self, video: str, max_pages: int = 1, *, newest=False, start_page=1) -> dict:

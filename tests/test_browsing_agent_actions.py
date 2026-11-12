@@ -1,7 +1,12 @@
 """An agent may continue a discussion without generating a video main reply."""
 
+import json
+
 from test_browsing import BV, finished
 from test_browsing import browsing as browsing
+
+from tuber_studio.operations.browsing.models import ContentDecision
+from tuber_studio.operations.browsing.round_context import agent_depth
 
 
 async def test_agent_chooses_comments_without_a_main_reply_or_interest_classification(browsing):
@@ -102,3 +107,36 @@ async def test_no_main_reply_decision_survives_revisit_and_character_version(bro
     assert len([call for call in browsing.adapter.calls if call[0] == "subtitles"]) == 1
     assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
     assert not browsing.intents()
+
+
+async def test_visual_action_is_persisted_and_delegated_under_the_original_round(browsing, monkeypatch):
+    await browsing._current_account()
+    row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
+    identity = browsing.repo.task(row["id"], {"bvid": BV, "title": "盐水实验"})
+    generation = browsing.repo.claim(identity, "test-owner")
+    key, material = await browsing._prepare_evidence(BV, row["config"])
+    evidence_id = browsing._segments(material)[0]["id"]
+    result = {"id": identity, "owner": "test-owner", "generation": generation,
+              "material": material, "material_key": key}
+    original = ContentDecision(interest="need_more", worth_commenting=False, reason="visual_required",
+                               evidence_ids=[evidence_id], coverage_required="visual")
+    monkeypatch.setattr(browsing.evidence, "has_visual_provider", lambda: True)
+
+    async def collect(video, config, *, visual_source_ids, task, deadline):
+        record = json.loads(browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
+        assert agent_depth.get() == 1 and task["round_id"] == row["id"]
+        assert record["visual_followup"]["id"] == task["id"]
+        assert record["visual_followup"]["status"] == "requested"
+        assert video == BV and visual_source_ids == {evidence_id}
+        return key, material | {"visual_source_ids": sorted(visual_source_ids)}
+
+    async def decide(material, row, metrics):
+        assert material["visual_source_ids"] == [evidence_id]
+        return [original]
+
+    monkeypatch.setattr(browsing, "_prepare_evidence", collect)
+    monkeypatch.setattr(browsing.decisions, "_content_decisions", decide)
+    followup = {}
+    await browsing.decisions._followup_visual(result, row, {}, [original], followup)
+    assert agent_depth.get() == 0 and followup["status"] == "completed"
+    assert followup["material_key"] == key and not browsing.intents()

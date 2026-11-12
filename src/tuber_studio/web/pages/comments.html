@@ -59,6 +59,16 @@
           <table class="comment-source-table"><thead><tr><th><input id="select-comments" type="checkbox" aria-label="选择本页评论"></th><th>评论</th><th>类别</th><th>草稿</th></tr></thead><tbody id="comments"></tbody></table>
           <div class="actions queue-pagination"><button id="source-prev" type="button">上一页</button><span id="source-page" class="hint"></span><button id="source-next" type="button">下一页</button></div>
         </div>
+        <div id="queue-batch-actions" class="actions queue-batch-actions" hidden>
+          <button id="queue-batch-toggle" type="button">全选所有页</button>
+          <span id="queue-batch-count" class="hint" aria-live="polite"></span>
+          <button id="queue-batch-publish" class="primary" type="button">发布所选草稿</button>
+        </div>
+        <p id="queue-batch-progress" class="hint" role="status" hidden></p>
+        <details id="queue-batch-result" class="subsection" hidden>
+          <summary id="queue-batch-summary" aria-live="polite"></summary>
+          <ul id="queue-batch-results" class="queue-batch-results"></ul>
+        </details>
         <div id="queue-list"></div>
         <div class="actions queue-pagination"><button id="queue-prev" type="button" disabled>上一页</button><button id="queue-next" type="button" disabled>下一页</button><span id="queue-count-label" class="hint"></span></div>
       </article>

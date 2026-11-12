@@ -1,9 +1,22 @@
 """Verified discussion participants and reply relationships for model context."""
 
 import inspect
+import re
 from functools import partial
 
 from ...operation_continuations import content_hash
+
+VIDEO_ID = re.compile(r"BV[0-9A-Za-z]{10}")
+COMMENT_ID = re.compile(r"[1-9][0-9]{0,19}")
+
+
+def public_discussion_url(bvid=None, comment_id=None, dynamic_id=None):
+    suffix = f"#reply{comment_id}" if COMMENT_ID.fullmatch(str(comment_id)) else ""
+    if VIDEO_ID.fullmatch(str(bvid)):
+        return f"https://www.bilibili.com/video/{bvid}{suffix}"
+    if COMMENT_ID.fullmatch(str(dynamic_id)):
+        return f"https://t.bilibili.com/{dynamic_id}{suffix}"
+    return None
 
 
 async def read_scoped_thread(store, reader, target, scope, *, invoke=None):

@@ -5,6 +5,7 @@ import inspect
 import json
 import time
 
+from ...comment_materials import prepare_comment_materials
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred
@@ -18,6 +19,20 @@ from ...store import dump
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
 from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
+
+
+def source_discussion(source_row, context, items):
+    def snapshot(row, parent):
+        return comment_source(row) | {"created_at": row.get("created_at"), "parent_comment_id": parent}
+
+    verified = context.get("parent") or {}
+    parent_id = verified.get("comment_id")
+    parent = next((item for item in items if verified.get("available")
+                   and str(item["comment_id"]) == str(parent_id)), None)
+    source = snapshot(source_row, context.get("addressing", {}).get("source_parent_comment_id"))
+    if parent is None:
+        return {"source": source}
+    return {"source": source, "parent": snapshot(parent, verified.get("parent_comment_id"))}
 
 
 def _extract_timestamp(item):
@@ -97,6 +112,7 @@ class CommentProgress:
                 return None
             decision._generation_id = generation.get("id")
             decision._generation_identity = generation.get("identity")
+            decision._comment_materials = generation.get("comment_materials", [])
             # A deliberate wait remains eligible on the next visit.
             return decision if decision.action != "wait" else None
         return None
@@ -110,6 +126,7 @@ class CommentProgress:
                 dump(decision.model_dump() | {"generation": {
                     "id": decision._generation_id, "identity": decision._generation_identity,
                     "source_id": str(source["comment_id"]),
+                    **({"comment_materials": decision._comment_materials} if decision._comment_materials else {}),
                 }}),
                 time.time(),
             ),
@@ -341,7 +358,7 @@ def enqueue_own_comments(browsing, account, cutoff, target, items):
     for comment in items:
         timestamp = int(comment["created_at"])
         author = str(comment["platform_user_id"])
-        if timestamp < cutoff or author == account or category(comment["content"]) == "spam":
+        if timestamp < cutoff or author == account or category(comment["content"], comment.get("attachments") or []) == "spam":
             continue
         comment_id = str(comment["comment_id"])
         identity = "own:" + content_hash([account, target["resource_type"], str(target["oid"]), comment_id])
@@ -583,7 +600,6 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     if (
         str(thread["account_id"]) != str(row["account_id"])
         or str(source["author_uid"]) == str(row["account_id"])
-        or category(source["text"]) == "spam"
     ):
         raise ValueError("账号来源无效、本人循环或广告互动")
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
@@ -622,10 +638,13 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
             "display_name": source.get("author_name") or source.get("display_name") or event.get("sender_name", ""),
             "content": source["text"],
         }
-    if comment_source(source_row)["text"] != source["text"] or (
+    checked_source = comment_source(source_row)
+    if checked_source["text"] != source["text"] or checked_source["author_uid"] != str(source["author_uid"]) or (
         event.get("sender_uid") and str(source["author_uid"]) != str(event["sender_uid"])
     ):
         raise ValueError("评论原文或作者已变化，未使用旧候选")
+    if category(source["text"], source_row.get("attachments") or []) == "spam":
+        raise ValueError("账号来源无效、本人循环或广告互动")
     like_enabled = config.get("comment_like_enabled", False)
     like_intent = browsing.publication.comment_like_intent(row, target) if like_enabled else None
     if like_intent:
@@ -695,8 +714,18 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     if reply is None:
         thread["_allow_public"] = allow_public
         thread["_allow_comment_like"] = allow_like
-        reply = (await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
-                 if allow_public or allow_like else ResponseDecision(action="skip", reason="no_interest"))
+        if allow_public or allow_like:
+            attachments = await prepare_comment_materials(browsing, target, source_row, row=row)
+            if attachments:
+                thread["_comment_materials"] = attachments
+            if not material and not source["text"].strip() and not any(item["status"] == "read" for item in attachments):
+                reply = ResponseDecision(action="skip", reason="insufficient_evidence",
+                                         explanation="评论没有可读正文，附件也未能读取")
+                reply._comment_materials = attachments
+            else:
+                reply = await browsing.decisions._response(row, material, thread, allowed, "reply_public", metrics)
+        else:
+            reply = ResponseDecision(action="skip", reason="no_interest")
         if reply.action != "skip" or allow_public:
             browsing.decisions.comment_progress.save(row, resource, source, reply)
     if reply.action == "reply_public" and not allow_public or reply.action == "like_comment" and not allow_like:
@@ -710,6 +739,10 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
         settle_aliases(browsing, event_row, row, target, source)
         return
     if reply.action in {"skip", "wait"}:
+        failed_materials = [item for item in reply._comment_materials if item["status"] != "read"]
+        if failed_materials:
+            browsing.store.execute("UPDATE browsing_events SET payload=json_set(payload,'$.unavailable_attachments',json(?)) WHERE id=?",
+                                   (dump(failed_materials), event_row["id"]))
         browsing.store.execute(
             "UPDATE browsing_events SET status=?,error=? WHERE id=?",
             (
@@ -737,6 +770,10 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
                                        event=target.get("source_event"), created_at=event_row.get("timestamp", ""))
     else:
         kind = "comment_like" if reply.action == "like_comment" else "reply_public"
+        if kind == "reply_public":
+            target["source_discussion"] = source_discussion(source_row, discussion, items_list)
+            if reply._comment_materials:
+                target["comment_materials"] = reply._comment_materials
         intent = browsing.publication._intent(row, kind, target, reply, keys, reply.evidence_ids)
         if not intent:
             if target.get("bvid") and browsing.repo.video_reply_limit_reached(row, target["bvid"]):

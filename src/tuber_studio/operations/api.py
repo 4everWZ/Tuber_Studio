@@ -1,16 +1,28 @@
 """Bilibili account, comments, and dynamics routes."""
 
+import asyncio
 from typing import Literal
 
 import httpx
 from fastapi import Body, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from ..comment_workbench import generation_task, list_queue, queue_detail
+from ..comment_workbench import (
+    generation_task,
+    list_queue,
+    publish_queue_selection,
+    queue_detail,
+    queue_selection,
+)
 from ..providers import public_error
 
 
 def register_operations_api(app, store, account, comments, browsing, dynamics, require_admin):
+    comment_batch_lock = asyncio.Lock()
+
+    def can_write_comments():
+        return comments.policy()["credentials_configured"]
+
     @app.get("/api/account/bilibili", dependencies=[Depends(require_admin)])
     async def account_status():
         return account.status()
@@ -86,8 +98,24 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         task_id: str | None = Query(None, min_length=1, max_length=100),
     ):
         return list_queue(
-            store, view, limit, offset, video_id=video_id, comment_ids=comment_ids, task_id=task_id
+            store, view, limit, offset, video_id=video_id, comment_ids=comment_ids, task_id=task_id,
+            can_write=can_write_comments(),
         )
+
+    @app.get("/api/comments/workbench/selection", dependencies=[Depends(require_admin)])
+    async def comment_queue_selection(
+        video_id: str | None = None,
+        comment_ids: str | None = None,
+        task_id: str | None = Query(None, min_length=1, max_length=100),
+    ):
+        return queue_selection(
+            store, can_write=can_write_comments(), video_id=video_id, comment_ids=comment_ids, task_id=task_id,
+        )
+
+    @app.post("/api/comments/workbench/batch-publish", dependencies=[Depends(require_admin)])
+    async def comment_queue_batch_publish(data: dict = Body(...)):
+        async with comment_batch_lock:
+            return await publish_queue_selection(store, comments, browsing, data)
 
     @app.get("/api/comments/workbench/{channel}/{identity}", dependencies=[Depends(require_admin)])
     async def comment_queue_detail(channel: Literal["comments", "browsing", "jobs"], identity: str):
@@ -103,10 +131,10 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
     @app.get("/api/comment-tasks", dependencies=[Depends(require_admin)])
     async def tasks(task_id: str | None = Query(None, min_length=1, max_length=100)):
         if task_id:
-            row = generation_task(store, task_id)
+            row = generation_task(store, task_id, can_write=can_write_comments())
             return [row] if row else []
         return [
-            generation_task(store, row["id"])
+            generation_task(store, row["id"], can_write=can_write_comments())
             for row in store.all("SELECT id FROM comment_tasks ORDER BY created_at DESC LIMIT 50")
         ]
 

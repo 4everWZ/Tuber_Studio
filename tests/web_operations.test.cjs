@@ -183,6 +183,76 @@ test("comments use ten compact records per page without loading browsing history
   assert.deepEqual(calls, ["/api/comments/workbench?view=review&limit=10&offset=0"]);
 });
 
+test("batch approval keeps cross-page selections and routes uncertain and failed items separately", async t => {
+  const byId = setupDOM(t);
+  globalThis.location = { hash: "#comments/review" };
+  globalThis.history = { pushState(_, title, hash) { location.hash = hash; }, replaceState() {} };
+  t.after(() => { delete globalThis.location; delete globalThis.history; });
+  const { initCommentQueue } = await import("../src/tuber_studio/web/modules/comment-queue.js");
+  const records = Array.from({ length: 12 }, (_, index) => ({
+    channel: "comments", id: String(index + 1), source: "manual", status: "pending_review",
+    excerpt: `来源 ${index + 1}`, text: `草稿 ${index + 1}`, updated_at: index + 100, can_publish: index < 11,
+  }));
+  const writes = [];
+  const api = async (path, options) => {
+    if (options) {
+      writes.push([path, options]);
+      records[0].status = "published";
+      records[9].status = "publish_uncertain";
+      return { items: options.body.items.map(({ channel, id }) => ({
+        channel, id, status: records[Number(id) - 1].status,
+        ...(id === "11" ? { error: "草稿在选择后已变化" } : {}),
+      })) };
+    }
+    if (path.endsWith("/selection")) return { items: records.filter(row => row.can_publish), total: 11 };
+    if (path.includes("?view=")) {
+      const offset = Number(new URL(path, "https://studio.example").searchParams.get("offset"));
+      const rows = records.filter(row => row.status === "pending_review");
+      return { items: rows.slice(offset, offset + 10), offset, total: rows.length };
+    }
+    return records[Number(path.split("/").at(-1)) - 1];
+  };
+  const queue = initCommentQueue(api, () => {}, () => null);
+  const check = (index, checked) => {
+    const input = byId("queue-list").children[index].children[0].children[0];
+    input.checked = checked;
+    input.listeners.change();
+  };
+
+  await queue.open("review");
+  assert.equal(byId("queue-batch-actions").hidden, true);
+  check(0, true);
+  const editor = byId("queue-detail").children.find(child => child.tagName === "LABEL").children[0];
+  editor.value = "确认过的正文";
+  editor.listeners.input();
+  await byId("queue-next").onclick();
+  check(0, true);
+  assert.equal(byId("queue-batch-count").textContent, "已选 2 条");
+  assert.equal(byId("queue-list").children[1].children[0].children[0].disabled, true);
+
+  await byId("queue-batch-toggle").onclick();
+  assert.equal(byId("queue-batch-count").textContent, "已选 11 条");
+  await byId("queue-batch-toggle").onclick();
+  assert.equal(byId("queue-batch-publish").disabled, true);
+  check(0, true);
+  await byId("queue-prev").onclick();
+  check(0, true);
+  check(9, true);
+  await byId("queue-batch-publish").onclick();
+  assert.deepEqual(writes, [["/api/comments/workbench/batch-publish", { method: "POST", body: { items: [
+    { channel: "comments", id: "11", updated_at: 110 },
+    { channel: "comments", id: "1", updated_at: 100, text: "确认过的正文" },
+    { channel: "comments", id: "10", updated_at: 109 },
+  ] } }]]);
+  assert.match(byId("queue-batch-summary").textContent, /已发送 1 · 待核对 1 · 已跳过 0 · 未发送 1/);
+  const [failed, sent, uncertain] = byId("queue-batch-results").children;
+  assert.match(failed.children[2], /草稿在选择后已变化/);
+  assert.equal(sent.children[0].href, "#comments/history/comments/1");
+  assert.equal(uncertain.children[0].href, "#comments/verify/comments/10");
+  assert.equal(byId("queue-batch-publish").disabled, true);
+  assert.equal(queue.hasUnsaved(), false);
+});
+
 function sourceDependencies(api) {
   const node = (tag, text) => Object.assign(document.createElement(tag), { textContent: text });
   return {
@@ -484,6 +554,32 @@ test("dynamic background refresh reconciles external terminal states and preserv
     await module.refreshDynamics({ background: true });
     assert.equal(calls.length, before, "current-page background calls are throttled");
   }
+});
+
+test("the dynamic comment attachment shows ordered participants and one exact link for each video", async t => {
+  const byId = setupDOM(t);
+  const { renderDynamicPost } = await import("../src/tuber_studio/web/modules/dynamics.js");
+  const video = "https://www.bilibili.com/video/BV1d8pU6xEZX";
+  const post = { id: 1, status: "pending_review", content: "动态正文", sources: [{ text: "原素材", source_url: video }],
+    comment_card: { comments: [{ author: "观众甲", uid: "42", quote: "前因", url: `${video}#reply1` },
+      { author: "鱼鱼", quote: "后续", url: `${video}#reply2` }],
+      links: [{ bvid: "BV1d8pU6xEZX", url: `${video}#reply2` }], omitted: 1 },
+  };
+  renderDynamicPost({ dynamicPosts: [post], dynamicPostId: 1, dynamicMemeCache: new Map() }, {
+    ...sourceDependencies(), display: String, publicSettings: value => value,
+  });
+  const [quotes, truncation, links] = byId("dynamic-comment-conversation").children;
+  assert.deepEqual(quotes.children.map(row => [row.children[0].children[0].textContent, row.children[1].textContent]), [
+    ["观众甲", "前因"], ["鱼鱼", "后续"],
+  ]);
+  assert.equal(truncation.textContent, "另有 1 条原话，可在原楼查看。");
+  assert.equal(links.children.length, 1);
+  assert.equal(links.children[0].href, `${video}#reply2`);
+  assert.equal(byId("dynamic-post-sources").children[0].children.some(child => child.tagName === "A"), false);
+  const image = byId("dynamic-meme-image").children[0];
+  assert.equal(image.src, "/api/dynamics/posts/1/comment-card");
+  image.onerror();
+  assert.match(byId("dynamic-meme-availability").textContent, /暂无法预览/);
 });
 
 test("clearing read alerts clears local and remote counts and stays clear after refresh", async t => {

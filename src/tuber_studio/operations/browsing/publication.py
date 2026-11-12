@@ -5,6 +5,7 @@ import json
 import time
 from uuid import uuid4
 
+from ...comment_materials import model_comment_materials, validate_comment_material_sources
 from ...operation_continuations import content_hash
 from ...operation_feedback import (
     FeedbackPublication,
@@ -26,7 +27,7 @@ from ...store import dump
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import read_round
-from .thread_context import comment_source, operator_reply, read_scoped_thread
+from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
 _ENGAGEMENT_KINDS = {"video_like", "video_fav", "comment_like"}
@@ -327,6 +328,8 @@ class BrowsingPublication:
             "evidence": used,
             "coverage": [item["coverage"] for item in materials],
         }
+        if comment_materials := row["target"].get("comment_materials"):
+            context["comment_materials"] = model_comment_materials(comment_materials)
         parent = self.browsing.repo.round(read_round.get() or row["round_id"])
         active = parent and parent["status"] in {"queued", "running"}
         return PublicationContext(
@@ -362,6 +365,9 @@ class BrowsingPublication:
         materials = self._intent_materials(row)
         segments = [segment for material in materials for segment in browsing._segments(material)]
         target = row["target"]
+        model_target = {key: value for key, value in target.items() if key not in {
+            "generation_identity", "source_event", "source_discussion", "comment_materials",
+        }}
         if row["kind"] == "reply_public":
             if target.get("source_event"):
                 thread = await browsing._read(browsing.adapter.read_public_thread, target["source_event"])
@@ -372,19 +378,28 @@ class BrowsingPublication:
             source = thread["source"]
             if source["text"] != target["source_text"] or str(source["author_uid"]) != str(target["recipient"]):
                 raise ValueError("原始互动已删除或变化，保留草稿")
-            target = target | {"recipient_name": source.get("author_name") or target.get("recipient_name", "")}
-            thread = thread | {"target": {key: value for key, value in target.items() if key != "generation_identity"}}
+            recipient_name = source.get("author_name") or target.get("recipient_name", "")
+            target = target | {"recipient_name": recipient_name}
+            model_target["recipient_name"] = recipient_name
+            items = thread.get("items", [])
+            source_row = next((item for item in items if str(item["comment_id"]) == str(target["parent"])), None)
+            if source_row:
+                thread |= comment_thread_context(source_row, items, model_target)
+            else:
+                thread = thread | {"target": model_target}
         else:
-            thread = {"target": {key: value for key, value in target.items() if key != "generation_identity"},
+            thread = {"target": model_target,
                       "video": [material["metadata"] for material in materials]}
         allowed = [segment["id"] for segment in segments]
         if row["kind"] == "reply_public":
             allowed.append("public:" + str(thread["source"]["comment_id"]))
         request = row | {"config": browsing.policy() | {"comment_handoff_enabled": False}}
+        comment_materials = model_comment_materials(target.get("comment_materials", []))
         data = browsing.decisions._response_actor_data(request, {
             "kind": row["kind"], "thread": thread, "evidence": segments,
             "coverage": "public_text" if not materials else materials[0]["coverage"],
             "allowed_evidence_ids": allowed,
+            **({"comment_materials": comment_materials} if comment_materials else {}),
         })
         response_input = ResponseDecisionInput(data)
         _, messages, schema = browsing.decisions._model_input(
@@ -408,7 +423,8 @@ class BrowsingPublication:
                 browsing.runtime, channel="generation.browsing_identity", identity=identity + ":" + current["identity_version"],
                 binding={"task": "generation", "account_id": account,
                          "character": {key: character[key] for key in ("id", "version")},
-                         "source_sha256": content_hash(thread), "self_identity": current},
+                         "source_sha256": content_hash([thread, comment_materials]) if comment_materials
+                         else content_hash(thread), "self_identity": current},
                 character=character, messages=messages, generate=invoke, validate=response_input.validate_wire,
                 max_tokens=request["config"]["decision_max_tokens"], guard=guard,
                 diagnose=response_input.diagnose,
@@ -613,6 +629,7 @@ class BrowsingPublication:
         if (verified["source"]["text"] != target["source_text"]
                 or str(verified["source"]["author_uid"]) != str(target["recipient"])):
             raise ValueError("原始互动已删除或变化")
+        validate_comment_material_sources(target.get("comment_materials", []), verified.get("items", []), target["parent"])
         return verified
 
     @staticmethod

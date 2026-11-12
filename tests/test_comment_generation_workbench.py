@@ -10,6 +10,7 @@ from test_comments import comments as comments
 
 from tuber_studio.app import create_app
 from tuber_studio.comment_workbench import list_queue
+from tuber_studio.platforms.bilibili import PublishUncertain
 
 
 async def test_current_generation_filters_out_old_selected_drafts_and_prioritizes_its_results(
@@ -119,3 +120,45 @@ def test_comment_workbench_http_accepts_exact_generation_scope_and_fetch_video_a
         assert client.get("/api/comments/workbench?comment_ids=1,bad").status_code == 400
         assert client.get("/api/comments/workbench?comment_ids=0").status_code == 400
         assert client.get("/api/comments/workbench?task_id=").status_code == 422
+
+
+def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_attempt(settings):
+    class BatchPlatform(Platform):
+        async def publish(self, video, comment, text, *, thread_id):
+            assert thread_id == "100"
+            self.sent.append((video, comment, text))
+            if comment == "102":
+                raise PublishUncertain("回执丢失")
+            return {"rpid": 901}
+
+    platform = BatchPlatform()
+    app = create_app(settings, platform)
+    with TestClient(app) as client:
+        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        app.state.comments.credentials = {"sessdata": "test", "csrf": "test"}
+        store = app.state.store
+        for parent in ("103", "102", "101"):
+            app.state.comments.import_items("BV1d8pU6xEZX", [{
+                "comment_id": parent, "thread_id": "100", "created_at": parent, "content": f"来评{parent}",
+            }])
+            source = store.one("SELECT id FROM comments WHERE comment_id=?", (parent,))
+            store.execute(
+                "INSERT INTO drafts(comment_id,text,status,character_id,character_version,created_at,updated_at) "
+                "VALUES(?,?,'pending_review','whale',1,?,?)",
+                (source["id"], f"本鱼回复第{parent}条", int(parent), int(parent)),
+            )
+        review = client.get("/api/comments/workbench?limit=1").raise_for_status().json()
+        selection = client.get("/api/comments/workbench/selection?video_id=BV1d8pU6xEZX").raise_for_status().json()
+        assert review["total"] == selection["total"] == 3 and review["items"][0]["can_publish"]
+        items = [{key: item[key] for key in ("id", "channel", "updated_at")} for item in selection["items"]]
+        items[0]["updated_at"] -= 1
+        items[2]["text"] = "本鱼认真答了这一条。"
+        endpoint = "/api/comments/workbench/batch-publish"
+        result = client.post(endpoint, json={"items": items}).raise_for_status().json()["items"]
+        assert [item["id"] for item in result] == [item["id"] for item in items]
+        assert [item["status"] for item in result] == ["pending_review", "publish_uncertain", "published"]
+        assert "已变化" in result[0]["error"] and result[2]["receipt"]["rpid"] == 901
+        assert [entry[1] for entry in platform.sent] == ["101", "102"]
+        assert platform.sent[0][2] == "本鱼认真答了这一条。"
+        assert client.post(endpoint, json={"items": items}).raise_for_status().json()["items"][1]["status"] == "publish_uncertain"
+        assert len(platform.sent) == 2

@@ -147,6 +147,24 @@ async def provider(runtime, request):
     await value.close()
 
 
+async def test_comment_attachment_observation_uses_ordered_images_without_video_identity(provider):
+    value, state = provider
+    state["result"] = {"captions": ["第一帧所见", "第二帧所见"]}
+    frames = [
+        {"image": PNG, "mime_type": "image/png", "width": 1, "height": 1, "time_ms": stamp}
+        for stamp in (0, 120)
+    ]
+    assert await value.analyze_comment_images({"id": "comment-1"}, frames, deadline=time.time() + 10) == [
+        "第一帧所见", "第二帧所见",
+    ]
+    bodies = [json.loads(request.content) for request in state["requests"] if request.url.path.endswith("completions")]
+    actual = next(body for body in bodies if body["max_tokens"] > 1)
+    assert actual["max_tokens"] == 768
+    images = actual["messages"][-1]["content"]
+    assert [part["type"] for part in images] == ["text", "image_url", "text", "image_url"]
+    assert "120 ms" in images[2]["text"] and "分P" not in images[2]["text"]
+
+
 def proof(provider):
     return {
         "passed": True,

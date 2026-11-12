@@ -6,6 +6,7 @@ import time
 import unicodedata
 from difflib import SequenceMatcher
 
+from ...comment_materials import model_comment_materials, prepare_comment_materials
 from ...comments import category
 from ...compaction import ContextWindowExceeded
 from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgeted_json
@@ -27,6 +28,7 @@ from .comment_reader import (
     evaluate_comment_visit,
     handoff_comment,
     merge_continuous_comments,
+    source_discussion,
 )
 from .inputs import (
     CLASSIFICATION_INPUT_VERSION,
@@ -57,6 +59,7 @@ from .models import (
     response_schema,
 )
 from .quotas import DailyReplyLimitReached, day_window
+from .round_context import agent_depth
 from .thread_context import comment_thread_context
 
 
@@ -569,21 +572,43 @@ class BrowsingDecisions:
         source_ids = {ref for decision in requested for ref in decision.evidence_ids}
         if not source_ids:
             source_ids = {self.browsing._segments(material)[0]["id"]}
+        task = {
+            "id": "visual:" + content_hash([
+                row["account_id"], row["character_id"], row["character_version"], material["metadata"]["bvid"],
+                material["source_version"], sorted(source_ids),
+            ]),
+            "round_id": row["id"],
+            "parent_id": identity,
+        }
         followup.update(
+            id=task["id"],
+            action="sample_frames",
             status="requested",
             decisions_before=[decision.model_dump() for decision in decisions],
             source_material_key=result["material_key"],
+            evidence_ids=sorted(source_ids),
         )
-        key, enriched = await self.browsing._prepare_evidence(
-            material["metadata"]["bvid"], row["config"], visual_source_ids=source_ids,
-            task={"id": identity}, deadline=row["deadline"],
-        )
+        payload = json.loads(self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
+        self.browsing.repo.complete(identity, result["owner"], result["generation"], "evidence_ready",
+                                    payload | {"visual_followup": followup}, result["material_key"])
+
+        async def read_frames():
+            depth = agent_depth.set(agent_depth.get() + 1)
+            try:
+                return await self.browsing._prepare_evidence(
+                    material["metadata"]["bvid"], row["config"], visual_source_ids=source_ids,
+                    task=task, deadline=row["deadline"],
+                )
+            finally:
+                agent_depth.reset(depth)
+
+        child = asyncio.create_task(read_frames(), name=task["id"])
+        key, enriched = await child
         result.update(material_key=key, material=enriched)
         if error := enriched.get("visual_error"):
             followup.update(status="failed", error=error)
             return enriched, decisions
         followup.update(status="prepared", material_key=key)
-        payload = json.loads(self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
         self.browsing.repo.complete(
             identity, result["owner"], result["generation"], "evidence_ready",
             payload | {"coverage": enriched["coverage"], "missing_parts": enriched["missing_parts"],
@@ -792,7 +817,7 @@ class BrowsingDecisions:
                 if context is None:
                     context = await self.browsing.video_comment_context(row, bvid)
                 response = direct_response or await self._response(
-                    row, material, context, chosen, "top_level", metrics
+                    row, material, context | {"_visual_followup": followup}, chosen, "top_level", metrics
                 )
                 payload["response_decision"] = response.model_dump()
                 payload["reason"] = decision_explanation(response, material)
@@ -1047,7 +1072,8 @@ class BrowsingDecisions:
                 for candidate in candidates:
                     body = str(candidate.get("text") or candidate.get("content") or "")
                     uid = str(candidate.get("user_id") or candidate.get("platform_user_id") or "")
-                    if uid != author_uid or len(body.strip()) < 2 or category(body) == "spam":
+                    attachments = candidate.get("attachments") or []
+                    if uid != author_uid or (len(body.strip()) < 2 and not attachments) or category(body, attachments) == "spam":
                         continue
                     candidate_id = candidate["comment_id"]
                     key = canonical_intent("bilibili", bvid, candidate_id, row["character_id"])
@@ -1075,6 +1101,9 @@ class BrowsingDecisions:
                         thread_response = None
                 if thread_response is None:
                     try:
+                        comment_materials = await prepare_comment_materials(self.browsing, target, item, row=row)
+                        if comment_materials:
+                            thread_context["_comment_materials"] = comment_materials
                         thread_response = await self._response(
                             row, material, thread_context,
                             chosen if material else {"public:" + comment_id}, "reply_public", metrics
@@ -1102,6 +1131,9 @@ class BrowsingDecisions:
                         self.browsing, row, thread_response, target, thread_context, material,
                         [material_key] if material_key else [], created_at=item.get("created_at", ""),
                     )
+                target["source_discussion"] = source_discussion(item, thread_context, items)
+                if thread_response._comment_materials:
+                    target["comment_materials"] = thread_response._comment_materials
                 thread_intent = self.browsing.publication._intent(
                     row, "reply_public", target, thread_response,
                     [material_key] if material_key else [], thread_response.evidence_ids
@@ -1121,6 +1153,8 @@ class BrowsingDecisions:
     async def _response(self, row, material, context, allowed, kind, metrics, *, video_actions=False):
         context = dict(context)
         context.pop("_scroll_progress", None)
+        followup = context.pop("_visual_followup", {})
+        comment_materials = context.pop("_comment_materials", [])
         allow_public = context.pop("_allow_public", True)
         allow_comment_like = context.pop("_allow_comment_like", False)
         if kind != "top_level":
@@ -1154,6 +1188,7 @@ class BrowsingDecisions:
             "kind": kind,
             "evidence": segments,
             "thread": {} if kind == "top_level" else context,
+            **({"comment_materials": model_comment_materials(comment_materials)} if comment_materials else {}),
             **({"video_source": self._metadata_summary(material["metadata"])} if material else {}),
             "coverage": material["coverage"] if material else "public_text",
             **({"allow_public": allow_public, "allow_comment_like": allow_comment_like}
@@ -1169,6 +1204,13 @@ class BrowsingDecisions:
                 else {}
             ),
         }
+        if video_actions:
+            data["available_actions"] = {
+                "read_comments": data["allow_comments"],
+                "sample_frames": data["allow_visual"],
+            }
+        if followup.get("status") == "completed":
+            data["completed_actions"] = [{"action": "sample_frames", "result": "已补看所引用时码附近的画面"}]
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
         if kind != "top_level" and context.get("source") and context.get("target"):
@@ -1184,11 +1226,13 @@ class BrowsingDecisions:
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
                 "comment_id": str(context["source"]["comment_id"]),
             }
-        return await self._model(
+        response = await self._model(
             row,
             ResponseDecision,
             data,
             RESPONSE_INSTRUCTION
+            + (" comment_materials仅是当前原评的专栏摘录或图片抽样观察，"
+               "用当前原评编号引用，依据实际读到的内容。" if comment_materials else "")
             + (" 想给当前评论点个赞时选like_comment，引用该评论，正文留空。"
                if allow_comment_like else "")
             + (" grouped_comments是同一用户对同一对象的连续来评。若一并公开回答，"
@@ -1213,6 +1257,8 @@ class BrowsingDecisions:
                 else None
             ),
         )
+        response._comment_materials = comment_materials
+        return response
 
     @staticmethod
     def repetition_reason(text, recent, context):

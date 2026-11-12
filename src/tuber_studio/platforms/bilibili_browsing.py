@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..comment_materials import MAX_IMAGE_BYTES, article_excerpt, comment_image_url
 from ..operation_text import validate_comment_body
 from ..publication_errors import platform_rejection
 from ..subtitle_presentation import deduplicate_subtitles
@@ -160,6 +161,41 @@ class BrowsingAdapter(BilibiliAdapter):
         if not isinstance(data, dict):
             raise PlatformReadError("invalid", "平台返回对象类型错误")
         return data
+
+    async def read_comment_article(self, identity):
+        identity = _identifier(identity)
+        article = await self._get("/x/article/view", {"id": identity})
+        return article_excerpt(article, identity)
+
+    async def read_comment_image(self, url):
+        url = comment_image_url(url)
+        if url is None:
+            raise PlatformReadError("invalid", "评论图片来源不属于支持的 B 站 CDN")
+        request = httpx.Request("GET", url, headers={"Referer": "https://www.bilibili.com/"})
+        await self._pace()
+        try:
+            response = await self.client.send(request, stream=True, auth=None, follow_redirects=False)
+            try:
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
+                if content_type not in {"image/jpeg", "image/png", "image/gif", "image/webp", "application/octet-stream"}:
+                    raise PlatformReadError("invalid", "评论图片响应类型不受支持")
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(body) + len(chunk) > MAX_IMAGE_BYTES:
+                        raise PlatformReadError("too_large", "评论图片下载超出字节上限")
+                    body.extend(chunk)
+                return bytes(body)
+            finally:
+                await response.aclose()
+        except httpx.HTTPStatusError as error:
+            code = error.response.status_code
+            kind = "invalid" if error.response.is_redirect else (
+                "restricted" if code in {412, 429} else "permission" if code in {401, 403} else "network"
+            )
+            raise PlatformReadError(kind, "评论图片下载失败：" + http_read_detail(error)) from None
+        except httpx.HTTPError as error:
+            raise PlatformReadError("network", "评论图片下载失败：" + http_read_detail(error)) from None
 
     async def self_uid(self):
         if not self._sessdata:

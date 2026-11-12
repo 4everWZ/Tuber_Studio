@@ -40,6 +40,8 @@ def reply_generation_binding(scope, character, event, mode):
         "mode": mode,
         "character": {"id": character["id"], "version": character["version"]},
         "source": source,
+        **({"comment_materials_sha256": content_hash(event["comment_materials"])}
+           if mode == "comment_draft" and event.get("comment_materials") else {}),
     }
 
 

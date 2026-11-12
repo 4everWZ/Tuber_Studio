@@ -146,9 +146,10 @@ async def test_public_incident_is_factual_cited_and_removed_from_draft_sources(s
     payload = json.loads(service.runtime.llm.calls[-1][1]["content"])
     assert payload["public_sources"][0]["fictional"] is False
     assert payload["public_sources"][0]["public_sources"][0]["quote"] == "你消息是不是回错了"
-    assert post["comment_card"]["comments"] == [{
-        "quote": "你消息是不是回错了",
-        "url": "https://www.bilibili.com/video/BV13S4i6fE82#reply323231188736",
+    original, = post["comment_card"]["comments"]
+    assert original["quote"] == "你消息是不是回错了" and original["author"] == "作者资料未保存"
+    assert post["comment_card"]["links"] == [{
+        "bvid": "BV13S4i6fE82", "url": "https://www.bilibili.com/video/BV13S4i6fE82#reply323231188736",
     }]
     assert service._valid_sources(post)
     memory.delete_highlight(identifier)
@@ -163,9 +164,26 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
     from tuber_studio import dynamic_comment_card
 
     monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
-    published_reply(service)
+    draft_id = published_reply(service)
+    service.store.execute(
+        "UPDATE comments SET display_name='观众甲',platform_user_id='11',parent_comment_id='41',created_at='10' "
+        "WHERE comment_id='42'"
+    )
+    service.store.execute(
+        "INSERT INTO comments(video_id,comment_id,content,display_name,platform_user_id,created_at) "
+        "VALUES('BV1d8pU6xEZX','41','你说的是哪间厨房？','观众乙','12','5')"
+    )
+    service.store.execute(
+        "UPDATE drafts SET answer_check=? WHERE id=?",
+        (json.dumps({"generation_identity": {"account_uid": "100", "account_display_name": "小鲸鱼"}}), draft_id),
+    )
     decision = await service.evaluate(manual=True)
     post_id = decision["post_id"]
+    post_card = service._post(post_id)["comment_card"]
+    assert [(item["comment_id"], item["author"]) for item in post_card["comments"]] == [
+        ("41", "观众乙"), ("42", "观众甲"), ("77", "小鲸鱼"),
+    ]
+    assert len(post_card["links"]) == 1
     card = service.comment_card_image(post_id)
     with Image.open(BytesIO(card)) as rendered:
         assert rendered.format == "PNG" and rendered.width == 960
@@ -180,6 +198,7 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
     monkeypatch.setattr(module, "publish_image", send)
     text = "前些天有人问起海底厨房，我回他说那里总有一碗热饭。今天揭锅时又想起他这句。"
     service.review(post_id, "approve", text)
+    service.store.execute("UPDATE comments SET display_name='改名后的观众' WHERE comment_id='42'")
     result = await service.publish(post_id)
     assert result["status"] == "published"
     assert observed == [(

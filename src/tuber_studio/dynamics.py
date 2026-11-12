@@ -134,6 +134,8 @@ class Dynamics:
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")
         }:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN generation_identity TEXT")
+        if "comment_card_snapshot" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
+            store.execute("ALTER TABLE dynamic_posts ADD COLUMN comment_card_snapshot TEXT")
         if "generation_continuation_id" not in {
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")
         }:
@@ -347,6 +349,25 @@ class Dynamics:
                     "receipt_id": str(receipt["rpid"]),
                 }
             )
+        if browsing := getattr(self.runtime, "browsing", None):
+            account_id = browsing.account or self.comments.display_account_id()
+            if account_id:
+                for row in self.store.all(
+                    "SELECT id,text,target,receipt FROM browsing_intents WHERE kind='reply_public' AND status='published' "
+                    "AND account_id=? AND character_id=? AND character_version=? ORDER BY updated_at DESC LIMIT 100",
+                    (account_id, char["id"], char["version"]),
+                ):
+                    target, receipt = json.loads(row["target"]), json.loads(row["receipt"] or "null")
+                    if not isinstance(receipt, dict) or not re.fullmatch(r"[1-9][0-9]{0,19}", str(receipt.get("rpid"))) or not (
+                        re.fullmatch(r"BV[0-9A-Za-z]{10}", str(target.get("bvid"))) and target.get("source_text")
+                    ):
+                        continue
+                    result.append({
+                        "id": f"reply:browsing:{row['id']}", "type": "published_reply", "text": row["text"],
+                        "fictional": False, "source_url": f"https://www.bilibili.com/video/{target['bvid']}",
+                        "original_comment": {"id": target.get("parent"), "text": target["source_text"]},
+                        "receipt_id": str(receipt["rpid"]),
+                    })
         for row in self._memory_rows():
             mark = self.store.one(
                 "SELECT fingerprint FROM dynamic_memory_public WHERE memory_id=?", (row["id"],)
@@ -414,7 +435,10 @@ class Dynamics:
 
     def _post_view(self, row):
         post = self._decode(row)
-        post["comment_card"] = comment_card(post["sources"])
+        snapshot = post.pop("comment_card_snapshot", None)
+        post["comment_card"] = json.loads(snapshot) if snapshot else comment_card(
+            post["sources"], legacy=bool(post.get("attempted_at")),
+        )
         return continuation_view(self.runtime, "dynamics", post)
 
     def comment_card_image(self, post_id):
@@ -553,8 +577,9 @@ class Dynamics:
     def _outgoing(self, row, character):
         value = {"text": row["content"]}
         if card := row["comment_card"]:
+            links = card["comments"] if card.get("legacy") else card["links"]
             value["text"] += "\n\n" + "\n".join(
-                f"原评论：{url}" for url in dict.fromkeys(item["url"] for item in card["comments"])
+                f"原评论：{url}" for url in dict.fromkeys(item["url"] for item in links)
             )
             value["comment_card_sha256"] = hashlib.sha256(render_comment_card(card)).hexdigest()
         elif row.get("meme_id"):
@@ -1158,8 +1183,8 @@ class Dynamics:
             if data["action"] == "post":
                 post_id = self.store.db.execute(
                     "INSERT INTO dynamic_posts(decision_id,character_id,character_version,model,content,reason,"
-                    "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id,comment_card_snapshot) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         decision_id,
                         char["id"],
@@ -1175,6 +1200,7 @@ class Dynamics:
                         _content_hash(data["content"]),
                         int(manual),
                         getattr(self.comments, "display_account_id", lambda: "")() or "",
+                        _json(comment_card(selected, store=self.store, actor=generation_identity)),
                     ),
                 ).lastrowid
                 self.store.db.execute("UPDATE dynamic_decisions SET post_id=? WHERE id=?", (post_id, decision_id))

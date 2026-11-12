@@ -61,7 +61,47 @@ export function dynamicPolicyFromServer(policy, model, describe, display) {
   renderDynamicPolicy(model, describe, display);
 }
 
-export function appendDynamicSources(container, sources, { node, display }) {
+function videoId(url) {
+  return url.origin === "https://www.bilibili.com" ? /^\/video\/(BV[0-9A-Za-z]{10})\/?$/.exec(url.pathname)?.[1] : null;
+}
+
+function commentCardLinks(card) {
+  const links = new Map();
+  for (const source of card?.links || card?.comments || []) {
+    try {
+      const url = new URL(source.url);
+      const bvid = videoId(url);
+      if (bvid && /^#reply[1-9][0-9]{0,19}$/.test(url.hash) && !links.has(bvid)) links.set(bvid, url.href);
+    } catch { /* Old material may have lost its public link. */ }
+  }
+  return links;
+}
+
+function renderCommentConversation(container, card, links, node) {
+  const conversation = node("ol", null, "dynamic-comment-conversation");
+  for (const comment of card.comments || []) {
+    const row = node("li");
+    const participant = node("div");
+    participant.append(node("strong", comment.author || "用户名未保留"));
+    const metadata = [comment.uid && `UID ${comment.uid}`, comment.created_at != null && localDateTime(comment.created_at)].filter(Boolean);
+    if (metadata.length) participant.append(node("span", ` · ${metadata.join(" · ")}`, "hint"));
+    row.append(participant, node("p", comment.quote));
+    conversation.append(row);
+  }
+  container.replaceChildren(conversation);
+  if (card.omitted > 0) container.append(node("p", `另有 ${card.omitted} 条原话，可在原楼查看。`, "hint"));
+  const sources = node("div", null, "actions");
+  for (const [bvid, href] of links) {
+    const source = node("a", `打开原评论 · ${bvid}`);
+    source.href = href;
+    source.target = "_blank";
+    source.rel = "noopener noreferrer";
+    sources.append(source);
+  }
+  if (links.size) container.append(sources);
+}
+
+export function appendDynamicSources(container, sources, { node, display, commentLinks = new Map() }) {
   container.replaceChildren();
   if (!Array.isArray(sources) || !sources.length) {
     container.append(node("p", "暂无可展示的来源原文。", "hint"));
@@ -75,7 +115,7 @@ export function appendDynamicSources(container, sources, { node, display }) {
     if (source.source_url) {
       try {
         const url = new URL(source.source_url);
-        if (url.protocol === "https:") {
+        if (url.protocol === "https:" && !commentLinks.has(videoId(url))) {
           const link = node("a", "打开来源");
           link.href = url.href;
           link.target = "_blank";
@@ -103,6 +143,7 @@ export function renderDynamicPost(model, {
   const terminalInPending = model.dynamicPostView !== "history" && ["published", "rejected", "invalidated"].includes(post?.status);
   const editable = !!post && !terminalInPending && ["pending_review", "approved", "rejected"].includes(post.status);
   const card = post?.comment_card;
+  const commentLinks = commentCardLinks(card);
   const memeId = card ? null : post?.meme_id;
   const imageInfo = memeId ? model.dynamicMemeCache.get(`${post.character_id}:${memeId}`) : null;
   const unavailable = !!memeId && !!imageInfo && !imageInfo.error && (!imageInfo.asset || !imageInfo.asset.enabled || imageInfo.asset.missing);
@@ -136,16 +177,23 @@ export function renderDynamicPost(model, {
   }
   for (const option of $("dynamic-post-views")?.querySelectorAll("input") || []) option.disabled = !!model.dynamicPostPending;
   if ($("dynamic-meme-preview")) $("dynamic-meme-preview").hidden = !card && !memeId;
+  if ($("dynamic-comment-sources")) $("dynamic-comment-sources").hidden = !card;
   if (card) {
     if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = "原评论图";
-    if ($("dynamic-meme-availability")) $("dynamic-meme-availability").textContent = "当前草稿附图和原楼链接";
-    const key = `comment-card:${post.id}`;
+    const key = `comment-card:${post.id}:${JSON.stringify(card)}`;
     if (model.dynamicMemePreviewKey !== key) {
       model.dynamicMemePreviewKey = key;
       const image = node("img", null, "dynamic-comment-card");
       image.src = `/api/dynamics/posts/${encodeURIComponent(post.id)}/comment-card`;
-      image.alt = "这条动态引用的原评论";
+      image.alt = "动态附图中的评论对话";
+      const availability = $("dynamic-meme-availability");
+      availability.textContent = "提交时附上此图与原评论链接。";
+      image.onerror = () => {
+        if (model.dynamicMemePreviewKey === key) availability.textContent = "附图暂无法预览，可展开查看原话与链接。";
+      };
       $("dynamic-meme-image")?.replaceChildren(image);
+      $("dynamic-comment-sources").open = false;
+      renderCommentConversation($("dynamic-comment-conversation"), card, commentLinks, node);
     }
   } else if (memeId) {
     if ($("dynamic-meme-name")) $("dynamic-meme-name").textContent = imageInfo?.asset?.title || memeId;
@@ -178,16 +226,7 @@ export function renderDynamicPost(model, {
 
   if ($("dynamic-post-sources")) {
     const sources = $("dynamic-post-sources");
-    appendDynamicSources(sources, post?.sources, { node, display });
-    for (const comment of card?.comments || []) {
-      const quote = node("blockquote", comment.quote, "dynamic-source");
-      const link = node("a", "打开原评论");
-      link.href = comment.url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      quote.append(document.createElement("br"), link);
-      sources.append(quote);
-    }
+    appendDynamicSources(sources, post?.sources, { node, display, commentLinks });
   }
 
   if ($("dynamic-post-receipt")) {

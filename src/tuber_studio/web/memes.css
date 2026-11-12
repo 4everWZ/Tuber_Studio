@@ -2,3 +2,6 @@
 
 .meme-attachment-preview{margin:14px 0;padding:12px;border:1px solid var(--line,#d5e1e8);border-radius:5px}.meme-attachment-preview .meme-preview{height:180px;margin:10px 0}.meme-attachment-preview .hint{font-size:11px}
 .dynamic-comment-card{display:block;max-width:100%;height:auto;margin-top:10px;border-radius:8px}
+.dynamic-comment-conversation { list-style: none; padding-inline-start: 0; overflow-wrap: anywhere; }
+.dynamic-comment-conversation li + li { border-top: 1px solid var(--line); padding-top: .5rem; }
+.dynamic-comment-conversation p { margin-block: .25rem .5rem; white-space: pre-wrap; }

@@ -124,6 +124,13 @@
 .queue-row > span:empty { display: none; }
 #queue-list { border: 0; }
 #queue-list .queue-row:first-child { border-top: 0; }
+.queue-check-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; border-top: 1px solid var(--line); }
+.queue-check-row:first-child, .queue-check-row > .queue-row { border-top: 0; }
+.queue-check-row > label { display: grid; place-items: center; width: 36px; min-height: 36px; margin: 0; }
+.queue-check-row input { margin: 0; }
+.queue-batch-actions { margin-block: 8px; }
+.queue-batch-results { padding-inline-start: 1.3rem; overflow-wrap: anywhere; }
+.queue-batch-results li + li { margin-top: .35rem; }
 .review-detail textarea { font-size: 1rem; min-height: 6rem; line-height: 1.65; }
 .review-detail > label:has(> textarea[readonly]) { margin-inline-start: 6%; }
 .review-detail textarea[readonly] { field-sizing: content; min-height: 3rem; max-height: 18rem; resize: none; padding: 12px 14px; background: #edf4fd; color: var(--ink); border: 0; border-radius: 15px 15px 5px 15px; }

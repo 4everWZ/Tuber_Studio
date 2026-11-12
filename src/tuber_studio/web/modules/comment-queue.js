@@ -1,4 +1,4 @@
-import { $, node } from "./core.js";
+import { $, node, safeMessage } from "./core.js";
 import { commentFinished } from "./comment-state.js?v=20261107.13";
 
 const pageSize = 10;
@@ -17,6 +17,8 @@ const queueViewForStatus = status => {
   return "history";
 };
 const keyOf = row => row && `${row.channel}/${row.id}`;
+const workbench = "/api/comments/workbench";
+const canBatchPublish = row => row.can_publish === true && ["comments", "browsing"].includes(row.channel);
 
 function link(label, href) {
   const result = node("a", label);
@@ -52,12 +54,78 @@ export function evidenceList(segments = []) {
 export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraftUpdated = () => {}, onSelectionCleared = () => {} } = {}) {
   const list = $("queue-list"), detail = $("queue-detail"), feedback = $("queue-feedback");
   const filter = $("queue-view");
+  const batchActions = $("queue-batch-actions"), batchToggle = $("queue-batch-toggle"), batchPublish = $("queue-batch-publish");
+  const batchProgress = $("queue-batch-progress"), batchResult = $("queue-batch-result");
   const draftEdits = new Map();
+  const checkedDrafts = new Map(), rowChecks = new Map();
   let view = "review", offset = 0, routeKey = null, inferRouteView = false, selected = null, version = 0;
   let rows = [], listSignature = "", detailSignature = "", active = false, busy = false, loaded = false, focusedKey = null;
   let generation = null;
   let sourceVersion = 0;
   let selectionCleared = false;
+  let batchMode = false, batchScope = null, selectionRequest = 0, selectionLoading = false, allSelected = false;
+
+  function scopeParams(useExisting = false) {
+    if (!generation) return "";
+    const params = new URLSearchParams();
+    if (!useExisting || !generation.existing) params.set("task_id", generation.id);
+    if (generation.commentIds?.length) params.set("comment_ids", generation.commentIds.join(","));
+    return params.toString();
+  }
+
+  function syncBatchControls() {
+    batchActions.hidden = view !== "review" || !batchMode;
+    batchToggle.disabled = busy || selectionLoading;
+    batchToggle.textContent = allSelected ? "全不选" : "全选所有页";
+    batchPublish.disabled = busy || selectionLoading || !checkedDrafts.size;
+    $("queue-batch-count").textContent = `已选 ${checkedDrafts.size} 条`;
+    for (const [key, { check, row }] of rowChecks) {
+      check.checked = checkedDrafts.has(key);
+      check.disabled = busy || selectionLoading || (!check.checked && !canBatchPublish(row));
+    }
+  }
+
+  function setBatchProgress(text) {
+    batchProgress.textContent = text;
+    batchProgress.hidden = !text;
+  }
+
+  function syncBatchScope() {
+    const scope = view === "review" ? scopeParams(true) : null;
+    if (scope !== batchScope) {
+      batchScope = scope;
+      ++selectionRequest;
+      selectionLoading = allSelected = batchMode = false;
+      checkedDrafts.clear();
+      setBatchProgress("");
+    }
+    syncBatchControls();
+  }
+
+  function showBatchResults(items, submitted) {
+    const counts = { published: 0, publish_uncertain: 0, skipped: 0, failed: 0 };
+    const results = $("queue-batch-results");
+    results.replaceChildren();
+    for (const result of items) {
+      const key = keyOf(result);
+      const { status, error } = result;
+      const outcome = ["published", "publish_uncertain"].includes(status) ? status :
+        ["skipped", "operator_replied", "rejected", "copied", "private_handoff", "publishing", "invalidated"].includes(status) ? "skipped" : "failed";
+      counts[outcome]++;
+      const item = node("li");
+      const label = { published: "已发送", publish_uncertain: "待核对", skipped: "已跳过", failed: "未发送" }[outcome];
+      const route = status === "skipped" || status === "failed" ? `#comments/${key}` : `#comments/${queueViewForStatus(status)}/${key}`;
+      const state = outcome === "skipped" && statuses[status] ? `（${statuses[status]}）` : "";
+      item.append(link(submitted.get(key)?.excerpt?.slice(0, 80) || "查看草稿", route), ` · ${label}${state}`);
+      if (error) item.append(` · ${safeMessage(error)}`);
+      results.append(item);
+    }
+    const summary = `批量发布 · 已发送 ${counts.published} · 待核对 ${counts.publish_uncertain} · 已跳过 ${counts.skipped} · 未发送 ${counts.failed}`;
+    $("queue-batch-summary").textContent = summary;
+    batchResult.hidden = false;
+    batchResult.open = false;
+    setBatchProgress("");
+  }
 
   function emptyDetail(text) {
     detailSignature = "";
@@ -77,8 +145,10 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
   function renderRows(data) {
     const signature = JSON.stringify([view, data.items, selected]);
     if (signature !== listSignature) {
-      const focused = document.activeElement?.closest("[data-queue-key]")?.dataset.queueKey;
+      const focusedElement = document.activeElement;
+      const focused = focusedElement?.closest("[data-queue-key]")?.dataset.queueKey;
       list.replaceChildren();
+      rowChecks.clear();
       for (const row of data.items) {
         const id = keyOf(row);
         const item = link("", `#comments/${view}/${id}`);
@@ -90,11 +160,37 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
           node("strong", (row.excerpt || statuses[row.status] || "评论记录").slice(0, 80) + ((row.excerpt?.length || 0) > 80 ? "…" : "")),
           node("span", row.video_id || (row.channel === "jobs" ? "生成任务" : ""), "hint"),
         );
-        list.append(item);
-        if (focused === id) item.focus({ preventScroll: true });
+        if (generation) item.onclick = event => {
+          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          routeKey = id;
+          return refresh();
+        };
+        if (view === "review" && row.channel !== "jobs") {
+          const wrapper = node("div", null, "queue-check-row");
+          wrapper.dataset.queueKey = id;
+          const label = node("label"), check = node("input");
+          check.type = "checkbox";
+          check.dataset.queueKey = id;
+          check.setAttribute("aria-label", `选择草稿：${(row.excerpt || row.video_id || "评论草稿").slice(0, 80)}`);
+          check.addEventListener("change", () => {
+            if (busy || selectionLoading) return;
+            batchMode = true;
+            allSelected = false;
+            if (check.checked) checkedDrafts.set(id, row);
+            else checkedDrafts.delete(id);
+            syncBatchControls();
+          });
+          rowChecks.set(id, { check, row });
+          label.append(check);
+          wrapper.append(label, item);
+          list.append(wrapper);
+        } else list.append(item);
+        if (focused === id) (focusedElement.type === "checkbox" ? rowChecks.get(id)?.check : item)?.focus({ preventScroll: true });
       }
       listSignature = signature;
     }
+    syncBatchControls();
     $("queue-prev").disabled = !data.offset;
     $("queue-next").disabled = data.offset + data.items.length >= data.total;
     $("queue-prev").parentElement.hidden = data.total <= pageSize;
@@ -122,8 +218,14 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       row.character_id].filter(Boolean);
     if (metadata.length) detail.append(node("p", metadata.join(" · "), "hint"));
     if (original) detail.append(node("blockquote", original, "quoted-text"));
-    if (video && /^BV[a-zA-Z0-9]+$/.test(video)) {
-      const source = link("在 B 站查看来源", `https://www.bilibili.com/video/${video}`);
+    let sourceUrl;
+    try {
+      const url = new URL(row.source_url);
+      if (url.protocol === "https:" && ["www.bilibili.com", "t.bilibili.com"].includes(url.host)) sourceUrl = url.href;
+    } catch { /* A legacy row may only have the video ID. */ }
+    if (!sourceUrl && video && /^BV[0-9A-Za-z]{10}$/.test(video)) sourceUrl = `https://www.bilibili.com/video/${video}`;
+    if (sourceUrl) {
+      const source = link("在 B 站查看来源", sourceUrl);
       source.target = "_blank";
       source.rel = "noreferrer";
       detail.append(source);
@@ -161,6 +263,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
       button.onclick = async () => {
         if (busy) return;
         busy = true;
+        syncBatchControls();
         ++version;
         for (const control of actions.querySelectorAll("button")) control.disabled = true;
         editor.readOnly = true;
@@ -185,6 +288,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
           feedback.textContent = `${text}失败：${error.message}`;
         } finally {
           busy = false;
+          syncBatchControls();
           editor.readOnly = !editable;
           for (const control of actions.querySelectorAll("button")) control.disabled = false;
           syncActions();
@@ -260,14 +364,17 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
         setView(queueViewForStatus(routedDetail.status));
         inferRouteView = false;
       }
-      const scope = generation ? `&task_id=${encodeURIComponent(generation.id)}${generation.commentIds?.length ? `&comment_ids=${generation.commentIds.join(",")}` : ""}` : "";
-      const data = await api(`/api/comments/workbench?view=${view}&limit=${pageSize}&offset=${offset}${scope}`);
+      const scope = scopeParams();
+      const data = await api(`${workbench}?view=${view}&limit=${pageSize}&offset=${offset}${scope ? `&${scope}` : ""}`);
       if (request !== version || !active) return;
       if (generation && !data.items.length && data.task?.status === "completed" && data.task.existing_drafts?.length) {
-        data.items = data.task.existing_drafts.filter(row => queueViewForStatus(row.status) === view);
-        data.total = data.items.length;
-        data.offset = 0;
+        const existing = data.task.existing_drafts.filter(row => queueViewForStatus(row.status) === view);
+        data.total = existing.length;
+        data.offset = offset < existing.length ? offset : 0;
+        data.items = existing.slice(data.offset, data.offset + pageSize);
+        generation.commentIds ||= data.task.comment_ids;
         generation.existing = true;
+        syncBatchScope();
       }
       loaded = true;
       offset = data.offset;
@@ -326,6 +433,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     $("queue-list-title").textContent = view === "sources" ? "选择要回复的评论" : generation ? "本次生成的回复" : "评论草稿";
     $("queue-show-all").hidden = !generation;
     if (view === "sources") $("queue-prev").parentElement.hidden = true;
+    syncBatchScope();
   }
 
   function open(nextView, nextKey = null) {
@@ -353,7 +461,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
   }
 
   function clearLinkedRecord(nextView) {
-    const hash = `#comments/${nextView}`;
+    const hash = generation ? `#comments/review/task/${encodeURIComponent(generation.id)}` : `#comments/${nextView}`;
     if (location.hash !== hash) history.pushState(null, "", hash);
     routeKey = null;
     inferRouteView = false;
@@ -370,6 +478,76 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     filter.value = event.target.value;
     void filter.onchange();
   });
+
+  batchToggle.onclick = async () => {
+    if (busy || selectionLoading || view !== "review") return;
+    if (allSelected) {
+      checkedDrafts.clear();
+      allSelected = false;
+      syncBatchControls();
+      return;
+    }
+    const request = ++selectionRequest;
+    selectionLoading = true;
+    syncBatchControls();
+    setBatchProgress("正在读取所有页的可发布草稿…");
+    try {
+      const data = await api(`${workbench}/selection${batchScope ? `?${batchScope}` : ""}`);
+      if (request !== selectionRequest) return;
+      const before = new Map(checkedDrafts);
+      checkedDrafts.clear();
+      for (const row of data.items) {
+        const key = keyOf(row);
+        checkedDrafts.set(key, before.get(key) || row);
+      }
+      allSelected = checkedDrafts.size > 0;
+      setBatchProgress(allSelected ? "" : "当前筛选没有可发布的草稿。");
+    } catch (error) {
+      if (request === selectionRequest) setBatchProgress(`全选失败：${safeMessage(error.message)}`);
+    } finally {
+      if (request === selectionRequest) {
+        selectionLoading = false;
+        syncBatchControls();
+      }
+    }
+  };
+
+  batchPublish.onclick = async () => {
+    if (busy || selectionLoading || view !== "review" || !checkedDrafts.size) return;
+    const submitted = new Map(checkedDrafts);
+    const scope = batchScope;
+    const items = [...submitted].map(([key, { channel, id, updated_at }]) => ({
+      channel, id, updated_at, ...(draftEdits.has(key) ? { text: draftEdits.get(key) } : {}),
+    }));
+    busy = detail.inert = true;
+    ++version;
+    batchResult.hidden = true;
+    syncBatchControls();
+    setBatchProgress(`正在提交 ${items.length} 条草稿…`);
+    try {
+      const result = await api(`${workbench}/batch-publish`, { method: "POST", body: { items } });
+      for (const row of result.items) {
+        const key = keyOf(row);
+        if (["published", "publish_uncertain"].includes(row.status)) draftEdits.delete(key);
+        if (["published", "operator_replied"].includes(row.status) && selected === key && view === "review" && batchScope === scope) {
+          clearProcessedSelection();
+        }
+      }
+      showBatchResults(result.items, submitted);
+    } catch (error) {
+      setBatchProgress(`未取得本次发布结果：${safeMessage(error.message)}。请先核对草稿状态与回执。`);
+    } finally {
+      if (batchScope === scope) {
+        for (const key of submitted.keys()) checkedDrafts.delete(key);
+        allSelected = false;
+      }
+      busy = detail.inert = false;
+      syncBatchControls();
+      detailSignature = "";
+      await refresh(true);
+    }
+  };
+
   $("refresh-queue").onclick = async event => {
     if (busy) return;
     const button = event.currentTarget;

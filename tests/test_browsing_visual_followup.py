@@ -154,7 +154,9 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     assert "需要补看时选visual" in visual.prompts[0]
     assert "需要补看时选visual" not in visual.prompts[1]
     assert "本次取样画面已到齐" in visual.prompts[1]
-    assert visual.task["round_id"] == row["id"] and visual.task["id"] == task["id"]
+    assert visual.task["round_id"] == row["id"] and visual.task["parent_id"] == task["id"]
+    assert visual.task["id"] == task["visual_followup"]["id"] != task["id"]
+    assert task["visual_followup"]["status"] == "completed"
     assert visual.deadline <= row["deadline"]
     assert task["input_version"] == task["material_key"]
     assert task["material_key"] != task["visual_followup"]["source_material_key"]

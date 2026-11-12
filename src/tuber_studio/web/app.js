@@ -3,7 +3,7 @@
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js";
-import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261111.08";
+import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261112.01";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261111.02";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261111.07";
@@ -22,7 +22,7 @@ import {
 } from "./modules/comments.js?v=20261107.17";
 import {
   initDynamicsModule,
-} from "./modules/dynamics.js?v=20261111.08";
+} from "./modules/dynamics.js?v=20261113.02";
 import {
   initMaintenanceModule,
 } from "./modules/maintenance.js?v=20261107.12";
