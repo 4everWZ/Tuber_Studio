@@ -1,8 +1,7 @@
 """Isolated Genie v2 CPU backend with original dynamic Chinese frontend.
 
-No dependency installs or production configuration writes happen here. Only the
-explicit coexistence switch warms up MiniCPM5-2B through the broker; the maintenance
-controller owns the exclusive window and Mini restoration. Genie templates/converters are MIT High_Logic (2025); stock
+No dependency installs or production configuration writes happen here. The
+maintenance controller owns the isolated window. Genie templates/converters are MIT High_Logic (2025); stock
 weight loading executes the unchanged upstream function from its source AST.
 The existing checked fixed-reference cache replaces only the reference-only
 HuBERT/quantizer encoder branch. Target text is never precomputed between calls.
@@ -56,8 +55,6 @@ def configuration(args):
             "warmup_text",
             "case_order",
             "repetitions",
-            "load_llm_after_warmup",
-            "advise_converted_cache_before_llm",
             "sampling_mode",
             "ar_mode",
         )
@@ -74,104 +71,6 @@ def evaluation_adapter(name, root):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def observe_mini(root, *, load=False, expected=None):
-    """Check the resident profile after an optional MiniCPM5-2B warmup."""
-    import httpx
-    import psutil
-
-    headers = {"X-Tuber-Inference-Key": (root / "runtime/inference-token").read_text().strip()}
-    with httpx.Client(base_url="http://127.0.0.1:9012", headers=headers, trust_env=False) as client:
-        if load:
-            response = client.post("/llm/warmup", json={"model": "MiniCPM5-2B"}, timeout=180)
-            response.raise_for_status()
-        response = client.get("/health", timeout=5)
-        response.raise_for_status()
-        health = response.json()
-        response = client.get("/llm/props", timeout=5)
-        response.raise_for_status()
-        props = response.json()
-    providers = health.get("providers", {})
-    mini = providers.get("llm2b", {})
-    aliases = props.get("model_alias")
-    aliases = [aliases] if isinstance(aliases, str) else aliases
-    if (
-        health.get("mode") != "text"
-        or health.get("selected_provider") != "llm2b"
-        or health.get("busy") is not False
-        or health.get("error")
-        or health.get("kv_cache_type") != "q4_0"
-        or mini.get("running") is not True
-        or mini.get("native_context_tokens") != 131072
-        or mini.get("cache_type_k") != "q4_0"
-        or mini.get("cache_type_v") != "q4_0"
-        or any(
-            value.get("running") is not False
-            for key, value in providers.items()
-            if key not in {"llm2b", "tts"}
-        )
-        or providers.get("tts", {}).get("running") is not False
-        or props.get("default_generation_settings", {}).get("n_ctx") != 131072
-        or props.get("is_sleeping") is not False
-        or "MiniCPM5-2B" not in (aliases or [])
-    ):
-        raise RuntimeError(
-            "Experimental coexistence requires idle text MiniCPM5-2B/native131072/q4_0, production TTS and other providers stopped"
-        )
-    matches = [p for p in psutil.process_iter() if p.name() == "llama-server"]
-    if len(matches) != 1:
-        raise RuntimeError("Expected exactly one actual Mini llama-server process")
-    process = matches[0]
-    argv = process.cmdline()
-    identity = {
-        "pid": process.pid,
-        "uid": process.uids().real,
-        "create_time": process.create_time(),
-        "argv": argv,
-    }
-    required = {
-        "--alias": "MiniCPM5-2B",
-        "--ctx-size": "131072",
-        "--cache-type-k": "q4_0",
-        "--cache-type-v": "q4_0",
-    }
-    if (
-        identity["uid"] != 1001
-        or not any(Path(value).name == "MiniCPM5-2B-Q4_K_M.gguf" for value in argv)
-        or any(
-            flag not in argv or argv.index(flag) + 1 >= len(argv) or argv[argv.index(flag) + 1] != value
-            for flag, value in required.items()
-        )
-        or (expected is not None and identity != expected)
-    ):
-        raise RuntimeError("Actual Mini process identity/profile changed or does not match native128K/q4_0")
-    return {
-        "identity": identity,
-        "health": health,
-        "props": props,
-        "genie_pid": os.getpid(),
-        "scope": "Experimental physical coexistence; broker remains text, not formal live mode",
-    }
-
-
-def advise_converted_cache(args):
-    """Advise only this isolated bundle's clean files, never global caches."""
-    directories = {args.models or args.output / "models", args.ar_models, args.bert_models} - {None}
-    details = []
-    for directory in sorted(directories):
-        advised = 0
-        for path in directory.iterdir():
-            if path.is_symlink() or not path.is_file() or path.suffix not in {".bin", ".onnx", ".data"}:
-                continue
-            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-            try:
-                os.posix_fadvise(descriptor, 0, 0, os.POSIX_FADV_DONTNEED)
-                advised += 1
-            finally:
-                os.close(descriptor)
-        details.append({"directory": str(directory), "files": advised})
-    emit("converted_cache_advice", directories=details, global_cache_reclaim=False)
 
 
 def read_events(path):
@@ -593,7 +492,6 @@ def run(args):
         cases.sort(key=lambda item: (item[1], item[0]))
     if args.warmup_text:
         cases.insert(0, (-1, -1, args.warmup_text))
-    mini_identity = None
     for repetition, index, text in cases:
         if compact.reference_signature(args.root, voice_id=args.voice, metadata=metadata) != signature:
             raise RuntimeError("Original voice/reference configuration changed")
@@ -684,18 +582,6 @@ def run(args):
         )
         if not valid:
             raise RuntimeError("Invalid/silent speech")
-        if repetition == -1 and args.load_llm_after_warmup:
-            if args.advise_converted_cache_before_llm:
-                advise_converted_cache(args)
-            emit("start_llm_load", phase="llm_load_after_genie_warmup")
-            load_started = time.monotonic()
-            observation = observe_mini(args.root, load=True)
-            mini_identity = observation["identity"]
-            emit("llm_loaded", seconds=time.monotonic() - load_started, **observation)
-    if args.load_llm_after_warmup:
-        if mini_identity is None:
-            raise RuntimeError("Mini was not loaded after a completed explicit warmup")
-        emit("llm_identity_verified", **observe_mini(args.root, expected=mini_identity))
     emit("completed", variant=args.variant)
 
 
@@ -832,16 +718,6 @@ def main():
         "--case-order", choices=("repetition-first", "text-first"), default="repetition-first"
     )
     parser.add_argument("--repetitions", type=int, default=2)
-    parser.add_argument(
-        "--advise-converted-cache-before-llm",
-        action="store_true",
-        help="Advise this experiment's clean converted files only before typed LLM load; no global reclaim",
-    )
-    parser.add_argument(
-        "--load-llm-after-warmup",
-        action="store_true",
-        help="After a required explicit non-silent warmup, load and verify broker Mini/native131072/q4_0; verify its PID again after speech. Experimental text-mode coexistence only",
-    )
     parser.add_argument("--deadline", type=int, default=270)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
@@ -852,12 +728,6 @@ def main():
         parser.error("ONNX BERT requires --bert-models")
     if args.ar_mode == "int8" and (args.sampling_mode != "reference" or not args.ar_models):
         parser.error("INT8 AR requires restored reference sampling and --ar-models")
-    if args.advise_converted_cache_before_llm and not args.load_llm_after_warmup:
-        parser.error("Converted cache advice requires --load-llm-after-warmup")
-    if args.load_llm_after_warmup and (
-        args.action != "run" or not args.warmup_text or not args.warmup_text.strip()
-    ):
-        parser.error("--load-llm-after-warmup requires --action run and an explicit nonempty --warmup-text")
     if min(args.torch_threads, args.intra_op_threads, args.inter_op_threads, args.repetitions) < 1:
         parser.error("Thread counts and repetitions must be positive")
     if args.seed is not None and not 0 <= args.seed <= 4294967295:

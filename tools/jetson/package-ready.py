@@ -34,6 +34,7 @@ def checked(base: Path, relative: str) -> Path:
 def builtin(root: Path):
     """Public presets and resource metadata, shared by packaging and startup."""
     manifest = json.loads(checked(root, "config/jetson/downloads.json").read_text(encoding="utf-8"))
+    manifest.pop("compatibility", None)
     records = manifest["files"]
     for entry in records:
         name = entry["path"]

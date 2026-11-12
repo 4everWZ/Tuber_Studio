@@ -590,7 +590,7 @@ class InferenceBroker:
         client=None,
         *,
         mode="text",
-        selected="llm2b",
+        selected=DAFEIYU_9B_KEY,
         operations_selected=None,
         live_selected=None,
         configuration_path=None,
@@ -601,7 +601,11 @@ class InferenceBroker:
         if selected not in RESOURCES or not RESOURCES[selected].model:
             raise ValueError("Unknown selected inference model")
         self.root = root.resolve()
-        self.runner = runner or ProcessRunner(self.root)
+        self.runner = runner or ProcessRunner(
+            self.root,
+            context_tokens=DAFEIYU_9B_CONTEXT if selected == DAFEIYU_9B_KEY else 131072,
+            kv_cache_type="q4_0" if selected == DAFEIYU_9B_KEY else "q8_0",
+        )
         self.context_tokens = validate_context_tokens(getattr(self.runner, "context_tokens", 131072))
         self.client = client or httpx.AsyncClient(timeout=httpx.Timeout(1200, connect=10), trust_env=False)
         self.lock = asyncio.Lock()
@@ -1429,7 +1433,7 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
     default_context = DAFEIYU_9B_CONTEXT if selected_alias == DAFEIYU_9B_MODEL else 131072
     runner = ProcessRunner(
         root,
-        kv_cache_type=profile.get("kv_cache_type", "q8_0"),
+        kv_cache_type=profile.get("kv_cache_type", "q4_0" if selected_alias == DAFEIYU_9B_MODEL else "q8_0"),
         cuda_managed_memory=profile.get("cuda_managed_memory", False),
         context_tokens=settings.get("context_tokens", default_context),
         node_settings=profile if node_config is not None else None,

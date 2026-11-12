@@ -69,28 +69,42 @@ LLM_ARTIFACTS = {
 def prepare_llm(root: Path, key: str, offline: bool) -> None:
     """Prepare one fixed text model without changing the selected profile."""
     from tuber_studio.inference import RESOURCES, native_context
-    from tuber_studio.inference_profiles import DAFEIYU_9B_CONTEXT, DAFEIYU_9B_KEY, DAFEIYU_9B_PROJECTOR
+    from tuber_studio.inference_profiles import (
+        DAFEIYU_9B_CONTEXT,
+        DAFEIYU_9B_KEY,
+        DAFEIYU_9B_PROJECTOR,
+        GROUNDED_DAFEIYU_KEY,
+    )
 
     resource = RESOURCES[key]
     path = root / "runtime/models" / resource.model
-    if key == DAFEIYU_9B_KEY:
-        from tuber_studio.portable import DOWNLOAD_SECONDS, _download_missing, _existing
+    if key in {DAFEIYU_9B_KEY, GROUNDED_DAFEIYU_KEY}:
+        from tuber_studio.portable import DOWNLOAD_SECONDS, _checked, _download_missing, _existing
 
-        names = {f"models/{resource.model}", f"models/{DAFEIYU_9B_PROJECTOR}"}
-        entries = json.loads((root / "config/jetson/downloads.json").read_text(encoding="utf-8"))["files"]
+        manifest = json.loads((root / "config/jetson/downloads.json").read_text(encoding="utf-8"))
+        model = f"models/{resource.model}"
+        if key == DAFEIYU_9B_KEY:
+            entries = manifest["files"]
+            projector = f"models/{DAFEIYU_9B_PROJECTOR}"
+            context, architecture = DAFEIYU_9B_CONTEXT, "qwen35"
+        else:
+            entries = manifest["compatibility"]["dafeiyu-dora"]
+            projector = Path(model).with_name("mmproj-4x-f16.gguf").as_posix()
+            context, architecture = 131072, None
+        names = {model, projector}
         selected = [entry for entry in entries if entry["path"] in names]
-        if {entry["path"] for entry in selected} != names:
-            raise ValueError("The pinned 9B model and projector must both be in the download manifest")
+        if len(selected) != 2 or {entry["path"] for entry in selected} != names:
+            raise ValueError(f"{resource.alias} requires its fixed model and projector in the download manifest")
         runtime = root / "runtime"
         for entry in selected:
             deadline = time.monotonic() + DOWNLOAD_SECONDS
-            target = runtime / entry["path"]
+            target = _checked(runtime / entry["path"], runtime)
             if offline:
                 if not _existing(target, entry, deadline):
                     raise FileNotFoundError(f"Missing offline asset: {entry['path']}")
             else:
                 _download_missing(target, entry, runtime, deadline)
-        if native_context(path, expected_architecture="qwen35") != DAFEIYU_9B_CONTEXT:
+        if native_context(path, expected_architecture=architecture) != context:
             raise RuntimeError(f"{resource.alias} does not declare its expected native window")
         print(f"{resource.alias} weights and projector verified")
         return
@@ -215,7 +229,13 @@ def main(argv=None) -> None:
         "--check-only", action="store_true", help="Read-only offline compact voice validation"
     )
     scope = parser.add_mutually_exclusive_group()
-    scope.add_argument("--candidate", choices=["qwen35", "dafeiyu9b", "minicpm2b"], help="Prepare only this text profile")
+    candidates = {
+        "dafeiyu9b": "llmdafeiyu9b",
+        "dafeiyu-dora": "llmdafeiyu_dora",
+        "qwen35": "llmqwen35",
+        "minicpm2b": "llm2b",
+    }
+    scope.add_argument("--candidate", choices=candidates, help="Prepare only the chosen inference profile")
     scope.add_argument(
         "--compact-voice-only", action="store_true", help="Prepare only the compact DaFeiYu voice"
     )
@@ -226,7 +246,7 @@ def main(argv=None) -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent / "tts"))
 
     if args.candidate:
-        prepare_llm(root, {"qwen35": "llmqwen35", "dafeiyu9b": "llmdafeiyu9b", "minicpm2b": "llm2b"}[args.candidate], args.offline)
+        prepare_llm(root, candidates[args.candidate], args.offline)
         return
     from prepare_compact import prepare_voice
 
@@ -234,7 +254,12 @@ def main(argv=None) -> None:
         prepare_voice(root, offline=args.offline, check_only=args.check_only)
         return
 
-    from tuber_studio.inference_profiles import DAFEIYU_9B_KEY, DAFEIYU_9B_MODEL, llm_resource_key
+    from tuber_studio.inference_profiles import (
+        DAFEIYU_9B_KEY,
+        DAFEIYU_9B_MODEL,
+        GROUNDED_DAFEIYU_KEY,
+        llm_resource_key,
+    )
 
     nltk_directory = root / "runtime/nltk_data"
     ensure_nltk_data(nltk_directory, args.offline)
@@ -244,7 +269,7 @@ def main(argv=None) -> None:
     data = json.loads(source.read_text(encoding="utf-8"))
     alias = data.get("llm", {}).get("model", DAFEIYU_9B_MODEL)
     selected = llm_resource_key(alias)
-    if selected not in {*LLM_ARTIFACTS, DAFEIYU_9B_KEY}:
+    if selected not in {*LLM_ARTIFACTS, DAFEIYU_9B_KEY, GROUNDED_DAFEIYU_KEY}:
         raise RuntimeError("Configured LLM does not match a fixed downloadable profile")
     prepare_llm(root, selected, args.offline)
     if not configuration.is_file():

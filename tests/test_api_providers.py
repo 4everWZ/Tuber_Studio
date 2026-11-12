@@ -377,9 +377,9 @@ def test_api_speech_preview_reports_upstream_rejection_without_its_body(settings
 
 
 @pytest.mark.asyncio
-async def test_reserved_vision_accepts_only_inline_images_and_is_disabled_by_default(transport):
+async def test_vision_provider_supports_explicit_disable_and_accepts_only_inline_images(transport):
     service = VisionService({"kind": "disabled"})
-    with pytest.raises(ValueError, match="仅支持文本"):
+    with pytest.raises(ValueError, match="尚未启用视觉 Provider"):
         await service.describe("图片是什么", b"x", "image/png")
     service = VisionService(
         {

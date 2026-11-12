@@ -305,12 +305,12 @@ class VisionService:
 
     async def health(self):
         if not self.client:
-            return {"available": False, "detail": "多模态接口已保留；当前文本模型不具备图片理解能力"}
+            return {"available": False, "detail": "尚未启用视觉 Provider"}
         return await models_health(self.client, self.config["model"])
 
     async def describe(self, prompt, image, mime_type):
         if not self.client:
-            raise ValueError("尚未配置视觉服务；MiniCPM5-2B仅支持文本")
+            raise ValueError("尚未启用视觉 Provider")
         if not isinstance(prompt, str) or not 0 < len(prompt.strip()) <= 8000:
             raise ValueError("图片问题须为1到8000字")
         validate_image(image, mime_type)

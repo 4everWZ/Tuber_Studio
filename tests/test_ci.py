@@ -8,6 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from tuber_studio.inference_profiles import (
+    DAFEIYU_9B_CONTEXT,
+    DAFEIYU_9B_DIGESTS,
+    DAFEIYU_9B_MODEL,
+    DAFEIYU_9B_PROJECTOR,
+    DAFEIYU_9B_WEIGHTS,
+)
+
 ROOT = Path(__file__).parents[1]
 
 
@@ -65,10 +73,11 @@ def context(tmp_path):
     assets = tmp_path / "ready"
     files = assets / "builtin/files"
     (files / "tts").mkdir(parents=True)
+    model = {"model": DAFEIYU_9B_MODEL, "context_tokens": DAFEIYU_9B_CONTEXT}
     studio = {
-        "llm": {"model": "MiniCPM5-2B", "context_tokens": 131072},
+        "llm": model,
         "tts": {"voice_id": "yaoyao_sovits_v2", "local_backend": "genie_onnx_int8"},
-        "inference_broker": {"mode": "live"},
+        "inference_broker": model | {"mode": "live", "kv_cache_type": "q4_0"},
     }
     entries = []
     for name, data in (("studio.json", json.dumps(studio).encode()), ("tts/tts_infer.yaml", b"custom: v2")):
@@ -82,14 +91,15 @@ def context(tmp_path):
                 "mode": 0o600,
             }
         )
-    entries.append(
+    entries.extend(
         {
-            "path": "models/model.gguf",
+            "path": "models/" + filename,
             "bytes": 100,
-            "sha256": "a" * 64,
-            "urls": ["https://huggingface.co/public/model"],
+            "sha256": DAFEIYU_9B_DIGESTS[role],
+            "urls": ["https://huggingface.co/public/" + filename],
             "mode": 0o444,
         }
+        for role, filename in (("model", DAFEIYU_9B_WEIGHTS), ("projector", DAFEIYU_9B_PROJECTOR))
     )
     (assets / "builtin/manifest.json").write_text(json.dumps({"format": 1, "files": entries}))
     (assets / "run-ready.sh").write_text("#!/bin/sh\n")
@@ -98,7 +108,7 @@ def context(tmp_path):
 
 def test_program_contract_accepts_only_small_presets_and_public_download_metadata(tmp_path):
     report = tool("audit_program").audit_assets(context(tmp_path))
-    assert report["program_only"] and report["download_artifact_count"] == 1
+    assert report["program_only"] and report["download_artifact_count"] == 2
     assert report["model_weights_embedded_in_builtin"] is False
     assert report["gpu_or_voice_acceptance_verified"] is False
 

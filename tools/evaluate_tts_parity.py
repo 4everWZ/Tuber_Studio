@@ -288,24 +288,11 @@ def child(root, output, variant, voice_id):
 
 def preflight(root):
     import httpx
+    from evaluate_tts_memory import require_idle_business
 
     assert_no_workers()
     with httpx.Client(trust_env=False, timeout=5) as client:
-        response = client.get(
-            "http://127.0.0.1:9020/api/status",
-            headers={"Authorization": "Bearer " + (root / "runtime/admin-token").read_text().strip()},
-        )
-        response.raise_for_status()
-        state = response.json()
-        policy = state["comment_policy"]
-        if (
-            state["state"] != "stopped"
-            or state["queue_length"]
-            or state["current_job"]
-            or policy["auto_browse"]
-            or policy["auto_reply"]
-        ):
-            raise RuntimeError("Stop business/automatic jobs before evaluation")
+        require_idle_business(client, root)
         response = client.get(
             "http://127.0.0.1:9012/health",
             headers={"X-Tuber-Inference-Key": (root / "runtime/inference-token").read_text().strip()},

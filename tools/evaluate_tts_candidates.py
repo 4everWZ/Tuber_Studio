@@ -719,7 +719,7 @@ def child(args):
         )
 
     # Cold startup includes a complete utterance, frontend initialization and allocator warmup.
-    # In tts-first mode this finishes before the broker is asked to load Mini.
+    # In tts-first mode this finishes before the configured LLM is loaded.
     synthesize(args.warmup_text, 0, "cold_warmup")
     if args.candidate == "lite" and (pipeline.cnhubert_model is not None or pipeline.sv_model is not None):
         raise RuntimeError("Lite reference encoder became resident during cold warmup")
@@ -730,20 +730,10 @@ def child(args):
         reference_encoders_released=True if args.candidate == "lite" else None,
     )
     if args.load_order == "tts-first":
-        import httpx
-        from evaluate_tts_memory import profile
+        from evaluate_tts_memory import warm_configured_llm
 
         emit("start_llm_load")
-        headers = {"X-Tuber-Inference-Key": (args.root / "runtime/inference-token").read_text().strip()}
-        response = httpx.post(
-            "http://127.0.0.1:9012/llm/warmup",
-            headers=headers,
-            json={"model": "MiniCPM5-2B"},
-            trust_env=False,
-            timeout=180,
-        )
-        response.raise_for_status()
-        emit("llm_loaded", profile=profile(args.root))
+        emit("llm_loaded", profile=warm_configured_llm(args.root))
     for index, text in enumerate(texts[:1] if args.action == "diagnose" else texts):
         synthesize(text, index, "speech")
     if args.candidate == "bert-int8" and args.action == "diagnose" and not pipeline.int8_operators:
@@ -862,7 +852,7 @@ def measured(args):
         after = {"verification_error": str(error)}
     loaded_profile = next((e["profile"] for e in events if e["stage"] == "llm_loaded"), before)
     unchanged = loaded_profile == after and all(
-        before.get(key) == loaded_profile.get(key) for key in ("model", "context_when_resident", "kv")
+        before.get(key) == loaded_profile.get(key) for key in ("model", "configured_context", "kv")
     )
     if args.load_order == "tts-first" and not any(e["stage"] == "llm_loaded" for e in events):
         unchanged = False

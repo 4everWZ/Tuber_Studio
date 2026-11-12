@@ -18,6 +18,8 @@ PATHS = (
     "config",
     "assets",
     "tools",
+    ":(exclude,glob)tools/training/**",
+    ":(exclude,glob)tools/deployment/push*_to_hf.py",
     "third_party",
     "components/song_requests",
     "evaluations/semantic-cases.json",

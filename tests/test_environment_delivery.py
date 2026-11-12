@@ -42,6 +42,7 @@ def source(tmp_path):
         "src/tuber_studio/portable.py",
         "config/oc.json",
         "assets/avatar.svg",
+        "tools/jetson/initialize-data.py",
         "components/song_requests/stdio.cjs",
         "evaluations/semantic-cases.json",
         "evaluations/speech-cases.json",
@@ -78,19 +79,36 @@ def test_code_edits_reuse_identity_but_dependency_changes_require_new_environmen
         helper.verify(source, installed)
 
 
-def test_program_archive_excludes_runtime_and_untracked_secrets(source):
+def test_program_archive_excludes_runtime_training_and_untracked_secrets(source):
     helper = load("tools/ci/package_program.py")
     subprocess.run(["git", "init", "-q", str(source)], check=True)
     (source / ".env").write_text("PRIVATE")
     (source / "runtime").mkdir()
     (source / "runtime/admin-token").write_text("PRIVATE")
+    source_only = (
+        "tools/training/train_dora.py",
+        "tools/training/grounded_general.txt",
+        "tools/deployment/push_gguf_to_hf.py",
+        "data/sft_train.json",
+        "evaluations/cases/dafeiyu-release-holdout-v1.jsonl",
+    )
+    for name in source_only:
+        fixture = source / name
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text("SOURCE ONLY")
     subprocess.run(["git", "add", "."], cwd=source, check=True, capture_output=True)
     (source / "src/untracked-secret.py").write_text("PRIVATE")
     result = helper.package(source, source / "tmp/program.tar.gz")
     with tarfile.open(result["program_archive"]) as archive:
         names = archive.getnames()
         assert not any("runtime" in name or ".env" in name or "untracked" in name for name in names)
-        assert "program/src/tuber_studio/portable.py" in names
+        assert not {f"program/{name}" for name in source_only}.intersection(names)
+        assert {
+            "program/src/tuber_studio/portable.py",
+            "program/tools/jetson/initialize-data.py",
+            "program/evaluations/semantic-cases.json",
+            "program/evaluations/speech-cases.json",
+        } <= set(names)
         assert (
             archive.extractfile("program/environment-image.txt").read().decode().strip()
             == result["environment_image"]

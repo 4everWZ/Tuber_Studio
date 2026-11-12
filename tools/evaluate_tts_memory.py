@@ -1,7 +1,7 @@
 """Compare fixed-reference v2 inference in fresh processes on the Jetson.
 
-Run inside the project's CUDA container, with live production stopped and the
-selected MiniCPM5-2B/131072 resident. This never changes the production backend.
+Run inside the project's CUDA container with live production stopped. Coexistence
+measurements use the locally configured and selected broker model and window.
 Whole-machine MemAvailable and swap traffic are sampled during loading AND
 synthesis; CUDA tensor sizes alone are not a claim about shared physical RAM.
 """
@@ -23,6 +23,8 @@ import httpx
 import psutil
 from evaluate_context import MemoryWatch, ProbeCancelled
 
+from tuber_studio.inference_profiles import LLM_MODELS, llm_resource_key
+
 PREFIX = "TUBER_TTS_EVAL "
 TEXTS = (
     "海底厨房开门啦，今天的饭团要趁热吃。",
@@ -35,50 +37,80 @@ def emit(**fields):
     print(PREFIX + json.dumps(fields, ensure_ascii=False), flush=True)
 
 
-def profile(root, without_llm=False):
-    admin_headers = {"Authorization": "Bearer " + (root / "runtime/admin-token").read_text().strip()}
-    response = httpx.get(
-        "http://127.0.0.1:9020/api/status", headers=admin_headers, trust_env=False, timeout=5
-    )
+def require_idle_business(client, root):
+    admin = {"Authorization": "Bearer " + (root / "runtime/admin-token").read_text().strip()}
+    response = client.get("http://127.0.0.1:9020/api/status", headers=admin)
     response.raise_for_status()
     status = response.json()
+    response = client.get("http://127.0.0.1:9020/api/automation", headers=admin)
+    response.raise_for_status()
+    automation = response.json()
     if (
         status["state"] != "stopped"
         or status["queue_length"]
         or status["current_job"]
-        or status["comment_policy"]["auto_browse"]
         or status["comment_policy"]["auto_reply"]
+        or automation["policy"]["enabled"]
+        or automation["active_rounds"]
+        or automation["state"] in {"starting", "draining", "stopping"}
     ):
         raise RuntimeError("Stop production and disable automatic comment jobs before evaluation")
-    config = json.loads((root / "runtime/studio.json").read_text())
+
+
+def inference_client(root):
     headers = {"X-Tuber-Inference-Key": (root / "runtime/inference-token").read_text().strip()}
-    response = httpx.get("http://127.0.0.1:9012/health", headers=headers, trust_env=False, timeout=5)
-    response.raise_for_status()
-    health = response.json()
-    if (
-        config["llm"]["model"] != "MiniCPM5-2B"
-        or config["llm"]["context_tokens"] != 131072
-        or health["selected_provider"] != "llm2b"
-        or health["mode"] != "text"
-        or health["busy"]
-        or health["providers"]["llm2b"]["running"] == without_llm
-        or health["providers"]["tts"]["running"]
-    ):
-        raise RuntimeError("Requires idle MiniCPM5-2B/131072 text mode, production TTS stopped")
-    response = httpx.get("http://127.0.0.1:9012/llm/props", headers=headers, trust_env=False, timeout=5)
-    response.raise_for_status()
-    props = response.json()
-    aliases = props.get("model_alias")
-    aliases = [aliases] if isinstance(aliases, str) else aliases
-    if "MiniCPM5-2B" not in (aliases or []) or props["default_generation_settings"]["n_ctx"] != 131072:
-        raise RuntimeError("Actual LLM profile is not MiniCPM5-2B with a 131072 context")
+    return httpx.Client(base_url="http://127.0.0.1:9012", headers=headers, trust_env=False, timeout=5)
+
+
+def profile(root, without_llm=False):
+    config = json.loads((root / "runtime/studio.json").read_text(encoding="utf-8"))
+    key = llm_resource_key(config["llm"]["model"])
+    if config["llm"]["kind"] != "llama_cpp" or key not in LLM_MODELS:
+        raise RuntimeError("Select a locally installed broker language model before evaluation")
+    model, context = LLM_MODELS[key], config["llm"]["context_tokens"]
+    with httpx.Client(trust_env=False, timeout=5) as business:
+        require_idle_business(business, root)
+    with inference_client(root) as client:
+        response = client.get("/health")
+        response.raise_for_status()
+        health = response.json()
+        expected = set() if without_llm else {key}
+        running = {name for name, info in health["providers"].items() if info.get("running")}
+        if (
+            health["selected_provider"] != key
+            or health["mode"] != "text"
+            or health["busy"]
+            or health.get("error")
+            or health["requested_context_tokens"] != context
+            or running != expected
+        ):
+            raise RuntimeError("Idle broker state does not match the configured model, window or residency")
+        actual_context = None
+        if not without_llm:
+            response = client.get("/llm/props")
+            response.raise_for_status()
+            props = response.json()
+            aliases = props.get("model_alias")
+            aliases = [aliases] if isinstance(aliases, str) else aliases
+            actual_context = props["default_generation_settings"]["n_ctx"]
+            if model not in (aliases or []) or actual_context != context or props.get("is_sleeping"):
+                raise RuntimeError("Loaded model or window does not match the configured profile")
     return {
-        "model": config["llm"]["model"],
+        "model": model,
         "resident_llm": not without_llm,
-        "context_when_resident": props["default_generation_settings"]["n_ctx"],
+        "configured_context": context,
+        "context_when_resident": actual_context,
         "kv": health["kv_cache_type"],
         "llm_pids": sorted(p.pid for p in psutil.process_iter(["name"]) if p.info["name"] == "llama-server"),
     }
+
+
+def warm_configured_llm(root):
+    selected = profile(root, without_llm=True)
+    with inference_client(root) as client:
+        response = client.post("/llm/warmup", json={"model": selected["model"]}, timeout=180)
+        response.raise_for_status()
+    return profile(root)
 
 
 def baseline(root, output):
@@ -122,16 +154,8 @@ def child(args):
     if args.load_order == "tts-first":
         emit(stage="start_llm_load")
         started = time.monotonic()
-        headers = {"X-Tuber-Inference-Key": (args.root / "runtime/inference-token").read_text().strip()}
-        response = httpx.post(
-            "http://127.0.0.1:9012/llm/warmup",
-            headers=headers,
-            json={"model": "MiniCPM5-2B"},
-            trust_env=False,
-            timeout=180,
-        )
-        response.raise_for_status()
-        emit(stage="llm_loaded", seconds=round(time.monotonic() - started, 3), profile=profile(args.root))
+        loaded = warm_configured_llm(args.root)
+        emit(stage="llm_loaded", seconds=round(time.monotonic() - started, 3), profile=loaded)
     if args.child == "baseline":
         emit(stage="start_reference_precompute")
         started = time.monotonic()
@@ -180,24 +204,23 @@ def child(args):
             cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved(),
         )
         if args.exercise_llm and index < len(TEXTS) - 1:
+            model = profile(args.root)["model"]
             emit(stage="start_llm", after_speech=index)
             started = time.monotonic()
-            headers = {"X-Tuber-Inference-Key": (args.root / "runtime/inference-token").read_text().strip()}
-            response = httpx.post(
-                "http://127.0.0.1:9012/llm/completion",
-                headers=headers,
-                trust_env=False,
-                json={
-                    "model": "MiniCPM5-2B",
-                    "prompt": "用户：你好。\n助手：",
-                    "n_predict": 4,
-                    "ignore_eos": True,
-                    "cache_prompt": False,
-                    "seed": 42,
-                },
-                timeout=40,
-            )
-            response.raise_for_status()
+            with inference_client(args.root) as client:
+                response = client.post(
+                    "/llm/completion",
+                    json={
+                        "model": model,
+                        "prompt": "用户：你好。\n助手：",
+                        "n_predict": 4,
+                        "ignore_eos": True,
+                        "cache_prompt": False,
+                        "seed": 42,
+                    },
+                    timeout=40,
+                )
+                response.raise_for_status()
             completion = response.json()
             if completion.get("tokens_predicted") != 4 or completion.get("truncated") is not False:
                 raise RuntimeError("Interleaved LLM request did not complete four actual tokens")
@@ -369,6 +392,10 @@ def main():
     except (RuntimeError, httpx.HTTPError) as error:
         # Preserve failed loading evidence even when no live LLM was reached.
         after = {"verification_error": str(error)}
+    if "verification_error" not in after and any(
+        before[key] != after[key] for key in ("model", "configured_context", "kv")
+    ):
+        after["verification_error"] = "Broker model, window or K/V changed during evaluation"
     speeches = [[e for e in r["events"] if e["stage"] == "speech"] for r in results]
     equal = None
     if len(speeches) == 2:

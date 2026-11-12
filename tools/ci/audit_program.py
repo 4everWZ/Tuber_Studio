@@ -13,6 +13,14 @@ import re
 from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qsl, urlsplit
 
+from tuber_studio.inference_profiles import (
+    DAFEIYU_9B_CONTEXT,
+    DAFEIYU_9B_DIGESTS,
+    DAFEIYU_9B_MODEL,
+    DAFEIYU_9B_PROJECTOR,
+    DAFEIYU_9B_WEIGHTS,
+)
+
 PRESETS = {"studio.json", "tts/tts_infer.yaml"}
 PRIVATE = {
     "api_key",
@@ -88,6 +96,14 @@ def audit_builtin(builtin):
             local.add(name)
     if local != PRESETS or not downloadable:
         raise ValueError("Program bundle needs both presets and public artifact metadata")
+    model_artifacts = {
+        record["path"]: record["sha256"] for record in downloadable if record["path"].startswith("models/")
+    }
+    if model_artifacts != {
+        f"models/{DAFEIYU_9B_WEIGHTS}": DAFEIYU_9B_DIGESTS["model"],
+        f"models/{DAFEIYU_9B_PROJECTOR}": DAFEIYU_9B_DIGESTS["projector"],
+    }:
+        raise ValueError("Program bundle must download the fixed 9B model and projector")
     expected = {"manifest.json", *("files/" + name for name in PRESETS)}
     actual = set()
     for item in builtin.rglob("*"):
@@ -101,8 +117,11 @@ def audit_builtin(builtin):
     studio = json.loads(regular(builtin / "files/studio.json"))
     public_values(studio)
     if (
-        studio["llm"]["model"] != "MiniCPM5-2B"
-        or studio["llm"]["context_tokens"] != 131072
+        studio["llm"]["model"] != DAFEIYU_9B_MODEL
+        or studio["llm"]["context_tokens"] != DAFEIYU_9B_CONTEXT
+        or studio["inference_broker"]["model"] != DAFEIYU_9B_MODEL
+        or studio["inference_broker"]["context_tokens"] != DAFEIYU_9B_CONTEXT
+        or studio["inference_broker"]["kv_cache_type"] != "q4_0"
         or studio["tts"]["voice_id"] != "yaoyao_sovits_v2"
         or studio["tts"]["local_backend"] != "genie_onnx_int8"
         or studio["inference_broker"]["mode"] != "live"
