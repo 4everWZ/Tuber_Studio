@@ -49,7 +49,7 @@ LLM API 使用操作者指定的 Base URL／model 和 OpenAI-compatible Chat Com
 
 语音 API 使用独立的 external_api voice_profile，通过 audio/speech 请求 WAV；有效格式、有限大小、非静音和缓存身份仍须检查。其声音身份包括 endpoint、model、API voice 和配置作用域，不能串用本地 GPT-SoVITS 缓存，也不能因设置 API 自动替换角色原 voice_id。操作者须显式选择 API 音色。
 
-MiniCPM5-2B 是文本模型。视觉 endpoint 默认 disabled；本地地址不表示已安装视觉权重，不从模型名称推断已有 encoder／mmproj。图片使用有界、类型匹配的内联字节，不接受观众指定的 URL／系统文件路径；视觉结果无工具或发布权限。视频逐帧观察由独立的 `ApiVideoEvidenceProvider` 负责，须核验实际投影器、窗口、图像响应及绑定模型／投影器／引擎版本的设备资源证明；接口可达与资源准入不替代运营语义验证。取帧和证据归属由[自主浏览](../operations/autonomous-browsing.md#视觉与管理接口)维护。
+MiniCPM5-2B 是文本模型。未配置视觉端点时，运营工作台显示字幕模式。视频通过当前视觉 Provider 传入有界的内联图片，按实际请求结果记录画面或失败原因。模型、投影器、窗口与整机资源的检查用于部署验收，日常取帧直接使用当前配置。取帧和来源归属见[自主浏览](../operations/autonomous-browsing.md#视觉与管理接口)。
 
 LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json，使用 0600 私有权限；管理接口只返回是否已配置，不回显密钥，不把凭证放入模型上下文、公开配置或日志。修改 endpoint 时须重新填写或明确清除对应 key，避免旧凭证发送到新服务；公网 endpoint 使用 HTTPS，禁止跟随重定向泄露凭证。内部 broker token 只用于受控本地 broker，不发送给外部 API。设置修改须经过认证，并在停止直播、无生成作业且自动浏览／回复关闭时原子应用；失败恢复原配置／客户端／本地资源，恢复未确认须可见报错，历史会话保留并按新 Provider 重新计数。
 
@@ -61,7 +61,7 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 ### AGX Orin 候选验收
 
-AGX Orin 64 GB 的 CPU／GPU 共享内存。本项目按约 32 GB 的共驻预算验收。4B／9B／12B 既有权重优先按独立持出配对复验，Qwen3.8-27B 作离线对照。实测须核对主权重、匹配的视觉资产、实际 4-bit K/V 配置、服务模板、启用窗口和整机峰值。初始测试档为直播 8K、运营 32K，原生 256K 能力单列。选型依据实际业务与共驻结果，AGX 单条文本历史测速只支持该次负载的结论。[独立持出回放](../../../evaluations/results/workstation-candidate-replay-20261110.md)
+AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算验收。用目标运营或直播档实际运行，记录权重、配套视觉资产、4-bit K/V、服务模板、实开窗口、整机峰值和换页。早期 8K 文本探针和 32K 首次装配的条件保留在原报告。 [初次装配](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [独立持出回放](../../../evaluations/results/workstation-candidate-replay-20261110.md)
 
 状态探测遵守同一凭证绑定。临时输入的凭证不进入 URL 或日志，保存的凭证仅用于其绑定端点，内部 broker token 仅用于已配对节点的受控路径。检查临时地址使用明确提供给该地址的凭证，或执行无凭证探测。
 

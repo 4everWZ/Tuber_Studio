@@ -213,7 +213,7 @@ Key只写入runtime/provider-credentials.json（设备0600），设置响应／�
 
     uv run python tools/evaluate_semantics.py --config runtime/studio.json
 
-只测集成的原句检索／一次补答路径可加--grounded；该用例使用隔离的内存数据库，真实执行摘要与模型回复，不修改工作台对话、调用TTS或发布。容器内可在空闲时用docker exec tuber-studio python tools/evaluate_semantics.py --grounded。两种检查均按题记录，不凭单次遗漏自动淘汰模型；原模型条件、框架输入与外围证据层分别报告。
+用 `--grounded` 单独测试压缩后的原句检索与回复。该用例在隔离内存库中执行，输出本题回复与缺项诊断。容器内可在空闲时运行 `docker exec tuber-studio python tools/evaluate_semantics.py --grounded`。
 
 Linux设备的真实长输入接收探针为docker exec tuber-studio python tools/evaluate_context.py --tokens 120000 --deadline 900。它验证真实alias／窗口、精确输入token数、未截断和实际处理计数，输出小型JSON并守护可用内存／换页／OOM；不打印全部填充文本。合成填充接收成功不证明长文召回、人格或长期稳定性，取消后先检查实际资源状态再继续业务。
 
@@ -247,4 +247,4 @@ Genie正式依赖作为原镜像的小层安装进同一`/opt/studio-venv`，锁
 
 精简镜像或新增声音的手动部署须先准备并验证永久音色包，再配置`tts.local_backend=genie_onnx_int8`、选定`tts.voice_id`并显式启用`features.live_enabled`；ready新安装由预设及首次初始化完成这些步骤。引擎选择属启动配置，手改后重启。保持MiniCPM5-2B／131072／q4_0，手动切live时先完成Genie冷载和完整暖机，再加载Mini。前端只读显示引擎，text下动态试听提示先手动切live，不隐式加载；仅允许所选固定音色。`/docs`实际backend／voice／bundle身份和小stat检查通过后，工作台才能复用相应音频缓存。真实平台和评论自动策略不因启用Mock而开启。
 
-语义检查覆盖回声、部分字面事实和摘要遗漏，不证明完整人格、长文召回或长期稳定性。比较须记录真实模型、采样、Think、模板适配和证据层条件，不能把旧2B NoThink实验当官方质量基线。正式Genie Profile已完成声音冷／热启动、共享RAM、128K共驻与真实长输入接收验证；持续运行独立验收。新Profile或窗口仍须分别测量，不从旧结果外推，也不把低窗口结果冒称默认128K。
+语义检查记录模型、采样、思考、模板、来源与逐题结果。现有 Genie 档已验证冷／热启动、128K 共驻和真实长输入接收。切换运行档或窗口后，按实际配置复测资源与持续运行。
