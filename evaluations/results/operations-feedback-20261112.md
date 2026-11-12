@@ -71,3 +71,7 @@ uv run --locked python -m evaluations.live_operations_evidence --database runtim
 ## 9B 直播推理额度验证
 
 实际 AGX 9B 节点经 `LlamaCppProvider.generate_live_json` 探测。请求思考额度 1、总输出上限 81，模型返回 `finish_reason=stop` 和结构化可见台词。应用调用耗时 5.37 秒，使用 27 个输入和 27 个输出 tokens。隔离 Chromium 的设置页显示默认 1,024，改为 0 后经保存、刷新和设置 API 核验持久化，语言及视觉模型选择仍是原值。Genie 共驻、首音和两小时设备负载留在目标部署验收。
+
+## 现行评论协议设备诊断
+
+使用已驻留的 9B 和隔离内存库，导入一条带合成回执的回复及一条未发草稿。实际窗口为 262,144。压缩用时 10.04 秒，摘要只绑定有回执的原话。经现行评论生成入口回复用时 14.50 秒，输入 2,455 tokens、输出 160 tokens，正常结束。地点、人物、物品和数量均从对应来源找回，词面缺项为零。该用例检验生产协议和来源隔离，平台写入为零。
