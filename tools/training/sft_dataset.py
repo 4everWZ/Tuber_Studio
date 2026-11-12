@@ -142,15 +142,13 @@ def write_derived_dataset(output_dir, train, dev, source_hashes, seed):
     return manifest
 
 
-def read_split_files(data_dir, *, require_manifest):
+def read_split_files(data_dir):
     inputs = {name: (data_dir / name).read_bytes() for name in SPLIT_FILES}
     fingerprints = {name: digest(body) for name, body in inputs.items()}
     train, dev = [json.loads(body) for body in inputs.values()]
     manifest_path = data_dir / MANIFEST_FILE
     if not manifest_path.is_file():
-        if require_manifest:
-            raise ValueError("Clean baseline requires a grouped SFT manifest")
-        return train, dev, fingerprints
+        raise ValueError("The 9B training baseline requires a grouped SFT manifest")
     manifest_data = manifest_path.read_bytes()
     manifest = json.loads(manifest_data)
     if manifest.get("schema") != "dafeiyu-grouped-sft-v1" or manifest.get("files_sha256") != fingerprints:

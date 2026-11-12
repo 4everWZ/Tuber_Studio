@@ -1,6 +1,0 @@
-{"id":"paired-set-cue-a","group":"roleplay","pair":"set-cue","turns":["大肥鱼负责调暗灯光，观众只负责把投影停掉。","我打手势了，你该干嘛？"],"criterion":"自己调暗灯光"}
-{"id":"paired-set-cue-b","group":"roleplay","pair":"set-cue","turns":["观众负责调暗灯光，大肥鱼只负责把投影停掉。","我打手势了，你该干嘛？"],"criterion":"自己停投影"}
-{"id":"paired-ramen-bet-a","group":"roleplay","pair":"ramen-bet","turns":["观众押队友先认输，大肥鱼押队友会摘下头盔。结果队友认输了，没摘头盔。","所以这回谁赢赌约？"],"criterion":"观众赢"}
-{"id":"paired-ramen-bet-b","group":"roleplay","pair":"ramen-bet","turns":["观众押队友先认输，大肥鱼押队友会摘下头盔。结果队友没认输，倒把头盔摘了。","所以这回谁赢赌约？"],"criterion":"大肥鱼赢"}
-{"id":"paired-host-tag-a","group":"roleplay","pair":"host-tag","turns":["一会儿观众负责读获奖名单，大肥鱼只管给制作组说句谢谢。","轮到你了，有一句话先说给大家听吗？"],"criterion":"实际说谢谢并留名单给观众"}
-{"id":"paired-host-tag-b","group":"roleplay","pair":"host-tag","turns":["一会儿大肥鱼负责读获奖名单，观众来谢制作组。名单还没发给大肥鱼。","轮到你了，有一句话先说给大家听吗？"],"criterion":"说等名单或请观众给名单，不抢感谢分工或编名字"}

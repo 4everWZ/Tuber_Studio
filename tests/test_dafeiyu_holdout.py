@@ -1,4 +1,5 @@
 import copy
+import importlib
 import json
 
 import httpx
@@ -17,15 +18,19 @@ from evaluations.dafeiyu_holdout import (
     run_endpoint,
     score_packet,
     select_replay_cases,
-    structured_check,
     write_jsonl,
 )
 
 
-def test_frozen_holdout_and_independent_training_sources(tmp_path):
+def test_frozen_holdout_and_independent_training_sources(tmp_path, monkeypatch):
     cases, digest = load_frozen(DEFAULT_CASES, DEFAULT_MANIFEST)
-    audit = audit_sources(cases, [ROOT / "data/sft_train.json", ROOT / "data/sft_val.json"], ROOT / "tools/training")
+    training = ROOT / "tools/training"
+    monkeypatch.syspath_prepend(str(training))
+    compiled = tmp_path / "compiled"
+    importlib.import_module("build_authentic_sft_dataset").build_dataset(training, compiled)
+    audit = audit_sources(cases, [compiled / "sft_train.json", compiled / "sft_val.json"], training)
     assert not audit["collisions"]
+    assert audit == json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))["independence"]
     assert digest == cases_digest(cases)
 
     source = tmp_path / "compiled.json"
@@ -59,16 +64,7 @@ def replay_bundle(cases, holdout, condition, suites):
     for case in cases:
         if case["suite"] not in suites:
             continue
-        if case["suite"] == "operations":
-            text = json.dumps({
-                "action": case["expected_action"],
-                "evidence_ids": case["expected_evidence_ids"],
-                "text": "仅用于计分工具结构验证"
-                if case["expected_action"] in {"reply_public", "prepare_dm"}
-                else "",
-            })
-        else:
-            text = "占位回复，仅用于计分测试"
+        text = "占位回复，仅用于计分测试"
         rows.append({"id": case["id"], "replies": [{"text": text, "finish_reason": "stop"} for _ in case["turns"]]})
     return {
         "holdout_sha256": holdout,
@@ -121,40 +117,6 @@ def test_paired_scoring_honors_general_per_category_and_oc_thresholds():
     changed[0]["a"][0] = "替换了实际输出"
     with pytest.raises(ValueError, match="changed"):
         score_packet(cases, digest, changed, key)
-
-
-def test_historical_operations_are_opt_in_and_cannot_change_release_gate():
-    cases, digest = load_frozen(DEFAULT_CASES, DEFAULT_MANIFEST)
-    base = replay_bundle(cases, digest, "base", {"general"})
-    deployed = replay_bundle(cases, digest, "deployed", {"oc", "operations"})
-    candidate = replay_bundle(cases, digest, "candidate", {"general", "oc", "operations"})
-    packet, _ = prepare_blind(cases, digest, base, deployed, candidate, seed=1)
-    assert len(packet) == 160
-    assert len(select_replay_cases(cases, ["operations"])) == 12
-    packet, key = prepare_blind(
-        cases, digest, base, deployed, candidate, seed=1, include_historical_operations=True,
-    )
-    for row in packet:
-        if row["suite"] == "oc":
-            row["grading"]["preference"] = key["cases"][row["id"]]["candidate_position"]
-        else:
-            passed = row["suite"] == "general"
-            row["grading"] = {"a_correct": passed, "b_correct": passed}
-    with pytest.raises(ValueError, match="selected holdout"):
-        score_packet(cases, digest, packet, key)
-    report = score_packet(cases, digest, packet, key, include_historical_operations=True)
-    assert report["release_holdout_gate_pass"]
-    assert not report["synthetic_operations"]["pass"]
-    assert len(report["synthetic_operations"]["failed_cases"]) == 12
-
-
-def test_structured_evidence_requires_correct_action_and_refs():
-    cases, _ = load_frozen(DEFAULT_CASES, DEFAULT_MANIFEST)
-    case = next(row for row in cases if row["id"] == "source-actual-frame")
-    correct = {"action": "reply_public", "evidence_ids": ["ref:1"], "text": "27.6 秒"}
-    wrong = correct | {"evidence_ids": ["ref:2"]}
-    assert structured_check(case, [{"text": json.dumps(correct)}])
-    assert not structured_check(case, [{"text": json.dumps(wrong)}])
 
 
 def test_endpoint_replay_keeps_completed_cases_across_transport_failure(tmp_path, monkeypatch):

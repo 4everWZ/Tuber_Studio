@@ -40,9 +40,8 @@ def decoded(value, expected):
 def has_comment_receipt(receipt):
     code = receipt.get("code")
     identifier = str(receipt.get("rpid", ""))
-    return code in (0, "0") and type(code) is not bool and identifier.isascii() and (
-        identifier.isdecimal() and identifier.lstrip("0") != ""
-    )
+    return (type(code) in {int, str} and code in (0, "0") and identifier.isascii()
+            and identifier.isdecimal() and bool(identifier.lstrip("0")))
 
 
 def collect(database, first_day, last_day, *, timezone="Asia/Taipei", model=None):

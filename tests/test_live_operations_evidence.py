@@ -5,13 +5,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from evaluations.live_operations_evidence import collect, tally_reviews
+from evaluations.live_operations_evidence import collect, has_comment_receipt, tally_reviews
 from tuber_studio.operation_continuations import ContinuationCoordinator
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.operations_control import OperationsControl
 
 
 def test_public_candidates_receipts_and_explicit_reviews_are_distinct(settings, store):
+    assert not has_comment_receipt({"code": 0.0, "rpid": "8"})
     BrowsingRepository(store)
     ContinuationCoordinator(store, OperationsControl(store))
     zone = ZoneInfo("Asia/Taipei")

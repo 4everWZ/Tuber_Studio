@@ -15,12 +15,12 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CASES = ROOT / "evaluations/cases/dafeiyu-next-holdout-v1.jsonl"
+VERSION = "dafeiyu-release-holdout-v1"
+DEFAULT_CASES = ROOT / "evaluations/cases" / f"{VERSION}.jsonl"
 DEFAULT_MANIFEST = DEFAULT_CASES.with_suffix(".manifest.json")
 DEFAULT_CHARACTERS = ROOT / "config/characters.json"
 GENERAL_CATEGORIES = ("reading", "numeracy", "practical", "instruction", "coding", "continuity")
-SUITE_COUNTS = {"general": 120, "oc": 40, "operations": 12}
-RELEASE_SUITES = ("general", "oc")
+SUITE_COUNTS = {"general": 120, "oc": 40}
 NEAR_RATIO = 0.88
 
 
@@ -54,7 +54,7 @@ def read_cases(path=DEFAULT_CASES):
     counts = Counter(row["suite"] for row in rows)
     general = Counter(row["category"] for row in rows if row["suite"] == "general")
     if counts != SUITE_COUNTS or general != dict.fromkeys(GENERAL_CATEGORIES, 20):
-        raise ValueError("holdout requires 120 general, 40 OC and 12 operations cases")
+        raise ValueError("holdout requires 120 general and 40 OC cases")
     for key in ("id", "source_group"):
         if len({row[key] for row in rows}) != len(rows):
             raise ValueError(f"holdout contains repeated {key}")
@@ -63,10 +63,6 @@ def read_cases(path=DEFAULT_CASES):
             raise ValueError(f"holdout case {row['id']} has no prompt or rubric")
         if not all(turn["speaker"].strip() and normalize(turn["text"]) for turn in row["turns"]):
             raise ValueError(f"holdout case {row['id']} has an empty turn")
-        if row["suite"] == "operations" and not (
-            row.get("expected_action") and isinstance(row.get("expected_evidence_ids"), list)
-        ):
-            raise ValueError(f"holdout case {row['id']} has no structured reference")
     return rows
 
 
@@ -141,7 +137,7 @@ def freeze(cases, manifest, compiled, raw_dir):
     if audit["collisions"]:
         raise ValueError(json.dumps(audit, ensure_ascii=False))
     value = {
-        "version": "dafeiyu-next-holdout-v1",
+        "version": VERSION,
         "cases": cases.name,
         "cases_sha256": cases_digest(rows),
         "case_counts": SUITE_COUNTS,
@@ -158,9 +154,11 @@ def load_frozen(cases, manifest):
     rows = read_cases(cases)
     value = json.loads(manifest.read_text(encoding="utf-8"))
     if (
-        value["cases"] != cases.name
+        value["version"] != VERSION
+        or value["cases"] != cases.name
         or value["cases_sha256"] != cases_digest(rows)
         or value["case_counts"] != SUITE_COUNTS
+        or value["general_categories"] != dict.fromkeys(GENERAL_CATEGORIES, 20)
         or value["independence"]["collisions"]
     ):
         raise ValueError("frozen holdout does not match its manifest")
@@ -178,7 +176,6 @@ def replay_protocol(characters=DEFAULT_CHARACTERS, max_tokens=256):
             "general": "准确、简洁地回答。遵循当前任务的输出要求，缺少事实依据时如实说明。",
             "oc": "用角色的身份接当前话题，注意多人发言和后续更新。角色设定："
             + json.dumps(profile, ensure_ascii=False, sort_keys=True),
-            "operations": "按当前运营快照和要求返回结构化决定。以明确来源、账号关系和平台回执为准。",
         },
         "seed": 42,
         "temperature": 0,
@@ -289,37 +286,12 @@ def checked_result(result, cases, holdout_sha):
 
 
 def select_replay_cases(cases, suites=None):
-    selected = suites or RELEASE_SUITES
+    selected = suites or SUITE_COUNTS
     return [case for case in cases if "all" in selected or case["suite"] in selected]
 
 
-def structured_check(case, replies):
-    try:
-        value = json.loads(replies[-1]["text"])
-        refs = value["evidence_ids"]
-        return (
-            isinstance(value, dict)
-            and set(value) == {"action", "evidence_ids", "text"}
-            and value["action"] == case["expected_action"]
-            and isinstance(refs, list)
-            and all(isinstance(ref, str) for ref in refs)
-            and sorted(refs) == sorted(case["expected_evidence_ids"])
-            and isinstance(value["text"], str)
-            and (bool(value["text"].strip()) == (value["action"] in {"reply_public", "prepare_dm"}))
-        )
-    except (TypeError, ValueError, KeyError):
-        return False
-
-
-def prepare_blind(cases, holdout_sha, base, deployed, candidate, *, seed=None, include_historical_operations=False):
+def prepare_blind(cases, holdout_sha, base, deployed, candidate, *, seed=None):
     results = {"base": base, "deployed": deployed, "candidate": candidate}
-    historical_ids = {case["id"] for case in cases if case["suite"] == "operations"}
-    if not include_historical_operations:
-        cases = select_replay_cases(cases)
-        results = {
-            label: result | {"rows": [row for row in result["rows"] if row["id"] not in historical_ids]}
-            for label, result in results.items()
-        }
     indexed = {label: checked_result(result, cases, holdout_sha) for label, result in results.items()}
     protocols = {result["protocol_sha256"] for result in results.values()}
     if len(protocols) != 1:
@@ -362,8 +334,6 @@ def prepare_blind(cases, holdout_sha, base, deployed, candidate, *, seed=None, i
             "reference_length_finishes": sum(reply["finish_reason"] == "length"
                                              for reply in indexed[reference][case_id]),
         }
-        if suite == "operations":
-            evidence["candidate_structured"] = structured_check(case, indexed["candidate"][case_id])
         private[case_id] = evidence
     key = {
         "holdout_sha256": holdout_sha,
@@ -389,15 +359,13 @@ def paired_interval(differences, samples=10000):
     return [round(resamples[lower], 4), round(resamples[upper], 4)]
 
 
-def score_packet(cases, holdout_sha, packet, key, *, include_historical_operations=False):
+def score_packet(cases, holdout_sha, packet, key):
     if holdout_sha != key["holdout_sha256"] or packet_digest(packet) != key["packet_sha256"]:
         raise ValueError("grading packet was changed or belongs to a different run")
-    if not include_historical_operations:
-        cases = select_replay_cases(cases)
     if [row["id"] for row in packet] != [case["id"] for case in cases]:
         raise ValueError("grading packet does not cover the selected holdout suites")
     cases_by_id = {case["id"]: case for case in cases}
-    general, oc, ops, details = defaultdict(list), Counter(), [], []
+    general, oc, details = defaultdict(list), Counter(), []
     for row in packet:
         case = cases_by_id[row["id"]]
         evidence, grading = key["cases"][row["id"]], row["grading"]
@@ -419,12 +387,7 @@ def score_packet(cases, holdout_sha, packet, key, *, include_historical_operatio
             a, b = grading["a_correct"], grading["b_correct"]
             candidate, reference = (a, b) if position == "a" else (b, a)
             detail |= {"candidate_correct": candidate, "reference_correct": reference}
-            if case["suite"] == "general":
-                general[case["category"]].append((candidate, reference))
-            else:
-                detail["structured_pass"] = evidence["candidate_structured"]
-                if not candidate or not evidence["candidate_structured"]:
-                    ops.append(row["id"])
+            general[case["category"]].append((candidate, reference))
         details.append(detail)
 
     categories = {}
@@ -435,7 +398,7 @@ def score_packet(cases, holdout_sha, packet, key, *, include_historical_operatio
                                 "additional_errors": reference - candidate}
     paired = [int(a) - int(b) for pairs in general.values() for a, b in pairs]
     gen_ok = sum(paired) >= -3 and all(value["additional_errors"] <= 2 for value in categories.values())
-    result = {
+    return {
         "holdout_sha256": holdout_sha,
         "protocol_sha256": key["protocol_sha256"],
         "conditions": key["conditions"],
@@ -446,9 +409,6 @@ def score_packet(cases, holdout_sha, packet, key, *, include_historical_operatio
         "release_holdout_gate_pass": gen_ok and oc["win"] >= 24,
         "details": details,
     }
-    if any(case["suite"] == "operations" for case in cases):
-        result["synthetic_operations"] = {"failed_cases": ops, "pass": not ops}
-    return result
 
 
 def main():
@@ -458,10 +418,8 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     for command in ("freeze", "audit"):
         arguments = commands.add_parser(command)
-        arguments.add_argument("--compiled", nargs="+", type=Path, default=[
-            ROOT / "data/sft_train.json",
-            ROOT / "data/sft_val.json",
-        ])
+        arguments.add_argument("--compiled", nargs="+", type=Path, required=True,
+                               help="compiled training and development splits to check for overlap")
         arguments.add_argument("--raw-dir", type=Path, default=ROOT / "tools/training")
     replay = commands.add_parser("replay")
     replay.add_argument("--endpoint", default=os.environ.get("DAFEIYU_HOLDOUT_ENDPOINT", "http://127.0.0.1:8080/v1"))
@@ -472,7 +430,7 @@ def main():
     replay.add_argument("--max-tokens", type=int, default=256)
     replay.add_argument(
         "--suite", choices=(*SUITE_COUNTS, "all"), action="append",
-        help="default: general and OC; operations and all include historical synthetic cases",
+        help="default: all general and OC cases",
     )
     replay.add_argument("--output", type=Path, required=True)
     blind = commands.add_parser("blind")
@@ -480,7 +438,6 @@ def main():
     for command in (blind, score):
         command.add_argument("--packet", type=Path, required=True)
         command.add_argument("--key", type=Path, required=True)
-        command.add_argument("--include-historical-operations", action="store_true")
     for name in ("base", "deployed", "candidate"):
         blind.add_argument(f"--{name}", type=Path, required=True)
     blind.add_argument("--seed", type=int, help="optional private seed for reproducing an existing pairing")
@@ -509,10 +466,7 @@ def main():
                 raise ValueError("choose distinct new paths for the grading packet and private key")
             conditions = [json.loads(path.read_text(encoding="utf-8"))
                           for path in (args.base, args.deployed, args.candidate)]
-            packet, key = prepare_blind(
-                rows, digest, *conditions, seed=args.seed,
-                include_historical_operations=args.include_historical_operations,
-            )
+            packet, key = prepare_blind(rows, digest, *conditions, seed=args.seed)
             write_jsonl(args.packet, packet)
             write_json(args.key, key)
         else:
@@ -520,7 +474,6 @@ def main():
                 raise ValueError("choose a new scoring report path")
             report = score_packet(
                 rows, digest, read_jsonl(args.packet), json.loads(args.key.read_text(encoding="utf-8")),
-                include_historical_operations=args.include_historical_operations,
             )
             write_json(args.output, report)
 

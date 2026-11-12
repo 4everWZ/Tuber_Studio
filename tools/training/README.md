@@ -1,63 +1,77 @@
-# 大肥鱼 OC 训练与导出
+# 大肥鱼 9B 训练、评估与导出
 
-大肥鱼 OC 训练覆盖表达、关系和互动，并检查通用能力保留。平台能力、调度、联网取材与发送由业务程序提供。训练输入由既有语料派生，保留原始文本及历史训练集。
+现行运营和直播默认使用同一份大肥鱼 Qwen3.5-9B。已部署版本从 `checkpoint-38` 合并，配套 Q4_K_M 主权重和 Q8_0 视觉投影器。训练选择、离线结果与实机条件分别见[配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)、[装配记录](../../evaluations/results/agx-clean-9b-deployment-20261111.md)和[运营审核回放](../../evaluations/results/review-agx-mainline-20261111.md)。
 
-## 当前部署
+## 编译与训练
 
-运营档使用 Qwen3.5-9B 的 `checkpoint-38`，部署包包含同一基座的 Q4_K_M 权重和 Q8_0 视觉投影器。AGX 运行 llama.cpp CUDA，当前窗口为 262,144、K/V 为 `q4_0`，思考开启。训练选点、独立评估、导出和运行条件分别见[9B 配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)、[装配实测](../../evaluations/results/agx-clean-9b-deployment-20261111.md)和[运营审核回放](../../evaluations/results/review-agx-mainline-20261111.md)。
-
-MiniCPM-V-4.7-1B 的历史训练使用 612 条 SFT 样本、assistant-only loss 和 DoRA rank 16／alpha 32，在双 RTX 3090 上训练五轮。字幕、帧引用和复读样例见[1B 实测](../../evaluations/results/authentic-dora-20261107/README.md)。
-
-## Qwen3.5-9B 派生基线
-
-使用工作站项目专用 Python 环境。编译器按二次元宽度、大肥鱼 OC 深度、通用能力归类，先合并同源与近重复会话，再分训练和开发。原始文本、历史样本和已有适配器保留。编译器向指定目录写入组别及文件摘要，发现不同内容时要求新目录。
-
-干净基线使用模型原生模板，逐样本验证 system 与对话原文均实际进入输入。监督只覆盖 assistant 正文及其 EOS，超过序列长度、缺少终止符或带视觉／音频资产的样本直接失败。语言适配器目标排除视觉组件。训练数据按实际监督 token 平衡，宽度与深度合计约 70%，通用约 30%，允许偏差 3 个百分点。
+在工作站项目专用训练环境执行。`RUN` 为本地版本目录。准备实际训练使用的 Qwen3.5-9B 固定快照，首版基座提交为 `c202236235762e1c871ad0ccb60c8ee5ba337b9a`。编译先合并同源和近重复会话，再分训练与开发。各分片和清单写入 `RUN/data`，原始语料及来源保持在本目录。
 
 ```bash
+BASE_REVISION=c202236235762e1c871ad0ccb60c8ee5ba337b9a
+HOLDOUT=evaluations/cases/dafeiyu-release-holdout-v1.jsonl
+
 python tools/training/build_authentic_sft_dataset.py --output_dir "$RUN/data" --seed 42
 python -m evaluations.dafeiyu_holdout audit \
   --compiled "$RUN/data/sft_train.json" "$RUN/data/sft_val.json" --raw-dir tools/training
-torchrun --standalone --nproc_per_node=2 tools/training/train_dora.py \
-  --model_name_or_path Qwen/Qwen3.5-9B --revision "$BASE_REVISION" \
-  --local_files_only --clean_baseline \
-  --holdout evaluations/cases/dafeiyu-next-holdout-v1.jsonl \
-  --data_dir "$RUN/data" --output_dir "$RUN/adapter" \
-  --r 16 --lora_alpha 32 --batch_size 1 --gradient_accumulation_steps 4 \
-  --learning_rate 0.00015 --epochs 2 --max_seq_length 1024 --seed 42
+
+TRAIN_ARGS=(--revision "$BASE_REVISION" --local_files_only --holdout "$HOLDOUT"
+  --data_dir "$RUN/data" --r 16 --lora_alpha 32 --batch_size 1
+  --gradient_accumulation_steps 4 --learning_rate 0.00015 --epochs 2
+  --max_seq_length 1024 --seed 42)
+
+WORLD_SIZE=2 python tools/training/train_dora.py "${TRAIN_ARGS[@]}" \
+  --prepare_only --output_dir "$RUN/prepared"
+torchrun --standalone --nproc_per_node=2 tools/training/train_dora.py "${TRAIN_ARGS[@]}" \
+  --output_dir "$RUN/adapter"
 ```
 
-`BASE_REVISION` 是已缓存的 40 位基座提交，`RUN` 是独立输出目录。`training_metrics.json` 记录训练输入、模板、留出集、实际 token 配额及检查点。先用开发集选检查点，再进入配对留出回放。训练或开发 loss 只用于训练诊断。历史 1B 包装器 `run_finetune.sh` 仍支持显式指定数据与新输出。
+准备入口用真实 tokenizer 检查原生聊天模板、assistant 正文和 EOS 监督边界，拒绝截断及带视觉或音频的样本。训练仅更新语言适配器。训练侧按实际监督 token 平衡，角色深度和二次元宽度合计约 70%，通用约 30%，允许偏差 3 个百分点。`training_metrics.json` 保存分片与模板身份、留出集、监督 token 和检查点。按开发 loss 选点后再做冻结回放。
 
-编号工件、分片摘要、开发选择与留出回放进度记录在本次实验结果中。[9B 干净基线](../../evaluations/results/dafeiyu-clean-9b-20261111.md)
+## 冻结回放与配对评审
 
-冻结持出默认回放和评分 120 条通用题及 40 个 OC 场景。复现旧 12 条合成运营时，在回放加 `--suite all`，匿名配对和评分均加 `--include-historical-operations`。合成结果单列，现行 `release_holdout_gate_pass` 取通用与 OC 的结果。真实运营从业务库只读复算，并用本地评审包核对逐条语义反馈。 [真实运营评估入口](../../evaluations/results/operations-feedback-20261112.md#真实运营的模型评估)
-
-历史批量训练和 18 题文本初筛可用退役前提交 `744ddd7` 的 `tools/training/run_model_queue.py` 复现。现行入口使用上文的分组编译、固定基座训练与配对持出。
-
-## 历史 1B 的合并与 GGUF 导出
-
-复现 MiniCPM 1B 时，`export_grounded_sft.py` 完成 PEFT 合并、4× 视觉配置、GGUF 转换、Q4_K_M 量化及 `bundle.json` 元数据输出。要求底模快照目录名为 `ad9bf379feb71204c888b22923d63322452407f9`，llama.cpp 固定为 `0ec4027a2a0183de87c007069adddc06e665f7de`，并已构建量化工具。输出使用新目录。
+冻结集由 120 条通用题和 40 个 OC 场景组成。用同一角色卡和回放协议生成同基座通用对照、现行角色模型 OC 对照及候选的两套结果。`ADAPTER` 指向已选检查点，`DEPLOYED_ENDPOINT` 和 `DEPLOYED_MODEL` 指向待对照的已部署模型服务。`DEPLOYED_BASE_REVISION` 与 `DEPLOYED_ARTIFACT` 使用可追溯的实际版本标识。
 
 ```bash
-python tools/training/export_grounded_sft.py \
-  --base "$BASE" --adapter "$ADAPTER" --llama-cpp "$LLAMA_CPP" --output "$EXPORT"
+python -m tools.training.replay_dafeiyu_holdout_workstation \
+  --model Qwen/Qwen3.5-9B --revision "$BASE_REVISION" --artifact base \
+  --suite general --output "$RUN/base.json"
+python -m tools.training.replay_dafeiyu_holdout_workstation \
+  --model Qwen/Qwen3.5-9B --revision "$BASE_REVISION" --adapter "$ADAPTER" \
+  --artifact candidate --output "$RUN/candidate.json"
+python -m evaluations.dafeiyu_holdout replay --endpoint "$DEPLOYED_ENDPOINT" \
+  --model "$DEPLOYED_MODEL" --base-revision "$DEPLOYED_BASE_REVISION" \
+  --artifact "$DEPLOYED_ARTIFACT" --suite oc --output "$RUN/deployed.json"
+python -m evaluations.dafeiyu_holdout blind \
+  --base "$RUN/base.json" --candidate "$RUN/candidate.json" --deployed "$RUN/deployed.json" \
+  --packet "$RUN/grading.jsonl" --key "$RUN/grading-key.json"
 ```
 
-该 1B 适配器与原始底模合并。导出包括以下文件。
+独立评审员只接收 `grading.jsonl`。通用题把 `grading.a_correct` 和 `grading.b_correct` 填为布尔值，OC 题的 `grading.preference` 填 `a`、`b` 或 `tie`。完成后用同一次配对的密钥评分。真实运营语义走实际来源和回执的[只读评估入口](../../evaluations/results/operations-feedback-20261112.md#真实运营的模型评估)。
 
-- `MiniCPM-V-4.7-1B-Dafeiyu-Grounded-Q4_K_M.gguf`
-- `mmproj-4x-f16.gguf`
-- `bundle.json`：底模／引擎版本、adapter 和产物来源信息。
+```bash
+python -m evaluations.dafeiyu_holdout score \
+  --packet "$RUN/grading.jsonl" --key "$RUN/grading-key.json" --output "$RUN/score.json"
+```
 
-`merge_and_export_gguf.py` 也可将 adapter 合并成 Hugging Face checkpoint；它本身不完成 GGUF 与配套投影器导出，不能以脚本文件名代替检查输出。
+## 合并与 GGUF
 
-已发布的同批权重与投影器见[固定发布版本](https://huggingface.co/4everImmortality/dafeiyu-minicpmv/tree/68f9542e3c7dee1b41a1be12fe97f3095819b952)。Hub 主权重文件名为 `MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf`，节点安装使用上面的 Grounded 文件名；按固定下载清单映射，不混用旧 projector。安装、节点配对与视觉验证见[部署指南](../../docs/guides/deployment.md#电脑业务主机与独立推理节点)。
+`BASE_SNAPSHOT` 为与训练同一提交的本地基座快照，`LLAMA_CPP` 为已安装转换依赖且构建 `llama-quantize` 的 llama.cpp 工作目录。首版使用导出提交 `0ec4027a2a0183de87c007069adddc06e665f7de`。主权重从合并结果导出，投影器使用同一固定基座的视觉权重。选定检查点只训练语言层。
 
-## 评估与其他训练工具
+```bash
+python tools/training/merge_and_export_gguf.py --revision "$BASE_REVISION" \
+  --adapter_path "$ADAPTER" --output_dir "$RUN/merged"
+mkdir "$RUN/gguf"
+python "$LLAMA_CPP/convert_hf_to_gguf.py" "$RUN/merged" \
+  --no-mtp --outtype f16 --outfile "$RUN/model-f16.gguf"
+"$LLAMA_CPP/build/bin/llama-quantize" "$RUN/model-f16.gguf" \
+  "$RUN/gguf/dafeiyu-qwen35-9b-Q4_K_M.gguf" Q4_K_M
+python "$LLAMA_CPP/convert_hf_to_gguf.py" "$BASE_SNAPSHOT" \
+  --mmproj --outtype q8_0 --outfile "$RUN/gguf/mmproj-dafeiyu-qwen35-9b-Q8_0.gguf"
+sha256sum "$RUN/gguf/"*.gguf
+```
 
-`evaluate_finetuned_model.py`使用固定旧SYSTEM_PROMPT（含旧自称与AI OC描述），`evaluate_4groups.py`也使用固定题目和判据；它们仅供原条件离线对照，不读取当前角色卡，旧评分不代表当前`characters.json`或当前运营服务已通过。主线验收须通过实际服务，使用当前人格和真实caption／frame回放，覆盖多轮回复、引用、连续复读、未完成输出和工具补读。报告须保留素材、模型／引擎、采样、上下文与输出设置，以及失败原答；小集合通过不宣称 100% 稳定。
+发布工件保存基座、适配器、导出引擎和两份 GGUF 的身份。目标设备复验真实窗口、K/V、文本模板和图像输入。现行装载使用[固定发布版本](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/tree/21ecede9e9a3f07764c8c0ee3bc24d2de7cf5aff/releases/1.0.0)。
 
-`grounded_sft.py`、`train_grounded_preference.py` 及 `build_grounded_*`／`augment_grounded_*` 是独立视觉与偏好实验工具，其语料、起始权重和判据不自动替代当前 OC 数据。历史条件和逐例结果见[视觉实验](../../evaluations/results/grounded-persona-v6-20261105/README.md)、[后续回放](../../evaluations/results/grounded-persona-v7-20261105/README.md)、[偏好实验](../../evaluations/results/grounded-preference-20261105/README.md)。这些记录用于比较与追查，不作为当前部署说明。
+## 历史复现
 
-`prepare_grounded_replay.py`、`evaluate_grounded_sft.py` 和 `replay_grounded_operations.py` 服务于旧 Grounded 实验。旧 endpoint 的逐帧、证据先行和来源笔记协议，以及旧八题合成运营集 `evaluations/cases/operations-heldout.json`，可在提交 `744ddd7` 复现。早期评估随结果保留当时实际用的[八题副本](../../evaluations/results/operations-vlm-20261101/resume2/mini4-7-legacy/operations-heldout.json)。现行冻结回放默认读取 `evaluations/cases/dafeiyu-next-holdout-v1.jsonl` 的通用与 OC 题，实跑模型评估从业务库提取。
+MiniCPM/Grounded、旧 DoRA 试验、18 题初筛及旧派生 `data/sft_*.json` 可用提交 `744ddd7` 复现。该版本保留视频标注及署名，1B 训练实证位于 `evaluations/results/authentic-dora-20261107/README.md`。含 12 条合成运营题的旧冻结回放可从 `58652d3` 回查，阶段式运营原型在 `0d136b1`。现行独立性审计继续读取本目录 13 份 `grounded_*.txt`。 [早期 9B 配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)

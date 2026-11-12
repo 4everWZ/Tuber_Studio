@@ -216,7 +216,12 @@ async def test_public_cases_use_real_native_provider_json_with_isolated_override
     assert "private-memory-must-not-import" not in json.dumps(requests)
     assert result["llm_config"]["max_tokens"] == source_config["llm"]["max_tokens"]
     assert result["explicit_overrides"]["decision_max_tokens"] == 4096
-    assert result["context_contract"]["native_context_tokens"] == 262144
+    assert result["context_contract"] == {
+        "context_tokens": 131072,
+        "native_context_tokens": 262144,
+        "native_context_source": "explicit_cli",
+        "uses_configured_native_window": False,
+    }
     assert result["production_configuration_written"] is False
     assert result["platform_messages_sent"] == 0
     assert "text-only" in result["evaluation_scope"].casefold()

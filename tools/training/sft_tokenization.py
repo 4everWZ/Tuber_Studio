@@ -90,17 +90,12 @@ def encode_row(row, tokenizer, max_seq_length, *, end_tokens=()):
     return {"input_ids": ids, "attention_mask": encoded["attention_mask"], "labels": labels}, count
 
 
-def tokenize_split(rows, tokenizer, max_seq_length, *, allow_legacy=False, end_tokens=()):
+def tokenize_split(rows, tokenizer, max_seq_length, *, end_tokens=()):
     encoded = []
     for index, row in enumerate(rows, 1):
         try:
-            try:
-                bucket = bucket_for(row["category"])
-            except ValueError:
-                if not allow_legacy or "bucket" in row:
-                    raise
-                bucket = "legacy"
-            if row.get("bucket", bucket) != bucket:
+            bucket = bucket_for(row["category"])
+            if row["bucket"] != bucket:
                 raise ValueError("Category and training bucket differ")
             inputs, tokens = encode_row(row, tokenizer, max_seq_length, end_tokens=end_tokens)
         except (KeyError, TypeError, ValueError) as error:

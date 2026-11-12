@@ -20,7 +20,7 @@ def test_compiler_preserves_source_roles_and_isolates_groups(modules, tmp_path):
     sources = {name: (TRAINING / name).read_bytes() for name in compiler.SOURCE_NAMES}
     manifest = compiler.build_dataset(TRAINING, tmp_path)
     assert manifest == compiler.build_dataset(TRAINING, tmp_path)
-    train, dev, _ = dataset.read_split_files(tmp_path, require_manifest=True)
+    train, dev, _ = dataset.read_split_files(tmp_path)
     assert {row["group_id"] for row in train}.isdisjoint(row["group_id"] for row in dev)
     assert {row["bucket"] for row in train} == set(dataset.BUCKETS)
     assert {row["bucket"] for row in dev} == set(dataset.BUCKETS)
@@ -160,15 +160,12 @@ def test_actual_token_balancing_keeps_every_train_row_and_aligns_global_batch(mo
     assert 0.27 <= counts["general_ability"] / sum(counts.values()) <= 0.33
 
 
-def test_legacy_rows_keep_strict_mask_without_claiming_clean_categories(modules):
+def test_uncompiled_legacy_rows_are_rejected(modules):
     compiler, _, tokens = modules
     row = compiler.sample("source", "family", "dafeiyu_core", [("Q", "A")], system="SYS")
     legacy = {"messages": row["messages"], "category": "chit_chat_and_food"}
     with pytest.raises(ValueError, match="Unknown OC training category"):
         tokens.tokenize_split([legacy], CharacterTokenizer(), 256)
-    encoded = tokens.tokenize_split([legacy], CharacterTokenizer(), 256, allow_legacy=True)
-    assert encoded[0][0] == "legacy"
-    assert encoded[0][2] == 2
 
 
 def test_workstation_replay_retains_native_stop_vs_length():

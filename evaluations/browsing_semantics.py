@@ -28,7 +28,6 @@ from tuber_studio.providers import SYSTEM_RULES
 from tuber_studio.runtime import Runtime
 from tuber_studio.store import Store
 
-STRICT_CONTEXT_TOKENS = 131072
 OVERRIDES = {
     "model_base_url": "base_url",
     "model": "model",
@@ -246,7 +245,7 @@ async def evaluate(args):
         client.event_hooks["request"].append(observe_request)
         client.event_hooks["response"].append(observe_response)
     report = {
-        "protocol": "browsing-semantics-v3",
+        "protocol": "browsing-semantics-v4",
         "model": llm["model"],
         "enable_thinking": llm.get("enable_thinking"),
         "decision_max_tokens": config["decision_max_tokens"],
@@ -263,13 +262,11 @@ async def evaluate(args):
         "character": character_info,
         "context_contract": {
             "context_tokens": llm["context_tokens"],
-            "native_context_tokens": llm.get("native_context_tokens", 131072),
+            "native_context_tokens": llm["native_context_tokens"],
             "native_context_source": "explicit_cli"
             if getattr(args, "native_context_tokens", None) is not None
             else "configured_model",
-            "strict_context_tokens": STRICT_CONTEXT_TOKENS,
-            "meets_strict_window": llm["context_tokens"] >= STRICT_CONTEXT_TOKENS,
-            "native_meets_strict_window": llm.get("native_context_tokens", 131072) >= STRICT_CONTEXT_TOKENS,
+            "uses_configured_native_window": llm["context_tokens"] == llm["native_context_tokens"],
         },
         "cases_sha256": hashlib.sha256(args.cases.read_bytes()).hexdigest(),
         "evaluation_scope": "Text-only public ResponseDecision generation",

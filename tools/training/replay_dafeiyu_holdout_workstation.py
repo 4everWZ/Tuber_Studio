@@ -110,8 +110,7 @@ def main():
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--characters", type=Path, default=DEFAULT_CHARACTERS)
     parser.add_argument(
-        "--suite", choices=(*SUITE_COUNTS, "all"), action="append",
-        help="default: general and OC; operations and all include historical synthetic cases",
+        "--suite", choices=tuple(SUITE_COUNTS), action="append", help="Default: both release suites",
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-tokens", type=int, default=256)
