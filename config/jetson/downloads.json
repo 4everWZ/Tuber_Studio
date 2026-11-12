@@ -22,12 +22,21 @@
       ]
     },
     {
-      "path": "models/MiniCPM5-2B-Q4_K_M.gguf",
-      "bytes": 1561318368,
-      "sha256": "ec2d5801640099e97d8d7e8003ad4d81f336e757811f03a26173dddf386602fd",
+      "path": "models/dafeiyu-qwen35-9b-clean-v1-Q4_K_M.gguf",
+      "bytes": 5629108800,
+      "sha256": "fded619c91bd3d26058a2d77fa9dd39b41f422f5ab2c0ced90510b8f7c3f9138",
       "mode": 292,
       "urls": [
-        "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/resolve/2079a22f3beaa4e306449978533478fe0522f4b3/MiniCPM5-2B-Q4_K_M.gguf"
+        "https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/resolve/21ecede9e9a3f07764c8c0ee3bc24d2de7cf5aff/releases/1.0.0/dafeiyu-qwen35-9b-clean-v1-Q4_K_M.gguf"
+      ]
+    },
+    {
+      "path": "models/mmproj-dafeiyu-qwen35-9b-clean-v1-Q8_0.gguf",
+      "bytes": 624229184,
+      "sha256": "c669d6b368334f731c94fa36e8f22e0a95bf44e7c8e397d42dea07261ac1425c",
+      "mode": 292,
+      "urls": [
+        "https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/resolve/21ecede9e9a3f07764c8c0ee3bc24d2de7cf5aff/releases/1.0.0/mmproj-dafeiyu-qwen35-9b-clean-v1-Q8_0.gguf"
       ]
     },
     {

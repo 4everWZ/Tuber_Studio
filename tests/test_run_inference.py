@@ -105,10 +105,12 @@ def test_command_mounts_only_public_source_and_read_only_assets(deployment):
     assert not any("dst=/workspace/tuber/runtime" in value for value in check)
 
 
-def test_new_node_uses_installed_fine_tuned_weights(deployment):
+def test_new_node_uses_the_same_9b_in_both_modes(deployment):
     deployment.dry_run = True
     (Path(deployment.assets) / "models/MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").touch()
-    assert launcher.setup(deployment)["node"]["operations_model"] == "MiniCPM-V-4.7-1B"
+    node = launcher.setup(deployment)["node"]
+    assert node["operations_model"] == node["live_model"] == "dafeiyu-qwen35-9b:1.0.0"
+    assert node["context_tokens"] == 262144
 
 
 @pytest.mark.parametrize(
@@ -163,6 +165,7 @@ def test_initialization_preserves_existing_pairing_and_configuration(deployment)
 def test_model_configuration_cannot_escape_read_only_mounts(deployment):
     deployment.data.mkdir()
     settings = copy.deepcopy(launcher.DEFAULT_NODE)
+    settings["operations_model"] = "Gemma4-E2B"
     settings["gemma_model"] = "runtime/tmp/main.gguf"
     (deployment.data / "inference-node.json").write_text(json.dumps(settings))
     with pytest.raises(ValueError, match="read-only asset"):

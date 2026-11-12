@@ -36,7 +36,9 @@ def originals(service):
 
 
 async def real_protocol(settings, runtime, *, failure=None, first_large=False):
-    settings.data["llm"]["kind"] = "llama_cpp"
+    settings.data["llm"].update(
+        kind="llama_cpp", context_tokens=131072, native_context_tokens=131072, auto_compact_token_limit=117964,
+    )
     provider = LlamaCppProvider(settings.data["llm"])
     await provider.client.aclose()
     requests = []

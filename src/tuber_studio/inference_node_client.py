@@ -11,7 +11,13 @@ from .api_providers import VisionService, create_llm
 from .config import atomic_bytes, validate_api_key
 from .deployment_profiles import business_configuration
 from .http_api import endpoint, response_json
-from .inference_profiles import DAFEIYU_MODEL, GEMMA_KEY, GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL
+from .inference_profiles import (
+    DAFEIYU_9B_MODEL,
+    DAFEIYU_MODEL,
+    GROUNDED_DAFEIYU_MODEL,
+    LLM_MODELS,
+    llm_resource_key,
+)
 from .operations.browsing.models import DisabledVideoEvidence
 from .providers import VoiceService
 from .runtime_modes import ObservationOwner, close_clients, inference_transition, require_model_idle
@@ -139,21 +145,25 @@ async def pair_node(runtime, body):
                     model = observed.get("model")
                     if observed.get("mode") != "text" or model not in {
                         "Gemma4-E2B",
+                        DAFEIYU_9B_MODEL,
                         DAFEIYU_MODEL,
                         GROUNDED_DAFEIYU_MODEL,
                     }:
                         raise ValueError("节点未提供可用的运营模型，请检查 Jetson 版本及运营模型设置")
-                    if model in {DAFEIYU_MODEL, GROUNDED_DAFEIYU_MODEL}:
+                    live_model = LLM_MODELS.get(observed.get("live_provider"),
+                                               DAFEIYU_9B_MODEL if model == DAFEIYU_9B_MODEL else "MiniCPM5-2B")
+                    if model in {DAFEIYU_MODEL, GROUNDED_DAFEIYU_MODEL, DAFEIYU_9B_MODEL}:
                         profile = observed["providers"][observed["selected_provider"]]
                         proposed = business_configuration(
                             settings.data,
                             base,
                             operations_model=model,
+                            live_model=live_model,
                             context_tokens=profile["context_tokens"],
                             native_context_tokens=profile["native_context_tokens"],
                         )
                     else:
-                        proposed = business_configuration(settings.data, base)
+                        proposed = business_configuration(settings.data, base, operations_model=model, live_model=live_model)
                     settings._validate(proposed)
                     staged = copy.copy(settings)
                     staged.data, staged.inference_token = proposed, token
@@ -175,13 +185,13 @@ async def pair_node(runtime, body):
                     await llm.ensure_capacity()
                     capabilities = await response_json(client, "GET", "/capabilities", timeout=10)
                     identity = proposed["video_vision"]
-                    key = GROUNDED_DAFEIYU_KEY if model == GROUNDED_DAFEIYU_MODEL else GEMMA_KEY
+                    key = llm_resource_key(model)
                     actual = capabilities.get("profiles", {}).get(key, {})
                     if identity["enabled"] and (
                         capabilities.get("mode") != "text"
                         or not actual.get("loaded")
                         or any(
-                            actual.get(key) != expected
+                            expected and actual.get(key) != expected
                             for key, expected in {
                                 "model_sha256": identity["model_revision"],
                                 "projector_sha256": identity["projector_revision"],

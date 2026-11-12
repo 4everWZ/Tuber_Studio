@@ -8,7 +8,7 @@ import httpx
 from .api_providers import VisionService, create_llm
 from .config import atomic_bytes, normalize_broker_llm, uses_broker_llm, validate_api_key
 from .deployment_profiles import select_local_voice
-from .inference_profiles import LLM_MODELS, llm_resource_key
+from .inference_profiles import DAFEIYU_9B_CONTEXT, DAFEIYU_9B_MODEL, LLM_MODELS, llm_resource_key
 from .providers import VoiceService, public_error
 from .runtime_modes import require_model_idle
 from .video_vision import ApiVideoEvidenceProvider
@@ -193,10 +193,10 @@ def proposal(settings, body):
 def _update_model_profiles(data, previous_llm):
     broker = data.setdefault("inference_broker", {})
     broker.setdefault(
-        "model", previous_llm["model"] if previous_llm["kind"] == "llama_cpp" else "MiniCPM5-2B"
+        "model", previous_llm["model"] if previous_llm["kind"] == "llama_cpp" else DAFEIYU_9B_MODEL
     )
     broker.setdefault(
-        "context_tokens", previous_llm["context_tokens"] if previous_llm["kind"] == "llama_cpp" else 131072
+        "context_tokens", previous_llm["context_tokens"] if previous_llm["kind"] == "llama_cpp" else DAFEIYU_9B_CONTEXT
     )
     if uses_broker_llm(data):
         broker.update(model=data["llm"]["model"], context_tokens=data["llm"]["context_tokens"])

@@ -17,7 +17,9 @@ NODE_URL = "http://jetson.local:9012"
 
 @pytest.fixture
 async def distributed(settings, store, monkeypatch):
-    settings.data = business_configuration(settings.data, NODE_URL)
+    settings.data = business_configuration(
+        settings.data, NODE_URL, operations_model="Gemma4-E2B", live_model="MiniCPM5-2B",
+    )
     settings.save_public(settings.data)
     state = {
         "mode": "text",
@@ -343,7 +345,9 @@ async def test_unpaired_url_never_receives_the_node_credential(distributed):
 
 
 def test_business_voice_reference_resolves_with_independent_runtime(settings):
-    settings.data = business_configuration(settings.data, NODE_URL)
+    settings.data = business_configuration(
+        settings.data, NODE_URL, operations_model="Gemma4-E2B", live_model="MiniCPM5-2B",
+    )
     voice = next(voice for voice in settings.voices() if voice["id"] == "yaoyao_sovits_v2")
     reference = settings.runtime / Path(voice["reference_asset"]).relative_to("runtime")
     reference.parent.mkdir(parents=True)

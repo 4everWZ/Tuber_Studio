@@ -58,7 +58,7 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
     python3 PROGRAM/tools/deployment/run_inference.py --source PROGRAM --data NODE_DATA --assets MODEL_DATA --image ENV_IMAGE --host NODE_LAN_IP --replace
 
-`NODE_DATA`必须独立于程序和模型目录，不能含业务数据库或平台凭据。`MODEL_DATA`只挂载models／engines／tts／nltk_data子目录；永久投影器可放`NODE_DATA/node-assets`，或用`--node-assets`指定另一只读目录。固定模型、投影器与完整引擎须已准备。镜像存在则直接固定其ID，缺失才拉取；`--dry-run`仅检查并打印装配。替换核对同一数据目录、保留旧容器，启动失败恢复旧容器；Docker健康检查只访问推理节点，不启动业务。
+`NODE_DATA` 必须独立于程序和模型目录，业务数据库和平台凭据留在业务主机。`MODEL_DATA` 只挂载 models／engines／tts／nltk_data 子目录。默认 9B 的主权重和投影器一起放在 `MODEL_DATA/models`。可在 Jetson 的项目环境运行 `python tools/jetson/initialize-data.py --candidate dafeiyu9b`，将验证后的两个文件从项目 `runtime/models` 装入模型目录。镜像存在时固定其 ID，缺失时拉取。`--dry-run` 检查并打印装配。替换前核对数据目录并保留旧容器，启动失败恢复旧容器。Docker 健康检查访问推理节点。 [Hugging Face 固定版本](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/tree/21ecede9e9a3f07764c8c0ee3bc24d2de7cf5aff/releases/1.0.0)
 
 容器中的纯推理入口为：
 
@@ -72,13 +72,13 @@ Node是可选组件；不使用在线点歌时可以省略最后一行。电脑�
 
 维护前保存节点配置和旧容器。若要退回旧文本档，在运营模式选择 `MiniCPM-V-4.7-1B`，再重新配对。回退程序需要对应程序、配置和权重，核对 `/llm/props` 的别名与窗口。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。切换后用浏览器试听。
 
-旧分模型路径已退役。仓外脚本将 `/llm/2b/props` 换为 `GET /llm/props`，读取前先用 `GET /health` 确认已选模型。将 `POST /llm/2b/warmup` 换为 `POST /llm/warmup`，请求体填入 `{"model":"MiniCPM5-2B"}`。生成同样在请求体指定模型，继续用 `/tts` 合成语音。工作台读取与已配置节点匹配的旧 LLM 地址时会归一化，下次保存设置时写回。双机升级时先更新 Jetson，再更新业务主机。
+旧分模型路径已退役。仓外脚本将 `/llm/2b/props` 换为 `GET /llm/props`，读取前先用 `GET /health` 确认已选模型。将 `POST /llm/2b/warmup` 换为 `POST /llm/warmup`，请求体使用节点当前模型，默认值为 `{"model":"dafeiyu-qwen35-9b:1.0.0"}`。生成同样在请求体指定模型，继续用 `/tts` 合成语音。工作台读取与已配置节点匹配的旧 LLM 地址时会归一化，下次保存设置时写回。双机升级时先更新 Jetson，再更新业务主机。
 
 OBS使用电脑后端生成的播放器链接，音频直接从电脑媒体目录读取，不经Jetson转发。电脑后端关闭后节点不继续浏览、执行Agent或发送平台消息。代码更新先停对应服务、换程序版本，再用原数据目录和环境启动；回退先核对切换后的新增数据，再变更权威标记，不能直接启动旧副本覆盖进度。
 
 ## 全本地Jetson可选部署
 
-Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Python锁定依赖及固定Genie转换／图骨架依赖。应用源码、WebUI、角色素材、初始化清单和配置预设随独立程序包或宿主源码目录交付，以只读挂载运行；模型、音色包、缓存、配置、令牌和数据库保存在独立数据目录。此可选启动器仍默认加载MiniCPM5-2B＋Genie直播档；清单资源准备与DoRA视觉运营的引擎配置、模式切换及验收分别进行。普通程序修改不重建镜像，也不在启动时安装依赖。
+Docker 环境提供 CUDA／原生 Torch、llama-server、锁定的 Python 依赖和 Genie 转换依赖。应用源码、WebUI、角色素材、初始化清单和配置预设随程序包或宿主源码目录交付，以只读挂载运行。模型、音色包、缓存、配置、令牌和数据库保存在独立数据目录。独立启动器默认加载 9B＋Genie 直播档，DoRA 备用档使用其匹配的引擎。应用更新沿用环境镜像。
 
 目标为Jetson ARM64／L4T R36.4及NVIDIA容器运行时，不是Windows／x86镜像。使用单个tuber-studio容器，后台／受限broker共享业务进程，llama／TTS按需作为固定子进程运行。源码与程序包根仍映射为容器/workspace/tuber；Python环境为/opt/studio-venv，官方GPT-SoVITS依赖为/opt/GPT-SoVITS-v2，固定Genie依赖为/opt/Genie-TTS。不挂Docker.sock，不在宿主安装运行环境，不操作其他项目服务。
 
@@ -87,6 +87,7 @@ Docker只维护可复用的运行环境：CUDA／原生Torch、llama-server、Py
 | 后台 | 9020 | 管理API、WebUI、OBS、业务调度 |
 | 受限broker | 9012 | 固定推理入口、进程管理与资源锁 |
 | MiniCPM5-2B | 9013 | 原生131072窗口、q4_0 KV，实际容量核查 |
+| 大肥鱼 Qwen3.5-9B | 9018 | 默认模型，原生 262144 窗口、q4_0 KV，Q8_0 投影器 |
 | Genie／GPT-SoVITS | 9011 | 绑定权重与参考的语音合成 |
 | 显式实验候选 | 9010／9015 | 独立诊断，不自动替换默认模型 |
 
@@ -127,7 +128,7 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 ### 首次模型准备与后续复用
 
-环境镜像不带模型。portable初始化核验／安装固定清单的全部资源，包括DoRA运营主权重及4× F16投影器、MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT和NLTK。资源下载到持久目录，逐文件核对来源、大小和SHA256。`run-ready.sh`沿用这条初始化链；在已装配的容器规范根目录也可运行 `python -m tuber_studio.portable --initialize-only`。准备资产不切换当前Profile，独立直播仍默认加载MiniCPM5-2B＋Genie；DoRA还需配置匹配引擎。首次启动需要访问这些公共HTTPS源；可显式使用HTTPS origin形式的TUBER_HF_BASE或容器可达的TUBER_DOWNLOAD_PROXY，不能改变revision或关闭校验。
+环境镜像从持久目录加载模型。portable 初始化按固定清单下载并校验 9B 主权重和投影器、DoRA 备用资产、瑶瑶原始 GPT／SoVITS 与参考、BERT／HuBERT 和 NLTK。`run-ready.sh` 使用同一初始化链，也可在已装配的容器根目录运行 `python -m tuber_studio.portable --initialize-only`。新安装默认 9B＋Genie，已有配置保留显式选择。首次准备访问公共 HTTPS 源，支持 HTTPS origin 形式的 `TUBER_HF_BASE` 和容器可达的 `TUBER_DOWNLOAD_PROXY`。 [固定下载清单](../../config/jetson/downloads.json)
 
 下载后顺序完成权重净化、参考处理、Genie图准备与永久音色安装；准备期间不加载LLM，子进程结束后才进入Genie预热及Mini131072／q4_0共驻。重复启动验证并复用已下载及生成资源，不重新下载／转换；身份不符时保留原件并报错。环境预检和小型公共启动预设在runtime/.portable-launch内生成，不修改已有Operator配置。初始化日志及portable-status.json显示进度，HTTP可达不等于模型就绪。
 
@@ -201,7 +202,7 @@ Jetson 节点先配对，LLM Base URL 使用 `http://<Jetson地址>:9012/llm`，
 
 Key只写入runtime/provider-credentials.json（设备0600），设置响应／配置JSON不返回其值。空输入保留已有Key，单独勾选清除才删除；更换API地址时必须重新填写或清除对应Key，避免把旧凭证发到新服务。内部broker token不发给外部服务。语音API使用独立external_api音色；已有角色不会自动换声线，需显式选择对应音色。接口测试替身通过不代表真实账号、声音许可或服务商质量已验证。
 
-未单独填写时，窗口沿用所选模型的原生上限。9B 运营档为 262,144，MiniCPM5-2B 直播档为 131,072。可显式设置从 4,096 到模型原生上限的窗口。本地保存后核对服务实际窗口，失败或取消时恢复原配置。外部窗口由Operator依据服务能力声明，不能标作本机verified；计数通过一token请求的实际usage，可能额外计费，同输入缓存计数摘要。检查连接只查健康／模型列表，不生成文本。Provider切换不删除现有楼历史，下次生成按新Provider重新计数／压缩；小窗口的保留预算按比例适配，原评论数据集仍保留。
+未单独填写时，窗口沿用所选模型的原生上限。运营和直播默认 9B 为 262,144，备用 MiniCPM5-2B 为 131,072。可显式设置从 4,096 到模型原生上限的窗口。本地保存后核对服务实际窗口，失败或取消时恢复原配置。外部窗口由操作者依据服务能力声明。计数取一 token 请求的实际 usage，同输入缓存计数摘要。检查连接读取健康或模型列表。Provider 切换后，下次生成按新 Provider 重新计数和压缩，原评论数据集继续保留。
 
 兼容API会收到任务上下文，本地留存清理不控制服务商留存。默认Mini为文本模型，视觉高级配置提供本地／外部兼容端点；默认disabled，未配置时明确拒绝图片请求。认证的/api/vision/describe仅接收prompt、image_base64、mime_type，不接受系统路径或URL，不把输出自动写成历史事实。普通管理API请求上限2.1MB；表情上传单独允许8MiB原图及对应base64封装，歌曲走原有受限流式上传。图片签名／MIME检查不代表本地视觉模型已部署。
 
@@ -245,6 +246,6 @@ Genie正式依赖作为原镜像的小层安装进同一`/opt/studio-venv`，锁
 
 初始whale角色默认声音为`yaoyao_sovits_v2`；本地runner仍须配置`tts.voice_id=yaoyao_sovits_v2`并具有相应模型包。ready首次初始化提供该预设并准备包，精简镜像或新增声音由操作者显式准备。省略voice_id仍兼容选择第一个旧本地声线，不会自动推断或替换权重。旧voice、预录素材与历史角色版本保留，恢复旧声音须同步恢复原YAML／voice_id／bundle及角色版本。
 
-精简镜像或新增声音的手动部署须先准备并验证永久音色包，再配置`tts.local_backend=genie_onnx_int8`、选定`tts.voice_id`并显式启用`features.live_enabled`；ready新安装由预设及首次初始化完成这些步骤。引擎选择属启动配置，手改后重启。保持MiniCPM5-2B／131072／q4_0，手动切live时先完成Genie冷载和完整暖机，再加载Mini。前端只读显示引擎，text下动态试听提示先手动切live，不隐式加载；仅允许所选固定音色。`/docs`实际backend／voice／bundle身份和小stat检查通过后，工作台才能复用相应音频缓存。真实平台和评论自动策略不因启用Mock而开启。
+精简镜像或新增声音的手动部署须先准备并验证永久音色包，再配置 `tts.local_backend=genie_onnx_int8`、选定 `tts.voice_id` 并启用 `features.live_enabled`。ready 新安装由预设及首次初始化完成这些步骤。引擎选择属启动配置，修改后重启。手动切 live 时先完成 Genie 冷载和暖机，再加载所选语言模型。默认 9B 使用 262,144 和 q4_0。前端显示实际引擎，text 模式的试听提示先切 live。工作台核对 `/docs` 中的 backend、voice 和 bundle 身份后复用音频缓存。
 
 语义检查记录模型、采样、思考、模板、来源与逐题结果。现有 Genie 档已验证冷／热启动、128K 共驻和真实长输入接收。切换运行档或窗口后，按实际配置复测资源与持续运行。

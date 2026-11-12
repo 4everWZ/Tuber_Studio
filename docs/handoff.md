@@ -1,4 +1,4 @@
-# 部署交接 · 2026-11-12
+# 部署交接 · 2026-11-13
 
 ## 运行位置
 
@@ -8,7 +8,9 @@
 & tools/deployment/run-business.ps1 -Data runtime -Config runtime/studio.json -Background
 ```
 
-运营使用 AGX 上独立的 llama.cpp CUDA 容器。模型别名为 `dafeiyu-qwen35-9b:1.0.0`，Q4_K_M 权重和 Q8_0 投影器配套使用，实际窗口为 262,144，K/V 均为 `q4_0`，思考开启。直播使用原有 MiniCPM5-2B＋Genie 节点，默认形象为图片／GIF。 [部署指南](guides/deployment.md) · [可选 Live2D](guides/live/avatar.md)
+运营使用 AGX 上独立的 llama.cpp CUDA 容器，已核验 `dafeiyu-qwen35-9b:1.0.0` 的 Q4_K_M 权重、Q8_0 投影器、262,144 窗口和 `q4_0` K/V。新安装的运营和直播均默认引用同一 9B，按固定 Hugging Face 发布版本准备资产，默认开启思考。直播使用 Genie 语音和图片／GIF 形象，9B 与 Genie 的共驻和首音待实机复验。 [部署指南](guides/deployment.md) · [可选 Live2D](guides/live/avatar.md)
+
+电脑工作台保存的运营和直播语言模型均已指向现用 9B 端点，重载后从设置接口读回一致。现有 Genie 语音仍由原节点提供。直播档切换和实际播放待核验，改动前的业务配置留在版本目录的 `rollback/studio-before-live-9b-20261113.json`。
 
 ## 数据与恢复
 

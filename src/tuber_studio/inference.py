@@ -24,6 +24,12 @@ from .config import normalize_broker_llm
 from .inference_cache import cache_summary, scan_cache
 from .inference_observation import BackgroundObservation
 from .inference_profiles import (
+    DAFEIYU_9B_CONTEXT,
+    DAFEIYU_9B_DIGESTS,
+    DAFEIYU_9B_KEY,
+    DAFEIYU_9B_MODEL,
+    DAFEIYU_9B_PROJECTOR,
+    DAFEIYU_9B_WEIGHTS,
     DAFEIYU_KEY,
     DAFEIYU_WEIGHTS,
     GEMMA_ARTIFACTS,
@@ -65,6 +71,7 @@ class Resource:
 
 RESOURCES = {
     "llm2b": Resource("http://127.0.0.1:9013", "/health", LLM_MODELS["llm2b"], "MiniCPM5-2B-Q4_K_M.gguf"),
+    DAFEIYU_9B_KEY: Resource("http://127.0.0.1:9018", "/health", DAFEIYU_9B_MODEL, DAFEIYU_9B_WEIGHTS),
     "llm1b": Resource("http://127.0.0.1:9010", "/health", LLM_MODELS["llm1b"], "MiniCPM5-1B-Q4_K_M.gguf"),
     DAFEIYU_KEY: Resource("http://127.0.0.1:9016", "/health", LLM_MODELS[DAFEIYU_KEY], DAFEIYU_WEIGHTS),
     GROUNDED_DAFEIYU_KEY: Resource(
@@ -204,6 +211,9 @@ class ProcessRunner:
     def vision_assets(self, key):
         if key == GEMMA_KEY:
             return self.gemma_assets()
+        if key == DAFEIYU_9B_KEY:
+            model = self.model_path(key)
+            return {"model": model, "projector": model.with_name(DAFEIYU_9B_PROJECTOR), "engine": self.llama_binary}
         model = project_asset(self.root, "runtime/models/" + RESOURCES[GROUNDED_DAFEIYU_KEY].model)
         return {
             "model": model,
@@ -329,6 +339,9 @@ class ProcessRunner:
                     "--no-webui",
                 ]
             command.extend(["--no-mmap", "--direct-io"])
+            if key == DAFEIYU_9B_KEY:
+                command.extend(["--mmproj", str(self.vision_assets(key)["projector"]),
+                                "--ctx-checkpoints", "0", "--no-context-shift"])
             if (self.node_settings or {}).get("speculative_ngram", False):
                 command.extend(["--spec-type", "ngram-mod"])
             if key == "llmqwen35":
@@ -506,6 +519,10 @@ class ProcessRunner:
                     GROUNDED_DAFEIYU_ARTIFACTS[role],
                     self.verified_artifacts,
                 )
+        elif key == DAFEIYU_9B_KEY:
+            assets = self.vision_assets(key)
+            for role, digest in DAFEIYU_9B_DIGESTS.items():
+                await asyncio.to_thread(verify_artifact, assets[role], digest, self.verified_artifacts)
         elif key == GEMMA_KEY:
             assets = self.gemma_assets()
             await asyncio.to_thread(
@@ -760,8 +777,8 @@ class InferenceBroker:
                 "vision": bool(loaded and properties.get("modalities", {}).get("vision") is True),
                 "supports_vision": key in VISION_ROUTES.values(),
                 "tts": key == "tts",
-                "quantization": {GEMMA_KEY: "Q4_0", GROUNDED_DAFEIYU_KEY: "Q4_K_M"}.get(key),
-                "projector_quantization": {GEMMA_KEY: "Q8_0", GROUNDED_DAFEIYU_KEY: "F16"}.get(key),
+                "quantization": {GEMMA_KEY: "Q4_0", GROUNDED_DAFEIYU_KEY: "Q4_K_M", DAFEIYU_9B_KEY: "Q4_K_M"}.get(key),
+                "projector_quantization": {GEMMA_KEY: "Q8_0", GROUNDED_DAFEIYU_KEY: "F16", DAFEIYU_9B_KEY: "Q8_0"}.get(key),
                 **(
                     self._artifact_identifiers.get(key)
                     or {"model_sha256": None, "projector_sha256": None, "runtime_sha256": None}
@@ -1383,16 +1400,16 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
             raise ValueError("Gemma vision-only flag must be boolean")
         mode = node.get("mode", "text")
         selected_alias = (
-            node.get("live_model", "MiniCPM5-2B")
+            node.get("live_model", DAFEIYU_9B_MODEL)
             if mode == "live"
-            else node.get("operations_model", "Gemma4-E2B")
+            else node.get("operations_model", DAFEIYU_9B_MODEL)
         )
         data = {
             "inference_broker": node,
             "llm": {
                 "kind": "llama_cpp",
                 "model": selected_alias,
-                "context_tokens": node.get("context_tokens", 131072),
+                "context_tokens": node.get("context_tokens", DAFEIYU_9B_CONTEXT if selected_alias == DAFEIYU_9B_MODEL else 131072),
             },
             "tts": node.get("tts", {}) | {"kind": "gpt_sovits"},
         }
@@ -1408,14 +1425,15 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
         raise ValueError("Invalid language model configuration")
     local = llm.get("kind", "llama_cpp") == "llama_cpp"
     settings = llm if local else profile
+    selected_alias = settings.get("model", DAFEIYU_9B_MODEL)
+    default_context = DAFEIYU_9B_CONTEXT if selected_alias == DAFEIYU_9B_MODEL else 131072
     runner = ProcessRunner(
         root,
         kv_cache_type=profile.get("kv_cache_type", "q8_0"),
         cuda_managed_memory=profile.get("cuda_managed_memory", False),
-        context_tokens=settings.get("context_tokens", 131072),
+        context_tokens=settings.get("context_tokens", default_context),
         node_settings=profile if node_config is not None else None,
     )
-    selected_alias = settings.get("model", RESOURCES["llm2b"].alias)
     selected = next((key for key, resource in RESOURCES.items() if resource.alias == selected_alias), None)
     mode = profile.get("mode", "text") if local else "text"
     if data.get("tts", {}).get("kind") in {"openai_compatible", "prerecorded"}:
@@ -1423,8 +1441,8 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
     extra = {}
     if node_config is not None:
         for field, alias in (
-            ("operations_selected", profile.get("operations_model", "Gemma4-E2B")),
-            ("live_selected", profile.get("live_model", "MiniCPM5-2B")),
+            ("operations_selected", profile.get("operations_model", DAFEIYU_9B_MODEL)),
+            ("live_selected", profile.get("live_model", DAFEIYU_9B_MODEL)),
         ):
             key = next((key for key, value in RESOURCES.items() if value.alias == alias), None)
             if key is None:

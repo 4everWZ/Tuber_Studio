@@ -67,13 +67,13 @@ AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算
 
 ## Profile 选择与准入
 
-当前运营档为 AGX 上的 `dafeiyu-qwen35-9b:1.0.0`，使用 Q4_K_M 主权重、Q8_0 投影器、262,144 上下文及 `q4_0` K/V，默认开启思考。模型读取[当前角色卡](runtime-and-characters.md#角色生成方式)。本地与兼容 API 都可以另行配置。直播继续使用 MiniCPM5-2B＋Genie 基线。换模型或运行参数后，在实际设备上核对窗口、图像、采样、内存和耗时。 [当前审核回放](../../../evaluations/results/review-agx-mainline-20261111.md)
+运营和直播默认使用 `dafeiyu-qwen35-9b:1.0.0`，配置为 Q4_K_M 主权重、Q8_0 投影器、262,144 上下文及 `q4_0` K/V，默认开启思考。模型读取当前角色卡。本地模型与兼容 API 都可以另行配置。运营 9B 已实测，直播 9B 与 Genie 的共驻和首音待验收。换模型或运行参数后，在实际设备上核对窗口、图像、采样、内存和耗时。 [当前角色卡](runtime-and-characters.md#角色生成方式) · [运营审核回放](../../../evaluations/results/review-agx-mainline-20261111.md)
 
 历史 DoRA 回退档的运营别名为 `MiniCPM-V-4.7-1B-Dafeiyu-Grounded`。节点核对 Q4_K_M 主权重、同批导出的 4× F16 投影器及固定 llama.cpp 引擎，默认窗口为 131072，KV 使用 q4_0。文本请求走 `/llm/v1/chat/completions`，图像请求走 `/vlm/dafeiyu/v1/chat/completions`，两个端点共享运营资源与认证。业务配对使用实开的窗口，视频取材按同一组权重、投影器、引擎和图片配置独立测量资源。旧版 `MiniCPM-V-4.7-1B` 提供文本。统一视觉直播档另验真实长输入、Genie 共驻和浏览器可听音频延迟。[视觉微调实验](../../../tools/training/README.md) · [装配与回退](../../guides/deployment.md#电脑业务主机与独立推理节点)
 
 通用模型路线可用 Gemma 4 E2B（Q4_0 主权重、Q8_0 视觉、131072、q4_0 KV、思考开启、8192 正常运营输出）。切换先核对实际模型与窗口，再同步替换客户端，失败恢复原模式。长输入实验分别记录原生窗口、实开窗口、显式扩窗、真实长输入接收与召回。[性能复核](../../../evaluations/results/operations-vlm-20261102-performance.md#最终运营选型) · [双机实测](../../../evaluations/results/distributed-operations-20261102.md)
 
-源码模板的通用文本配置及节点直播基线采用 MiniCPM5-2B Q4_K_M、q4_0 K/V 和 131072 上下文。操作者可显式调整窗口，最小 4096，实际不得超过所选本地模型的原生窗口。MiniCPM5-2B 的原生窗口为 131072。本地从真实 GGUF／运行时核对原生窗口和实际 n_ctx，API 区分操作者声明的上限与未验证的远端容量。容量预算和压缩由上下文规范维护，切换 Provider 或窗口后重新计数。角色、摘要与长输入质量分别验收。
+源码模板和节点默认采用 9B 原生窗口。操作者可在 4,096 到所选模型原生上限之间调整。备选的 MiniCPM5-2B 原生窗口为 131,072。本地从 GGUF 和运行时核对原生窗口与实际 n_ctx，API 显示操作者声明的远端容量。容量预算和压缩由上下文规范维护，切换 Provider 或窗口后重新计数。角色、摘要与长输入质量分别验收。
 
 [MiniCPM5-2B 官方配置](https://huggingface.co/openbmb/MiniCPM5-2B/blob/f97400052a43d642bbc6e9975e2397e3ae6a6b52/config.json)声明 LlamaForCausalLM 和 max_position_embeddings=131072，是文本 CausalLM；多模态接入遵守独立视觉 Provider 契约。
 
@@ -83,7 +83,7 @@ AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算
 
 既有 MiniCPM5-2B 直播质量基线采用 Think 参数 temperature=1.0、top_p=0.95、min_p=0.0；当时的 NoThink 对照只证明该实验条件。大肥鱼 DoRA 的运营参数和质量另按其实际模型评估，不继承这份2B实验结论。外部 API 采用显式配置，不因接入服务而放宽角色／摘要语义要求。模型、量化或精度替换应保留可比质量判据与真实结果；不因参数规模直接认定合格或不合格，也不把语义评测变成未配置的运行时发送门槛。更换 Profile 或窗口须分别验证 LLM／TTS 共驻、冷／热启动和持续运行；互斥加载不能冒称共驻，未准入时保留文本工作。长输入接收只证明容量，不证明长文召回或长期稳定。
 
-Qwen3.5-2B 是可显式准备的历史候选，不替换 MiniCPM5-2B 默认；[候选质量结果](../../../evaluations/results/qwen35-2b-single-system-seed42.json)、[来源检索对照](../../../evaluations/results/grounded-qwen35-2b-seed42.json)、[资源测量](../../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json)、[长输入与恢复](../../../evaluations/results/qwen35-2b-live-context-f35d061.json)及[播放测量](../../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)保留各自条件，不转移为当前 MiniCPM／Genie 的证据。
+Qwen3.5-2B 是可显式准备的历史候选。各次测试沿用当时的配置。 [候选质量结果](../../../evaluations/results/qwen35-2b-single-system-seed42.json) · [来源检索对照](../../../evaluations/results/grounded-qwen35-2b-seed42.json) · [资源测量](../../../evaluations/results/qwen35-2b-live-resource-4b8cadf.json) · [长输入与恢复](../../../evaluations/results/qwen35-2b-live-context-f35d061.json) · [播放测量](../../../evaluations/results/qwen35-2b-browser-playback-f35d061.json)
 
 历史 compact Profile 的容量测量、共驻分配失败与恢复记录保留在[原链路设备证据](../../../evaluations/results/compact-live-runtime-20261029.json)，不覆盖当前 Genie Profile 的准入结论。
 
@@ -149,7 +149,7 @@ CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制
 
 环境标识由依赖声明／锁文件、Dockerfile、TTS依赖及固定Genie源码计算，CI仅在对应env-<指纹>尚未发布时构建；同环境的程序更新复用已有镜像。本地缺少指定镜像才拉取，解析一次ID后所有运行使用--pull=never；依赖不匹配须在替换旧容器前拒绝，不静默升级。环境和程序构建不得依赖旧runtime、生产凭证、模型权重或设备连接。固定镜像与程序版本共同用于回退，不假定数据库自动回退；交付命令与CI由[部署指南](../../guides/deployment.md)维护。
 
-节点／portable初始化是唯一内建资产准备链，核验／安装[固定下载清单](../../../config/jetson/downloads.json)的全部资源：DoRA运营主权重与同批4× F16投影器、MiniCPM5-2B Q4_K_M、瑶瑶原始GPT／SoVITS与参考、BERT／HuBERT及NLTK。准备不改变所选Profile；独立直播默认加载MiniCPM5-2B＋Genie，DoRA运营仍需匹配其固定引擎。保存LLM设置不触发下载，本地模型目录API只报告实际状态。资产进入持久runtime，逐文件验证固定来源、字节数和SHA256，完整校验后才发布。可使用HTTPS origin形式的TUBER_HF_BASE替换HF源站，不能改变revision、关闭校验或回退到其他声音／模型。初次网络、公共源可用性和转换能力是启动前提；超时、取消或校验失败必须有界报错，不能把部分文件或半个bundle当成就绪。
+节点／portable 初始化按固定下载清单准备大肥鱼 9B 主权重和投影器、DoRA 备用模型和投影器、瑶瑶原始 GPT／SoVITS 与参考、BERT／HuBERT 和 NLTK。独立直播默认加载 9B＋Genie。准备资产会保留已保存的 Profile，工作台保存模型或 API 时使用已安装模型或外部服务。资产进入持久 runtime，完整校验固定版本、字节数和 SHA256 后才发布。可用 HTTPS origin 形式的 `TUBER_HF_BASE` 替换 Hugging Face 源站，文件身份仍使用固定清单。下载或转换失败时报告实际错误。 [固定下载清单](../../../config/jetson/downloads.json)
 
 下载后固定短命bootstrap顺序完成权重净化、参考处理／NPZ、转换、原采样恢复、INT8图准备和bundle安装；整个准备期间不得驻留LLM，结束并释放准备资源后才进入常驻TTS预热及Mini131072／q4_0共驻。初始化与健康检查不得pip安装依赖、创建新运行环境或改变原生Torch。首次准备成本与冷加载、热态合成分别测量；转换不在业务／直播常驻进程中进行。
 

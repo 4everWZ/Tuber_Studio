@@ -52,7 +52,8 @@ def test_image_context_contains_only_presets_and_download_metadata(project):
     assert all("urls" in f or f["path"] in embedded for f in manifest["files"])
     preset = json.loads((output / "builtin/files/studio.json").read_text())
     assert preset["tts"]["voice_id"] == assets.VOICE
-    assert preset["llm"]["context_tokens"] == 131072
+    assert preset["llm"]["context_tokens"] == 262144
+    assert preset["llm"]["model"] == preset["inference_broker"]["model"] == "dafeiyu-qwen35-9b:1.0.0"
     assert preset["inference_broker"]["mode"] == "live"
     assert all(b"operator-private-data" not in p.read_bytes() for p in output.rglob("*") if p.is_file())
 

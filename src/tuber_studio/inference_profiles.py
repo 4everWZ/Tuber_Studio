@@ -6,6 +6,15 @@ from pathlib import Path
 DAFEIYU_KEY = "llmdafeiyu"
 DAFEIYU_MODEL = "MiniCPM-V-4.7-1B"
 DAFEIYU_WEIGHTS = "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf"
+DAFEIYU_9B_KEY = "llmdafeiyu9b"
+DAFEIYU_9B_MODEL = "dafeiyu-qwen35-9b:1.0.0"
+DAFEIYU_9B_WEIGHTS = "dafeiyu-qwen35-9b-clean-v1-Q4_K_M.gguf"
+DAFEIYU_9B_PROJECTOR = "mmproj-dafeiyu-qwen35-9b-clean-v1-Q8_0.gguf"
+DAFEIYU_9B_CONTEXT = 262144
+DAFEIYU_9B_DIGESTS = {
+    "model": "fded619c91bd3d26058a2d77fa9dd39b41f422f5ab2c0ced90510b8f7c3f9138",
+    "projector": "c669d6b368334f731c94fa36e8f22e0a95bf44e7c8e397d42dea07261ac1425c",
+}
 DAFEIYU_ALIASES = {
     DAFEIYU_KEY,
     DAFEIYU_MODEL.lower(),
@@ -21,11 +30,12 @@ GROUNDED_DAFEIYU_KEY = "llmdafeiyu_dora"
 GROUNDED_DAFEIYU_MODEL = "MiniCPM-V-4.7-1B-Dafeiyu-Grounded"
 GROUNDED_DAFEIYU_BUNDLE = "authentic-dora-20261107"
 GROUNDED_DAFEIYU_WEIGHTS = GROUNDED_DAFEIYU_MODEL + "-Q4_K_M.gguf"
-VISION_ROUTES = {"gemma4e2b": GEMMA_KEY, "dafeiyu": GROUNDED_DAFEIYU_KEY}
+VISION_ROUTES = {"gemma4e2b": GEMMA_KEY, "dafeiyu": GROUNDED_DAFEIYU_KEY, "dafeiyu9b": DAFEIYU_9B_KEY}
 LLM_MODELS = {
     "llm2b": "MiniCPM5-2B",
     "llm1b": "MiniCPM5-1B",
     DAFEIYU_KEY: DAFEIYU_MODEL,
+    DAFEIYU_9B_KEY: DAFEIYU_9B_MODEL,
     GROUNDED_DAFEIYU_KEY: GROUNDED_DAFEIYU_MODEL,
     "llm1bq8": "MiniCPM5-1B-Q8_0",
     "llmqwen35": "Qwen3.5-2B",

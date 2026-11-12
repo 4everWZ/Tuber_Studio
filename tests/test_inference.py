@@ -941,11 +941,11 @@ async def test_external_llm_uses_default_local_profile_without_copying_remote_wi
     path = tmp_path / "runtime/studio.json"
     path.parent.mkdir(parents=True)
     path.write_text(
-        json.dumps({"llm": {"kind": "openai_compatible", "model": "remote-256k", "context_tokens": 262144}})
+        json.dumps({"llm": {"kind": "openai_compatible", "model": "remote-64k", "context_tokens": 65536}})
     )
     app = create_app(tmp_path, warm_start=False)
-    assert app.state.broker.selected == "llm2b"
-    assert app.state.broker.context_tokens == 131072
+    assert app.state.broker.selected == "llmdafeiyu9b"
+    assert app.state.broker.context_tokens == 262144
     await app.state.broker.close()
 
 

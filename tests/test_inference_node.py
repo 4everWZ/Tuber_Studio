@@ -12,6 +12,7 @@ from test_inference import setup_broker
 from tuber_studio.inference import HEADER, ProcessRunner, create_app
 from tuber_studio.inference_cache import cache_summary, scan_cache
 from tuber_studio.inference_profiles import (
+    DAFEIYU_9B_KEY,
     DAFEIYU_KEY,
     DAFEIYU_MODEL,
     GEMMA_ENGINE,
@@ -230,8 +231,8 @@ def test_node_configuration_has_independent_persistence_and_mode_defaults(tmp_pa
     configuration.write_text(json.dumps({"context_tokens": 131072, "kv_cache_type": "q4_0"}))
     application = create_app(tmp_path, node_config=configuration, warm_start=False)
     manager = application.state.broker
-    assert manager.selected == manager.operations_selected == GEMMA_KEY
-    assert manager.live_selected == "llm2b" and manager.configuration_path == configuration
+    assert manager.selected == manager.operations_selected == manager.live_selected == DAFEIYU_9B_KEY
+    assert manager.configuration_path == configuration
     assert manager.runner.node_settings["kv_cache_type"] == "q4_0"
     assert not (runtime / "studio.sqlite3").exists()
 

@@ -4,6 +4,9 @@ from copy import deepcopy
 
 from .http_api import endpoint
 from .inference_profiles import (
+    DAFEIYU_9B_CONTEXT,
+    DAFEIYU_9B_DIGESTS,
+    DAFEIYU_9B_MODEL,
     DAFEIYU_MODEL,
     GEMMA_ARTIFACTS,
     GEMMA_ENGINE_SHA256,
@@ -25,24 +28,29 @@ def business_configuration(
     node_url,
     *,
     mode="text",
-    operations_model="Gemma4-E2B",
-    context_tokens=131072,
-    native_context_tokens=131072,
+    operations_model=DAFEIYU_9B_MODEL,
+    live_model=DAFEIYU_9B_MODEL,
+    context_tokens=None,
+    native_context_tokens=None,
 ):
     if mode not in {"text", "live"}:
         raise ValueError("工作模式应为text或live")
     base = endpoint(node_url)
     data = deepcopy(current)
+    if native_context_tokens is None:
+        native_context_tokens = DAFEIYU_9B_CONTEXT if operations_model == DAFEIYU_9B_MODEL else 131072
+    if context_tokens is None:
+        context_tokens = native_context_tokens
     common = deepcopy(data["llm"])
     common.update(
         kind="llama_cpp",
         context_tokens=context_tokens,
-        native_context_tokens=131072,
+        native_context_tokens=native_context_tokens,
         enable_thinking=True,
         operations_max_tokens=8192,
         prefill_timeout_seconds=1200,
         timeout_seconds=600,
-        auto_compact_token_limit=117964,
+        auto_compact_token_limit=native_context_tokens * 9 // 10,
         effective_context_window_percent=95,
     )
     operations = {
@@ -56,10 +64,14 @@ def business_configuration(
         "min_p": 0.0,
         "repeat_penalty": 1.0,
     }
+    live_native = DAFEIYU_9B_CONTEXT if live_model == DAFEIYU_9B_MODEL else 131072
     live = {
         **common,
         "base_url": base + "/llm",
-        "model": "MiniCPM5-2B",
+        "model": live_model,
+        "native_context_tokens": live_native,
+        "context_tokens": min(context_tokens, live_native),
+        "auto_compact_token_limit": live_native * 9 // 10,
         "max_tokens": 1024,
         "temperature": 1.0,
         "summary_temperature": 1.0,
@@ -110,7 +122,26 @@ def business_configuration(
         "image_profile": "gemma4_image_280",
         "image_order": "image_first",
     }
-    if operations_model == DAFEIYU_MODEL:
+    if operations_model == DAFEIYU_9B_MODEL:
+        operations["temperature"] = operations["summary_temperature"] = 0.7
+        qwen_vision = {
+            "base_url": base + "/vlm/dafeiyu9b/v1",
+            "model": operations_model,
+            "image_profile": "server_native",
+            "image_order": "text_first",
+        }
+        vision.update(qwen_vision)
+        data["video_vision"].update(
+            qwen_vision,
+            model_revision=DAFEIYU_9B_DIGESTS["model"],
+            projector_revision=DAFEIYU_9B_DIGESTS["projector"],
+            runtime_revision="",
+            runtime_profile="dafeiyu-qwen35-9b-q4km-q8-projector",
+            context_tokens=context_tokens,
+            native_context_tokens=native_context_tokens,
+            properties_path="/vlm/dafeiyu9b/props",
+        )
+    elif operations_model == DAFEIYU_MODEL:
         operations["native_context_tokens"] = native_context_tokens
         operations["temperature"] = operations["summary_temperature"] = 0.7
         data["work_mode_profiles"]["text"]["vision"] = data["work_mode_profiles"]["live"]["vision"].copy()

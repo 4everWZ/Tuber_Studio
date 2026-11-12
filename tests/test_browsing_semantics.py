@@ -332,6 +332,7 @@ async def test_staged_cli_uses_native_stages_and_one_shared_retry_without_changi
     before = {path.name: path.read_bytes() for path in production.iterdir()}
     args.model_base_url, args.model = "http://127.0.0.1:19030", "candidate"
     args.thinking, args.temperature, args.seed = "on", 0.2, 42
+    args.context_tokens, args.native_context_tokens = 131072, 131072
     args.response_strategy = strategy
     calls, first_bad_body = [], True
 

@@ -47,9 +47,9 @@ BUSINESS_FILES = {
 }
 DEFAULT_NODE = {
     "mode": "text",
-    "operations_model": "Gemma4-E2B",
-    "live_model": "MiniCPM5-2B",
-    "context_tokens": 131072,
+    "operations_model": "dafeiyu-qwen35-9b:1.0.0",
+    "live_model": "dafeiyu-qwen35-9b:1.0.0",
+    "context_tokens": 262144,
     "kv_cache_type": "q4_0",
     "cuda_managed_memory": False,
     "min_available_mib": 384,
@@ -141,14 +141,13 @@ def setup(args):
         raise ValueError("Writable data cannot be inside a read-only asset directory")
     node_file = data / "inference-node.json"
     node = load_json(node_file) if node_file.exists() else json.loads(json.dumps(DEFAULT_NODE))
-    if not node_file.exists() and (mounts["models"] / "MiniCPM-V-4_7-1B-dafeiyu-Q4_K_M.gguf").is_file():
-        node["operations_model"] = "MiniCPM-V-4.7-1B"
     gemma_assets = (
         ("gemma_model", {"models"}),
         ("gemma_engine", {"engines"}),
         ("gemma_projector", {"models", "node-assets"}),
     )
-    if node.get("operations_model", "Gemma4-E2B") != "Gemma4-E2B":
+    if "Gemma4-E2B" not in (node.get("operations_model", DEFAULT_NODE["operations_model"]),
+                           node.get("live_model", DEFAULT_NODE["live_model"])):
         gemma_assets = ()
     for field, allowed in gemma_assets:
         path = PurePosixPath(node.get(field, DEFAULT_NODE[field]))
@@ -423,7 +422,7 @@ def initialize_data(plan):
             {
                 "tts": node.get("tts", {}),
                 "inference_broker": {
-                    "context_tokens": node.get("context_tokens", 131072),
+                    "context_tokens": node.get("context_tokens", DEFAULT_NODE["context_tokens"]),
                     "mode": node.get("mode", "text"),
                     "kv_cache_type": node.get("kv_cache_type", "q4_0"),
                 },
@@ -457,14 +456,14 @@ def wait_ready(plan, args):
                 node = plan["node"]
                 mode = node.get("mode", "text")
                 model = (
-                    node.get("live_model", "MiniCPM5-2B")
+                    node.get("live_model", DEFAULT_NODE["live_model"])
                     if mode == "live"
-                    else node.get("operations_model", "Gemma4-E2B")
+                    else node.get("operations_model", DEFAULT_NODE["operations_model"])
                 )
                 if (
                     status.get("mode") != mode
                     or status.get("model") != model
-                    or status.get("requested_context_tokens") != node.get("context_tokens", 131072)
+                    or status.get("requested_context_tokens") != node.get("context_tokens", DEFAULT_NODE["context_tokens"])
                 ):
                     raise RuntimeError("Loaded inference profile differs from the saved node configuration")
                 return {

@@ -9,6 +9,10 @@ from test_distributed_modes import distributed as distributed
 from tuber_studio import inference_node_client
 from tuber_studio.config import atomic_bytes
 from tuber_studio.inference_profiles import (
+    DAFEIYU_9B_CONTEXT,
+    DAFEIYU_9B_DIGESTS,
+    DAFEIYU_9B_KEY,
+    DAFEIYU_9B_MODEL,
     DAFEIYU_KEY,
     DAFEIYU_MODEL,
     GROUNDED_DAFEIYU_ARTIFACTS,
@@ -37,15 +41,18 @@ OTHER_TOKEN = "second-node-test-token-0123456789abcdef"
     [
         (DAFEIYU_KEY, DAFEIYU_MODEL),
         (GROUNDED_DAFEIYU_KEY, GROUNDED_DAFEIYU_MODEL),
+        (DAFEIYU_9B_KEY, DAFEIYU_9B_MODEL),
     ],
 )
 async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distributed, key, model):
     runtime, state = distributed
     runtime.browsing = StubBrowsing(DisabledVideoEvidence())
-    grounded = key == GROUNDED_DAFEIYU_KEY
+    is_9b = key == DAFEIYU_9B_KEY
+    visual_route = {GROUNDED_DAFEIYU_KEY: "dafeiyu", DAFEIYU_9B_KEY: "dafeiyu9b"}.get(key)
+    artifacts = DAFEIYU_9B_DIGESTS if is_9b else GROUNDED_DAFEIYU_ARTIFACTS
 
     async def own_node(request):
-        if grounded and request.url.path == "/capabilities":
+        if visual_route and request.url.path == "/capabilities":
             return httpx.Response(
                 200,
                 json={
@@ -55,9 +62,9 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
                     "profiles": {
                         key: {
                             "loaded": True,
-                            "model_sha256": GROUNDED_DAFEIYU_ARTIFACTS["model"],
-                            "projector_sha256": GROUNDED_DAFEIYU_ARTIFACTS["projector"],
-                            "runtime_sha256": GROUNDED_DAFEIYU_ARTIFACTS["engine"],
+                            "model_sha256": artifacts["model"],
+                            "projector_sha256": artifacts["projector"],
+                            "runtime_sha256": artifacts.get("engine"),
                         }
                     },
                 },
@@ -70,11 +77,12 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
                     "state": "active",
                     "model": model,
                     "selected_provider": key,
+                    "live_provider": DAFEIYU_9B_KEY if is_9b else "llm2b",
                     "providers": {
                         key: {
                             "running": True,
                             "context_tokens": 65536,
-                            "native_context_tokens": 131072,
+                            "native_context_tokens": DAFEIYU_9B_CONTEXT if is_9b else 131072,
                         }
                     },
                 },
@@ -92,9 +100,11 @@ async def test_pair_uses_the_nodes_fine_tuned_model_and_its_vision_profile(distr
     result = await inference_node_client.pair_node(runtime, {"base_url": OTHER_NODE, "token": OTHER_TOKEN})
     assert result["model"] == runtime.llm.config["model"] == model
     assert runtime.llm.server_tokens == runtime.llm.config["context_tokens"] == 65536
-    assert runtime.settings.data["work_mode_profiles"]["live"]["llm"]["model"] == "MiniCPM5-2B"
-    if grounded:
-        assert runtime.settings.data["vision"]["base_url"] == OTHER_NODE + "/vlm/dafeiyu/v1"
+    assert runtime.settings.data["work_mode_profiles"]["live"]["llm"]["model"] == (
+        DAFEIYU_9B_MODEL if is_9b else "MiniCPM5-2B"
+    )
+    if visual_route:
+        assert runtime.settings.data["vision"]["base_url"] == OTHER_NODE + f"/vlm/{visual_route}/v1"
         visual = runtime.browsing.visual_provider
         assert visual.config.model == model and visual.config.context_tokens == 65536
         assert visual.capabilities()["admitted"] is False

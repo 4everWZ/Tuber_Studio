@@ -21,8 +21,8 @@ def test_paired_provider_settings_survive_restart_and_live_round_trip(settings):
     reloaded = Settings(runtime=settings.runtime)
     returned = mode_configuration(mode_configuration(reloaded.data, "live"), "text")
     assert returned["llm"]["operations_max_tokens"] == 16384
-    assert returned["llm"]["model"] == "Gemma4-E2B"
-    assert returned["llm"]["context_tokens"] == 131072
+    assert returned["llm"]["model"] == live["llm"]["model"] == "dafeiyu-qwen35-9b:1.0.0"
+    assert returned["llm"]["context_tokens"] == 262144
     assert returned["work_mode_profiles"]["live"] == live
 
 

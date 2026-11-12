@@ -68,19 +68,39 @@ LLM_ARTIFACTS = {
 
 def prepare_llm(root: Path, key: str, offline: bool) -> None:
     """Prepare one fixed text model without changing the selected profile."""
+    from tuber_studio.inference import RESOURCES, native_context
+    from tuber_studio.inference_profiles import DAFEIYU_9B_CONTEXT, DAFEIYU_9B_KEY, DAFEIYU_9B_PROJECTOR
+
+    resource = RESOURCES[key]
+    path = root / "runtime/models" / resource.model
+    if key == DAFEIYU_9B_KEY:
+        from tuber_studio.portable import DOWNLOAD_SECONDS, _download_missing, _existing
+
+        names = {f"models/{resource.model}", f"models/{DAFEIYU_9B_PROJECTOR}"}
+        entries = json.loads((root / "config/jetson/downloads.json").read_text(encoding="utf-8"))["files"]
+        selected = [entry for entry in entries if entry["path"] in names]
+        if {entry["path"] for entry in selected} != names:
+            raise ValueError("The pinned 9B model and projector must both be in the download manifest")
+        runtime = root / "runtime"
+        for entry in selected:
+            deadline = time.monotonic() + DOWNLOAD_SECONDS
+            target = runtime / entry["path"]
+            if offline:
+                if not _existing(target, entry, deadline):
+                    raise FileNotFoundError(f"Missing offline asset: {entry['path']}")
+            else:
+                _download_missing(target, entry, runtime, deadline)
+        if native_context(path, expected_architecture="qwen35") != DAFEIYU_9B_CONTEXT:
+            raise RuntimeError(f"{resource.alias} does not declare its expected native window")
+        print(f"{resource.alias} weights and projector verified")
+        return
+
     from prepare_compact import fetch
 
-    from tuber_studio.inference import RESOURCES, native_context
-
-    artifact, resource = LLM_ARTIFACTS[key], RESOURCES[key]
-    base = os.environ.get("TUBER_HF_BASE", "https://hf-mirror.com").rstrip("/")
-    path = root / "runtime/models" / resource.model
-    fetch(
-        f"{base}/{artifact['repository']}/resolve/{artifact['revision']}/{resource.model}",
-        path,
-        artifact["size"],
-        offline,
-    )
+    artifact = LLM_ARTIFACTS[key]
+    mirror = os.environ.get("TUBER_HF_BASE", "https://hf-mirror.com").rstrip("/")
+    url = f"{mirror}/{artifact['repository']}/resolve/{artifact['revision']}/{resource.model}"
+    fetch(url, path, artifact["size"], offline)
     with path.open("rb") as source:
         digest = hashlib.file_digest(source, "sha256").hexdigest()
     if digest != artifact["sha256"]:
@@ -195,7 +215,7 @@ def main(argv=None) -> None:
         "--check-only", action="store_true", help="Read-only offline compact voice validation"
     )
     scope = parser.add_mutually_exclusive_group()
-    scope.add_argument("--candidate", choices=["qwen35"], help="Prepare only this optional text candidate")
+    scope.add_argument("--candidate", choices=["qwen35", "dafeiyu9b", "minicpm2b"], help="Prepare only this text profile")
     scope.add_argument(
         "--compact-voice-only", action="store_true", help="Prepare only the compact DaFeiYu voice"
     )
@@ -206,7 +226,7 @@ def main(argv=None) -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent / "tts"))
 
     if args.candidate:
-        prepare_llm(root, "llmqwen35", args.offline)
+        prepare_llm(root, {"qwen35": "llmqwen35", "dafeiyu9b": "llmdafeiyu9b", "minicpm2b": "llm2b"}[args.candidate], args.offline)
         return
     from prepare_compact import prepare_voice
 
@@ -214,7 +234,7 @@ def main(argv=None) -> None:
         prepare_voice(root, offline=args.offline, check_only=args.check_only)
         return
 
-    from tuber_studio.inference import RESOURCES
+    from tuber_studio.inference_profiles import DAFEIYU_9B_KEY, DAFEIYU_9B_MODEL, llm_resource_key
 
     nltk_directory = root / "runtime/nltk_data"
     ensure_nltk_data(nltk_directory, args.offline)
@@ -222,9 +242,9 @@ def main(argv=None) -> None:
     configuration = root / "runtime/studio.json"
     source = configuration if configuration.exists() else root / "config/studio.example.json"
     data = json.loads(source.read_text(encoding="utf-8"))
-    alias = data.get("llm", {}).get("model", RESOURCES["llm2b"].alias)
-    selected = next((key for key in LLM_ARTIFACTS if RESOURCES[key].alias == alias), None)
-    if selected is None:
+    alias = data.get("llm", {}).get("model", DAFEIYU_9B_MODEL)
+    selected = llm_resource_key(alias)
+    if selected not in {*LLM_ARTIFACTS, DAFEIYU_9B_KEY}:
         raise RuntimeError("Configured LLM does not match a fixed downloadable profile")
     prepare_llm(root, selected, args.offline)
     if not configuration.is_file():
