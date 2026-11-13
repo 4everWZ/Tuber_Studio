@@ -20,7 +20,7 @@ from .live.session import HANDOFF_PLATFORM, LiveSession
 from .media_cache import MediaCache
 from .memory import missing_slots
 from .model_runtime.session import InferenceRuntime
-from .models import OperationReply
+from .models import OperationReply, Reply
 from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
 from .operation_identity import identity_messages, identity_snapshot
@@ -503,8 +503,19 @@ class Runtime:
              "使用 spoken_text、emotion、animation_id 和 reply_to 输出。角色表达：" + dump(character["style"])},
             {"role": "user", "content": dump({"交接文字": text, "直播偏好": [row["anecdote"] for row in style]})},
         ]
-        generate = getattr(self.llm, "generate_live", self.llm.generate)
-        reply = await generate(messages, character, event["event_id"], text)
+        # Provider wrappers otherwise resolve and append the active account.
+        messages = identity_messages(messages, identity_snapshot({}, character))
+        if generate_json := getattr(self.llm, "generate_live_json", None):
+            schema = Reply.model_json_schema()
+            schema["properties"]["reply_to"]["items"] = {"type": "string", "enum": [event["event_id"]]}
+            schema["properties"]["reply_to"]["maxItems"] = 1
+            value = await generate_json(messages, schema, max_tokens=180)
+            reply = Reply.model_validate(value)
+            if any(reference != event["event_id"] for reference in reply.reply_to):
+                raise ValueError("模型引用了其他事件")
+        else:
+            generate = getattr(self.llm, "generate_live", self.llm.generate)
+            reply = await generate(messages, character, event["event_id"], text)
         audit = {"handoff": True, "memory_scope": scope, "memory_channel": "live",
                  "organized_memory": [self.daily_memory.organized_reference(row) for row in style]}
         if style:

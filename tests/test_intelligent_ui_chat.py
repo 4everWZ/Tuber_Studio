@@ -13,6 +13,7 @@ from tuber_studio.agent import operator_facts
 from tuber_studio.app import create_app
 from tuber_studio.live.game_livestream import GameLivestreamService
 from tuber_studio.models import Reply
+from tuber_studio.operation_identity import provider_identity_messages
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.providers import Audio
@@ -492,8 +493,12 @@ def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settin
     async def generate(messages, character, event_id, source_text):
         if source_text != safe_text:
             return Reply(spoken_text="记下了。")
-        wire = json.dumps(messages, ensure_ascii=False)
+        provider = type("Provider", (), {"identity_resolver": staticmethod(
+            lambda: {"account_bio": name, "account_uid": "private-account", "identity_version": "test"}
+        )})()
+        wire = json.dumps(provider_identity_messages(provider, messages), ensure_ascii=False)
         assert name not in wire and private_url not in wire and BV not in wire
+        assert "private-account" not in wire
         assert all(isinstance(message["content"], str) for message in messages)
         seen.append(wire)
         if "先讲结果" in wire:
