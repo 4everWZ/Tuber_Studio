@@ -228,7 +228,12 @@ function videoCard(root, turn, { api, path }) {
     excerpt.replaceChildren();
     if (data.inspection) {
       const frame = data.inspection;
-      const timecode = seconds => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(3).padStart(6, "0")}`;
+      const timecode = seconds => {
+        const millis = Math.round(seconds * 1000);
+        const minutes = String(Math.floor(millis / 60000)).padStart(2, "0");
+        const remainder = (millis % 60000 / 1000).toFixed(3).padStart(6, "0");
+        return `${minutes}:${remainder}`;
+      };
       const source = frame.kind === "stream" ? "视频流" : "故事板";
       excerpt.append(node("p", `P${frame.part} · 目标 ${timecode(frame.requested_time)} · ${source} ${timecode(frame.actual_time)}`));
       const details = node("details");

@@ -650,17 +650,17 @@ class BrowsingEvidence:
                     evidence["bytes_read"] = 0
                     evidence["elapsed_seconds"] = 0
                 return parts, [frame | {"requested_time": timestamp, "bytes_read": 0, "elapsed_seconds": 0}]
+        known_frames = frozenset(known_frames)
         async with self._flight(
-            ("precise_frame", metadata["bvid"], tuple(version), timestamp, self._visual_identity(), allow_fallback),
-            lambda: self._inspect_frame(metadata, task, deadline, cid, timestamp, version, allow_fallback),
+            ("precise_frame", metadata["bvid"], tuple(version), timestamp, provider, allow_fallback, known_frames),
+            lambda: self._inspect_frame(metadata, task, deadline, cid, timestamp, version, allow_fallback, known_frames),
         ) as (parts, frames):
-            if frames and frames[0]["id"] in known_frames:
-                return [], []
             return copy.deepcopy(parts), copy.deepcopy(frames)
 
-    async def _inspect_frame(self, metadata, task, deadline, cid, timestamp, version, allow_fallback):
+    async def _inspect_frame(self, metadata, task, deadline, cid, timestamp, version, allow_fallback, known_frames):
         parts, frames = await self._visual_parts(
             metadata, task, deadline, cid=cid, timestamps=[timestamp], precise=True, allow_fallback=allow_fallback,
+            known_frames=known_frames,
             question="描述目标帧实际可见的动作、界面和可读文字。区分可辨认内容和看不清的细节。",
         )
         if parts and frames and frames[0].get("kind") == "stream":

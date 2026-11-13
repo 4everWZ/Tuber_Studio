@@ -179,6 +179,21 @@ async def evidence_factory(runtime):
         await instance.close()
 
 
+async def test_precise_fallback_skips_a_storyboard_frame_already_analyzed(evidence_factory):
+    class ExpiredStream(PublicAdapter):
+        async def video_stream_frame(self, metadata, *, cid, timestamp):
+            raise ValueError("播放地址已过期")
+
+    adapter, visual = ExpiredStream(), TestVisual()
+    service = evidence_factory(adapter, visual)
+    metadata = await adapter.video_metadata(BV)
+    _, frames = await service._visual_parts(metadata, {}, None, cid="456", timestamps=[8])
+    known = {frame["id"] for frame in frames}
+
+    assert await service.inspect_frame(metadata, {}, None, "456", 10, known_frames=known) == ([], [])
+    assert visual.calls == 1
+
+
 async def test_cache_persists_raw_parts_and_same_material_is_shared_across_oc(
     evidence_factory, runtime, config
 ):

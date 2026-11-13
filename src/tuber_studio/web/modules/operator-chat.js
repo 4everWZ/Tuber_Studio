@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261113.14";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261113.15";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 
 const path = "/api/chat/intelligent";
