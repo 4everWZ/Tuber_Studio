@@ -221,9 +221,9 @@ class OperatorChat:
              "video_tasks": [{"reference": key, **task} for key, task in list(tasks.items())[:6]]}, ChatIntent,
         )
 
-    def _visible(self, result):
+    def _visible(self, result, *, historical=False):
         try:
-            self.runtime.validate_memory_delivery(result.get("organized_memory"))
+            self.runtime.validate_memory_delivery(result.get("organized_memory"), historical=historical)
         except ValueError:
             return {"reply_text": "这条回复引用的记忆已变更。", "card": None}
         if memory := result.get("memory"):
@@ -311,7 +311,7 @@ class OperatorChat:
                         "card": {"type": "video_browsing", "data": {"status": "unavailable"}}}
         return {
             "request_id": row["request_id"], "message": row["message"],
-            **self._visible(result),
+            **self._visible(result, historical=True),
         }
 
     def history(self, limit, before):
@@ -392,13 +392,14 @@ class OperatorChat:
                         raise HTTPException(503, "暂时无法生成回复，请重试。") from error
                     self._check_scope(char, account)
                     self.runtime.context.record(
-                        scope, char, event, None if audit.get("organized_memory") else reply.spoken_text,
+                        scope, char, event, None if "memory_preference_revision" in audit else reply.spoken_text,
                         "operator_chat", memory_kind="operator_private",
                     )
                 result = {"reply_text": reply.spoken_text, "emotion": reply.emotion, "card": None, "private": True}
-                if audit.get("organized_memory"):
+                if "memory_preference_revision" in audit:
                     result["organized_memory"] = {key: audit[key] for key in
-                                                  ("organized_memory", "memory_scope", "memory_channel")}
+                                                  ("organized_memory", "memory_scope", "memory_channel",
+                                                   "memory_preference_revision")}
             else:
                 if intent.action in {"browse", "full_video", "inspect_video_frame", "stop", "resume_video"}:
                     pending.cancellable = False
@@ -512,14 +513,19 @@ class OperatorChat:
         if kind == "public_experiences":
             return {"reply_text": "这是当前角色的公开经历。", "card": {"type": kind, "data": {}}}
         if kind == "recall_experience":
-            organized = self.runtime.daily_memory.recall_organized(self.runtime.memory_organizer.scope(), "operator", topic)
+            memory_scope = self.runtime.memory_organizer.scope()
+            preference = self.runtime.daily_memory.preference(memory_scope)
+            organized = self.runtime.daily_memory.recall_organized(memory_scope, "operator", topic)
             matches = [item for item in organized if item["memory_kind"] == "experience"]
             if len(matches) == 1:
                 item = matches[0]
                 return {"reply_text": item["anecdote"], "card": None, "organized_memory": {
-                    "memory_scope": self.runtime.memory_organizer.scope(), "memory_channel": "operator",
+                    "memory_scope": memory_scope, "memory_channel": "operator",
+                    "memory_preference_revision": preference["revision"],
                     "organized_memory": [self.runtime.daily_memory.organized_reference(item)],
                 }}
+            if not preference["enabled"]:
+                return {"reply_text": "记忆已停用，可以在个性化设置中查看已保存的记忆。", "card": None}
             items = [item for item in self.experiences()["items"] if item["status"] in {"active", "archived"}]
             found = [item for item in items if topic and topic in item["anecdote"]]
             if len(found) != 1:

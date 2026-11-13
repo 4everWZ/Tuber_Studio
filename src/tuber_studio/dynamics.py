@@ -327,13 +327,20 @@ class Dynamics:
             self.store.execute("DELETE FROM dynamic_memory_public WHERE memory_id=?", (memory_id,))
         return next(item for item in self.list_memories(200) if item["id"] == memory_id)
 
+    def _memory_preference(self):
+        organizer = getattr(self.runtime, "memory_organizer", None)
+        scope = organizer.scope() if organizer and getattr(self.runtime, "browsing", None) else None
+        return scope, self.daily_memory.preference(scope) if scope else {"enabled": True, "revision": 0}
+
     def _sources(self):
         char = self._character()
-        result = self.daily_memory.public_incident_sources(char["id"], char["version"])
-        result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
-        organizer = getattr(self.runtime, "memory_organizer", None)
-        if organizer and getattr(self.runtime, "browsing", None):
-            for row in self.daily_memory.organized(organizer.scope(), limit=100):
+        scope, preference = self._memory_preference()
+        result = []
+        if preference["enabled"]:
+            result = self.daily_memory.public_incident_sources(char["id"], char["version"])
+            result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
+        if scope and preference["enabled"]:
+            for row in self.daily_memory.organized(scope, limit=100):
                 if row["status"] != "active" or "dynamic" not in row["channels"]:
                     continue
                 anchor = row["source"]["thread"]
@@ -344,6 +351,9 @@ class Dynamics:
                                    {"bvid": anchor["resource"], "thread_id": anchor["root_id"],
                                     "comment_id": ref["comment_id"], "quote": ref["text"]} for ref in references
                                ] if anchor["resource"].startswith("BV") else []})
+        if preference["revision"]:
+            for source in result:
+                source["memory_preference_revision"] = preference["revision"]
         rows = self.store.all(
             "SELECT d.id,d.text,d.receipt,c.video_id,c.comment_id,c.content FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.status='published' AND c.platform='bilibili' "
@@ -392,7 +402,7 @@ class Dynamics:
                         "original_comment": {"id": target.get("parent"), "text": target["source_text"]},
                         "receipt_id": str(receipt["rpid"]),
                     })
-        for row in self._memory_rows():
+        for row in self._memory_rows() if preference["enabled"] else ():
             mark = self.store.one(
                 "SELECT fingerprint FROM dynamic_memory_public WHERE memory_id=?", (row["id"],)
             )
@@ -405,6 +415,7 @@ class Dynamics:
                         "fictional": True,
                         "scope": row["scope"],
                         "event_id": row["event_id"],
+                        **({"memory_preference_revision": preference["revision"]} if preference["revision"] else {}),
                     }
                 )
         return result
@@ -1215,7 +1226,10 @@ class Dynamics:
         now = time.time()
         selected = [s for s in sources if s["id"] in data["source_ids"]]
         selected_ids = {s["id"] for s in selected}
-        memory_dependencies = [s for s in sources if s.get("memory_version") and s["id"] not in selected_ids]
+        memory_dependencies = [
+            s for s in sources if s["id"] not in selected_ids
+            and (s.get("memory_version") or s["id"].startswith(("memory:", "experience:", "incident:")))
+        ]
         if selected and memory_dependencies:
             selected[0] = selected[0] | {"memory_dependencies": memory_dependencies}
         model = str(self.settings.data["llm"].get("model", self.settings.data["llm"]["kind"]))
@@ -1343,11 +1357,19 @@ class Dynamics:
                     base["reason"] = "发布频率限制中，暂不生成动态"
                     return self._save_decision(char, manual, base, [])
             current_time = datetime.now().astimezone().isoformat()
+            memory_preference = self._memory_preference()
             recent_posts = [
                 {"content": p["content"], "published_at": p["published_at"]}
                 for p in self.list_posts("published", 5)
                 if p["character_id"] == char["id"] and p["character_version"] == char["version"]
-                and not any(s.get("memory_version") or s.get("memory_dependencies") for s in p["sources"])
+                and not any(
+                    s.get("memory_version") or s.get("memory_dependencies")
+                    or (s["id"].startswith(("memory:", "experience:", "incident:")) and (
+                        not memory_preference[1]["enabled"]
+                        or s.get("memory_preference_revision", 0) != memory_preference[1]["revision"]
+                    ))
+                    for s in p["sources"]
+                )
             ]
             messages = dynamic_decision_messages(
                 char,
@@ -1378,6 +1400,7 @@ class Dynamics:
                             self._character()["id"] == char["id"]
                             and self._character()["version"] == char["version"]
                             and self._summary_sources() == sources
+                            and self._memory_preference() == memory_preference
                             and self._summary_model() == model_identity
                             and runtime_identity(self.runtime, self._character())["identity_version"]
                             == generation_identity["identity_version"]

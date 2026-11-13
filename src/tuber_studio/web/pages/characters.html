@@ -2,7 +2,7 @@
 
   <div class="page-heading win-heading">
     <div class="heading-title-box">
-      <h1>角色卡与记忆</h1>
+      <h1>角色卡</h1>
       <p class="hint">当前激活角色 · <strong id="persona-current">待读取</strong></p>
     </div>
   </div>
@@ -118,32 +118,8 @@
     </form>
   </dialog>
 
-  <section class="win-group-box" aria-labelledby="recent-memory-title">
-    <div class="panel-heading">
-      <h2 id="recent-memory-title" class="win-group-title">近期趣事</h2>
-      <span class="hint" id="recent-memory-day"></span>
-    </div>
-    <div id="recent-memory-list" class="daily-memory-list" aria-busy="true"></div>
-  </section>
-
-  <div class="win-group-box daily-memory-card" id="daily-memory-card" data-workspace-anchor style="margin-top:18px;">
-    <div class="panel-heading">
-      <div>
-        <div class="win-group-title" style="margin:0;">长期记忆</div>
-      </div>
-      <div class="actions">
-        <button type="button" id="extract-daily-memory" class="win-btn">补跑整理</button>
-        <button type="button" id="refresh-daily-memory" class="win-btn">刷新</button>
-      </div>
-    </div>
-    <p id="daily-memory-notice" class="hint" role="status">正在加载长期记忆…</p>
-    <h2>待确认经历</h2>
-    <div id="pending-memory-list" class="daily-memory-list"></div>
-    <h2>已保存记忆</h2>
-    <div id="organized-memory-list" class="daily-memory-list"></div>
-    <details>
-      <summary>早期记忆记录</summary>
-      <div id="daily-memory-list" class="daily-memory-list"></div>
-    </details>
+  <div class="personalization-row recent-memory-preview">
+    <span><strong>近期趣事</strong><small id="recent-memory-preview-text">正在读取…</small></span>
+    <button type="button" class="personalization-button" id="open-role-recent-events">查看</button>
   </div>
 </section>

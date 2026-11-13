@@ -1676,7 +1676,7 @@ class DirectMessages:
                 self.scope(draft),
                 character,
                 self._delivered_event(draft, character),
-                spoken,
+                None if "memory_preference_revision" in check else spoken,
                 "direct_message",
                 memory_kind=None if payload.get("message_kind") == "image" else check.get("memory_kind"),
             )
@@ -1886,8 +1886,11 @@ class DirectMessages:
 
                 def authorized(*, reserve=True):
                     nonlocal token
-                    generated = json.loads(row.get("answer_check") or "{}").get("generation_identity")
-                    if not self._conversation_matches(row, json.loads(row.get("answer_check") or "{}").get("conversation_sha256")):
+                    audit = json.loads(row.get("answer_check") or "{}")
+                    if not image:
+                        self.runtime.validate_memory_delivery(audit)
+                    generated = audit.get("generation_identity")
+                    if not self._conversation_matches(row, audit.get("conversation_sha256")):
                         raise MessageInputChanged("会话出现新发言，暂未提交私信")
                     if generated != runtime_identity(self.runtime, character, row["account_id"]):
                         raise MessageIdentityChanged("提交前账号资料已更新，按最新身份重新准备")
@@ -2066,7 +2069,7 @@ class DirectMessages:
                 self.scope(row),
                 character,
                 self._delivered_event(row, character),
-                spoken,
+                None if "memory_preference_revision" in check else spoken,
                 "direct_message",
                 memory_kind=None if image else check.get("memory_kind"),
             )

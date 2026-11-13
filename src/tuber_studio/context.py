@@ -240,7 +240,8 @@ class ContextManager:
         ]
 
     async def prepare(
-        self, scope, character, event, relationship=None, mode="live", *, evidence=None, output_tokens=None, extra=()
+        self, scope, character, event, relationship=None, mode="live", *, evidence=None, output_tokens=None,
+        extra=(), daily_memory_enabled=True, on_memory=None,
     ):
         row = self.window(scope, character)
         prefix, initial, pending, suffix = self.parts(
@@ -265,11 +266,21 @@ class ContextManager:
                     + json.dumps(evidence, ensure_ascii=False),
                 }
             )
+        recalled_blocks = set()
+
+        def record_recalled_block(block):
+            recalled_blocks.add(id(block))
+            if on_memory:
+                on_memory()
+
         if self.tool_registry:
             augmentations = self.tool_registry.collect_context_augmentations(
-                character, event, mode, extra_context={"scope": scope}
+                character, event, mode, extra_context={
+                    "scope": scope, "daily_memory_enabled": daily_memory_enabled, "on_memory": record_recalled_block,
+                }
             )
             initial.extend(augmentations)
+        compaction_context = [block for block in initial if id(block) not in recalled_blocks]
         initial.extend(extra)
         history = self.history_for_model(scope, character, json.loads(row["history"]))
         messages = self.render(prefix, initial, history, pending, suffix)
@@ -287,7 +298,8 @@ class ContextManager:
         if overflow or needs_compaction(total, config, row["carried_prefix_tokens"]):
             if not history:
                 raise ContextWindowExceeded("核心设定或当前输入已超窗，没有可压缩历史；请调整输入")
-            await self._compact(row, prefix, initial, pending, suffix, output_tokens=output)
+            # Persist summaries of conversation history, without transient recalled memories.
+            await self._compact(row, prefix, compaction_context, pending, suffix, output_tokens=output)
             row = self.window(scope, character)
             history = json.loads(row["history"])
             messages = self.render(prefix, initial, history, pending, suffix)

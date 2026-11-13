@@ -6,10 +6,11 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import Body, Depends, HTTPException, Path, Query
-from pydantic import Field, StringConstraints, ValidationError
+from pydantic import Field, StrictBool, StringConstraints, ValidationError
 
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..models import Character, StrictModel
+from ..operation_continuations import content_hash
 from ..relationships import UserProfile
 from ..store import character_card, editable_character
 from .operator_facts import recent_events
@@ -30,6 +31,11 @@ class DeleteCharacter(StrictModel):
     replacement_id: str | None = None
 
 
+class MemoryPreference(StrictModel):
+    enabled: StrictBool
+    scope: str
+
+
 def organized_view(row):
     result = {key: row[key] for key in ("id", "memory_kind", "headline", "quote", "anecdote", "status",
                                        "channels", "source", "updated_at")}
@@ -40,6 +46,13 @@ def organized_view(row):
 
 def register_agent_api(app, settings, runtime, store, comments, require_admin, *, default_character):
     character_writes = asyncio.Lock()
+
+    def memory_scope(expected=None):
+        scope = runtime.memory_organizer.scope()
+        token = content_hash(scope)
+        if expected is not None and expected != token:
+            raise HTTPException(409, "当前账号或角色已变化，请重新打开")
+        return scope, token
 
     def user_memory_scope(platform, user_id, account_id, character_id):
         messages = comments.direct_messages
@@ -172,43 +185,61 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     async def assets():
         return settings.assets(runtime.character)
 
+    @app.get("/api/daily-memory/preferences", dependencies=[Depends(require_admin)])
+    async def get_memory_preference():
+        scope, token = memory_scope()
+        return runtime.daily_memory.preference(scope) | {"scope": token}
+
+    @app.put("/api/daily-memory/preferences", dependencies=[Depends(require_admin)])
+    async def set_memory_preference(data: MemoryPreference):
+        scope, token = memory_scope(data.scope)
+        result = runtime.daily_memory.set_preference(scope, data.enabled)
+        runtime.memory_organizer.schedule(manual=True)
+        return result | {"scope": token}
+
     @app.get("/api/daily-memory", dependencies=[Depends(require_admin)])
     async def get_daily_memory(
         date: str | None = None,
         status: str | None = None,
         limit: int = Query(50, ge=1, le=100),
     ):
-        char = runtime.character
-        account = str(runtime.browsing.discovery.history_scope()[0] or "")
+        scope, token = memory_scope()
+        account, character_id, version = scope
         highlights = runtime.daily_memory.list_highlights(
-            char["id"], char["version"], date_str=date, status=status, limit=limit, account_id=account,
+            character_id, version, date_str=date, status=status, limit=limit, account_id=account,
         )
         active = runtime.daily_memory.get_active_anecdotes(
-            char["id"], char["version"], limit=3, max_tokens=200
+            character_id, version, limit=3, max_tokens=200
         )
-        organized = runtime.daily_memory.organized(runtime.memory_organizer.scope(), limit=limit)
+        organized = runtime.daily_memory.organized(scope, limit=limit)
         return {"highlights": highlights, "active_anecdotes": active,
-                "organized": [organized_view(row) for row in organized], "organization": runtime.memory_organizer.state()}
+                "organized": [organized_view(row) for row in organized], "organization": runtime.memory_organizer.state(),
+                "scope": token, "enabled": runtime.daily_memory.preference(scope)["enabled"]}
 
     @app.get("/api/daily-memory/recent-events", dependencies=[Depends(require_admin)])
     async def get_recent_events():
         await runtime.browsing.discovery.restore_history_scope()
-        return recent_events(runtime.browsing)
+        return recent_events(runtime.browsing) | {"scope": memory_scope()[1]}
 
     @app.post("/api/daily-memory/organize", dependencies=[Depends(require_admin)])
-    async def organize_memory():
+    async def organize_memory(scope: str | None = None):
+        current, _ = memory_scope(scope)
+        if not runtime.daily_memory.preference(current)["enabled"]:
+            raise HTTPException(409, "请先启用记忆")
         return runtime.memory_organizer.schedule(manual=True)
 
     @app.patch("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
-    async def change_organized_memory(item_id: int, data: OrganizedMemoryChange):
-        row = runtime.daily_memory.change_organized(runtime.memory_organizer.scope(), item_id, **data.model_dump())
+    async def change_organized_memory(item_id: int, data: OrganizedMemoryChange, scope: str | None = None):
+        current, _ = memory_scope(scope)
+        row = runtime.daily_memory.change_organized(current, item_id, **data.model_dump())
         if not row:
             raise HTTPException(404, "未找到当前账号和角色的记忆")
         return organized_view(row)
 
     @app.delete("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
-    async def delete_organized_memory(item_id: int):
-        result = runtime.daily_memory.change_organized(runtime.memory_organizer.scope(), item_id, delete=True)
+    async def delete_organized_memory(item_id: int, scope: str | None = None):
+        current, _ = memory_scope(scope)
+        result = runtime.daily_memory.change_organized(current, item_id, delete=True)
         if not result:
             raise HTTPException(404, "未找到当前账号和角色的记忆")
         return result
@@ -238,8 +269,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         return {"extracted": extracted, "total": len(extracted), "date": date_str}
 
     @app.put("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
-    async def update_daily_memory(item_id: int, data: dict = Body(...)):
+    async def update_daily_memory(item_id: int, data: dict = Body(...), scope: str | None = None):
         async with runtime.generation_lock:
+            memory_scope(scope)
             current_highlight(item_id)
             updated = runtime.daily_memory.update_highlight(item_id, data)
             if not updated:
@@ -247,8 +279,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             return updated
 
     @app.delete("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
-    async def delete_daily_memory(item_id: int):
+    async def delete_daily_memory(item_id: int, scope: str | None = None):
         async with runtime.generation_lock:
+            memory_scope(scope)
             current_highlight(item_id)
             runtime.daily_memory.delete_highlight(item_id)
             return {"ok": True, "id": item_id}

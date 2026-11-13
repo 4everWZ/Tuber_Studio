@@ -219,6 +219,87 @@ p { margin-block: .55em 1em; }
 .win-subgroup-title { margin: 0 0 8px; font-size: .97rem; color: var(--win-ink-secondary); font-weight: 650; }
 .win-split-pane { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(270px, 1fr); gap: 18px; align-items: start; }
 .character-layout { grid-template-columns: clamp(245px, 30%, 400px) minmax(0, 1fr); margin-block-end: 16px; }
+.personalization-settings { max-width: 940px; margin-inline: auto; }
+.personalization-settings h1 { margin: 8px 0 22px; }
+.personalization-rows, .recent-memory-preview {
+  border: 1px solid var(--win-border-light);
+  border-radius: 17px;
+  background: var(--panel);
+}
+.personalization-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 19px; margin: 0; }
+.personalization-row + .personalization-row { border-top: 1px solid var(--win-border-light); }
+.personalization-row > span { min-width: 0; }
+.personalization-row strong, .personalization-row small { display: block; overflow-wrap: anywhere; }
+.personalization-row small { color: var(--muted); font-weight: 400; margin-top: 3px; }
+.personalization-button { border: 0; border-radius: 999px; background: #ededed; color: var(--ink); flex-shrink: 0; }
+.personalization-button:hover { background: #e3e3e3; }
+#memory-enabled {
+  appearance: none;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 25px;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px;
+  margin: 0;
+  background: #777;
+  cursor: pointer;
+  transition: background-color .15s ease;
+}
+#memory-enabled::before {
+  display: block;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  content: "";
+  transition: transform .15s ease;
+}
+#memory-enabled:checked { background: #3564bd; }
+#memory-enabled:checked::before { transform: translateX(17px); }
+#memory-enabled:disabled { cursor: wait; opacity: .65; }
+#memory-switch-status:empty, #daily-memory-notice:empty { display: none; }
+.personalization-dialog {
+  box-sizing: border-box;
+  width: min(calc(100% - 28px), 650px);
+  max-height: min(calc(100dvh - 28px), 720px);
+  padding: 0;
+  border: 1px solid var(--win-border-light);
+  border-radius: 21px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 36px #0002;
+  overflow: hidden;
+}
+.personalization-dialog[open] { display: flex; flex-direction: column; }
+.personalization-dialog::backdrop { background: #0003; }
+.personalization-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--win-border-light);
+}
+.personalization-dialog h2 { margin: 0; font-size: 1.14rem; font-weight: 650; }
+.personalization-close { width: 36px; height: 36px; border: 0; border-radius: 50%; padding: 0; font-size: 1.35rem; background: transparent; }
+.personalization-dialog-body { overflow: auto; padding: 15px 20px 20px; overscroll-behavior: contain; }
+.personalization-load:not([hidden]) { min-height: 180px; display: grid; align-content: center; justify-items: center; gap: 12px; text-align: center; }
+.memory-detail-list { display: grid; }
+.memory-detail-list article { min-width: 0; overflow-wrap: anywhere; padding-block: 11px; }
+.memory-detail-list article + article { border-top: 1px solid var(--win-border-light); }
+.memory-detail-list article :is(p, blockquote) { margin: 6px 0; }
+.memory-detail-list article blockquote { padding-inline-start: 10px; border-inline-start: 2px solid var(--win-border-light); }
+.memory-detail-list summary, .older-memory-list > summary { cursor: pointer; }
+.memory-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.memory-channels { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; }
+.memory-channels label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.memory-channels input { margin: 0; }
+.older-memory-list { margin-top: 14px; }
+@media (max-width: 520px) {
+  .personalization-row, .personalization-dialog > header, .personalization-dialog-body { padding-inline: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { #memory-enabled, #memory-enabled::before { transition: none; } }
 .win-filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px 14px; padding: 12px 14px; background: #f7f7f7; border-radius: 9px; margin-bottom: 14px; }
 .win-filter-bar label { margin: 0; font-weight: 550; }
 

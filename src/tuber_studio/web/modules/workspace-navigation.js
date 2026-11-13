@@ -4,7 +4,7 @@ const workspaceSections = {
   operations: ["automation", "comments", "messages", "dynamics", "automation-records", "automation-settings"],
   live: ["live", "live-scene", "live-music", "live-settings", "live-interaction"],
   characters: ["characters", "voices", "assets"],
-  settings: ["settings", "accounts", "overview", "issues"],
+  settings: ["settings", "personalization", "accounts", "overview", "issues"],
 };
 
 export function workspaceSection(page) {
@@ -56,7 +56,7 @@ export function initWorkspaceNavigation(model, loadPage) {
       live: "直播工作台", "live-scene": "场景编排", "live-music": "曲库与点歌",
       "live-settings": "直播设置", "live-interaction": "互动与游戏",
       characters: "角色工作室", voices: "语音", assets: "素材与表情包",
-      settings: "推理与模型", accounts: "账号与权限", overview: "存储与维护",
+      settings: "推理与模型", personalization: "个性化", accounts: "账号与权限", overview: "存储与维护",
     };
     const previous = model.page;
     scrollPositions.set(previous, window.scrollY);

@@ -1,0 +1,69 @@
+<section data-section="personalization" class="win-page-view" hidden>
+  <div class="personalization-settings">
+    <h1>个性化</h1>
+    <section class="personalization-rows" id="daily-memory-card" data-workspace-anchor aria-label="记忆设置">
+      <label class="personalization-row" for="memory-enabled">
+        <span><strong id="memory-toggle-label">启用记忆</strong><small id="memory-toggle-description">为当前账号和角色自动整理并取用长期记忆。</small></span>
+        <input id="memory-enabled" type="checkbox" role="switch" aria-labelledby="memory-toggle-label" aria-describedby="memory-toggle-description" disabled>
+      </label>
+      <div class="personalization-row">
+        <span><strong>记忆摘要</strong><small>查看已记住的内容，管理来源和使用权限。</small></span>
+        <button type="button" class="personalization-button" id="open-memory-summary">管理</button>
+      </div>
+      <div class="personalization-row">
+        <span><strong>近期趣事</strong><small>查看近期观看、评论互动和回复结果。</small></span>
+        <button type="button" class="personalization-button" id="open-recent-events">查看</button>
+      </div>
+    </section>
+    <p id="memory-switch-status" class="hint" role="status"></p>
+    <button type="button" class="win-btn" id="retry-memory-preference" hidden>重新读取记忆设置</button>
+  </div>
+</section>
+
+<dialog id="memory-summary-dialog" class="personalization-dialog" aria-labelledby="memory-summary-title">
+  <header>
+    <h2 id="memory-summary-title">记忆摘要</h2>
+    <form method="dialog"><button type="submit" class="personalization-close" aria-label="关闭记忆摘要" autofocus>×</button></form>
+  </header>
+  <div class="personalization-dialog-body">
+    <div class="personalization-load" id="memory-load-state" role="status" hidden></div>
+    <div id="memory-summary">
+      <div id="memory-summary-list" class="memory-detail-list"></div>
+      <button type="button" id="open-memory-items" class="personalization-button">管理记忆条目</button>
+    </div>
+    <div id="memory-items" hidden>
+      <div class="memory-toolbar">
+        <button type="button" id="back-to-memory-summary" class="win-btn">返回摘要</button>
+        <button type="button" id="extract-daily-memory" class="win-btn">补跑整理</button>
+      </div>
+      <p id="daily-memory-notice" class="hint" role="status"></p>
+      <div class="form-grid">
+        <label>搜索记忆<input id="search-memory" type="search"></label>
+        <label>状态
+          <select id="filter-memory">
+            <option value="all">全部</option>
+            <option value="active">已保存</option>
+            <option value="pending_review">待确认</option>
+            <option value="archived">已归档</option>
+          </select>
+        </label>
+      </div>
+      <div id="organized-memory-list" class="memory-detail-list"></div>
+      <details class="older-memory-list">
+        <summary>早期记忆记录</summary>
+        <div id="daily-memory-list" class="memory-detail-list"></div>
+      </details>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="recent-events-dialog" class="personalization-dialog" aria-labelledby="recent-events-title">
+  <header>
+    <h2 id="recent-events-title">近期趣事</h2>
+    <form method="dialog"><button type="submit" class="personalization-close" aria-label="关闭近期趣事" autofocus>×</button></form>
+  </header>
+  <div class="personalization-dialog-body">
+    <div class="personalization-load" id="recent-load-state" role="status" hidden></div>
+    <div id="recent-memory-list" class="memory-detail-list"></div>
+  </div>
+</dialog>

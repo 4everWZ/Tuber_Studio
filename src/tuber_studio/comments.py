@@ -1060,7 +1060,8 @@ class Comments:
         event = self._comment_event(source) | {"account_id": account_id}
         scope = self.account_context_scope(source["video_id"], source["thread_id"], source["platform"], account_id=account_id)
         check = json.loads(draft["answer_check"] or "{}")
-        self.runtime.context.record(scope, character, event, None if check.get("organized_memory") else draft["text"], "comment_draft",
+        used_memory = check.get("organized_memory") or "memory_preference_revision" in check
+        self.runtime.context.record(scope, character, event, None if used_memory else draft["text"], "comment_draft",
                                     memory_kind=check.get("memory_kind"))
 
     def publication_limits(self):

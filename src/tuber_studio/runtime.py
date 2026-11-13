@@ -309,28 +309,47 @@ class Runtime:
         """Generate once with source memory; lexical diagnostics never rewrite speech."""
         context = context or self.context
         evidence = context.memory.retrieve(scope, character, event["text"])
-        channel = {"operator_chat": "operator", "live": "live", "comment_draft": "comment"}.get(mode)
+        channel = {"operator_chat": "operator", "live": "live", "comment_draft": "comment",
+                   "direct_message": "direct_message"}.get(mode)
         memory_scope = self.memory_organizer.scope() if channel and hasattr(self, "browsing") else None
         organized = []
-        if memory_scope and memory_scope[1:] == (character["id"], character["version"]):
+        if memory_scope and memory_scope[1:] != (character["id"], character["version"]):
+            memory_scope = None
+        if memory_scope:
             resource = event.get("video_id") or event.get("bvid")
             thread = event.get("thread_id")
-            if channel == "comment":
+            if channel == "direct_message":
+                if event.get("account_id") and str(event["account_id"]) != memory_scope[0]:
+                    memory_scope = None
+            elif channel == "comment":
                 account, _, resource, thread = comment_scope(scope) or (None, None, None, None)
                 if account != memory_scope[0]:
                     memory_scope = None
             elif channel == "live" and event.get("account_id") and str(event["account_id"]) != memory_scope[0]:
                 memory_scope = None
-            if memory_scope:
+            if memory_scope and channel != "direct_message":
                 organized = self.daily_memory.recall_organized(
                     memory_scope, channel, event["text"], resource=resource, thread=thread,
                     participant=event.get("platform_user_id") or event.get("user_id"),
                 )
         memory_refs = [self.daily_memory.organized_reference(row) for row in organized]
+        preference = self.daily_memory.preference(memory_scope) if memory_scope else None
+        memory_audit = {"organized_memory": memory_refs, "memory_scope": memory_scope, "memory_channel": channel}
+
+        def remember_dependency():
+            if preference:
+                memory_audit["memory_preference_revision"] = preference["revision"]
+
+        if memory_refs:
+            remember_dependency()
         extra = [{"role": "user", "kind": "context", "content": "与当前话题相关的现行记忆（偏好以此处最新版本为准）：" + dump([
             {"topic": row["headline"], "note": row["anecdote"]} for row in organized
         ])}] if organized else []
-        messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence, extra=extra)
+        messages = await context.prepare(
+            scope, character, event, relationship, mode, evidence=evidence, extra=extra,
+            daily_memory_enabled=preference["enabled"] if preference else not hasattr(self, "browsing"),
+            on_memory=remember_dependency,
+        )
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         messages = identity_messages(messages, generation_identity)
         operation = mode in {"comment_draft", "direct_message"}
@@ -345,6 +364,8 @@ class Runtime:
             binding["self_identity"] = generation_identity
             if memory_refs:
                 binding["organized_memory"] = memory_refs
+            if "memory_preference_revision" in memory_audit:
+                binding["memory_preference_revision"] = memory_audit["memory_preference_revision"]
             profile_revision = self.relationships.event_profile_revision(character["id"], event)
             if profile_revision is not None:
                 binding["profile_revision"] = profile_revision
@@ -368,8 +389,7 @@ class Runtime:
                 return reply
 
             def guard():
-                self.validate_memory_delivery({"organized_memory": memory_refs, "memory_scope": memory_scope,
-                                               "memory_channel": channel})
+                self.validate_memory_delivery(memory_audit)
                 current = self.store.character()
                 if (
                     (current["id"], current["version"], current.get("_edit_identity"))
@@ -428,7 +448,6 @@ class Runtime:
                     if mode == "live"
                     else await generate(messages, character, event["event_id"], event["text"])
                 )
-        memory_audit = {"organized_memory": memory_refs, "memory_scope": memory_scope, "memory_channel": channel}
         self.validate_memory_delivery(memory_audit)
         missing = missing_slots(reply.spoken_text, evidence)
         supported = [
@@ -454,7 +473,7 @@ class Runtime:
         if missing:
             labels = {"location": "地点", "person": "人物", "item": "物品", "quantity": "数量"}
             audit["warning"] = "待核对：" + "、".join(labels.get(slot, slot) for slot in missing)
-        if memory_refs:
+        if "memory_preference_revision" in memory_audit:
             audit.update(memory_audit)
         if operation:
             audit["output"] = operation_output_diagnostics(reply.spoken_text) | {
@@ -469,13 +488,17 @@ class Runtime:
             audit["continuation"] = continuation
         return reply, audit
 
-    def validate_memory_delivery(self, audit):
-        if not audit or not audit.get("organized_memory"):
+    def validate_memory_delivery(self, audit, *, historical=False):
+        if not audit or not (audit.get("organized_memory") or "memory_preference_revision" in audit):
             return
         scope = tuple(audit["memory_scope"])
         if scope != self.memory_organizer.scope():
             raise ValueError("记忆所属账号或角色已切换，请重试")
-        self.daily_memory.validate_organized(scope, audit["memory_channel"], audit["organized_memory"])
+        preference = self.daily_memory.preference(scope)
+        if not historical and (not preference["enabled"] or preference["revision"] !=
+                               audit.get("memory_preference_revision", 0)):
+            raise ValueError("生成使用的记忆设置已变更，请重试")
+        self.daily_memory.validate_organized(scope, audit["memory_channel"], audit.get("organized_memory", []))
 
     async def control(self, action):
         return await self.live.control(action)

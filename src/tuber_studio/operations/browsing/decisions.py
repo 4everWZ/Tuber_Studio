@@ -112,15 +112,20 @@ class BrowsingDecisions:
         if target.get("bvid") and target["bvid"] == video.get("bvid") and video.get("owner_uid"):
             thread["resource_author_uid"] = str(video["owner_uid"])
         root_id = (thread.get("addressing") or {}).get("source_root_comment_id") or target.get("root")
+        memory = self.browsing.runtime.daily_memory
+        scope = (str(row.get("account_id") or ""), character["id"], character["version"])
+        preference = memory.preference(scope)
+        if not preference["enabled"]:
+            return bound
         if target.get("bvid") and (root_id or source.get("comment_id")):
-            bound["own_public_experiences"] = self.browsing.runtime.daily_memory.context(
+            bound["own_public_experiences"] = memory.context(
                 character, video_id=target["bvid"], thread_id=root_id, comment_id=source.get("comment_id")
             )
+        memories = []
         if root_id and row.get("account_id"):
             from .comment_timeline import resource_key
 
-            scope = (str(row["account_id"]), character["id"], character["version"])
-            memories = self.browsing.runtime.daily_memory.recall_organized(
+            memories = memory.recall_organized(
                 scope, "comment", source.get("text") or "", resource=resource_key(target), thread=root_id,
                 participant=source.get("author_uid"),
             )
@@ -129,9 +134,11 @@ class BrowsingDecisions:
                     {"id": f"organized:{memory['id']}", "text": memory["anecdote"],
                      "public_sources": memory["source"]["references"]} for memory in memories
                 )
-                bound["_memory_audit"] = {"memory_scope": scope, "memory_channel": "comment", "organized_memory": [
-                    self.browsing.runtime.daily_memory.organized_reference(memory) for memory in memories
-                ]}
+        if bound.get("own_public_experiences"):
+            bound["_memory_audit"] = {
+                "memory_scope": scope, "memory_channel": "comment", "memory_preference_revision": preference["revision"],
+                "organized_memory": [memory.organized_reference(item) for item in memories],
+            }
         return bound
 
     def invited_private_response(self, row, thread):

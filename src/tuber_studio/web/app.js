@@ -2,7 +2,7 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261113.16";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261113.17";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261113.01";
@@ -18,6 +18,7 @@ import {
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261113.03";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261113.02";
+import { initPersonalization } from "./modules/personalization.js?v=20261113.02";
 import {
   selectedThread,
   initCommentsModule,
@@ -36,7 +37,7 @@ import {
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
-import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261111.01";
+import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261113.01";
 import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.07";
 
 const api = async (path, options = {}) => {
@@ -113,11 +114,9 @@ const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.statu
   onDraftUpdated: (draft, key) => commentsModule?.draftUpdated(draft, key),
   onSelectionCleared: () => commentsModule?.clearCurrent(),
 });
-const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
+const personalization = initPersonalization(model, api);
 setInterval(() => {
-  if (model.authenticated && !document.hidden && model.page === "characters" && !dailyMemoryUI.busy
-      && !dailyMemoryUI.container?.contains(document.activeElement)
-      && !$("recent-memory-list")?.contains(document.activeElement)) dailyMemoryUI.refresh();
+  if (model.authenticated && !document.hidden) personalization.refresh({ background: true });
 }, 15000);
 const interactiveGamesUI = new InteractiveGamesUI({ api, notify: notice });
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
@@ -132,6 +131,7 @@ const accountPanel = new BilibiliAccountUI({
   onSessionRevoked: showLogin,
   onChange: () => {
     if (!model.authenticated) return;
+    personalization.refreshScope();
     Promise.allSettled([
       commentsModule?.loadPolicy(),
       updatePermissionCapsule(),
@@ -197,6 +197,7 @@ function showLogin() {
   messagesPanel.closeImagePicker();
   userMemoryEditor.close();
   operatorChat.reset();
+  personalization.close();
 }
 
 function applyWorkbenchSettings(settings) {
@@ -253,6 +254,7 @@ function renderStatus(status) {
   if (previousCharacter?.id !== status.character?.id || previousCharacter?.name !== status.character?.name) {
     characterStudio?.refreshActivation();
   }
+  if (model.authenticated && previousCharacter?.id !== status.character?.id) personalization.refreshScope();
   operatorChat.renderModel(status, model.settings);
 }
 setInterval(refreshWorkspaceClock, 1000);
@@ -394,8 +396,8 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     if (!frame.hasAttribute("src")) frame.src = frame.dataset.src;
   } else if (model.page === "live-interaction") {
     await interactiveGamesUI.refresh();
-  } else if (model.page === "characters") {
-    await dailyMemoryUI.refresh();
+  } else if (model.page === "characters" || model.page === "personalization") {
+    personalization.refresh();
   } else if (model.page === "overview") {
     await Promise.allSettled([cachePanel.refresh(), maintenanceModule?.loadRetention()]);
   } else if (model.page === "accounts") {

@@ -218,6 +218,18 @@ class DailyMemoryService:
                                      "channels": proof.get("channels", []), "proof": proof})
         return result
 
+    def preference(self, scope):
+        account, character, _ = scope
+        return self.store.get(f"memory_preference:{account}:{character}", {"enabled": True, "revision": 0})
+
+    def set_preference(self, scope, enabled):
+        account, character, _ = scope
+        current = self.preference(scope)
+        if current["enabled"] != enabled:
+            current = {"enabled": enabled, "revision": current["revision"] + 1}
+            self.store.set(f"memory_preference:{account}:{character}", current)
+        return current
+
     def save_organized(self, scope, source, decision, existing):
         key = source["key"]
         kind = source["kind"]
@@ -336,6 +348,8 @@ class DailyMemoryService:
         return self._score_highlight_match(row, self._extract_recall_keywords(text), text)
 
     def recall_organized(self, scope, channel, text, *, resource=None, thread=None, participant=None):
+        if not self.preference(scope)["enabled"]:
+            return []
         matched = []
         for row in self.organized(scope):
             if row["status"] != "active" or channel != "operator" and channel not in row["channels"]:

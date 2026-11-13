@@ -342,7 +342,7 @@ function experienceCard(root, initial, { api, path, privateTurns }) {
   factLabel.append(fact);
   form.append(sourceLabel, preview, factLabel, submit);
   details.append(node("summary", "从私聊确认一条公开经历"), form);
-  root.append(node("h2", "公开经历"), items, details, note, link("打开角色记忆", "#daily-memory-card"));
+  root.append(node("h2", "公开经历"), items, details, note, link("打开记忆设置", "#personalization"));
 
   function showPrivateSource() {
     const turn = privateTurns().find(item => item.request_id === choice.value);

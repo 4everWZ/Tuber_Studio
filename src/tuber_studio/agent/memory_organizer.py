@@ -34,6 +34,7 @@ class MemoryOrganizer:
         self.worker = None
         self.status = "waiting"
         self.error = None
+        self.status_scope = None
         self.next_run = 0
         self.store.execute(
             "CREATE TABLE IF NOT EXISTS memory_organization ("
@@ -55,17 +56,22 @@ class MemoryOrganizer:
     def schedule(self, *, manual=False):
         if manual:
             self.next_run = 0
+            if self.status == "disabled" and self.runtime.daily_memory.preference(self.scope())["enabled"]:
+                self.status = "idle"
         self.changed.set()
         return self.state()
 
 
     def state(self):
         scope = self.scope()
+        preference = self.runtime.daily_memory.preference(scope)
         counts = self.store.all(
             "SELECT status,COUNT(*) AS count FROM memory_organization WHERE account=? AND character=? AND version=? "
             "AND source NOT LIKE 'thread:%' AND status IN ('saved','skipped','invalid') GROUP BY status", scope,
         )
-        return {"status": self.status, "error": self.error, "processed": sum(row["count"] for row in counts),
+        status, error = ((self.status, self.error) if self.status_scope == scope else ("idle", None))
+        return {"status": status if preference["enabled"] else "disabled", "error": error,
+                "processed": sum(row["count"] for row in counts),
                 "invalid": sum(row["count"] for row in counts if row["status"] == "invalid")}
 
     def scope(self):
@@ -161,11 +167,16 @@ class MemoryOrganizer:
 
     async def _process_batch(self):
         runtime = self.runtime
+        scope = self.scope()
+        self.status_scope = scope
+        preference = runtime.daily_memory.preference(scope)
+        if not preference["enabled"]:
+            self.status = "disabled"
+            return 0
         if (isinstance(runtime.llm, DemoProvider) or runtime.operations_waiting()
                 or runtime.generation_lock.locked() or any(runtime.operation_turns.queues.values())):
             self.status = "waiting"
             return 0
-        scope = self.scope()
         sources = list(self._source_rows(scope))
         if not sources:
             self.status = "idle"
@@ -220,7 +231,7 @@ class MemoryOrganizer:
                 result = result_type.model_validate(value)
                 decisions = {item["key"]: getattr(result, item["key"]) for item in packet}
         supplied = {item["key"]: item["existing"] for item in packet}
-        if scope != self.scope():
+        if scope != self.scope() or preference != runtime.daily_memory.preference(scope):
             self.status = "waiting"
             return 0
         with self.store.db:

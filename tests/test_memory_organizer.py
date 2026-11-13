@@ -1,8 +1,10 @@
+import asyncio
 import json
 import time
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 
 from tuber_studio.agent.memory_organizer import MemoryOrganizer, MemorySuggestion
 from tuber_studio.app import create_app
@@ -16,6 +18,92 @@ def add_turn(runtime, text):
     runtime.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
                           (identity, *scope[1:], text, json.dumps({"account_id": scope[0]}), time.time()))
     return identity
+
+
+def test_memory_switch_persists_per_account_and_character(settings):
+    app = create_app(settings)
+    path = "/api/daily-memory/preferences"
+    with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+        runtime = app.state.runtime
+        discovery = app.state.browsing.discovery
+        discovery.remember_account("100")
+        before = client.get(path).raise_for_status().json()
+        assert before["enabled"] and before["revision"] == 0
+        disabled = client.put(path, json={"enabled": False, "scope": before["scope"]}).raise_for_status().json()
+        assert not disabled["enabled"] and disabled["revision"] == 1
+        assert client.get("/api/daily-memory").json()["organization"]["status"] == "disabled"
+        assert client.post("/api/daily-memory/organize").status_code == 409
+        assert MemoryOrganizer(runtime).state()["status"] == "disabled"
+        discovery.remember_account("200")
+        assert client.get(path).json()["enabled"]
+        assert client.put(path, json={"enabled": False, "scope": before["scope"]}).status_code == 409
+        discovery.remember_account("100")
+        other = client.post("/api/characters", json={"name": "另一个角色"}).raise_for_status().json()
+        client.post(f"/api/characters/{other['id']}/activate").raise_for_status()
+        assert client.get(path).json()["enabled"]
+        client.post("/api/characters/whale/activate").raise_for_status()
+        assert client.get(path).json() == disabled
+
+
+async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(settings):
+    app = create_app(settings)
+    runtime = app.state.runtime
+    memory = runtime.daily_memory
+    organizer = runtime.memory_organizer
+    base = runtime.llm
+    organizer_model = OrganizerModel()
+    app.state.browsing.discovery.remember_account("100")
+    scope = organizer.scope()
+    used = "以后运营汇报先说结论"
+    try:
+        runtime.llm = organizer_model
+        add_turn(runtime, used)
+        assert await organizer.run_once() == 1
+        row, = memory.organized(scope)
+        runtime.llm = base
+
+        async def generate(messages, _character, _event_id, _source_text):
+            assert any(used in item["content"] for item in messages)
+            memory.set_preference(scope, False)
+            memory.set_preference(scope, True)
+            return Reply(spoken_text=used)
+
+        base.generate = generate
+        with pytest.raises(ValueError, match="记忆设置已变更"):
+            await runtime.generate_reply("operator:probe", runtime.character,
+                                         {"event_id": "probe", "text": "运营汇报"}, mode="operator_chat")
+        memory.set_preference(scope, False)
+        assert not memory.recall_organized(scope, "operator", "运营汇报")
+        assert not app.state.dynamics._sources()
+        assert memory.organized(scope) == [row]
+        assert await organizer.run_once() == 0
+
+        started, resume = asyncio.Event(), asyncio.Event()
+
+        class BlockingOrganizer(OrganizerModel):
+            async def generate_json(self, messages, schema, *, max_tokens):
+                started.set()
+                await resume.wait()
+                return await super().generate_json(messages, schema, max_tokens=max_tokens)
+
+        runtime.llm = BlockingOrganizer()
+        turnover = add_turn(runtime, "以后运营汇报先说风险")
+        memory.set_preference(scope, True)
+        task = asyncio.create_task(organizer.run_once())
+        await asyncio.wait_for(started.wait(), timeout=3)
+        memory.set_preference(scope, False)
+        resume.set()
+        assert await task == 0
+        assert memory.organized(scope) == [row]
+        assert not runtime.store.one("SELECT 1 FROM memory_organization WHERE source=?", (f"turn:{turnover}",))
+        runtime.llm = organizer_model
+        memory.set_preference(scope, True)
+        assert await organizer.run_once() == 1
+        assert memory.organized(scope)[0]["anecdote"].endswith("先说风险")
+    finally:
+        await base.close()
+        await app.state.browsing.close()
+        app.state.store.close()
 
 
 class OrganizerModel:

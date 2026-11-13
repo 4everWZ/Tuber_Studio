@@ -1006,7 +1006,7 @@ class LiveSession:
                     "live:" + job["session_id"],
                     character,
                     event,
-                    None if check.get("organized_memory") else spoken,
+                    None if check.get("organized_memory") or "memory_preference_revision" in check else spoken,
                     memory_kind=check.get("memory_kind"),
                 )
             if event["type"] == "chat":

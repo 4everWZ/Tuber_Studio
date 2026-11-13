@@ -63,7 +63,8 @@ class RecentAnecdotesTool(BaseAgentTool):
 
     def can_handle(self, event: dict[str, Any], context_info: dict[str, Any]) -> bool:
         mode = context_info.get("mode", "live")
-        return bool(self.daily_memory and mode in ("live", "comment_draft", "direct_message"))
+        return bool(self.daily_memory and context_info.get("daily_memory_enabled", True)
+                    and mode in ("live", "comment_draft", "direct_message"))
 
     def execute(self, event: dict[str, Any], context_info: dict[str, Any]) -> list[dict[str, Any]]:
         character = context_info.get("character", {})
@@ -115,7 +116,7 @@ class HistoricalRecallTool(BaseAgentTool):
         self.daily_memory = daily_memory_service
 
     def can_handle(self, event: dict[str, Any], context_info: dict[str, Any]) -> bool:
-        if not self.daily_memory:
+        if not self.daily_memory or not context_info.get("daily_memory_enabled", True):
             return False
         mode = context_info.get("mode", "live")
         if mode not in ("live", "comment_draft", "direct_message"):
@@ -288,13 +289,10 @@ class ToolRegistry:
 
                     rendered = tool.render_context(res)
                     if rendered:
-                        context_blocks.append(
-                            {
-                                "role": "user",
-                                "kind": "context",
-                                "content": rendered,
-                            }
-                        )
+                        block = {"role": "user", "kind": "context", "content": rendered}
+                        if tool.name in {"recent_anecdotes", "historical_recall"} and ctx_info.get("on_memory"):
+                            ctx_info["on_memory"](block)
+                        context_blocks.append(block)
             except Exception as e:
                 LOGGER.warning("Tool %s execution failed: %s", tool.name, e)
 
