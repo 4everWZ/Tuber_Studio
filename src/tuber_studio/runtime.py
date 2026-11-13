@@ -13,10 +13,10 @@ from .api_providers import VisionService, create_llm
 from .config import uses_broker_llm
 from .context import ContextManager
 from .context_delivery import comment_scope
-from .daily_memory import DailyMemoryService
+from .daily_memory import DailyMemoryService, MemoryChanged
 from .generation_meter import budgeted_call
 from .live.scene import LiveScene
-from .live.session import LiveSession
+from .live.session import HANDOFF_PLATFORM, LiveSession
 from .media_cache import MediaCache
 from .memory import missing_slots
 from .model_runtime.session import InferenceRuntime
@@ -307,6 +307,8 @@ class Runtime:
     @reuse_turn_token_counts
     async def generate_reply(self, scope, character, event, relationship=None, mode="live", *, context=None):
         """Generate once with source memory; lexical diagnostics never rewrite speech."""
+        if mode == "live" and event.get("platform") == HANDOFF_PLATFORM:
+            return await self._generate_handoff_reply(character, event)
         context = context or self.context
         evidence = context.memory.retrieve(scope, character, event["text"])
         channel = {"operator_chat": "operator", "live": "live", "comment_draft": "comment",
@@ -488,16 +490,39 @@ class Runtime:
             audit["continuation"] = continuation
         return reply, audit
 
+    async def _generate_handoff_reply(self, character, event):
+        scope = self.memory_organizer.scope()
+        account = event["metadata"]["_handoff_account"]
+        if scope != (account, character["id"], character["version"]) or event["room_id"] != self.live.session_id:
+            raise ValueError("交接所属的账号、角色或直播场次已切换")
+        preference = self.daily_memory.preference(scope)
+        style = self.daily_memory.live_preferences(scope)
+        text = event["text"]
+        messages = [
+            {"role": "system", "content": "以当前角色口吻向直播观众讲一句。根据交接文字说结论。"
+             "使用 spoken_text、emotion、animation_id 和 reply_to 输出。角色表达：" + dump(character["style"])},
+            {"role": "user", "content": dump({"交接文字": text, "直播偏好": [row["anecdote"] for row in style]})},
+        ]
+        generate = getattr(self.llm, "generate_live", self.llm.generate)
+        reply = await generate(messages, character, event["event_id"], text)
+        audit = {"handoff": True, "memory_scope": scope, "memory_channel": "live",
+                 "organized_memory": [self.daily_memory.organized_reference(row) for row in style]}
+        if style:
+            audit["memory_preference_revision"] = preference["revision"]
+        self.validate_memory_delivery(audit)
+        return reply, audit
+
     def validate_memory_delivery(self, audit, *, historical=False):
-        if not audit or not (audit.get("organized_memory") or "memory_preference_revision" in audit):
+        if not audit or not (audit.get("organized_memory") or "memory_preference_revision" in audit or audit.get("handoff")):
             return
         scope = tuple(audit["memory_scope"])
         if scope != self.memory_organizer.scope():
             raise ValueError("记忆所属账号或角色已切换，请重试")
         preference = self.daily_memory.preference(scope)
-        if not historical and (not preference["enabled"] or preference["revision"] !=
-                               audit.get("memory_preference_revision", 0)):
-            raise ValueError("生成使用的记忆设置已变更，请重试")
+        if not historical and (audit.get("organized_memory") or "memory_preference_revision" in audit) and (
+            not preference["enabled"] or preference["revision"] != audit.get("memory_preference_revision", 0)
+        ):
+            raise MemoryChanged("生成使用的记忆设置已变更，请重试")
         self.daily_memory.validate_organized(scope, audit["memory_channel"], audit.get("organized_memory", []))
 
     async def control(self, action):

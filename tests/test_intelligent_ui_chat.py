@@ -11,8 +11,11 @@ from test_browsing_evidence import PNG, TestVisual
 
 from tuber_studio.agent import operator_facts
 from tuber_studio.app import create_app
+from tuber_studio.live.game_livestream import GameLivestreamService
+from tuber_studio.models import Reply
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
+from tuber_studio.providers import Audio
 
 
 async def test_stop_generation_cancels_only_the_bound_chat_and_releases_model(settings, monkeypatch):
@@ -254,7 +257,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
                   "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience"}[message]
         reference = next((item["reference"] for item in payload["events"] if item["position"] == 2), None)
-        return {"action": action, "reference": reference, "topic": "确认后的事实" if action == "recall_experience" else ""}
+        return {"action": action, "reference": reference, "topic": "第一句" if action == "recall_experience" else ""}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
@@ -274,21 +277,19 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         assert send("第二件是谁讲的")[1]["reply_text"] == "是甲说的（UID 1）。"
         assert send("后来回了没")[1]["card"]["data"]["event"]["reply"]["text"] == "知道了"
         proposal, turn = send("把它记成公开经历")
-        assert turn["card"]["data"]["fact"] == "第一句"
-        saved = client.post(f"{path}/{proposal}/public-experience", json={"fact": "确认后的事实"}).json()
-        assert saved["source"]["items"][0]["text"] == "第一句"
+        assert turn["card"]["data"]["text"] == "第一句"
+        memory_path = "/api/daily-memory"
+        saved, = client.get(memory_path).json()["organized"]
+        assert saved["source"]["references"][0]["text"] == "第一句"
+        assert saved["channels"] == ["operator"]
         assert not app.state.dynamics._sources()
         app.state.browsing.discovery.remember_account("200")
-        assert client.get(f"{path}/public-experiences/{saved['id']}").status_code == 404
+        assert not client.get(memory_path).json()["organized"]
         app.state.browsing.discovery.remember_account("100")
         recalled, turn = send("那件公开经历")
-        assert turn["reply_text"] == "确认后的事实"
-        assert client.patch(f"{path}/public-experiences/{saved['id']}", json={"status": "archived"}).status_code == 200
-        assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条公开经历当前不可引用。"
-        recalled, turn = send("那件公开经历")
-        assert turn["reply_text"] == "确认后的事实"
-        assert client.delete(f"{path}/public-experiences/{saved['id']}").status_code == 200
-        assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条公开经历当前不可引用。"
+        assert turn["reply_text"] == "第一句"
+        assert client.delete(f"{memory_path}/organized/{saved['id']}").status_code == 200
+        assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条回复引用的记忆已变更。"
         app.state.browsing.discovery.remember_account("200")
         assert client.get(f"{path}/turns/{proposal}").json()["card"] is None
 
@@ -451,6 +452,156 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
         assert app.state.store.one("SELECT COUNT(*) AS n FROM browsing_tasks WHERE round_id=?", (result["id"],))["n"] == 1
         browsing.comments.verified_account_id = "200"
         assert client.get(turn_url).json()["card"]["data"]["status"] == "unavailable"
+
+
+def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settings, monkeypatch):
+    platform = ControlledPlatform()
+    app = create_app(settings, adapter=platform, video_evidence_factory=lambda runtime: TestVisual())
+    runtime, browsing = app.state.runtime, app.state.browsing
+    browsing.read_interval = 0
+    browsing.discovery.remember_account("100")
+    monkeypatch.delenv("TUBER_VIDEO_ASR_CLI", raising=False)
+    seen = []
+    safe_text = "加盐会提高水的密度，让鸡蛋浮起来。"
+    spoken = "结论是，加盐后鸡蛋就浮起来了。"
+    name = "验收姓名甲"
+    private_url = "http://internal.invalid/secret"
+
+    async def interpret(messages, schema, *, max_tokens):
+        wire = json.loads(messages[-1]["content"])
+        kind = schema["title"]
+        if kind == "ChatIntent":
+            action = {
+                "本场讲一下这个视频的发现": {"action": "live_handoff", "source": "video"},
+                "以后直播都先讲结果": {"action": "live_preference"},
+                "忘掉直播先讲结果这条": {"action": "forget_memory", "topic": "直播先讲结果"},
+                "本场讲一下刚才讨论的打法": {"action": "live_handoff", "source": "discussion"},
+            }
+            return action.get(wire["message"], {"action": "chat"})
+        if kind == "LivePreferenceSelection":
+            return {"preference": "result_first"}
+        assert kind == "PublicText"
+        seen.append(wire)
+        if wire["要求"].endswith("打法"):
+            assert name in json.dumps(wire, ensure_ascii=False)
+        else:
+            assert wire["资料"][0]["seconds"] == 0
+            assert name not in json.dumps(wire, ensure_ascii=False)
+        return {"text": safe_text}
+
+    async def generate(messages, character, event_id, source_text):
+        if source_text != safe_text:
+            return Reply(spoken_text="记下了。")
+        wire = json.dumps(messages, ensure_ascii=False)
+        assert name not in wire and private_url not in wire and BV not in wire
+        assert all(isinstance(message["content"], str) for message in messages)
+        seen.append(wire)
+        if "先讲结果" in wire:
+            return Reply(spoken_text="这句来自删除前的直播偏好。")
+        return Reply(spoken_text=spoken)
+
+    async def synthesize(text, voice_profile):
+        return Audio(settings.audio / "handoff-test.wav", 1, text)
+
+    monkeypatch.setattr(runtime.llm, "generate_operator_json", interpret, raising=False)
+    monkeypatch.setattr(runtime.llm, "generate", generate)
+    monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
+    path = "/api/chat/intelligent"
+
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        client.cookies.set("tuber_overlay", settings.overlay_token)
+
+        def send(message, **kwargs):
+            req = {"message": message, "request_id": str(uuid4()), **kwargs}
+            return req, client.post(path, json=req).raise_for_status().json()
+
+        send(f"姓名：{name}，私下讨论加盐让鸡蛋浮起来，内部链接 {private_url}")
+        request, queued = send(f"帮{name}看一下 {BV}，范围是 P1 开头五秒。", video_selection={
+            "bvid": BV, "ranges": [{"part": 1, "start": 0, "end": 5}],
+        })
+        assert queued["card"]["data"]["selection"]["bvid"] == BV
+        turn_url = f"{path}/turns/{request['request_id']}"
+        for _ in range(200):
+            status = client.get(turn_url).json()["card"]["data"]
+            if status["coverage"] and status["coverage"]["parts"][0]["ranges"][0]["highlights"]:
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail(f"指定视频没有完成取材：{status}")
+        row = browsing.repo.round(request["request_id"])
+        assert name not in json.dumps(row, ensure_ascii=False) and private_url not in json.dumps(row)
+        assert ("subtitles", BV, "11") in platform.calls and platform.sent == []
+        client.post("/api/live/start").raise_for_status()
+        send("以后直播都先讲结果")
+        req, handoff = send("本场讲一下这个视频的发现")
+        assert handoff["card"]["data"]["text"] == safe_text
+        assert handoff["card"]["data"]["sources"][0]["seconds"] == 0
+        assert client.post(path, json=req).json()["card"]["data"]["job_id"] == handoff["card"]["data"]["job_id"]
+        handoff_url = f"{path}/turns/{req['request_id']}"
+        for _ in range(100):
+            if client.get(handoff_url).json()["card"]["data"]["status"] == "ready_to_play":
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("待播任务没有完成第一次合成")
+        assert any(isinstance(entry, str) and "先讲结果" in entry for entry in seen)
+        _, forgotten = send("忘掉直播先讲结果这条")
+        assert forgotten["reply_text"] == "已删除这条记忆。"
+        with client.websocket_connect("/ws/overlay") as player:
+            assert player.receive_json()["type"] == "hello"
+            play = player.receive_json()
+            assert play["type"] == "play" and play["text"] == spoken
+            ack = {key: play[key] for key in ("job_id", "playback_token")}
+            player.send_json(ack | {"type": "started"})
+            player.send_json(ack | {"type": "ended"})
+            for _ in range(100):
+                done = client.get(f"{path}/turns/{req['request_id']}").json()["card"]["data"]
+                if done["status"] == "completed":
+                    break
+                time.sleep(0.01)
+            assert done["spoken"] == spoken
+        client.post("/api/live/stop").raise_for_status()
+        client.post("/api/live/start").raise_for_status()
+        assert client.get(f"{path}/turns/{req['request_id']}").json()["card"]["data"]["spoken"] == spoken
+        _, history = send("刚才有说鸡蛋吗", intent={"action": "live_history", "topic": "鸡蛋"})
+        assert [entry["text"] for entry in history["card"]["data"]["items"]] == [spoken]
+        assert not runtime.live.queue
+        assert any(isinstance(entry, str) and safe_text in entry for entry in seen)
+
+        # The discussion variant sees the named private source only at extraction.
+        with client.websocket_connect("/ws/overlay") as player:
+            player.receive_json()
+            _, discussion = send("本场讲一下刚才讨论的打法")
+            assert discussion["card"]["data"]["text"] == safe_text
+            assert player.receive_json()["text"] == spoken
+
+
+def test_game_chat_handoff_uses_save_and_yields_to_operator(settings):
+    app = create_app(settings, adapter=ControlledPlatform())
+    game = app.state.runtime.live.game_livestream
+    path = "/api/chat/intelligent"
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        def handoff(action, *, request_id=None):
+            request_id = request_id or str(uuid4())
+            return client.post(path, json={"request_id": request_id, "message": "私聊背景：验收姓名乙和内部链接",
+                                          "intent": {"action": "game_handoff", "game_action": action}}).raise_for_status().json()
+
+        original = client.get("/api/games/status").json()["active_status"]
+        identity = str(uuid4())
+        first = handoff("water_crops", request_id=identity)
+        assert first["card"]["type"] == "game_handoff"
+        assert "验收姓名乙" not in json.dumps(game.last_handoff, ensure_ascii=False)
+        watered = client.get("/api/games/status").json()["active_status"]
+        assert watered["unwatered_crops"] < original["unwatered_crops"]
+        assert handoff("water_crops", request_id=identity) == first
+        assert client.post("/api/games/control", json={"owner": "operator"}).json()["owner"] == "operator"
+        assert "号主接管" in handoff("sleep_day")["reply_text"]
+        assert client.post("/api/games/step").status_code == 400
+        assert client.post("/api/games/action", json={"action": "sleep_day"}).json()["success"]
+        saved = GameLivestreamService(store=app.state.store)
+        assert saved.status()["active_status"]["day"] == original["day"] + 1 and saved.owner == "operator"
+        client.post("/api/games/control", json={"owner": "studio"}).raise_for_status()
+        assert handoff("step")["card"]["type"] == "game_handoff"
 
 
 def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear(settings, monkeypatch):

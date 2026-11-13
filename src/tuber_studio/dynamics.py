@@ -343,14 +343,14 @@ class Dynamics:
             for row in self.daily_memory.organized(scope, limit=100):
                 if row["status"] != "active" or "dynamic" not in row["channels"]:
                     continue
-                anchor = row["source"]["thread"]
+                anchor = row["source"].get("thread") or {}
                 references = row["source"]["references"]
                 result.append({"id": f"organized:{row['id']}", "type": "public_incident", "fictional": False,
                                "text": row["anecdote"], "memory_version": row["updated_at"],
                                "source_url": references[0]["href"], "public_sources": [
                                    {"bvid": anchor["resource"], "thread_id": anchor["root_id"],
                                     "comment_id": ref["comment_id"], "quote": ref["text"]} for ref in references
-                               ] if anchor["resource"].startswith("BV") else []})
+                               ] if anchor.get("resource", "").startswith("BV") else []})
         if preference["revision"]:
             for source in result:
                 source["memory_preference_revision"] = preference["revision"]

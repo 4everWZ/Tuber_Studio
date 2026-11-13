@@ -35,6 +35,9 @@ window.InteractiveGamesUI = class {
         const action = actBtn.dataset.gameAction;
         await this.runAction(actBtn, () => this.executeAction(action));
       }
+      if (e.target.id === "game-control") {
+        await this.runAction(e.target, () => this.transferGameControl());
+      }
 
       if (e.target.id === "dg-start-btn") {
         await this.runAction(e.target, () => this.startDrawGuess());
@@ -111,6 +114,11 @@ window.InteractiveGamesUI = class {
     if (nameEl) nameEl.textContent = st.display_name || "未知游戏";
     if (summaryEl) summaryEl.textContent = st.summary || "准备中...";
     if (activityEl) activityEl.textContent = `当前行动: ${st.current_activity || "待命"}`;
+    const control = document.getElementById("game-control");
+    if (control) {
+      control.disabled = false;
+      control.textContent = this.gameStatus.owner === "operator" ? "交回游戏控制" : "接管游戏";
+    }
 
     if (actionListEl) {
       actionListEl.replaceChildren();
@@ -190,6 +198,16 @@ window.InteractiveGamesUI = class {
       });
       this.notify(`游戏指令【${action}】: ${data.message}`);
       await this.fetchGameStatus();
+    } catch (e) {
+      this.notify(e.message, true);
+    }
+  }
+
+  async transferGameControl() {
+    try {
+      const owner = this.gameStatus.owner === "operator" ? "studio" : "operator";
+      this.gameStatus = await this.api("/api/games/control", { method: "POST", body: { owner } });
+      this.renderGameCard();
     } catch (e) {
       this.notify(e.message, true);
     }

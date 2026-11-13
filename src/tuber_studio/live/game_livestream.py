@@ -1,6 +1,5 @@
 """Game livestream adapters and autonomous AI gameplay orchestration (SRS v0.1)."""
 
-import asyncio
 import logging
 import random
 import time
@@ -64,6 +63,9 @@ class StardewValleyAdapter(BaseGameAdapter):
 
     name = "stardew_valley"
     display_name = "星露谷物语"
+    actions = frozenset({"water_crops", "chop_wood", "go_fishing", "eat_snack", "harvest", "sleep_day"})
+    save_fields = ("day", "season", "time_str", "minutes", "location", "stamina", "max_stamina", "money",
+                   "inventory", "crops", "current_activity")
 
     def __init__(self):
         super().__init__()
@@ -273,6 +275,8 @@ class PvZAdapter(BaseGameAdapter):
 
     name = "pvz"
     display_name = "植物大战僵尸"
+    actions = frozenset({"plant_sunflower", "plant_peashooter", "plant_wallnut", "use_cherry_bomb"})
+    save_fields = ("level", "sun", "wave", "total_waves", "grid", "zombies", "current_activity")
 
     def __init__(self):
         super().__init__()
@@ -468,15 +472,69 @@ class PvZAdapter(BaseGameAdapter):
 
 
 class GameLivestreamService:
-    def __init__(self, interactive_rules=None):
+    def __init__(self, interactive_rules=None, store=None):
         self.rules_service = interactive_rules
+        self.store = store
         self.adapters: dict[str, BaseGameAdapter] = {
             "stardew_valley": StardewValleyAdapter(),
             "pvz": PvZAdapter(),
         }
         self.active_game_id: str = "stardew_valley"
         self.is_playing: bool = True
-        self._task: asyncio.Task | None = None
+        self.owner = "studio"
+        self.last_handoff = None
+        if store and (saved := store.get("simulation_save")):
+            self.active_game_id = saved["game"]
+            self.owner = saved["owner"]
+            self.last_handoff = saved.get("last_handoff")
+            for game, adapter in self.adapters.items():
+                for field, value in saved["adapters"].get(game, {}).items():
+                    if field in adapter.save_fields:
+                        setattr(adapter, field, value)
+
+    def _save(self):
+        if self.store:
+            self.store.set("simulation_save", {
+                "game": self.active_game_id, "owner": self.owner, "last_handoff": self.last_handoff,
+                "adapters": {name: {field: getattr(adapter, field) for field in adapter.save_fields}
+                             for name, adapter in self.adapters.items()},
+            })
+
+    def status(self):
+        return {"active_game_id": self.active_game_id, "is_active": self.is_active(),
+                "active_status": self.get_active_adapter().get_status(), "owner": self.owner,
+                "available_games": [{"id": key, "display_name": adapter.display_name}
+                                    for key, adapter in self.adapters.items()]}
+
+    def transfer_control(self, owner):
+        if owner not in {"studio", "operator"}:
+            raise ValueError("游戏控制权应为工作台或号主")
+        self.owner = owner
+        self._save()
+        return self.status()
+
+    def handoff(self, request_id, game, action):
+        if self.last_handoff and self.last_handoff["request"] == request_id:
+            return self.last_handoff["result"]
+        if self.owner != "studio" or game != self.active_game_id:
+            raise ValueError("当前游戏已切换或由号主接管")
+        adapter = self.get_active_adapter()
+        if action != "step" and action not in adapter.actions:
+            raise ValueError("当前游戏不支持这个动作")
+        if action == "step":
+            step = adapter.decide_and_step()
+            result = step["result"] | {"action": step.get("action") or step["result"].get("action")}
+        else:
+            result = adapter.execute_action(action)
+        result = result | {"game": game, "state": adapter.get_status()["summary"]}
+        self.last_handoff = {"request": request_id, "result": result}
+        self._save()
+        return result
+
+    def manual_action(self, action, params=None):
+        result = self.get_active_adapter().execute_action(action, params)
+        self._save()
+        return result
 
     def get_active_adapter(self) -> BaseGameAdapter:
         return self.adapters.get(self.active_game_id, self.adapters["stardew_valley"])
@@ -490,6 +548,7 @@ class GameLivestreamService:
 
         old_game = self.get_active_adapter().display_name
         self.active_game_id = target_game_id
+        self._save()
         new_game = self.get_active_adapter().display_name
 
         spoken_text = f"收到！大肥鱼这就切换游戏画面！暂别《{old_game}》，马上进入《{new_game}》！"
@@ -533,5 +592,9 @@ class GameLivestreamService:
 
     def step_game(self) -> dict[str, Any]:
         """Steps the active game."""
+        if self.owner == "operator":
+            raise ValueError("当前由号主接管，请先交回工作台控制")
         adapter = self.get_active_adapter()
-        return adapter.decide_and_step()
+        result = adapter.decide_and_step()
+        self._save()
+        return result

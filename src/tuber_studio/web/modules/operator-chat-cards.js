@@ -10,6 +10,12 @@ const statuses = {
 };
 const label = value => statuses[value] || value || "未知";
 const activeVideo = new Set(["queued", "waiting", "running", "pending", "starting"]);
+function formatTimecode(seconds) {
+  const millis = Math.round(seconds * 1000);
+  const minutes = String(Math.floor(millis / 60000)).padStart(2, "0");
+  const remainder = (millis % 60000 / 1000).toFixed(3).padStart(6, "0");
+  return `${minutes}:${remainder}`;
+}
 
 function button(text) {
   const element = node("button", text);
@@ -228,21 +234,15 @@ function videoCard(root, turn, { api, path }) {
     excerpt.replaceChildren();
     if (data.inspection) {
       const frame = data.inspection;
-      const timecode = seconds => {
-        const millis = Math.round(seconds * 1000);
-        const minutes = String(Math.floor(millis / 60000)).padStart(2, "0");
-        const remainder = (millis % 60000 / 1000).toFixed(3).padStart(6, "0");
-        return `${minutes}:${remainder}`;
-      };
       const source = frame.kind === "stream" ? "视频流" : "故事板";
-      excerpt.append(node("p", `P${frame.part} · 目标 ${timecode(frame.requested_time)} · ${source} ${timecode(frame.actual_time)}`));
+      excerpt.append(node("p", `P${frame.part} · 目标 ${formatTimecode(frame.requested_time)} · ${source} ${formatTimecode(frame.actual_time)}`));
       const details = node("details");
       details.append(node("summary", "查看取到的画面"));
       details.ontoggle = () => {
         if (!details.open || details.querySelector("img")) return;
         const picture = node("img");
         picture.src = `${path}/turns/${turn.request_id}/inspection-image`;
-        picture.alt = `P${frame.part} ${timecode(frame.actual_time)} 的${source}画面`;
+        picture.alt = `P${frame.part} ${formatTimecode(frame.actual_time)} 的${source}画面`;
         picture.style.maxWidth = "100%";
         details.append(picture);
       };
@@ -455,6 +455,28 @@ export function createOperatorCard(root, turn, context) {
   if (type === "video_browsing") return videoCard(root, turn, context);
   if (type === "operation_control") return operationControlCard(root, data, { ...context, turn });
   if (type === "video_activity") return activityCard(root, data);
+  if (type === "memory_change") root.append(node("h3", data.target), node("p", data.text));
+  if (type === "game_handoff") root.append(node("h3", data.target), node("p", data.text), node("p", data.state, "hint"));
+  if (type === "live_history") {
+    const items = node("ul");
+    for (const item of data.items) items.append(node("li", item.text));
+    root.append(node("h3", "已播台词"), items);
+  }
+  if (type === "live_handoff") {
+    const status = node("p", null, "hint");
+    let current = data.status;
+    const update = value => {
+      current = value.status;
+      status.textContent = value.spoken ? `已播报：${value.spoken}` :
+        ({ queued: "等待播报", generating: "正在生成台词", synthesizing: "正在合成语音",
+           ready_to_play: "等待播放器", playing: "正在播报", failed: "播报失败", cancelled: "任务已取消",
+           unavailable: "任务不可用", expired: "任务已过期" }[current] || current);
+    };
+    root.append(node("h3", "本场直播"), node("p", data.text), status);
+    for (const source of data.sources || []) root.append(link(`P${source.part} · ${formatTimecode(source.seconds)}`, source.url));
+    update(data);
+    return { update, needsRefresh: () => ["queued", "generating", "synthesizing", "ready_to_play", "playing"].includes(current) };
+  }
   if (type === "public_experiences") return experienceCard(root, data, context);
   if (type === "operation_events") {
     const items = node("ol");

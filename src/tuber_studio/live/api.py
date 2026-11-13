@@ -295,16 +295,11 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
 
     @app.get("/api/games/status", dependencies=[Depends(require_admin)])
     async def get_games_status():
-        adapter = runtime.live.game_livestream.get_active_adapter()
-        return {
-            "active_game_id": runtime.live.game_livestream.active_game_id,
-            "is_active": runtime.live.game_livestream.is_active(),
-            "active_status": adapter.get_status(),
-            "available_games": [
-                {"id": k, "display_name": a.display_name}
-                for k, a in runtime.live.game_livestream.adapters.items()
-            ],
-        }
+        return runtime.live.game_livestream.status()
+
+    @app.post("/api/games/control", dependencies=[Depends(require_admin)])
+    async def control_game(data: dict = Body(...)):
+        return runtime.live.game_livestream.transfer_control(data.get("owner"))
 
     @app.post("/api/games/switch", dependencies=[Depends(require_admin)])
     async def switch_game(data: dict = Body(...)):
@@ -318,8 +313,7 @@ def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_o
         action = data.get("action")
         if not action:
             raise ValueError("缺少 action")
-        adapter = runtime.live.game_livestream.get_active_adapter()
-        return adapter.execute_action(action, data.get("params"))
+        return runtime.live.game_livestream.manual_action(action, data.get("params"))
 
     @app.post("/api/games/step", dependencies=[Depends(require_admin)])
     async def step_game():

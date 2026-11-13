@@ -8,6 +8,7 @@ from collections import deque
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from ..daily_memory import MemoryChanged
 from ..models import Event, Reply
 from ..providers import public_error
 from ..store import character_card
@@ -20,6 +21,7 @@ from .online_songs import OnlineSongs
 from .options import LiveLookup, LiveOptions
 
 TERMINAL = {"completed", "failed", "cancelled", "expired"}
+HANDOFF_PLATFORM = "operator_handoff"
 IDLE_AFTER = 90
 IDLE_COOLDOWN = 180
 IDLE_WINDOW = 600
@@ -36,7 +38,7 @@ class LiveSession:
         self.settings, self.store = runtime.settings, runtime.store
         self.interactive_rules = InteractiveRulesService(self.store)
         self.draw_and_guess = DrawAndGuessService(daily_memory=runtime.daily_memory)
-        self.game_livestream = GameLivestreamService(interactive_rules=self.interactive_rules)
+        self.game_livestream = GameLivestreamService(interactive_rules=self.interactive_rules, store=self.store)
         self.live_scene = live_scene
         self.state = "stopped"
         self.muted = False
@@ -231,6 +233,8 @@ class LiveSession:
         return result
 
     async def submit(self, event, *, online_snapshot=None, verified_account_id=None):
+        if event.platform == HANDOFF_PLATFORM:
+            raise ValueError("直播交接须从号主对话发起")
         key = (event.platform, event.room_id, event.event_id)
         while key in self.submissions:
             await asyncio.shield(self.submissions[key])
@@ -246,7 +250,23 @@ class LiveSession:
             self.submissions.pop(key, None)
             finished.set_result(None)
 
-    async def _submit(self, event, *, online_snapshot=None, verified_account_id=None, internal=False):
+    async def submit_handoff(self, request_id, session_id, text, *, account):
+        event = Event(platform=HANDOFF_PLATFORM, room_id=session_id, event_id=request_id, text=text,
+                      display_name="本场交接")
+        if event_id := self.store.duplicate_event(event):
+            job = self.store.one("SELECT id,status FROM jobs WHERE event_id=?", (event_id,))
+            return {"job_id": job["id"], "status": job["status"]} if job else {"status": "unavailable"}
+        if self.state not in {"live", "paused"} or self.session_id != session_id:
+            raise ValueError("本场直播已变化")
+        return await self._submit(event, internal=True, handoff_account=account)
+
+    def handoff_result(self, session, job_id):
+        job = self.store.job(job_id) if job_id else None
+        if not job or job["session_id"] != session:
+            return {"status": "unavailable"}
+        return {"status": job["status"], "spoken": job["text"] if job["status"] == "completed" else None}
+
+    async def _submit(self, event, *, online_snapshot=None, verified_account_id=None, internal=False, handoff_account=None):
         session_id = self.session_id
         now = datetime.now(UTC)
         age = (now - event.timestamp).total_seconds()
@@ -256,6 +276,9 @@ class LiveSession:
         metadata = dict(event.metadata)
         metadata.pop("_live_account", None)
         metadata.pop("_live_input", None)
+        metadata.pop("_handoff_account", None)
+        if event.platform == HANDOFF_PLATFORM and internal:
+            metadata["_handoff_account"] = handoff_account
         original_type, original_text = event.type, event.text
         if verified_account_id and event.platform == "bilibili":
             metadata["_live_account"] = str(verified_account_id)
@@ -270,11 +293,11 @@ class LiveSession:
                 if not duplicate:
                     self.recent_activities.append(item)
                 return {"id": None, "status": "duplicate" if duplicate else "recorded", "reason": "活动摘要"}
-            filtered = self.activity_filter.check_event(event)
+            filtered = None if event.platform == HANDOFF_PLATFORM else self.activity_filter.check_event(event)
             if filtered:
                 status, reason = filtered
                 return {"id": None, "status": status, "reason": reason}
-            if event.type == "chat" and (text := clean_barrage(event.text)):
+            if event.type == "chat" and event.platform != HANDOFF_PLATFORM and (text := clean_barrage(event.text)):
                 self.recent_barrage.append({
                     "platform": event.platform,
                     "room_id": event.room_id,
@@ -285,7 +308,7 @@ class LiveSession:
                     "at": event.timestamp.timestamp(),
                 })
             try:
-                if event.type == "chat":
+                if event.type == "chat" and event.platform != HANDOFF_PLATFORM:
                     # 1. Check if Draw & Guess is active and user guessed correctly
                     if self.draw_and_guess.is_active():
                         matched_win = self.draw_and_guess.check_guess(
@@ -632,6 +655,7 @@ class LiveSession:
 
     async def _process(self, job_id):
         try:
+            answer_check = None
             self.timings = dict.fromkeys(self.timings)
             self.spoken_parts.clear()
             job = self.store.job(job_id)
@@ -718,7 +742,7 @@ class LiveSession:
                             "live:" + self.session_id,
                             character,
                             event,
-                            self.runtime.relationships.live_view(
+                            {} if event["platform"] == HANDOFF_PLATFORM else self.runtime.relationships.live_view(
                                 self.session_id, character["id"], event["platform"],
                                 event["platform_user_id"], account_id=account_id or "",
                             ),
@@ -763,7 +787,17 @@ class LiveSession:
                 audio_ref=audio.ref,
                 error=warning,
             )
-            await self._play(job_id, audio, character, emotion, animation)
+            await self._play(job_id, audio, character, emotion, animation, memory_audit=answer_check)
+        except MemoryChanged:
+            if self.state in {"live", "paused"} and not self.spoken_parts:
+                self.store.update_job(job_id, status="queued", text="", audio_ref=None, answer_check=None)
+                self.queue.insert(0, job_id)
+                self.wake.set()
+            else:
+                job = self.store.job(job_id)
+                error = "记忆已变更，后续台词未播出"
+                self.store.update_job(job_id, status="cancelled", error=error, text="".join(self.spoken_parts))
+                self.store.execute("UPDATE events SET status='cancelled',reason=? WHERE id=?", (error, job["event_id"]))
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -999,7 +1033,7 @@ class LiveSession:
             event = self.store.event(job["event_id"])["payload"]
             character = self.store.character(job["character_id"], job["character_version"])
             check = json.loads(job["answer_check"]) if job.get("answer_check") else {}
-            if event["type"] not in {"song", "idle"}:
+            if event["type"] not in {"song", "idle"} and event["platform"] != HANDOFF_PLATFORM:
                 if account_id := event["metadata"].get("_live_account"):
                     event["account_id"] = account_id
                 self.runtime.context.record(
@@ -1009,7 +1043,7 @@ class LiveSession:
                     None if check.get("organized_memory") or "memory_preference_revision" in check else spoken,
                     memory_kind=check.get("memory_kind"),
                 )
-            if event["type"] == "chat":
+            if event["type"] == "chat" and event["platform"] != HANDOFF_PLATFORM:
                 self.observe_relationship(character, event)
             self.last_played = self.store.job(job["id"])
             self.last_activity = time.monotonic()

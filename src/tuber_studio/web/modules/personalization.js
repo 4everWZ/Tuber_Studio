@@ -39,7 +39,6 @@ export function initPersonalization(model, api) {
   const summary = $("memory-summary");
   const recentList = $("recent-memory-list");
   const organizerStatus = $("daily-memory-notice");
-  const extractButton = $("extract-daily-memory");
   const retryPreference = $("retry-memory-preference");
   let preference;
   let report;
@@ -56,7 +55,6 @@ export function initPersonalization(model, api) {
     preference = value;
     toggle.checked = value.enabled;
     toggle.disabled = savingPreference;
-    extractButton.disabled = !value.enabled;
     retryPreference.hidden = true;
     settingsStatus.textContent = "";
   }
@@ -151,7 +149,6 @@ export function initPersonalization(model, api) {
   function renderReport(value, redraw) {
     const organized = value.organized;
     const state = value.organization;
-    extractButton.disabled = !value.enabled;
     const status = {
       running: "正在后台整理", waiting: "等待模型空闲", disabled: "自动整理已停用",
       retry: state.error ? `后台整理失败：${state.error}` : "后台整理失败，稍后重试",
@@ -285,7 +282,7 @@ export function initPersonalization(model, api) {
       else organizerStatus.textContent = `操作失败：${error.message}`;
     } finally {
       memoryWriting = false;
-      if (target !== extractButton || preference?.enabled !== false) target.disabled = false;
+      target.disabled = false;
     }
   }
 
@@ -321,7 +318,8 @@ export function initPersonalization(model, api) {
 
       const form = node("form");
       const title = node("input");
-      const note = node("textarea");
+      const note = node(item.choices ? "select" : "textarea");
+      for (const choice of item.choices || []) note.append(new Option(choice, choice));
       title.value = item.headline;
       title.maxLength = 40;
       title.required = true;
@@ -359,11 +357,6 @@ export function initPersonalization(model, api) {
         change(body, save, "记忆已更新。");
       };
       edit.append(form);
-      if (archived) actions.append(action("恢复", event => change({ status: "active" }, event.currentTarget, "记忆已恢复。")));
-      else actions.append(action("归档", event => change({ status: "archived" }, event.currentTarget, "记忆已归档。")));
-      if (item.channels.some(channel => channel !== "operator")) {
-        actions.append(action("撤销公开", event => change({ channels: [] }, event.currentTarget, "已撤销公开授权。")));
-      }
       actions.append(action("删除", event => {
         if (confirm("确认删除这条记忆吗？")) mutate(path, { method: "DELETE" }, event.currentTarget, "记忆已删除。");
       }));
@@ -380,19 +373,32 @@ export function initPersonalization(model, api) {
       const entry = node("article");
       const actions = node("div", null, "actions");
       const path = `/${item.id}`;
-      const active = item.status === "active";
       entry.append(node("strong", item.headline), node("p", item.anecdote),
         node("p", item.highlight_date, "hint"), node("blockquote", item.quote || ""));
       for (const ref of item.public_sources || []) {
         const link = sourceLink(ref.quote, `https://www.bilibili.com/video/${ref.bvid}#reply${ref.comment_id}`);
         if (link) { const line = node("p"); line.append(link); entry.append(line); }
       }
-      actions.append(action(active ? "归档" : item.status === "archived" ? "恢复" : "恢复公开", event =>
-        mutate(path, { method: "PUT", body: { status: active ? "archived" : "active" } }, event.currentTarget, "记忆已更新。")));
-      if (active && (item.category === "public_incident" || item.source_ref?.startsWith("operator-public:"))) {
-        actions.append(action("撤销公开", event => mutate(path, { method: "PUT", body: { status: "pending_review" } },
-          event.currentTarget, "已撤销公开授权。")));
-      }
+      const edit = node("details");
+      edit.append(node("summary", "更正"));
+      const form = node("form");
+      const title = node("input");
+      title.value = item.headline;
+      const note = node("textarea");
+      note.value = item.anecdote;
+      const titleLabel = node("label", "记忆标题");
+      titleLabel.append(title);
+      const noteLabel = node("label", "记忆内容");
+      noteLabel.append(note);
+      const save = node("button", "保存修改", "win-btn");
+      form.append(titleLabel, noteLabel, save);
+      form.onsubmit = event => {
+        event.preventDefault();
+        mutate(path, { method: "PUT", body: { headline: title.value.trim(), anecdote: note.value.trim() } },
+          save, "记忆已更新。");
+      };
+      edit.append(form);
+      entry.append(edit);
       actions.append(action("删除", event => {
         if (confirm("确认删除这条记忆吗？")) mutate(path, { method: "DELETE" }, event.currentTarget, "记忆已删除。");
       }));
@@ -404,7 +410,6 @@ export function initPersonalization(model, api) {
 
   $("filter-memory").onchange = renderEntries;
   $("search-memory").oninput = renderEntries;
-  extractButton.onclick = () => mutate("/organize", { method: "POST" }, extractButton, "已安排后台整理。");
 
   function resetScope() {
     scopeVersion++;

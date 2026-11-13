@@ -26,6 +26,11 @@ HIGHLIGHT_ACCOUNT_FILTER = (
     "COALESCE(CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END,?)=?"
 )
 
+
+class MemoryChanged(ValueError):
+    """A generated reply refers to memory that changed before delivery."""
+
+
 RETROSPECTIVE_CUES = (
     "还记得",
     "记不记得",
@@ -248,8 +253,11 @@ class DailyMemoryService:
         tags = sorted({tag.strip()[:24] for tag in decision.tags if tag.strip()})
         headline = decision.headline.strip()
         signature = re.sub(r"\W", "", headline).casefold()
+        target = source.get("scene")
         for row in rows:
             if row["memory_kind"] != kind:
+                continue
+            if row["proof"].get("scene") != target:
                 continue
             if row["source_ref"] == key or kind == "private" and (
                 row["quote"] == quote or re.sub(r"\W", "", row["headline"]).casefold() == signature
@@ -286,6 +294,10 @@ class DailyMemoryService:
         if kind == "private":
             previous = existing["proof"].get("preference_sources", [source_ref]) if existing else []
             proof["preference_sources"] = list(dict.fromkeys([*previous, key]))
+        if target:
+            proof["scene"] = target
+            proof["channels"] = [target]
+            proof["style_group"] = source["style_group"]
         at = time.time()
         fields = (headline, quote, decision.note.strip(), dump_memory(tags), dump_memory(proof), at)
         if existing:
@@ -317,7 +329,8 @@ class DailyMemoryService:
                 keys = {row["source_ref"], row["source"]["key"]}
                 if row["memory_kind"] == "private":
                     keys.update(proof.get("preference_sources", []))
-                    keys.add("private:" + re.sub(r"\W", "", row["headline"]).casefold())
+                    if not proof.get("scene"):
+                        keys.add("private:" + re.sub(r"\W", "", row["headline"]).casefold())
                     keys.add(f"deleted-preference:{item_id}")
                 self.store.db.executemany(
                     "INSERT INTO memory_organization VALUES(?,?,?,?,?,'deleted',?) "
@@ -354,6 +367,18 @@ class DailyMemoryService:
             )
         return self.organized(scope, item_id=item_id)[0]
 
+    def live_preferences(self, scope):
+        if not self.preference(scope)["enabled"]:
+            return []
+        account, character, version = scope
+        rows = self.store.all(
+            "SELECT id FROM daily_highlights WHERE character_id=? AND character_version=? AND status='active' "
+            "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.scene') END='live' "
+            "AND json_extract(source_evidence,'$.operation_account_id')=? ORDER BY updated_at DESC,id DESC LIMIT 4",
+            (character, version, account),
+        )
+        return [item for row in rows for item in self.organized(scope, item_id=row["id"])]
+
     def memory_match(self, row, text):
         return self._score_highlight_match(row, self._extract_recall_keywords(text), text)
 
@@ -373,14 +398,15 @@ class DailyMemoryService:
                 continue
             if same_thread or score >= 3:
                 matched.append((20 * same_thread + 5 * same_person + score, row))
-        return [row for _, row in sorted(matched, key=lambda item: -item[0])[:3]]
+        relevant = [row for _, row in sorted(matched, key=lambda item: -item[0]) if not row["proof"].get("scene")]
+        return (self.live_preferences(scope) + relevant)[:4] if channel == "live" else relevant[:3]
 
     def validate_organized(self, scope, channel, refs):
         for item in refs:
             rows = self.organized(scope, item_id=item["id"])
             if (not rows or rows[0]["updated_at"] != item["updated_at"] or rows[0]["status"] != "active"
                     or channel != "operator" and channel not in rows[0]["channels"]):
-                raise ValueError("生成使用的记忆已变更，请重试")
+                raise MemoryChanged("生成使用的记忆已变更，请重试")
 
     @staticmethod
     def organized_reference(row):

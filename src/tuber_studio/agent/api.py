@@ -13,6 +13,7 @@ from ..models import Character, StrictModel
 from ..operation_continuations import content_hash
 from ..relationships import UserProfile
 from ..store import character_card, editable_character
+from .handoff import LIVE_STYLE, LIVE_STYLE_GROUP
 from .operator_facts import recent_events
 
 
@@ -41,6 +42,10 @@ def organized_view(row):
                                        "channels", "source", "updated_at")}
     if row["status"] == "active":
         result["channels"] = ["operator", *result["channels"]]
+    result["scene"] = row["proof"].get("scene")
+    if result["scene"] == "live":
+        result["choices"] = [text for key, text in LIVE_STYLE.items()
+                             if LIVE_STYLE_GROUP[key] == row["proof"]["style_group"]]
     return result
 
 
@@ -231,6 +236,11 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     @app.patch("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
     async def change_organized_memory(item_id: int, data: OrganizedMemoryChange, scope: str | None = None):
         current, _ = memory_scope(scope)
+        existing = runtime.daily_memory.organized(current, item_id=item_id)
+        if existing and existing[0]["proof"].get("scene") == "live" and data.note is not None:
+            group = existing[0]["proof"].get("style_group")
+            if data.note not in {text for key, text in LIVE_STYLE.items() if LIVE_STYLE_GROUP[key] == group}:
+                raise ValueError("请从直播表达规则中选择")
         row = runtime.daily_memory.change_organized(current, item_id, **data.model_dump())
         if not row:
             raise HTTPException(404, "未找到当前账号和角色的记忆")
