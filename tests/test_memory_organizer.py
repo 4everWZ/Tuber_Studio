@@ -33,7 +33,6 @@ def test_memory_switch_persists_per_account_and_character(settings):
         disabled = client.put(path, json={"enabled": False, "scope": before["scope"]}).raise_for_status().json()
         assert not disabled["enabled"] and disabled["revision"] == 1
         assert client.get("/api/daily-memory").json()["organization"]["status"] == "disabled"
-        assert client.post("/api/daily-memory/organize").status_code == 409
         assert MemoryOrganizer(runtime).state()["status"] == "disabled"
         discovery.remember_account("200")
         assert client.get(path).json()["enabled"]
@@ -170,7 +169,7 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
             memory.save_organized(scope, source, proposal, None)
         candidate, = memory.organized(scope)
         assert not memory.recall_organized(scope, "comment", "企鹅", resource=resource, thread="40")
-        memory.change_organized(scope, candidate["id"], status="active", channels=["comment", "live", "dynamic"])
+        memory.change_organized(scope, candidate["id"], channels=["comment", "live", "dynamic"])
         assert memory.recall_organized(scope, "comment", "接着说", resource=resource, thread="40")
         assert not memory.recall_organized(scope, "comment", "企鹅", resource=resource, thread="70")
         row, _ = app.state.browsing.repo.create_round(scope[0], runtime.character, BrowsingPolicy().model_dump(), 0, False)
@@ -181,7 +180,11 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
         source_snapshot = next(row for row in app.state.dynamics._sources() if row["id"] == f"organized:{candidate['id']}")
         dynamic = {"character_id": scope[1], "character_version": scope[2], "sources": [source_snapshot]}
         assert app.state.dynamics._valid_sources(dynamic)
-        runtime.daily_memory.confirm_operator_experience(runtime.character, "other", "直播休息时整理素材。")
+        memory.record_highlight(
+            scope[1], scope[2], memory.business_date(time.time()), "community_meme",
+            "整理素材", "直播休息时整理素材。", "直播休息时整理素材。",
+            source_ref="operator-public:other", operator_confirmed=True,
+        )
         other = next(item for item in app.state.dynamics._sources() if item["id"].startswith("experience:"))
         saved = app.state.dynamics._save_decision(runtime.character, False, {
             "action": "post", "reason": "回顾整理素材", "content": "今天整理了素材。", "source_ids": [other["id"]],
@@ -258,7 +261,11 @@ def test_migrate_organized_memory_without_restoring_revoked_public_experience(se
         with store.db:
             memory.save_organized(scope, source, proposal, None)
         saved, = memory.organized(scope)
-        revoked = memory.confirm_operator_experience(runtime.character, "revoked", "以前公开过的经历")
+        revoked = memory.record_highlight(
+            scope[1], scope[2], memory.business_date(time.time()), "community_meme",
+            "已撤销的经历", "以前公开过的经历", "以前公开过的经历",
+            source_ref="operator-public:revoked", operator_confirmed=True,
+        )
         store.execute("UPDATE daily_highlights SET status='pending_review' WHERE id IN (?,?)", (saved["id"], revoked))
         migrated = DailyMemoryService(store)
         assert migrated.organized(scope) == [saved]

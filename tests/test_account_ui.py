@@ -26,13 +26,7 @@ def test_workbench_serves_page_fragments_in_the_shell(settings):
 
 @pytest.mark.parametrize(
     "script",
-    [
-        "account_ui.test.cjs",
-        "web_api.test.cjs",
-        "web_operations.test.cjs",
-        "web_character_studio.test.cjs",
-        "web_workbench_state.test.cjs",
-    ],
+    sorted(path.name for path in Path(__file__).parent.glob("*.test.cjs")),
 )
 def test_shared_web_clients(script):
     node = shutil.which("node")

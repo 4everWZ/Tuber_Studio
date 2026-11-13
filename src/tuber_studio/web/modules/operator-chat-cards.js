@@ -58,38 +58,6 @@ function eventContent(item, heading = "h2") {
   return section;
 }
 
-function experienceProposal(root, turn, { api, path }) {
-  const { event, fact } = turn.card.data;
-  const form = node("form"), label = node("label", "确认可公开的事实"), input = node("textarea");
-  const note = node("p", null, "hint"), submit = node("button", "确认加入公开经历", "primary");
-  input.value = fact;
-  input.maxLength = 150;
-  input.required = true;
-  submit.type = "submit";
-  note.setAttribute("role", "status");
-  label.append(input);
-  form.append(label, submit, note);
-  root.append(eventContent(event), form);
-  if (turn.card.data.confirmed) {
-    submit.disabled = input.readOnly = true;
-    note.textContent = "已保存公开经历。";
-  }
-  form.onsubmit = async action => {
-    action.preventDefault();
-    if (submit.disabled) return;
-    submit.disabled = input.readOnly = true;
-    note.textContent = "正在保存…";
-    try {
-      await api(`${path}/${turn.request_id}/public-experience`, { method: "POST", body: { fact: input.value.trim() } });
-      note.textContent = "已保存公开经历。";
-    } catch (error) {
-      note.textContent = safeMessage(error.message);
-      submit.disabled = input.readOnly = false;
-    }
-  };
-  return { update() {} };
-}
-
 function dynamicCard(root, initial, api) {
   let data, signature, dirty = false, busy = false, revision = 0;
   function update(next) {
@@ -325,128 +293,31 @@ function activityCard(root, initial) {
   return { update, needsRefresh: () => true };
 }
 
-function experienceCard(root, initial, { api, path, privateTurns }) {
-  const items = node("div"), details = node("details"), form = node("form");
-  const sourceLabel = node("label", "作为依据的私聊");
-  const choice = node("select"), preview = node("blockquote", "", "quoted-text");
-  const factLabel = node("label", "确认可公开的事实"), fact = node("textarea");
-  const submit = node("button", "确认加入公开经历", "primary");
-  const note = node("p", "", "hint");
-  let data = [], signature, busy = false, revision = 0;
-  choice.required = fact.required = true;
-  fact.rows = 2;
-  fact.maxLength = 150;
-  submit.type = "submit";
-  note.setAttribute("role", "status");
-  sourceLabel.append(choice);
-  factLabel.append(fact);
-  form.append(sourceLabel, preview, factLabel, submit);
-  details.append(node("summary", "从私聊确认一条公开经历"), form);
-  root.append(node("h2", "公开经历"), items, details, note, link("打开记忆设置", "#personalization"));
+function experienceCard(root, initial) {
+  const items = node("ul");
+  const empty = node("p", "暂无已保存的公开经历。", "hint");
+  let signature;
+  root.append(items, empty, link("打开记忆设置", "#personalization"));
 
-  function showPrivateSource() {
-    const turn = privateTurns().find(item => item.request_id === choice.value);
-    preview.hidden = !turn;
-    preview.textContent = turn ? `你：${turn.message}\n大肥鱼：${turn.reply_text}` : "";
-    submit.disabled = !turn || busy;
-  }
-
-  details.ontoggle = () => {
-    if (!details.open) return;
-    const previous = choice.value;
-    const available = privateTurns();
-    const prompt = node("option", available.length ? "请选择一段已加载的私聊" : "可先加载更早的私聊");
-    prompt.value = "";
-    choice.replaceChildren(prompt);
-    for (const turn of available) {
-      const option = node("option", turn.message.slice(0, 60));
-      option.value = turn.request_id;
-      choice.append(option);
-    }
-    if (available.some(turn => turn.request_id === previous)) choice.value = previous;
-    showPrivateSource();
-  };
-  choice.onchange = showPrivateSource;
-
-  async function mutate(operation, success) {
-    if (busy) return;
-    revision++;
-    busy = choice.disabled = fact.disabled = submit.disabled = true;
-    for (const control of items.querySelectorAll("button")) control.disabled = true;
-    note.textContent = "正在保存…";
-    try {
-      const next = await operation();
-      busy = false;
-      update({ items: next });
-      note.textContent = success;
-    } catch (error) {
-      note.textContent = safeMessage(error.message);
-    } finally {
-      busy = choice.disabled = fact.disabled = false;
-      showPrivateSource();
-      for (const control of items.querySelectorAll("button")) control.disabled = false;
-    }
-  }
-
-  form.onsubmit = event => {
-    event.preventDefault();
-    const text = fact.value.trim();
-    if (!choice.value || !text) return;
-    return mutate(async () => {
-      const updated = await api(`${path}/${choice.value}/public-experience`, { method: "POST", body: { fact: text } });
-      fact.value = "";
-      details.open = false;
-      return [updated, ...data.filter(item => item.id !== updated.id)];
-    }, "已保存号主确认的公开事实。");
-  };
-
-  function update(next) {
-    if (busy || signature === JSON.stringify(next.items)) return;
-    signature = JSON.stringify(next.items);
-    note.textContent = "";
-    data = next.items;
+  function update(data) {
+    const next = JSON.stringify(data.items);
+    if (signature === next) return;
+    signature = next;
     items.replaceChildren();
-    if (!data.length) items.append(node("p", "暂无公开经历。", "hint"));
-    for (const item of data) {
-      const row = node("section", null, "operator-chat-memory");
-      const source = { confirmed_turn: "号主确认", public_thread: "公开评论", runtime_event: "运行记录", operation_event: "运营记录" }[item.source?.kind];
-      const memoryStatus = { active: "可公开使用", archived: "已归档", pending_review: "已撤销公开" }[item.status];
-      row.append(node("strong", item.headline), node("p", [source, item.highlight_date, memoryStatus].filter(Boolean).join(" · "), "hint"));
-      row.append(node("p", item.anecdote || item.quote));
-      for (const entry of item.source?.public_sources || []) {
-        const href = /^\d+$/.test(entry.comment_id) ? videoHref(entry.bvid, `#reply${entry.comment_id}`) : "";
-        if (href) row.append(link(`原评论 · ${entry.bvid}`, href));
-        if (entry.quote) row.append(node("blockquote", entry.quote, "quoted-text"));
+    empty.hidden = data.items.length > 0;
+    items.hidden = !empty.hidden;
+    for (const entry of data.items) {
+      const item = node("li", null, "operator-chat-memory");
+      item.append(node("strong", entry.headline), node("p", entry.anecdote));
+      for (const href of entry.links) {
+        if (platformLink(href)) item.append(link("原始来源", href));
       }
-      for (const entry of item.source?.items || []) {
-        if (platformLink(entry.href)) row.append(link("原始来源", entry.href));
-      }
-      const actions = node("div", null, "actions");
-      const states = item.status === "active" ? [["归档", "archived"], ["撤销公开", "pending_review"]] : [["恢复公开", "active"]];
-      for (const [caption, newStatus] of states) {
-        const control = button(caption);
-        control.onclick = () => mutate(async () => {
-          const updated = await api(`${path}/public-experiences/${item.id}`, { method: "PATCH", body: { status: newStatus } });
-          return data.map(current => current.id === item.id ? updated : current);
-        }, { archived: "已归档。", pending_review: "已撤销公开资格。", active: "已恢复公开。" }[newStatus]);
-        actions.append(control);
-      }
-      const remove = button("删除");
-      remove.onclick = () => {
-        if (!window.confirm("删除这条记忆及其公开引用资格？")) return;
-        return mutate(async () => {
-          await api(`${path}/public-experiences/${item.id}`, { method: "DELETE" });
-          return data.filter(current => current.id !== item.id);
-        }, "已删除该条记忆。");
-      };
-      actions.append(remove);
-      row.append(actions);
-      items.append(row);
+      items.append(item);
     }
   }
 
   update(initial);
-  return { update, revision: () => revision, needsRefresh: () => !busy };
+  return { update, needsRefresh: () => true };
 }
 
 export function createOperatorCard(root, turn, context) {
@@ -477,7 +348,7 @@ export function createOperatorCard(root, turn, context) {
     update(data);
     return { update, needsRefresh: () => ["queued", "generating", "synthesizing", "ready_to_play", "playing"].includes(current) };
   }
-  if (type === "public_experiences") return experienceCard(root, data, context);
+  if (type === "public_experiences") return experienceCard(root, data);
   if (type === "operation_events") {
     const items = node("ol");
     for (const event of data.items) {
@@ -488,7 +359,6 @@ export function createOperatorCard(root, turn, context) {
     root.append(items);
   }
   if (type === "operation_event") root.append(eventContent(data.event));
-  if (type === "experience_proposal") return experienceProposal(root, turn, context);
   if (["live_studio_hud", "live_confirmation"].includes(type)) {
     const state = node("p", null, "muted"), note = node("p", null, "hint");
     const confirm = button("确认开启直播会话");

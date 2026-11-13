@@ -1,80 +1,21 @@
 import datetime
-import json
-import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tuber_studio.app import create_app
 from tuber_studio.context import ContextManager
-from tuber_studio.daily_memory import DailyMemoryService, desensitize_user
+from tuber_studio.daily_memory import DailyMemoryService
 
 
-class DummyProvider:
-    def __init__(self, reply_data=None):
-        self.reply_data = reply_data or {
-            "highlights": [
-                {
-                    "category": "comment_anecdote",
-                    "headline": "被吐槽游得太慢",
-                    "source_ref": "video:BVtest:comment:101",
-                    "source_user": "热心潜水员",
-                    "quote": "大肥鱼游得比乌龟还慢",
-                    "anecdote": "昨天居然有人说我游得比海龟还慢！气得我昨晚吨吨吨多炫了一碗热白米饭！",
-                    "tags": ["游速", "炫饭"],
-                }
-            ]
-        }
-        self.counted_tokens = 50
-
-    async def generate_json(self, messages, schema, *, max_tokens=1024):
-        return self.reply_data
-
+class TokenCounter:
     async def count_tokens(self, messages):
-        return self.counted_tokens
-
-    async def summarize(self, messages, *, max_tokens=1024):
-        return json.dumps(self.reply_data, ensure_ascii=False)
+        return 50
 
 
 class DummyPlatform:
     async def close(self):
         pass
-
-
-@pytest.mark.parametrize(
-    ("status", "receipt", "expected"),
-    [
-        ("approved", {"code": 0, "rpid": "123"}, False),
-        ("pending_review", None, False),
-        ("published", None, False),
-        ("published", "invalid-json", False),
-        ("published", {"code": -1, "rpid": "123"}, False),
-        ("published", {"code": 0}, False),
-        ("published", {"code": 0, "rpid": "0"}, False),
-        ("published", {"code": 0, "rpid": "123"}, True),
-        ("published", {"rpid": 123}, True),
-    ],
-)
-def test_daily_source_only_counts_published_receipt_as_replied(store, status, receipt, expected):
-    identifier = store.execute(
-        "INSERT INTO comments(video_id,comment_id,content,imported_at) VALUES(?,?,?,?)",
-        ("BV13S4i6fE82", "source-1", "原评论仍可作为真实来源", time.time()),
-    ).lastrowid
-    store.execute(
-        "INSERT INTO drafts(comment_id,text,status,receipt) VALUES(?,?,?,?)",
-        (
-            identifier,
-            "未发送的草稿正文不可成为已说的经历",
-            status,
-            receipt if isinstance(receipt, str) else json.dumps(receipt),
-        ),
-    )
-    sources = DailyMemoryService(store).candidate_sources(datetime.date.today().isoformat(), "whale")
-    assert len(sources) == 1
-    assert sources[0]["replied"] is expected
-    assert sources[0]["content"] == "原评论仍可作为真实来源"
-    assert "草稿正文" not in json.dumps(sources, ensure_ascii=False)
 
 
 def test_operator_public_incident_api_is_deduplicated_and_clearable(settings):
@@ -107,49 +48,6 @@ def test_operator_public_incident_api_is_deduplicated_and_clearable(settings):
         assert client.post("/api/daily-memory/incidents", json=payload).json()["status"] == "archived"
         assert client.delete(f"/api/daily-memory/{item['id']}").status_code == 200
         assert client.get("/api/daily-memory").json()["highlights"] == []
-
-
-def test_desensitize_user():
-    assert desensitize_user(None) == "某位热心观众"
-    assert desensitize_user("") == "某位热心观众"
-    assert desensitize_user("   ") == "某位热心观众"
-    assert desensitize_user("user_1234567") == "观众"
-    assert desensitize_user("u987654321") == "观众"
-    assert desensitize_user("潜水小鲸鱼") == "潜水小鲸鱼"
-    long_name = "超长名字" * 10
-    masked = desensitize_user(long_name)
-    assert len(masked) <= 20
-    assert masked.endswith("…")
-
-
-def test_candidate_sources_and_desensitization(store):
-    service = DailyMemoryService(store)
-    today = datetime.date.today().isoformat()
-
-    # Seed comments
-    store.execute(
-        """
-        INSERT INTO comments(video_id, comment_id, display_name, content, like_count, category, imported_at)
-        VALUES('BVtest1', 'c1', 'user_998877', '大肥鱼你的尾巴好胖呀！', 15, 'interaction', ?)
-        """,
-        (1730000000,),
-    )
-    # Update created_at so LIKE query matches today
-    store.execute("UPDATE comments SET created_at = ? WHERE comment_id = 'c1'", (f"{today} 12:00:00",))
-
-    # Seed live conversation
-    store.execute(
-        """
-        INSERT INTO conversations(session_id, character_id, event_text, reply_text, created_at)
-        VALUES('live_sess_1', 'whale', '今天吃什么？', '吃热白饭配秋刀鱼！', strftime('%s', 'now'))
-        """
-    )
-
-    candidates = service.candidate_sources(today, "whale", limit=10)
-    assert len(candidates) >= 1
-    comment_cand = next(c for c in candidates if c["source_type"] == "comment")
-    assert comment_cand["source_user"] == "观众"  # desensitized from user_998877
-    assert "尾巴好胖" in comment_cand["content"]
 
 
 def test_daily_highlight_crud(store):
@@ -198,60 +96,6 @@ def test_daily_highlight_crud(store):
 
 
 @pytest.mark.asyncio
-async def test_distillation_with_grounded_validation(store):
-    service = DailyMemoryService(store)
-    provider = DummyProvider()
-    today = datetime.date.today().isoformat()
-
-    candidates = [
-        {
-            "source_type": "comment",
-            "source_ref": "video:BVtest:comment:101",
-            "source_user": "热心潜水员",
-            "content": "大肥鱼游得比乌龟还慢，快加速！",
-            "like_count": 20,
-            "replied": False,
-        }
-    ]
-
-    char = {"id": "whale", "version": 1, "name": "大肥鱼"}
-    extracted = await service.distill(char, today, provider, candidates=candidates)
-    assert len(extracted) == 1
-    item = extracted[0]
-    assert item["status"] == "active"
-    assert item["headline"] == "被吐槽游得太慢"
-    assert "热白米饭" in item["anecdote"]
-
-
-async def test_distillation_only_saves_a_grounded_source(store):
-    service = DailyMemoryService(store)
-    character = store.character()
-    date = datetime.date.today().isoformat()
-    candidates = [
-        {"source_ref": "a", "source_user": "小鱼", "content": "白饭很好吃，一起加饭。"},
-        {"source_ref": "b", "source_user": "海豹", "content": "白饭很好吃，再来一碗。"},
-    ]
-    base = {"headline": "今天的饭", "anecdote": "我已经吃饱啦", "source_user": "编造的昵称"}
-    provider = DummyProvider(
-        {
-            "highlights": [
-                base | {"source_ref": "missing", "quote": "再来一碗"},
-                base | {"source_ref": "a", "quote": "再来一碗"},
-                base | {"source_ref": "missing", "quote": "白饭很好吃"},
-                base | {"source_ref": "missing", "quote": "一份甜点"},
-            ]
-        }
-    )
-    result = await service.distill(character, date, provider, candidates=candidates)
-    assert [(item["source_ref"], item["source_user"], item["quote"]) for item in result] == [
-        ("b", "海豹", "再来一碗")
-    ]
-    assert store.all("SELECT source_ref,source_user,status FROM daily_highlights") == [
-        {"source_ref": "b", "source_user": "海豹", "status": "active"}
-    ]
-
-
-@pytest.mark.asyncio
 async def test_context_manager_injects_daily_memory(settings, store):
     service = DailyMemoryService(store)
     today = datetime.date.today().isoformat()
@@ -269,7 +113,7 @@ async def test_context_manager_injects_daily_memory(settings, store):
         status="active",
     )
 
-    provider = DummyProvider()
+    provider = TokenCounter()
     ctx_mgr = ContextManager(settings, store, provider, daily_memory=service)
 
     char = store.character()
@@ -306,13 +150,6 @@ def test_daily_memory_api_endpoints(settings):
         assert res.status_code == 200
         assert res.json()["highlights"] == []
 
-        # 3. Extract via API
-        ext_res = client.post("/api/daily-memory/extract")
-        assert ext_res.status_code == 200
-        assert "extracted" in ext_res.json()
-
-        # 4. Insert manually via store to test PUT and DELETE
-        _store = app.state.runtime.store
         service = app.state.runtime.daily_memory
         today = datetime.date.today().isoformat()
         item_id = service.record_highlight(
@@ -324,15 +161,15 @@ def test_daily_memory_api_endpoints(settings):
             headline="测试梗",
             quote="测试原句",
             anecdote="这是测试自述",
-            status="pending_review",
         )
 
-        # 5. Update via PUT
-        put_res = client.put(f"/api/daily-memory/{item_id}", json={"status": "active"})
+        # Update via PUT
+        put_res = client.put(f"/api/daily-memory/{item_id}", json={"headline": "更正后的标题", "anecdote": "更正后的内容"})
         assert put_res.status_code == 200
-        assert put_res.json()["status"] == "active"
+        assert put_res.json()["headline"] == "更正后的标题"
+        assert put_res.json()["quote"] == "测试原句"
 
-        # 6. Delete via DELETE
+        # Delete via DELETE
         del_res = client.delete(f"/api/daily-memory/{item_id}")
         assert del_res.status_code == 200
         assert del_res.json()["ok"] is True

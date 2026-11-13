@@ -53,14 +53,14 @@ class MemoryOrganizer:
             with suppress(asyncio.CancelledError):
                 await self.worker
 
-    def schedule(self, *, manual=False):
-        if manual:
-            self.next_run = 0
-            if self.status == "disabled" and self.runtime.daily_memory.preference(self.scope())["enabled"]:
-                self.status = "idle"
-        self.changed.set()
-        return self.state()
+    def setting_changed(self):
+        self.next_run = 0
+        if self.status == "disabled" and self.runtime.daily_memory.preference(self.scope())["enabled"]:
+            self.status = "idle"
+        self.schedule()
 
+    def schedule(self):
+        self.changed.set()
 
     def state(self):
         scope = self.scope()

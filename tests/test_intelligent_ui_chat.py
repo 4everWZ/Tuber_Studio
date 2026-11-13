@@ -125,11 +125,6 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         assert client.post(path, json={"request_id": str(uuid4()), "message": "还记得吗"}).status_code == 200
         assert "xyz123" in str(private_packets[-1])
 
-        selected = client.post(f"{path}/{chat_id}/public-experience", json={"fact": "海底小屋放了一盆草"})
-        assert selected.status_code == 200
-        sources = app.state.dynamics._sources()
-        assert [source["text"] for source in sources] == ["海底小屋放了一盆草"]
-
         dynamic = {"request_id": str(uuid4()), "message": "发个动态：聊白饭", "intent": {"action": "dynamic", "topic": "聊白饭"}}
         card = client.post(path, json=dynamic).json()["card"]
         post_id = card["data"]["id"]
@@ -151,7 +146,7 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         assert not store.one("SELECT 1 FROM grounded_memory WHERE scope LIKE 'operator:%'")
         assert not store.one("SELECT 1 FROM context_windows WHERE mode LIKE 'operator:%'")
         assert app.state.dynamics._post(post_id)["id"] == post_id
-        assert app.state.dynamics._sources() == sources
+        assert not app.state.dynamics._sources()
 
 
 def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
@@ -195,7 +190,7 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
         assert client.post(path, json=query | {"request_id": str(uuid4())}).json()["card"]["data"]["started"] == 1
 
 
-def test_explicit_public_experience_and_operations_cards_use_current_sources(settings, monkeypatch):
+def test_operations_card_refreshes_permissions_and_confirmation(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     async def model(messages, schema, *, max_tokens):
         return {"action": "chat"}
@@ -203,33 +198,6 @@ def test_explicit_public_experience_and_operations_cards_use_current_sources(set
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/chat/intelligent"
-        turn = {"request_id": str(uuid4()), "message": "这句私下保留"}
-        assert client.post(path, json=turn).json()["private"]
-        confirmed = client.post(path + f"/{turn['request_id']}/public-experience", json={"fact": "这条事实单独公开"})
-        assert confirmed.status_code == 200, confirmed.text
-        item = confirmed.json()
-        assert item["quote"] == "这条事实单独公开"
-        assert item["source"] == {"kind": "confirmed_turn", "request_id": turn["request_id"]}
-        memory_url = path + f"/public-experiences/{item['id']}"
-        assert client.get(memory_url).json() == item
-        lookup = {"request_id": str(uuid4()), "message": "查看公开经历", "intent": {"action": "public_experiences"}}
-        lookup_url = path + "/turns/" + lookup["request_id"]
-        assert client.post(path, json=lookup).json()["card"]["data"] == {"items": [item]}
-        for status in ("archived", "pending_review", "active"):
-            assert client.patch(memory_url, json={"status": status}).json()["status"] == status
-            items = client.get(lookup_url).json()["card"]["data"]["items"]
-            assert items[0]["status"] == status
-            assert bool(app.state.dynamics._sources()) == (status == "active")
-        assert client.delete(memory_url).json()["ok"]
-        assert client.get(memory_url).status_code == 404
-        assert client.get(lookup_url).json()["card"]["data"]["items"] == []
-        assert client.get(path + "/turns/" + turn["request_id"]).json()["message"] == "这句私下保留"
-        foreign = app.state.runtime.daily_memory.confirm_operator_experience(
-            {"id": "other", "version": 1}, str(uuid4()), "其他角色的公开经历",
-        )
-        assert client.delete(path + f"/public-experiences/{foreign}").status_code == 404
-        assert client.delete(f"/api/daily-memory/{foreign}").status_code == 404
-
         command = {"request_id": str(uuid4()), "message": "启动自主运营", "intent": {"action": "start_operations"}}
         control = client.post(path, json=command).json()["card"]
         assert control["type"] == "operation_control" and control["data"]["policy"]["enabled"] is False
@@ -256,7 +224,8 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
             return {"items": [2, 1]}
         message = payload["message"]
         action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
-                  "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience"}[message]
+                  "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience",
+                  "查看公开经历": "public_experiences"}[message]
         reference = next((item["reference"] for item in payload["events"] if item["position"] == 2), None)
         return {"action": action, "reference": reference, "topic": "第一句" if action == "recall_experience" else ""}
 
@@ -283,16 +252,35 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         saved, = client.get(memory_path).json()["organized"]
         assert saved["source"]["references"][0]["text"] == "第一句"
         assert saved["channels"] == ["operator"]
+        listing, turn = send("查看公开经历")
+        assert turn["card"]["data"]["items"] == [{
+            "headline": saved["headline"], "anecdote": "第一句", "links": [events[1]["source"]["href"]],
+        }]
         assert not app.state.dynamics._sources()
         app.state.browsing.discovery.remember_account("200")
         assert not client.get(memory_path).json()["organized"]
         app.state.browsing.discovery.remember_account("100")
         recalled, turn = send("那件公开经历")
-        assert turn["reply_text"] == "第一句"
+        assert turn["reply_text"] == "第一句" and turn["memory_dependent"]
         assert client.delete(f"{memory_path}/organized/{saved['id']}").status_code == 200
+        assert client.get(f"{path}/turns/{listing}").json()["card"]["data"]["items"] == []
         assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条回复引用的记忆已变更。"
+
+        legacy_request = str(uuid4())
+        runtime = app.state.runtime
+        runtime.store.execute(
+            "INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
+            (legacy_request, runtime.character["id"], runtime.character["version"], "记下这件事", json.dumps({
+                "account_id": "100", "reply_text": "请确认这件事。",
+                "card": {"type": "experience_proposal", "data": {"event": events[1], "fact": "早期草稿"}},
+            }), time.time()),
+        )
+        assert client.get(f"{path}/turns/{legacy_request}").json()["card"] == {
+            "type": "operation_event", "data": {"event": events[1]},
+        }
         app.state.browsing.discovery.remember_account("200")
         assert client.get(f"{path}/turns/{proposal}").json()["card"] is None
+        assert client.get(f"{path}/turns/{legacy_request}").json()["card"] is None
 
 
 def test_live_proposal_runs_existing_control_once_and_demo_shortcut_remains_available(settings, monkeypatch):

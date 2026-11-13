@@ -1,14 +1,9 @@
-"""Daily episodic memory and community highlights consolidation.
-
-Distills interesting anecdotes, jokes, and milestones from daily comments and
-live streams into compact, grounded character memories for cross-channel banter.
-"""
+"""Source-backed long-term memories and stored community highlights."""
 
 from __future__ import annotations
 
 import datetime
 import json
-import logging
 import re
 import time
 from typing import Any
@@ -16,10 +11,8 @@ from zoneinfo import ZoneInfo
 
 from .store import dump as dump_memory
 
-LOGGER = logging.getLogger(__name__)
-
-DISTILLED_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
-HIGHLIGHT_CATEGORIES = (*DISTILLED_CATEGORIES, "public_incident")
+ANECDOTE_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
+HIGHLIGHT_CATEGORIES = (*ANECDOTE_CATEGORIES, "public_incident")
 HIGHLIGHT_STATUSES = ("active", "pending_review", "archived")
 MEMORY_CHANNELS = ("live", "comment", "dynamic")
 HIGHLIGHT_ACCOUNT_FILTER = (
@@ -126,27 +119,6 @@ SCAFFOLDING_WORDS = {
     "那个",
     "这个",
 }
-
-DISTILLATION_PROMPT = (
-    "从今天的互动中挑最多三件适合日后聊起的趣事，返回包含 highlights 数组的 JSON。"
-    "每项填 category、headline、source_ref、quote、anecdote 和 tags。"
-    "评论区趣事用 comment_anecdote，直播高光用 live_highlight，社群新梗用 community_meme。"
-    "headline 用十五字以内，quote 摘录所选素材的连续原文。"
-    "anecdote 以当前角色的第一人称，用三十到七十字聊聊素材中的事情。"
-)
-
-
-def desensitize_user(display_name: str | None) -> str:
-    """Mask or sanitize user names to protect viewer privacy."""
-    if not display_name or not isinstance(display_name, str):
-        return "某位热心观众"
-    clean = display_name.strip()
-    # Strip explicit uid patterns if embedded like "user_123456"
-    clean = re.sub(r"^u(?:ser)?[_-]?\d{4,}", "观众", clean, flags=re.I)
-    if len(clean) > 20:
-        clean = clean[:18] + "…"
-    return clean or "某位热心观众"
-
 
 class DailyMemoryService:
     def __init__(self, store):
@@ -314,7 +286,7 @@ class DailyMemoryService:
             )
         return True
 
-    def change_organized(self, scope, item_id, *, status=None, channels=None, headline=None, note=None, delete=False):
+    def change_organized(self, scope, item_id, *, channels=None, headline=None, note=None, delete=False):
         rows = self.organized(scope, item_id=item_id)
         if not rows:
             return None
@@ -322,8 +294,6 @@ class DailyMemoryService:
         proof = row["proof"]
         if headline is not None and not headline.strip() or note is not None and not note.strip():
             raise ValueError("记忆标题和内容不能为空")
-        if status is not None and status not in {"active", "archived"}:
-            raise ValueError("记忆状态只能为已保存或已归档")
         with self.store.db:
             if delete:
                 keys = {row["source_ref"], row["source"]["key"]}
@@ -358,12 +328,11 @@ class DailyMemoryService:
                 if row["memory_kind"] != "experience" or set(channels) - set(MEMORY_CHANNELS):
                     raise ValueError("这条记忆的渠道授权无效")
                 proof["channels"] = [channel for channel in MEMORY_CHANNELS if channel in channels]
-            status = status or row["status"]
-            if status != "active":
+            if row["status"] != "active":
                 proof["channels"] = []
             self.store.db.execute(
-                "UPDATE daily_highlights SET status=?,headline=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
-                (status, headline or row["headline"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
+                "UPDATE daily_highlights SET headline=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
+                (headline or row["headline"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
             )
         return self.organized(scope, item_id=item_id)[0]
 
@@ -553,25 +522,6 @@ class DailyMemoryService:
             and not proof.get("operation_sources")
         ]
 
-    def confirm_operator_experience(self, character, request_id, fact, *, sources=None, account_id=None):
-        source_ref = f"operator-public:{request_id}"
-        previous = self.store.one(
-            "SELECT id,quote FROM daily_highlights WHERE character_id=? AND character_version=? AND source_ref=?",
-            (character["id"], character["version"], source_ref),
-        )
-        if previous:
-            if previous["quote"] != fact:
-                raise ValueError("这段对话已有确认的公开经历")
-            return previous["id"]
-        proof = self._source_proof("operator_note", source_ref, fact)
-        if sources:
-            proof["operation_sources"] = sources
-            proof["operation_account_id"] = account_id
-        return self.record_highlight(
-            character["id"], character["version"], self.business_date(time.time()), "community_meme",
-            "号主确认的公开经历", fact, fact, source_ref=source_ref, source_evidence=proof,
-        )
-
     def business_date(self, now):
         zone = self.store.get("browsing_policy", {}).get("business_timezone", "Asia/Taipei")
         return datetime.datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()
@@ -595,77 +545,6 @@ class DailyMemoryService:
             for row in rows
         ]
 
-    def candidate_sources(self, date_str: str, character_id: str, limit: int = 15) -> list[dict[str, Any]]:
-        """Collect potential highlight candidates from comments and conversations for a date."""
-        candidates = []
-
-        # 1. Fetch notable comments (high likes, interaction categories, or replied drafts)
-        comment_rows = self.store.all(
-            """
-            SELECT c.video_id, c.comment_id, c.display_name, c.content, c.like_count, c.category,
-                   d.status as draft_status, d.receipt as draft_receipt
-            FROM comments c
-            LEFT JOIN drafts d ON d.comment_id = c.id
-            WHERE c.created_at LIKE ? OR date(c.imported_at, 'unixepoch', 'localtime') = ?
-            ORDER BY c.like_count DESC, c.id DESC
-            LIMIT ?
-            """,
-            (f"{date_str}%", date_str, limit),
-        )
-        for row in comment_rows:
-            content = (row["content"] or "").strip()
-            if not content or len(content) < 3:
-                continue
-            try:
-                receipt = json.loads(row["draft_receipt"] or "null")
-            except (TypeError, ValueError):
-                receipt = None
-            replied = (
-                row["draft_status"] == "published"
-                and isinstance(receipt, dict)
-                and receipt.get("code", 0) == 0
-                and bool(re.fullmatch(r"[1-9][0-9]{0,19}", str(receipt.get("rpid", ""))))
-            )
-            candidates.append(
-                {
-                    "source_type": "comment",
-                    "source_ref": f"video:{row['video_id']}:comment:{row['comment_id']}",
-                    "source_user": desensitize_user(row["display_name"]),
-                    "content": content,
-                    "like_count": row["like_count"] or 0,
-                    "replied": replied,
-                }
-            )
-
-        # 2. Fetch live conversation interactions for the date
-        conv_rows = self.store.all(
-            """
-            SELECT session_id, event_text, reply_text, created_at
-            FROM conversations
-            WHERE character_id = ? AND date(created_at, 'unixepoch', 'localtime') = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (character_id, date_str, limit),
-        )
-        for row in conv_rows:
-            user_msg = (row["event_text"] or "").strip()
-            reply = (row["reply_text"] or "").strip()
-            if not user_msg:
-                continue
-            candidates.append(
-                {
-                    "source_type": "live",
-                    "source_ref": f"live:{row['session_id']}",
-                    "source_user": "直播间观众",
-                    "content": f"观众说：{user_msg} | 主播回：{reply}" if reply else user_msg,
-                    "like_count": 0,
-                    "replied": bool(reply),
-                }
-            )
-
-        return candidates[:limit]
-
     def record_highlight(
         self,
         character_id: str,
@@ -684,7 +563,7 @@ class DailyMemoryService:
         operator_confirmed: bool = False,
     ) -> int:
         """Insert or record a verified daily highlight."""
-        if category not in DISTILLED_CATEGORIES:
+        if category not in ANECDOTE_CATEGORIES:
             raise ValueError(f"Unsupported category: {category}")
         if status not in HIGHLIGHT_STATUSES:
             raise ValueError(f"Unsupported status: {status}")
@@ -793,126 +672,6 @@ class DailyMemoryService:
             "headline": headline,
             "anecdote": anecdote,
         }
-
-    async def distill(
-        self,
-        character: dict[str, Any],
-        date_str: str,
-        provider: Any,
-        *,
-        candidates: list[dict[str, Any]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Distill highlights from daily candidates using LLM with grounded quote validation."""
-        character_id = character.get("id", "whale")
-        character_version = character.get("version", 1)
-
-        candidates = candidates if candidates is not None else self.candidate_sources(date_str, character_id)
-        if not candidates:
-            return []
-
-        candidates_map = {c["source_ref"]: c for c in candidates}
-        messages = [
-            {"role": "system", "content": DISTILLATION_PROMPT},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "character": {key: character[key] for key in ("name", "core", "style") if key in character},
-                        "sources": candidates,
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-        ]
-
-        schema = {
-            "type": "object",
-            "required": ["highlights"],
-            "properties": {
-                "highlights": {
-                    "type": "array",
-                    "maxItems": 4,
-                    "items": {
-                        "type": "object",
-                        "required": ["category", "headline", "source_ref", "quote", "anecdote"],
-                        "properties": {
-                            "category": {"type": "string", "enum": list(DISTILLED_CATEGORIES)},
-                            "headline": {"type": "string", "maxLength": 30},
-                            "source_ref": {"type": "string", "enum": list(candidates_map)},
-                            "source_user": {"type": "string"},
-                            "quote": {"type": "string"},
-                            "anecdote": {"type": "string", "maxLength": 150},
-                            "tags": {"type": "array", "items": {"type": "string"}},
-                        },
-                    },
-                }
-            },
-        }
-
-        try:
-            # Generate structured JSON
-            if hasattr(provider, "generate_json"):
-                data = await provider.generate_json(messages, schema, max_tokens=1024)
-            else:
-                raw_reply = await provider.summarize(messages, max_tokens=1024)
-                # Parse JSON block from output
-                match = re.search(r"\{.*\}", raw_reply, re.DOTALL)
-                data = json.loads(match.group(0)) if match else {"highlights": []}
-        except Exception as e:
-            LOGGER.warning("Daily memory distillation LLM failed: %s", e)
-            return []
-
-        highlights = data.get("highlights", [])
-        saved = []
-
-        for item in highlights:
-            quote = item.get("quote", "").strip()
-            headline = item.get("headline", "").strip()
-            anecdote = item.get("anecdote", "").strip()
-            category = item.get("category", "comment_anecdote")
-            if category not in DISTILLED_CATEGORIES:
-                category = "comment_anecdote"
-            source_ref = item.get("source_ref", "")
-            candidate = candidates_map.get(source_ref)
-            if not quote or not anecdote:
-                continue
-            if candidate is None:
-                matches = [source for source in candidates if quote in source["content"]]
-                if len(matches) != 1:
-                    continue
-                candidate = matches[0]
-            elif quote not in candidate["content"]:
-                continue
-            source_ref = candidate["source_ref"]
-            source_user = desensitize_user(candidate.get("source_user") or "观众")
-
-            item_id = self.record_highlight(
-                character_id=character_id,
-                character_version=character_version,
-                highlight_date=date_str,
-                category=category,
-                headline=headline or "社群趣事",
-                quote=quote,
-                anecdote=anecdote,
-                source_ref=source_ref,
-                source_user=source_user,
-                tags=item.get("tags", []),
-                status="active",
-                source_evidence=self._source_proof("live" if candidate.get("source_type") == "live" else "viewer", source_ref, quote),
-            )
-            saved.append(
-                {
-                    **item,
-                    "quote": quote,
-                    "source_ref": source_ref,
-                    "source_user": source_user,
-                    "id": item_id,
-                    "status": "active",
-                    "highlight_date": date_str,
-                }
-            )
-
-        return saved
 
     def get_active_anecdotes(
         self,
@@ -1207,16 +966,6 @@ class DailyMemoryService:
         values = list(filtered.values()) + [highlight_id]
 
         self.store.execute(f"UPDATE daily_highlights SET {set_clause} WHERE id = ?", tuple(values))
-        if set(updates) & {"headline", "quote", "anecdote"} or updates.get("status") == "active":
-            confirmed = self.store.one("SELECT * FROM daily_highlights WHERE id=?", (highlight_id,))
-            if confirmed and confirmed["category"] != "public_incident":
-                proof = self._source_proof("operator_note", confirmed["source_ref"], confirmed["quote"])
-                previous = json.loads(confirmed.get("source_evidence") or "{}") or {}
-                if previous.get("operation_sources"):
-                    proof["operation_sources"] = previous["operation_sources"]
-                    proof["operation_account_id"] = previous.get("operation_account_id")
-                self.store.execute("UPDATE daily_highlights SET source_evidence=? WHERE id=?",
-                    (json.dumps(proof, ensure_ascii=False), highlight_id))
         self.store.db.commit()
         row = self.store.one("SELECT * FROM daily_highlights WHERE id = ?", (highlight_id,))
         if not row:

@@ -18,7 +18,6 @@ from .operator_facts import recent_events
 
 
 class OrganizedMemoryChange(StrictModel):
-    status: Literal["active", "archived"] | None = None
     channels: list[Literal["live", "comment", "dynamic"]] | None = None
     headline: str | None = Field(default=None, min_length=1, max_length=40)
     note: str | None = Field(default=None, min_length=1, max_length=150)
@@ -199,7 +198,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     async def set_memory_preference(data: MemoryPreference):
         scope, token = memory_scope(data.scope)
         result = runtime.daily_memory.set_preference(scope, data.enabled)
-        runtime.memory_organizer.schedule(manual=True)
+        runtime.memory_organizer.setting_changed()
         return result | {"scope": token}
 
     @app.get("/api/daily-memory", dependencies=[Depends(require_admin)])
@@ -213,11 +212,8 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         highlights = runtime.daily_memory.list_highlights(
             character_id, version, date_str=date, status=status, limit=limit, account_id=account,
         )
-        active = runtime.daily_memory.get_active_anecdotes(
-            character_id, version, limit=3, max_tokens=200
-        )
         organized = runtime.daily_memory.organized(scope, limit=limit)
-        return {"highlights": highlights, "active_anecdotes": active,
+        return {"highlights": highlights,
                 "organized": [organized_view(row) for row in organized], "organization": runtime.memory_organizer.state(),
                 "scope": token, "enabled": runtime.daily_memory.preference(scope)["enabled"]}
 
@@ -225,13 +221,6 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     async def get_recent_events():
         await runtime.browsing.discovery.restore_history_scope()
         return recent_events(runtime.browsing) | {"scope": memory_scope()[1]}
-
-    @app.post("/api/daily-memory/organize", dependencies=[Depends(require_admin)])
-    async def organize_memory(scope: str | None = None):
-        current, _ = memory_scope(scope)
-        if not runtime.daily_memory.preference(current)["enabled"]:
-            raise HTTPException(409, "请先启用记忆")
-        return runtime.memory_organizer.schedule(manual=True)
 
     @app.patch("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
     async def change_organized_memory(item_id: int, data: OrganizedMemoryChange, scope: str | None = None):
@@ -265,17 +254,6 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         item["tags"] = json.loads(item["tags"] or "[]")
         item["public_sources"] = json.loads(item["public_sources"] or "[]")
         return item
-
-    @app.post("/api/daily-memory/extract", dependencies=[Depends(require_admin)])
-    async def extract_daily_memory(data: dict = Body(default={})):
-        import datetime
-
-        date_str = data.get("date") or datetime.date.today().isoformat()
-        async with runtime.generation_lock:
-            extracted = await runtime.daily_memory.distill(
-                runtime.character, date_str, runtime.llm
-            )
-        return {"extracted": extracted, "total": len(extracted), "date": date_str}
 
     @app.put("/api/daily-memory/{item_id}", dependencies=[Depends(require_admin)])
     async def update_daily_memory(item_id: int, data: dict = Body(...), scope: str | None = None):

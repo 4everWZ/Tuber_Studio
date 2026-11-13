@@ -1,9 +1,8 @@
 """Modular Agent Tools and Capabilities Architecture.
 
-Provides a decoupled, extensible framework for agent tools across three execution tiers:
+Provides a registry for two kinds of agent tools:
 1. DIRECT_ACTION: Deterministic, zero-LLM latency interception (Draw & Guess answer checking, song requests, gift bounties).
 2. CONTEXT_AUGMENT: Lightweight, pre-inference context enrichment (historical recall, active anecdotes, game state).
-3. BACKGROUND_TASK: Asynchronous offline/operations tasks (daily distillation, draft generation).
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ LOGGER = logging.getLogger(__name__)
 class ToolKind(enum.Enum):
     DIRECT_ACTION = "direct_action"
     CONTEXT_AUGMENT = "context_augment"
-    BACKGROUND_TASK = "background_task"
 
 
 class BaseAgentTool(ABC):

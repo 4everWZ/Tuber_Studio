@@ -113,22 +113,6 @@ test("interactive controls bind once and preserve zero thresholds and unsaved ru
   assert.equal(selected, "pvz");
 });
 
-test("manual memory organization schedules the shared background worker", async t => {
-  const { get, document } = dom(t);
-  const UI = classic("daily-memory.js", "DailyMemoryUI", document);
-  const calls = [];
-  const ui = new UI({ container: get("memory"), notify() {}, api: async (url, options) => {
-    calls.push([url, options.method]);
-    return { status: "waiting" };
-  } });
-  let rendered = 0;
-  ui.render = () => { rendered++; };
-  await ui.extract();
-  assert.deepEqual(calls, [["/api/daily-memory/organize", "POST"]]);
-  assert.equal(rendered, 0);
-  assert.equal(ui.busy, false);
-});
-
 test("saving text model settings leaves independent vision configuration untouched", async t => {
   const { get } = dom(t);
   const { readProviderPayload } = await import("../src/tuber_studio/web/modules/providers.js");

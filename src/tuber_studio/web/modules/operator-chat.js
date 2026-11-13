@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261113.17";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261113.18";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 
 const path = "/api/chat/intelligent";
@@ -178,9 +178,6 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   const scrollEnd = () => { timeline.scrollTop = timeline.scrollHeight; };
   const nearEnd = () => timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 36;
-  const privateTurns = () => Array.from(feed.children, element => turns.get(element.dataset.requestId)?.turn)
-    .filter(turn => turn?.private && !turn.card).reverse();
-
   function syncAutomationCards(value) {
     for (const entry of turns.values()) {
       if (entry.turn.card?.type === "operation_control") entry.card.update(value);
@@ -208,7 +205,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     let card;
     if (turn.card) {
       const cardRoot = node("div", null, "operator-chat-card");
-      card = createOperatorCard(cardRoot, turn, { api, path, privateTurns, reflectAutomation, controls });
+      card = createOperatorCard(cardRoot, turn, { api, path, reflectAutomation, controls });
       section.append(cardRoot);
       if (turn.card.type === "operation_control" && getAutomationStatus?.()) card.update(getAutomationStatus());
     }

@@ -39,7 +39,6 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 _EXPERIENCE_SOURCE = (
     "(category='public_incident' OR source_ref LIKE 'operator-public:%' OR source_ref LIKE 'system:downtime:%')"
 )
-_EXPERIENCE_FIELDS = ("id", "category", "headline", "highlight_date", "quote", "anecdote", "status", "updated_at")
 
 
 class VideoRange(StrictModel):
@@ -92,14 +91,6 @@ class ChatTurn(StrictModel):
     message: Text
     video_selection: VideoSelection | None = None
     intent: ChatIntent | None = None
-
-
-class PublicExperience(StrictModel):
-    fact: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
-
-
-class PublicExperienceState(StrictModel):
-    status: Literal["active", "archived", "pending_review"]
 
 
 class LivePreferenceSelection(StrictModel):
@@ -254,8 +245,9 @@ class OperatorChat:
         )
 
     def _visible(self, result, *, historical=False):
+        audit = result.get("organized_memory")
         try:
-            self.runtime.validate_memory_delivery(result.get("organized_memory"), historical=historical)
+            self.runtime.validate_memory_delivery(audit, historical=historical)
         except ValueError:
             return {"reply_text": "这条回复引用的记忆已变更。", "card": None}
         if memory := result.get("memory"):
@@ -266,6 +258,7 @@ class OperatorChat:
                 or not self.runtime.daily_memory._source_evidence(rows[0])
             ):
                 return {"reply_text": "这条公开经历当前不可引用。", "card": None}
+        if memory or (audit and audit.get("organized_memory")):
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
                   if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory"}}
@@ -300,13 +293,10 @@ class OperatorChat:
             data = card["data"]
             return result | {"card": card | {"data": data | self.runtime.live.handoff_result(data["session"], data["job_id"])}}
         if card["type"] == "experience_proposal":
-            data = card["data"]
-            row = self.store.one("SELECT id FROM daily_highlights WHERE source_ref=?",
-                                 (f"operator-public:{data['request_id']}",))
-            if row:
-                return result | {"card": card | {"data": data | {"confirmed": True}}}
+            # Older turns stored a confirmation card alongside the original event.
+            return result | {"card": {"type": "operation_event", "data": {"event": card["data"]["event"]}}}
         if card["type"] == "public_experiences":
-            return result | {"card": card | {"data": self.experiences()}}
+            return result | {"card": card | {"data": {"items": self._saved_experiences()}}}
         if card["type"] == "video_activity":
             return result | {"card": card | {"data": self.video_activity(card["data"])}}
         return result
@@ -590,8 +580,11 @@ class OperatorChat:
                 }}
             if not preference["enabled"]:
                 return {"reply_text": "记忆已停用，可以在个性化设置中查看已保存的记忆。", "card": None}
-            items = [item for item in self.experiences()["items"] if item["status"] in {"active", "archived"}]
-            found = [item for item in items if topic and topic in item["anecdote"]]
+            found = [
+                row for row in self._experience_rows()
+                if row["status"] in {"active", "archived"} and topic and topic in row["anecdote"]
+                and self.runtime.daily_memory._source_evidence(row)
+            ]
             if len(found) != 1:
                 return {"reply_text": "请指明要查的公开经历。", "card": {"type": "public_experiences", "data": {}}}
             item = found[0]
@@ -966,26 +959,7 @@ class OperatorChat:
                            "AND COALESCE(json_extract(result,'$.account_id'),?)=?", (char["id"], self._account(), self._account()))
         return {"ok": True}
 
-    async def publish_experience(self, request_id, fact):
-        async with self.lock, self.runtime.generation_lock:
-            row, char = self.current_turn(request_id), self.runtime.character
-            result = json.loads(row["result"])
-            card = result.get("card") or {}
-            sources = None
-            if card.get("type") == "experience_proposal":
-                if result["binding"] != self._binding(char):
-                    raise HTTPException(409, "账号或角色已变化，请重新选择来源。")
-                sources = card["data"]["sources"]
-            elif not result.get("private"):
-                raise HTTPException(400, "请从私下对话选择要公开的经历")
-            elif result.get("account_id", self._account()) != self._account():
-                raise HTTPException(409, "请切换到原账号确认这条经历。")
-            identity = self.runtime.daily_memory.confirm_operator_experience(
-                char, request_id, fact, sources=sources, account_id=self._account(),
-            )
-            return self.experience(identity)
-
-    def _experience_rows(self, *, item_id=None, active_only=False, limit=50):
+    def _experience_rows(self, *, item_id=None, limit=50):
         char = self.runtime.character
         sql = ("SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? AND " + _EXPERIENCE_SOURCE
                + " AND " + HIGHLIGHT_ACCOUNT_FILTER)
@@ -994,43 +968,32 @@ class OperatorChat:
         if item_id is not None:
             sql += " AND id=?"
             params.append(item_id)
-        if active_only:
-            sql += " AND status='active'"
         return self.store.all(sql + " ORDER BY highlight_date DESC,id DESC LIMIT ?", (*params, limit))
 
-    @staticmethod
-    def _experience_view(row):
-        if row["category"] == "public_incident":
-            source = {"kind": "public_thread", "public_sources": json.loads(row["public_sources"] or "[]")}
-        elif row["source_ref"].startswith("operator-public:"):
-            source = {"kind": "confirmed_turn", "request_id": row["source_ref"].split(":", 1)[1]}
-            proof = json.loads(row.get("source_evidence") or "{}") or {}
-            if proof.get("operation_sources"):
-                source = {"kind": "operation_event", "items": proof["operation_sources"]}
-        else:
-            source = {"kind": "runtime_event"}
-        return {key: row[key] for key in _EXPERIENCE_FIELDS} | {"source": source}
-
-    def experiences(self, *, active_only=False, limit=50):
-        return {"items": [
-            self._experience_view(row) for row in self._experience_rows(active_only=active_only, limit=limit)
-            if self.runtime.daily_memory._source_evidence(row)
-        ]}
-
-    def experience(self, item_id):
-        rows = self._experience_rows(item_id=item_id)
-        if not rows or not self.runtime.daily_memory._source_evidence(rows[0]):
-            raise HTTPException(404, "找不到当前角色的公开经历")
-        return self._experience_view(rows[0])
-
-    async def change_experience(self, item_id, status=None):
-        async with self.lock, self.runtime.generation_lock:
-            self.experience(item_id)
-            if status is None:
-                self.runtime.daily_memory.delete_highlight(item_id)
-                return {"ok": True, "id": item_id}
-            self.runtime.daily_memory.update_highlight(item_id, {"status": status})
-            return self.experience(item_id)
+    def _saved_experiences(self):
+        memory = self.runtime.daily_memory
+        scope = self.runtime.memory_organizer.scope()
+        entries = [
+            (row, [ref["href"] for ref in row["source"].get("references", []) if ref.get("href")])
+            for row in memory.organized(scope, limit=50)
+            if row["memory_kind"] == "experience" and row["status"] == "active"
+        ]
+        for row in self._experience_rows():
+            proof = memory._source_evidence(row)
+            if not proof or row["status"] != "active":
+                continue
+            links = [ref["href"] for ref in proof.get("operation_sources", []) if ref.get("href")]
+            if row["category"] == "public_incident":
+                links.extend(
+                    f"https://www.bilibili.com/video/{ref['bvid']}#reply{ref['comment_id']}"
+                    for ref in json.loads(row["public_sources"] or "[]")
+                )
+            entries.append((row, links))
+        entries.sort(key=lambda entry: (entry[0]["updated_at"], entry[0]["id"]), reverse=True)
+        return [
+            {"headline": row["headline"], "anecdote": row["anecdote"], "links": list(dict.fromkeys(links))}
+            for row, links in entries[:50]
+        ]
 
     def video_activity(self, period):
         account, character, _ = self.browsing.discovery.history_scope()
@@ -1127,23 +1090,3 @@ def register_operator_chat(app, runtime, store, browsing, dynamics, require_admi
     @app.delete("/api/chat/intelligent", dependencies=deps)
     async def clear():
         return await service.clear()
-
-    @app.post("/api/chat/intelligent/{request_id}/public-experience", dependencies=deps)
-    async def publish_experience(request_id: UUID, data: PublicExperience):
-        return await service.publish_experience(str(request_id), data.fact)
-
-    @app.get("/api/chat/intelligent/public-experiences", dependencies=deps)
-    async def experiences(active_only: bool = False, limit: int = Query(50, ge=1, le=100)):
-        return service.experiences(active_only=active_only, limit=limit)
-
-    @app.get("/api/chat/intelligent/public-experiences/{item_id}", dependencies=deps)
-    async def experience(item_id: int):
-        return service.experience(item_id)
-
-    @app.patch("/api/chat/intelligent/public-experiences/{item_id}", dependencies=deps)
-    async def change_experience(item_id: int, data: PublicExperienceState):
-        return await service.change_experience(item_id, data.status)
-
-    @app.delete("/api/chat/intelligent/public-experiences/{item_id}", dependencies=deps)
-    async def forget_experience(item_id: int):
-        return await service.change_experience(item_id)

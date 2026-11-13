@@ -27,7 +27,6 @@ def test_unpublished_assistant_quote_is_auditable_but_never_daily_recall(store):
     assert service.recall_historical_highlight("whale", 1, "你还记得热白饭吗") is None
     assert service.list_highlights("whale", 1)[0]["id"] == identifier
     assert store.one("SELECT quote FROM daily_highlights WHERE id=?", (identifier,))["quote"] == draft_text
-    assert service.candidate_sources(datetime.date.today().isoformat(), "whale")[0]["content"] != draft_text
 
 
 def test_legacy_viewer_quote_is_backfilled_and_retained_after_original_cleanup(store):
@@ -39,37 +38,19 @@ def test_legacy_viewer_quote_is_backfilled_and_retained_after_original_cleanup(s
     service = DailyMemoryService(store)
     proof = json.loads(store.one("SELECT source_evidence FROM daily_highlights WHERE id=?", (identifier,))["source_evidence"])
     assert proof["kind"] == "viewer" and proof["confirmed_by"] == "source_match" and proof["quote"] == quote
+    service.update_highlight(identifier, {"headline": "改过的热白饭标题"})
+    stored = store.one("SELECT headline,source_evidence FROM daily_highlights WHERE id=?", (identifier,))
+    assert stored["headline"] == "改过的热白饭标题" and json.loads(stored["source_evidence"]) == proof
     store.execute("DELETE FROM comments WHERE id=?", (source,))
     recalled = service.get_active_anecdotes("whale", 1, query_text="热白饭")
     assert recalled[0]["id"] == identifier and recalled[0]["source_role"] == "viewer"
 
 
-async def test_distillation_keeps_viewer_proof_instead_of_operator_note(store):
-    service = DailyMemoryService(store)
-    source = original(store)
-    quote = store.one("SELECT content FROM comments WHERE id=?", (source,))["content"]
-
-    class Extractor:
-        async def count_tokens(self, messages):
-            return 100
-
-        async def generate_json(self, messages, schema, *, max_tokens):
-            return {"highlights": [{"category": "comment_anecdote", "headline": "热白饭的比喻",
-                "source_ref": "video:import-proof:comment:123", "quote": quote,
-                "anecdote": "有人把鲸鱼游泳比作一碗热白饭。", "tags": ["热白饭"]}]}
-
-    values = await service.distill(store.character(), datetime.date.today().isoformat(), Extractor())
-    assert len(values) == 1
-    row = store.one("SELECT * FROM daily_highlights WHERE id=?", (values[0]["id"],))
-    proof = json.loads(row["source_evidence"])
-    assert row["status"] == "active" and proof["kind"] == "viewer" and proof["confirmed_by"] != "operator"
-    store.execute("DELETE FROM comments WHERE id=?", (source,))
-    assert service.recall_historical_highlight("whale", 1, "还记得热白饭吗")["source_role"] == "viewer"
-
-
-def test_only_explicit_operator_confirmation_can_admit_an_unverifiable_note(store):
+def test_correcting_a_note_does_not_create_source_proof(store):
     service = DailyMemoryService(store)
     identifier = highlight(service, store, quote="管理员确认的一则虚构角色日常")
     assert service.get_active_anecdotes("whale", 1) == []
-    service.update_highlight(identifier, {"status": "active"})
-    assert service.get_active_anecdotes("whale", 1)[0]["source_role"] == "operator_note"
+    service.update_highlight(identifier, {"status": "active", "headline": "更正标题", "anecdote": "更正后的条目"})
+    item, = service.list_highlights("whale", 1)
+    assert (item["headline"], item["anecdote"]) == ("更正标题", "更正后的条目")
+    assert service.get_active_anecdotes("whale", 1) == []
