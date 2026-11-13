@@ -1,6 +1,7 @@
 """Private operator conversation and typed shortcuts to existing studio tasks."""
 
 import asyncio
+import base64
 import json
 import re
 import time
@@ -9,6 +10,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import Field, StringConstraints, model_validator
 
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
@@ -20,6 +22,8 @@ from . import operator_facts
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
+_TIMECODE = re.compile(r"(?<![0-9:])(?:(\d{1,3}):)?(\d{1,4}):([0-5]\d)(?:\.(\d{1,3}))?(?![0-9:])")
+_PART = re.compile(r"(?<![A-Za-z0-9])P\s*([1-9]\d{0,3})(?!\d)", re.I)
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 _EXPERIENCE_SOURCE = (
     "(category='public_incident' OR source_ref LIKE 'operator-public:%' OR source_ref LIKE 'system:downtime:%')"
@@ -57,7 +61,7 @@ class ChatIntent(StrictModel):
         "chat", "clarify", "clock", "activity", "event_details", "event_author", "event_reply",
         "video_activity", "dynamic", "browse", "full_video", "public_experiences", "remember_event",
         "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
-        "recall_experience",
+        "recall_experience", "inspect_video_frame",
     ]
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
@@ -195,7 +199,7 @@ class OperatorChat:
             "写动态选 dynamic，按主题刷视频选 browse，要求指定 BV 看完选 full_video。"
             "查看、开始自主运营分别选 operation_control、start_operations。直播状态和开启分别选 live_status、start_live。"
             "停止任务选 stop，继续指定视频任务选 resume_video，问指定视频的进度或已看的内容选 video_details。"
-            "问指定分 P 和时点时，填 part 与 seconds，seconds 按秒。"
+            "要求看一下具体时点选 inspect_video_frame，填 part 与 seconds，保留毫秒。询问已经看过的内容选 video_details。"
             "任务和事件仅能使用已给出的 reference。第几件输出 position，使用 position 时无需复制 reference。"
             "省略事件时留空，程序会用 focus。停止对象只可用任务 reference、operations 或 live。"
             "topic 只填已表达的搜索主题或澄清问题。下面是格式示例："
@@ -431,6 +435,31 @@ class OperatorChat:
                 focus = {"part": intent.part, "seconds": intent.seconds} if intent.seconds is not None else None
                 return self._video_result(reference, "这是那条视频目前的进度和原始时码。", focus=focus)
             return {"reply_text": "你想查哪条视频的进度？", "card": None}
+        if kind == "inspect_video_frame":
+            mentioned = set(_MENTIONED_BV.findall(data.message))
+            event = events.get(reference or focus, (None, {}))[1]
+            if len(mentioned) == 1:
+                bvid = next(iter(mentioned))
+            elif not mentioned and reference in tasks:
+                bvid = tasks[reference]["bvid"]
+            elif not mentioned and event.get("bvid"):
+                bvid = event["bvid"]
+            elif not mentioned and len({task["bvid"] for task in tasks.values()}) == 1:
+                bvid = next(iter(tasks.values()))["bvid"]
+            else:
+                return {"reply_text": "请指明要取帧的视频 BV。", "card": None}
+            seconds = intent.seconds
+            numbered_parts = {int(match) for match in _PART.findall(data.message)}
+            part = next(iter(numbered_parts), intent.part)
+            times = list(_TIMECODE.finditer(data.message))
+            if len(times) == 1:
+                hours, minutes, whole, fraction = times[0].groups()
+                seconds = int(hours or 0) * 3600 + int(minutes) * 60 + int(whole) + int((fraction or "").ljust(3, "0")) / 1000
+            if part is None or seconds is None or len(times) > 1 or len(numbered_parts) > 1:
+                return {"reply_text": "请给出分 P 和目标时码。", "card": None}
+            selection = {"bvid": bvid, "frame": {"part": part, "seconds": seconds}}
+            row = await self.browsing.queue_full_video(request_id, char, selection)
+            return {"reply_text": "已安排按时码查看画面。", "card": {"type": "video_browsing", "data": row}}
         if kind == "public_experiences":
             return {"reply_text": "这是当前角色的公开经历。", "card": {"type": kind, "data": {}}}
         if kind == "recall_experience":
@@ -737,6 +766,19 @@ class OperatorChat:
             await self.browsing.update_full_video(card["data"]["id"], resume=resume)
             return self.visible_turn(row)
 
+    def inspection_image(self, request_id):
+        row = self.current_turn(request_id)
+        result = json.loads(row["result"])
+        card = result.get("card") or {}
+        if result.get("account_id") != self._account() or card.get("type") != "video_browsing":
+            raise HTTPException(404, "画面不可用")
+        task = self.store.one("SELECT json_extract(payload,'$.inspection.preview') AS preview FROM browsing_tasks WHERE round_id=?",
+                              (card["data"]["id"],))
+        if not task or not task["preview"]:
+            raise HTTPException(404, "画面不可用")
+        preview = json.loads(task["preview"])
+        return Response(base64.b64decode(preview["content"]), media_type=preview["mime"])
+
 
 def register_operator_chat(app, runtime, store, browsing, dynamics, require_admin):
     service = OperatorChat(runtime, store, browsing, dynamics)
@@ -749,6 +791,10 @@ def register_operator_chat(app, runtime, store, browsing, dynamics, require_admi
     @app.get("/api/chat/intelligent/turns/{request_id}", dependencies=deps)
     async def get_turn(request_id: UUID):
         return service.visible_turn(service.current_turn(str(request_id)))
+
+    @app.get("/api/chat/intelligent/turns/{request_id}/inspection-image", dependencies=deps)
+    async def inspection_image(request_id: UUID):
+        return service.inspection_image(str(request_id))
 
     @app.post("/api/chat/intelligent/turns/{request_id}/cancel-video", dependencies=deps)
     async def cancel_video(request_id: UUID):

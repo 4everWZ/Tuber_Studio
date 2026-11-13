@@ -166,13 +166,13 @@ function coverageDetails(data, container) {
       for (const [caption, value] of [["字幕", range.subtitle], ["音频", range.audio], ["画面", range.visual]]) {
         item.append(node("p", `${caption} · ${materialSummary(value)}`, "hint"));
       }
-      const missing = (range.visual?.windows || []).filter(window => window.state !== "sampled");
+      const missing = range.visual?.gaps || (range.visual?.windows || []).filter(window => window.state !== "sampled");
       if (missing.length) {
         const gaps = node("details"), windows = node("ul");
         gaps.dataset.coverageRange = `${part.part}/${range.start}/${range.end}`;
         gaps.open = expanded.has(gaps.dataset.coverageRange);
         for (const window of missing) {
-          const reason = { gap: "无可用预览图", retry: "待重试", pending: "未处理" }[window.state] || window.state;
+          const reason = { gap: "无可用预览图", retry: "待重试", pending: "未处理" }[window.state] || "画面间隔过大";
           windows.append(node("li", `${window.start}–${window.end} 秒 · ${reason}${window.reason ? ` · ${safeMessage(window.reason)}` : ""}`));
         }
         gaps.append(node("summary", `画面缺口 ${missing.length} 段`), windows);
@@ -213,7 +213,8 @@ function videoCard(root, turn, { api, path }) {
     if (busy || signature === JSON.stringify(next)) return;
     signature = JSON.stringify(next);
     data = next;
-    title.textContent = data.full_video ? data.coverage?.title || `指定视频取材${data.selection?.bvid ? ` · ${data.selection.bvid}` : ""}` : "只读浏览";
+    title.textContent = data.selection?.frame ? "按时码查看画面" :
+      data.full_video ? data.coverage?.title || `指定视频取材${data.selection?.bvid ? ` · ${data.selection.bvid}` : ""}` : "只读浏览";
     const phases = { watching: "正在看视频", comments: "正在逛评论区", complete: "已完成" };
     const viewing = { watched: "看完", subtitles_only: "字幕已读完 · 画面覆盖有缺口",
       visual_only: "画面已全程扫描 · 无可用字幕", partial: "视频材料覆盖有缺口" };
@@ -225,6 +226,26 @@ function videoCard(root, turn, { api, path }) {
     selection.hidden = !selection.textContent;
     note.textContent = safeMessage(data.error);
     excerpt.replaceChildren();
+    if (data.inspection) {
+      const frame = data.inspection;
+      const timecode = seconds => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(3).padStart(6, "0")}`;
+      const source = frame.kind === "stream" ? "视频流" : "故事板";
+      excerpt.append(node("p", `P${frame.part} · 目标 ${timecode(frame.requested_time)} · ${source} ${timecode(frame.actual_time)}`));
+      const details = node("details");
+      details.append(node("summary", "查看取到的画面"));
+      details.ontoggle = () => {
+        if (!details.open || details.querySelector("img")) return;
+        const picture = node("img");
+        picture.src = `${path}/turns/${turn.request_id}/inspection-image`;
+        picture.alt = `P${frame.part} ${timecode(frame.actual_time)} 的${source}画面`;
+        picture.style.maxWidth = "100%";
+        details.append(picture);
+      };
+      excerpt.append(details);
+      if (platformLink(frame.source_url)) excerpt.append(link("打开原视频", frame.source_url));
+      excerpt.append(node("blockquote", frame.text, "quoted-text"));
+      if (frame.fallback_reason) excerpt.append(node("p", safeMessage(frame.fallback_reason), "hint"));
+    }
     if (data.excerpt?.error) excerpt.append(node("p", data.excerpt.error, "hint"));
     if (platformLink(data.excerpt?.source_url)) {
       excerpt.append(link(`P${data.excerpt.part} · ${Math.floor(data.excerpt.start)} 秒`, data.excerpt.source_url),

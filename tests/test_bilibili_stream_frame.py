@@ -1,3 +1,4 @@
+import asyncio
 import json
 import struct
 import subprocess
@@ -88,3 +89,31 @@ async def test_rejected_range_response_never_reads_body(status, message):
         with pytest.raises(PlatformReadError, match="预算"):
             await reader.read(0, 16)
         assert reader.used == 0
+
+
+async def test_range_cancellation_closes_stream():
+    started = asyncio.Event()
+    closed = asyncio.Event()
+
+    class SlowBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"ab"
+            started.set()
+            await asyncio.Future()
+
+        async def aclose(self):
+            closed.set()
+
+    def serve(_):
+        return httpx.Response(206, headers={"Content-Range": "bytes 0-7/8"}, stream=SlowBody())
+
+    adapter = Adapter()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as client:
+        adapter.client = client
+        reader = RangeReader(adapter, "https://upos.example.bilivideo.com/track.m4s", 16)
+        task = asyncio.create_task(reader.read(0, 7))
+        await asyncio.wait_for(started.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert closed.is_set()

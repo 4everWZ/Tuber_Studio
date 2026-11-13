@@ -279,6 +279,60 @@ def test_live_proposal_runs_existing_control_once_and_demo_shortcut_remains_avai
         assert stopped.json()["card"]["data"]["state"] == "stopped"
 
 
+@pytest.mark.parametrize("stream_available", [True, False])
+def test_precise_video_chat_uses_bound_part_and_reports_fallback(settings, monkeypatch, stream_available):
+    class Platform(ControlledPlatform):
+        async def video_metadata(self, video):
+            metadata = await super().video_metadata(video)
+            return metadata | {"parts": metadata["parts"] + [{"cid": "22", "title": "第二P", "duration": 180}]}
+
+        async def video_stream_frame(self, metadata, *, cid, timestamp):
+            assert cid == "22" and timestamp == 137.4
+            self.calls.append("stream")
+            if not stream_available:
+                raise ValueError("播放来源未按请求返回有效 HTTP Range")
+            return {"id": "frame-22", "cid": cid, "kind": "stream", "requested_time": timestamp,
+                    "actual_time": 137.383, "presentation_end": 137.417, "width": 1, "height": 1, "image": PNG}
+
+        async def video_frames(self, metadata, count, *, cid, timestamps):
+            assert cid == "22" and timestamps == [137.4]
+            self.calls.append("storyboard")
+            return [{"id": "board-22", "cid": cid, "kind": "storyboard", "actual_time": 135,
+                     "width": 1, "height": 1, "image": PNG}]
+
+    platform, vision = Platform(), TestVisual()
+    app = create_app(settings, adapter=platform, video_evidence_factory=lambda runtime: vision)
+    app.state.browsing.read_interval = 0
+
+    async def intent(messages, schema, *, max_tokens):
+        return {"action": "inspect_video_frame", "part": 2, "seconds": 137}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", intent)
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        path = "/api/chat/intelligent"
+        for _ in range(2 if stream_available else 1):
+            identity = str(uuid4())
+            queued = client.post(path, json={"request_id": identity, "message": f"看一下 {BV} P2 的 02:17.400"})
+            assert queued.status_code == 200, queued.text
+            assert queued.json()["card"]["data"]["selection"]["frame"]["seconds"] == 137.4
+            for _ in range(200):
+                data = client.get(f"{path}/turns/{identity}").json()["card"]["data"]
+                if data["status"] not in {"waiting", "queued", "running"}:
+                    break
+                time.sleep(0.01)
+            assert data["status"] == "completed", data
+            assert data["inspection"]["requested_time"] == 137.4
+            assert data["inspection"]["actual_time"] == (137.383 if stream_available else 135)
+            assert data["inspection"]["kind"] == ("stream" if stream_available else "storyboard")
+            assert bool(data["inspection"].get("fallback_reason")) is not stream_available
+            assert "preview" not in data["inspection"]
+            picture = client.get(f"{path}/turns/{identity}/inspection-image")
+            assert picture.status_code == 200 and picture.content == PNG
+        assert platform.calls.count("stream") == vision.calls == 1
+        assert platform.calls.count("storyboard") == (0 if stream_available else 1)
+        assert not platform.sent
+
+
 def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(settings, monkeypatch):
     class MultipartPlatform(ControlledPlatform):
         hold_second = True

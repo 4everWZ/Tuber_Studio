@@ -93,7 +93,9 @@ async def test_priority_budget_yields_and_resumes_same_windows(browsing):
         "version": "1", "max_frames": 1, "max_pixels": 100, "max_bytes": 4096, "context_tokens": 4096}
     attempts = []
 
-    async def frames(metadata, count, *, cid, windows):
+    async def frames(metadata, count, *, cid, windows=None, timestamps=None):
+        if timestamps:
+            return []
         (start, end), = windows
         attempts.append(start)
         if len(attempts) == 2:
@@ -126,7 +128,9 @@ async def test_priority_visual_retry_reason_survives_new_budget_slice(browsing):
         "version": "1", "max_frames": 1, "max_pixels": 100, "max_bytes": 4096, "context_tokens": 4096}
     attempts = []
 
-    async def frames(metadata, count, *, cid, windows):
+    async def frames(metadata, count, *, cid, windows=None, timestamps=None):
+        if timestamps:
+            return []
         (start, end), = windows
         attempts.append(start)
         if len(attempts) == 1:
@@ -149,3 +153,50 @@ async def test_priority_visual_retry_reason_survives_new_budget_slice(browsing):
     assert finished["status"] == "partial" and attempts == [0, 15, 15]
     assert windows[0]["state"] == "retry" and windows[0]["reason"] == "视觉服务没有返回有效帧引用"
     assert windows[1]["state"] == "sampled" and "reason" not in windows[1]
+    assert finished["coverage"]["parts"][0]["ranges"][0]["visual"]["gaps"][0]["end"] == 22.5
+
+
+async def test_priority_bridges_empty_window_and_only_requests_stream_for_remaining_gap(browsing):
+    await browsing._current_account()
+    browsing.discovery.remember_account("100")
+    install_visual(browsing, ask=False)
+    attempts = []
+
+    def frame(cid, at):
+        return {"id": f"{cid}:{at}", "cid": cid, "actual_time": at,
+                "width": 1, "height": 1, "image": PNG, "kind": "storyboard"}
+
+    async def frames(metadata, count, *, cid, windows=None, timestamps=None):
+        if timestamps:
+            attempts.append(("storyboard", timestamps[0]))
+            return [frame(cid, 5)]  # nearest tile has already been analyzed
+        return [frame(cid, 5)] if any(start == 0 for start, _ in windows) else []
+
+    async def stream(metadata, *, cid, timestamp):
+        attempts.append(("stream", timestamp))
+        if len([kind for kind, _ in attempts if kind == "stream"]) == 2:
+            raise BrowsingBudgetDeferred("测试取帧预算耗尽")
+        return frame(cid, timestamp) | {"kind": "stream", "presentation_end": timestamp + .04, "requested_time": timestamp}
+
+    browsing.adapter.video_frames = frames
+    browsing.adapter.video_stream_frame = stream
+    identity = str(uuid4())
+    await browsing.queue_full_video(identity, browsing.runtime.character, {"bvid": BV, "ranges": []})
+    assert await browsing._start_full_video()
+    await wait_for(lambda: identity not in browsing.active)
+    first = browsing.full_video_status(browsing.repo.round(identity))
+    assert first["yielded"]
+    assert await browsing._start_full_video()
+    await wait_for(lambda: identity not in browsing.active)
+    result = browsing.full_video_status(browsing.repo.round(identity))
+    visual = result["coverage"]["parts"][0]["ranges"][0]["visual"]
+    assert visual["gaps"] == [] and visual["complete"]
+    assert attempts[:2] == [("storyboard", 17.5), ("stream", 17.5)]
+    assert [target for kind, target in attempts if kind == "stream"] == [17.5, 23.75, 23.75]
+
+
+def test_visual_coverage_uses_neighbor_spacing_and_checks_both_edges():
+    from tuber_studio.operations.browsing.evidence import visual_gaps
+
+    assert visual_gaps(0, 30, [6, 22]) == []
+    assert visual_gaps(0, 41, [10, 31]) == [(0, 10), (10, 31), (31, 41)]

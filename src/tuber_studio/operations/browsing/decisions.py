@@ -171,6 +171,7 @@ class BrowsingDecisions:
             instruction += (
                 "需要补看时选visual。visual_targets引用字幕编号并选before（之前）、during（当时）、"
                 "after（之后）或within（段内，fraction填0到1）；其它位置fraction为null。"
+                "需要看瞬间动作或读屏幕小字时设precision=stream，其余用storyboard。"
                 if allow_visual
                 else "本次取样画面已到齐。请用现有材料判断，材料仍不足时可以暂不发言。"
             )
@@ -574,7 +575,7 @@ class BrowsingDecisions:
         requested = [decision for decision in decisions if decision.coverage_required == "visual"]
         if not requested or not self.browsing.evidence.has_visual_provider() or material.get("visual_source_ids"):
             return material, decisions
-        targets = {(target.evidence_id, target.position, target.fraction)
+        targets = {(target.evidence_id, target.position, target.fraction, target.precision)
                    for decision in requested for target in decision.visual_targets}
         source_ids = {ref for decision in requested for ref in decision.evidence_ids}
         if not source_ids:
@@ -595,8 +596,8 @@ class BrowsingDecisions:
             decisions_before=[decision.model_dump() for decision in decisions],
             source_material_key=result["material_key"],
             evidence_ids=sorted(source_ids),
-            targets=[{"evidence_id": source, "position": position, "fraction": fraction}
-                     for source, position, fraction in sorted(targets, key=repr)],
+            targets=[{"evidence_id": source, "position": position, "fraction": fraction, "precision": precision}
+                     for source, position, fraction, precision in sorted(targets, key=repr)],
         )
         payload = json.loads(self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
         self.browsing.repo.complete(identity, result["owner"], result["generation"], "evidence_ready",
@@ -1296,6 +1297,7 @@ class BrowsingDecisions:
             + (
                 "想发主评选reply_public并写正文。翻评论选read_comments，补看画面选watch_frames；"
                 "visual_targets引用字幕并选before、during、after或within（段内比例fraction为0到1，其它为null）。"
+                "瞬间动作或屏幕小字用precision=stream，其余用storyboard。"
                 "补读选read_more，结束观看选finish，略过选skip，稍后处理选wait。"
                 "video_preference填like/not_interested/neutral，preference_reason说说视频里具体哪点影响了你的偏好。"
                 if video_actions

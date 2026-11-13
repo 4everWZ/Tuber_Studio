@@ -502,7 +502,7 @@ async def test_no_caption_fallback_distributes_bounded_storyboard_windows(eviden
     adapter.metadata["parts"][0]["duration"] = 300
     service = evidence_factory(adapter, TestVisual())
     _, material = await service.prepare(BV, config | {"frame_sampling": "adaptive"})
-    batches = [call[4] for call in adapter.calls if call[0] == "frames" and call[2] == "456"]
+    batches = [call[4] for call in adapter.calls if call[0] == "frames" and call[2] == "456" and call[4]]
     windows = [window for batch in batches for window in batch]
     assert max(map(len, batches)) == 6 and len(windows) == 25
     assert windows[0][0] == 0 and windows[-1][1] == 300

@@ -561,12 +561,15 @@ class BrowsingService:
         coverage = payload.get("full_coverage")
         comment_progress = payload.get("comment_progress")
         status = row["status"]
-        if status == "completed" and not payload.get("comment_progress", {}).get("at_end"):
+        inspection = row["config"]["operator_selection"].get("frame")
+        if status == "completed" and not inspection and not payload.get("comment_progress", {}).get("at_end"):
             status = "partial"
         return {
             "id": row["id"], "status": status, "preview": True, "full_video": True,
             "selection": row["config"]["operator_selection"],
             "coverage": coverage,
+            "inspection": {key: value for key, value in payload["inspection"].items() if key != "preview"}
+            if payload.get("inspection") else None,
             "phase": payload.get("phase", "watching"),
             "comments": {key: comment_progress.get(key) for key in (
                 "pages_read", "thread_pages_read", "next_page", "at_end", "links",
@@ -574,7 +577,7 @@ class BrowsingService:
             "yielded": status == "waiting" and payload.get("yielded", False),
             "error": row["error"] or (task["error"] if task else None),
             "can_resume": status in {"paused", "cancelled", "partial", "failed"} or bool(
-                status == "completed" and coverage and coverage.get("viewing") != "watched"
+                status == "completed" and not inspection and coverage and coverage.get("viewing") != "watched"
             ),
         }
 

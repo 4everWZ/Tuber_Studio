@@ -8,7 +8,13 @@ from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_turns import operation_lane
 from ...providers import DemoProvider, public_error
 from .comment_reader import commit_comment_context, enqueue_comment_visit, video_comment_context
-from .evidence import STORYBOARD_SCAN_QUESTION, EvidenceUnavailable, storyboard_changes, storyboard_windows
+from .evidence import (
+    STORYBOARD_SCAN_QUESTION,
+    EvidenceUnavailable,
+    storyboard_changes,
+    storyboard_windows,
+    visual_gaps,
+)
 from .round_context import agent_depth
 from .thread_context import comment_source, public_discussion_url
 
@@ -152,9 +158,11 @@ def _visual_report(material, part, interval, provider, scans, bvid):
         if samples:
             result = {"state": "sampled"}
         windows.append(window | result | {"samples": samples})
+    gaps = visual_gaps(start, end, actual_times)
     return {
-        "state": "sampled" if all(window["state"] == "sampled" for window in windows) else "partial",
-        "complete": all(window["state"] == "sampled" for window in windows),
+        "state": "sampled" if not gaps else "partial",
+        "complete": not gaps,
+        "gaps": [{"start": left, "end": right} | scans.get(str([part["cid"], left, right, "gap"]), {}) for left, right in gaps],
         "windows": windows,
         "samples": sorted({value for window in windows for value in window["samples"]}),
         "source_url": _source_url(bvid, part["part"], start),
@@ -179,18 +187,21 @@ def _highlights(material, part, interval, bvid):
     ]
 
 
-async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=None, windows=None):
+async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=None, windows=None, precise=False, allow_fallback=True):
     provider = dict(zip(("provider_id", "version"), browsing.evidence._visual_identity()))
     depth = agent_depth.set(agent_depth.get() + 1)
     try:
-        parts, _ = await browsing.evidence._visual_parts(
-            material["metadata"], {"id": identity + ":storyboard", "parent_id": identity, "round_id": row["id"]},
-            row["deadline"], cid=cid, timestamps=timestamps, windows=windows,
-            question=STORYBOARD_SCAN_QUESTION if windows else None,
-            known_frames={frame["id"] for part in material["parts"] if part.get("visual")
-                          and part.get("visual_provider") == provider
-                          for frame in part.get("frame_evidence", [])},
-        )
+        task = {"id": identity + ":visual", "parent_id": identity, "round_id": row["id"]}
+        known = {frame["id"] for part in material["parts"] if part.get("visual") and part.get("visual_provider") == provider
+                 for frame in part.get("frame_evidence", [])}
+        if precise:
+            parts, _ = await browsing.evidence.inspect_frame(material["metadata"], task, row["deadline"], cid, timestamps[0],
+                                                            known_frames=known, allow_fallback=allow_fallback)
+        else:
+            parts, _ = await browsing.evidence._visual_parts(
+                material["metadata"], task, row["deadline"], cid=cid, timestamps=timestamps, windows=windows,
+                question=STORYBOARD_SCAN_QUESTION if windows else None, known_frames=known,
+            )
     finally:
         agent_depth.reset(depth)
     references = {segment["id"] for part in parts for segment in part["segments"]}
@@ -237,16 +248,17 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
         except (ValueError, TimeoutError, OSError) as error:
             interval["visual_choice_error"] = public_error(error)
             decisions = []
-        requests = {(target.evidence_id, target.position, target.fraction)
+        requests = {(target.evidence_id, target.position, target.fraction, target.precision)
                     for decision in decisions for target in decision.visual_targets}
         if not requests:
-            requests = {(reference, "during", None) for decision in decisions
+            requests = {(reference, "during", None, "storyboard") for decision in decisions
                         if decision.coverage_required == "visual" for reference in decision.evidence_ids[:1]}
         timestamps = browsing.evidence._visual_targets(focus, sorted(requests, key=repr)).get(cid, [])
-        interval["visual_requests"] = [{"evidence_id": source, "position": position, "fraction": fraction}
-                                       for source, position, fraction in sorted(requests, key=repr)]
+        precise_times = browsing.evidence._visual_targets(focus, [item for item in requests if item[3] == "stream"]).get(cid, [])
+        interval["visual_requests"] = [{"evidence_id": source, "position": position, "fraction": fraction, "precision": precision}
+                                       for source, position, fraction, precision in sorted(requests, key=repr)]
         known_times = {item["start"] for item in _observations(material, cid, provider)}
-        wanted = [target for target in timestamps if start <= target <= end
+        wanted = [target for target in timestamps if start <= target < end and target not in precise_times
                   and [cid, target] not in completed and not any(abs(target - time) <= 0.5 for time in known_times)]
         choice_ok = True
         for offset in range(0, len(wanted), batch_size):
@@ -262,14 +274,30 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
             completed.extend([cid, value] for value in batch)
             interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
             save()
+        for target in precise_times:
+            if start <= target < end and [cid, target, "stream"] not in completed:
+                try:
+                    await _visual_batch(browsing, row, identity, material, cid, timestamps=[target], precise=True)
+                except BrowsingBudgetDeferred:
+                    raise
+                except (ValueError, TimeoutError, OSError) as error:
+                    interval["visual_choice_error"] = public_error(error)
+                    choice_ok = False
+                else:
+                    completed.append([cid, target, "stream"])
+                    save()
         if choice_ok and not interval.get("visual_choice_error"):
             chosen_intervals.append(choice_key)
             save()
     visual = interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
     pending = [window for window in visual["windows"] if window["state"] == "pending"
-               or retry and window["state"] in {"gap", "retry"}]
+               and any(gap["start"] < window["end"] and window["start"] < gap["end"] for gap in visual["gaps"])]
     for offset in range(0, len(pending), batch_size):
         batch = pending[offset:offset + batch_size]
+        batch = [window for window in batch if any(gap["start"] < window["end"] and window["start"] < gap["end"]
+                                                  for gap in visual["gaps"])]
+        if not batch:
+            continue
         result = {"state": "gap", "reason": "该时段没有通过核验的故事板画面"}
         try:
             await _visual_batch(browsing, row, identity, material, cid,
@@ -280,6 +308,41 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
             result = {"state": "retry", "reason": public_error(error)}
         for window in batch:
             current_scans[str([cid, window["start"], window["end"]])] = result
+        visual = interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
+        interval["highlights"] = _highlights(material, part, interval, bvid)
+        save()
+    attempted = set()
+    while visual["gaps"]:
+        gap = next((item for item in visual["gaps"] if (item["start"], item["end"]) not in attempted
+                    and (retry or not item.get("stream_attempted"))), None)
+        if not gap:
+            break
+        left, right = gap["start"], gap["end"]
+        attempted.add((left, right))
+        key = str([cid, left, right, "gap"])
+        target = (left + right) / 2
+        state = current_scans.setdefault(key, {})
+        if not state.get("storyboard_attempted"):
+            try:
+                await _visual_batch(browsing, row, identity, material, cid, timestamps=[target])
+            except BrowsingBudgetDeferred:
+                raise
+            except (ValueError, TimeoutError, OSError) as error:
+                state["reason"] = public_error(error)
+            state["storyboard_attempted"] = True
+            visual = interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
+            save()
+            if not any(item["start"] == left and item["end"] == right for item in visual["gaps"]):
+                continue
+        try:
+            await _visual_batch(browsing, row, identity, material, cid, timestamps=[target], precise=True, allow_fallback=False)
+        except BrowsingBudgetDeferred:
+            raise
+        except (ValueError, TimeoutError, OSError) as error:
+            state["reason"] = public_error(error)
+        else:
+            state["reason"] = "取到的实际帧仍未覆盖该段"
+        state["stream_attempted"] = True
         visual = interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
         interval["highlights"] = _highlights(material, part, interval, bvid)
         save()
@@ -314,7 +377,7 @@ def _viewing(report):
 def _requires_resume(report):
     return any(
         interval["subtitle"].get("state") == "retry"
-        or any(window["state"] in {"pending", "retry"} for window in interval["visual"].get("windows", []))
+        or bool(interval["visual"].get("gaps"))
         for selected in report["parts"] for interval in selected["ranges"]
     )
 
@@ -450,6 +513,24 @@ async def _read_comments(browsing, row, identity, payload, material, save, metri
         await asyncio.sleep(0)
 
 
+async def _inspect_target(browsing, row, identity, metadata, target):
+    part = next((part for index, part in enumerate(metadata["parts"], 1)
+                 if part.get("page", index) == target["part"]), None)
+    if not part or target["seconds"] >= part["duration"]:
+        raise EvidenceUnavailable("invalid_frames", "目标时码超出已核验分 P")
+    task = {"id": identity + ":inspection", "parent_id": identity, "round_id": row["id"]}
+    parts, frames = await browsing.evidence.inspect_frame(metadata, task, row["deadline"], str(part["cid"]), target["seconds"])
+    if not parts or not frames:
+        raise EvidenceUnavailable("no_frames", "目标时码没有可分析的画面")
+    frame = frames[0]
+    return {key: frame[key] for key in ("cid", "actual_time", "presentation_end", "requested_time", "kind", "fallback_reason",
+                                        "bytes_read", "elapsed_seconds") if key in frame} | {
+        "part": target["part"], "text": parts[0]["segments"][0]["text"],
+        "source_url": _source_url(metadata["bvid"], target["part"], frame["actual_time"]),
+        "preview": {"content": frame["image_base64"], "mime": frame["mime_type"]},
+    }
+
+
 async def execute(browsing, row, metrics):
     selection = row["config"]["operator_selection"]
     bvid = selection["bvid"]
@@ -489,6 +570,11 @@ async def execute(browsing, row, metrics):
         metadata = await browsing._read(browsing.adapter.video_metadata, bvid)
         if metadata.get("bvid") != bvid or not metadata.get("aid"):
             raise EvidenceUnavailable("invalid", "指定视频与平台实际来源不一致")
+        if target := selection.get("frame"):
+            payload["inspection"] = await _inspect_target(browsing, row, identity, metadata, target)
+            payload["phase"] = "complete"
+            save("completed")
+            return "completed"
         current = _plan(metadata, selection)
         prior = payload.get("full_coverage")
         if prior and _part_identity(current) != _part_identity(prior):

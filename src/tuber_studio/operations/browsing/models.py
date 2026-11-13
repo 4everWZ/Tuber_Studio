@@ -271,6 +271,7 @@ class VisualTarget(StrictModel):
     evidence_id: str
     position: Literal["before", "during", "after", "within"]
     fraction: float | None = Field(default=None, ge=0, le=1)
+    precision: Literal["storyboard", "stream"] = "storyboard"
 
     @model_validator(mode="after")
     def fraction_only_within_segment(self):
@@ -288,6 +289,7 @@ def visual_target_schema(evidence_ids):
                 "evidence_id": {"type": "string", "enum": sorted(evidence_ids)},
                 "position": {"type": "string", "enum": positions},
                 "fraction": fraction,
+                "precision": {"type": "string", "enum": ["storyboard", "stream"]},
             },
             "required": ["evidence_id", "position", "fraction"],
         } for positions, fraction in (
