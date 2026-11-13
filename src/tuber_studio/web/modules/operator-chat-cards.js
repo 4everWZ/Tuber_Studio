@@ -204,7 +204,9 @@ function videoCard(root, turn, { api, path }) {
     const phases = { watching: "正在看视频", comments: "正在逛评论区", complete: "已完成" };
     const viewing = { watched: "看完", subtitles_only: "字幕已读完 · 画面覆盖有缺口",
       visual_only: "画面已全程扫描 · 无可用字幕", partial: "视频材料覆盖有缺口" };
-    state.textContent = [activeVideo.has(data.status) || data.status === "completed" ? phases[data.phase] || label(data.status) : label(data.status),
+    const taskState = data.status === "running" || data.status === "completed" ? phases[data.phase] || label(data.status) :
+      data.yielded ? "已保存进度 · 等待下一次调度" : label(data.status);
+    state.textContent = [taskState,
       viewing[data.coverage?.viewing]].filter(Boolean).join(" · ");
     selection.textContent = data.selection?.ranges?.length ? data.selection.ranges.map(range => `P${range.part} · ${range.start}–${range.end} 秒`).join("；") : "";
     selection.hidden = !selection.textContent;
@@ -219,7 +221,8 @@ function videoCard(root, turn, { api, path }) {
     if (report.open) coverageDetails(data, coverage);
     comments.replaceChildren();
     if (data.comments) {
-      const text = data.comments.at_end ? "已读到平台可见末页" : `已读 ${data.comments.pages_read || 0} 页`;
+      const text = data.comments.at_end ? "已读到平台可见末页" :
+        `已读 ${data.comments.pages_read || 0} 页根评论${data.comments.thread_pages_read ? `、${data.comments.thread_pages_read} 页楼内评论` : ""}`;
       comments.append(node("p", text, "hint"));
       for (const item of data.comments.links || []) {
         if (platformLink(item.url)) comments.append(link(item.text || "查看原评论", item.url), node("br"));
