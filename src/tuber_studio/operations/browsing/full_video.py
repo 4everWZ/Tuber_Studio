@@ -145,8 +145,13 @@ def _visual_report(material, part, interval, provider, scans, bvid):
             last_sample += 1
         samples = actual_times[first_sample:last_sample]
         first_sample = last_sample
-        state = "sampled" if samples else scans.get(str([part["cid"], left, right]), "pending")
-        windows.append(window | {"state": state, "samples": samples})
+        previous = scans.get(str([part["cid"], left, right]), "pending")
+        # Existing checkpoints may store a bare state. Keep the reason next
+        # to its window when a subsequent slice recomputes the report.
+        result = previous if isinstance(previous, dict) else {"state": previous}
+        if samples:
+            result = {"state": "sampled"}
+        windows.append(window | result | {"samples": samples})
     return {
         "state": "sampled" if all(window["state"] == "sampled" for window in windows) else "partial",
         "complete": all(window["state"] == "sampled" for window in windows),
@@ -265,21 +270,17 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
                or retry and window["state"] in {"gap", "retry"}]
     for offset in range(0, len(pending), batch_size):
         batch = pending[offset:offset + batch_size]
-        state = "gap"
+        result = {"state": "gap", "reason": "该时段没有通过核验的故事板画面"}
         try:
             await _visual_batch(browsing, row, identity, material, cid,
                                 windows=[(window["start"], window["end"]) for window in batch])
         except BrowsingBudgetDeferred:
             raise
         except (ValueError, TimeoutError, OSError) as error:
-            state = "retry"
-            visual["reason"] = public_error(error)
+            result = {"state": "retry", "reason": public_error(error)}
         for window in batch:
-            current_scans[str([cid, window["start"], window["end"]])] = state
-        reason = visual.get("reason")
+            current_scans[str([cid, window["start"], window["end"]])] = result
         visual = interval["visual"] = _visual_report(material, part, interval, provider, current_scans, bvid)
-        if reason:
-            visual["reason"] = reason
         interval["highlights"] = _highlights(material, part, interval, bvid)
         save()
     if visual["complete"] and choice_key not in choices.setdefault("changes:" + policy, []):

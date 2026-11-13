@@ -152,6 +152,7 @@ function materialSummary(value) {
 }
 
 function coverageDetails(data, container) {
+  const expanded = new Set([...container.querySelectorAll("details[open][data-coverage-range]")].map(item => item.dataset.coverageRange));
   container.replaceChildren();
   for (const part of data.coverage?.parts || []) {
     const detail = node("div", null, "operator-chat-memory");
@@ -164,6 +165,18 @@ function coverageDetails(data, container) {
       item.append(href ? link(title, href) : node("strong", title));
       for (const [caption, value] of [["字幕", range.subtitle], ["音频", range.audio], ["画面", range.visual]]) {
         item.append(node("p", `${caption} · ${materialSummary(value)}`, "hint"));
+      }
+      const missing = (range.visual?.windows || []).filter(window => window.state !== "sampled");
+      if (missing.length) {
+        const gaps = node("details"), windows = node("ul");
+        gaps.dataset.coverageRange = `${part.part}/${range.start}/${range.end}`;
+        gaps.open = expanded.has(gaps.dataset.coverageRange);
+        for (const window of missing) {
+          const reason = { gap: "无可用预览图", retry: "待重试", pending: "未处理" }[window.state] || window.state;
+          windows.append(node("li", `${window.start}–${window.end} 秒 · ${reason}${window.reason ? ` · ${safeMessage(window.reason)}` : ""}`));
+        }
+        gaps.append(node("summary", `画面缺口 ${missing.length} 段`), windows);
+        item.append(gaps);
       }
       for (const highlight of range.highlights || []) {
         const location = videoHref(data.selection?.bvid, `?p=${part.part}&t=${Math.floor(highlight.start)}`);

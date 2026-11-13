@@ -116,3 +116,36 @@ async def test_priority_budget_yields_and_resumes_same_windows(browsing):
     assert browsing.repo.content_progress(browsing.repo.round(identity), BV)["fully_read"]
     assert attempts == [0, 15, 15] and len(inputs) == 1
     assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 1
+
+
+async def test_priority_visual_retry_reason_survives_new_budget_slice(browsing):
+    await browsing._current_account()
+    browsing.discovery.remember_account("100")
+    install_visual(browsing, ask=False)
+    browsing.evidence.visual.capabilities = lambda: {"images": True, "provider_id": "followup-test",
+        "version": "1", "max_frames": 1, "max_pixels": 100, "max_bytes": 4096, "context_tokens": 4096}
+    attempts = []
+
+    async def frames(metadata, count, *, cid, windows):
+        (start, end), = windows
+        attempts.append(start)
+        if len(attempts) == 1:
+            raise ValueError("视觉服务没有返回有效帧引用")
+        if len(attempts) == 2:
+            raise BrowsingBudgetDeferred("测试时段预算耗尽")
+        return [{"id": f"{cid}:{start}", "cid": cid, "actual_time": (start + end) / 2,
+                 "width": 1, "height": 1, "image": PNG, "kind": "storyboard"}]
+
+    browsing.adapter.video_frames = frames
+    identity = str(uuid4())
+    await browsing.queue_full_video(identity, browsing.runtime.character, {"bvid": BV, "ranges": []})
+    assert await browsing._start_full_video()
+    await wait_for(lambda: identity not in browsing.active)
+    assert browsing.full_video_status(browsing.repo.round(identity))["yielded"]
+    assert await browsing._start_full_video()
+    await wait_for(lambda: identity not in browsing.active)
+    finished = browsing.full_video_status(browsing.repo.round(identity))
+    windows = finished["coverage"]["parts"][0]["ranges"][0]["visual"]["windows"]
+    assert finished["status"] == "partial" and attempts == [0, 15, 15]
+    assert windows[0]["state"] == "retry" and windows[0]["reason"] == "视觉服务没有返回有效帧引用"
+    assert windows[1]["state"] == "sampled" and "reason" not in windows[1]
