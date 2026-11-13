@@ -9,6 +9,8 @@ from uuid import uuid4
 from .character_presets import upgrade_bundled_characters
 from .models import Character
 
+DELETED_CHARACTER = "角色工作室删除"
+
 
 def dump(value):
     return json.dumps(value, ensure_ascii=False)
@@ -172,6 +174,53 @@ class Store:
             )
         ]
 
+    def deleted_characters(self):
+        return [
+            self.character(row["character_id"], row["version"])
+            for row in self.all(
+                "SELECT a.character_id,a.version FROM character_archives a JOIN characters c "
+                "ON c.id=a.character_id AND c.active_version=a.version "
+                "WHERE a.reason=? ORDER BY a.created_at DESC,a.character_id",
+                (DELETED_CHARACTER,),
+            )
+        ]
+
+    def managed_character(self, character_id, version=None):
+        current = self.character(character_id)
+        if self.one(
+            "SELECT 1 FROM character_archives WHERE character_id=? AND version IN (?,?)",
+            (character_id, current["version"], version or current["version"]),
+        ):
+            raise ValueError("该角色已移除或归档，请先恢复")
+        return self.character(character_id, version) if version is not None else current
+
+    def delete_character(self, character_id):
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            if self.get("active_character") == character_id:
+                raise ValueError("请先激活另一张角色卡")
+            current = self.character(character_id)
+            archived = self.one(
+                "SELECT reason FROM character_archives WHERE character_id=? AND version=?",
+                (character_id, current["version"]),
+            )
+            if archived and archived["reason"] != DELETED_CHARACTER:
+                raise ValueError("该角色已归档")
+            self.db.execute(
+                "INSERT OR IGNORE INTO character_archives VALUES(?,?,?,?)",
+                (character_id, current["version"], DELETED_CHARACTER, time.time()),
+            )
+
+    def restore_character(self, character_id):
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            current = self.character(character_id)
+            self.db.execute(
+                "DELETE FROM character_archives WHERE character_id=? AND version=? AND reason=?",
+                (character_id, current["version"], DELETED_CHARACTER),
+            )
+            return self.managed_character(character_id)
+
     def versions(self, character_id, *, include_archived=False):
         return [
             json.loads(r["config"])
@@ -199,7 +248,7 @@ class Store:
         data = Character.model_validate(config).model_dump()
         with self.db:
             self.db.execute("BEGIN IMMEDIATE")
-            current = self.character(data["id"])
+            current = self.managed_character(data["id"])
             data["version"] = current["version"]
             original = Character.model_validate(editable_character(current)).model_dump()
             if data == original:
@@ -222,17 +271,16 @@ class Store:
         return editable_character(data)
 
     def activate(self, character_id, version=None):
-        character = self.character(character_id, version)
-        if self.one(
-            "SELECT 1 FROM character_archives WHERE character_id=? AND version=?",
-            (character_id, character["version"]),
-        ):
-            raise ValueError("该人设版本已归档，请使用当前版本")
-        self.execute(
-            "UPDATE characters SET active_version=? WHERE id=?", (character["version"], character_id)
-        )
-        self.set("active_character", character_id)
-        return character
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            character = self.managed_character(character_id, version)
+            self.db.execute(
+                "UPDATE characters SET active_version=? WHERE id=?", (character["version"], character_id)
+            )
+            self.db.execute(
+                "INSERT OR REPLACE INTO kv VALUES('active_character',?)", (dump(character_id),)
+            )
+            return character
 
     def user(self, event):
         if not event.platform_user_id:

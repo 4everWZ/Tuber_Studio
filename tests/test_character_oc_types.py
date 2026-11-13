@@ -119,3 +119,36 @@ def test_create_blank_character_and_rename_before_and_after_activation(settings)
         active = app.state.runtime.character
         assert active["id"] == card["id"] and active["name"] == "改名后"
         assert active["core"] == {"identity": "新设定"}
+
+
+def test_paste_complete_card_delete_active_and_restore(settings):
+    app = create_app(settings)
+    with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+        store = app.state.store
+        original = client.get("/api/characters/whale").raise_for_status().json()
+        target = client.post("/api/characters", json={"name": "大肥鱼 v2"}).raise_for_status().json()
+        path = f"/api/characters/{target['id']}"
+        assert client.put(path, json=original | {"voice_profile": "missing"}).status_code == 422
+        assert client.get(path).json() == target
+        saved = client.put(path, json=original | {"name": "改名 v2"}).raise_for_status().json()
+        assert saved == original | {"id": target["id"], "name": "改名 v2"}
+        assert client.get("/api/characters/whale").json() == original
+        client.post(f"{path}/activate").raise_for_status()
+        history = store.character(target["id"])
+        assert client.delete(path).status_code == 409
+        assert client.request("DELETE", path, json={"replacement_id": "missing"}).status_code == 400
+        assert app.state.runtime.character["id"] == target["id"]
+        assert client.request("DELETE", path, json={"replacement_id": "whale"}).raise_for_status().json() == {
+            "active_character_id": "whale",
+        }
+        assert [row["id"] for row in client.get("/api/characters").json()] == ["whale"]
+        assert client.get("/api/characters/deleted").json() == [saved]
+        assert client.get(path).status_code == 400
+        assert client.put(path, json=saved).status_code == 400
+        assert client.post(f"{path}/activate").status_code == 400
+        assert store.character(target["id"], history["version"]) == history
+        client.post(f"{path}/restore").raise_for_status()
+        edited = client.put(path, json=saved | {"name": "恢复后改名"}).raise_for_status().json()
+        assert client.get(path).json() == edited
+        client.post(f"{path}/activate").raise_for_status()
+        assert app.state.runtime.character["name"] == "恢复后改名"

@@ -1,16 +1,17 @@
 """Character, memory, and conversation context routes."""
 
+import asyncio
 import json
 from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import Body, Depends, HTTPException, Path, Query
-from pydantic import Field, StringConstraints
+from pydantic import Field, StringConstraints, ValidationError
 
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..models import Character, StrictModel
 from ..relationships import UserProfile
-from ..store import character_card
+from ..store import character_card, editable_character
 from .operator_facts import recent_events
 
 
@@ -25,6 +26,10 @@ class NewCharacter(StrictModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
 
 
+class DeleteCharacter(StrictModel):
+    replacement_id: str | None = None
+
+
 def organized_view(row):
     result = {key: row[key] for key in ("id", "memory_kind", "headline", "quote", "anecdote", "status",
                                        "channels", "source", "updated_at")}
@@ -34,6 +39,8 @@ def organized_view(row):
 
 
 def register_agent_api(app, settings, runtime, store, comments, require_admin, *, default_character):
+    character_writes = asyncio.Lock()
+
     def user_memory_scope(platform, user_id, account_id, character_id):
         messages = comments.direct_messages
         current_account = messages.display_account_id() if messages else comments.display_account_id()
@@ -90,26 +97,64 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         })
         return character_card(card)
 
+    @app.get("/api/characters/deleted", dependencies=[Depends(require_admin)])
+    async def deleted_characters():
+        return [character_card(character) for character in store.deleted_characters()]
+
     @app.get("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def character(character_id: str):
-        return character_card(store.character(character_id))
+        return character_card(store.managed_character(character_id))
 
     @app.put("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
-    async def save_character(character_id: str, data: Character):
-        if data.id != character_id:
-            raise ValueError("角色ID不可修改，请复制新建OC")
-        settings.voice(data.voice_profile)
-        if not settings.assets(data.model_dump()):
-            raise ValueError("素材清单无效或为空")
-        active = runtime.character
-        result = store.replace_character(data.model_dump())
-        if active["id"] == character_id and character_card(active) != character_card(result):
-            await runtime.activate(character_id)
-        return character_card(result)
+    async def save_character(character_id: str, data: dict = Body(...)):
+        async with character_writes:
+            store.managed_character(character_id)
+            card = editable_character(data)
+            card.pop("version", None)
+            card["id"] = character_id
+            if isinstance(card.get("name"), str):
+                card["name"] = card["name"].strip()
+            try:
+                data = Character.model_validate(card).model_dump()
+            except ValidationError as error:
+                raise HTTPException(422, [
+                    {"field": item["loc"][0], "message": item["msg"]} for item in error.errors()
+                ]) from error
+            try:
+                settings.voice(data["voice_profile"])
+            except ValueError as error:
+                raise HTTPException(422, [{"field": "voice_profile", "message": str(error)}]) from error
+            if not settings.assets(data):
+                raise HTTPException(422, [{"field": "avatar_manifest", "message": "素材清单无效或为空"}])
+            active = runtime.character
+            result = store.replace_character(data)
+            if active["id"] == character_id and character_card(active) != character_card(result):
+                await runtime.activate(character_id)
+            return character_card(result)
 
     @app.post("/api/characters/{character_id}/activate", dependencies=[Depends(require_admin)])
     async def activate(character_id: str):
-        return character_card(await runtime.activate(character_id))
+        async with character_writes:
+            return character_card(await runtime.activate(character_id))
+
+    @app.delete("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
+    async def delete_character(character_id: str, data: DeleteCharacter | None = None):
+        async with character_writes:
+            if runtime.character["id"] == character_id:
+                replacement = data.replacement_id if data else None
+                if not replacement or replacement == character_id:
+                    raise HTTPException(409, "请先选择要激活的替代角色")
+                candidate = store.managed_character(replacement)
+                if not settings.assets(candidate):
+                    raise ValueError("替代角色的素材清单无效或为空")
+                await runtime.activate(replacement)
+            store.delete_character(character_id)
+            return {"active_character_id": runtime.character["id"]}
+
+    @app.post("/api/characters/{character_id}/restore", dependencies=[Depends(require_admin)])
+    async def restore_character(character_id: str):
+        async with character_writes:
+            return character_card(store.restore_character(character_id))
 
     @app.post("/api/characters/{character_id}/clone", dependencies=[Depends(require_admin)])
     async def clone(character_id: str, data: dict = Body(...)):
@@ -119,7 +164,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             raise ValueError("请填写角色名称")
         if store.one("SELECT id FROM characters WHERE id=?", (identity,)):
             raise ValueError("角色ID已存在")
-        seed = store.character(character_id)
+        seed = store.managed_character(character_id)
         seed.update(id=identity, name=name.strip())
         return character_card(store.save_character(seed))
 

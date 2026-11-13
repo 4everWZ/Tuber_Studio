@@ -17,7 +17,7 @@ import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261113.03";
-import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261113.01";
+import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261113.02";
 import {
   selectedThread,
   initCommentsModule,
@@ -248,7 +248,11 @@ function connectAdmin() {
 }
 
 function renderStatus(status) {
+  const previousCharacter = model.status?.character;
   renderWorkspaceStatus(model, status);
+  if (previousCharacter?.id !== status.character?.id || previousCharacter?.name !== status.character?.name) {
+    characterStudio?.refreshActivation();
+  }
   operatorChat.renderModel(status, model.settings);
 }
 setInterval(refreshWorkspaceClock, 1000);

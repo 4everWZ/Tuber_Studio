@@ -211,15 +211,17 @@ class LiveSession:
         return self.runtime.status()
 
     async def activate(self, character_id, version=None):
-        self.settings.voice(self.store.character(character_id, version)["voice_profile"])
+        self.settings.voice(self.store.managed_character(character_id, version)["voice_profile"])
         previous_state = self.state
         if previous_state == "live":
             self.state = "paused"
-        self.clear_queue("角色切换")
-        await self.cancel_current("角色切换")
-        self.clear_queue("角色切换期间入队")
-        result = self.store.activate(character_id, version)
-        self.state = previous_state
+        try:
+            self.clear_queue("角色切换")
+            await self.cancel_current("角色切换")
+            self.clear_queue("角色切换期间入队")
+            result = self.store.activate(character_id, version)
+        finally:
+            self.state = previous_state
         if self.state != "stopped":
             self.new_session()
         await self.send_overlay(

@@ -20,6 +20,10 @@
           <button type="submit" class="win-btn" style="margin-top:8px;">创建角色卡</button>
         </form>
       </div>
+      <details id="deleted-characters" style="margin-top:16px;">
+        <summary>已删除</summary>
+        <div id="deleted-character-list" class="object-list"></div>
+      </details>
     </article>
 
     <article class="win-group-box">
@@ -86,17 +90,33 @@
           <label>角色卡完整底层 JSON
             <textarea id="character-editor" class="code-editor" rows="18" spellcheck="false" disabled aria-describedby="character-help"></textarea>
           </label>
-          <p id="character-help" class="hint">保存将更新当前选中的角色卡。</p>
+          <p id="character-help" class="hint">可粘贴完整角色卡。保存时使用当前卡片的内部 ID。</p>
         </form>
       </div>
 
       <div class="actions" style="margin-top:14px;">
         <button id="save-character" type="submit" form="character-form" class="primary win-btn" disabled>保存角色</button>
         <button id="reset-character" type="button" class="win-btn" disabled>放弃未保存修改</button>
+        <button id="delete-character" type="button" class="win-btn danger" disabled>删除角色</button>
         <span id="character-dirty" class="hint" role="status"></span>
       </div>
     </article>
   </div>
+
+  <dialog id="delete-character-dialog" class="account-dialog" aria-labelledby="delete-character-title">
+    <form id="delete-character-form">
+      <h2 id="delete-character-title">删除角色卡</h2>
+      <p id="delete-character-description"></p>
+      <label id="replacement-character-label" hidden>先激活另一张角色卡
+        <select id="replacement-character"></select>
+      </label>
+      <p id="delete-character-error" class="hint" role="alert"></p>
+      <div class="actions">
+        <button id="cancel-delete-character" type="button" class="win-btn" autofocus>取消</button>
+        <button id="confirm-delete-character" type="submit" class="win-btn danger">删除角色卡</button>
+      </div>
+    </form>
+  </dialog>
 
   <section class="win-group-box" aria-labelledby="recent-memory-title">
     <div class="panel-heading">
