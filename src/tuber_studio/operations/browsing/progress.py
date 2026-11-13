@@ -156,6 +156,7 @@ async def prepare_attempt(browsing, identity, row, semaphore, metrics, owner):
             prior_material = progress["material"] if progress else None
             if prior_material and not row["config"].get("force_read") and (
                 not browsing.evidence.has_visual_provider() or browsing.evidence._current_visual(prior_material)
+                and not browsing.evidence.pending_visual_scan(prior_material)
             ):
                 material_key, material = await browsing.evidence._store(progress["material"])
                 browsing.evidence.hits += 1

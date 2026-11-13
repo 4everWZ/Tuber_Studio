@@ -141,13 +141,14 @@ function dynamicCard(root, initial, api) {
 
 function materialSummary(value) {
   if (!value) return "未处理";
-  const captions = { available: "已读取", sampled: "抽样", gap: "无有效材料", unavailable: "不可用", retry: "待补读" };
+  const captions = { available: "已读取", sampled: "抽样", partial: "部分覆盖", gap: "无有效材料", unavailable: "不可用", retry: "待补读" };
   const state = captions[value.state] || value.state;
   const count = value.covered_seconds != null ? `${value.covered_seconds} 秒` : "";
   const samples = value.samples?.length ? `抽样时码 ${value.samples.join("、")} 秒` : "";
   const gaps = value.gap_seconds > 0 ? `${value.gap_seconds} 秒无有效文本` : "";
   const track = value.track_complete === true ? "原轨已取全" : "";
-  return [state, count, track, gaps, samples, safeMessage(value.reason)].filter(Boolean).join(" · ");
+  const windows = value.windows?.length ? `覆盖 ${value.windows.filter(window => window.state === "sampled").length}/${value.windows.length} 段` : "";
+  return [state, count, track, gaps, windows, samples, safeMessage(value.reason)].filter(Boolean).join(" · ");
 }
 
 function coverageDetails(data, container) {
@@ -164,9 +165,13 @@ function coverageDetails(data, container) {
       for (const [caption, value] of [["字幕", range.subtitle], ["音频", range.audio], ["画面", range.visual]]) {
         item.append(node("p", `${caption} · ${materialSummary(value)}`, "hint"));
       }
-      for (const highlight of range.visual?.highlights || []) {
+      for (const highlight of range.highlights || []) {
         const location = videoHref(data.selection?.bvid, `?p=${part.part}&t=${Math.floor(highlight.start)}`);
-        if (location && highlight.text) item.append(link(`${Math.floor(highlight.start)} 秒`, location), ` ${highlight.text}`);
+        if (location && highlight.text) {
+          const excerpt = node("p");
+          excerpt.append(link(`${Math.floor(highlight.start)} 秒`, location), ` · ${highlight.kind} · ${highlight.text}`);
+          item.append(excerpt);
+        }
       }
       ranges.append(item);
     }
@@ -187,8 +192,9 @@ function videoCard(root, turn, { api, path }) {
   const record = link("查看轮次", "#automation-records");
   const cancel = button("取消取材"), resume = button("继续取材");
   const comments = node("div");
+  const excerpt = node("div");
   actions.append(record, cancel, resume);
-  root.append(title, state, selection, report, comments, actions, note);
+  root.append(title, state, selection, excerpt, report, comments, actions, note);
 
   function update(next) {
     if (busy || signature === JSON.stringify(next)) return;
@@ -203,6 +209,12 @@ function videoCard(root, turn, { api, path }) {
     selection.textContent = data.selection?.ranges?.length ? data.selection.ranges.map(range => `P${range.part} · ${range.start}–${range.end} 秒`).join("；") : "";
     selection.hidden = !selection.textContent;
     note.textContent = safeMessage(data.error);
+    excerpt.replaceChildren();
+    if (data.excerpt?.error) excerpt.append(node("p", data.excerpt.error, "hint"));
+    if (platformLink(data.excerpt?.source_url)) {
+      excerpt.append(link(`P${data.excerpt.part} · ${Math.floor(data.excerpt.start)} 秒`, data.excerpt.source_url),
+        node("blockquote", data.excerpt.text, "quoted-text"));
+    }
     report.hidden = !data.coverage?.parts?.length;
     if (report.open) coverageDetails(data, coverage);
     comments.replaceChildren();

@@ -83,6 +83,7 @@ def test_other_participation_choices_remain_available(choice):
     assert ContentDecision.model_validate(choice).model_dump() == choice | {
         "evidence_ids": [],
         "explanation": "",
+        "visual_targets": [],
     }
 
 

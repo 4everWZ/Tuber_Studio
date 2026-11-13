@@ -69,6 +69,10 @@ class BrowsingRepository:
             store.execute(
                 "ALTER TABLE browsing_video_progress ADD COLUMN read_state TEXT NOT NULL DEFAULT 'reading'"
             )
+        if "watch_evidence" not in {
+            row[1] for row in store.db.execute("PRAGMA table_info(browsing_video_progress)")
+        }:
+            store.execute("ALTER TABLE browsing_video_progress ADD COLUMN watch_evidence TEXT")
         store.db.execute("""CREATE TABLE IF NOT EXISTS browsing_read_progress(
             account_id TEXT,character_id TEXT,bvid TEXT,chunk_key TEXT,result TEXT,updated_at REAL,
             PRIMARY KEY(account_id,character_id,bvid,chunk_key))""")
@@ -215,11 +219,12 @@ class BrowsingRepository:
             self.store.db.execute("BEGIN IMMEDIATE")
             row = self.round(identity)
             admitted = self.store.db.execute(
-                "UPDATE browsing_rounds SET status='queued',deadline=?,error=NULL,updated_at=? "
+                "UPDATE browsing_rounds SET status='queued',deadline=?,error=NULL,updated_at=?,budget=? "
                 "WHERE id=? AND status='waiting' AND NOT EXISTS(SELECT 1 FROM browsing_rounds "
                 "WHERE account_id=? AND status IN ('queued','running') "
                 "AND COALESCE(json_extract(config,'$.interaction_only'),0)=0)",
-                (now + row["config"]["deadline_seconds"], now, identity, row["account_id"]),
+                (now + row["config"]["deadline_seconds"], now, dump(dict.fromkeys(row["budget"], 0)),
+                 identity, row["account_id"]),
             )
             return self.round(identity) if admitted.rowcount else None
 
@@ -384,6 +389,37 @@ class BrowsingRepository:
             ),
         )
 
+    def watch_evidence(self, row, bvid):
+        value = self.store.one(
+            "SELECT watch_evidence FROM browsing_video_progress WHERE account_id=? AND character_id=? AND bvid=?",
+            (row["account_id"], row["character_id"], bvid),
+        )
+        return json.loads(value["watch_evidence"]) if value and value["watch_evidence"] else None
+
+    def save_watch_evidence(self, row, bvid, evidence):
+        material = evidence.get("material")
+        if material is None or not material["parts"]:
+            return
+        self.store.execute(
+            "INSERT INTO browsing_video_progress(account_id,character_id,bvid,material,decisions,updated_at,watch_evidence) "
+            "VALUES(?,?,?,?,'[]',?,?) ON CONFLICT(account_id,character_id,bvid) DO UPDATE SET "
+            "material=CASE WHEN browsing_video_progress.decisions='[]' THEN excluded.material "
+            "ELSE browsing_video_progress.material END,watch_evidence=excluded.watch_evidence,updated_at=excluded.updated_at",
+            (row["account_id"], row["character_id"], bvid, dump(material), time.time(), dump(evidence)),
+        )
+
+    def watch_material(self, row, bvid):
+        saved = self.watch_evidence(row, bvid)
+        progress = self.content_progress(row, bvid)
+        # Ordinary viewing may be newer than the priority scan. Preserve the
+        # live source identity while accepting the expanded retained material.
+        if saved:
+            material = saved["material"]
+            previous = progress["material"]["metadata"] if progress else material["metadata"]
+            if all(previous.get(key) == material["metadata"].get(key) for key in ("aid", "parts", "published_at")):
+                return material
+        return progress["material"] if progress else None
+
     def save_main_decision(self, row, bvid, decision):
         self.store.execute(
             "UPDATE browsing_video_progress SET main_decision=?,updated_at=? WHERE account_id=? AND character_id=? AND bvid=?",
@@ -396,14 +432,13 @@ class BrowsingRepository:
             ),
         )
 
-    def mark_watch_result(self, row, bvid, *, fully_read=False):
+    def mark_watch_result(self, row, bvid, *, fully_read=False, coverage=None):
         progress = self.content_progress(row, bvid)
         if not progress:
             return
         material = progress["material"]
-        complete = bool(
-            fully_read
-            and not material.get("missing_parts")
+        complete = coverage == "watched" if coverage is not None else bool(
+            fully_read and not material.get("missing_parts")
             and material.get("coverage") in {"all_available_cc", "complete", "all_parts"}
         )
         state = "complete" if complete or progress["fully_read"] else "viewed"

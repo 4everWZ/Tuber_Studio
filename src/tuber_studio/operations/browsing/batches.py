@@ -522,6 +522,14 @@ async def run_discovery_video(browsing, row, candidate, metrics):
     """Execute one queue attempt; a later round may resume interrupted work."""
     bvid = candidate["bvid"]
     comment_batch_ids = candidate.get("comment_batch_ids")
+    if not comment_batch_ids and row["config"].get("autonomous_batch") and browsing.store.one(
+        "SELECT 1 FROM browsing_rounds WHERE status='waiting' AND account_id=? AND character_id=? "
+        "AND character_version=? AND json_extract(config,'$.full_video')=1 LIMIT 1",
+        (row["account_id"], row["character_id"], row["character_version"]),
+    ):
+        # In-flight video work reaches its normal checkpoint. Candidates that
+        # are still waiting for a worker retain their original batch positions.
+        return
     saved = None if comment_batch_ids else browsing.repo.video_retry(row, bvid)
     failures = saved["failures"] if saved else 0
     if failures >= 3:

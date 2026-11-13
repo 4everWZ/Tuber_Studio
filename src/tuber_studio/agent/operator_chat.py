@@ -62,6 +62,8 @@ class ChatIntent(StrictModel):
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
     position: int | None = Field(default=None, ge=1, le=3, strict=True)
+    part: int | None = Field(default=None, ge=1, strict=True)
+    seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class ChatTurn(StrictModel):
@@ -178,6 +180,7 @@ class OperatorChat:
             "写动态选 dynamic，按主题刷视频选 browse，要求指定 BV 看完选 full_video。"
             "查看、开始自主运营分别选 operation_control、start_operations。直播状态和开启分别选 live_status、start_live。"
             "停止任务选 stop，继续指定视频任务选 resume_video，问指定视频的进度或已看的内容选 video_details。"
+            "问指定分 P 和时点时，填 part 与 seconds，seconds 按秒。"
             "任务和事件仅能使用已给出的 reference。第几件输出 position，使用 position 时无需复制 reference。"
             "省略事件时留空，程序会用 focus。停止对象只可用任务 reference、operations 或 live。"
             "topic 只填已表达的搜索主题或澄清问题。下面是格式示例："
@@ -214,7 +217,10 @@ class OperatorChat:
                 if not account or row["account_id"] != str(account):
                     return result | {"card": card | {"data": {"id": row["id"], "status": "unavailable"}}}
                 if card["data"].get("full_video"):
-                    return result | {"card": card | {"data": self.browsing.full_video_status(row)}}
+                    status = self.browsing.full_video_status(row)
+                    if focus := card["data"].get("focus"):
+                        status["excerpt"] = self._video_excerpt(status, focus)
+                    return result | {"card": card | {"data": status}}
                 return result | {"card": card | {"data": card["data"] | {"status": row["status"]}}}
         if card["type"] == "live_studio_hud":
             return result | {"card": card | {"data": self._live_view()}}
@@ -378,8 +384,8 @@ class OperatorChat:
                     raise HTTPException(400, "取材设置与消息中的指定视频不同")
             elif len(mentioned) == 1:
                 selection = VideoSelection(bvid=next(iter(mentioned)))
-            elif (reference or focus) in events:
-                selection = VideoSelection(bvid=events[reference or focus][1]["bvid"])
+            elif (reference or focus) in events and (bvid := events[reference or focus][1]["bvid"]):
+                selection = VideoSelection(bvid=bvid)
             else:
                 return {"reply_text": "把要优先观看的视频 BV 号或链接发给我。", "card": None}
             selection = selection.model_dump()
@@ -403,7 +409,8 @@ class OperatorChat:
             if reference not in tasks and reference is None and len(tasks) == 1:
                 reference = next(iter(tasks))
             if reference in tasks:
-                return self._video_result(reference, "这是那条视频目前的进度和原始时码。")
+                focus = {"part": intent.part, "seconds": intent.seconds} if intent.seconds is not None else None
+                return self._video_result(reference, "这是那条视频目前的进度和原始时码。", focus=focus)
             return {"reply_text": "你想查哪条视频的进度？", "card": None}
         if kind == "public_experiences":
             return {"reply_text": "这是当前角色的公开经历。", "card": {"type": kind, "data": {}}}
@@ -477,10 +484,29 @@ class OperatorChat:
             text = "这是当时引用的原始记录。"
         return {"reply_text": text, "card": {"type": "operation_event", "data": {"event": event}}}
 
-    def _video_result(self, reference, text):
+    @staticmethod
+    def _video_excerpt(status, focus):
+        parts = (status.get("coverage") or {}).get("parts", [])
+        if focus["part"] is None and len(parts) != 1:
+            return {"error": "请指明要查看哪个分 P。"}
+        selected = next((part for part in parts if focus["part"] in (None, part["part"])), None)
+        if selected is None:
+            return {"error": "该分 P 暂无已处理材料。"}
+        seconds = focus["seconds"]
+        ranges = [interval for interval in selected["ranges"] if interval["start"] <= seconds <= interval["end"]]
+        highlights = [item for interval in ranges for item in interval.get("highlights", [])
+                      if abs(seconds - item["start"]) <= 15]
+        if not highlights:
+            return {"error": "这个时点暂时没有可引用的材料。"}
+        item = min(highlights, key=lambda item: abs(seconds - item["start"]))
+        return item | {"part": selected["part"], "requested": seconds}
+
+    def _video_result(self, reference, text, *, focus=None):
         row = self.browsing.repo.round(reference)
-        return {"reply_text": text, "card": {"type": "video_browsing", "data":
-                {"id": reference, "full_video": True, "selection": row["config"]["operator_selection"]}}}
+        data = {"id": reference, "full_video": True, "selection": row["config"]["operator_selection"]}
+        if focus:
+            data["focus"] = focus
+        return {"reply_text": text, "card": {"type": "video_browsing", "data": data}}
 
     async def _stop(self, reference, tasks):
         active = [key for key, task in tasks.items() if task["status"] in {"waiting", "queued", "running"}]
@@ -639,6 +665,7 @@ class OperatorChat:
         entries = self.store.all(
             "SELECT w.bvid,w.started_at,t.round_id,t.status,t.material_key,"
             "json_extract(t.payload,'$.coverage') AS coverage,"
+            "json_extract(t.payload,'$.full_coverage.viewing') AS priority_viewing,"
             "COALESCE(json_array_length(t.payload,'$.missing_parts'),0) AS missing_parts "
             "FROM browsing_watch_starts w "
             "LEFT JOIN (browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id) "
@@ -648,9 +675,11 @@ class OperatorChat:
             (account, character, base["start_at"], base["next_at"]),
         )
         completed = [
-            item for item in entries if item["status"] in {"selected", "viewed_without_comment"} and item["material_key"]
+            item for item in entries if (item["status"] in {"selected", "viewed_without_comment"} and item["material_key"])
+            or (item["status"] == "completed" and item["priority_viewing"] in {"watched", "subtitles_only", "visual_only"})
         ]
-        fully_read = sum(item["coverage"] == "all_available_cc" and not item["missing_parts"] for item in completed)
+        fully_read = sum(item["priority_viewing"] == "watched" or (item["coverage"] == "all_available_cc"
+                         and not item["missing_parts"]) for item in completed)
         fields = ("bvid", "started_at", "round_id", "status", "coverage")
         return base | {
             "available": True, "started": len(entries), "completed": len(completed), "fully_read": fully_read,

@@ -90,7 +90,10 @@ async def test_old_rejected_cleanup_preserves_receipts_sources_and_progress(brow
     store.execute("UPDATE dynamic_posts SET status='rejected' WHERE id=?", (dynamic["post_id"],))
     bvid, actor = "fixture-video", "100"
     decision = json.dumps({"action": "reply_public", "text": "旧拒绝主评候选", "reason": "specific_detail", "video_preference": "like"})
-    store.execute("INSERT INTO browsing_video_progress VALUES(?,?,?,'{}','[]',1,?,'read')", (actor, char["id"], bvid, decision))
+    store.execute(
+        "INSERT INTO browsing_video_progress(account_id,character_id,bvid,material,decisions,updated_at,main_decision,read_state) "
+        "VALUES(?,?,?,'{}','[]',1,?,'read')", (actor, char["id"], bvid, decision),
+    )
     store.execute("INSERT INTO browsing_comment_progress VALUES(?,?,?,'301','source-proof',?,1)", (actor, char["id"], bvid, decision))
     store.execute("INSERT INTO browsing_watch_starts VALUES(?,?,?,?,'2026-11-07',1)", (actor, char["id"], "watch", bvid))
     for identity, status, kind, parent in (("top", "rejected", "top_level", "0"), ("reply", "rejected", "reply_public", "301"), ("sent", "published", "reply_public", "302")):

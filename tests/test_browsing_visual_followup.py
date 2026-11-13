@@ -137,16 +137,15 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     visual, inputs = install_visual(browsing, ask_again=ask_again)
     row = await finished(browsing, preview=True)
     task = browsing.tasks()[0]
-    assert row["status"] == "completed" and visual.generated == 2 and len(inputs) == 2
-    assert [segment["id"] for segment in inputs[0]["segments"]] == ["e1", "e2"]
+    assert row["status"] == "completed" and visual.generated == 1 and len(inputs) == 2
+    assert [segment["id"] for segment in inputs[0]["segments"]] == ["e1"]
     assert "[e1|00:00]加盐之后，鸡蛋浮了起来。" in inputs[0]["content"]
-    assert [segment["id"] for segment in inputs[1]["segments"]] == ["e1", "e2", "e3"]
+    assert [segment["id"] for segment in inputs[1]["segments"]] == ["e1", "e2"]
     assert inputs[1]["segments"][0] == inputs[0]["segments"][0]
-    assert "[e2|00:08]" in inputs[1]["content"]
-    assert "[e3|00:05]" in inputs[1]["content"]
+    assert "[e2|00:05]" in inputs[1]["content"]
     assert inputs[1]["content"].count("P1") == 1
     assert "parts" not in inputs[1]
-    assert inputs[0]["has_visual"] and inputs[0]["source_kinds"] == ["subtitle", "visual_observation"]
+    assert not inputs[0]["has_visual"] and inputs[0]["source_kinds"] == ["subtitle"]
     assert inputs[1]["has_visual"] is True
     assert inputs[1]["source_kinds"] == ["subtitle", "visual_observation"]
     assert inputs[1]["coverage"] == "sampled_visual"
@@ -171,16 +170,16 @@ async def test_cc_visual_request_adds_once_then_rejudges_same_task(browsing, ask
     assert not browsing.adapter.sent
 
 
-async def test_no_followup_keeps_initial_visual_generation(browsing):
+async def test_subtitles_do_not_invoke_vision_without_followup(browsing):
     visual, inputs = install_visual(browsing, ask=False)
     await finished(browsing, preview=True)
-    assert visual.generated == 1 and len(inputs) == 1
+    assert visual.generated == 0 and len(inputs) == 1
 
 
 async def test_followup_reuses_an_already_observed_frame(browsing):
     visual, inputs = install_visual(browsing, initial_time=5)
     await finished(browsing, preview=True)
-    assert visual.generated == 1 and len(inputs) == 1
+    assert visual.generated == 1 and len(inputs) == 2
     assert browsing.tasks()[0]["material_mode"] == "subtitle_visual"
 
 
@@ -209,13 +208,14 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
         frame_requests.append((cid, timestamps))
         result = await frames(metadata, count)
         if cid == "22":
-            result[0].update(id="22:65", cid="22", actual_time=65, requested_time=65)
+            result[0].update(id="22:74", cid="22", actual_time=74, requested_time=73)
         return result
 
     async def cite_second_part(messages, schema, *, max_tokens):
         result = await generate(messages, schema, max_tokens=max_tokens)
         if schema["title"] == "ContentDecision" and result["coverage_required"] == "visual":
             result["evidence_ids"] = ["e2"]
+            result["visual_targets"] = [{"evidence_id": "e2", "position": "after", "fraction": None}]
         if schema["title"] == "ResponseDecision":
             data = model_packet(messages[-1]["content"])
             response_inputs.append(data["content"])
@@ -228,12 +228,12 @@ async def test_followup_uses_the_cited_part_and_preserves_only_reply_citations(b
     browsing.runtime.llm.generate_json = cite_second_part
     await finished(browsing, preview=True)
 
-    assert frame_requests == [(None, None), ("22", [65.0])]
-    assert visual.generated == 2
+    assert frame_requests == [("22", [73])]
+    assert visual.generated == 1
     assert len(response_inputs) == 1
     assert "P2 画面 蓝色液体位于透明杯中。" in response_inputs[0]
-    assert "P2 字幕 第二P的字幕。" in response_inputs[0]
-    assert browsing.intents()[0]["evidence"] == ["frame:22:65"]
+    assert "P2 字幕 第二P的字幕。" not in response_inputs[0]
+    assert browsing.intents()[0]["evidence"] == ["frame:22:74"]
 
 
 async def test_missing_visual_provider_reads_subtitles_without_followup(browsing):
@@ -253,7 +253,7 @@ async def test_exhausted_parent_budget_never_generates_followup(browsing):
     assert row["budget"]["model_calls"] == 2 and visual.generated == 1
     assert row["status"] == "partial" and task["status"] == "checkpoint"
     assert task["payload"]["retry_kind"] == "round_budget"
-    assert task["visual_followup"]["status"] == "requested" and len(inputs) == 1
+    assert task["visual_followup"]["status"] == "prepared" and len(inputs) == 1
     assert task["decisions"][0]["coverage_required"] == "visual"
     assert not browsing.intents() and not browsing.adapter.sent
 

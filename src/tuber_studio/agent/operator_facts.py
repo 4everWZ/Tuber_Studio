@@ -13,12 +13,20 @@ def now(browsing):
 
 
 def _excerpt(browsing, account, character, bvid):
-    progress = browsing.repo.content_progress({"account_id": account, "character_id": character}, bvid)
-    material = (progress or {}).get("material") or {}
+    scope = {"account_id": account, "character_id": character}
+    progress = browsing.repo.content_progress(scope, bvid)
+    priority = browsing.repo.watch_evidence(scope, bvid)
+    material = (priority or {}).get("material") or (progress or {}).get("material") or {}
+    pages = {str(part["cid"]): part.get("page", index)
+             for index, part in enumerate(material.get("metadata", {}).get("parts", []), 1)}
     for part in material.get("parts", []):
+        if part.get("asr"):
+            continue
         for segment in part.get("segments", []):
             if text := segment.get("text"):
-                number = part.get("part") or 1
+                number = pages.get(str(part.get("cid")))
+                if not number:
+                    continue
                 start = segment.get("start") or 0
                 return {"text": text, "kind": "visual" if part.get("visual") else "subtitle", "part": number,
                         "start": start, "href": f"https://www.bilibili.com/video/{bvid}?p={number}&t={int(start)}"}
@@ -49,16 +57,18 @@ def daily_events(browsing, day):
     # Public browsing/comment sources only. Exclude drafts and outgoing/private material.
     videos = activity(browsing, day=day, kind="videos", page_size=100)["items"]
     comments = activity(browsing, day=day, kind="comments", page_size=100)["items"]
-    by_video = defaultdict(list)
+    by_resource = defaultdict(list)
     for comment in comments:
-        if comment.get("bvid") and comment.get("source_text"):
-            by_video[comment["bvid"]].append(comment)
+        resource = comment.get("bvid") or (comment.get("thread") or {}).get("resource")
+        if resource and comment.get("source_text"):
+            by_resource[resource].append(comment)
     metadata = {video["bvid"]: video for video in videos}
-    candidates = set(metadata) | set(by_video)
+    candidates = set(metadata) | set(by_resource)
     events = []
-    for bvid in candidates:
-        video = metadata.get(bvid, {})
-        thread = sorted(by_video.get(bvid, []), key=lambda item: (
+    for resource in candidates:
+        bvid = None if resource.startswith("dynamic:") else resource
+        video = metadata.get(resource, {})
+        thread = sorted(by_resource.get(resource, []), key=lambda item: (
             item["status"] != "published", not item.get("source_href"), -item["updated_at"], item["id"],
         ))
         comment = thread[0] if thread else None
@@ -85,12 +95,13 @@ def daily_events(browsing, day):
                            "same_account": "same_account_replied"}.get(comment.get("comment_outcome")):
                 reply = {"state": state, "text": comment.get("confirmed_reply_text") or comment.get("account_reply_text"),
                          "href": comment.get("sent_href")}
-        material = _excerpt(browsing, account, character, bvid)
+        material = _excerpt(browsing, account, character, bvid) if bvid else None
         if not source and not material:
             continue
-        events.append({"bvid": bvid, "day": day, "title": video.get("title") or bvid,
-                       "href": f"https://www.bilibili.com/video/{bvid}", "source": source or material,
+        href = f"https://www.bilibili.com/video/{bvid}" if bvid else f"https://t.bilibili.com/{resource.removeprefix('dynamic:')}"
+        events.append({"bvid": bvid, "resource": resource, "day": day, "title": video.get("title") or bvid or "动态评论",
+                       "href": href, "source": source or material,
                        "material": material if source else None, "reply": reply, "thread": anchor,
                        "at": max(video.get("updated_at", 0), (comment or {}).get("updated_at", 0))})
     return sorted(events, key=lambda item: (-bool(item["reply"]), -bool(item["source"].get("href")),
-                                            -bool(item["material"]), -item["at"], item["bvid"]))
+                                            -bool(item["material"]), -item["at"], item["resource"]))

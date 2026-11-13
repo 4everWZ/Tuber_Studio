@@ -320,6 +320,7 @@ class BilibiliAdapter:
             "thread_id": root,
             "parent_comment_id": parent,
             "parent_verified": parent_verified,
+            **({"reply_count": reply["rcount"]} if type(reply.get("rcount")) is int and reply["rcount"] >= 0 else {}),
             "platform_user_id": _positive_id(member["mid"]),
             "display_name": str(member["uname"]),
             "content": str(content["message"]),

@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
-from tuber_studio.app import create_app
 from tuber_studio.agent import operator_facts
+from tuber_studio.app import create_app
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 
@@ -272,12 +272,9 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
             metadata = await super().video_metadata(video)
             return metadata | {"parts": metadata["parts"] + [{"cid": "22", "title": "第二P", "duration": 30}]}
 
-        async def subtitles(self, bvid, cid, languages):
+        async def video_frames(self, metadata, count, *, cid, timestamps):
             if self.hold_second and cid == "22":
                 await asyncio.Event().wait()
-            return await super().subtitles(bvid, cid, languages)
-
-        async def video_frames(self, metadata, count, *, cid, timestamps):
             return [
                 {"id": f"{cid}-{index}", "cid": cid, "actual_time": timestamp,
                  "width": 1, "height": 1, "image": PNG, "kind": "storyboard"}
@@ -329,7 +326,8 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
         assert first["subtitle"]["covered_seconds"] == 5 and first["subtitle"]["track_complete"]
         assert second["subtitle"]["covered_seconds"] == 7 and second["subtitle"]["gap_seconds"] == 10
         assert first["visual"]["state"] == second["visual"]["state"] == "sampled"
-        assert len(first["visual"]["samples"]) == len(second["visual"]["samples"]) == 3
+        assert len(first["visual"]["samples"]) == 1 and len(second["visual"]["samples"]) == 2
+        assert result["phase"] == "complete" and result["comments"]["at_end"]
         assert second["audio"]["state"] == "unavailable"
         assert platform.calls.count(("subtitles", BV, "11")) == 1
         assert platform.calls.count(("subtitles", BV, "22")) == 1

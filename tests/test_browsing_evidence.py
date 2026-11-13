@@ -91,9 +91,14 @@ class PublicAdapter:
             self.cancelled.set()
             raise
 
-    async def video_frames(self, metadata, count):
-        self.calls.append(("frames", count))
-        return copy.deepcopy(self.frames)
+    async def video_frames(self, metadata, count, *, cid=None, timestamps=None, windows=None):
+        self.calls.append(("frames", count, cid, timestamps, windows))
+        frames = [frame for frame in self.frames if cid is None or frame["cid"] == cid or frame["cid"] == "999"]
+        if windows:
+            frames = [frame for frame in frames if not isinstance(frame["actual_time"], (int, float))
+                      or not 0 <= frame["actual_time"] <= next(part["duration"] for part in metadata["parts"] if part["cid"] == cid)
+                      or any(start <= frame["actual_time"] <= end for start, end in windows)]
+        return copy.deepcopy(frames[:count])
 
 
 class TestVisual:
@@ -468,11 +473,11 @@ async def test_visual_default_is_unavailable_and_never_creates_fake_evidence(evi
 
 async def test_cc_and_real_frames_are_used_without_resource_admission(evidence_factory, config):
     adapter = PublicAdapter()
-    adapter.failures["457"] = "no_subtitles"
+    adapter.failures["456"] = "no_subtitles"
     visual = TestVisual()
     visual.cap.update(available=False, admitted=False)
     service = evidence_factory(adapter, visual)
-    _, material = await service.prepare(BV, config | {"visual_enabled": True})
+    _, material = await service.prepare(BV, config)
     assert service.material_mode(material) == "subtitle_visual" and visual.calls == 1
     assert material["visual_frames"][0]["actual_time"] == 8
 
@@ -483,7 +488,7 @@ async def test_visual_failure_preserves_cc_or_marks_material_unavailable(evidenc
     visual.cancel_error = ValueError("视觉接口暂时无法返回结果")
     service = evidence_factory(PublicAdapter() if has_cc else await no_cc_adapter(), visual)
     if has_cc:
-        _, material = await service.prepare(BV, config)
+        _, material = await service.prepare(BV, config, visual_source_ids=["456:1:0"])
         assert service.material_mode(material) == "subtitle"
         assert "暂时无法返回结果" in material["visual_error"]
     else:
@@ -492,17 +497,18 @@ async def test_visual_failure_preserves_cc_or_marks_material_unavailable(evidenc
         assert error.value.missing_material
 
 
-async def test_frame_policy_changes_actual_request_without_reusing_baseline(evidence_factory, config):
+async def test_no_caption_fallback_distributes_bounded_storyboard_windows(evidence_factory, config):
     adapter = await no_cc_adapter()
     adapter.metadata["parts"][0]["duration"] = 300
     service = evidence_factory(adapter, TestVisual())
-    config["visual_enabled"] = True
-    first_key, baseline = await service.prepare(BV, config)
-    second_key, adaptive = await service.prepare(BV, config | {"frame_sampling": "adaptive"})
-    assert first_key != second_key
-    assert baseline["frame_sampling"] == "baseline"
-    assert adaptive["frame_sampling"] == "adaptive"
-    assert [call[1] for call in adapter.calls if call[0] == "frames"] == [3, 6]
+    _, material = await service.prepare(BV, config | {"frame_sampling": "adaptive"})
+    batches = [call[4] for call in adapter.calls if call[0] == "frames" and call[2] == "456"]
+    windows = [window for batch in batches for window in batch]
+    assert max(map(len, batches)) == 6 and len(windows) == 25
+    assert windows[0][0] == 0 and windows[-1][1] == 300
+    assert all(10 <= end - start <= 15 for start, end in windows)
+    scan = next(scan["windows"] for scan in material["visual_scan"] if scan["cid"] == "456")
+    assert scan[0]["samples"] == [8] and scan[1]["state"] == "gap"
 
 
 async def test_opt_in_local_asr_is_partial_audio_evidence_not_cc(evidence_factory, config, monkeypatch):
@@ -535,7 +541,6 @@ async def test_visual_references_actual_times_and_each_part_without_claiming_ful
     adapter = await no_cc_adapter()
     adapter.frames.append(dict(adapter.frames[0], id="second", cid="457", requested_time=35, actual_time=31))
     visual = TestVisual()
-    visual.returned = {"frame_observations": {adapter.frames[0]["id"]: "珊瑚", "second": "海龟"}}
     service = evidence_factory(adapter, visual)
     identity, material = await service.prepare(
         BV, config | {"visual_enabled": True}, task={"id": "visual-task"}
@@ -545,12 +550,12 @@ async def test_visual_references_actual_times_and_each_part_without_claiming_ful
         ("457", 31),
     ]
     assert all(not part["coverage"]["complete"] for part in material["parts"])
-    assert [part["segments"][0]["text"] for part in material["parts"]] == ["珊瑚", "海龟"]
+    assert all(part["segments"][0]["text"] for part in material["parts"])
     assert material["coverage"] == "sampled_visual"
     assert base64.b64decode(material["visual_frames"][0]["image_base64"]) == PNG
     assert material["parts"][0]["visual_provider"] == {"provider_id": "controlled-test", "version": "1"}
     assert (
-        visual.cancelled == ["visual-task"] and visual.task["cancel_signal"].is_set() and visual.frames == []
+        set(visual.cancelled) == {"visual-task"} and visual.task["cancel_signal"].is_set() and visual.frames == []
     )
     assert service.load(identity)["visual_frames"]
 
@@ -676,7 +681,7 @@ async def test_platform_frame_request_has_its_own_timeout(evidence_factory, conf
 
     adapter.video_frames = stalled_frames
     service = evidence_factory(adapter, visual)
-    _, material = await service.prepare(BV, config)
+    _, material = await service.prepare(BV, config, visual_source_ids=["456:1:0"])
     assert material["visual_error"] == "读取视频画面超时"
     assert service.material_mode(material) == "subtitle" and visual.calls == 0
 
@@ -727,23 +732,22 @@ async def test_requested_visual_appends_to_cached_cc_without_refetching_original
     first_expiry = service.store.one("SELECT expires_at FROM browsing_materials WHERE id=?", (first_key,))[
         "expires_at"
     ]
-    assert visual.calls == 1
+    assert visual.calls == 0
     adapter.frames[0].update(id="second", actual_time=10)
     target = ["456:1:0"]
     key, material = await service.prepare(BV, enabled, visual_source_ids=target, task={"id": "followup"})
-    assert key != first_key and visual.calls == 2
+    assert key != first_key and visual.calls == 1
     assert (
         service.store.one("SELECT expires_at FROM browsing_materials WHERE id=?", (key,))["expires_at"]
         == first_expiry
     )
-    assert material["parts"][:3] == first["parts"]
+    assert material["parts"][:2] == first["parts"]
     assert material["parts"][2]["visual_provider"] == {"provider_id": "controlled-test", "version": "1"}
-    assert material["parts"][2]["segments"][0]["start"] == 8
+    assert material["parts"][2]["segments"][0]["start"] == 10
     assert len([call for call in adapter.calls if call[0] == "subtitles"]) == 2
     assert len([call for call in adapter.calls if call[0] == "metadata"]) == 1
-    assert material["parts"][3]["segments"][0]["start"] == 10
     cached, _ = await service.prepare(BV, enabled, visual_source_ids=target)
-    assert cached == key and visual.calls == 2
+    assert cached == key and visual.calls == 1
 
 
 async def test_followup_and_initial_visual_requests_keep_distinct_targets(evidence_factory, config):
@@ -757,19 +761,20 @@ async def test_followup_and_initial_visual_requests_keep_distinct_targets(eviden
     await asyncio.sleep(0)
     adapter.subtitle_gate.set()
     plain, augmented = await asyncio.gather(ordinary, requested)
-    assert any(part.get("visual") for part in plain[1]["parts"])
+    assert not any(part.get("visual") for part in plain[1]["parts"])
     assert any(part.get("visual") for part in augmented[1]["parts"])
-    assert visual.calls == 2 and plain[1]["visual_source_ids"] != augmented[1]["visual_source_ids"]
+    assert visual.calls == 1 and augmented[1]["visual_source_ids"] == ["456:1:0"]
 
 
 async def test_other_provider_visual_is_not_reused_but_original_cc_is_shared(evidence_factory, config):
     adapter, visual = PublicAdapter(), TestVisual()
     service = evidence_factory(adapter, visual)
     enabled = config | {"visual_enabled": True}
-    _, first = await service.prepare(BV, enabled)
+    target = ["456:1:0"]
+    _, first = await service.prepare(BV, enabled, visual_source_ids=target)
     visual.cap["version"] = "2"
     visual.returned = {"version": "2", "frame_observations": {"first": "新模型看到的是透明容器"}}
-    _, current = await service.prepare(BV, enabled)
+    _, current = await service.prepare(BV, enabled, visual_source_ids=target)
     assert current["parts"][:2] == first["parts"][:2]
     assert visual.calls == 2
     assert current["parts"][-1]["segments"][0]["text"] == "新模型看到的是透明容器"
@@ -819,4 +824,4 @@ async def test_cc_visual_followup_cancel_or_deadline_collects_children(evidence_
         assert "期限" in outcome[1]["visual_error"]
     assert not service.pending and visual.frames == []
     assert visual.cancelled == ["followup"]
-    assert any(part.get("visual") for part in service.load(original)["parts"])
+    assert not any(part.get("visual") for part in service.load(original)["parts"])

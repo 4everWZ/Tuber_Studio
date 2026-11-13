@@ -557,12 +557,25 @@ class BrowsingService:
         task = self.repo.decode(self.store.one(
             "SELECT payload,error FROM browsing_tasks WHERE round_id=?", (row["id"],)
         ))
+        payload = task["payload"] if task else {}
+        coverage = payload.get("full_coverage")
+        comment_progress = payload.get("comment_progress")
+        status = row["status"]
+        if status == "completed" and not payload.get("comment_progress", {}).get("at_end"):
+            status = "partial"
         return {
-            "id": row["id"], "status": row["status"], "preview": True, "full_video": True,
+            "id": row["id"], "status": status, "preview": True, "full_video": True,
             "selection": row["config"]["operator_selection"],
-            "coverage": task["payload"].get("full_coverage") if task else None,
+            "coverage": coverage,
+            "phase": payload.get("phase", "watching"),
+            "comments": {key: comment_progress.get(key) for key in (
+                "pages_read", "thread_pages_read", "next_page", "at_end", "links",
+            )} if comment_progress else None,
+            "yielded": status == "waiting" and payload.get("yielded", False),
             "error": row["error"] or (task["error"] if task else None),
-            "can_resume": row["status"] in {"paused", "cancelled", "partial", "failed"},
+            "can_resume": status in {"paused", "cancelled", "partial", "failed"} or bool(
+                status == "completed" and coverage and coverage.get("viewing") != "watched"
+            ),
         }
 
     async def update_full_video(self, request_id, *, resume):
@@ -586,6 +599,8 @@ class BrowsingService:
                     "WHERE id=? AND status=?",
                     (dump(config), dump(dict.fromkeys(row["budget"], 0)), time.time(), request_id, row["status"]),
                 )
+                self.store.execute("UPDATE browsing_tasks SET payload=json_remove(payload,'$.yielded') WHERE round_id=?",
+                                   (request_id,))
                 self.changed.set()
         elif row["status"] in {"waiting", "queued", "running"}:
             if child := self.active.get(request_id):
@@ -603,7 +618,7 @@ class BrowsingService:
         account, character, version = self.discovery.history_scope()
         item = self.store.one(
             "SELECT id FROM browsing_rounds WHERE status='waiting' AND json_extract(config,'$.full_video')=1 "
-            "AND account_id=? AND character_id=? AND character_version=? ORDER BY created_at,id LIMIT 1",
+            "AND account_id=? AND character_id=? AND character_version=? ORDER BY updated_at,id LIMIT 1",
             (account, character, version),
         )
         if not item:

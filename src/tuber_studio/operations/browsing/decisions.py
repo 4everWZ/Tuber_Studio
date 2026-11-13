@@ -169,7 +169,8 @@ class BrowsingDecisions:
         allow_visual = data.get("allow_visual", self.browsing.evidence.has_visual_provider())
         if schema is ContentDecision:
             instruction += (
-                "需要补看时选visual，并引用最接近想补看时码的材料编号。"
+                "需要补看时选visual。visual_targets引用字幕编号并选before（之前）、during（当时）、"
+                "after（之后）或within（段内，fraction填0到1）；其它位置fraction为null。"
                 if allow_visual
                 else "本次取样画面已到齐。请用现有材料判断，材料仍不足时可以暂不发言。"
             )
@@ -320,6 +321,7 @@ class BrowsingDecisions:
                 allowed = {segment["id"] for segment in data["segments"]}
                 if (
                     not set(value.evidence_ids) <= allowed
+                    or any(target.evidence_id not in allowed for target in value.visual_targets)
                     or value.worth_commenting
                     and not value.evidence_ids
                 ):
@@ -536,18 +538,21 @@ class BrowsingDecisions:
         )
 
     @reuse_turn_token_counts
-    async def _content_decisions(self, material, row, metrics):
+    async def _content_decisions(self, material, row, metrics, *, allow_visual=None):
         decisions = []
         presentation = self._content_presentation(material, row)
         version = material.get("source_version") or self.browsing.evidence.source_version(material)
         for chunk in await self._chunks(material, row):
-            chunk_key = content_hash({"source_version": version, "chunk_ids": [s["id"] for s in chunk]})
+            can_watch = (self.browsing.evidence.has_visual_provider() and not material.get("visual_source_ids")
+                         if allow_visual is None else allow_visual)
+            chunk_key = content_hash({"source_version": version, "chunk_ids": [s["id"] for s in chunk],
+                                      "allow_visual": can_watch, "visual_targets": 1})
             stored = self.browsing.repo.read_chunk(row, material["metadata"]["bvid"], chunk_key)
             if stored:
                 decisions.extend(restore_stored_content_decisions(material, [stored]))
                 continue
             data, aliases = presentation.present(chunk)
-            data["allow_visual"] = self.browsing.evidence.has_visual_provider() and not material.get("visual_source_ids")
+            data["allow_visual"] = can_watch and "subtitle" in data["source_kinds"]
             decision = await self._model(
                 row,
                 ContentDecision,
@@ -569,13 +574,16 @@ class BrowsingDecisions:
         requested = [decision for decision in decisions if decision.coverage_required == "visual"]
         if not requested or not self.browsing.evidence.has_visual_provider() or material.get("visual_source_ids"):
             return material, decisions
+        targets = {(target.evidence_id, target.position, target.fraction)
+                   for decision in requested for target in decision.visual_targets}
         source_ids = {ref for decision in requested for ref in decision.evidence_ids}
         if not source_ids:
             source_ids = {self.browsing._segments(material)[0]["id"]}
+        requests = targets or source_ids
         task = {
             "id": "visual:" + content_hash([
                 row["account_id"], row["character_id"], row["character_version"], material["metadata"]["bvid"],
-                material["source_version"], sorted(source_ids),
+                material["source_version"], sorted(requests, key=repr),
             ]),
             "round_id": row["id"],
             "parent_id": identity,
@@ -587,6 +595,8 @@ class BrowsingDecisions:
             decisions_before=[decision.model_dump() for decision in decisions],
             source_material_key=result["material_key"],
             evidence_ids=sorted(source_ids),
+            targets=[{"evidence_id": source, "position": position, "fraction": fraction}
+                     for source, position, fraction in sorted(targets, key=repr)],
         )
         payload = json.loads(self.browsing.store.one("SELECT payload FROM browsing_tasks WHERE id=?", (identity,))["payload"])
         self.browsing.repo.complete(identity, result["owner"], result["generation"], "evidence_ready",
@@ -596,7 +606,7 @@ class BrowsingDecisions:
             depth = agent_depth.set(agent_depth.get() + 1)
             try:
                 return await self.browsing._prepare_evidence(
-                    material["metadata"]["bvid"], row["config"], visual_source_ids=source_ids,
+                    material["metadata"]["bvid"], row["config"], visual_source_ids=requests,
                     task=task, deadline=row["deadline"],
                 )
             finally:
@@ -618,6 +628,49 @@ class BrowsingDecisions:
         decisions = await self._content_decisions(enriched, row, metrics)
         followup["status"] = "completed"
         return enriched, decisions
+
+    async def priority_top_level(self, active, row, material, context, metrics):
+        """Use the ordinary source key, owner check and publication boundary."""
+        metadata = material["metadata"]
+        bvid = metadata["bvid"]
+        scope = canonical_intent("bilibili", bvid, "top-level", row["character_id"])
+        if self.browsing.publication.source_intent(row, scope) or any(
+            str(item.get("platform_user_id") or item.get("user_id")) == row["account_id"]
+            and str(item.get("parent_comment_id") or "0") in {"0", str(item.get("comment_id"))}
+            for item in context["items"]
+        ):
+            return
+        progress = self.browsing.repo.content_progress(row, bvid) or {}
+        saved = progress.get("main_decision") or {}
+        if saved.get("action") in {"finish", "skip", "read_comments"}:
+            return
+        references = {segment["id"] for segment in self.browsing._segments(material)}
+        if not references or active["config"]["top_level_limit"] <= 0:
+            return
+        response = await self._response(row, material, context, references, "top_level", metrics)
+        self.browsing.repo.save_main_decision(row, bvid, response)
+        if response.action != "reply_public" or not self.browsing.operations.accepting_work:
+            return
+        try:
+            self.browsing.operations.assert_authorized(
+                automatic=True, channel="comments", account_id=row["account_id"], character=self.browsing.runtime.character,
+                epoch=row["epoch"],
+            )
+        except ValueError:
+            return
+        if not self.browsing.effective()["top_level_enabled"]:
+            return
+        key, _ = await self.browsing.evidence._store(material)
+        self.browsing._check_round(row)
+        if not self.browsing.operations.accepting_work or self.browsing.operations.policy()["epoch"] != row["epoch"] or not self.browsing.effective()["top_level_enabled"]:
+            return
+        self.browsing.repo.reserve_budget(row["id"], top_levels=1)
+        intent = self.browsing.publication._intent(
+            active, "top_level", {"type": 1, "oid": str(metadata["aid"]), "bvid": bvid, "root": "0", "parent": "0"},
+            response, [key], response.evidence_ids,
+        )
+        if intent and intent["auto_authorized"]:
+            await self.browsing.publish(intent["id"], automatic=True)
 
     async def _evaluate_task(self, result, row, metrics):
         if result.get("comment_only"):
@@ -711,6 +764,7 @@ class BrowsingDecisions:
                             else list(references)[:8]
                         ),
                         coverage_required=coverage,
+                        visual_targets=direct_response.visual_targets if direct_response else [],
                     )
                 ]
                 if coverage != "provided":
@@ -742,6 +796,7 @@ class BrowsingDecisions:
                 "coverage": material["coverage"],
                 "material_mode": self.browsing.evidence.material_mode(material),
                 "visual_error": material.get("visual_error"),
+                "visual_scan": material.get("visual_scan", []),
                 "decisions": [d.model_dump() for d in decisions],
                 "reason": "；".join(dict.fromkeys(decision_explanation(d, material) for d in decisions)),
                 "subtitle_tracks": [
@@ -1239,7 +1294,8 @@ class BrowsingDecisions:
                "covered_comments列当前回复目标和正文一并回答的其他来评编号。"
                if context.get("grouped_comments") else "")
             + (
-                "想发主评选reply_public并写正文。翻评论选read_comments，补看画面选watch_frames并引用附近时码，"
+                "想发主评选reply_public并写正文。翻评论选read_comments，补看画面选watch_frames；"
+                "visual_targets引用字幕并选before、during、after或within（段内比例fraction为0到1，其它为null）。"
                 "补读选read_more，结束观看选finish，略过选skip，稍后处理选wait。"
                 "video_preference填like/not_interested/neutral，preference_reason说说视频里具体哪点影响了你的偏好。"
                 if video_actions

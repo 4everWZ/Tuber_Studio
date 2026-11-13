@@ -57,7 +57,9 @@ def comment_href(resource, comment_id=None):
 
 def observe_thread(store, row, resource, items, *, via, resource_author_uid=None):
     """Persist only platform-verified public rows, with independent discovery sources."""
-    if row.get("preview") or not resource or not items or not row.get("account_id") or not row.get("character_id"):
+    if (row.get("preview") and not row.get("config", {}).get("full_video")) or not (
+        resource and items and row.get("account_id") and row.get("character_id")
+    ):
         return
     if not _table(store, "browsing_comment_observations"):
         store.db.execute(

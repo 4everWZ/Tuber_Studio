@@ -30,7 +30,28 @@ class EvidenceUnavailable(ValueError):
         super().__init__(message)
 
 
-VISUAL_SAMPLING_VERSION = "cid-aligned-v1"
+VISUAL_SAMPLING_VERSION = "cid-aligned-v2"
+STORYBOARD_STEP = 12
+STORYBOARD_SCAN_QUESTION = (
+    "按输入顺序逐一说明每张画面实际可见的内容，即使画面静止或仅有文字。"
+    "used_frames列出所有能描述的画面序号。"
+)
+
+
+def storyboard_windows(start, end):
+    count = max(1, round((end - start) / STORYBOARD_STEP), math.ceil((end - start) / 15))
+    step = (end - start) / count
+    return [(start + index * step, end if index == count - 1 else start + (index + 1) * step)
+            for index in range(count)]
+
+
+def storyboard_changes(parts, cid, start, end):
+    observations = sorted((segment for part in parts if part.get("visual") and str(part["cid"]) == cid
+                           for segment in part["segments"] if start <= segment["start"] <= end),
+                          key=lambda item: item["start"])
+    return [(previous["start"] + current["start"]) / 2
+            for previous, current in zip(observations, observations[1:])
+            if current["start"] - previous["start"] >= 10 and current["text"] != previous["text"]]
 
 
 class BrowsingEvidence:
@@ -156,10 +177,20 @@ class BrowsingEvidence:
     def has_visual_provider(self):
         return bool(self.visual.capabilities().get("images"))
 
+    def visual_batch_size(self):
+        capabilities = self.visual.capabilities()
+        maximum = capabilities.get("max_frames")
+        return min(maximum, 6) if capabilities.get("multiple_images") and type(maximum) is int and maximum > 0 else 1
+
+    @staticmethod
+    def pending_visual_scan(material):
+        return any(window["state"] in {"pending", "retry"} for scan in material.get("visual_scan", [])
+                   for window in scan["windows"])
+
     @staticmethod
     def material_mode(material):
         subtitles = any(not part.get("visual") and not part.get("asr") for part in material["parts"])
-        visual = bool(material.get("visual_frames"))
+        visual = any(part.get("visual") for part in material["parts"])
         return "subtitle_visual" if subtitles and visual else "subtitle" if subtitles else "visual" if visual else "audio"
 
     @staticmethod
@@ -169,7 +200,10 @@ class BrowsingEvidence:
         result.pop("visual_frames", None)
         result.pop("visual_sampling_version", None)
         result.pop("visual_source_ids", None)
+        result.pop("visual_requests", None)
         result.pop("frame_sampling", None)
+        result.pop("visual_scan", None)
+        result.pop("visual_change_cids", None)
         result.pop("visual_error", None)
         result["coverage"] = "partial" if result["missing_parts"] else "all_available_cc"
         return result
@@ -188,7 +222,8 @@ class BrowsingEvidence:
         if self.closed:
             raise EvidenceUnavailable("cancelled", "浏览证据服务正在停止")
         visual = self.has_visual_provider()
-        visual_source_ids = tuple(sorted(set(visual_source_ids)))
+        visual_requests = tuple(sorted({(item, "during", None) if isinstance(item, str) else tuple(item)
+                                        for item in visual_source_ids}, key=repr))
         sampling = config.get("frame_sampling", "baseline")
         cached_cc = None
         if not force:
@@ -207,28 +242,31 @@ class BrowsingEvidence:
                         if reason:
                             raise EvidenceUnavailable("filtered", reason)
                         has_visual = any(part.get("visual") for part in material["parts"])
+                        needs_scan = bool(material["missing_parts"])
                         current_visual = visual and self._current_visual(material) and material.get("frame_sampling", "baseline") == sampling
-                        if current_visual and tuple(material.get("visual_source_ids", ())) == visual_source_ids or not visual and not has_visual:
+                        if (current_visual and tuple(map(tuple, material.get("visual_requests", ()))) == visual_requests
+                                and not self.pending_visual_scan(material)
+                                or not visual_requests and not has_visual and (not visual or not needs_scan)):
                             self.hits += 1
                             return row["id"], material
-                        base = material if current_visual and visual_source_ids else self._cc_only(material)
+                        base = material if current_visual and not material.get("visual_source_ids") else self._cc_only(material)
                         if base["parts"] and cached_cc is None:
                             cached_cc = (base, row["expires_at"])
-                            if not visual:
+                            if not visual_requests and (not visual or not needs_scan):
                                 self.hits += 1
                                 return await self._store(base, expires_at=row["expires_at"])
                 except EvidenceUnavailable as error:
                     if error.kind == "filtered":
                         raise
                     continue
-        if cached_cc is not None:
+        if cached_cc is not None and (visual_requests or visual):
             self.hits += 1
             base, expires_at = cached_cc
             key = (
                 "visual_followup",
                 video,
                 tuple(config["languages"]),
-                visual_source_ids,
+                visual_requests,
                 self._visual_identity(),
                 sampling,
                 self.source_version(base),
@@ -240,7 +278,7 @@ class BrowsingEvidence:
                     task=task,
                     deadline=deadline,
                     expires_at=expires_at,
-                    visual_source_ids=visual_source_ids,
+                    visual_requests=visual_requests,
                     sampling=sampling,
                 ),
             ) as result:
@@ -260,7 +298,7 @@ class BrowsingEvidence:
                 tuple(config["languages"]),
                 visual,
                 sampling,
-                visual_source_ids,
+                visual_requests,
                 self._visual_identity(),
             )
             async with self._flight(
@@ -270,13 +308,13 @@ class BrowsingEvidence:
                     config,
                     task=task,
                     deadline=deadline,
-                    visual_source_ids=visual_source_ids,
+                    visual_requests=visual_requests,
                 ),
             ) as result:
                 return result[0], copy.deepcopy(result[1])
 
     async def _prepare(
-        self, metadata, config, *, task=None, deadline=None, visual_source_ids=()
+        self, metadata, config, *, task=None, deadline=None, visual_requests=()
     ):
         parts, missing = [], []
         subtitle_error = None
@@ -310,8 +348,8 @@ class BrowsingEvidence:
             "coverage": "sampled_audio" if parts and not have_cc else "partial" if missing else "all_available_cc",
         }
         visual_failure = None
-        if self.has_visual_provider():
-            visual_failure = await self._add_visual(material, task, deadline, visual_source_ids, sampling)
+        if self.has_visual_provider() and (missing or visual_requests):
+            visual_failure = await self._add_visual(material, task, deadline, visual_requests, sampling)
         if not material["parts"]:
             subtitle = subtitle_error or "无可用字幕"
             visual = material.get("visual_error") or "未配置多模态视觉接口"
@@ -337,68 +375,146 @@ class BrowsingEvidence:
         return result
 
     @staticmethod
-    def _bind_visual_sampling(material, frames, source_ids, sampling):
+    def _bind_visual_sampling(material, frames, requests, sampling):
         material["visual_frames"] = frames
         material["visual_sampling_version"] = VISUAL_SAMPLING_VERSION
-        material["visual_source_ids"] = list(source_ids)
+        material["visual_source_ids"] = list(dict.fromkeys(request[0] for request in requests))
+        material["visual_requests"] = list(requests)
         material["frame_sampling"] = sampling
 
-    def _visual_targets(self, parts, source_ids, sampling="baseline"):
-        groups = []
-        selected = set(source_ids)
-        for part in parts:
-            segments = [
-                segment
-                for segment in part["segments"]
-                if self._valid_time(segment.get("start"))
-                and self._valid_time(segment.get("end"))
-                and segment["end"] >= segment["start"]
-            ]
-            if segments:
-                matched = [segment for segment in segments if segment["id"] in selected]
-                groups.append((len(matched), part["cid"], matched or segments))
-        if not groups:
-            return None, None
-        _, cid, segments = max(groups, key=lambda group: group[0])
-        if sampling == "adaptive" and selected:
-            if len(segments) > 3:
-                segments = [segments[int(len(segments) * p)] for p in (0.15, 0.50, 0.85)]
-            times = []
-            for segment in segments:
-                start, end = segment["start"], segment["end"]
-                times.append((start + end) / 2)
-                if end - start >= 4:
-                    times.append(start + 0.75 * (end - start))
-            return str(cid), list(dict.fromkeys(sorted(times)))
-        if len(segments) > 3:
-            segments = [segments[int(len(segments) * p)] for p in (0.15, 0.50, 0.85)]
-        return str(cid), list(dict.fromkeys((s["start"] + s["end"]) / 2 for s in segments))
+    def _visual_targets(self, material, requests):
+        durations = {str(part["cid"]): part["duration"] for part in material["metadata"]["parts"]}
+        segments = {segment["id"]: (str(part["cid"]), segment) for part in material["parts"]
+                    if not part.get("visual") for segment in part["segments"]}
+        targets = {}
+        for identity, position, fraction in requests:
+            if identity not in segments:
+                continue
+            cid, segment = segments[identity]
+            start, end = segment.get("start"), segment.get("end")
+            if not self._valid_time(start) or not self._valid_time(end) or end < start:
+                continue
+            match position:
+                case "before":
+                    target = start - 3
+                case "after":
+                    target = end + 3
+                case "within" if self._valid_time(fraction) and fraction <= 1:
+                    target = start + fraction * (end - start)
+                case _:
+                    target = (start + end) / 2
+            times = targets.setdefault(cid, [])
+            target = min(durations[cid], max(0, target))
+            if target not in times:
+                times.append(target)
+        return targets
 
-    async def _with_visual(self, material, *, task, deadline, expires_at, visual_source_ids, sampling):
-        await self._add_visual(material, task, deadline, visual_source_ids, sampling)
+    async def _with_visual(self, material, *, task, deadline, expires_at, visual_requests, sampling):
+        await self._add_visual(material, task, deadline, visual_requests, sampling)
         material["fetched_at"] = time.time()
         return await self._store(material, expires_at=expires_at)
 
-    async def _add_visual(self, material, task, deadline, source_ids, sampling):
-        cid, timestamps = self._visual_targets(material["parts"], source_ids, sampling) if source_ids else (None, None)
+    async def _add_visual(self, material, task, deadline, requests, sampling):
+        metadata = material["metadata"]
         previous = {frame["id"]: frame for frame in material.get("visual_frames", [])}
         observed = {frame["id"] for part in material["parts"] for frame in part.get("frame_evidence", [])}
-        try:
-            parts, frames = await self._visual_parts(
-                material["metadata"], task, deadline, cid=cid, timestamps=timestamps, sampling=sampling,
-                known_frames=observed,
-            )
-        except BrowsingBudgetDeferred:
-            raise
-        except Exception as error:
+        scan_index = {scan["cid"]: scan["windows"] for scan in material.get("visual_scan", [])}
+        batch_size = min(self.visual_batch_size(), 3 if sampling == "baseline" else 6)
+        if requests:
+            targets = self._visual_targets(material, requests)
+            batches = [(cid, times[offset:offset + batch_size], None)
+                       for cid, times in targets.items() for offset in range(0, len(times), batch_size)]
+        else:
+            missing = {str(item["cid"]) for item in material["missing_parts"]}
+            batches = []
+            for part in metadata["parts"]:
+                cid = str(part["cid"])
+                if cid not in missing:
+                    continue
+                windows = scan_index.setdefault(cid, [
+                    {"start": start, "end": end, "state": "pending", "samples": []}
+                    for start, end in storyboard_windows(0, part["duration"])
+                ])
+                pending = [window for window in windows if window["state"] in {"pending", "retry"}]
+                batches.extend((cid, None, pending[offset:offset + batch_size])
+                               for offset in range(0, len(pending), batch_size))
+            material["visual_scan"] = [{"cid": cid, "windows": windows} for cid, windows in scan_index.items()]
+        if not batches and not requests and scan_index:
+            return None
+        if not batches:
+            error = EvidenceUnavailable("no_frames", "没有可绑定到实际分P和时码的补看请求")
             material["visual_error"] = public_error(error)
             return error
-        material.pop("visual_error", None)
-        material["parts"].extend(parts)
-        previous.update((frame["id"], frame) for frame in frames)
-        self._bind_visual_sampling(material, list(previous.values()), source_ids, sampling)
-        material["coverage"] = "sampled_visual"
-        return None
+        failure = None
+        durations = {str(part["cid"]): part["duration"] for part in metadata["parts"]}
+        for cid, timestamps, windows in batches:
+            try:
+                parts, frames = await self._visual_parts(
+                    metadata, task, deadline, cid=cid, timestamps=timestamps,
+                    windows=[(window["start"], window["end"]) for window in windows] if windows else None,
+                    known_frames=observed, question=STORYBOARD_SCAN_QUESTION if windows else None,
+                )
+            except BrowsingBudgetDeferred as error:
+                if not material["parts"]:
+                    raise
+                failure = error
+                break
+            except (ValueError, TimeoutError, OSError) as error:
+                failure = error
+                for window in windows or []:
+                    window["state"] = "retry"
+                if not material["parts"]:
+                    break
+                continue
+            material["parts"].extend(parts)
+            new_observations = {frame["id"] for part in parts for frame in part["frame_evidence"]}
+            for frame in frames:
+                if frame["id"] in new_observations and (requests or len(previous) < batch_size):
+                    previous[frame["id"]] = frame
+            observed.update(new_observations)
+            samples = sorted({segment["start"] for part in parts for segment in part["segments"]})
+            for window in windows or []:
+                window["samples"] = [value for value in samples if window["start"] <= value < window["end"]
+                                     or value == window["end"] == durations[cid]]
+                window["state"] = "sampled" if window["samples"] else "gap"
+        if not observed and failure is None:
+            failure = EvidenceUnavailable("no_frames", "指定时段没有可用故事板画面")
+        if failure:
+            material["visual_error"] = public_error(failure)
+        else:
+            material.pop("visual_error", None)
+        if observed:
+            # Long scans retain every observation and source identity. Keep a
+            # small illustrative subset of bitmap bytes in the shared cache.
+            keep = []
+            bitmap_size = 0
+            for frame in previous.values():
+                size = len(frame["image_base64"])
+                if bitmap_size + size <= 512 * 1024 and (requests or len(keep) < batch_size):
+                    keep.append(frame)
+                    bitmap_size += size
+            self._bind_visual_sampling(material, keep, requests, sampling)
+            material["coverage"] = "sampled_visual"
+        if not requests and any(window["state"] != "sampled" for windows in scan_index.values() for window in windows):
+            material["visual_error"] = material.get("visual_error") or "部分时段没有可核验的故事板画面"
+        if not requests and not failure:
+            checked = set(material.get("visual_change_cids", []))
+            for cid, duration in durations.items():
+                if cid in checked or cid not in scan_index:
+                    continue
+                targets = storyboard_changes(material["parts"], cid, 0, duration)[:batch_size]
+                if targets:
+                    try:
+                        parts, _ = await self._visual_parts(metadata, task, deadline, cid=cid,
+                                                            timestamps=targets, known_frames=observed)
+                    except (ValueError, TimeoutError, OSError) as error:
+                        material["visual_error"] = public_error(error)
+                        break
+                    material["parts"].extend(parts)
+                    observed.update(frame["id"] for part in parts for frame in part["frame_evidence"])
+                checked.add(cid)
+            material["visual_change_cids"] = sorted(checked)
+        return failure
 
     async def _store(self, material, *, expires_at=None):
         material["source_version"] = self.source_version(material)
@@ -437,7 +553,7 @@ class BrowsingEvidence:
         return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
     async def _visual_parts(
-        self, metadata, task, deadline, *, cid=None, timestamps=None, sampling="baseline", known_frames=frozenset(),
+        self, metadata, task, deadline, *, cid=None, timestamps=None, windows=None, known_frames=frozenset(), question=None,
     ):
         capabilities = dict(self.visual.capabilities())
         if not (
@@ -463,12 +579,7 @@ class BrowsingEvidence:
                 import inspect
 
                 sig = inspect.signature(self.adapter.video_frames)
-                count = 3
-                if sampling == "adaptive":
-                    target_cid = str(cid or metadata["parts"][0]["cid"])
-                    duration = next(part["duration"] for part in metadata["parts"] if str(part["cid"]) == target_cid)
-                    count = len(timestamps) if timestamps else 3 if duration <= 45 else 4 if duration <= 180 else 6
-                count = min(count, capabilities["max_frames"], 6) if capabilities.get("multiple_images") else 1
+                count = min(len(windows or timestamps or [None] * 3), self.visual_batch_size())
                 call_args = [metadata, count]
                 call_kwargs = {}
                 if cid is not None:
@@ -476,6 +587,10 @@ class BrowsingEvidence:
                         call_kwargs["cid"] = cid
                     elif cid != str(metadata["parts"][0]["cid"]):
                         raise EvidenceUnavailable("visual_unavailable", "平台适配器无法指定要补读的分P")
+                if windows and "windows" in sig.parameters:
+                    call_kwargs["windows"] = windows
+                elif windows:
+                    timestamps = [(start + end) / 2 for start, end in windows]
                 if "timestamps" in sig.parameters and timestamps:
                     call_kwargs["timestamps"] = timestamps
                 try:
@@ -488,9 +603,10 @@ class BrowsingEvidence:
                             frames = await self.reader(self.adapter.video_frames, *call_args)
                 except TimeoutError:
                     raise EvidenceUnavailable("deadline", "读取视频画面超时") from None
+                if frames == []:
+                    return [], []
                 if (
                     not isinstance(frames, list)
-                    or not frames
                     or len(frames) > count
                     or len(frames) > 1
                     and not capabilities.get("multiple_images")
@@ -525,6 +641,9 @@ class BrowsingEvidence:
                         raise EvidenceUnavailable(
                             "invalid_frames", "只能使用有分P、实际时间和有效图像的有界帧"
                         )
+                    if windows and not any(start <= actual_time < end or actual_time == end == durations[frame_cid]
+                                           for start, end in windows):
+                        continue
                     mime = (
                         "image/png"
                         if image.startswith(b"\x89PNG\r\n\x1a\n")
@@ -562,7 +681,7 @@ class BrowsingEvidence:
                     task,
                     metadata,
                     frames,
-                    "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
+                    question or "描述这些画面中的人物、物品和动作，概括你看到的具体内容。",
                     deadline=deadline,
                 )
                 if not isinstance(result, dict):

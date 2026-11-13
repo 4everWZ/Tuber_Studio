@@ -16,6 +16,7 @@ from ...operations_control import canonical_intent
 from ...providers import public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
+from .comment_timeline import observe_thread, resource_key
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
 from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
@@ -133,18 +134,26 @@ class CommentProgress:
         )
 
 
-async def video_comment_context(browsing, row, bvid):
+def comment_cursor_key(row, bvid):
+    return f"browsing_comment_page:{row['account_id']}:{row['character_id']}:{bvid}"
+
+
+async def video_comment_context(browsing, row, bvid, *, scroll=False, newest=True, latest_only=False):
     """Read new arrivals and advance through older pages independently."""
     fetch = browsing.adapter.fetch
     parameters = inspect.signature(fetch).parameters
-    if row["preview"] or "start_page" not in parameters:
+    if row["preview"] and not scroll or "start_page" not in parameters:
         return await browsing._read(fetch, bvid, 1)
-    cursor_key = f"browsing_comment_page:{row['account_id']}:{row['character_id']}:{bvid}"
+    cursor_key = comment_cursor_key(row, bvid)
     page = max(1, int(browsing.store.get(cursor_key, 1)))
-    newest = await browsing._read(fetch, bvid, 1, newest=True) if "newest" in parameters else None
+    arrivals = await browsing._read(fetch, bvid, 1, newest=True) if newest and "newest" in parameters else None
+    if latest_only:
+        return arrivals or {"items": []}
     context = await browsing._read(fetch, bvid, 1, start_page=page)
     items, seen = [], set()
-    for source in (newest, context):
+    for source in (arrivals, context):
+        if source and source.get("video_id", bvid) != bvid:
+            raise ValueError("评论页与当前视频不一致")
         for item in (source or {}).get("items", []):
             identity = str(item.get("comment_id", ""))
             if identity and identity not in seen:
@@ -152,17 +161,22 @@ async def video_comment_context(browsing, row, bvid):
                 seen.add(identity)
     return context | {
         "items": items,
-        "_scroll_progress": {"key": cursor_key, "next_page": context.get("next_page") or 1},
+        "_scroll_progress": {"key": cursor_key, "page": page, "next_page": context.get("next_page") or 1},
     }
 
 
 def commit_comment_context(browsing, context):
     if progress := (context or {}).get("_scroll_progress"):
-        browsing.store.set(progress["key"], progress["next_page"])
+        if browsing.store.get(progress["key"], 1) == progress.get("page", 1):
+            browsing.store.set(progress["key"], progress["next_page"])
 
 
-def enqueue_comment_visit(browsing, row, task_id, metadata, items):
+def enqueue_comment_visit(browsing, row, task_id, metadata, items, *, interactive=True):
     bvid, oid = metadata["bvid"], str(metadata["aid"])
+    observe_thread(browsing.store, row, bvid, items, via="comment_visit",
+                   resource_author_uid=metadata.get("owner_uid"))
+    if not interactive:
+        return
     scope = [row["account_id"], row["character_id"], row["config"].get("review_session_id"), oid]
     for item in merge_continuous_comments(items):
         source = comment_source(item)
@@ -205,6 +219,9 @@ async def evaluate_comment_visit(browsing, result, row, metrics):
             browsing.repo.complete(identity, result["owner"], result["generation"], status, payload, key)
             browsing.commit_comment_context(context)
             return
+        with browsing.store.db:
+            observe_thread(browsing.store, row, metadata["bvid"], items, via="comment_visit",
+                           resource_author_uid=metadata.get("owner_uid"))
         chosen = {segment["id"] for segment in browsing._segments(material)} if material else set()
         for item in merge_continuous_comments(items):
             if browsing.repo.video_reply_limit_reached(row, metadata["bvid"]):
@@ -523,7 +540,8 @@ async def attempt_event(browsing, event_row, row, metrics):
     if task_id and intent:
         field = "$.like_intent_ids" if intent["kind"] == "comment_like" else "$.reply_intent_ids"
         browsing.store.execute(
-            "UPDATE browsing_tasks SET status='selected', "
+            "UPDATE browsing_tasks SET status=CASE WHEN json_extract(payload,'$.task_kind')='full_video' "
+            "THEN status ELSE 'selected' END, "
             "payload=json_insert(payload,?,json('[]')),updated_at=? WHERE id=?",
             (field, time.time(), task_id),
         )
@@ -605,13 +623,20 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     resource = target.get("bvid") or "dynamic:" + str(target["oid"])
     canonical = canonical_intent("bilibili", resource, source["comment_id"], row["character_id"])
     items_list = thread.get("items", [])
+    with browsing.store.db:
+        observe_thread(
+            browsing.store, row, resource_key(target), items_list, via=event_row["kind"],
+            resource_author_uid=str(row["account_id"]) if event_row["kind"] == "own_comment"
+            else thread.get("resource_author_uid"),
+        )
     existing = browsing.publication.source_intent(row, canonical)
     matched = operator_reply(items_list, target, row["account_id"])
     if matched and (not existing or existing["status"] != "published"):
         browsing.store.execute(
             "UPDATE browsing_events SET status='operator_replied',source_key=?,"
-            "payload=json_set(payload,'$.account_reply',json(?)),error=NULL WHERE id=?",
-            (canonical, dump(comment_source(matched)), event_row["id"]),
+            "payload=json_set(payload,'$.account_reply',json(?),'$.bvid',?,'$.dynamic_id',?),error=NULL WHERE id=?",
+            (canonical, dump(comment_source(matched) | {"created_at": matched.get("created_at")}),
+             target.get("bvid"), target.get("dynamic_id"), event_row["id"]),
         )
         settle_aliases(browsing, event_row, row, target, source)
         return
@@ -683,9 +708,9 @@ async def event_unlocked(browsing, event_row, row, metrics, event, thread):
     material, keys = None, []
     allowed = {"public:" + str(source["comment_id"])}
     if thread["resource_type"] == "video":
-        progress = browsing.repo.content_progress(row, target["bvid"])
-        if progress:
-            key, material = await browsing.evidence._store(progress["material"])
+        saved_material = browsing.repo.watch_material(row, target["bvid"])
+        if saved_material:
+            key, material = await browsing.evidence._store(saved_material)
             keys = [key]
             allowed.update(s["id"] for s in browsing._segments(material))
     elif thread["resource_type"] not in {"video", "dynamic"}:

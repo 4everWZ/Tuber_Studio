@@ -10,6 +10,7 @@ import json
 import math
 import shutil
 import struct
+from bisect import bisect_left, bisect_right
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -309,7 +310,7 @@ class FrameSampler:
             if response is not None:
                 await response.aclose()
 
-    async def frames(self, metadata, count=3, *, cid=None, timestamps=None):
+    async def frames(self, metadata, count=3, *, cid=None, timestamps=None, windows=None):
         _integer(count, maximum=16)
         if not self.decoder.available:
             raise PlatformReadError("frames_unavailable", "未安装ffmpeg／ffprobe")
@@ -361,19 +362,37 @@ class FrameSampler:
             raise PlatformReadError("no_frames", "当前分P没有可核验的故事板拼图")
         width = _integer(data.get("img_x_size"), maximum=2048)
         height = _integer(data.get("img_y_size"), maximum=2048)
-        if timestamps:
+        if windows is not None:
+            targets = []
+            for start, end in windows[:count]:
+                start, end = _seconds(start, duration), _seconds(end, duration)
+                if start >= end:
+                    raise PlatformReadError("invalid_frames", "故事板取材窗口无效")
+                targets.append(((start + end) / 2, start, end))
+        elif timestamps:
             valid_targets = [float(t) for t in timestamps[:count] if 0 <= float(t) <= duration]
-            targets = (
+            times = (
                 valid_targets if valid_targets else [duration * (i + 1) / (count + 1) for i in range(count)]
             )
+            targets = [(value, 0, duration) for value in times]
         else:
-            targets = [duration * (i + 1) / (count + 1) for i in range(count)]
+            targets = [(duration * (i + 1) / (count + 1), 0, duration) for i in range(count)]
         selected, used = [], set()
-        for target in targets:
-            actual, ordinal = min(entries, key=lambda item: (abs(item[0] - target), item[1]))
+        entry_times = [entry[0] for entry in entries]
+        for target, start, end in targets:
+            left = bisect_left(entry_times, start)
+            right = bisect_right(entry_times, end) if end == duration else bisect_left(entry_times, end)
+            if left == right:
+                continue
+            insertion = bisect_left(entry_times, target, left, right)
+            neighbors = entries[max(left, insertion - 1):min(right, insertion + 1)]
+            actual = min(neighbors, key=lambda item: (abs(item[0] - target), item[0]))[0]
+            _, ordinal = entries[bisect_left(entry_times, actual, left, right)]
             if ordinal not in used:
                 selected.append((target, actual, ordinal))
                 used.add(ordinal)
+        if not selected:
+            return []
         cache, dimensions = {}, {}
 
         async def sheet(number):

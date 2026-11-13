@@ -87,12 +87,12 @@ class BrowsingAdapter(BilibiliAdapter):
         self._read_gate = asyncio.Lock()
         self._frame_sampler = None
 
-    async def video_frames(self, metadata, count=3, *, cid=None, timestamps=None):
+    async def video_frames(self, metadata, count=3, *, cid=None, timestamps=None, windows=None):
         from .bilibili_frames import FrameSampler
 
         if self._frame_sampler is None:
             self._frame_sampler = FrameSampler(self)
-        return await self._frame_sampler.frames(metadata, count, cid=cid, timestamps=timestamps)
+        return await self._frame_sampler.frames(metadata, count, cid=cid, timestamps=timestamps, windows=windows)
 
     async def close(self):
         if self._frame_sampler is not None:
@@ -669,6 +669,30 @@ class BrowsingAdapter(BilibiliAdapter):
                 checkpoint({"head": head, "next_page": page, "items": list(items.values())})
         raise PlatformReadError("thread_pending", "讨论楼分页尚未读完，保存游标后继续核对")
 
+    async def video_thread_page(self, target, *, page=1):
+        """Read a single page for the ordinary/priority video comment cursor."""
+        scoped = self._target(target)
+        if scoped["resource_type"] != "video" or type(page) is not int or page < 1:
+            raise ValueError("视频评论楼页码无效")
+        root_id = scoped["root"]
+        data = await self._get("/x/v2/reply/reply", {
+            "oid": scoped["oid"], "type": 1, "root": root_id, "pn": page, "ps": 20,
+        })
+        replies, root = data.get("replies") or [], data.get("root")
+        info = data.get("page") or {}
+        if not isinstance(replies, list) or not isinstance(info, dict):
+            raise PlatformReadError("invalid", "评论楼分页结构无效")
+        try:
+            items = ([self._comment(root, thread_id=root_id)] if root else []) + [
+                self._comment(reply, thread_id=root_id) for reply in replies
+            ]
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise PlatformReadError("invalid", "评论楼关系无效") from None
+        count, size = info.get("count"), info.get("size") or 20
+        has_more = bool(replies) and (page * size < count if type(count) is int and type(size) is int
+                                       else len(replies) >= 20)
+        return {"items": items, "next_page": page + 1 if has_more else None}
+
     async def read_public_thread(self, event, *, resume=None, checkpoint=None):
         account = await self.self_uid()
         own_comment = event.get("kind") == "own_comment"
@@ -693,10 +717,11 @@ class BrowsingAdapter(BilibiliAdapter):
         public_text = ""
         if target["resource_type"] == "video":
             info = await self._video("av" + target["oid"])
+            resource_author_uid = (info.get("owner") or {}).get("mid")
             if str(info["aid"]) != target["oid"]:
                 raise PlatformReadError("invalid", "通知视频对象不一致")
             if own_comment:
-                if str((info.get("owner") or {}).get("mid")) != account:
+                if str(resource_author_uid) != account:
                     raise PlatformReadError("permission", "该视频不属于当前账号")
                 public_text = _text(info.get("title") or "", 1000)
             target["bvid"] = info["bvid"]
@@ -713,13 +738,15 @@ class BrowsingAdapter(BilibiliAdapter):
             if str(basic.get("comment_id_str") or dynamic_id) != target["oid"]:
                 raise PlatformReadError("invalid", "动态评论区与来源不一致")
             modules = item.get("modules") or {}
-            if own_comment and str((modules.get("module_author") or {}).get("mid")) != account:
+            resource_author_uid = (modules.get("module_author") or {}).get("mid")
+            if own_comment and str(resource_author_uid) != account:
                 raise PlatformReadError("permission", "该动态不属于当前账号")
             public_text = _text(((modules.get("module_dynamic") or {}).get("desc") or {}).get("text"))
             target["dynamic_id"] = dynamic_id
         return {
             "account_id": account,
             "resource_type": target["resource_type"],
+            "resource_author_uid": resource_author_uid,
             "target": target,
             "source": {
                 "comment_id": source["comment_id"],

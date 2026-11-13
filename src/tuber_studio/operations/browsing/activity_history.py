@@ -11,6 +11,7 @@ from .comment_timeline import comment_activity, comment_href, comment_thread, re
 from .quotas import publication_time
 
 _AUTO = "r.preview=0 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)"
+_PRIORITY = "json_extract(r.config,'$.full_video')=1"
 _QUEUED_REPLY = (
     "r.preview=0 AND EXISTS(SELECT 1 FROM browsing_tasks q WHERE q.round_id=i.round_id "
     "AND q.bvid=json_extract(i.target,'$.bvid') AND json_type(q.payload,'$.comment_batch_ids')='array')"
@@ -68,6 +69,7 @@ def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
     tasks = store.all(
         "SELECT t.id,t.bvid,t.status,t.material_key,t.error,t.created_at,t.updated_at,r.id AS round_id,"
         "json_extract(t.payload,'$.task_kind') AS task_kind,"
+        "json_extract(t.payload,'$.phase') AS phase,json_extract(t.payload,'$.full_coverage.viewing') AS viewing,"
         "EXISTS(SELECT 1 FROM browsing_watch_starts w WHERE w.account_id=r.account_id "
         "AND w.character_id=r.character_id AND w.task_id=t.id) AS metered_watch,"
         "COALESCE(json_extract(t.payload,'$.metadata.title'),json_extract(t.payload,'$.title')) AS title,"
@@ -77,7 +79,7 @@ def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
         "json_extract(t.payload,'$.reason') AS decision_reason,json_extract(t.payload,'$.sources') AS sources "
         "FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
         "WHERE r.account_id=? AND r.character_id=? AND "
-        + "(" + _AUTO + " OR (r.preview=0 AND json_type(t.payload,'$.comment_batch_ids')='array'))"
+        + "(" + _AUTO + " OR " + _PRIORITY + " OR (r.preview=0 AND json_type(t.payload,'$.comment_batch_ids')='array'))"
         + " AND "
         + _TASK_RESULT
         + " AND t.updated_at>=? AND (? IS NULL OR r.id=?)",
@@ -192,6 +194,8 @@ def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
                 status=item["status"],
                 error=item["error"],
             )
+            if item["task_kind"] == "full_video":
+                result.update(phase=item["phase"], viewing=item["viewing"])
             result["reason"] = (
                 item["explanation"]
                 or _REASONS.get(item["decision_reason"])

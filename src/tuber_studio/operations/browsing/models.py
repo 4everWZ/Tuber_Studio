@@ -267,6 +267,36 @@ unsafe_interaction：这次互动本身涉及骚扰、伤害他人或公开他�
 各字段表达同一意图：准备回复时选interest=like、worth_commenting=true、reason=specific_detail；当前材料够用选coverage_required=provided。还想补读材料时选interest=need_more、worth_commenting=false，并用reason和coverage_required说明所需材料。没有想发言时worth_commenting=false。evidence_ids对应这次选择相关的内容块。"""
 
 
+class VisualTarget(StrictModel):
+    evidence_id: str
+    position: Literal["before", "during", "after", "within"]
+    fraction: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def fraction_only_within_segment(self):
+        if (self.position == "within") != (self.fraction is not None):
+            raise ValueError("只有段内补看需要位置比例")
+        return self
+
+
+def visual_target_schema(evidence_ids):
+    return {
+        "type": "array", "maxItems": 8,
+        "items": {"oneOf": [{
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "evidence_id": {"type": "string", "enum": sorted(evidence_ids)},
+                "position": {"type": "string", "enum": positions},
+                "fraction": fraction,
+            },
+            "required": ["evidence_id", "position", "fraction"],
+        } for positions, fraction in (
+            (["before", "during", "after"], {"type": "null"}),
+            (["within"], {"type": "number", "minimum": 0, "maximum": 1}),
+        )]},
+    }
+
+
 class ContentDecision(StrictModel):
     explanation: str = ""
     interest: Literal["like", "not_interested", "need_more", "skip"]
@@ -281,9 +311,12 @@ class ContentDecision(StrictModel):
     ]
     evidence_ids: list[str] = Field(default_factory=list, max_length=8)
     coverage_required: Literal["provided", "unread_part", "visual"] = "provided"
+    visual_targets: list[VisualTarget] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode="after")
     def consistent_prepared_intent(self):
+        if self.visual_targets and self.coverage_required != "visual":
+            raise ValueError("只有补看画面接受时点参数")
         if (
             self.interest == "like"
             and self.worth_commenting
@@ -333,6 +366,13 @@ class ResponseDecision(StrictModel):
     ]
     evidence_ids: list[str] = Field(default_factory=list, max_length=8)
     covered_comments: list[str] = Field(default_factory=list, max_length=8)
+    visual_targets: list[VisualTarget] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def visual_targets_only_for_watch_frames(self):
+        if self.visual_targets and self.action != "watch_frames":
+            raise ValueError("只有补看画面接受时点参数")
+        return self
 
     @field_validator("text")
     @classmethod
@@ -355,6 +395,7 @@ class VideoEngagementDecision(StrictModel):
 def content_decision_schema(evidence_ids, *, allow_visual=True):
     """Require source selection for a comment, with no requirement to comment."""
     properties = ContentDecision.model_json_schema()["properties"]
+    properties.pop("visual_targets")
     properties["explanation"] = {"type": "string", "minLength": 1}
     if not allow_visual:
         for name, unavailable in (("coverage_required", "visual"), ("reason", "visual_required")):
@@ -397,14 +438,17 @@ def content_decision_schema(evidence_ids, *, allow_visual=True):
             ]
         for constraints in alternatives:
             constrained = fields | {name: fields[name] | rule for name, rule in constraints.items()}
-            branches.append(
-                {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": constrained,
-                    "required": list(constrained),
-                }
-            )
+            branch = {"type": "object", "additionalProperties": False,
+                      "properties": constrained, "required": list(constrained)}
+            branches.append(branch)
+            if allow_visual and evidence_ids and "visual" in constrained["coverage_required"]["enum"]:
+                branches.append(branch | {
+                    "properties": constrained | {
+                        "coverage_required": {"type": "string", "enum": ["visual"]},
+                        "visual_targets": visual_target_schema(evidence_ids) | {"minItems": 1},
+                    },
+                    "required": [*constrained, "visual_targets"],
+                })
     return {"title": "ContentDecision", "type": "object", "oneOf": branches}
 
 
@@ -485,6 +529,8 @@ def response_schema(
                     },
                     **({"covered_comments": {"type": "array", "minItems": 1, "maxItems": 8,
                         "items": {"type": "string", "enum": sorted(grouped_comment_refs)}}} if grouped_reply else {}),
+                    **({"visual_targets": visual_target_schema(evidence_ids)}
+                       if action == "watch_frames" and evidence_ids else {}),
                     "text": {
                         "type": "string",
                         "minLength": 1 if sending else 0,

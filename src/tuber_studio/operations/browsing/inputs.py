@@ -517,6 +517,8 @@ class ResponseDecisionInput:
                 raise ValueError(f"{field}须概括具体原因，单次最多{MAX_DECISION_REASON_CHARACTERS}字符")
         if not set(value.evidence_ids) <= self.allowed_aliases:
             raise ValueError("回应引用不属于本次短编号")
+        if any(target.evidence_id not in self.allowed_aliases for target in value.visual_targets):
+            raise ValueError("画面时点不属于本次短编号")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
         if value.action == "reply_public" and not self.allow_public:
@@ -550,6 +552,9 @@ class ResponseDecisionInput:
             wire.model_dump()
             | {
                 "evidence_ids": [self._by_alias[alias].canonical_id for alias in wire.evidence_ids],
+                "visual_targets": [target.model_dump() | {
+                    "evidence_id": self._by_alias[target.evidence_id].canonical_id,
+                } for target in wire.visual_targets],
                 "covered_comments": list(dict.fromkeys(self._by_alias[alias].canonical_id.split(":", 1)[1]
                     for alias in wire.covered_comments)),
             }
@@ -591,6 +596,10 @@ class ResolvedContentDecision:
     @property
     def evidence_ids(self):
         return [source.id for source in self.sources]
+
+    @property
+    def visual_targets(self):
+        return self.wire_decision.visual_targets
 
     def model_dump(self):
         return self.wire_decision.model_dump() | {"evidence_ids": self.evidence_ids}
@@ -703,6 +712,15 @@ def bind_content_decision(decision, aliases):
         wire.worth_commenting and not wire.evidence_ids
     ):
         raise ValueError("内容判断引用不存在或为空")
+    canonical_targets = []
+    for target in wire.visual_targets:
+        block = aliases.get(target.evidence_id)
+        sources = block.sources if block and block.part.kind == "subtitle" else ()
+        if not sources:
+            raise ValueError("画面时点需绑定到本次字幕")
+        source = sources[-1] if target.position == "after" else sources[0] if target.position == "before" else sources[len(sources) // 2]
+        canonical_targets.append(target.model_copy(update={"evidence_id": source.id}))
+    wire = wire.model_copy(update={"visual_targets": canonical_targets})
     selected, sources, seen = [], [], set()
     for reference in dict.fromkeys(wire.evidence_ids):
         block = aliases[reference]
@@ -736,5 +754,7 @@ def restore_stored_content_decisions(material, values):
         ):
             raise ValueError("已存内容判断缺少有效的原始材料引用")
         fields = ContentDecision.model_validate(value | {"evidence_ids": []})
+        if any(target.evidence_id not in sources for target in fields.visual_targets):
+            raise ValueError("已存画面时点缺少有效的原始材料引用")
         restored.append(ResolvedContentDecision(fields, (), tuple(sources[ref] for ref in references)))
     return restored
