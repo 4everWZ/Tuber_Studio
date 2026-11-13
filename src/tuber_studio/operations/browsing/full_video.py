@@ -187,7 +187,8 @@ def _highlights(material, part, interval, bvid):
     ]
 
 
-async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=None, windows=None, precise=False, allow_fallback=True):
+async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=None, windows=None, precise=False, allow_fallback=True,
+                        sparse_range=None):
     provider = dict(zip(("provider_id", "version"), browsing.evidence._visual_identity()))
     depth = agent_depth.set(agent_depth.get() + 1)
     try:
@@ -201,6 +202,9 @@ async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=No
             parts, _ = await browsing.evidence._visual_parts(
                 material["metadata"], task, row["deadline"], cid=cid, timestamps=timestamps, windows=windows,
                 question=STORYBOARD_SCAN_QUESTION if windows else None, known_frames=known,
+                sparse_range=sparse_range,
+                known_times={segment["start"] for segment in _observations(material, cid, provider)}
+                if sparse_range else (),
             )
     finally:
         agent_depth.reset(depth)
@@ -324,7 +328,7 @@ async def _watch_interval(browsing, row, identity, material, part, interval, cho
         state = current_scans.setdefault(key, {})
         if not state.get("storyboard_attempted"):
             try:
-                await _visual_batch(browsing, row, identity, material, cid, timestamps=[target])
+                await _visual_batch(browsing, row, identity, material, cid, timestamps=[target], sparse_range=(left, right))
             except BrowsingBudgetDeferred:
                 raise
             except (ValueError, TimeoutError, OSError) as error:

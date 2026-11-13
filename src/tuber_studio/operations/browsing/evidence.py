@@ -550,24 +550,37 @@ class BrowsingEvidence:
                 def remaining():
                     return visual_gaps(0, durations[cid], observed_times(material["parts"], cid))
 
-                attempts = set()
+                attempts = {}
                 while not failure and (gap := next((gap for gap in remaining() if gap not in attempts), None)):
-                    attempts.add(gap)
+                    attempts[gap] = "没有可用画面"
                     timestamp = sum(gap) / 2
                     try:
                         parts, _ = await self._visual_parts(metadata, task, deadline, cid=cid,
-                                                            timestamps=[timestamp], known_frames=observed)
+                                                            timestamps=[timestamp], known_frames=observed, sparse_range=gap,
+                                                            known_times=observed_times(material["parts"], cid))
                         material["parts"].extend(parts)
                         observed.update(frame["id"] for part in parts for frame in part["frame_evidence"])
-                        if gap in remaining() and hasattr(self.adapter, "video_stream_frame"):
+                    except (ValueError, TimeoutError, OSError) as error:
+                        failure = error
+                        attempts[gap] = public_error(error)
+                    if isinstance(failure, BrowsingBudgetDeferred):
+                        break
+                    if gap in remaining() and hasattr(self.adapter, "video_stream_frame"):
+                        try:
                             parts, _ = await self.inspect_frame(metadata, task, deadline, cid, timestamp,
                                                                 known_frames=observed, allow_fallback=False)
                             material["parts"].extend(parts)
                             observed.update(frame["id"] for part in parts for frame in part["frame_evidence"])
-                    except (ValueError, TimeoutError, OSError) as error:
-                        failure = error
-                        material["visual_error"] = public_error(error)
-                scan["gaps"] = [{"start": left, "end": right} for left, right in remaining()]
+                        except (ValueError, TimeoutError, OSError) as error:
+                            failure = error
+                            attempts[gap] = public_error(error)
+                        else:
+                            if gap not in remaining():
+                                failure = None
+                scan["gaps"] = [{"start": left, "end": right, "reason": attempts.get((left, right),
+                                  public_error(failure) if failure else "等待补看")} for left, right in remaining()]
+            if failure:
+                material["visual_error"] = public_error(failure)
             if any(scan["gaps"] for scan in scans.values()):
                 material["visual_error"] = material.get("visual_error") or "部分时段画面间隔过大"
             if not observed and failure is None:
@@ -682,7 +695,7 @@ class BrowsingEvidence:
 
     async def _visual_parts(
         self, metadata, task, deadline, *, cid=None, timestamps=None, windows=None, known_frames=frozenset(), question=None,
-        precise=False, allow_fallback=True,
+        precise=False, allow_fallback=True, sparse_range=None, known_times=(),
     ):
         capabilities = dict(self.visual.capabilities())
         if not (
@@ -725,6 +738,8 @@ class BrowsingEvidence:
                     call_kwargs["windows"] = [(max(0, timestamp - 6), min(duration, timestamp + 6)) for timestamp in timestamps]
                 if "timestamps" in sig.parameters and timestamps:
                     call_kwargs["timestamps"] = timestamps
+                if sparse_range is not None and "sparse_range" in sig.parameters:
+                    call_kwargs.update(sparse_range=sparse_range, known_times=known_times)
                 try:
                     async with asyncio.timeout(timeout):
                         failure = None

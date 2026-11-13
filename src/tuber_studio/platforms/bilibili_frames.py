@@ -310,7 +310,7 @@ class FrameSampler:
             if response is not None:
                 await response.aclose()
 
-    async def frames(self, metadata, count=3, *, cid=None, timestamps=None, windows=None):
+    async def frames(self, metadata, count=3, *, cid=None, timestamps=None, windows=None, sparse_range=None, known_times=()):
         _integer(count, maximum=16)
         if not self.decoder.available:
             raise PlatformReadError("frames_unavailable", "未安装ffmpeg／ffprobe")
@@ -362,7 +362,12 @@ class FrameSampler:
             raise PlatformReadError("no_frames", "当前分P没有可核验的故事板拼图")
         width = _integer(data.get("img_x_size"), maximum=2048)
         height = _integer(data.get("img_y_size"), maximum=2048)
-        if windows is not None:
+        if sparse_range is not None:
+            start, end = (_seconds(value, duration) for value in sparse_range)
+            if start >= end:
+                raise PlatformReadError("invalid_frames", "故事板稀疏时段无效")
+            targets = [((start + end) / 2, start, end)]
+        elif windows is not None:
             targets = []
             for start, end in windows[:count]:
                 start, end = _seconds(start, duration), _seconds(end, duration)
@@ -384,9 +389,15 @@ class FrameSampler:
             right = bisect_right(entry_times, end) if end == duration else bisect_left(entry_times, end)
             if left == right:
                 continue
-            insertion = bisect_left(entry_times, target, left, right)
-            neighbors = entries[max(left, insertion - 1):min(right, insertion + 1)]
-            actual = min(neighbors, key=lambda item: (abs(item[0] - target), item[0]))[0]
+            if sparse_range is not None:
+                neighbors = (item for item in entries[left:right] if item[0] not in known_times)
+            else:
+                insertion = bisect_left(entry_times, target, left, right)
+                neighbors = entries[max(left, insertion - 1):min(right, insertion + 1)]
+            choice = min(neighbors, key=lambda item: (abs(item[0] - target), item[0]), default=None)
+            if choice is None:
+                continue
+            actual = choice[0]
             _, ordinal = entries[bisect_left(entry_times, actual, left, right)]
             if ordinal not in used:
                 selected.append((target, actual, ordinal))

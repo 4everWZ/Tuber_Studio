@@ -178,6 +178,18 @@ async def test_real_ffmpeg_crops_selected_tiles_and_accounts_reads(adapter):
     assert not decoder.processes
 
 
+async def test_sparse_storyboard_skips_analyzed_tiles_and_stays_inside_gap(adapter):
+    seen = transport(adapter)
+    sampler = FrameSampler(adapter, FakeDecoder())
+
+    frames = await sampler.frames(META, 1, sparse_range=(0, 34), known_times={10})
+    assert [(frame["requested_time"], frame["actual_time"]) for frame in frames] == [(17, 30)]
+
+    seen.clear()
+    assert await sampler.frames(META, 1, sparse_range=(10, 30), known_times={10}) == []
+    assert all(request.url.host == "api.bilibili.com" for request in seen)
+
+
 @pytest.mark.parametrize(
     "status,kind",
     [(302, "network"), (403, "permission"), (412, "restricted"), (429, "restricted"), (503, "network")],
