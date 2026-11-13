@@ -34,7 +34,55 @@ class DailyMemoryUI {
 
   async refresh() {
     if (!this.container || this.busy) return;
-    return this.load();
+    return Promise.all([this.loadRecent(), this.load()]);
+  }
+
+  async loadRecent() {
+    const list = document.getElementById("recent-memory-list");
+    if (!list) return;
+    const day = document.getElementById("recent-memory-day");
+    list.setAttribute("aria-busy", "true");
+    try {
+      const result = await this.api("/api/daily-memory/recent-events");
+      day.textContent = result.day;
+      list.replaceChildren();
+      for (const event of result.items) {
+        const article = document.createElement("article");
+        article.className = "issue-row";
+        const title = document.createElement("strong");
+        title.textContent = event.title;
+        const at = document.createElement("time");
+        const date = new Date(event.at * 1000);
+        at.dateTime = date.toISOString();
+        at.textContent = date.toLocaleString("zh-CN", { timeZone: result.timezone, hour12: false });
+        at.className = "hint";
+        const excerpt = document.createElement("p");
+        excerpt.textContent = event.source.text.slice(0, 360);
+        const state = document.createElement("span");
+        state.className = "hint";
+        state.textContent = ({
+          confirmed: "回复已送达", uncertain: "送达待核对", previously_replied: "此前已回复",
+          owner_replied: "号主已代回", same_account_replied: "同账号已回复 · 归属未知",
+        })[event.reply?.state] || (event.thread ? "已读评论楼" : "有观看记录");
+        article.append(title, " · ", at, excerpt, state);
+        for (const [label, href] of [[event.thread ? "打开原楼" : "打开来源", event.source.href],
+          ["查看回复", event.reply?.href]]) {
+          if (!/^https:\/\/(?:www\.bilibili\.com\/video\/BV[0-9A-Za-z]+|t\.bilibili\.com\/\d+)(?:[/?#]|$)/.test(href || "")) continue;
+          const link = document.createElement("a");
+          link.href = href;
+          link.textContent = label;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          article.append(" · ", link);
+        }
+        list.append(article);
+      }
+      if (!result.items.length) list.textContent = "近期暂无有来源的运营事件。";
+    } catch (error) {
+      list.textContent = `读取近期趣事失败：${error.message}`;
+    } finally {
+      list.setAttribute("aria-busy", "false");
+    }
   }
 
   async load() {

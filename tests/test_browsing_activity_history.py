@@ -138,6 +138,37 @@ def test_comment_timeline_merges_discovery_and_distinguishes_round_outcomes(serv
     assert old["comment_outcome"] == "previous_reply"
 
 
+def test_recent_events_keep_thread_identity_when_receipt_is_confirmed(service, monkeypatch):
+    from tuber_studio.agent import operator_facts
+
+    row = round_row(service)
+    at = stamp("2026-11-08T10:05:00+08:00")
+    monkeypatch.setattr(operator_facts, "now", lambda _: dt.datetime.fromisoformat("2026-11-08T10:06:00+08:00"))
+    monkeypatch.setattr("tuber_studio.operations.browsing.comment_timeline.time.time", lambda: at)
+    items = [{"comment_id": root, "thread_id": root, "platform_user_id": "51", "content": "原评" + root}
+             for root in ("40", "70")]
+    with service.store.db:
+        for via in ("comment_visit", "own_comment", "reply"):
+            observe_thread(service.store, row, BV, items, via=via)
+    reply(service, row, "101", at, status="publish_uncertain")
+    service.store.execute("UPDATE browsing_intents SET target=?,receipt=NULL WHERE id='101'",
+                          (json.dumps({"bvid": BV, "root": "40", "parent": "40", "source_text": "原评40"}),))
+    events = {event["root_id"]: event for event in operator_facts.recent_events(service)["items"]}
+    assert set(events) == {"40", "70"}
+    assert events["40"]["reply"]["state"] == "uncertain"
+    assert events["40"]["thread"]["comment_id"] == "40"
+
+    service.store.execute("UPDATE browsing_intents SET status='published',receipt=?,updated_at=? WHERE id='101'",
+                          (json.dumps({"rpid": "101", "published_at": at + 1}), at + 1))
+    old = operator_facts.refresh_reply(service, events["40"])
+    current = {event["root_id"]: event for event in operator_facts.recent_events(service)["items"]}
+    assert old["reply"]["state"] == current["40"]["reply"]["state"] == "confirmed"
+    assert old["reply"]["href"].endswith("#reply101")
+    assert current["40"]["source"]["href"] == events["40"]["source"]["href"]
+    monkeypatch.setattr(service.discovery, "history_scope", lambda: ("900", "whale", 99))
+    assert not operator_facts.recent_events(service)["items"]
+
+
 def test_taipei_days_merge_versions_and_keep_comment_visits_out_of_watch_count(service):
     before = stamp("2026-11-07T15:58:00+00:00")
     after = stamp("2026-11-07T16:02:00+00:00")

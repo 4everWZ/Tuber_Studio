@@ -459,6 +459,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
         source_href = comment_href(resource, comment)
         return {
             "thread": {key: thread[key] for key in ("resource", "root_id", "root_author_uid", "resource_author_uid")},
+            "source_comment_id": str(comment) if source_href and comment else None,
             "source_href": source_href,
             "sent_href": comment_href(resource, replied_id) if replied_id else None,
             "comment_outcome": outcome,

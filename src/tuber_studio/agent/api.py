@@ -9,6 +9,7 @@ from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..models import Character
 from ..relationships import UserProfile
 from ..store import character_card
+from .operator_facts import recent_events
 
 
 def register_agent_api(app, settings, runtime, store, comments, require_admin):
@@ -107,6 +108,11 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
             char["id"], char["version"], limit=3, max_tokens=200
         )
         return {"highlights": highlights, "active_anecdotes": active}
+
+    @app.get("/api/daily-memory/recent-events", dependencies=[Depends(require_admin)])
+    async def get_recent_events():
+        await runtime.browsing.discovery.restore_history_scope()
+        return recent_events(runtime.browsing)
 
     @app.post("/api/daily-memory/incidents", dependencies=[Depends(require_admin)])
     async def record_public_incident(data: dict = Body(...)):
