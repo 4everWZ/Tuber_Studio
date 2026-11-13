@@ -86,6 +86,7 @@ class BrowsingAdapter(BilibiliAdapter):
         self._read_clock = 0.0
         self._read_gate = asyncio.Lock()
         self._frame_sampler = None
+        self._stream_sampler = None
 
     async def video_frames(self, metadata, count=3, *, cid=None, timestamps=None, windows=None):
         from .bilibili_frames import FrameSampler
@@ -93,6 +94,16 @@ class BrowsingAdapter(BilibiliAdapter):
         if self._frame_sampler is None:
             self._frame_sampler = FrameSampler(self)
         return await self._frame_sampler.frames(metadata, count, cid=cid, timestamps=timestamps, windows=windows)
+
+    async def video_stream_frame(self, metadata, *, cid, timestamp):
+        from .bilibili_frames import FrameSampler
+        from .bilibili_stream_frame import StreamFrameSampler
+
+        if self._frame_sampler is None:
+            self._frame_sampler = FrameSampler(self)
+        if self._stream_sampler is None:
+            self._stream_sampler = StreamFrameSampler(self, self._frame_sampler.decoder)
+        return await self._stream_sampler.frame(metadata, cid, timestamp)
 
     async def close(self):
         if self._frame_sampler is not None:
