@@ -400,7 +400,8 @@ async function poll() {
   model.polling = true;
   try {
     const automationRefresh = updatePermissionCapsule({ background: true });
-    const updates = [api("/api/status").then(renderStatus), discoveryPanel.refresh(), automationRefresh];
+    const updates = [api("/api/status").then(renderStatus), automationRefresh];
+    if (["automation", "automation-settings", "comments"].includes(model.page)) updates.push(discoveryPanel.refresh());
     if (model.page === "chat") updates.push(automationRefresh.then(operatorChat.refreshCards));
     if (model.page === "automation") updates.push($("operation-activity-issues").hidden ? refreshOperationsActivity() : issueLog.refresh());
     if (model.page === "comments") updates.push(commentQueue.refresh());
