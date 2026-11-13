@@ -257,7 +257,7 @@ p { margin-block: .55em 1em; }
 }
 #memory-enabled:checked { background: #3564bd; }
 #memory-enabled:checked::before { transform: translateX(17px); }
-#memory-enabled:disabled { cursor: wait; opacity: .65; }
+#memory-enabled:disabled { cursor: default; opacity: .65; }
 #memory-switch-status:empty, #daily-memory-notice:empty { display: none; }
 .personalization-dialog {
   box-sizing: border-box;
