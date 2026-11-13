@@ -49,6 +49,24 @@ async def test_numbered_variable_rate_track_matches_reference_frame(tmp_path):
                                      "-show_entries", "frame=best_effort_timestamp_time", "-of", "json", str(path)])
     times = [float(item["best_effort_timestamp_time"]) for item in json.loads(probe)["frames"]]
     assert times[0] > 0 and len({round(right-left, 2) for left, right in zip(times, times[1:])}) > 1
+    # Decode the complete track sequentially through the same JPEG output format.
+    # H.264/JPEG range conversion can change brightness; raw input bytes are not
+    # a decoded-frame oracle across FFmpeg versions.
+    reference_jpegs = subprocess.check_output([
+        decoder.ffmpeg, "-v", "error", "-threads", "1", "-filter_threads", "1",
+        "-i", str(path), "-map", "0:v:0", "-an", "-sn", "-dn",
+        "-vf", "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease",
+        "-fps_mode", "passthrough", "-c:v", "mjpeg", "-q:v", "3", "-threads", "1",
+        "-f", "image2pipe", "pipe:1",
+    ])
+    reference_pixels = subprocess.check_output([
+        decoder.ffmpeg, "-v", "error", "-f", "mjpeg", "-i", "pipe:0",
+        "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1",
+    ], input=reference_jpegs)
+    frame_size = 96 * 64
+    assert len(reference_pixels) == len(times) * frame_size
+    references = [reference_pixels[start:start + frame_size]
+                  for start in range(0, len(reference_pixels), frame_size)]
     reads = []
 
     def serve(request):
@@ -69,7 +87,10 @@ async def test_numbered_variable_rate_track_matches_reference_frame(tmp_path):
             assert frame["actual_time"] <= target < frame["presentation_end"]
             decoded = subprocess.check_output([decoder.ffmpeg, "-v", "error", "-i", "pipe:0", "-f", "rawvideo",
                                                "-pix_fmt", "gray", "pipe:1"], input=frame["image"])
-            assert abs(decoded[0] - (8 + 4 * index)) <= 2
+            assert (frame["width"], frame["height"]) == (96, 64)
+            assert decoded == references[index]
+            assert decoded != references[index - 1]
+            assert decoded != references[index + 1]
             assert 0 < reader.used < len(media)
     assert reads and all(right < len(media) for _, right in reads)
 
