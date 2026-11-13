@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from tuber_studio.agent.memory_organizer import MemoryOrganizer, MemorySuggestion
 from tuber_studio.app import create_app
+from tuber_studio.daily_memory import DailyMemoryService
 from tuber_studio.models import Reply
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 
@@ -210,7 +211,7 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
         app.state.store.close()
 
 
-async def test_public_organizer_uses_legacy_receipt_and_keeps_one_pending_candidate(settings):
+async def test_public_organizer_saves_one_experience_from_legacy_receipt(settings):
     app = create_app(settings)
     runtime = app.state.runtime
     original = runtime.llm
@@ -233,10 +234,35 @@ async def test_public_organizer_uses_legacy_receipt_and_keeps_one_pending_candid
             )
         assert await runtime.memory_organizer.run_once() == 1
         candidate, = runtime.daily_memory.organized(scope)
-        assert candidate["status"] == "pending_review" and candidate["channels"] == []
+        assert candidate["status"] == "active" and candidate["channels"] == []
+        matches = runtime.daily_memory.recall_organized(scope, "operator", "运营汇报")
+        assert [item["id"] for item in matches] == [candidate["id"]]
         assert [item["text"] for item in candidate["source"]["references"]] == [target["source_text"], "第二只一直往前探头"]
         assert await MemoryOrganizer(runtime).run_once() == 0
     finally:
         await original.close()
         await browsing.close()
         runtime.store.close()
+
+
+def test_migrate_organized_memory_without_restoring_revoked_public_experience(settings):
+    app = create_app(settings)
+    runtime = app.state.runtime
+    store = runtime.store
+    scope = runtime.memory_organizer.scope()
+    memory = runtime.daily_memory
+    try:
+        source = {"key": "thread:legacy", "kind": "experience", "at": time.time(), "text": "第三只企鹅",
+                  "references": [{"href": "https://www.bilibili.com/video/BV1d8pU6xEZX#reply40", "text": "第三只企鹅"}]}
+        proposal = MemorySuggestion(action="add", existing_id=None, headline="企鹅", note="第三只企鹅", tags=["企鹅"])
+        with store.db:
+            memory.save_organized(scope, source, proposal, None)
+        saved, = memory.organized(scope)
+        revoked = memory.confirm_operator_experience(runtime.character, "revoked", "以前公开过的经历")
+        store.execute("UPDATE daily_highlights SET status='pending_review' WHERE id IN (?,?)", (saved["id"], revoked))
+        migrated = DailyMemoryService(store)
+        assert migrated.organized(scope) == [saved]
+        assert migrated.organized(scope)[0]["channels"] == []
+        assert store.one("SELECT status FROM daily_highlights WHERE id=?", (revoked,))["status"] == "pending_review"
+    finally:
+        store.close()

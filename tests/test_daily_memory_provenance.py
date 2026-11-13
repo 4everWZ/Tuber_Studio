@@ -44,7 +44,7 @@ def test_legacy_viewer_quote_is_backfilled_and_retained_after_original_cleanup(s
     assert recalled[0]["id"] == identifier and recalled[0]["source_role"] == "viewer"
 
 
-async def test_auto_approve_distillation_keeps_viewer_proof_instead_of_operator_note(store):
+async def test_distillation_keeps_viewer_proof_instead_of_operator_note(store):
     service = DailyMemoryService(store)
     source = original(store)
     quote = store.one("SELECT content FROM comments WHERE id=?", (source,))["content"]
@@ -58,7 +58,7 @@ async def test_auto_approve_distillation_keeps_viewer_proof_instead_of_operator_
                 "source_ref": "video:import-proof:comment:123", "quote": quote,
                 "anecdote": "有人把鲸鱼游泳比作一碗热白饭。", "tags": ["热白饭"]}]}
 
-    values = await service.distill(store.character(), datetime.date.today().isoformat(), Extractor(), auto_approve=True)
+    values = await service.distill(store.character(), datetime.date.today().isoformat(), Extractor())
     assert len(values) == 1
     row = store.one("SELECT * FROM daily_highlights WHERE id=?", (values[0]["id"],))
     proof = json.loads(row["source_evidence"])

@@ -182,7 +182,7 @@ class MemoryOrganizer:
             self.status = "idle"
             return 0
         existing = runtime.daily_memory.organized(scope, limit=100)
-        visible = {row["id"]: row for row in existing if row["status"] in {"active", "pending_review"}}
+        visible = {row["id"]: row for row in existing if row["status"] == "active"}
         packet = []
         for number, source in enumerate(sources, 1):
             if source["kind"] == "unavailable":

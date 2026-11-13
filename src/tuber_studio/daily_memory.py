@@ -162,6 +162,16 @@ class DailyMemoryService:
             if proof:
                 store.execute("UPDATE daily_highlights SET source_evidence=? WHERE id=?",
                               (json.dumps(proof, ensure_ascii=False), row["id"]))
+        # Explicitly withdrawn public experiences share the legacy status. Only
+        # promote automatically organized or source-verified distilled memories.
+        store.execute(
+            """UPDATE daily_highlights SET status='active' WHERE status='pending_review'
+               AND CASE WHEN json_valid(source_evidence) THEN
+                 (json_extract(source_evidence,'$.memory_kind') IN ('private','experience')
+                  OR (json_extract(source_evidence,'$.kind') IN ('viewer','live')
+                   AND category!='public_incident' AND source_ref NOT LIKE 'operator-public:%'))
+               END"""
+        )
 
     @staticmethod
     def _source_proof(kind, source_ref, quote):
@@ -288,7 +298,7 @@ class DailyMemoryService:
                 "INSERT INTO daily_highlights(character_id,character_version,highlight_date,category,source_ref,source_user,"
                 "status,created_at,headline,quote,anecdote,tags,source_evidence,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (scope[1], scope[2], self.business_date(source["at"]), "community_meme", source_ref,
-                 "号主" if kind == "private" else "", "active" if kind == "private" else "pending_review", at, *fields),
+                 "号主" if kind == "private" else "", "active", at, *fields),
             )
         return True
 
@@ -300,8 +310,8 @@ class DailyMemoryService:
         proof = row["proof"]
         if headline is not None and not headline.strip() or note is not None and not note.strip():
             raise ValueError("记忆标题和内容不能为空")
-        if row["memory_kind"] == "private" and status == "pending_review":
-            raise ValueError("私聊记忆只能启用或归档")
+        if status is not None and status not in {"active", "archived"}:
+            raise ValueError("记忆状态只能为已保存或已归档")
         with self.store.db:
             if delete:
                 keys = {row["source_ref"], row["source"]["key"]}
@@ -765,7 +775,6 @@ class DailyMemoryService:
         provider: Any,
         *,
         candidates: list[dict[str, Any]] | None = None,
-        auto_approve: bool = False,
     ) -> list[dict[str, Any]]:
         """Distill highlights from daily candidates using LLM with grounded quote validation."""
         character_id = character.get("id", "whale")
@@ -829,7 +838,6 @@ class DailyMemoryService:
 
         highlights = data.get("highlights", [])
         saved = []
-        status = "active" if auto_approve else "pending_review"
 
         for item in highlights:
             quote = item.get("quote", "").strip()
@@ -863,7 +871,7 @@ class DailyMemoryService:
                 source_ref=source_ref,
                 source_user=source_user,
                 tags=item.get("tags", []),
-                status=status,
+                status="active",
                 source_evidence=self._source_proof("live" if candidate.get("source_type") == "live" else "viewer", source_ref, quote),
             )
             saved.append(
@@ -873,7 +881,7 @@ class DailyMemoryService:
                     "source_ref": source_ref,
                     "source_user": source_user,
                     "id": item_id,
-                    "status": status,
+                    "status": "active",
                     "highlight_date": date_str,
                 }
             )

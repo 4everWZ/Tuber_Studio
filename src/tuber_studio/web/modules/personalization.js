@@ -2,9 +2,9 @@ import { $, node } from "./core.js";
 
 const endpoint = "/api/daily-memory";
 const channelNames = { operator: "号主私聊", live: "直播", comment: "回帖", dynamic: "动态" };
-const replyStates = {
-  confirmed: "回复已送达", uncertain: "送达待核对", previously_replied: "此前已回复",
-  owner_replied: "号主已代回", same_account_replied: "同账号已回复 · 归属未知",
+const clip = (text, limit) => {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > limit ? line.slice(0, limit) + "…" : line;
 };
 
 function sourceLink(label, href) {
@@ -169,7 +169,6 @@ export function initPersonalization(model, api) {
     const overview = $("memory-summary-list");
     overview.replaceChildren();
     const active = organized.filter(item => item.status === "active");
-    const pending = organized.filter(item => item.status === "pending_review");
     const earlier = value.highlights.filter(item => item.status === "active");
     const notes = [...active, ...earlier].slice(0, 5);
     for (const item of notes) {
@@ -178,7 +177,6 @@ export function initPersonalization(model, api) {
       overview.append(entry);
     }
     if (!notes.length) overview.append(node("p", "暂无已保存的记忆。", "hint"));
-    if (pending.length) overview.append(node("p", `${pending.length} 条经历待确认`, "hint"));
     const overviewStatus = node("p", status || "", "hint");
     overviewStatus.id = "memory-summary-progress";
     overviewStatus.hidden = !status;
@@ -232,7 +230,7 @@ export function initPersonalization(model, api) {
       }
       recentScope = result.scope;
       const top = result.items[0];
-      preview.textContent = top ? `${top.title} · ${result.items.length} 件近期互动` : "近期暂无有来源的运营事件";
+      preview.textContent = top ? clip(top.source.text, 70) : "近期暂无有来源的运营事件";
       recentLoad.hidden = true;
       if (!recent.open) return;
       const signature = JSON.stringify(result);
@@ -242,18 +240,14 @@ export function initPersonalization(model, api) {
       recentList.replaceChildren();
       for (const event of result.items) {
         const entry = node("article");
-        const at = node("time", new Date(event.at * 1000).toLocaleString("zh-CN", {
-          timeZone: result.timezone, hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-        }), "hint");
-        at.dateTime = new Date(event.at * 1000).toISOString();
-        const state = replyStates[event.reply?.state] || (event.thread ? "已读评论楼" : "有观看记录");
-        const links = node("div", null, "actions");
+        const paragraph = node("p");
+        const title = /^BV[0-9A-Za-z]+$/.test(event.title) ? "视频" : event.title;
+        paragraph.append(node("strong", clip(title, 55)), ` · ${clip(event.source.text, 125)}`);
         for (const link of [
-          sourceLink(event.thread ? "打开原楼" : "打开来源", event.source.href),
-          sourceLink("查看回复", event.reply?.href),
-        ].filter(Boolean)) links.append(link);
-        entry.append(node("strong", event.title), node("p", event.source.text.slice(0, 360)), at,
-          node("p", state, "hint"), links);
+          sourceLink(event.source.kind === "comment" ? "原评论" : "原视频", event.source.href),
+          sourceLink("回复", event.reply?.href),
+        ].filter(Boolean)) paragraph.append(" ", link);
+        entry.append(paragraph);
         recentList.append(entry);
       }
       if (!top) recentList.append(node("p", "近期暂无有来源的运营事件。", "hint"));
@@ -300,13 +294,12 @@ export function initPersonalization(model, api) {
     const list = $("organized-memory-list");
     const filter = $("filter-memory").value;
     const search = $("search-memory").value.trim().toLocaleLowerCase();
-    const statuses = { pending_review: "待确认", active: "已保存", archived: "已归档" };
+    const statuses = { active: "已保存", archived: "已归档" };
     const visible = report.organized.filter(item => (filter === "all" || item.status === filter) &&
       (!search || [item.headline, item.anecdote, item.quote].some(value => value?.toLocaleLowerCase().includes(search))));
     list.replaceChildren();
     for (const item of visible) {
       const entry = node("article");
-      const pending = item.status === "pending_review";
       const archived = item.status === "archived";
       const actions = node("div", null, "actions");
       const edit = node("details");
@@ -316,7 +309,7 @@ export function initPersonalization(model, api) {
       const date = new Date(item.updated_at * 1000).toLocaleString("zh-CN");
       entry.append(node("strong", item.headline), node("p", item.anecdote),
         node("p", [statuses[item.status], channels, date].filter(Boolean).join(" · "), "hint"));
-      edit.append(node("summary", pending ? "查看来源并审核" : "来源与编辑"));
+      edit.append(node("summary", "来源与编辑"));
       if (item.quote) edit.append(node("blockquote", item.quote));
       if (item.memory_kind === "private") {
         edit.append(node("p", `来源 · 号主对话 · ${new Date(item.source.at * 1000).toLocaleString("zh-CN")}`, "hint"));
@@ -356,19 +349,18 @@ export function initPersonalization(model, api) {
         }
         form.append(fields);
       }
-      const save = node("button", pending ? "确认并保存" : "保存修改", "win-btn");
+      const save = node("button", "保存修改", "win-btn");
       save.type = "submit";
       form.append(save);
       form.onsubmit = event => {
         event.preventDefault();
         const body = { headline: title.value.trim(), note: note.value.trim() };
-        if (pending) body.status = "active";
         if (boxes.length) body.channels = boxes.filter(box => box.checked).map(box => box.value);
-        change(body, save, pending ? "经历已保存。" : "记忆已更新。");
+        change(body, save, "记忆已更新。");
       };
       edit.append(form);
       if (archived) actions.append(action("恢复", event => change({ status: "active" }, event.currentTarget, "记忆已恢复。")));
-      else if (!pending) actions.append(action("归档", event => change({ status: "archived" }, event.currentTarget, "记忆已归档。")));
+      else actions.append(action("归档", event => change({ status: "archived" }, event.currentTarget, "记忆已归档。")));
       if (item.channels.some(channel => channel !== "operator")) {
         actions.append(action("撤销公开", event => change({ channels: [] }, event.currentTarget, "已撤销公开授权。")));
       }
@@ -395,7 +387,7 @@ export function initPersonalization(model, api) {
         const link = sourceLink(ref.quote, `https://www.bilibili.com/video/${ref.bvid}#reply${ref.comment_id}`);
         if (link) { const line = node("p"); line.append(link); entry.append(line); }
       }
-      actions.append(action(active ? "归档" : item.status === "archived" ? "恢复" : "确认", event =>
+      actions.append(action(active ? "归档" : item.status === "archived" ? "恢复" : "恢复公开", event =>
         mutate(path, { method: "PUT", body: { status: active ? "archived" : "active" } }, event.currentTarget, "记忆已更新。")));
       if (active && (item.category === "public_incident" || item.source_ref?.startsWith("operator-public:"))) {
         actions.append(action("撤销公开", event => mutate(path, { method: "PUT", body: { status: "pending_review" } },

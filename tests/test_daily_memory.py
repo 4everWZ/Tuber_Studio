@@ -215,10 +215,10 @@ async def test_distillation_with_grounded_validation(store):
     ]
 
     char = {"id": "whale", "version": 1, "name": "大肥鱼"}
-    extracted = await service.distill(char, today, provider, candidates=candidates, auto_approve=False)
+    extracted = await service.distill(char, today, provider, candidates=candidates)
     assert len(extracted) == 1
     item = extracted[0]
-    assert item["status"] == "pending_review"
+    assert item["status"] == "active"
     assert item["headline"] == "被吐槽游得太慢"
     assert "热白米饭" in item["anecdote"]
 
@@ -242,7 +242,7 @@ async def test_distillation_only_saves_a_grounded_source(store):
             ]
         }
     )
-    result = await service.distill(character, date, provider, candidates=candidates, auto_approve=True)
+    result = await service.distill(character, date, provider, candidates=candidates)
     assert [(item["source_ref"], item["source_user"], item["quote"]) for item in result] == [
         ("b", "海豹", "再来一碗")
     ]
@@ -307,7 +307,7 @@ def test_daily_memory_api_endpoints(settings):
         assert res.json()["highlights"] == []
 
         # 3. Extract via API
-        ext_res = client.post("/api/daily-memory/extract", json={"auto_approve": True})
+        ext_res = client.post("/api/daily-memory/extract")
         assert ext_res.status_code == 200
         assert "extracted" in ext_res.json()
 

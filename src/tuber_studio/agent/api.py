@@ -17,7 +17,7 @@ from .operator_facts import recent_events
 
 
 class OrganizedMemoryChange(StrictModel):
-    status: Literal["active", "pending_review", "archived"] | None = None
+    status: Literal["active", "archived"] | None = None
     channels: list[Literal["live", "comment", "dynamic"]] | None = None
     headline: str | None = Field(default=None, min_length=1, max_length=40)
     note: str | None = Field(default=None, min_length=1, max_length=150)
@@ -261,10 +261,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         import datetime
 
         date_str = data.get("date") or datetime.date.today().isoformat()
-        auto_approve = bool(data.get("auto_approve", False))
         async with runtime.generation_lock:
             extracted = await runtime.daily_memory.distill(
-                runtime.character, date_str, runtime.llm, auto_approve=auto_approve
+                runtime.character, date_str, runtime.llm
             )
         return {"extracted": extracted, "total": len(extracted), "date": date_str}
 
