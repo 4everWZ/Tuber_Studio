@@ -337,6 +337,7 @@ class ContentDecision(StrictModel):
 class ResponseDecision(StrictModel):
     _generation_id: str | None = PrivateAttr(default=None)
     _generation_identity: dict | None = PrivateAttr(default=None)
+    _memory_audit: dict | None = PrivateAttr(default=None)
     _comment_materials: list[dict] = PrivateAttr(default_factory=list)
     explanation: str = ""
     contact_purpose: str = ""

@@ -205,6 +205,11 @@ def _receipts(store, resource, root, account, character):
         for row in rows:
             target = _json(row["target"])
             discussion = target.get("source_discussion") or {}
+            if (not discussion and row["status"] == "published" and _id(target.get("parent"))
+                    and _id(target.get("recipient")) and target.get("source_text")
+                    and _id(_json(row["receipt"]).get("rpid"))):
+                yield {"comment_id": target["parent"], "author_uid": _id(target["recipient"]),
+                       "author_name": target.get("recipient_name"), "text": target["source_text"]}
             for anchor in (discussion.get("parent") or {}, discussion.get("source") or {}):
                 if anchor.get("comment_id"):
                     yield {"comment_id": anchor["comment_id"], "parent_comment_id": _id(anchor.get("parent_comment_id")),

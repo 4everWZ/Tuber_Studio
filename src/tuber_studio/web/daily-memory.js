@@ -7,7 +7,9 @@ class DailyMemoryUI {
     this.notify = notify;
     this.busy = false;
     this.data = [];
-    this.activeAnecdotes = [];
+    this.loadVersion = 0;
+    this.organizedSignature = null;
+    this.recentSignature = null;
 
     if (this.container) {
       const extractBtn = this.container.querySelector("#extract-daily-memory");
@@ -45,6 +47,9 @@ class DailyMemoryUI {
     try {
       const result = await this.api("/api/daily-memory/recent-events");
       day.textContent = result.day;
+      const signature = JSON.stringify(result.items);
+      if (signature === this.recentSignature) return;
+      this.recentSignature = signature;
       list.replaceChildren();
       for (const event of result.items) {
         const article = document.createElement("article");
@@ -79,6 +84,7 @@ class DailyMemoryUI {
       }
       if (!result.items.length) list.textContent = "近期暂无有来源的运营事件。";
     } catch (error) {
+      this.recentSignature = null;
       list.textContent = `读取近期趣事失败：${error.message}`;
     } finally {
       list.setAttribute("aria-busy", "false");
@@ -86,38 +92,155 @@ class DailyMemoryUI {
   }
 
   async load() {
+    const version = ++this.loadVersion;
     try {
       const res = await this.api("/api/daily-memory");
+      if (version !== this.loadVersion) return;
       this.data = res.highlights || [];
-      this.activeAnecdotes = res.active_anecdotes || [];
       this.render();
+      this.renderOrganized(res.organized || [], res.organization || {});
     } catch (e) {
+      if (version !== this.loadVersion) return;
       const notice = this.container.querySelector("#daily-memory-notice");
       if (notice) notice.textContent = `读取失败: ${e.message}`;
     }
   }
 
-  async extract(date) {
+  async extract() {
     if (this.busy) return;
     this.busy = true;
     const btn = this.container.querySelector("#extract-daily-memory");
     if (btn) btn.disabled = true;
     const notice = this.container.querySelector("#daily-memory-notice");
-    if (notice) notice.textContent = "大模型正在审阅今日社群互动与直播素材，提炼人设趣事…";
+    if (notice) notice.textContent = "已安排后台整理。";
 
     try {
-      const res = await this.api("/api/daily-memory/extract", {
-        method: "POST",
-        body: { date: date || undefined, auto_approve: false },
-      });
-      this.notify(`已提炼 ${res.total || 0} 条今日趣事与高光（待审核）。`);
-      await this.load();
+      await this.api("/api/daily-memory/organize", { method: "POST" });
+      this.notify("已安排后台整理。");
     } catch (e) {
       this.notify(`提炼失败: ${e.message}`, true);
       if (notice) notice.textContent = `提炼失败: ${e.message}`;
     } finally {
       this.busy = false;
       if (btn) btn.disabled = false;
+    }
+  }
+
+  renderOrganized(items, organization) {
+    const notice = this.container.querySelector("#daily-memory-notice");
+    const labels = { operator: "号主私聊", live: "直播", comment: "回帖", dynamic: "动态" };
+    const state = ({
+      running: "正在后台整理", waiting: "等待模型空闲", retry: organization.error || "整理失败，稍后重试",
+    })[organization.status] || "";
+    notice.textContent = [state, organization.processed ? `已处理 ${organization.processed} 条来源` : "",
+      organization.invalid ? `${organization.invalid} 条整理结果无效` : ""].filter(Boolean).join(" · ");
+    const signature = JSON.stringify(items);
+    if (signature === this.organizedSignature) return;
+    this.organizedSignature = signature;
+    for (const pending of [true, false]) {
+      const root = this.container.querySelector(pending ? "#pending-memory-list" : "#organized-memory-list");
+      const rows = items.filter(item => (item.status === "pending_review") === pending);
+      root.replaceChildren();
+      if (!rows.length) root.textContent = pending ? "暂无待确认经历。" : "暂无已保存记忆。";
+      for (const item of rows) {
+        const card = document.createElement("article");
+        card.className = "issue-row";
+        const heading = document.createElement("strong");
+        heading.textContent = item.headline;
+        const text = document.createElement("p");
+        text.textContent = item.anecdote;
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "来源与使用权限";
+        const meta = document.createElement("p");
+        meta.className = "hint";
+        meta.textContent = `${new Date(item.updated_at * 1000).toLocaleString("zh-CN")} · ${item.status === "archived" ?
+          "已归档" : item.channels.map(channel => labels[channel]).join("、") || "待确认"}`;
+        const quote = document.createElement("blockquote");
+        quote.textContent = item.quote;
+        details.append(summary, meta, quote);
+        for (const ref of item.source.references || []) {
+          if (!/^https:\/\/(?:www\.bilibili\.com\/video\/BV[0-9A-Za-z]+|t\.bilibili\.com\/\d+)(?:[/?#]|$)/.test(ref.href || "")) continue;
+          const link = document.createElement("a");
+          link.href = ref.href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = ref.text;
+          const line = document.createElement("p");
+          line.append(link);
+          details.append(line);
+        }
+        const sourceKey = item.source.key || "";
+        if (item.memory_kind === "private" && sourceKey.startsWith("turn:")) {
+          const line = document.createElement("p");
+          line.className = "hint";
+          line.textContent = "来源 · 号主对话 " + new Date(item.source.at * 1000).toLocaleString("zh-CN");
+          details.append(line);
+        }
+        const form = document.createElement("form");
+        const headline = document.createElement("input");
+        headline.value = item.headline;
+        headline.maxLength = 40;
+        headline.required = true;
+        headline.setAttribute("aria-label", "记忆标题");
+        const note = document.createElement("textarea");
+        note.value = item.anecdote;
+        note.maxLength = 150;
+        note.required = true;
+        note.setAttribute("aria-label", "记忆内容");
+        form.append(headline, note);
+        const channels = [];
+        if (item.memory_kind === "experience") {
+          for (const channel of ["live", "comment", "dynamic"]) {
+            const label = document.createElement("label");
+            const box = document.createElement("input");
+            box.type = "checkbox";
+            box.value = channel;
+            box.checked = item.channels.includes(channel);
+            channels.push(box);
+            label.append(box, labels[channel]);
+            form.append(label);
+          }
+        }
+        const save = document.createElement("button");
+        save.textContent = pending ? "确认并保存" : "保存";
+        form.append(save);
+        form.onsubmit = event => {
+          event.preventDefault();
+          this.changeOrganized(item.id, { headline: headline.value.trim(), note: note.value.trim(), status: "active",
+            ...(item.memory_kind === "experience" ? { channels: channels.filter(box => box.checked).map(box => box.value) } : {}) });
+        };
+        details.append(form);
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        if (item.status === "active") {
+          const archive = document.createElement("button");
+          archive.textContent = "归档";
+          archive.onclick = () => this.changeOrganized(item.id, { status: "archived" });
+          actions.append(archive);
+        }
+        if (item.channels.some(channel => channel !== "operator")) {
+          const revoke = document.createElement("button");
+          revoke.textContent = "撤销公开";
+          revoke.onclick = () => this.changeOrganized(item.id, { channels: [] });
+          actions.append(revoke);
+        }
+        const remove = document.createElement("button");
+        remove.textContent = "删除";
+        remove.onclick = () => { if (confirm("确认删除这条记忆吗？")) this.changeOrganized(item.id); };
+        actions.append(remove);
+        card.append(heading, text, details, actions);
+        root.append(card);
+      }
+    }
+  }
+
+  async changeOrganized(id, body) {
+    try {
+      await this.api(`/api/daily-memory/organized/${id}`, body ? { method: "PATCH", body } : { method: "DELETE" });
+      await this.load();
+    } catch (error) {
+      this.notify(error.message, true);
     }
   }
 
@@ -147,17 +270,11 @@ class DailyMemoryUI {
 
   render() {
     const listEl = this.container.querySelector("#daily-memory-list");
-    const notice = this.container.querySelector("#daily-memory-notice");
     if (!listEl) return;
 
     if (!this.data.length) {
-      listEl.innerHTML = '<p class="hint empty-hint">今日暂无提炼的社群趣事。点击右上角“提炼今日趣事”，或在直播与评论区互动后自动生成。</p>';
-      if (notice) notice.textContent = "当前活跃谈资：0 条";
+      listEl.innerHTML = '<p class="hint empty-hint">暂无早期记忆记录。</p>';
       return;
-    }
-
-    if (notice) {
-      notice.innerHTML = `当前共 ${this.data.length} 条记忆（其中 <strong>${this.activeAnecdotes.length}</strong> 条正作为活跃谈资随身携带入直播/回帖）。`;
     }
 
     listEl.innerHTML = "";

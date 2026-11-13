@@ -116,6 +116,22 @@ class BrowsingDecisions:
             bound["own_public_experiences"] = self.browsing.runtime.daily_memory.context(
                 character, video_id=target["bvid"], thread_id=root_id, comment_id=source.get("comment_id")
             )
+        if root_id and row.get("account_id"):
+            from .comment_timeline import resource_key
+
+            scope = (str(row["account_id"]), character["id"], character["version"])
+            memories = self.browsing.runtime.daily_memory.recall_organized(
+                scope, "comment", source.get("text") or "", resource=resource_key(target), thread=root_id,
+                participant=source.get("author_uid"),
+            )
+            if memories:
+                bound.setdefault("own_public_experiences", []).extend(
+                    {"id": f"organized:{memory['id']}", "text": memory["anecdote"],
+                     "public_sources": memory["source"]["references"]} for memory in memories
+                )
+                bound["_memory_audit"] = {"memory_scope": scope, "memory_channel": "comment", "organized_memory": [
+                    self.browsing.runtime.daily_memory.organized_reference(memory) for memory in memories
+                ]}
         return bound
 
     def invited_private_response(self, row, thread):
@@ -146,7 +162,9 @@ class BrowsingDecisions:
             else None
         )
         if schema is ResponseDecision:
-            data = self._response_actor_data(row, data)
+            if response_input is None:
+                data = self._response_actor_data(row, data)
+                data.pop("_memory_audit", None)
             response_input = response_input or ResponseDecisionInput(data)
             if data.get("kind") == "top_level" and data.get("coverage") == "sampled_visual":
                 instruction += (
@@ -230,6 +248,7 @@ class BrowsingDecisions:
         self.browsing._check_round(row)
         if schema is ResponseDecision:
             data = self._response_actor_data(row, data)
+        memory_audit = data.pop("_memory_audit", None)
         response_input = ResponseDecisionInput(data) if schema is ResponseDecision else None
         video_response = schema is ResponseDecision and data.get("kind") == "top_level"
         character, messages, model_schema = self._model_input(
@@ -256,6 +275,7 @@ class BrowsingDecisions:
 
         def guard():
             self.browsing._check_round(row)
+            self.browsing.runtime.validate_memory_delivery(memory_audit)
             if profile_revision != relations.profile_revision(
                 row["account_id"], row["character_id"], "bilibili", profile_uid
             ):
@@ -374,6 +394,8 @@ class BrowsingDecisions:
             binding["input_format"] = "keyed-candidate-priorities-v4"
         if profile_revision is not None:
             binding["profile_revision"] = profile_revision
+        if memory_audit:
+            binding["memory_audit"] = memory_audit
         if video_response:
             binding["video_response"] = "aligned-source-dry-v1"
         binding["model"] = self.browsing.model_signature()
@@ -402,6 +424,8 @@ class BrowsingDecisions:
         )
         result = response_input.resolve(value) if response_input is not None else value
         if schema is ResponseDecision:
+            self.browsing.runtime.validate_memory_delivery(memory_audit)
+            result._memory_audit = memory_audit
             result._generation_identity = binding["self_identity"]
             saved_generation = self.browsing.runtime.continuations.find("generation.browsing", identity)
             result._generation_id = saved_generation["id"] if saved_generation else None

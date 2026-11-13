@@ -113,20 +113,19 @@ test("interactive controls bind once and preserve zero thresholds and unsaved ru
   assert.equal(selected, "pvz");
 });
 
-test("daily memory extraction reloads results before releasing its busy state", async t => {
+test("manual memory organization schedules the shared background worker", async t => {
   const { get, document } = dom(t);
   const UI = classic("daily-memory.js", "DailyMemoryUI", document);
   const calls = [];
   const ui = new UI({ container: get("memory"), notify() {}, api: async (url, options) => {
-    calls.push(url);
-    return options ? { total: 1 } : { highlights: [{ id: 1, headline: "新趣事" }], active_anecdotes: [] };
+    calls.push([url, options.method]);
+    return { status: "waiting" };
   } });
   let rendered = 0;
   ui.render = () => { rendered++; };
   await ui.extract();
-  assert.deepEqual(calls, ["/api/daily-memory/extract", "/api/daily-memory"]);
-  assert.equal(ui.data[0].headline, "新趣事");
-  assert.equal(rendered, 1);
+  assert.deepEqual(calls, [["/api/daily-memory/organize", "POST"]]);
+  assert.equal(rendered, 0);
   assert.equal(ui.busy, false);
 });
 

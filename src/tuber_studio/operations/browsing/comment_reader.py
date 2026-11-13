@@ -113,6 +113,7 @@ class CommentProgress:
                 return None
             decision._generation_id = generation.get("id")
             decision._generation_identity = generation.get("identity")
+            decision._memory_audit = generation.get("memory_audit")
             decision._comment_materials = generation.get("comment_materials", [])
             # A deliberate wait remains eligible on the next visit.
             return decision if decision.action != "wait" else None
@@ -127,6 +128,7 @@ class CommentProgress:
                 dump(decision.model_dump() | {"generation": {
                     "id": decision._generation_id, "identity": decision._generation_identity,
                     "source_id": str(source["comment_id"]),
+                    **({"memory_audit": decision._memory_audit} if decision._memory_audit else {}),
                     **({"comment_materials": decision._comment_materials} if decision._comment_materials else {}),
                 }}),
                 time.time(),

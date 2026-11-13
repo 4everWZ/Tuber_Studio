@@ -56,15 +56,14 @@ def daily_events(browsing, day):
     if not account:
         return []
     # Public browsing/comment sources only. Exclude drafts and outgoing/private material.
-    videos = activity(browsing, day=day, kind="videos", page_size=100)["items"]
-    comments = activity(browsing, day=day, kind="comments", page_size=100)["items"]
+    items = activity(browsing, day=day, kind="public", paginate=False)["items"]
     by_thread = defaultdict(list)
-    for comment in comments:
+    for comment in (item for item in items if item["kind"] == "comment"):
         context = comment.get("thread") or {}
         resource = context.get("resource") or comment.get("bvid")
         if resource and comment.get("source_text") and comment.get("source_href"):
             by_thread[resource, context.get("root_id") or comment["source_href"]].append(comment)
-    metadata = {video["bvid"]: video for video in videos}
+    metadata = {video["bvid"]: video for video in items if video["kind"] == "video"}
     linked_resources = {resource for resource, _ in by_thread}
     candidates = list(by_thread) + [(resource, None) for resource in metadata.keys() - linked_resources]
     excerpts = {}

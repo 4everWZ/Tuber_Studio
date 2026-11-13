@@ -86,6 +86,9 @@ class BrowsingPublication:
                            or runtime_identity(self.browsing.runtime, character, row["account_id"])}
         if response._generation_id:
             target["generation_continuation_id"] = response._generation_id
+        if response._memory_audit:
+            self.browsing.runtime.validate_memory_delivery(response._memory_audit)
+            target["memory_audit"] = response._memory_audit
         resource = target.get("bvid") or "dynamic:" + str(target["oid"])
         if kind == "top_level":
             source = "top-level"
@@ -714,6 +717,7 @@ class BrowsingPublication:
 
             def before_send():
                 nonlocal token
+                self.browsing.runtime.validate_memory_delivery(row["target"].get("memory_audit"))
                 if token is not None:
                     raise ValueError("同一意图不能二次进入提交边界")
                 if signature != self.browsing.credential_signature() or self.browsing.closed:

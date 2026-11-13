@@ -110,15 +110,21 @@
   <div class="win-group-box daily-memory-card" id="daily-memory-card" data-workspace-anchor style="margin-top:18px;">
     <div class="panel-heading">
       <div>
-        <div class="win-group-title" style="margin:0;">📝 跨渠道每日记忆与社群趣事</div>
-        <span class="hint">打通直播高光与评论热梗，为直播闲聊、视频回帖与动态提供鲜活谈资</span>
+        <div class="win-group-title" style="margin:0;">长期记忆</div>
       </div>
       <div class="actions">
-        <button type="button" id="extract-daily-memory" class="primary win-btn">✨ 提炼今日趣事</button>
+        <button type="button" id="extract-daily-memory" class="win-btn">补跑整理</button>
         <button type="button" id="refresh-daily-memory" class="win-btn">刷新</button>
       </div>
     </div>
-    <p id="daily-memory-notice" class="hint" role="status">正在加载每日记忆…</p>
-    <div id="daily-memory-list" class="daily-memory-list" style="margin-top:10px;"></div>
+    <p id="daily-memory-notice" class="hint" role="status">正在加载长期记忆…</p>
+    <h2>待确认经历</h2>
+    <div id="pending-memory-list" class="daily-memory-list"></div>
+    <h2>已保存记忆</h2>
+    <div id="organized-memory-list" class="daily-memory-list"></div>
+    <details>
+      <summary>早期记忆记录</summary>
+      <div id="daily-memory-list" class="daily-memory-list"></div>
+    </details>
   </div>
 </section>

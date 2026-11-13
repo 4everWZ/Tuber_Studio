@@ -7,10 +7,12 @@ from contextlib import asynccontextmanager
 
 import psutil
 
+from .agent.memory_organizer import MemoryOrganizer
 from .agent_tools import build_default_tool_registry
 from .api_providers import VisionService, create_llm
 from .config import uses_broker_llm
 from .context import ContextManager
+from .context_delivery import comment_scope
 from .daily_memory import DailyMemoryService
 from .generation_meter import budgeted_call
 from .live.scene import LiveScene
@@ -30,7 +32,7 @@ from .providers import VoiceService, public_error, reuse_turn_token_counts
 from .relationships import Relationships
 from .retention import INTERVAL_SECONDS, RetentionManager
 from .runtime_modes import apply_mode_profile, profile_alignment_error
-from .store import character_card
+from .store import character_card, dump
 from .video_vision_service import restore_admission
 
 
@@ -50,6 +52,7 @@ class Runtime:
             settings.data.get("vision", {"kind": "disabled"}), settings.endpoint_key("vision")
         )
         self.daily_memory = DailyMemoryService(store)
+        self.memory_organizer = MemoryOrganizer(self)
         self.live = LiveSession(self, singing_provider=singing_provider, live_scene=live_scene)
         self.tool_registry = build_default_tool_registry(
             daily_memory=self.daily_memory,
@@ -306,7 +309,28 @@ class Runtime:
         """Generate once with source memory; lexical diagnostics never rewrite speech."""
         context = context or self.context
         evidence = context.memory.retrieve(scope, character, event["text"])
-        messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence)
+        channel = {"operator_chat": "operator", "live": "live", "comment_draft": "comment"}.get(mode)
+        memory_scope = self.memory_organizer.scope() if channel and hasattr(self, "browsing") else None
+        organized = []
+        if memory_scope and memory_scope[1:] == (character["id"], character["version"]):
+            resource = event.get("video_id") or event.get("bvid")
+            thread = event.get("thread_id")
+            if channel == "comment":
+                account, _, resource, thread = comment_scope(scope) or (None, None, None, None)
+                if account != memory_scope[0]:
+                    memory_scope = None
+            elif channel == "live" and event.get("account_id") and str(event["account_id"]) != memory_scope[0]:
+                memory_scope = None
+            if memory_scope:
+                organized = self.daily_memory.recall_organized(
+                    memory_scope, channel, event["text"], resource=resource, thread=thread,
+                    participant=event.get("platform_user_id") or event.get("user_id"),
+                )
+        memory_refs = [self.daily_memory.organized_reference(row) for row in organized]
+        extra = [{"role": "user", "kind": "context", "content": "与当前话题相关的现行记忆（偏好以此处最新版本为准）：" + dump([
+            {"topic": row["headline"], "note": row["anecdote"]} for row in organized
+        ])}] if organized else []
+        messages = await context.prepare(scope, character, event, relationship, mode, evidence=evidence, extra=extra)
         generation_identity = self.identity_snapshot(character, event.get("account_id"))
         messages = identity_messages(messages, generation_identity)
         operation = mode in {"comment_draft", "direct_message"}
@@ -319,6 +343,8 @@ class Runtime:
             source_binding = reply_generation_binding(scope, character, event, mode)
             binding = dict(source_binding)
             binding["self_identity"] = generation_identity
+            if memory_refs:
+                binding["organized_memory"] = memory_refs
             profile_revision = self.relationships.event_profile_revision(character["id"], event)
             if profile_revision is not None:
                 binding["profile_revision"] = profile_revision
@@ -342,6 +368,8 @@ class Runtime:
                 return reply
 
             def guard():
+                self.validate_memory_delivery({"organized_memory": memory_refs, "memory_scope": memory_scope,
+                                               "memory_channel": channel})
                 current = self.store.character()
                 if (
                     (current["id"], current["version"], current.get("_edit_identity"))
@@ -400,6 +428,8 @@ class Runtime:
                     if mode == "live"
                     else await generate(messages, character, event["event_id"], event["text"])
                 )
+        memory_audit = {"organized_memory": memory_refs, "memory_scope": memory_scope, "memory_channel": channel}
+        self.validate_memory_delivery(memory_audit)
         missing = missing_slots(reply.spoken_text, evidence)
         supported = [
             slot
@@ -424,6 +454,8 @@ class Runtime:
         if missing:
             labels = {"location": "地点", "person": "人物", "item": "物品", "quantity": "数量"}
             audit["warning"] = "待核对：" + "、".join(labels.get(slot, slot) for slot in missing)
+        if memory_refs:
+            audit.update(memory_audit)
         if operation:
             audit["output"] = operation_output_diagnostics(reply.spoken_text) | {
                 "finish_reason": getattr(self.llm, "last_finish_reason", None),
@@ -436,6 +468,14 @@ class Runtime:
                 audit["warning"] = continuation["feedback"]["message"]
             audit["continuation"] = continuation
         return reply, audit
+
+    def validate_memory_delivery(self, audit):
+        if not audit or not audit.get("organized_memory"):
+            return
+        scope = tuple(audit["memory_scope"])
+        if scope != self.memory_organizer.scope():
+            raise ValueError("记忆所属账号或角色已切换，请重试")
+        self.daily_memory.validate_organized(scope, audit["memory_channel"], audit["organized_memory"])
 
     async def control(self, action):
         return await self.live.control(action)

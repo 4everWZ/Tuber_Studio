@@ -93,9 +93,11 @@ def create_app(
             await dynamics.open()
             await messages.open()
             await browsing.open()
+            runtime.memory_organizer.start()
             yield
         finally:
             try:
+                await runtime.memory_organizer.close()
                 await browsing.close()
             finally:
                 try:

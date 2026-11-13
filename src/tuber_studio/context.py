@@ -240,7 +240,7 @@ class ContextManager:
         ]
 
     async def prepare(
-        self, scope, character, event, relationship=None, mode="live", *, evidence=None, output_tokens=None
+        self, scope, character, event, relationship=None, mode="live", *, evidence=None, output_tokens=None, extra=()
     ):
         row = self.window(scope, character)
         prefix, initial, pending, suffix = self.parts(
@@ -270,6 +270,7 @@ class ContextManager:
                 character, event, mode, extra_context={"scope": scope}
             )
             initial.extend(augmentations)
+        initial.extend(extra)
         history = self.history_for_model(scope, character, json.loads(row["history"]))
         messages = self.render(prefix, initial, history, pending, suffix)
         overflow = False

@@ -114,6 +114,11 @@ const commentQueue = initCommentQueue(api, refreshComments, discoveryPanel.statu
   onSelectionCleared: () => commentsModule?.clearCurrent(),
 });
 const dailyMemoryUI = new DailyMemoryUI({ container: $("daily-memory-card"), api, notify: notice });
+setInterval(() => {
+  if (model.authenticated && !document.hidden && model.page === "characters" && !dailyMemoryUI.busy
+      && !dailyMemoryUI.container?.contains(document.activeElement)
+      && !$("recent-memory-list")?.contains(document.activeElement)) dailyMemoryUI.refresh();
+}, 15000);
 const interactiveGamesUI = new InteractiveGamesUI({ api, notify: notice });
 const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
   model.dynamicMemeCache.clear();

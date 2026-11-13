@@ -4,12 +4,28 @@ import json
 from typing import Annotated, Literal
 
 from fastapi import Body, Depends, HTTPException, Path, Query
+from pydantic import Field
 
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
-from ..models import Character
+from ..models import Character, StrictModel
 from ..relationships import UserProfile
 from ..store import character_card
 from .operator_facts import recent_events
+
+
+class OrganizedMemoryChange(StrictModel):
+    status: Literal["active", "pending_review", "archived"] | None = None
+    channels: list[Literal["live", "comment", "dynamic"]] | None = None
+    headline: str | None = Field(default=None, min_length=1, max_length=40)
+    note: str | None = Field(default=None, min_length=1, max_length=150)
+
+
+def organized_view(row):
+    result = {key: row[key] for key in ("id", "memory_kind", "headline", "quote", "anecdote", "status",
+                                       "channels", "source", "updated_at")}
+    if row["status"] == "active":
+        result["channels"] = ["operator", *result["channels"]]
+    return result
 
 
 def register_agent_api(app, settings, runtime, store, comments, require_admin):
@@ -107,12 +123,32 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         active = runtime.daily_memory.get_active_anecdotes(
             char["id"], char["version"], limit=3, max_tokens=200
         )
-        return {"highlights": highlights, "active_anecdotes": active}
+        organized = runtime.daily_memory.organized(runtime.memory_organizer.scope(), limit=limit)
+        return {"highlights": highlights, "active_anecdotes": active,
+                "organized": [organized_view(row) for row in organized], "organization": runtime.memory_organizer.state()}
 
     @app.get("/api/daily-memory/recent-events", dependencies=[Depends(require_admin)])
     async def get_recent_events():
         await runtime.browsing.discovery.restore_history_scope()
         return recent_events(runtime.browsing)
+
+    @app.post("/api/daily-memory/organize", dependencies=[Depends(require_admin)])
+    async def organize_memory():
+        return runtime.memory_organizer.schedule(manual=True)
+
+    @app.patch("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
+    async def change_organized_memory(item_id: int, data: OrganizedMemoryChange):
+        row = runtime.daily_memory.change_organized(runtime.memory_organizer.scope(), item_id, **data.model_dump())
+        if not row:
+            raise HTTPException(404, "未找到当前账号和角色的记忆")
+        return organized_view(row)
+
+    @app.delete("/api/daily-memory/organized/{item_id}", dependencies=[Depends(require_admin)])
+    async def delete_organized_memory(item_id: int):
+        result = runtime.daily_memory.change_organized(runtime.memory_organizer.scope(), item_id, delete=True)
+        if not result:
+            raise HTTPException(404, "未找到当前账号和角色的记忆")
+        return result
 
     @app.post("/api/daily-memory/incidents", dependencies=[Depends(require_admin)])
     async def record_public_incident(data: dict = Body(...)):
@@ -158,7 +194,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         char = runtime.character
         account = str(runtime.browsing.discovery.history_scope()[0] or "")
         if not store.one(
-            "SELECT id FROM daily_highlights WHERE id=? AND character_id=? AND character_version=? AND " + HIGHLIGHT_ACCOUNT_FILTER,
+            "SELECT id FROM daily_highlights WHERE id=? AND character_id=? AND character_version=? "
+            "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.memory_kind') END IS NULL "
+            "AND " + HIGHLIGHT_ACCOUNT_FILTER,
             (item_id, char["id"], char["version"], account, account),
         ):
             raise HTTPException(404, "未找到当前角色的记忆条目")

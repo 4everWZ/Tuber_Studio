@@ -331,9 +331,23 @@ class Dynamics:
         char = self._character()
         result = self.daily_memory.public_incident_sources(char["id"], char["version"])
         result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
+        organizer = getattr(self.runtime, "memory_organizer", None)
+        if organizer and getattr(self.runtime, "browsing", None):
+            for row in self.daily_memory.organized(organizer.scope(), limit=100):
+                if row["status"] != "active" or "dynamic" not in row["channels"]:
+                    continue
+                anchor = row["source"]["thread"]
+                references = row["source"]["references"]
+                result.append({"id": f"organized:{row['id']}", "type": "public_incident", "fictional": False,
+                               "text": row["anecdote"], "memory_version": row["updated_at"],
+                               "source_url": references[0]["href"], "public_sources": [
+                                   {"bvid": anchor["resource"], "thread_id": anchor["root_id"],
+                                    "comment_id": ref["comment_id"], "quote": ref["text"]} for ref in references
+                               ] if anchor["resource"].startswith("BV") else []})
         rows = self.store.all(
             "SELECT d.id,d.text,d.receipt,c.video_id,c.comment_id,c.content FROM drafts d "
             "JOIN comments c ON c.id=d.comment_id WHERE d.status='published' AND c.platform='bilibili' "
+            "AND json_extract(d.answer_check,'$.organized_memory') IS NULL "
             "AND d.character_id=? AND d.character_version=? ORDER BY d.id DESC LIMIT 100",
             (char["id"], char["version"]),
         )
@@ -363,6 +377,7 @@ class Dynamics:
             if account_id:
                 for row in self.store.all(
                     "SELECT id,text,target,receipt FROM browsing_intents WHERE kind='reply_public' AND status='published' "
+                    "AND json_extract(target,'$.memory_audit') IS NULL "
                     "AND account_id=? AND character_id=? AND character_version=? ORDER BY updated_at DESC LIMIT 100",
                     (account_id, char["id"], char["version"]),
                 ):

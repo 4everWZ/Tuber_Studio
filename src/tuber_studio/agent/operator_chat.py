@@ -122,9 +122,8 @@ class OperatorChat:
             "ON operator_chat_turns(character_id,character_version,created_at DESC,request_id DESC)"
         )
 
-    @staticmethod
-    def _scope(character):
-        return "operator:" + character["id"]
+    def _scope(self, character):
+        return "operator:" + dump([self._account(), character["id"]])
 
     def _account(self):
         return str(self.browsing.discovery.history_scope()[0] or "")
@@ -213,6 +212,10 @@ class OperatorChat:
         )
 
     def _visible(self, result):
+        try:
+            self.runtime.validate_memory_delivery(result.get("organized_memory"))
+        except ValueError:
+            return {"reply_text": "这条回复引用的记忆已变更。", "card": None}
         if memory := result.get("memory"):
             rows = self._experience_rows(item_id=memory["id"])
             if (
@@ -223,7 +226,7 @@ class OperatorChat:
                 return {"reply_text": "这条公开经历当前不可引用。", "card": None}
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
-                  if key not in {"submission", "binding", "account_id", "memory", "confirmations"}}
+                  if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory"}}
         card = result.get("card")
         if card is None:
             return result
@@ -287,7 +290,9 @@ class OperatorChat:
     def visible_turn(self, row):
         result = json.loads(row["result"])
         card = result.get("card") or {}
-        if result.get("account_id") not in {None, self._account()} and (card or result.get("memory")):
+        if result.get("account_id") not in {None, self._account()} and (
+            card or result.get("memory") or result.get("organized_memory")
+        ):
             result = {"reply_text": "请切换到当时的账号查看来源和任务。", "card": None}
             if card.get("type") == "video_activity":
                 result["card"] = card
@@ -345,14 +350,18 @@ class OperatorChat:
                          "sender_name": "号主", "is_operator": True}
                 async with self._generation_slot():
                     try:
-                        reply, _ = await self.runtime.generate_reply(scope, char, event, mode="operator_chat")
+                        reply, audit = await self.runtime.generate_reply(scope, char, event, mode="operator_chat")
                     except (ValueError, TimeoutError, httpx.HTTPError) as error:
                         raise HTTPException(503, "暂时无法生成回复，请重试。") from error
                     self._check_scope(char, account)
                     self.runtime.context.record(
-                        scope, char, event, reply.spoken_text, "operator_chat", memory_kind="operator_private"
+                        scope, char, event, None if audit.get("organized_memory") else reply.spoken_text,
+                        "operator_chat", memory_kind="operator_private",
                     )
                 result = {"reply_text": reply.spoken_text, "emotion": reply.emotion, "card": None, "private": True}
+                if audit.get("organized_memory"):
+                    result["organized_memory"] = {key: audit[key] for key in
+                                                  ("organized_memory", "memory_scope", "memory_channel")}
             else:
                 result = await self._action(intent, char, request_id, data, events, tasks, focus)
             self._check_scope(char, account, account_may_resolve=True)
@@ -361,6 +370,7 @@ class OperatorChat:
                 "INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
                 (request_id, char["id"], char["version"], data.message, dump(result), time.time()),
             )
+            self.runtime.memory_organizer.schedule()
             return self._visible(result)
 
     def _check_scope(self, char, account, *, account_may_resolve=False):
@@ -463,6 +473,14 @@ class OperatorChat:
         if kind == "public_experiences":
             return {"reply_text": "这是当前角色的公开经历。", "card": {"type": kind, "data": {}}}
         if kind == "recall_experience":
+            organized = self.runtime.daily_memory.recall_organized(self.runtime.memory_organizer.scope(), "operator", topic)
+            matches = [item for item in organized if item["memory_kind"] == "experience"]
+            if len(matches) == 1:
+                item = matches[0]
+                return {"reply_text": item["anecdote"], "card": None, "organized_memory": {
+                    "memory_scope": self.runtime.memory_organizer.scope(), "memory_channel": "operator",
+                    "organized_memory": [self.runtime.daily_memory.organized_reference(item)],
+                }}
             items = [item for item in self.experiences()["items"] if item["status"] in {"active", "archived"}]
             found = [item for item in items if topic and topic in item["anecdote"]]
             if len(found) != 1:
@@ -653,13 +671,18 @@ class OperatorChat:
         async with self.lock, self.runtime.generation_lock:
             char = self.runtime.character
             scope = self._scope(char)
+            legacy_scope = "operator:" + char["id"]
             with self.store.db:
                 db = self.store.db
                 db.execute("DELETE FROM context_history_audit WHERE window_key IN "
-                           "(SELECT key FROM context_windows WHERE mode=? AND character_id=?)", (scope, char["id"]))
-                db.execute("DELETE FROM context_windows WHERE mode=? AND character_id=?", (scope, char["id"]))
-                db.execute("DELETE FROM grounded_memory WHERE scope=? AND character_id=?", (scope, char["id"]))
-                db.execute("DELETE FROM operator_chat_turns WHERE character_id=?", (char["id"],))
+                           "(SELECT key FROM context_windows WHERE mode IN (?,?) AND character_id=?)",
+                           (scope, legacy_scope, char["id"]))
+                db.execute("DELETE FROM context_windows WHERE mode IN (?,?) AND character_id=?",
+                           (scope, legacy_scope, char["id"]))
+                db.execute("DELETE FROM grounded_memory WHERE scope IN (?,?) AND character_id=?",
+                           (scope, legacy_scope, char["id"]))
+                db.execute("DELETE FROM operator_chat_turns WHERE character_id=? "
+                           "AND COALESCE(json_extract(result,'$.account_id'),?)=?", (char["id"], self._account(), self._account()))
         return {"ok": True}
 
     async def publish_experience(self, request_id, fact):

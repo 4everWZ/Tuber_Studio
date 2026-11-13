@@ -809,6 +809,7 @@ class LiveSession:
                     character,
                     reply.emotion,
                     reply.animation_id,
+                    memory_audit=answer_check,
                     final_segment=final_segment,
                 )
                 if self.store.job(job_id)["status"] in TERMINAL:
@@ -847,6 +848,7 @@ class LiveSession:
         *,
         media=None,
         activity=None,
+        memory_audit=None,
         final_segment=True,
     ):
         if not media and self.settings.data.get("features", {}).get("live_enabled"):
@@ -864,6 +866,7 @@ class LiveSession:
             if time.monotonic() > deadline:
                 raise ValueError("没有overlay播放器，未播报；请打开OBS地址或浏览器播放器")
             await asyncio.sleep(0.1)
+        self.runtime.validate_memory_delivery(memory_audit)
         token = secrets.token_urlsafe(24)
         self.store.update_job(job_id, playback_token=token)
         self.playback_done.clear()
@@ -1001,7 +1004,7 @@ class LiveSession:
                     "live:" + job["session_id"],
                     character,
                     event,
-                    spoken,
+                    None if check.get("organized_memory") else spoken,
                     memory_kind=check.get("memory_kind"),
                 )
             if event["type"] == "chat":

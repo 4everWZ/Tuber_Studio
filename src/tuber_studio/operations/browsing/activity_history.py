@@ -344,22 +344,24 @@ def history(browsing, *, day=None, page=1, page_size=10, visible_since=None):
     return _paginate(_video_data(browsing, day=day, visible_since=visible_since), page, page_size)
 
 
-def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_since=None, round_id=None):
+def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_since=None, round_id=None, paginate=True):
     """Operator-only daily outcomes across public and private channels.
 
     Message bodies are read only for this view. They never become video source
     material or enter a public generation context.
     """
-    _validate_page(page, page_size)
+    if paginate:
+        _validate_page(page, page_size)
     kinds = {
         "all": None,
         "videos": "video",
         "comments": "comment",
         "messages": "message",
         "dynamics": "dynamic",
+        "public": None,
     }
     if kind not in kinds:
-        raise ValueError("活动类型须为 all、videos、comments、messages 或 dynamics")
+        raise ValueError("活动类型须为 all、videos、comments、messages、dynamics 或 public")
     if round_id and day is None:
         account, character = browsing.discovery.history_scope()[:2]
         recent = browsing.store.one(
@@ -564,7 +566,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 **details,
             )
 
-    if kind in {"all", "comments"}:
+    if kind in {"all", "comments", "public"}:
         lower, upper = (cutoff, 253402300800) if round_id else (max(start, cutoff), end)
         for observed in comment_activity(store, account, character, start=lower, end=upper, round_id=round_id):
             resource, root, observed_round = (observed[key] for key in ("resource", "root_id", "round_id"))
@@ -584,7 +586,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 round_id=observed_round, bvid=resource if not resource.startswith("dynamic:") else None,
                 **thread_details(resource, root, target_id, row))
 
-    if account and "dm_inbox" in tables:
+    if kind != "public" and account and "dm_inbox" in tables:
         for row in store.all(
             "SELECT id,display_name,platform_user_id,content,sent_at,received_at FROM dm_inbox WHERE account_id=? AND character_id=?",
             (account, character),
@@ -602,7 +604,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 contact_type="incoming",
                 recipient_name=row["display_name"] or row["platform_user_id"],
             )
-    if account and "dm_drafts" in tables:
+    if kind != "public" and account and "dm_drafts" in tables:
         for row in store.all(
             "SELECT * FROM dm_drafts WHERE account_id=? AND character_id=?", (account, character)
         ):
@@ -637,7 +639,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 meme_id=row.get("meme_id"),
             )
 
-    if account and "dynamic_posts" in tables:
+    if kind != "public" and account and "dynamic_posts" in tables:
         columns = {item[1] for item in store.db.execute("PRAGMA table_info(dynamic_posts)")}
         owned = set()
         if "operation_write_bindings" in tables and "account_writes" in tables:
@@ -699,16 +701,10 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
         "replies": sum(item["kind"] == "comment" and item["status"] == "published" for item in items),
         **{key: value for key, value in base["counts"].items() if key not in {"videos", "failed", "replies"}},
     }
-    filtered = items if kind == "all" else [item for item in items if item["kind"] == kinds[kind]]
-    return _paginate(
-        {
-            "day": base["day"],
-            "timezone": base["timezone"],
-            "days": sorted(days, reverse=True),
-            "kind": kind,
-            "counts": counts,
-            "items": filtered,
-        },
-        page,
-        page_size,
-    )
+    if kind == "public":
+        filtered = [item for item in items if item["kind"] in {"video", "comment"}]
+    else:
+        filtered = items if kind == "all" else [item for item in items if item["kind"] == kinds[kind]]
+    result = {"day": base["day"], "timezone": base["timezone"], "days": sorted(days, reverse=True),
+              "kind": kind, "counts": counts, "items": filtered}
+    return _paginate(result, page, page_size) if paginate else result
