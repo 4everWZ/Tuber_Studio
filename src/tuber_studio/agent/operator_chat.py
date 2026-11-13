@@ -11,12 +11,12 @@ import httpx
 from fastapi import Depends, HTTPException, Query
 from pydantic import Field, StringConstraints, model_validator
 
-from . import operator_facts
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..operations.browsing.quotas import day_window
 from ..store import dump
+from . import operator_facts
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")

@@ -24,10 +24,10 @@ from ...platforms.bilibili import PublishUncertain
 from ...providers import public_error
 from ...publication_errors import PlatformRejected, UnknownPublication
 from ...store import dump
+from .comment_timeline import observe_thread, resource_key
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import read_round
-from .comment_timeline import observe_thread, resource_key
 from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
