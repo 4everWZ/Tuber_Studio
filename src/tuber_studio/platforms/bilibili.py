@@ -132,8 +132,15 @@ def _data(payload: object) -> dict:
     return data
 
 
-class BilibiliAccountExpired(ValueError):
-    kind = "permission"
+class PlatformReadError(ValueError):
+    def __init__(self, kind, message):
+        self.kind = kind
+        super().__init__(message)
+
+
+class BilibiliAccountExpired(PlatformReadError):
+    def __init__(self, message):
+        super().__init__("permission", message)
 
 
 class BilibiliAdapter:
@@ -146,6 +153,8 @@ class BilibiliAdapter:
             cookies["SESSDATA"] = self._sessdata
         if self._csrf:
             cookies["bili_jct"] = self._csrf
+        if credential.get("uid"):
+            cookies["DedeUserID"] = credential["uid"]
         self.client = httpx.AsyncClient(
             base_url="https://api.bilibili.com",
             headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"},
@@ -160,12 +169,18 @@ class BilibiliAdapter:
     async def account_profile(self):
         if not self._sessdata:
             raise BilibiliAccountExpired("尚未配置B站登录")
-        nav = await self._get("/x/web-interface/nav", {})
+        nav = await self._get_payload("/x/web-interface/nav", {})
+        if nav.get("code") == -101:
+            raise BilibiliAccountExpired("B站登录已失效")
+        nav = _data(nav)
         if nav.get("isLogin") is not True:
             raise BilibiliAccountExpired("B站登录已失效")
         uid = _positive_id(nav.get("mid"))
-        details = await self._get("/x/space/myinfo", {})
-        if _positive_id(details.get("mid")) != uid:
+        try:
+            details = await self._get("/x/space/myinfo", {})
+        except ValueError:
+            details = {}
+        if details and _positive_id(details.get("mid")) != uid:
             raise ValueError("账号主页与登录账号不一致")
         fans = None
         try:

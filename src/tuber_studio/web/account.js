@@ -7,6 +7,7 @@ class BilibiliAccountUI {
     this.value = null; this.active = false; this.loading = false; this.pending = false;
     this.sequence = 0; this.requestError = ""; this.avatarKey = null;
     this.resetPending = false; this.tokenPresented = false; this.sensitiveValues = []; this.lastRefreshAttempt = 0;
+    this.login = null;
     header.innerHTML = `<div class="bilibili-account" aria-label="B站账号">
       <span class="account-avatar"><span data-avatar-placeholder aria-hidden="true">B站</span><img data-avatar alt="" referrerpolicy="no-referrer" hidden></span>
       <div class="account-identity"><div class="account-name-line"><strong data-name>账号状态待读取</strong><span data-status class="account-state" role="status">待读取</span><small data-profile-note hidden>上次核验资料</small></div><div class="account-profile"><span data-uid>UID —</span><span data-coins>硬币 —</span><span data-fans>粉丝 —</span></div><span data-header-error class="account-inline-error" hidden></span></div>
@@ -25,17 +26,22 @@ class BilibiliAccountUI {
       <div class="panel-heading"><h2 id="bilibili-account-heading">B站账号</h2><span data-settings-status class="account-state" role="status">待读取</span></div>
       <p class="hint">评论、私信、动态和自主浏览共用此账号。保存凭证后验证登录，资料以平台实际返回为准。</p>
       <p class="quoted-text" data-profile-bio>主页简介待读取</p>
-      <dl class="account-details"><dt>SESSDATA</dt><dd data-sessdata-state>待读取</dd><dt>CSRF / bili_jct</dt><dd data-csrf-state>待读取</dd><dt>最近核验</dt><dd data-checked>尚未核验</dd></dl>
+      <dl class="account-details"><dt>SESSDATA</dt><dd data-sessdata-state>待读取</dd><dt>CSRF / bili_jct</dt><dd data-csrf-state>待读取</dd><dt>自动续期</dt><dd data-renewal>待读取</dd><dt>最近核验</dt><dd data-checked>尚未核验</dd></dl>
+      <div class="actions"><button type="button" class="primary" data-scan-login>扫码登录 B站</button></div>
+      <div class="account-qr" data-login-qr hidden><img data-qr-image alt="B站登录二维码" width="184" height="184"><p data-qr-status role="status"></p><button type="button" data-qr-cancel>关闭二维码</button></div>
       <form data-credentials-form autocomplete="off"><fieldset data-credentials-fields class="account-fields">
-        <div class="form-grid"><label>SESSDATA<input data-sessdata type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存值" aria-describedby="account-credential-help"></label><label>CSRF / bili_jct<input data-csrf type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存值" aria-describedby="account-credential-help"></label></div>
-        <p class="hint" id="account-credential-help">凭证只写入、不回显；空白不会清除已有值。bili_jct 是 CSRF 凭证。</p>
+        <div class="form-grid"><label>SESSDATA<input data-sessdata type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存值" aria-describedby="account-credential-help"></label><label>CSRF / bili_jct<input data-csrf type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存值" aria-describedby="account-credential-help"></label><label>续期令牌 / ac_time_value<input data-refresh-token type="password" autocomplete="new-password" spellcheck="false" placeholder="可选，使用同一次登录的令牌" aria-describedby="account-credential-help"></label></div>
+        <p class="hint" id="account-credential-help">扫码会一并保存自动续期所需的凭证。手动填写时请使用同一次登录的值。凭证只写入，不回显。</p>
         <div class="actions"><button data-save type="submit" class="primary" disabled>保存账号凭证</button><button data-verify type="button">验证登录 / 刷新资料</button><button data-clear type="button" class="danger">清除已保存凭证</button></div>
       </fieldset></form><p data-account-warnings class="hint account-feedback" role="status" hidden></p><p data-account-feedback class="hint account-feedback" role="status"></p>
     </article>
     <article class="panel" data-remote-management aria-labelledby="management-login-heading"><div class="panel-heading"><h2 id="management-login-heading">工作台远程登录</h2></div><p class="hint">同一浏览器可保持登录。退出、清除浏览器数据或重置管理令牌后，需要重新登录。</p><p class="hint">重置令牌会立即退出所有远程管理登录，新令牌仅在重置成功后显示一次。</p><button data-reset-open type="button" class="danger">重置管理令牌…</button></article>`;
     this.s = selector => this.settings.querySelector(selector);
     this.s("[data-credentials-form]").onsubmit = event => { event.preventDefault(); this.saveCredentials(); };
-    this.s("[data-sessdata]").oninput = this.s("[data-csrf]").oninput = () => this.renderControls();
+    this.s("[data-sessdata]").oninput = this.s("[data-csrf]").oninput =
+      this.s("[data-refresh-token]").oninput = () => this.renderControls();
+    this.s("[data-scan-login]").onclick = () => this.startScanLogin();
+    this.s("[data-qr-cancel]").onclick = () => this.closeScanLogin(true);
     this.s("[data-verify]").onclick = () => this.refreshProfile();
     this.s("[data-clear]").onclick = () => this.clearCredentials();
     this.s("[data-reset-open]").onclick = () => this.openTokenReset();
@@ -56,7 +62,11 @@ class BilibiliAccountUI {
   async verifyIfNeeded() { if (this.value?.configured?.sessdata && this.value.state === "unverified" && Date.now() - this.lastRefreshAttempt > 30000) await this.refreshProfile(); }
   deactivate() {
     this.active = false; this.sequence += 1; this.loading = false; this.value = null; this.requestError = "";
-    if (this.settings) { this.s("[data-sessdata]").value = ""; this.s("[data-csrf]").value = ""; }
+    if (this.settings) {
+      this.closeScanLogin();
+      this.s("[data-sessdata]").value = ""; this.s("[data-csrf]").value = "";
+      this.s("[data-refresh-token]").value = "";
+    }
     this.render();
   }
   signature(value) { return JSON.stringify([value?.state, value?.configured, value?.profile?.uid]); }
@@ -98,7 +108,7 @@ class BilibiliAccountUI {
     const error = this.requestError || value?.error || "";
     this.h("[data-header-error]").textContent = error; this.h("[data-header-error]").hidden = !error;
     this.h("[data-avatar-placeholder]").textContent = profile?.name ? Array.from(profile.name)[0] : "B站";
-    const avatarKey = profile?.avatar_url ? `${profile.uid}:${value.checked_at ?? "unverified"}` : null;
+    const avatarKey = profile?.avatar_url ? `${profile.uid}:${profile.avatar_url}` : null;
     if (avatarKey !== this.avatarKey) {
       this.avatarKey = avatarKey; this.h("[data-avatar]").hidden = true; this.h("[data-avatar-placeholder]").hidden = false;
       if (avatarKey) this.h("[data-avatar]").src = `/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`;
@@ -108,7 +118,9 @@ class BilibiliAccountUI {
       this.s("[data-profile-bio]").textContent = typeof profile?.bio === "string" ? `主页简介：${profile.bio || "未填写"}` : "主页简介暂未取得";
       this.s("[data-sessdata-state]").textContent = value ? value.configured?.sessdata ? "已保存（不回显）" : "未保存" : "待读取";
       this.s("[data-csrf-state]").textContent = value ? value.configured?.csrf ? "已保存（不回显）" : "未保存" : "待读取";
-      this.s("[data-checked]").textContent = checkedText || "尚未核验";
+      this.s("[data-renewal]").textContent = ({manual: "手动凭证 · 可扫码启用", available: "已启用", checking: "检查中",
+        confirmation_pending: "已保存新会话 · 等待确认", error: "暂不可用 · 保留会话", idle: "未启用"})[value?.renewal?.state] || "待读取";
+      this.s("[data-checked]").textContent = checkedText ? checkedText + (value?.verification_stale ? " · 等待复核" : "") : "尚未核验";
       const warnings = Array.isArray(value?.warnings) ? value.warnings.filter(item => typeof item === "string").join("；") : "";
       this.s("[data-account-warnings]").textContent = warnings; this.s("[data-account-warnings]").hidden = !warnings;
     }
@@ -121,7 +133,9 @@ class BilibiliAccountUI {
     refresh.setAttribute("aria-busy", String(busy));
     if (!this.settings) return;
     this.s("[data-credentials-fields]").disabled = !this.active || this.pending;
-    this.s("[data-save]").disabled = !this.active || this.pending || !(this.s("[data-sessdata]").value.trim() || this.s("[data-csrf]").value.trim());
+    this.s("[data-save]").disabled = !this.active || this.pending || !(this.s("[data-sessdata]").value.trim() ||
+      this.s("[data-csrf]").value.trim() || this.s("[data-refresh-token]").value.trim());
+    this.s("[data-scan-login]").disabled = !this.active || this.pending;
     this.s("[data-save]").textContent = this.pending ? "处理中…" : "保存账号凭证";
     this.s("[data-verify]").disabled = !this.active || busy || !configured;
     this.s("[data-clear]").disabled = !this.active || this.pending || !(this.value?.configured?.sessdata || this.value?.configured?.csrf);
@@ -141,12 +155,15 @@ class BilibiliAccountUI {
   async saveCredentials() {
     if (!this.settings) return;
     const sessdata = this.s("[data-sessdata]").value.trim(), csrf = this.s("[data-csrf]").value.trim();
-    if (!sessdata && !csrf) return;
-    this.sensitiveValues = [sessdata, csrf];
+    const refreshToken = this.s("[data-refresh-token]").value.trim();
+    if (!sessdata && !csrf && !refreshToken) return;
+    this.sensitiveValues = [sessdata, csrf, refreshToken];
     await this.action(async () => {
-      const value = await this.api("/api/account/bilibili", {method: "PUT", body: {...(sessdata ? {sessdata} : {}), ...(csrf ? {csrf} : {})}});
+      const value = await this.api("/api/account/bilibili", {method: "PUT", body: {
+        ...(sessdata ? {sessdata} : {}), ...(csrf ? {csrf} : {}), ...(refreshToken ? {refresh_token: refreshToken} : {}),
+      }});
       if (!this.active) return;
-      this.s("[data-sessdata]").value = ""; this.s("[data-csrf]").value = "";
+      this.s("[data-sessdata]").value = ""; this.s("[data-csrf]").value = ""; this.s("[data-refresh-token]").value = "";
       this.accept(value, true); this.feedback("账号凭证已保存，正在验证登录…");
       this.lastRefreshAttempt = Date.now();
       try {
@@ -162,8 +179,61 @@ class BilibiliAccountUI {
       const value = await this.api("/api/account/bilibili", {method: "PUT", body: {clear: true}});
       if (!this.active) return;
       this.accept(value, true);
-      this.s("[data-sessdata]").value = ""; this.s("[data-csrf]").value = ""; this.feedback("已清除 B站账号凭证。");
+      this.closeScanLogin();
+      this.s("[data-sessdata]").value = ""; this.s("[data-csrf]").value = ""; this.s("[data-refresh-token]").value = "";
+      this.feedback("已清除 B站账号凭证。");
     });
+  }
+  closeScanLogin(cancel = false) {
+    const login = this.login;
+    clearTimeout(this.login?.timer);
+    this.login = null;
+    this.s("[data-login-qr]").hidden = true;
+    this.s("[data-qr-image]").removeAttribute("src");
+    if (cancel && login) this.api(login.path, {method: "DELETE"}).catch(() => {});
+  }
+  async startScanLogin() {
+    this.closeScanLogin(true);
+    await this.action(async () => {
+      const value = await this.api("/api/account/bilibili/login", {method: "POST"});
+      if (!this.active) return;
+      const path = `/api/account/bilibili/login/${encodeURIComponent(value.id)}`;
+      const login = {path, expires: Date.now() + value.expires_in * 1000};
+      this.login = login;
+      this.s("[data-qr-image]").src = path + "/image";
+      this.s("[data-login-qr]").hidden = false;
+      this.s("[data-qr-status]").textContent = "用 B站手机应用扫码并确认登录。";
+      login.timer = setTimeout(() => this.pollScanLogin(login), 3000);
+    });
+  }
+  async pollScanLogin(login) {
+    if (!this.active || this.login !== login) return;
+    if (Date.now() >= login.expires) {
+      this.closeScanLogin();
+      this.feedback("二维码已过期，请重新扫码。", true);
+      return;
+    }
+    try {
+      const result = await this.api(login.path + "/poll", {method: "POST"});
+      if (this.login !== login) return;
+      if (result.state === "complete") {
+        this.closeScanLogin();
+        this.accept(result.account, true);
+        this.feedback(result.account.state === "logged_in"
+          ? "B站登录凭证已保存，已启用自动续期。"
+          : "B站登录凭证已保存，账号资料将在后台复核。");
+        return;
+      }
+      if (result.state === "expired") {
+        this.closeScanLogin();
+        this.feedback("二维码已过期，请重新扫码。", true);
+        return;
+      }
+      if (result.state === "scanned") this.s("[data-qr-status]").textContent = "已扫码，请在手机上确认。";
+    } catch {
+      if (this.login === login) this.s("[data-qr-status]").textContent = "暂时无法核对扫码，稍后自动重试。";
+    }
+    if (this.login === login) login.timer = setTimeout(() => this.pollScanLogin(login), 3000);
   }
   async refreshProfile() {
     await this.action(async () => {

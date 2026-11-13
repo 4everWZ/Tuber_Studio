@@ -22,18 +22,20 @@ from ..comment_materials import MAX_IMAGE_BYTES, article_excerpt, comment_image_
 from ..operation_text import validate_comment_body
 from ..publication_errors import platform_rejection
 from ..subtitle_presentation import deduplicate_subtitles
-from .bilibili import _BV, BilibiliAdapter, PublishUncertain, _positive_id, _video_params
+from .bilibili import (
+    _BV,
+    BilibiliAccountExpired,
+    BilibiliAdapter,
+    PlatformReadError,
+    PublishUncertain,
+    _positive_id,
+    _video_params,
+)
 
 MAX_SUBTITLE_BYTES = 2 * 1024 * 1024
 MAX_API_BYTES = 4 * 1024 * 1024
 SUBTITLE_HOSTS = {"aisubtitle.hdslb.com", "i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}
 CREDIT = re.compile(r"^(?:字幕(?:制作|提供|来源|组|by)|(?:翻译|听译|校对|时间轴|轴师|字幕员)[:：\s])", re.I)
-
-
-class PlatformReadError(ValueError):
-    def __init__(self, kind, message):
-        self.kind = kind
-        super().__init__(message)
 
 
 def http_read_detail(error):
@@ -136,6 +138,8 @@ class BrowsingAdapter(BilibiliAdapter):
         # logins and risk denials before that signer can erase their category.
         code = payload["code"]
         anonymous_nav = code == -101 and path == "/x/web-interface/nav" and not self._sessdata
+        if code == -101 and path == "/x/web-interface/nav" and not anonymous_nav:
+            raise BilibiliAccountExpired("B站登录已失效")
         if code in {-101, -102, -111, -403} and not anonymous_nav:
             raise PlatformReadError("permission", "平台账号未登录、失效或无读取权限")
         if code in {-352, -412, -509}:

@@ -8,6 +8,7 @@ import stat
 import time
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -46,6 +47,7 @@ def network(monkeypatch):
     calls = []
     state = {
         "nav_code": 0,
+        "details_code": 0,
         "stats_code": 0,
         "face": FACE,
         "cdn_status": 200,
@@ -85,7 +87,7 @@ def network(monkeypatch):
                 },
             )
         if request.url.path == "/x/space/myinfo":
-            return httpx.Response(200, json={"code": 0, "data": {
+            return httpx.Response(200, json={"code": state["details_code"], "data": {
                 "mid": state["profile_uid"], "name": "大肥鱼账号", "sign": state["bio"],
             }})
         assert request.url.path == "/x/relation/stat"
@@ -95,7 +97,7 @@ def network(monkeypatch):
     original = httpx.AsyncClient
 
     def controlled(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
+        kwargs.setdefault("transport", httpx.MockTransport(handler))
         return original(*args, **kwargs)
 
     async def no_pace(self):
@@ -147,7 +149,7 @@ def test_get_configure_blank_clear_and_retired_policy_are_local_and_redacted(acc
     assert calls == []  # Neither GET nor credential editing may trigger platform reads.
 
 
-def test_credentials_survive_restart_but_login_status_requires_new_verification(settings, network):
+def test_credentials_and_last_verified_login_survive_restart(settings, network):
     with TestClient(create_app(settings)) as first:
         first.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         configure(first)
@@ -157,12 +159,124 @@ def test_credentials_survive_restart_but_login_status_requires_new_verification(
     with TestClient(create_app(settings)) as second:
         second.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
         response = second.get("/api/account/bilibili")
-        assert response.json()["state"] == "unverified"
+        assert response.json()["state"] == "logged_in"
         assert response.json()["configured"] == {"sessdata": True, "csrf": True}
         assert response.json()["profile"] == original["profile"]
         assert response.json()["checked_at"] == original["checked_at"]
         assert response.json()["attempted_at"] is None
         assert len(network[0]) == count
+
+
+def test_profile_age_is_stale_without_resetting_the_verified_session(account_client):
+    client, app, calls, _ = account_client
+    configure(client)
+    assert client.post("/api/account/bilibili/refresh").json()["state"] == "logged_in"
+    app.state.runtime.account.observed["checked_at"] -= 3600
+    count = len(calls)
+    current = client.get("/api/account/bilibili").json()
+    assert current["state"] == "logged_in" and current["verification_stale"]
+    assert len(calls) == count
+
+
+def test_profile_permission_error_preserves_platform_verified_login(account_client):
+    client, _, _, state = account_client
+    configure(client)
+    state["details_code"] = -403
+    result = client.post("/api/account/bilibili/refresh").json()
+    assert result["state"] == "logged_in" and result["profile"]["uid"] == "123"
+    assert result["profile"]["bio"] is None
+
+
+def test_qr_login_persists_renewal_and_recovers_confirmation_after_restart(settings, network, monkeypatch):
+    from tuber_studio import bilibili_account
+
+    first = SECRET | {"uid": "123", "refresh_token": "fixture-original-refresh"}
+    renewed = {"sessdata": "fixture-next-session", "csrf": "fixture-next-csrf",
+               "uid": "123", "refresh_token": "fixture-next-refresh"}
+    login_root = "/api/account/bilibili/login"
+    file = settings.runtime / "bilibili-credentials.json"
+    monkeypatch.setattr(bilibili_account, "QR_POLL_SECONDS", 0)
+    outcomes = iter((86101, 86090, 0))
+    count = {"renew": 0, "confirm": 0}
+    renewal_needed = False
+
+    def passport(request):
+        path = request.url.path
+        if path.endswith("/qrcode/generate"):
+            assert "cookie" not in request.headers
+            return httpx.Response(200, json={"code": 0, "data": {
+                "qrcode_key": "platform-qr-secret",
+                "url": "https://account.bilibili.com/h5/account-h5/auth/scan-web?fixture=qr",
+            }})
+        if path.endswith("/qrcode/poll"):
+            assert request.url.params["qrcode_key"] == "platform-qr-secret"
+            code = next(outcomes)
+            return cookies(first, code=0) if code == 0 else httpx.Response(
+                200, json={"code": 0, "data": {"code": code}},
+            )
+        if path.endswith("/cookie/info"):
+            assert first["sessdata"] in request.headers["cookie"]
+            return httpx.Response(200, json={"code": 0, "data": {"refresh": renewal_needed, "timestamp": 1794556800000}})
+        if path.endswith("/nav"):
+            return httpx.Response(200, json={"code": 0, "data": {"isLogin": True, "mid": 123}})
+        if path.startswith("/correspond/1/"):
+            assert len(path.rsplit("/", 1)[1]) == 256
+            return httpx.Response(200, text='<div id="1-name">platform-csrf</div>')
+        if path.endswith("/cookie/refresh"):
+            count["renew"] += 1
+            assert parse_qs(request.content.decode())["refresh_token"] == [first["refresh_token"]]
+            assert first["sessdata"] in request.headers["cookie"]
+            return cookies(renewed)
+        if path.endswith("/confirm/refresh"):
+            count["confirm"] += 1
+            assert parse_qs(request.content.decode())["refresh_token"] == [first["refresh_token"]]
+            assert renewed["sessdata"] in request.headers["cookie"]
+            assert json.loads(file.read_text()) == renewed | {"pending_confirmation": first["refresh_token"]}
+            return httpx.Response(503 if count["confirm"] == 1 else 200, json={"code": 0})
+        pytest.fail(f"Unexpected passport path: {path}")
+
+    def cookies(values, **data):
+        headers = [("Set-Cookie", f"{name}={values[key]}; Secure; Path=/; Domain=.bilibili.com")
+                   for key, name in (("sessdata", "SESSDATA"), ("csrf", "bili_jct"), ("uid", "DedeUserID"))]
+        return httpx.Response(200, headers=headers, json={"code": 0, "data": data | {
+            "refresh_token": values["refresh_token"],
+        }})
+
+    def new_app():
+        app = create_app(settings)
+        account = app.state.runtime.account
+        original = account.passport.client
+        account.passport.client = httpx.AsyncClient(transport=httpx.MockTransport(passport))
+        asyncio.run(original.aclose())
+        return app
+
+    app = new_app()
+    with TestClient(app) as client:
+        assert client.post(login_root).status_code == 401
+        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        ticket = client.post(login_root).json()
+        assert "platform-qr-secret" not in json.dumps(ticket)
+        path = f"{login_root}/{ticket['id']}"
+        assert client.get(path + "/image").content.startswith(b"\x89PNG")
+        assert client.post(path + "/poll").json()["state"] == "waiting"
+        assert client.post(path + "/poll").json()["state"] == "scanned"
+        completed = client.post(path + "/poll")
+        assert completed.json()["account"]["renewal"]["state"] == "available"
+        assert json.loads(file.read_text()) == first
+        assert first["refresh_token"] not in completed.text
+        assert client.post(path + "/poll").json()["account"]["state"] == "logged_in"
+        assert client.post("/api/account/bilibili/refresh").json()["renewal"]["state"] == "available"
+        renewal_needed = True
+        pending = client.post("/api/account/bilibili/refresh")
+        assert pending.json()["state"] == "logged_in"
+        assert pending.json()["renewal"]["state"] == "confirmation_pending"
+        assert first["refresh_token"] not in pending.text and renewed["refresh_token"] not in pending.text
+    with TestClient(new_app()) as client:
+        client.post("/api/auth", json={"token": settings.admin_token}).raise_for_status()
+        assert client.get("/api/account/bilibili").json()["state"] == "logged_in"
+        assert client.post("/api/account/bilibili/refresh").json()["renewal"]["state"] == "available"
+        assert json.loads(file.read_text()) == renewed
+    assert count == {"renew": 1, "confirm": 2}
 
 
 def test_refresh_reads_actual_nav_stats_and_profile_cache_does_not_poll(account_client):

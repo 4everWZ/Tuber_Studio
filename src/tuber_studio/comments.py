@@ -36,6 +36,7 @@ from .operations.browsing.thread_context import (
 )
 from .operations_control import OperationsControl, canonical_intent
 from .platforms.bilibili import BilibiliAdapter, PublishUncertain
+from .platforms.bilibili_login import validate_credentials
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
 
@@ -144,19 +145,21 @@ class Comments:
             "credentials_configured": credentials,
         }
 
-    async def replace_credentials(self, credential, *, expected=None):
+    async def replace_credentials(self, credential, *, expected=None, verified_uid=None):
         """Atomically replace the account credential store against its observed version."""
-        if not isinstance(credential, dict) or set(credential) - {"sessdata", "csrf"}:
-            raise ValueError("未知账号凭证字段")
-        for value in credential.values():
-            if not isinstance(value, str) or not 0 < len(value) <= 2000 or re.search(r"[\r\n;]", value):
-                raise ValueError("凭证格式无效")
+        validate_credentials(credential)
         from .platforms.bilibili_browsing import BrowsingAdapter
 
         async with self.publish_lock:
             if expected is not None and self.credentials != expected:
                 raise ValueError("账号凭证已被另一项设置更新，请刷新后重新保存")
             if credential == self.credentials:
+                return
+            if all(credential.get(key) == self.credentials.get(key) for key in ("sessdata", "csrf", "uid")):
+                atomic_json(self.credential_path, credential, private=True)
+                if self.verified_credential == self.credentials:
+                    self.verified_credential = dict(credential)
+                self.credentials = dict(credential)
                 return
             replacement = BrowsingAdapter(credential)
             try:
@@ -166,7 +169,8 @@ class Comments:
                 raise
             old = self.adapter
             self.credentials, self.adapter, self.injected = dict(credential), replacement, False
-            self.verified_account_id, self.verified_credential = "", None
+            self.verified_account_id = verified_uid or ""
+            self.verified_credential = dict(credential) if verified_uid else None
             self.policy_changed.set()
             await old.close()
 

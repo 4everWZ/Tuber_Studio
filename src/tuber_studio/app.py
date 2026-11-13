@@ -89,6 +89,7 @@ def create_app(
         try:
             await runtime.open()
             await comments.open()
+            await account.open()
             await dynamics.open()
             await messages.open()
             await browsing.open()
@@ -104,7 +105,10 @@ def create_app(
                         await dynamics.close()
                     finally:
                         try:
-                            await comments.close()
+                            try:
+                                await account.close()
+                            finally:
+                                await comments.close()
                         finally:
                             try:
                                 await runtime.close()

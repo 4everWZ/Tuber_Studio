@@ -33,7 +33,27 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
 
     @app.post("/api/account/bilibili/refresh", dependencies=[Depends(require_admin)])
     async def account_refresh():
-        return await account.refresh()
+        return await account.refresh(maintain=True)
+
+    @app.post("/api/account/bilibili/login", dependencies=[Depends(require_admin)])
+    async def start_bilibili_login():
+        return await account.create_login()
+
+    @app.get("/api/account/bilibili/login/{identity}/image", dependencies=[Depends(require_admin)])
+    async def bilibili_login_image(identity: str):
+        try:
+            image = account.login_image(identity)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from None
+        return Response(image, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/account/bilibili/login/{identity}/poll", dependencies=[Depends(require_admin)])
+    async def poll_bilibili_login(identity: str):
+        return await account.poll_login(identity)
+
+    @app.delete("/api/account/bilibili/login/{identity}", dependencies=[Depends(require_admin)])
+    async def cancel_bilibili_login(identity: str):
+        return await account.cancel_login(identity)
 
     @app.get("/api/account/bilibili/avatar", dependencies=[Depends(require_admin)])
     async def account_avatar():

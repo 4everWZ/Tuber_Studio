@@ -12,6 +12,8 @@ dependencies = [
     "mutagen>=1.47,<2",
     "Pillow==10.4.0",
     "tzdata>=2025.1",
+    "cryptography>=44,<50",
+    "qrcode>=8,<9",
 ]
 
 [dependency-groups]
