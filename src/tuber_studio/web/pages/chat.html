@@ -33,6 +33,7 @@
       </div>
     </fieldset>
     <span id="operator-chat-status" class="operator-chat-status" role="status"></span>
+    <span id="operator-chat-progress" class="operator-chat-sr-only" role="status"></span>
     <div class="operator-chat-pill">
       <div id="operator-chat-shortcuts" class="operator-chat-popup">
         <button id="operator-chat-shortcuts-toggle" class="operator-chat-icon" type="button" aria-label="对话快捷操作" aria-expanded="false" aria-controls="operator-chat-shortcuts-panel"><span aria-hidden="true">+</span></button>
@@ -51,7 +52,10 @@
       <button id="operator-chat-clear-action" class="operator-chat-selected-action" type="button" hidden></button>
       <label id="operator-chat-input-label" class="operator-chat-sr-only" for="operator-chat-input">给大肥鱼发消息</label>
       <textarea id="operator-chat-input" rows="1" maxlength="2000" placeholder="给大肥鱼发消息"></textarea>
-      <button class="primary operator-chat-icon operator-chat-send" id="operator-chat-send" type="submit" aria-label="发送"><span aria-hidden="true">↑</span></button>
+      <button class="operator-chat-icon operator-chat-send" id="operator-chat-send" type="submit" aria-label="发送" disabled>
+        <span class="operator-chat-arrow" aria-hidden="true"></span>
+        <span class="operator-chat-stop" aria-hidden="true"></span>
+      </button>
     </div>
   </form>
 </section>

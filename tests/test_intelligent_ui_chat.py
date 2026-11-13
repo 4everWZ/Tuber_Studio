@@ -3,6 +3,7 @@ import json
 import time
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
@@ -12,6 +13,52 @@ from tuber_studio.agent import operator_facts
 from tuber_studio.app import create_app
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
+
+
+async def test_stop_generation_cancels_only_the_bound_chat_and_releases_model(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime, browsing = app.state.runtime, app.state.browsing
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+    original = runtime.llm.generate
+
+    async def wait_for_stop(*args, **kwargs):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(runtime.llm, "generate", wait_for_stop)
+    path = "/api/chat/intelligent"
+    request_id = str(uuid4())
+    async with app.router.lifespan_context(app), httpx.AsyncClient(
+        transport=httpx.ASGITransport(app), base_url="http://127.0.0.1",
+    ) as client:
+        browsing.discovery.remember_account("100")
+        request = asyncio.create_task(client.post(path, json={
+            "request_id": request_id, "message": "你好呀", "intent": {"action": "chat"},
+        }))
+        try:
+            await asyncio.wait_for(entered.wait(), 3)
+            url = f"{path}/turns/{request_id}/stop-generation"
+            browsing.discovery.remember_account("200")
+            assert (await client.post(url)).json() == {"stopping": False}
+            assert not cancelled.is_set()
+            browsing.discovery.remember_account("100")
+            assert (await client.post(url)).json() == {"stopping": True}
+            assert (await asyncio.wait_for(request, 3)).json() == {"stopped": True}
+            assert cancelled.is_set() and not runtime.generation_lock.locked()
+            assert (await client.get(path)).json()["turns"] == []
+            assert (await client.post(url)).json() == {"stopping": False}
+            monkeypatch.setattr(runtime.llm, "generate", original)
+            followup = await client.post(path, json={
+                "request_id": str(uuid4()), "message": "还在吗", "intent": {"action": "chat"},
+            })
+            assert followup.status_code == 200 and followup.json()["reply_text"]
+        finally:
+            if not request.done():
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
 
 
 def test_preview_request_survives_completion_and_policy_edits(store):

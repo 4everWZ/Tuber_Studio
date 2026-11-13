@@ -31,6 +31,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   const older = $("operator-chat-older"), historyNote = $("operator-chat-history-note");
   const form = $("operator-chat-form"), input = $("operator-chat-input"), send = $("operator-chat-send");
   const clear = $("operator-chat-clear"), status = $("operator-chat-status");
+  const progress = $("operator-chat-progress");
   const clearAction = $("operator-chat-clear-action"), videoFields = $("operator-chat-video-fields");
   const videoId = $("operator-chat-video-id"), rangeList = $("operator-chat-video-ranges");
   const modelState = $("operator-chat-model-state"), modelDetails = $("operator-chat-model-details");
@@ -40,6 +41,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   }));
   const defaultInputLabel = input.placeholder;
   let active = false, pending = false, scope = null, nextCursor = null, selectedAction = null, retry = null;
+  let inFlight = null;
   let epoch = 0, recentRequest = 0, historyPending = false, cardRefreshPending = false;
   const viewport = window.visualViewport;
   const shell = form.closest(".win-main-shell");
@@ -54,10 +56,15 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   function resizeInput() {
     if (input.hidden) return;
+    const follow = nearEnd();
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight}px`;
+    if (follow) scrollEnd();
   }
-  input.addEventListener("input", resizeInput);
+  form.addEventListener("input", () => {
+    resizeInput();
+    updateSend();
+  });
 
   function setMenu(menu, open) {
     menu.panel.hidden = !open;
@@ -110,8 +117,10 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   };
 
   function setMessage(text, error = false) {
+    const follow = nearEnd();
     status.textContent = text;
     status.classList.toggle("operator-chat-status-error", error);
+    if (follow) scrollEnd();
   }
 
   function setHistoryNote(text) {
@@ -120,10 +129,20 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   }
 
   function setPending(value) {
-    pending = send.disabled = clear.disabled = clearAction.disabled = value;
+    pending = clear.disabled = clearAction.disabled = value;
     videoFields.disabled = value || selectedAction !== "full_video";
     for (const menu of menus) menu.toggle.disabled = value;
-    status.dataset.pending = String(value);
+    updateSend();
+  }
+
+  function updateSend() {
+    const stopping = inFlight?.stopping;
+    const hasInput = selectedAction === "full_video" ? videoId.value.trim() : input.value.trim() || selectedAction;
+    send.type = inFlight ? "button" : "submit";
+    send.disabled = inFlight ? Boolean(stopping) : pending || !hasInput;
+    send.dataset.generating = String(Boolean(inFlight));
+    send.setAttribute("aria-label", stopping ? "正在停止生成" : inFlight ? "停止生成" :
+      selectedAction === "full_video" ? "安排只读取材" : "发送");
   }
 
   function setAction(action) {
@@ -136,7 +155,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     clearAction.hidden = !shortcut;
     clearAction.textContent = shortcut ? `${shortcut.label} ×` : "";
     if (shortcut) clearAction.setAttribute("aria-label", `取消${shortcut.label}快捷操作`);
-    send.setAttribute("aria-label", videoMode ? "安排只读取材" : "发送");
+    updateSend();
     resizeInput();
   }
 
@@ -203,6 +222,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   function reset() {
     epoch++;
+    inFlight = null;
     turns.clear();
     feed.replaceChildren();
     input.value = videoId.value = "";
@@ -217,6 +237,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     setPending(false);
     setHistoryNote("");
     setMessage("");
+    progress.textContent = "";
   }
 
   async function refresh() {
@@ -361,12 +382,19 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     const key = JSON.stringify(payload);
     const request = retry?.key === key ? retry.request : { request_id: requestId(), ...payload };
     const currentEpoch = epoch, initialValue = input.value, initialAction = selectedAction;
+    inFlight = { request, stopping: false };
     ++recentRequest;
     setPending(true);
-    setMessage(payload.video_selection ? "正在安排取材…" : "正在处理…");
+    setMessage("");
+    progress.textContent = payload.video_selection ? "正在安排取材…" : "正在生成回复…";
     try {
       const result = await api(path, { method: "POST", body: request });
       if (currentEpoch !== epoch) return;
+      if (result.stopped) {
+        retry = null;
+        progress.textContent = "已停止生成。";
+        return;
+      }
       if (fromComposer && selectedAction === initialAction) {
         if (payload.video_selection) {
           videoId.value = "";
@@ -378,16 +406,20 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
         }
       }
       retry = null;
+      const follow = nearEnd();
       const section = mountTurn({ ...request, ...result });
       if (section) feed.append(section);
-      scrollEnd();
+      if (follow) scrollEnd();
       setMessage("");
+      progress.textContent = "";
     } catch (error) {
       if (currentEpoch !== epoch) return;
       retry = { key, request };
+      progress.textContent = "";
       setMessage(`${safeMessage(error.message)} 可再次发送。`, true);
     } finally {
       if (currentEpoch === epoch) {
+        inFlight = null;
         setPending(false);
         if (active && (form.contains(document.activeElement) || document.activeElement === document.body)) focusComposer();
         if (active && scope === null) await refresh();
@@ -395,8 +427,27 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     }
   }
 
+  send.onclick = async () => {
+    const current = inFlight;
+    if (!current || current.stopping) return;
+    current.stopping = true;
+    updateSend();
+    try {
+      const result = await api(`${path}/turns/${current.request.request_id}/stop-generation`, { method: "POST" });
+      if (inFlight !== current || result.stopping) return;
+      progress.textContent = "当前请求正在收尾。";
+    } catch (error) {
+      if (inFlight === current) setMessage(`停止失败：${safeMessage(error.message)}`, true);
+    }
+    if (inFlight === current) {
+      current.stopping = false;
+      updateSend();
+    }
+  };
+
   form.onsubmit = event => {
     event.preventDefault();
+    if (pending) return;
     try { return submit(submission()); }
     catch (error) { setMessage(safeMessage(error.message), true); }
   };

@@ -5,6 +5,7 @@ import base64
 import json
 import re
 import time
+from dataclasses import dataclass
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -107,10 +108,19 @@ _CONTROL_ACTIONS = {"operation_control", "start_operations", "start_live"}
 _ACTIVE_VIDEO_STATES = {"waiting", "queued", "running"}
 
 
+@dataclass
+class PendingChat:
+    scope: tuple
+    task: asyncio.Task
+    cancellable: bool = True
+    stopped: bool = False
+
+
 class OperatorChat:
     def __init__(self, runtime, store, browsing, dynamics):
         self.runtime, self.store, self.browsing, self.dynamics = runtime, store, browsing, dynamics
         self.lock = asyncio.Lock()
+        self.pending = {}
         store.execute(
             "CREATE TABLE IF NOT EXISTS operator_chat_turns ("
             "request_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, character_version INTEGER NOT NULL, "
@@ -325,9 +335,36 @@ class OperatorChat:
 
     async def send(self, data):
         request_id = str(data.request_id)
+        if request_id in self.pending:
+            raise HTTPException(409, "这条消息正在处理，请稍后重试。")
+        pending = self.pending[request_id] = PendingChat(tuple(self._binding(self.runtime.character)), asyncio.current_task())
+        try:
+            return await self._send(data, request_id, pending)
+        except asyncio.CancelledError:
+            if not pending.stopped:
+                raise
+            return {"stopped": True}
+        finally:
+            del self.pending[request_id]
+
+    def stop_generation(self, request_id):
+        pending = self.pending.get(request_id)
+        if not pending or pending.scope != tuple(self._binding(self.runtime.character)):
+            return {"stopping": False}
+        if pending.stopped:
+            return {"stopping": True}
+        if not pending.cancellable:
+            return {"stopping": False}
+        pending.stopped = True
+        pending.task.cancel()
+        return {"stopping": True}
+
+    async def _send(self, data, request_id, pending):
         async with self.lock:
             char = self.runtime.character
             account = self._account()
+            if pending.scope != tuple(self._binding(char)):
+                raise HTTPException(409, "账号或角色已切换，请重新发送")
             submission = data.model_dump(mode="json", exclude={"request_id", "message"})
             if row := self._turn(request_id):
                 result = json.loads(row["result"])
@@ -363,6 +400,8 @@ class OperatorChat:
                     result["organized_memory"] = {key: audit[key] for key in
                                                   ("organized_memory", "memory_scope", "memory_channel")}
             else:
+                if intent.action in {"browse", "full_video", "inspect_video_frame", "stop", "resume_video"}:
+                    pending.cancellable = False
                 result = await self._action(intent, char, request_id, data, events, tasks, focus)
             self._check_scope(char, account, account_may_resolve=True)
             result |= {"account_id": self._account(), "submission": submission}
@@ -830,6 +869,10 @@ def register_operator_chat(app, runtime, store, browsing, dynamics, require_admi
     @app.post("/api/chat/intelligent", dependencies=deps)
     async def send(data: ChatTurn):
         return await service.send(data)
+
+    @app.post("/api/chat/intelligent/turns/{request_id}/stop-generation", dependencies=deps)
+    async def stop_generation(request_id: UUID):
+        return service.stop_generation(str(request_id))
 
     @app.post("/api/chat/intelligent/turns/{request_id}/confirm/{action}", dependencies=deps)
     async def confirm(request_id: UUID, action: Literal["start", "save", "live"], data: ControlConfirmation):
