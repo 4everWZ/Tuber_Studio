@@ -32,10 +32,13 @@ hf download 4everImmortality/dafeiyu-qwen35-9b-gguf --revision 21ecede9e9a3f0776
 
 Tuber Studio 的安装流程会按固定版本下载并校验配对文件。使用 llama.cpp 时，文本用途加载主权重，图文用途同时通过 `--mmproj` 加载投影器。AGX 运营配置实开 262,144 上下文、`q4_0` K/V 并开启思考，其他设备可按实测容量设置窗口。工作台的直播和运营各自管理输出预算。 [部署指南](https://github.com/4everWZ/Tuber_Studio/blob/main/docs/guides/deployment.md)
 
+号主对话使用同一 9B 理解自然语言意图。运营原话、作者、时码和送达状态由应用查证。日常刷视频优先读字幕，需要画面时可以选择相应时点的 B 站故事板预览；无可用字幕时沿时间轴扫描故事板。
+
 ## 训练与验证
 
 1.0.0 将 DoRA `checkpoint-38` 合并至固定的 Qwen3.5-9B 基座。训练按原始会话与同源变体分组切分，在训练分片中加权，保留基座的视觉层。导出的 GGUF 未包含 MTP。仓库根目录另有一份早期 9B 文本实验权重，当前部署使用上表固定版本。 [训练与配对评估](https://github.com/4everWZ/Tuber_Studio/blob/main/evaluations/results/dafeiyu-clean-9b-20261111.md)
 
 - 冻结配对评估中，微调版通用题为 93/120，同基座为 100/120。40 个角色场景相对当时部署模型胜 23 个、平 12 个、负 5 个。两项均低于当时设定的下一轮发布门槛。 [配对评估记录](https://github.com/4everWZ/Tuber_Studio/blob/main/evaluations/results/dafeiyu-clean-9b-20261111.md)
 - AGX 审核回放使用 30 个真实视频。另一次运营实跑保存 220 条模型候选、159 条成功评论回执，其中 155 条发布正文与对应候选一致。号主总体反馈大部分满意，逐条语义仍待标注。 [审核回放](https://github.com/4everWZ/Tuber_Studio/blob/main/evaluations/results/review-agx-mainline-20261111.md) · [实跑核查](https://github.com/4everWZ/Tuber_Studio/blob/main/evaluations/results/operations-feedback-20261112.md)
+- 号主对话复放使用真实运营记录。自由输入列出事件后，连续追问作者、是否回复和原话，三轮均命中同一事件和已确认回执。该轮为只读验收。 [号主对话复测](https://github.com/4everWZ/Tuber_Studio/blob/main/evaluations/results/operations-feedback-20261112.md#号主对话与运行记录复测)
 - 直播与 Genie 的同节点首音、长时共驻和真实平台直播仍待验收。 [当前计划](https://github.com/4everWZ/Tuber_Studio/blob/main/docs/plans/current.md)

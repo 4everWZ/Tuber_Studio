@@ -12,7 +12,7 @@
 
 电脑工作台保存的运营和直播语言模型均已指向现用 9B 端点，重载后从设置接口读回一致。现有 Genie 语音仍由原节点提供。直播档切换和实际播放待核验，改动前的业务配置留在版本目录的 `rollback/studio-before-live-9b-20261113.json`。
 
-Hub 的 9B 模型卡已更新下载、训练及验收信息。当前模型资产仍使用固定 `1.0.0` 修订。 [Hugging Face 模型卡](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf) · [发布卡源稿](model-card.md)
+Hub 的 9B 模型卡已同步号主对话和故事板取材流程，以及真实运营记录的追问复测。模型资产使用固定 `1.0.0` 修订。 [Hugging Face 模型卡更新](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/commit/1bdd0b6422d6bb82302fe5e74f7ccae6bf5ed0d3) · [发布卡源稿](model-card.md)
 
 ## 数据与恢复
 
