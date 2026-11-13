@@ -92,3 +92,10 @@ def test_character_edit_overwrites_current_card_and_preserves_historical_sources
         ).raise_for_status().json()
         client.post("/api/characters/second-role/activate", headers=headers).raise_for_status()
         assert runtime.character["id"] == other["id"] and other["name"] == "新角色"
+
+        auto = client.post(
+            "/api/characters/second-role/clone", json={"name": " 大肥鱼改良版 "}, headers=headers,
+        ).raise_for_status().json()
+        assert auto["id"].startswith("oc-") and auto["id"] != other["id"]
+        assert auto["name"] == "大肥鱼改良版" and auto["core"] == other["core"]
+        assert runtime.character["id"] == other["id"]

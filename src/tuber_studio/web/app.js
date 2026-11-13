@@ -535,11 +535,13 @@ $("clone-form")?.addEventListener("submit", event => {
   event.preventDefault();
   busy(event.submitter, async () => {
     if (!model.characterId) throw new Error("请先选择要复制的角色");
-    const id = $("clone-id")?.value.trim();
-    const name = $("clone-name")?.value.trim();
-    await api(`/api/characters/${encodeURIComponent(model.characterId)}/clone`, { method: "POST", body: { id, name } });
+    const nameInput = $("clone-name");
+    const name = nameInput.value.trim();
+    if (!name) throw new Error("请填写角色名称");
+    const created = await api(`/api/characters/${encodeURIComponent(model.characterId)}/clone`, { method: "POST", body: { name } });
+    if (nameInput.value.trim() === name) nameInput.value = "";
     await characterStudio?.loadCharacters();
-    await characterStudio?.selectCharacter(id);
+    await characterStudio?.selectCharacter(created.id);
     notice("角色卡已创建。");
   });
 });

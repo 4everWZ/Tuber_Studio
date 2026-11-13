@@ -2,6 +2,7 @@
 
 import json
 from typing import Annotated, Literal
+from uuid import uuid4
 
 from fastapi import Body, Depends, HTTPException, Path, Query
 from pydantic import Field
@@ -99,10 +100,14 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
 
     @app.post("/api/characters/{character_id}/clone", dependencies=[Depends(require_admin)])
     async def clone(character_id: str, data: dict = Body(...)):
-        if store.one("SELECT id FROM characters WHERE id=?", (data.get("id"),)):
+        identity = data["id"] if "id" in data else f"oc-{uuid4().hex}"
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("请填写角色名称")
+        if store.one("SELECT id FROM characters WHERE id=?", (identity,)):
             raise ValueError("角色ID已存在")
         seed = store.character(character_id)
-        seed.update(id=data.get("id"), name=data.get("name"))
+        seed.update(id=identity, name=name.strip())
         return character_card(store.save_character(seed))
 
     @app.get("/api/assets", dependencies=[Depends(require_admin)])

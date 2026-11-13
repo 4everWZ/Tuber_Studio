@@ -17,8 +17,7 @@
         <div class="win-subgroup-title">新建角色卡</div>
         <p class="hint">以当前选中的角色卡为模板。</p>
         <form id="clone-form">
-          <label>角色 ID<input id="clone-id" pattern="[a-z0-9_\-]+" maxlength="50" placeholder="whale_variant" required></label>
-          <label>角色显示名称<input id="clone-name" placeholder="例如：电台大肥鱼" required></label>
+          <label>角色名称<input id="clone-name" maxlength="60" placeholder="例如：电台大肥鱼" required></label>
           <button type="submit" class="win-btn" style="margin-top:8px;">创建角色卡</button>
         </form>
       </div>
@@ -47,7 +46,7 @@
           <textarea id="oc-background" class="code-editor" rows="3"></textarea>
         </label>
         <label style="margin-top:10px;">性格与动作反应特质 (Traits，每行一条)
-          <textarea id="oc-traits" class="code-editor" rows="5"></textarea>
+          <textarea id="oc-traits" class="code-editor" rows="7"></textarea>
         </label>
       </div>
 
