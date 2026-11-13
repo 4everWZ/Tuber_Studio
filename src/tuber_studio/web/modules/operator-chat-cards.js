@@ -1,5 +1,5 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
-import { operationControlCard } from "./operator-chat-control.js?v=20261113.05";
+import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 
 const statuses = {
   queued: "排队中", waiting: "等待资源", running: "运行中", completed: "已完成", paused: "已暂停",
@@ -431,6 +431,8 @@ export function createOperatorCard(root, turn, context) {
   if (["live_studio_hud", "live_confirmation"].includes(type)) {
     const state = node("p", null, "muted"), note = node("p", null, "hint");
     const confirm = button("确认开启直播会话");
+    const refresh = button("重新核对会话");
+    refresh.hidden = true;
     let busy = false, revision = 0;
     note.setAttribute("role", "status");
     const update = value => {
@@ -438,7 +440,7 @@ export function createOperatorCard(root, turn, context) {
       confirm.disabled = busy || !value.enabled || value.state === "live";
     };
     root.append(node("h2", "直播状态"), state, link("打开直播工作台", "#live"));
-    if (type === "live_confirmation") root.append(confirm, note);
+    if (type === "live_confirmation") root.append(confirm, refresh, note);
     confirm.onclick = async () => {
       if (busy) return;
       revision++;
@@ -452,6 +454,20 @@ export function createOperatorCard(root, turn, context) {
       } catch (error) {
         note.textContent = safeMessage(error.message);
         busy = confirm.disabled = false;
+        if (error.status === 409) refresh.hidden = false;
+      }
+    };
+    refresh.onclick = async () => {
+      refresh.disabled = true;
+      try {
+        const value = await context.api(`${context.path}/turns/${turn.request_id}/refresh-confirmation`, { method: "POST" });
+        update(value.card.data);
+        refresh.hidden = true;
+        note.textContent = "已更新会话状态，请核对后确认。";
+      } catch (error) {
+        note.textContent = safeMessage(error.message);
+      } finally {
+        refresh.disabled = false;
       }
     };
     update(data);

@@ -186,6 +186,8 @@ def test_explicit_public_experience_and_operations_cards_use_current_sources(set
         current = client.get(path + "/turns/" + command["request_id"]).json()["card"]["data"]
         assert current["permissions"] == updated["permissions"] and current["permissions"]["replies"] == "review"
         assert client.post(path + f"/turns/{command['request_id']}/confirm/start", json={}).status_code == 409
+        assert client.post(path + f"/turns/{command['request_id']}/refresh-confirmation").status_code == 200
+        assert client.post(path + f"/turns/{command['request_id']}/confirm/save", json={}).status_code == 200
 
 
 def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, monkeypatch):

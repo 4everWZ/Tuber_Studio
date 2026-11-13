@@ -564,8 +564,10 @@ class OperatorChat:
             result = json.loads(row["result"])
             card = result.get("card") or {}
             expected_type = "live_confirmation" if action == "live" else "operation_control"
-            if card.get("type") != expected_type or "binding" not in result:
+            if card.get("type") != expected_type:
                 raise HTTPException(404, "这段对话没有对应的确认操作")
+            if "binding" not in result:
+                raise HTTPException(409, "请先重新核对当前权限。")
             values = confirmation.model_dump()
             submitted = {"action": action, "values": values}
             previous = result.get("confirmations", [])
@@ -597,6 +599,20 @@ class OperatorChat:
                     await self.browsing.set_enabled(True, guard=lambda: check(expected))
             result["confirmations"] = [*previous[-19:], submitted]
             result["binding"] = self._control_binding(char)
+            self.store.execute("UPDATE operator_chat_turns SET result=? WHERE request_id=?", (dump(result), request_id))
+            return self.visible_turn(self.current_turn(request_id))
+
+    async def refresh_confirmation(self, request_id):
+        async with self.lock:
+            row = self.current_turn(request_id)
+            result = json.loads(row["result"])
+            if (result.get("card") or {}).get("type") not in {"operation_control", "live_confirmation"}:
+                raise HTTPException(404, "这段对话没有对应的确认操作")
+            if result.get("account_id", self._account()) != self._account():
+                raise HTTPException(409, "请切换到原账号查看这项操作。")
+            result["binding"] = self._control_binding(self.runtime.character)
+            result["account_id"] = self._account()
+            result.pop("confirmations", None)
             self.store.execute("UPDATE operator_chat_turns SET result=? WHERE request_id=?", (dump(result), request_id))
             return self.visible_turn(self.current_turn(request_id))
 
@@ -745,6 +761,10 @@ def register_operator_chat(app, runtime, store, browsing, dynamics, require_admi
     @app.post("/api/chat/intelligent/turns/{request_id}/confirm/{action}", dependencies=deps)
     async def confirm(request_id: UUID, action: Literal["start", "save", "live"], data: ControlConfirmation):
         return await service.confirm_control(str(request_id), action, data)
+
+    @app.post("/api/chat/intelligent/turns/{request_id}/refresh-confirmation", dependencies=deps)
+    async def refresh_confirmation(request_id: UUID):
+        return await service.refresh_confirmation(str(request_id))
 
     @app.delete("/api/chat/intelligent", dependencies=deps)
     async def clear():

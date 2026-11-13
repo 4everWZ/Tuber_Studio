@@ -36,10 +36,12 @@ export function operationControlCard(root, initialStatus, { api, path, turn, ref
   const actions = node("div", null, "actions");
   const save = node("button", "保存权限"), start = node("button", "确认并启动", "primary");
   const stop = node("button", "停止自主运营");
+  const refresh = node("button", "重新核对权限");
+  refresh.hidden = true;
   const settings = node("a", "打开运营设置");
   settings.href = "#automation-settings";
-  for (const button of [save, start, stop]) button.type = "button";
-  actions.append(save, start, stop, settings);
+  for (const button of [save, start, stop, refresh]) button.type = "button";
+  actions.append(save, start, stop, refresh, settings);
   const note = node("p", "", "hint");
   note.setAttribute("role", "status");
   root.append(node("h2", "自主运营"), state, explanation, details, actions, note);
@@ -112,6 +114,7 @@ export function operationControlCard(root, initialStatus, { api, path, turn, ref
       note.textContent = action === "save" ? "权限已保存。" : result.state === "draining" ? "本批收尾后停止。" : labels[result.state] || "控制状态已更新。";
     } catch (error) {
       note.textContent = safeMessage(error.message);
+      if (error.status === 409 && action !== "stop") refresh.hidden = false;
       try { result = await api("/api/automation"); } catch { /* The next status refresh will reconcile the card. */ }
     } finally {
       controls.pending = false;
@@ -122,6 +125,20 @@ export function operationControlCard(root, initialStatus, { api, path, turn, ref
   save.onclick = () => apply("save");
   start.onclick = () => apply("start");
   stop.onclick = () => apply("stop");
+  refresh.onclick = async () => {
+    refresh.disabled = true;
+    try {
+      const result = await api(`${path}/turns/${turn.request_id}/refresh-confirmation`, { method: "POST" });
+      for (const field of choices) field.changed = false;
+      reflectAutomation(result.card.data);
+      note.textContent = "已更新当前权限，请核对后确认。";
+      refresh.hidden = true;
+    } catch (error) {
+      note.textContent = safeMessage(error.message);
+    } finally {
+      refresh.disabled = false;
+    }
+  };
   sync();
   return {
     update(value) {
