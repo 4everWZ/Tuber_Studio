@@ -1177,6 +1177,11 @@ class BrowsingDecisions:
                 thread_response = self.invited_private_response(row, thread_context)
                 if thread_response is None:
                     thread_response = self.comment_progress.get(row, bvid, source)
+                    if thread_response:
+                        try:
+                            self.browsing.runtime.validate_memory_delivery(thread_response._memory_audit)
+                        except ValueError:
+                            thread_response = None
                     if thread_response and thread_response.action == "handoff_private":
                         thread_response = None
                 if thread_response is None:
@@ -1257,6 +1262,7 @@ class BrowsingDecisions:
             )
         recent = self.browsing.store.all(
             "SELECT text FROM browsing_intents WHERE status='published' AND account_id=? AND character_id=? "
+            "AND json_extract(target,'$.memory_audit') IS NULL "
             "AND kind IN ('top_level','reply_public') AND updated_at>=? ORDER BY updated_at DESC LIMIT ?",
             (
                 row["account_id"], row["character_id"],

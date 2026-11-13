@@ -481,11 +481,13 @@ class Dynamics:
                 and json.loads(decision["sources"]) == sources
             )
         current = {s["id"]: s for s in self._sources()}
+        dependencies = [item for source in sources for item in source.get("memory_dependencies", [])]
+        originals = [{key: value for key, value in source.items() if key != "memory_dependencies"} for source in sources]
         return (
             row["character_id"] == char["id"]
             and row["character_version"] == char["version"]
             and bool(row["sources"])
-            and all(current.get(s["id"]) == s for s in row["sources"])
+            and all(current.get(s["id"]) == s for s in originals + dependencies)
         )
 
     def review(self, post_id, action, text=None, **options):
@@ -1212,6 +1214,10 @@ class Dynamics:
     ):
         now = time.time()
         selected = [s for s in sources if s["id"] in data["source_ids"]]
+        selected_ids = {s["id"] for s in selected}
+        memory_dependencies = [s for s in sources if s.get("memory_version") and s["id"] not in selected_ids]
+        if selected and memory_dependencies:
+            selected[0] = selected[0] | {"memory_dependencies": memory_dependencies}
         model = str(self.settings.data["llm"].get("model", self.settings.data["llm"]["kind"]))
         next_at = now + data["next_evaluation_seconds"]
         with self.store.db:
@@ -1341,6 +1347,7 @@ class Dynamics:
                 {"content": p["content"], "published_at": p["published_at"]}
                 for p in self.list_posts("published", 5)
                 if p["character_id"] == char["id"] and p["character_version"] == char["version"]
+                and not any(s.get("memory_version") or s.get("memory_dependencies") for s in p["sources"])
             ]
             messages = dynamic_decision_messages(
                 char,

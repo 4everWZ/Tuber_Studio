@@ -92,10 +92,18 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
         source_snapshot = next(row for row in app.state.dynamics._sources() if row["id"] == f"organized:{candidate['id']}")
         dynamic = {"character_id": scope[1], "character_version": scope[2], "sources": [source_snapshot]}
         assert app.state.dynamics._valid_sources(dynamic)
+        runtime.daily_memory.confirm_operator_experience(runtime.character, "other", "直播休息时整理素材。")
+        other = next(item for item in app.state.dynamics._sources() if item["id"].startswith("experience:"))
+        saved = app.state.dynamics._save_decision(runtime.character, False, {
+            "action": "post", "reason": "回顾整理素材", "content": "今天整理了素材。", "source_ids": [other["id"]],
+            "next_evaluation_seconds": 300,
+        }, [other, source_snapshot], schedule=False)
+        assert app.state.dynamics._valid_sources(app.state.dynamics._post(saved["post_id"]))
         memory.change_organized(scope, candidate["id"], channels=["live"])
         with pytest.raises(ValueError, match="记忆已变更"):
             runtime.validate_memory_delivery(bound["_memory_audit"])
         assert not app.state.dynamics._valid_sources(dynamic)
+        assert not app.state.dynamics._valid_sources(app.state.dynamics._post(saved["post_id"]))
 
         async def generate(messages, character, event_id, source_text):
             assert any("第三只企鹅" in message["content"] for message in messages)
