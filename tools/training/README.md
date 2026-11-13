@@ -74,4 +74,4 @@ sha256sum "$RUN/gguf/"*.gguf
 
 ## 历史复现
 
-MiniCPM/Grounded、旧 DoRA 试验、18 题初筛及旧派生 `data/sft_*.json` 可用提交 `744ddd7` 复现。该版本保留视频标注及署名，1B 训练实证位于 `evaluations/results/authentic-dora-20261107/README.md`。含 12 条合成运营题的旧冻结回放可从 `58652d3` 回查，阶段式运营原型在 `0d136b1`。现行独立性审计继续读取本目录 13 份 `grounded_*.txt`。 [早期 9B 配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)
+MiniCPM/Grounded、旧 DoRA 试验、18 题初筛及旧派生 `data/sft_*.json` 可用提交 `744ddd7` 复现。该版本保留视频标注及署名，1B 训练实证位于 `evaluations/results/authentic-dora-20261107/README.md`。含 12 条合成运营题的旧冻结回放可从 `58652d3` 回查，独立合成评论协议及题集可从 `69b2ed2` 回查。现行独立性审计读取本目录 13 份原始 `grounded_*.txt`；运营模型评估使用真实候选和回执。 [早期 9B 配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md) · [真实运营核查](../../evaluations/results/operations-feedback-20261112.md#真实运营的模型评估)
