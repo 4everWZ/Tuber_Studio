@@ -43,4 +43,8 @@ test("OC tabs switch panels and visual edits preserve the rest of the saved pers
   assert.deepEqual(saved.core.traits, character.core.traits);
   assert.deepEqual(saved.style, character.style);
   assert.deepEqual(saved.core.variants, character.core.variants);
+  element("oc-name").value = "新名字";
+  element("oc-name").listeners.input();
+  assert.equal(JSON.parse(element("character-editor").value).name, "新名字");
+  assert.equal(element("activate-character").textContent, "保存并激活");
 });

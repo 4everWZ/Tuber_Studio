@@ -99,3 +99,23 @@ def test_character_edit_overwrites_current_card_and_preserves_historical_sources
         assert auto["id"].startswith("oc-") and auto["id"] != other["id"]
         assert auto["name"] == "大肥鱼改良版" and auto["core"] == other["core"]
         assert runtime.character["id"] == other["id"]
+
+
+def test_create_blank_character_and_rename_before_and_after_activation(settings):
+    app = create_app(settings)
+    with TestClient(app) as client:
+        headers = {"Authorization": "Bearer " + settings.admin_token}
+        original = app.state.runtime.character
+        card = client.post("/api/characters", json={"name": " 新卡片 "}, headers=headers).raise_for_status().json()
+        assert card["id"].startswith("oc-") and card["name"] == "新卡片"
+        assert card["core"] == card["style"] == {}
+        assert card["rules"] == card["lore"] == card["sources"] == []
+        assert app.state.runtime.character == original
+        path = f"/api/characters/{card['id']}"
+        card = client.put(path, json=card | {"name": "新角色", "core": {"identity": "新设定"}},
+                          headers=headers).raise_for_status().json()
+        client.post(f"{path}/activate", headers=headers).raise_for_status()
+        client.put(path, json=card | {"name": "改名后"}, headers=headers).raise_for_status()
+        active = app.state.runtime.character
+        assert active["id"] == card["id"] and active["name"] == "改名后"
+        assert active["core"] == {"identity": "新设定"}

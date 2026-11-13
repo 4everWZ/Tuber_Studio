@@ -7,8 +7,15 @@ function editableCard(character) {
   return card;
 }
 
+function markCharacterDirty(model) {
+  model.characterDirty = $("character-editor").value !== JSON.stringify(editableCard(model.character), null, 2);
+  $("character-dirty").textContent = model.characterDirty ? "有未保存修改" : "";
+  $("activate-character").textContent = model.characterDirty ? "保存并激活" : "激活此角色";
+}
+
 export function syncCharacterJsonToVisual(character) {
   if (!character) return;
+  if ($("oc-name")) $("oc-name").value = character.name || "";
   if ($("oc-identity")) $("oc-identity").value = character.core?.identity || "";
   if ($("oc-background")) $("oc-background").value = character.core?.background || "";
   if ($("oc-traits")) {
@@ -32,6 +39,7 @@ export function syncCharacterJsonToVisual(character) {
 export function syncVisualToCharacterJson(model, changedId) {
   const charObj = editableCard(JSON.parse($("character-editor").value));
   const changed = id => !changedId || changedId === id;
+  if (changed("oc-name")) charObj.name = $("oc-name").value.trim();
 
   charObj.core = charObj.core || {};
   if (changed("oc-identity")) charObj.core.identity = $("oc-identity").value.trim();
@@ -59,19 +67,17 @@ export function syncVisualToCharacterJson(model, changedId) {
   }
 
   $("character-editor").value = JSON.stringify(charObj, null, 2);
-  model.characterDirty = true;
-  $("character-dirty").textContent = "有未保存修改";
+  markCharacterDirty(model);
 }
 
 export function setCharacterEditor(character, model) {
   model.character = character;
-  model.characterDirty = false;
   $("character-editor").value = JSON.stringify(editableCard(character), null, 2);
-  ["character-editor", "save-character", "reset-character", "activate-character"].forEach(id => {
-    if ($(id)) $(id).disabled = false;
+  ["oc-name", "character-editor", "save-character", "reset-character", "activate-character"].forEach(id => {
+    if ($(id) && $(id).getAttribute?.("aria-busy") !== "true") $(id).disabled = false;
   });
   $("editor-title").textContent = `编辑角色卡 · ${character.name || character.id}`;
-  $("character-dirty").textContent = "";
+  markCharacterDirty(model);
   syncCharacterJsonToVisual(character);
 }
 
@@ -150,21 +156,21 @@ export function initCharacterStudioUI(model, {
   });
 
   const visualIds = [
-    "oc-identity", "oc-background", "oc-traits",
+    "oc-name", "oc-identity", "oc-background", "oc-traits",
     "oc-min-chars", "oc-max-chars", "oc-catchphrases", "oc-instructions",
     "oc-voice-profile", "oc-avatar-manifest"
   ];
   visualIds.forEach(id => {
     const el = $(id);
     if (el) {
-      el.addEventListener("input", () => syncVisualToCharacterJson(model, id));
-      el.addEventListener("change", () => syncVisualToCharacterJson(model, id));
+      el.addEventListener("input", () => {
+        if (model.character) syncVisualToCharacterJson(model, id);
+      });
     }
   });
 
   $("character-editor")?.addEventListener("input", () => {
-    model.characterDirty = true;
-    $("character-dirty").textContent = "有未保存修改";
+    markCharacterDirty(model);
     try {
       const parsed = JSON.parse($("character-editor").value);
       if (parsed && typeof parsed === "object") {
@@ -188,7 +194,7 @@ export function initCharacterStudioUI(model, {
     await loadCharacters(model, {
       api,
       list,
-          selectCharacterFn: doSelect,
+      selectCharacterFn: doSelect,
       renderCharacterListFn: doRenderList,
     });
   };
@@ -199,45 +205,96 @@ export function initCharacterStudioUI(model, {
     }
   });
 
+  function readCard() {
+    let character;
+    try {
+      character = JSON.parse($("character-editor").value);
+    } catch (error) {
+      throw new Error(`角色 JSON 格式错误：${error.message}`);
+    }
+    if (!character || typeof character !== "object" || Array.isArray(character)) {
+      throw new Error("角色配置必须为 JSON 对象");
+    }
+    if (typeof character.name !== "string" || !character.name.trim() || character.name.trim().length > 60) {
+      throw new Error("请填写 1 至 60 字的角色名称。");
+    }
+    return { ...editableCard(character), name: character.name.trim() };
+  }
+
+  async function saveCard(id, card) {
+    const selection = model.characterSelection;
+    const editor = $("character-editor");
+    const input = editor.value;
+    const result = await api(`/api/characters/${encodeURIComponent(id)}`, { method: "PUT", body: card });
+    const sameEditor = model.characterSelection === selection && editor.value === input;
+    if (sameEditor) setCharacterEditor(result, model);
+    return sameEditor;
+  }
+
+  let writing = false;
+  async function changeCard(button, action) {
+    if (writing) return;
+    writing = true;
+    try {
+      await busy(button, async () => {
+        try {
+          await action();
+        } catch (error) {
+          $("character-dirty").textContent = error.message;
+          throw error;
+        }
+      });
+    } finally {
+      writing = false;
+    }
+  }
+
+  $("create-character-form")?.addEventListener("submit", event => {
+    event.preventDefault();
+    return changeCard(event.submitter, async () => {
+      if (model.characterDirty && !confirm("放弃当前角色的未保存修改并新建角色？")) return;
+      const nameInput = $("new-character-name");
+      const name = nameInput.value.trim();
+      if (!name) throw new Error("请填写角色名称");
+      const created = await api("/api/characters", { method: "POST", body: { name } });
+      if (nameInput.value.trim() === name) nameInput.value = "";
+      await doLoadCharacters();
+      await doSelect(created.id);
+      tabs[0]?.click();
+      $("oc-identity")?.focus();
+      notice("角色卡已创建。");
+    });
+  });
+
   $("character-form")?.addEventListener("submit", event => {
     event.preventDefault();
-    busy(event.submitter, async () => {
-      const editor = $("character-editor");
-      const input = editor.value;
-      let character;
-      try {
-        character = JSON.parse(input);
-      } catch (error) {
-        throw new Error(`角色 JSON 格式错误：${error.message}`);
-      }
-      if (!character || typeof character !== "object" || Array.isArray(character)) {
-        throw new Error("角色配置必须为 JSON 对象");
-      }
+    return changeCard(event.submitter, async () => {
       const id = model.characterId;
-      const selection = model.characterSelection;
-      const { persona_type, fine_tuned_model, compact_system_prompt } = model.character;
-      const result = await api(`/api/characters/${encodeURIComponent(id)}`, {
-        method: "PUT",
-        body: { ...editableCard(character), persona_type, fine_tuned_model, compact_system_prompt },
-      });
-      if (model.characterSelection === selection && editor.value === input) setCharacterEditor(result, model);
+      await saveCard(id, readCard());
       notice("角色已保存。");
       if (model.status?.character?.id === id && renderStatus) renderStatus(await api("/api/status"));
       await doLoadCharacters();
     });
   });
 
-  $("activate-character")?.addEventListener("click", () => busy($("activate-character"), async () => {
-    if (model.characterDirty) throw new Error("请先保存或放弃未保存的角色修改，再激活角色。");
-    if (!confirm(`激活 ${model.character.name}？旧角色尚未播报的任务将被取消。`)) return;
-    await api(`/api/characters/${encodeURIComponent(model.characterId)}/activate`, {
+  $("activate-character")?.addEventListener("click", () => changeCard($("activate-character"), async () => {
+    const id = model.characterId;
+    const card = model.characterDirty ? readCard() : null;
+    const alreadyActive = model.status?.character?.id === id;
+    if (!alreadyActive && !confirm(`${card ? "保存并激活" : "激活"} ${card?.name || model.character.name}？旧角色尚未播报的任务将被取消。`)) return;
+    if (card && !await saveCard(id, card)) {
+      await doLoadCharacters();
+      notice("角色已保存。请在当前编辑完成后激活。");
+      return;
+    }
+    if (!alreadyActive) await api(`/api/characters/${encodeURIComponent(id)}/activate`, {
       method: "POST",
     });
     if (typeof renderStatus === "function") {
       renderStatus(await api("/api/status"));
     }
     await doLoadCharacters();
-    notice("角色已激活。");
+    notice(card && alreadyActive ? "角色已保存。" : "角色已激活。");
   }));
 
   return {

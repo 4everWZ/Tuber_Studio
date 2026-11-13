@@ -17,7 +17,7 @@ import {
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261113.03";
-import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261111.07";
+import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261113.01";
 import {
   selectedThread,
   initCommentsModule,
@@ -530,21 +530,6 @@ $("logout").addEventListener("click", event => busy(event.currentTarget, async (
   await api("/api/logout", { method: "POST" });
   showLogin();
 }));
-
-$("clone-form")?.addEventListener("submit", event => {
-  event.preventDefault();
-  busy(event.submitter, async () => {
-    if (!model.characterId) throw new Error("请先选择要复制的角色");
-    const nameInput = $("clone-name");
-    const name = nameInput.value.trim();
-    if (!name) throw new Error("请填写角色名称");
-    const created = await api(`/api/characters/${encodeURIComponent(model.characterId)}/clone`, { method: "POST", body: { name } });
-    if (nameInput.value.trim() === name) nameInput.value = "";
-    await characterStudio?.loadCharacters();
-    await characterStudio?.selectCharacter(created.id);
-    notice("角色卡已创建。");
-  });
-});
 
 $("preview-voice")?.addEventListener("change", () => renderVoicePreview(model));
 $("preview-form")?.addEventListener("submit", event => {

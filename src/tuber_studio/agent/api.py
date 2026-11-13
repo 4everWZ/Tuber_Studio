@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import Body, Depends, HTTPException, Path, Query
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..models import Character, StrictModel
@@ -21,6 +21,10 @@ class OrganizedMemoryChange(StrictModel):
     note: str | None = Field(default=None, min_length=1, max_length=150)
 
 
+class NewCharacter(StrictModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+
+
 def organized_view(row):
     result = {key: row[key] for key in ("id", "memory_kind", "headline", "quote", "anecdote", "status",
                                        "channels", "source", "updated_at")}
@@ -29,7 +33,7 @@ def organized_view(row):
     return result
 
 
-def register_agent_api(app, settings, runtime, store, comments, require_admin):
+def register_agent_api(app, settings, runtime, store, comments, require_admin, *, default_character):
     def user_memory_scope(platform, user_id, account_id, character_id):
         messages = comments.direct_messages
         current_account = messages.display_account_id() if messages else comments.display_account_id()
@@ -76,6 +80,15 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
     @app.get("/api/characters", dependencies=[Depends(require_admin)])
     async def characters():
         return [character_card(character) for character in store.characters()]
+
+    @app.post("/api/characters", dependencies=[Depends(require_admin)])
+    async def create_character(data: NewCharacter):
+        card = store.save_character({
+            "id": f"oc-{uuid4().hex}", "name": data.name, "core": {}, "style": {},
+            "voice_profile": default_character["voice_profile"],
+            "avatar_manifest": default_character["avatar_manifest"],
+        })
+        return character_card(card)
 
     @app.get("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def character(character_id: str):

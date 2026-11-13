@@ -15,9 +15,8 @@
 
       <div class="win-subgroup-box" style="margin-top:16px;">
         <div class="win-subgroup-title">新建角色卡</div>
-        <p class="hint">以当前选中的角色卡为模板。</p>
-        <form id="clone-form">
-          <label>角色名称<input id="clone-name" maxlength="60" placeholder="例如：电台大肥鱼" required></label>
+        <form id="create-character-form">
+          <label>新角色名称<input id="new-character-name" maxlength="60" placeholder="例如：电台大肥鱼" required></label>
           <button type="submit" class="win-btn" style="margin-top:8px;">创建角色卡</button>
         </form>
       </div>
@@ -26,7 +25,7 @@
     <article class="win-group-box">
       <div class="panel-heading">
         <div class="win-group-title" id="editor-title" style="margin:0;">选择角色</div>
-        <button id="activate-character" class="primary win-btn" disabled>激活此角色</button>
+        <button id="activate-character" type="button" class="primary win-btn" disabled>激活此角色</button>
       </div>
 
       <!-- OC Tabs 选项卡 -->
@@ -39,6 +38,7 @@
 
       <!-- Tab 1: 核心设定 -->
       <div class="oc-tab-content active" id="tab-oc-persona" role="tabpanel" aria-labelledby="oc-tab-persona" style="margin-top:12px;">
+        <label>角色名称<input id="oc-name" maxlength="60" disabled></label>
         <label>核心身份与世界观 (Identity)
           <textarea id="oc-identity" class="code-editor" rows="4"></textarea>
         </label>
@@ -93,7 +93,7 @@
       <div class="actions" style="margin-top:14px;">
         <button id="save-character" type="submit" form="character-form" class="primary win-btn" disabled>保存角色</button>
         <button id="reset-character" type="button" class="win-btn" disabled>放弃未保存修改</button>
-        <span id="character-dirty" class="hint"></span>
+        <span id="character-dirty" class="hint" role="status"></span>
       </div>
     </article>
   </div>

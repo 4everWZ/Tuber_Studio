@@ -219,7 +219,7 @@ def create_app(
     app.mount("/static", StaticFiles(directory=web), name="static")
     app.mount("/assets", StaticFiles(directory=settings.root / "assets"), name="assets")
     register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin)
-    register_agent_api(app, settings, runtime, store, comments, require_admin)
+    register_agent_api(app, settings, runtime, store, comments, require_admin, default_character=seeds[0])
     register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
     register_model_api(app, settings, runtime, require_admin)
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
