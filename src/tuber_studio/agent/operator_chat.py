@@ -12,6 +12,7 @@ from fastapi import Depends, HTTPException, Query
 from pydantic import Field, StringConstraints, model_validator
 
 from . import operator_facts
+from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
 from ..operations.browsing.quotas import day_window
@@ -578,13 +579,17 @@ class OperatorChat:
                 raise HTTPException(400, "请从私下对话选择要公开的经历")
             elif result.get("account_id", self._account()) != self._account():
                 raise HTTPException(409, "请切换到原账号确认这条经历。")
-            identity = self.runtime.daily_memory.confirm_operator_experience(char, request_id, fact, sources=sources)
+            identity = self.runtime.daily_memory.confirm_operator_experience(
+                char, request_id, fact, sources=sources, account_id=self._account(),
+            )
             return self.experience(identity)
 
     def _experience_rows(self, *, item_id=None, active_only=False, limit=50):
         char = self.runtime.character
-        sql = "SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? AND " + _EXPERIENCE_SOURCE
-        params = [char["id"], char["version"]]
+        sql = ("SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? AND " + _EXPERIENCE_SOURCE
+               + " AND " + HIGHLIGHT_ACCOUNT_FILTER)
+        account = self._account()
+        params = [char["id"], char["version"], account, account]
         if item_id is not None:
             sql += " AND id=?"
             params.append(item_id)

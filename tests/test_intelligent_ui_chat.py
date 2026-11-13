@@ -210,6 +210,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/chat/intelligent"
+        app.state.browsing.discovery.remember_account("100")
 
         def send(text):
             request = str(uuid4())
@@ -227,6 +228,10 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         assert turn["card"]["data"]["fact"] == "第一句"
         saved = client.post(f"{path}/{proposal}/public-experience", json={"fact": "确认后的事实"}).json()
         assert saved["source"]["items"][0]["text"] == "第一句"
+        assert not app.state.dynamics._sources()
+        app.state.browsing.discovery.remember_account("200")
+        assert client.get(f"{path}/public-experiences/{saved['id']}").status_code == 404
+        app.state.browsing.discovery.remember_account("100")
         recalled, turn = send("那件公开经历")
         assert turn["reply_text"] == "确认后的事实"
         assert client.delete(f"{path}/public-experiences/{saved['id']}").status_code == 200

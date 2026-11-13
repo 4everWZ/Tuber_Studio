@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from fastapi import Body, Depends, HTTPException, Path, Query
 
+from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..models import Character
 from ..relationships import UserProfile
 from ..store import character_card
@@ -98,8 +99,9 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
         limit: int = Query(50, ge=1, le=100),
     ):
         char = runtime.character
+        account = str(runtime.browsing.discovery.history_scope()[0] or "")
         highlights = runtime.daily_memory.list_highlights(
-            char["id"], char["version"], date_str=date, status=status, limit=limit
+            char["id"], char["version"], date_str=date, status=status, limit=limit, account_id=account,
         )
         active = runtime.daily_memory.get_active_anecdotes(
             char["id"], char["version"], limit=3, max_tokens=200
@@ -148,9 +150,10 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin):
 
     def current_highlight(item_id):
         char = runtime.character
+        account = str(runtime.browsing.discovery.history_scope()[0] or "")
         if not store.one(
-            "SELECT id FROM daily_highlights WHERE id=? AND character_id=? AND character_version=?",
-            (item_id, char["id"], char["version"]),
+            "SELECT id FROM daily_highlights WHERE id=? AND character_id=? AND character_version=? AND " + HIGHLIGHT_ACCOUNT_FILTER,
+            (item_id, char["id"], char["version"], account, account),
         ):
             raise HTTPException(404, "未找到当前角色的记忆条目")
 

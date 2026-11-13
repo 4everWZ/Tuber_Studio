@@ -19,6 +19,9 @@ LOGGER = logging.getLogger(__name__)
 DISTILLED_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
 HIGHLIGHT_CATEGORIES = (*DISTILLED_CATEGORIES, "public_incident")
 HIGHLIGHT_STATUSES = ("active", "pending_review", "archived")
+HIGHLIGHT_ACCOUNT_FILTER = (
+    "COALESCE(CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END,?)=?"
+)
 
 RETROSPECTIVE_CUES = (
     "还记得",
@@ -334,9 +337,10 @@ class DailyMemoryService:
              "text": row["quote"], "public_sources": []}
             for row in rows if (proof := self._source_evidence(row))
             and proof["kind"] in {"runtime_event", "operator_note"}
+            and not proof.get("operation_sources")
         ]
 
-    def confirm_operator_experience(self, character, request_id, fact, *, sources=None):
+    def confirm_operator_experience(self, character, request_id, fact, *, sources=None, account_id=None):
         source_ref = f"operator-public:{request_id}"
         previous = self.store.one(
             "SELECT id,quote FROM daily_highlights WHERE character_id=? AND character_version=? AND source_ref=?",
@@ -349,6 +353,7 @@ class DailyMemoryService:
         proof = self._source_proof("operator_note", source_ref, fact)
         if sources:
             proof["operation_sources"] = sources
+            proof["operation_account_id"] = account_id
         return self.record_highlight(
             character["id"], character["version"], self.business_date(time.time()), "community_meme",
             "号主确认的公开经历", fact, fact, source_ref=source_ref, source_evidence=proof,
@@ -894,7 +899,8 @@ class DailyMemoryService:
         for row in rows:
             if row["id"] in exclude:
                 continue
-            if not self._source_evidence(row):
+            proof = self._source_evidence(row)
+            if not proof or proof.get("operation_sources"):
                 continue
             score = self._score_highlight_match(row, keywords, query_text)
             if score > best_score:
@@ -928,10 +934,14 @@ class DailyMemoryService:
         date_str: str | None = None,
         status: str | None = None,
         limit: int = 50,
+        account_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List daily highlights for UI visualization and editing."""
         clauses = ["character_id = ?", "character_version = ?"]
         params: list[Any] = [character_id, character_version]
+        if account_id is not None:
+            clauses.append(HIGHLIGHT_ACCOUNT_FILTER)
+            params.extend((account_id, account_id))
         if date_str:
             clauses.append("highlight_date = ?")
             params.append(date_str)
@@ -992,6 +1002,7 @@ class DailyMemoryService:
                 previous = json.loads(confirmed.get("source_evidence") or "{}") or {}
                 if previous.get("operation_sources"):
                     proof["operation_sources"] = previous["operation_sources"]
+                    proof["operation_account_id"] = previous.get("operation_account_id")
                 self.store.execute("UPDATE daily_highlights SET source_evidence=? WHERE id=?",
                     (json.dumps(proof, ensure_ascii=False), highlight_id))
         self.store.db.commit()
