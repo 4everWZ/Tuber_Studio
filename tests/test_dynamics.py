@@ -189,7 +189,7 @@ async def test_dynamic_from_public_reply_publishes_the_reviewed_text_and_comment
         assert rendered.format == "PNG" and rendered.width == 960
     observed = []
 
-    async def send(adapter, text, image, *, before_send, prepare_authorized):
+    async def send(adapter, text, image, *, before_send, prepare_authorized, on_prepared):
         assert prepare_authorized()
         before_send()
         observed.append((text, image))
@@ -218,6 +218,45 @@ def test_old_dynamic_card_preserves_the_original_quote_order_for_reconciliation(
     card = comment_card(sources, legacy=True)
     assert [item["quote"] for item in card["comments"]] == ["原来的原话", "之前的原话", "同楼补充引用"]
     assert len(card["links"]) == 2
+
+
+def test_long_card_keeps_ancestors_and_confirmed_outcome_across_pages(service, monkeypatch):
+    from PIL import ImageFont
+
+    from tuber_studio import dynamic_comment_card
+    from tuber_studio.operations.browsing.comment_timeline import observe_thread
+    from tuber_studio.operations.browsing.repository import BrowsingRepository
+
+    monkeypatch.setattr(dynamic_comment_card, "_font", lambda size: ImageFont.load_default())
+    store = service.store
+    BrowsingRepository(store)
+    bvid, root, account = "BV1d8pU6xEZX", "51", "100"
+    actor = {"character_id": service._character()["id"], "account_uid": account}
+    items = [{"comment_id": str(i), "thread_id": root, "parent_comment_id": str(i - 1) if i > 51 else None,
+              "platform_user_id": "111", "display_name": "观众甲", "content": f"评论原话 {i}", "created_at": i}
+             for i in range(51, 59)]
+    with store.db:
+        observe_thread(store, actor | {"account_id": account, "id": "round-a"}, bvid, items, via="comment_visit")
+        store.db.execute(
+            "INSERT INTO browsing_intents(id,account_id,character_id,kind,status,text,target,receipt,round_id,updated_at) "
+            "VALUES('confirmed',?,?,'reply_public','published','确认回复',?,?,'round-a',99)",
+            (account, actor["character_id"], json.dumps({"bvid": bvid, "root": root, "parent": "58"}),
+             json.dumps({"rpid": "59"})),
+        )
+        store.db.execute(
+            "INSERT INTO browsing_intents(id,account_id,character_id,kind,status,text,target,receipt,round_id,updated_at) "
+            "VALUES('unknown',?,?,'reply_public','publish_uncertain','未确认正文',?,NULL,'round-a',100)",
+            (account, actor["character_id"], json.dumps({"bvid": bvid, "root": root, "parent": "59"})),
+        )
+    card = dynamic_comment_card.comment_card([{
+        "type": "public_incident", "public_sources": [{"bvid": bvid, "thread_id": root,
+                                                        "comment_id": "53", "quote": "评论原话 53"}],
+    }], store=store, actor=actor)
+    assert card["page_count"] == 2 and card["missing"] == 0
+    assert [entry["comment_id"] for entry in card["comments"]] == [str(i) for i in range(51, 60)]
+    assert card["comments"][-1]["quote"] == "确认回复"
+    assert card["links"] == [{"bvid": bvid, "url": f"https://www.bilibili.com/video/{bvid}#reply53"}]
+    assert dynamic_comment_card.render_comment_card(card, 0) != dynamic_comment_card.render_comment_card(card, 1)
 
 
 def test_dynamic_decision_picks_one_episode(service):

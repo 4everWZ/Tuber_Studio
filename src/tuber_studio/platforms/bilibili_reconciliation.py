@@ -10,6 +10,7 @@ import re
 import time
 
 import httpx
+from .bilibili_images import bfs_image_path
 
 # Published bilibili-api-python 17.4.2: user.get_dynamics_new / Dynamic.get_info.
 # Signing stays in the adapter; these are ordinary client query parameters.
@@ -213,7 +214,9 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
     """Confirm a known ID or uniquely match the original author's recent feed."""
     known = bool(receipt and receipt.get("dynamic_id"))
     coverage = {"scope": "known_dynamic_detail" if known else "own_feed_first_page", "limit": 20}
-    if target.get("message_kind", "text") == "image":
+    image = target.get("message_kind", "text") == "image"
+    expected_images = target.get("images") or []
+    if image and not expected_images:
         return _result("unsupported", coverage, reason="image_payload_verification_required")
     try:
         author, cutoff = _id(author_uid), math.floor(_timestamp(started_at))
@@ -255,14 +258,23 @@ async def reconcile_dynamic(read, target, *, author_uid, text, started_at, recei
                 identifier = _id(item.get("id_str"))
                 modules = item["modules"]
                 poster = modules["module_author"]
+                dynamic = modules["module_dynamic"]
                 if (
                     (expected and identifier != expected)
                     or _id(poster["mid"]) != author
-                    or modules["module_dynamic"]["desc"]["text"] != text
-                    or item.get("type") != "DYNAMIC_TYPE_WORD"
+                    or dynamic["desc"]["text"] != text
+                    or item.get("type") != ("DYNAMIC_TYPE_DRAW" if image else "DYNAMIC_TYPE_WORD")
                     or (not expected and _timestamp(poster.get("pub_ts")) < cutoff)
                 ):
                     continue
+                if image:
+                    images = dynamic["major"]["draw"]["items"]
+                    actual = [
+                        {"path": bfs_image_path(entry["src"]), "width": entry["width"], "height": entry["height"]}
+                        for entry in images
+                    ]
+                    if not all(entry["path"] for entry in actual) or actual != expected_images:
+                        continue
                 matches[identifier] = item.get("visible") is False
             except (ValueError, TypeError, KeyError, AttributeError):
                 continue

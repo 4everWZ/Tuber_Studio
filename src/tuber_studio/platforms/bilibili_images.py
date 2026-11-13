@@ -18,6 +18,24 @@ UPLOAD_URL = "https://api.bilibili.com/x/dynamic/feed/draw/upload_bfs"
 FORMATS = {"image/gif": "gif", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 
+def bfs_image_path(url):
+    """Identity of an original BFS image, independent of its CDN host."""
+    if not isinstance(url, str) or len(url) > 2048 or any(ord(c) < 33 for c in url):
+        return None
+    url = "https:" + url if url.startswith("//") else url.replace("http://", "https://", 1)
+    try:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme == "https" and parsed.hostname in {"i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}
+            and not parsed.username and not parsed.password and parsed.port in {None, 443}
+            and parsed.path.startswith("/bfs/") and ".." not in parsed.path and "%" not in parsed.path
+            and not parsed.query and not parsed.fragment
+        ):
+            return parsed.path
+    except ValueError:
+        return None
+
+
 async def upload_image(adapter, image, *, authorized):
     if not adapter._sessdata or not adapter._csrf:
         raise ValueError("上传图片需要SESSDATA和bili_jct")
@@ -53,32 +71,15 @@ async def upload_image(adapter, image, *, authorized):
     if not isinstance(url, str):
         raise ValueError("平台未返回有效图片地址，尚未提交消息／动态")
     url = "https:" + url if url.startswith("//") else url.replace("http://", "https://", 1)
-    try:
-        parsed = urlsplit(url)
-        valid = (
-            parsed.scheme == "https"
-            and parsed.hostname in {"i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}
-            and not parsed.username
-            and not parsed.password
-            and parsed.port in {None, 443}
-            and parsed.path.startswith("/bfs/")
-            and ".." not in parsed.path
-            and "%" not in parsed.path
-            and not parsed.query
-            and not parsed.fragment
-            and len(url) <= 2048
-            and not any(ord(c) < 33 for c in url)
-        )
-    except ValueError:
-        valid = False
+    path = bfs_image_path(url)
     width, height, size = data.get("image_width"), data.get("image_height"), data.get("img_size")
     if (
-        not valid
+        not path
         or any(type(n) is not int or not 1 <= n <= 4096 for n in (width, height))
         or (type(size) not in {int, float} or not math.isfinite(size) or not 0 < size <= MAX_BYTES / 1024)
     ):
         raise ValueError("平台图片回执无效，尚未提交消息／动态")
-    extension = parsed.path.rsplit(".", 1)[-1].lower()
+    extension = path.rsplit(".", 1)[-1].lower()
     if extension not in {"png", "jpg", "jpeg", "gif", "webp"}:
         raise ValueError("平台图片格式无效，尚未提交消息／动态")
     return {"url": url, "height": height, "width": width, "imageType": extension, "original": 1, "size": size}

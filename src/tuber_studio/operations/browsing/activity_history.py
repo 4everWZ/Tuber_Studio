@@ -7,6 +7,7 @@ import time
 from zoneinfo import ZoneInfo
 
 from ...message_outreach import contact_state
+from .comment_timeline import comment_activity, comment_href, comment_thread, resource_key
 from .quotas import publication_time
 
 _AUTO = "r.preview=0 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)"
@@ -44,7 +45,7 @@ def _day_window(day, timezone):
     return start.timestamp(), end.timestamp()
 
 
-def _video_data(browsing, *, day=None, visible_since=None):
+def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
     """Return one row per video, with successful replies counted only once.
 
     Viewing starts come from the viewing ledger; a comment revisit contributes
@@ -79,32 +80,35 @@ def _video_data(browsing, *, day=None, visible_since=None):
         + "(" + _AUTO + " OR (r.preview=0 AND json_type(t.payload,'$.comment_batch_ids')='array'))"
         + " AND "
         + _TASK_RESULT
-        + " AND t.updated_at>=?",
-        (*scope, cutoff),
+        + " AND t.updated_at>=? AND (? IS NULL OR r.id=?)",
+        (*scope, cutoff, round_id, round_id),
     )
     selections = store.all(
         "SELECT i.bvid,i.kind,i.status,i.payload,b.round_id,"
         "COALESCE(json_extract(i.payload,'$.selection.decided_at'),b.created_at) AS decided_at "
         "FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id "
-        "JOIN browsing_rounds r ON r.id=b.round_id WHERE r.account_id=? AND r.character_id=? AND " + _AUTO,
-        scope,
+        "JOIN browsing_rounds r ON r.id=b.round_id WHERE r.account_id=? AND r.character_id=? AND "
+        + _AUTO + " AND (? IS NULL OR r.id=?)",
+        (*scope, round_id, round_id),
     )
     starts = store.all(
-        "SELECT bvid,started_at FROM browsing_watch_starts WHERE account_id=? AND character_id=? AND started_at>=?",
-        (*scope, cutoff),
+        "SELECT w.bvid,w.started_at,t.round_id FROM browsing_watch_starts w LEFT JOIN browsing_tasks t ON t.id=w.task_id "
+        "WHERE w.account_id=? AND w.character_id=? AND w.started_at>=? AND (? IS NULL OR t.round_id=?)",
+        (*scope, cutoff, round_id, round_id),
     )
     intents = store.all(
         "SELECT i.id,i.kind,i.status,i.text,i.error,i.receipt,i.reason,i.target,i.updated_at,i.round_id,"
         "CASE WHEN (" + _AUTO + " OR (" + _QUEUED_REPLY + ")) THEN 1 ELSE 0 END AS automatic_video "
         "FROM browsing_intents i JOIN browsing_rounds r ON r.id=i.round_id "
-        "WHERE i.account_id=? AND i.character_id=? AND i.kind IN ('top_level','reply_public')",
-        scope,
+        "WHERE i.account_id=? AND i.character_id=? AND i.kind IN ('top_level','reply_public') "
+        "AND (? IS NULL OR r.id=?)",
+        (*scope, round_id, round_id),
     )
     failures = store.all(
         "SELECT f.bvid,f.error,f.count,f.updated_at,b.round_id FROM browsing_batch_failures f "
         "JOIN browsing_batches b ON b.id=f.batch_id JOIN browsing_rounds r ON r.id=b.round_id "
-        "WHERE r.account_id=? AND r.character_id=? AND " + _AUTO + " AND f.updated_at>=?",
-        (*scope, cutoff),
+        "WHERE r.account_id=? AND r.character_id=? AND " + _AUTO + " AND f.updated_at>=? AND (? IS NULL OR r.id=?)",
+        (*scope, cutoff, round_id, round_id),
     )
     entries, days = {}, {today}
 
@@ -116,7 +120,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
         if value is None:
             return False
         days.add(dt.datetime.fromtimestamp(value, timezone).date().isoformat())
-        return start <= value < end
+        return round_id is not None or start <= value < end
 
     def video(bvid, value, round_id=None):
         if not bvid:
@@ -206,7 +210,7 @@ def _video_data(browsing, *, day=None, visible_since=None):
 
     for item in starts:
         if include(item["started_at"]):
-            result = video(item["bvid"], item["started_at"])
+            result = video(item["bvid"], item["started_at"], item["round_id"])
             if result is not None:
                 result["watched"] = True
 
@@ -336,7 +340,7 @@ def history(browsing, *, day=None, page=1, page_size=10, visible_since=None):
     return _paginate(_video_data(browsing, day=day, visible_since=visible_since), page, page_size)
 
 
-def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_since=None):
+def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_since=None, round_id=None):
     """Operator-only daily outcomes across public and private channels.
 
     Message bodies are read only for this view. They never become video source
@@ -352,7 +356,16 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
     }
     if kind not in kinds:
         raise ValueError("活动类型须为 all、videos、comments、messages 或 dynamics")
-    base = _video_data(browsing, day=day, visible_since=visible_since)
+    if round_id and day is None:
+        account, character = browsing.discovery.history_scope()[:2]
+        recent = browsing.store.one(
+            "SELECT updated_at FROM browsing_rounds WHERE id=? AND account_id=? AND character_id=?",
+            (round_id, str(account or ""), character),
+        )
+        if recent:
+            timezone = ZoneInfo(browsing.policy().get("business_timezone", "Asia/Taipei"))
+            day = dt.datetime.fromtimestamp(recent["updated_at"], timezone).date().isoformat()
+    base = _video_data(browsing, day=day, visible_since=visible_since, round_id=round_id)
     store = browsing.store
     timezone = ZoneInfo(base["timezone"])
     start, end = _day_window(base["day"], timezone)
@@ -370,7 +383,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
         for row in base["_intents"]
         if row["kind"] == "top_level" and row["status"] == "published"
     }
-    items = []
+    items, threads, listed_threads = [], {}, set()
     for video in videos:
         main = video.get("main_decision") or {}
         items.append(
@@ -391,7 +404,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
         if not isinstance(at, (int, float)) or not math.isfinite(at) or at < cutoff:
             return False
         days.add(dt.datetime.fromtimestamp(at, timezone).date().isoformat())
-        return start <= at < end
+        return round_id is not None or start <= at < end
 
     def add(row, *, channel, identity, text, title, href, at=None, reason="", **details):
         at = row["updated_at"] if at is None else at
@@ -412,6 +425,45 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 }
             )
 
+    def thread_details(resource, root, comment, row, target=None):
+        if not resource or not root:
+            return {}
+        root = str(root)
+        key = (resource, root)
+        if key not in threads:
+            threads[key] = comment_thread(store, resource, root, account_id=account, character_id=character)
+        thread = threads[key]
+        receipt = _json(row.get("receipt"), {})
+        status = row["status"]
+        observed = (target or {}).get("account_reply") or {}
+        matched = next((item for item in reversed(thread["comments"]) if
+                        item["parent_comment_id"] == str(comment) and item["publication"]
+                        and (item["created_at"] is None or item["created_at"] <= row["updated_at"])), None)
+        if status == "publish_uncertain":
+            outcome = "pending_verification"
+        elif status == "published" and receipt.get("rpid"):
+            outcome = "new_reply"
+        elif status == "operator_replied" and observed.get("comment_id"):
+            outcome = "same_account"
+        elif matched:
+            outcome = "previous_reply" if matched["publication"] == "confirmed" else "same_account"
+        else:
+            outcome = None
+        replied_id = None if status == "publish_uncertain" else (
+            receipt.get("rpid") or observed.get("comment_id") or (matched or {}).get("comment_id")
+        )
+        source_href = comment_href(resource, comment)
+        return {
+            "thread": {key: thread[key] for key in ("resource", "root_id", "root_author_uid", "resource_author_uid")},
+            "source_href": source_href,
+            "sent_href": comment_href(resource, replied_id) if replied_id else None,
+            "comment_outcome": outcome,
+            "account_reply_text": (observed.get("text") or (matched or {}).get("text")) if outcome == "same_account" else None,
+            "confirmed_reply_text": matched.get("text") if matched and outcome == "previous_reply" else None,
+            "own_resource": thread["resource_author_uid"] == account if thread["resource_author_uid"] else None,
+            "own_thread": thread["root_author_uid"] == account if thread["root_author_uid"] else None,
+        }
+
     comment_reasons = (
         {
             (row["bvid"], row["comment_id"]): row["explanation"]
@@ -428,6 +480,8 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
     # normal operating rounds and manually reviewed preview results.
     for row in base["_intents"]:
         target = _json(row["target"], {})
+        if round_id and row["round_id"] != round_id:
+            continue
         bvid = target.get("bvid")
         comment_kind = "top_level" if row["kind"] == "top_level" else "reply"
         recipient = target.get("recipient_name") or ""
@@ -443,6 +497,13 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
             if row["status"] == "published"
             else row["updated_at"]
         )
+        if not include(at):
+            continue
+        resource = resource_key(target)
+        root = target.get("root") or _json(row.get("receipt"), {}).get("rpid")
+        details = thread_details(resource, root, target.get("parent") or root, row, target)
+        if details:
+            listed_threads.add((resource, str(root), row["round_id"]))
         add(
             row,
             channel="comment",
@@ -458,9 +519,12 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
             recipient_name=recipient,
             round_id=row["round_id"],
             source_text=target.get("source_text") or "",
+            **details,
         )
 
-    if account and "drafts" in tables:
+    if account and "drafts" in tables and not round_id and "account_id" in {
+        column[1] for column in store.db.execute("PRAGMA table_info(drafts)")
+    }:
         for row in store.all(
             "SELECT d.id,d.status,d.text,d.error,d.receipt,d.updated_at,d.answer_check,c.video_id,c.comment_id,c.thread_id,c.parent_comment_id,c.display_name,c.content AS source_text FROM drafts d JOIN comments c ON c.id=d.comment_id WHERE d.account_id=? AND d.character_id=?",
             (account, character),
@@ -471,6 +535,11 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 publication_time(row["receipt"], row["updated_at"])
                 if row["status"] == "published"
                 else row["updated_at"]
+            )
+            if not include(at):
+                continue
+            details = {} if handoff else thread_details(
+                row["video_id"], row["thread_id"], row["comment_id"], row, check
             )
             add(
                 row,
@@ -486,7 +555,28 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 reply_kind="reply",
                 recipient_name="" if handoff else row["display_name"] or "",
                 source_text="" if handoff else row["source_text"],
+                **details,
             )
+
+    if kind in {"all", "comments"}:
+        lower, upper = (cutoff, 253402300800) if round_id else (max(start, cutoff), end)
+        for observed in comment_activity(store, account, character, start=lower, end=upper, round_id=round_id):
+            resource, root, observed_round = (observed[key] for key in ("resource", "root_id", "round_id"))
+            if (resource, root, observed_round) in listed_threads:
+                continue
+            if (resource, root) not in threads:
+                threads[resource, root] = comment_thread(store, resource, root, account_id=account, character_id=character)
+            thread = threads[resource, root]
+            outcomes = [item for item in thread["comments"] if item["publication"] and item["parent_comment_id"]
+                        and (item["created_at"] is None or item["created_at"] <= observed["observed_at"])]
+            outcome = max(outcomes, key=lambda item: item["created_at"] or 0, default=None)
+            target_id = outcome["parent_comment_id"] if outcome else root
+            source = next((item for item in thread["comments"] if item["comment_id"] == target_id), None)
+            row = {"status": "read", "updated_at": observed["observed_at"]}
+            add(row, channel="comment", identity=f"comment/thread/{resource}/{root}/{observed_round}",
+                text="", source_text=(source or {}).get("text"), title="浏览评论楼", href=comment_href(resource, root),
+                round_id=observed_round, bvid=resource if not resource.startswith("dynamic:") else None,
+                **thread_details(resource, root, target_id, row))
 
     if account and "dm_inbox" in tables:
         for row in store.all(
@@ -581,6 +671,8 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                 reason=row.get("reason") or "",
             )
 
+    if round_id:
+        items = [item for item in items if item.get("round_id") == round_id]
     items.sort(key=lambda item: (-item["updated_at"], item["id"]))
     counts = {
         "videos": len(videos),

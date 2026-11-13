@@ -8,10 +8,12 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .operations.browsing.comment_timeline import comment_thread
 from .operations.browsing.thread_context import COMMENT_ID, public_discussion_url
 
 VIDEO = re.compile(r"https://www\.bilibili\.com/video/(BV[0-9A-Za-z]{10})/?")
 MAX_QUOTES = 6
+MAX_CARD_PAGES = 9
 
 
 def _references(source):
@@ -41,7 +43,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
     sources = sorted(sources, key=lambda item: item.get("type") != "public_incident")
     if legacy:
         return _legacy_card(sources)
-    entries, links = {}, {}
+    entries, links, missing = {}, {}, set()
     actor = actor or {}
 
     def add(bvid, identifier, quote, *, author=None, uid=None, created_at=None, parent=None):
@@ -76,15 +78,77 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
             if not url:
                 continue
             links.setdefault(bvid, {"bvid": bvid, "url": url})
-            if original.get("parent_comment_id"):
-                parent = _original(store, bvid, original["parent_comment_id"], None, original.get("thread_id"))
-                add(bvid, parent.get("comment_id"), parent.get("content"), author=parent.get("display_name"),
-                    uid=parent.get("platform_user_id"), created_at=parent.get("created_at"),
-                    parent=parent.get("parent_comment_id"))
+            root = ref.get("thread_id") or published.get("root") or original.get("thread_id")
+            root = root or original.get("parent_comment_id") or (str(comment_id) if original else None)
             parent = captured.get("parent") or {}
             if anchor and str(parent.get("comment_id")) == str(anchor.get("parent_comment_id")):
                 add(bvid, parent.get("comment_id"), parent.get("text"), author=parent.get("author_name"),
                     uid=parent.get("author_uid"), created_at=parent.get("created_at"), parent=parent.get("parent_comment_id"))
+            if store is not None and root:
+                thread = comment_thread(
+                    store, bvid, root, account_id=actor.get("account_uid") or published.get("account_id"),
+                    character_id=actor.get("character_id") or published.get("character_id"),
+                )
+                known = {row["comment_id"]: row for row in thread["comments"]}
+                known_anchor = known.get(str(comment_id))
+                if known_anchor and known_anchor["text"] == quote:
+                    item = entries[url]
+                    item.update(author=known_anchor["author_name"] or item["author"],
+                                uid=known_anchor["author_uid"] or item["uid"],
+                                created_at=known_anchor["created_at"] or item["created_at"],
+                                parent_comment_id=known_anchor["parent_comment_id"] or item["parent_comment_id"])
+                selected = {str(comment_id)}
+
+                def add_ancestor(identifier):
+                    if identifier in selected:
+                        return None
+                    selected.add(identifier)
+                    item = known.get(identifier)
+                    if not item:
+                        legacy = _original(store, bvid, identifier, None, None)
+                        if legacy and str(legacy.get("thread_id") or identifier) in {str(root), str(identifier)}:
+                            item = {"author_name": legacy["display_name"], "author_uid": legacy["platform_user_id"],
+                                    "text": legacy["content"], "created_at": legacy["created_at"],
+                                    "parent_comment_id": legacy["parent_comment_id"]}
+                    if not item:
+                        if public_discussion_url(bvid, identifier) not in entries:
+                            missing.add((bvid, identifier))
+                        return None
+                    add(bvid, identifier, item["text"], author=item["author_name"], uid=item["author_uid"],
+                        created_at=item["created_at"], parent=item["parent_comment_id"])
+                    return item["parent_comment_id"]
+
+                ancestor = entries[url]["parent_comment_id"]
+                while ancestor:
+                    ancestor = add_ancestor(ancestor)
+                if str(root) not in selected:
+                    add_ancestor(str(root))
+                descendants = {str(comment_id)}
+                remaining = [item for item in thread["comments"] if item["text"]]
+                while remaining:
+                    matches = [item for item in remaining if item["parent_comment_id"] in descendants
+                               and item["comment_id"] not in descendants]
+                    if not matches:
+                        break
+                    descendants.update(item["comment_id"] for item in matches)
+                    remaining = [item for item in remaining if item["comment_id"] not in descendants]
+                # Keep confirmed outcomes and the comments needed to understand them.
+                outcomes = [item for item in thread["comments"] if item["publication"] == "confirmed"
+                            and item["comment_id"] in descendants]
+                for outcome in outcomes:
+                    identifier = outcome["comment_id"]
+                    while identifier:
+                        identifier = add_ancestor(identifier)
+                # Keep a short continuation when no confirmed reply followed the anchor.
+                if not outcomes:
+                    identifier = str(comment_id)
+                    for _ in range(3):
+                        child = next((item for item in thread["comments"] if item["parent_comment_id"] == identifier
+                                      and item["comment_id"] not in selected and item["text"]), None)
+                        if not child:
+                            break
+                        identifier = child["comment_id"]
+                        add_ancestor(identifier)
             if source.get("type") == "published_reply":
                 identity = published.get("generation_identity") or {}
                 author = identity.get("account_display_name")
@@ -95,15 +159,13 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
                     created_at=published.get("published_at"), parent=comment_id)
     if not entries:
         return None
-    # Numeric platform IDs preserve ordering when historical sources lack timestamps.
-    selected = list(entries.values())[:MAX_QUOTES]
-    by_video = {video: index for index, video in enumerate(links)}
-    use_time = all(item["created_at"] for item in selected)
-    selected.sort(key=lambda item: (
-        by_video[item["url"].split("/")[-1].split("#")[0]],
-        item["created_at"] if use_time else 0, int(item["comment_id"]),
-    ))
-    return {"comments": selected, "links": list(links.values()), "omitted": len(entries) - len(selected)}
+    all_times = all(item["created_at"] for item in entries.values())
+    selected = sorted(entries.values(), key=lambda item: (
+        item["created_at"] or 0, int(item["comment_id"]),
+    ) if all_times else (int(item["comment_id"]),))[:MAX_QUOTES * MAX_CARD_PAGES]
+    return {"version": 2, "comments": selected, "links": list(links.values()),
+            "omitted": len(entries) - len(selected), "missing": len(missing),
+            "page_count": (len(selected) + MAX_QUOTES - 1) // MAX_QUOTES}
 
 
 def _time(value):
@@ -132,12 +194,12 @@ def _published(store, source):
     identity = source["id"]
     if identity.startswith("reply:browsing:"):
         row = store.one(
-            "SELECT account_id,target,updated_at AS published_at FROM browsing_intents WHERE id=? AND status='published'",
+            "SELECT account_id,character_id,target,updated_at AS published_at FROM browsing_intents WHERE id=? AND status='published'",
             (identity.removeprefix("reply:browsing:"),),
         )
         return row | json.loads(row["target"]) if row else {}
     row = store.one(
-        "SELECT answer_check,updated_at AS published_at FROM drafts WHERE id=? AND status='published'",
+        "SELECT character_id,answer_check,updated_at AS published_at FROM drafts WHERE id=? AND status='published'",
         (identity.removeprefix("reply:"),),
     )
     if not row:
@@ -187,20 +249,30 @@ def _render(quotes):
     return image.getvalue()
 
 
-def render_comment_card(card):
+def render_comment_card(card, page=0):
+    if not 0 <= page < card.get("page_count", 1):
+        raise ValueError("原评论图页码无效")
     if card.get("legacy"):
         quotes = [" ".join(comment["quote"].split()) for comment in card["comments"][:4]]
         return _render(tuple(quote[:177] + "…" if len(quote) > 178 else quote for quote in quotes))
+    comments = card["comments"]
+    if card.get("version") == 2:
+        entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"] is not None)
+                        for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES])
+        return _render_discussion(entries, card["omitted"] if page + 1 == card["page_count"] else 0,
+                                  page + 1, card["page_count"], card["missing"] if page == 0 else 0)
     entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"] is not None)
-                    for item in card["comments"])
+                    for item in comments)
     return _render_discussion(entries, card["omitted"])
 
 
 @lru_cache(maxsize=16)
-def _render_discussion(entries, omitted):
+def _render_discussion(entries, omitted, page=1, pages=1, missing=0):
     canvas = Image.new("RGB", (960, 3600), "#f1f4f8")
     draw = ImageDraw.Draw(canvas)
     draw.text((46, 32), "公开评论", fill="#1d324d", font=_font(36))
+    if pages > 1:
+        draw.text((760, 40), f"{page} / {pages}", fill="#526476", font=_font(28))
     y = 96
     for author, uid, quote, reply in entries:
         left = 78 if reply else 46
@@ -216,6 +288,9 @@ def _render_discussion(entries, omitted):
         y += height + 13
     if omitted:
         draw.text((48, y + 10), f"另有 {omitted} 条，见原楼链接", fill="#526476", font=_font(28))
+        y += 52
+    if missing:
+        draw.text((48, y + 10), f"有 {missing} 条关键原评未取得", fill="#526476", font=_font(28))
         y += 52
     image = BytesIO()
     canvas.crop((0, 0, 960, y + 20)).save(image, format="PNG")

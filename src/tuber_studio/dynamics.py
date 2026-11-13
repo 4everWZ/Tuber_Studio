@@ -39,6 +39,7 @@ from .platforms.bilibili_dynamics import (
     publish_text,
     validate_text,
 )
+from .platforms.bilibili_images import bfs_image_path
 from .publication_errors import PlatformRejected, UnknownPublication
 
 DEFAULT_POLICY = {
@@ -136,11 +137,19 @@ class Dynamics:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN generation_identity TEXT")
         if "comment_card_snapshot" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN comment_card_snapshot TEXT")
+        if "send_payload" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
+            store.execute("ALTER TABLE dynamic_posts ADD COLUMN send_payload TEXT")
         if "generation_continuation_id" not in {
             row[1] for row in store.db.execute("PRAGMA table_info(dynamic_decisions)")
         }:
             store.execute("ALTER TABLE dynamic_decisions ADD COLUMN generation_continuation_id TEXT")
-        interrupted = store.one("SELECT id FROM dynamic_posts WHERE status='publishing' LIMIT 1")
+        interrupted = store.all("SELECT id,send_payload FROM dynamic_posts WHERE status='publishing'")
+        for post in interrupted:
+            saved = json.loads(post["send_payload"] or "null")
+            if saved:
+                FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
+                    "dynamics", post["id"], saved["token"], saved["binding"], saved["payload"], "动态发送结果待核对",
+                )
         store.execute(
             "UPDATE dynamic_posts SET status='publish_uncertain',"
             "error='写入中重启，请人工核对平台',updated_at=? WHERE status='publishing'",
@@ -435,15 +444,16 @@ class Dynamics:
 
     def _post_view(self, row):
         post = self._decode(row)
+        post.pop("send_payload", None)
         snapshot = post.pop("comment_card_snapshot", None)
         post["comment_card"] = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
         return continuation_view(self.runtime, "dynamics", post)
 
-    def comment_card_image(self, post_id):
+    def comment_card_image(self, post_id, page=0):
         card = self._post(post_id)["comment_card"]
         if not card:
             raise ValueError("这条动态没有原评论图")
-        return render_comment_card(card)
+        return render_comment_card(card, page)
 
     def _valid_sources(self, row):
         char = self._character()
@@ -579,7 +589,13 @@ class Dynamics:
             value["text"] += "\n\n" + "\n".join(
                 f"原评论：{url}" for url in dict.fromkeys(item["url"] for item in links)
             )
+            pages = card.get("page_count", 1)
             value["comment_card_sha256"] = hashlib.sha256(render_comment_card(card)).hexdigest()
+            if pages > 1:
+                value["comment_card_page_sha256"] = [
+                    value["comment_card_sha256"],
+                    *(hashlib.sha256(render_comment_card(card, page)).hexdigest() for page in range(1, pages)),
+                ]
         elif row.get("meme_id"):
             if not self.memes:
                 raise ValueError("配图组件未挂载")
@@ -689,7 +705,7 @@ class Dynamics:
             selected = [source for source in row["sources"] if source["id"] in data["source_ids"]]
             self.store.execute(
                 "UPDATE dynamic_posts SET content=?,content_hash=?,reason=?,sources=?,source_ids=?,"
-                "generation_identity=?,updated_at=?,error=NULL WHERE id=?",
+                "generation_identity=?,comment_card_snapshot=?,updated_at=?,error=NULL WHERE id=?",
                 (
                     data["content"],
                     _content_hash(data["content"]),
@@ -697,6 +713,7 @@ class Dynamics:
                     _json(selected),
                     _json(data["source_ids"]),
                     _json(identity),
+                    _json(comment_card(selected, store=self.store, actor=identity)),
                     time.time(),
                     post_id,
                 ),
@@ -815,12 +832,16 @@ class Dynamics:
                 return {"status": "check_failed", "reason": "account_unavailable"}
             if account != row["binding"]["account_id"]:
                 return {"status": "check_failed", "reason": "account_changed"}
+            payload = row["feedback"]["sent_payload"]
+            target = row["binding"]["target"] | {
+                "message_kind": "image" if payload.get("meme_id") or payload.get("comment_card_sha256") else "text"
+            }
+            if payload.get("prepared_images"):
+                target["images"] = payload["prepared_images"]
             return await adapter.reconcile_dynamic_publication(
-                row["binding"]["target"]
-                | {"message_kind": "image" if any(row["feedback"]["sent_payload"].get(key)
-                    for key in ("meme_id", "comment_card_sha256")) else "text"},
+                target,
                 author_uid=account,
-                text=row["feedback"]["sent_payload"]["text"],
+                text=payload["text"],
                 started_at=attempt["started_at"],
                 receipt=attempt["receipt"],
             )
@@ -902,7 +923,9 @@ class Dynamics:
             self._check_used_sources(row)
             image = None
             if card := row["comment_card"]:
-                image = {"mime_type": "image/png", "content": render_comment_card(card)}
+                pages = [{"mime_type": "image/png", "content": render_comment_card(card, page)}
+                         for page in range(card.get("page_count", 1))]
+                image = pages if len(pages) > 1 else pages[0]
             elif row.get("meme_id"):
                 if not self.memes:
                     raise ValueError("图文草稿缺少表情组件，保留待审")
@@ -923,6 +946,24 @@ class Dynamics:
             character = self.store.character(row["character_id"], row["character_version"])
             actual_binding = self._publication_binding(row, account_id, character)
             payload = self._outgoing(row, character)
+            prepared_images = []
+
+            def record_prepared_images(images):
+                prepared_images.extend(
+                    {"path": bfs_image_path(item["url"]), "width": item["width"], "height": item["height"]}
+                    for item in images
+                )
+
+            def attempted_payload():
+                return payload | {"prepared_images": prepared_images} if prepared_images else payload
+
+            def save_attempt(attempt_token):
+                self.store.db.execute(
+                    "UPDATE dynamic_posts SET attempted_at=?,updated_at=?,send_payload=? WHERE id=?",
+                    (time.time(), time.time(), _json({
+                        "token": attempt_token, "binding": actual_binding, "payload": attempted_payload(),
+                    }), post_id),
+                )
             if (
                 binding is not None
                 and binding != actual_binding
@@ -947,6 +988,7 @@ class Dynamics:
                     or not self._valid_sources(fresh)
                     or fresh["content"] != row["content"]
                     or fresh["sources"] != row["sources"]
+                    or fresh["comment_card"] != row["comment_card"]
                     or fresh.get("meme_id") != row.get("meme_id")
                 ):
                     raise PublishCancelled("人物版本或公开来源已变化，取消发送")
@@ -989,13 +1031,10 @@ class Dynamics:
                         binding=actual_binding,
                         content_hash=content_hash(payload),
                         revision_ticket=revision_ticket,
+                        admission_hook=save_attempt,
                     )
                 except ValueError:
                     raise PublishCancelled("账号全渠道额度、角色或紧急停止阻止了本次提交") from None
-                self.store.execute(
-                    "UPDATE dynamic_posts SET attempted_at=?,updated_at=? WHERE id=?",
-                    (time.time(), time.time(), post_id),
-                )
 
             # Account reads may fail or be cancelled before publication begins.
             # Keep the reviewed draft intact until all identity setup succeeds.
@@ -1004,6 +1043,7 @@ class Dynamics:
                 fresh["status"] != row["status"]
                 or fresh["content"] != row["content"]
                 or fresh["sources"] != row["sources"]
+                or fresh["comment_card"] != row["comment_card"]
                 or fresh.get("meme_id") != row.get("meme_id")
             ):
                 raise ValueError("账号核验期间草稿已变化，保留当前审核状态；请重新确认后发布")
@@ -1018,6 +1058,7 @@ class Dynamics:
                         image,
                         before_send=before_send,
                         prepare_authorized=lambda: before_send(reserve=False),
+                        on_prepared=record_prepared_images,
                     )
                 else:
                     receipt = await publish_text(adapter, payload["text"], before_send=before_send)
@@ -1040,7 +1081,7 @@ class Dynamics:
                 if token:
                     self.operations.finish(token, "uncertain")
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
-                        "dynamics", post_id, token, actual_binding, payload, "动态发送结果不确定"
+                        "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入被取消，请人工核对平台")
                 raise
@@ -1048,7 +1089,7 @@ class Dynamics:
                 if token:
                     self.operations.finish(token, "uncertain")
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
-                        "dynamics", post_id, token, actual_binding, payload, "动态发送结果不确定"
+                        "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入结果不确定，请人工核对平台，禁止重试")
                 raise UnknownPublication("写入结果不确定，请人工核对平台，禁止重试", token) from None
@@ -1067,7 +1108,7 @@ class Dynamics:
                 if token:
                     self.operations.finish(token, "uncertain")
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
-                        "dynamics", post_id, token, actual_binding, payload, "动态发送结果不确定"
+                        "dynamics", post_id, token, actual_binding, attempted_payload(), "动态发送结果不确定"
                     )
                 self._status(post_id, "publish_uncertain", "写入或回执保存失败，请人工核对平台")
                 raise UnknownPublication("写入或回执保存失败，请人工核对平台，禁止重试", token) from None
@@ -1079,7 +1120,7 @@ class Dynamics:
                 if token:
                     self.operations.finish(token, "uncertain", receipt=receipt)
                     FeedbackPublication(self.runtime, self.store, self.operations).record_unknown(
-                        "dynamics", post_id, token, actual_binding, payload, "平台成功后本地保存失败"
+                        "dynamics", post_id, token, actual_binding, attempted_payload(), "平台成功后本地保存失败"
                     )
                 # A local persistence failure after receipt is never a definite
                 # remote rejection, even when the local exception is ValueError.

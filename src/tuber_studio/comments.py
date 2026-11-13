@@ -39,6 +39,7 @@ from .platforms.bilibili import BilibiliAdapter, PublishUncertain
 from .platforms.bilibili_login import validate_credentials
 from .providers import public_error
 from .publication_errors import PlatformRejected, UnknownPublication
+from .store import dump
 
 CATEGORIES = {"question", "suggestion", "interaction", "spam", "general"}
 THREAD_WORKERS = 4
@@ -1158,7 +1159,8 @@ class Comments:
                     changed = self.store.execute(
                         "UPDATE drafts SET status='operator_replied',answer_check=json_set(COALESCE(answer_check,'{}'),"
                         "'$.account_reply',json(?)),error=NULL,updated_at=? WHERE id=? AND text=? AND status=?",
-                        (json.dumps(comment_source(matched), ensure_ascii=False), time.time(), draft_id, row["text"], row["status"]),
+                        (dump(comment_source(matched) | {"created_at": matched.get("created_at")}),
+                         time.time(), draft_id, row["text"], row["status"]),
                     )
                     if changed.rowcount != 1:
                         raise ValueError("核验期间草稿已更新")

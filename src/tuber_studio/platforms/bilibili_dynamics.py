@@ -54,12 +54,17 @@ async def publish_text(adapter, text, *, before_send=None):
     return await _create(adapter, params, body, before_send=before_send)
 
 
-async def publish_image(adapter, text, image, *, before_send=None, prepare_authorized=None):
+async def publish_image(adapter, text, image, *, before_send=None, prepare_authorized=None, on_prepared=None):
     text = validate_text(text)
     if not (adapter._sessdata and adapter._csrf):
         raise ValueError("发布动态需要先配置账号登录凭证")
     try:
-        prepared = await upload_image(adapter, image, authorized=prepare_authorized)
+        images = image if isinstance(image, (list, tuple)) else [image]
+        if not 1 <= len(images) <= 9:
+            raise ValueError("动态配图数量须为 1 至 9 张")
+        prepared = []
+        for asset in images:
+            prepared.append(await upload_image(adapter, asset, authorized=prepare_authorized))
         params = await adapter.wbi_params({"csrf": adapter._csrf})
     except PublishCancelled:
         raise
@@ -72,12 +77,15 @@ async def publish_image(adapter, text, image, *, before_send=None, prepare_autho
             "content": {"contents": [{"raw_text": text, "biz_id": "", "type": 1}]},
             "scene": 2,
             "pics": [
-                {"img_src": prepared["url"], "img_width": prepared["width"], "img_height": prepared["height"]}
+                {"img_src": item["url"], "img_width": item["width"], "img_height": item["height"]}
+                for item in prepared
             ],
             "meta": {"app_meta": {"from": "create.dynamic.web", "mobi_app": "web"}},
             "attach_card": None,
         }
     }
+    if on_prepared is not None:
+        on_prepared(prepared)
     return await _create(adapter, params, body, before_send=before_send)
 
 

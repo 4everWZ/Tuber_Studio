@@ -27,6 +27,7 @@ from ...store import dump
 from .inputs import ResponseDecisionInput
 from .models import RESPONSE_INSTRUCTION, ResponseDecision
 from .round_context import read_round
+from .comment_timeline import observe_thread, resource_key
 from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
 
 _COMMENT_KINDS = {"top_level", "reply_public"}
@@ -677,6 +678,11 @@ class BrowsingPublication:
             if row["kind"] not in ("top_level", "video_like", "video_fav"):
                 target = row["target"]
                 verified = await self._verify_reply_source(target, account)
+                with self.browsing.store.db:
+                    observe_thread(
+                        self.browsing.store, row, resource_key(target), verified.get("items"),
+                        via="submission_check", resource_author_uid=verified.get("resource_author_uid"),
+                    )
                 if is_like:
                     if self._liked_target(verified, target):
                         receipt = self._like_observation(target)
@@ -878,7 +884,7 @@ class BrowsingPublication:
             )
 
     def _record_account_reply(self, row, handled):
-        target = row["target"] | {"account_reply": comment_source(handled)}
+        target = row["target"] | {"account_reply": comment_source(handled) | {"created_at": handled.get("created_at")}}
         self.browsing.store.execute(
             "UPDATE browsing_intents SET status='operator_replied',target=?,error=NULL,auto_authorized=0,updated_at=? "
             "WHERE id=? AND status=? AND text=?",

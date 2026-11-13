@@ -90,6 +90,7 @@ function renderCommentConversation(container, card, links, node) {
   }
   container.replaceChildren(conversation);
   if (card.omitted > 0) container.append(node("p", `另有 ${card.omitted} 条原话，可在原楼查看。`, "hint"));
+  if (card.missing > 0) container.append(node("p", `有 ${card.missing} 条关键原评未取得。`, "hint"));
   const sources = node("div", null, "actions");
   for (const [bvid, href] of links) {
     const source = node("a", `打开原评论 · ${bvid}`);
@@ -183,15 +184,21 @@ export function renderDynamicPost(model, {
     const key = `comment-card:${post.id}:${JSON.stringify(card)}`;
     if (model.dynamicMemePreviewKey !== key) {
       model.dynamicMemePreviewKey = key;
-      const image = node("img", null, "dynamic-comment-card");
-      image.src = `/api/dynamics/posts/${encodeURIComponent(post.id)}/comment-card`;
-      image.alt = "动态附图中的评论对话";
       const availability = $("dynamic-meme-availability");
-      availability.textContent = "提交时附上此图与原评论链接。";
-      image.onerror = () => {
-        if (model.dynamicMemePreviewKey === key) availability.textContent = "附图暂无法预览，可展开查看原话与链接。";
-      };
-      $("dynamic-meme-image")?.replaceChildren(image);
+      const pages = card.page_count || 1;
+      availability.textContent = `提交时附上 ${pages} 张评论图与原评论链接。`;
+      const images = [];
+      for (let page = 1; page <= pages; page++) {
+        const image = node("img", null, "dynamic-comment-card");
+        image.src = `/api/dynamics/posts/${encodeURIComponent(post.id)}/comment-card?page=${page}`;
+        image.alt = `评论对话第 ${page} 张，共 ${pages} 张`;
+        image.loading = page === 1 ? "eager" : "lazy";
+        image.onerror = () => {
+          if (model.dynamicMemePreviewKey === key) availability.textContent = "部分附图暂无法预览，可展开查看原话与链接。";
+        };
+        images.push(image);
+      }
+      $("dynamic-meme-image")?.replaceChildren(...images);
       $("dynamic-comment-sources").open = false;
       renderCommentConversation($("dynamic-comment-conversation"), card, commentLinks, node);
     }

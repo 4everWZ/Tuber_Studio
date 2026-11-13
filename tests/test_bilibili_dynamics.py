@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from tuber_studio.platforms.bilibili import BilibiliAdapter, PublishUncertain
-from tuber_studio.platforms.bilibili_dynamics import PublishCancelled, publish_text
+from tuber_studio.platforms.bilibili_dynamics import PublishCancelled, publish_image, publish_text
 
 
 @pytest.fixture
@@ -29,6 +29,12 @@ async def platform():
                     },
                 },
             )
+        if request.url.path.endswith("/upload_bfs"):
+            page = len([item for item in requests if item.url.path.endswith("/upload_bfs")])
+            return httpx.Response(200, json={"code": 0, "data": {
+                "image_url": f"https://i0.hdslb.com/bfs/new_dyn/{page}.png",
+                "image_width": 960, "image_height": 720, "img_size": 0.5,
+            }})
         if isinstance(outcome, Exception):
             raise outcome
         return httpx.Response(200, json=outcome)
@@ -40,6 +46,24 @@ async def platform():
     )
     yield adapter, requests, outcome
     await adapter.close()
+
+
+async def test_image_pages_upload_in_order_before_one_guarded_final_write(platform):
+    adapter, requests, _ = platform
+    checkpoints = []
+    result = await publish_image(
+        adapter, "公开评论故事",
+        [{"mime_type": "image/png", "content": b"page-1"}, {"mime_type": "image/png", "content": b"page-2"}],
+        prepare_authorized=lambda: checkpoints.append("upload") or True,
+        before_send=lambda: checkpoints.append("send"),
+        on_prepared=lambda items: checkpoints.append([item["url"].rsplit("/", 1)[-1] for item in items]),
+    )
+    uploads = [item for item in requests if item.url.path.endswith("/upload_bfs")]
+    final, = [item for item in requests if item.url.path.endswith("/create/dyn")]
+    assert [b"page-1" in uploads[0].content, b"page-2" in uploads[1].content] == [True, True]
+    assert checkpoints == ["upload", "upload", ["1.png", "2.png"], "send"]
+    assert [item["img_src"].rsplit("/", 1)[-1] for item in json.loads(final.content)["dyn_req"]["pics"]] == ["1.png", "2.png"]
+    assert result["dynamic_id"] == "987654321"
 
 
 async def test_signed_exact_payload_single_write_and_receipt(platform):

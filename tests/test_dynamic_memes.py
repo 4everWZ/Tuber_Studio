@@ -116,6 +116,9 @@ async def dynamic_memes(settings, store):
                     },
                 },
             )
+        if request.url.path == "/x/polymer/web-dynamic/v1/feed/space":
+            assert request.method == "GET"
+            return httpx.Response(200, json={"code": 0, "data": {"items": []}})
         assert request.url.path == "/x/dynamic/feed/create/dyn"
         state["final_entered"].set()
         if state["final_wait"]:

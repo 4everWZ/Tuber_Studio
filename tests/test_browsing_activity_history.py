@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tuber_studio.operations.browsing.activity_history import history
+from tuber_studio.operations.browsing.activity_history import activity, history
+from tuber_studio.operations.browsing.comment_timeline import comment_thread, observe_thread
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 
@@ -88,6 +89,53 @@ def reply(service, row, identity, at, *, bvid=BV, kind="reply_public", status="p
             at,
         ),
     )
+
+
+def test_comment_timeline_merges_discovery_and_distinguishes_round_outcomes(service, monkeypatch):
+    previous, current = round_row(service), round_row(service)
+    now = stamp("2026-11-08T10:05:00+08:00")
+    monkeypatch.setattr("tuber_studio.operations.browsing.comment_timeline.time.time", lambda: now)
+    items = [
+        {"comment_id": "40", "thread_id": "40", "platform_user_id": "51", "content": "起因", "created_at": now - 50},
+        {"comment_id": "41", "thread_id": "40", "parent_comment_id": "40", "platform_user_id": "52", "content": "追问", "created_at": now - 40},
+        {"comment_id": "44", "thread_id": "40", "parent_comment_id": "43", "platform_user_id": "100", "content": "同账号回复", "created_at": now - 10},
+    ]
+    with service.store.db:
+        for via in ("comment_visit", "own_comment", "reply"):
+            observe_thread(service.store, current, BV, items, via=via, resource_author_uid="100")
+        observe_thread(service.store, current | {"account_id": "900"}, BV,
+                       items[:1] + [{"comment_id": "99", "thread_id": "40", "platform_user_id": "99", "content": "另一个账号观察"}],
+                       via="reply", resource_author_uid="100")
+    for key, row, parent, status in [
+        ("101", previous, "40", "published"), ("102", current, "41", "published"),
+        ("103", current, "43", "operator_replied"), ("104", current, "42", "publish_uncertain"),
+    ]:
+        reply(service, row, key, now - (20 if row == previous else 5), status=status)
+        target = {"bvid": BV, "parent": parent, "root": "40", "source_text": "真实原话"}
+        if status == "operator_replied":
+            target["account_reply"] = {"comment_id": "44", "author_uid": "100", "text": "同账号回复", "created_at": now - 10}
+        service.store.execute("UPDATE browsing_intents SET target=?,receipt=CASE WHEN status='published' THEN receipt END WHERE id=?",
+                              (json.dumps(target), key))
+    # An observation-only later round can report the earlier verified reply.
+    revisit = round_row(service)
+    with service.store.db:
+        observe_thread(service.store, revisit, BV, items[:2], via="comment_visit", resource_author_uid="100")
+    thread = comment_thread(service.store, BV, "40", account_id="100", character_id="whale")
+    by_id = {entry["comment_id"]: entry for entry in thread["comments"]}
+    assert set(by_id) == {"40", "41", "44", "101", "102"}
+    assert set(by_id["41"]["discovered_via"]) == {"comment_visit", "own_comment", "reply"}
+    assert by_id["44"]["publication"] == "same_account"
+    assert thread["resource_author_uid"] == "100" and thread["root_author_uid"] == "51"
+    data = activity(service, day="2026-11-08", kind="comments", round_id=current["id"])
+    outcomes = {entry["comment_outcome"]: entry for entry in data["items"]}
+    assert set(outcomes) == {"new_reply", "same_account", "pending_verification"}
+    assert outcomes["new_reply"]["source_href"].endswith("#reply41")
+    assert outcomes["new_reply"]["sent_href"].endswith("#reply102")
+    assert outcomes["new_reply"]["own_resource"] and not outcomes["new_reply"]["own_thread"]
+    assert outcomes["same_account"]["account_reply_text"] == "同账号回复"
+    assert outcomes["pending_verification"]["sent_href"] is None
+    old = activity(service, day="2026-11-08", kind="comments", round_id=revisit["id"])["items"][0]
+    assert old["comment_outcome"] == "previous_reply"
 
 
 def test_taipei_days_merge_versions_and_keep_comment_visits_out_of_watch_count(service):

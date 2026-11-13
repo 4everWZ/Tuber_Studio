@@ -183,9 +183,9 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         return dynamics.list_posts(status=status, limit=limit)
 
     @app.get("/api/dynamics/posts/{post_id}/comment-card", dependencies=[Depends(require_admin)])
-    async def dynamic_comment_card(post_id: int):
+    async def dynamic_comment_card(post_id: int, page: int = Query(1, ge=1, le=9)):
         return Response(
-            dynamics.comment_card_image(post_id), media_type="image/png", headers={"Cache-Control": "no-store"}
+            dynamics.comment_card_image(post_id, page - 1), media_type="image/png", headers={"Cache-Control": "no-store"}
         )
 
     @app.get("/api/dynamics/decisions", dependencies=[Depends(require_admin)])

@@ -255,6 +255,31 @@ def dynamic_item():
     }
 
 
+@pytest.mark.parametrize("order", [(1, 2), (2, 1), (1,)])
+async def test_draw_reconciliation_requires_original_order_and_complete_pictures(order):
+    item = dynamic_item()
+    item["type"] = "DYNAMIC_TYPE_DRAW"
+    item["modules"]["module_dynamic"]["major"] = {"draw": {"items": [
+        {"src": f"https://i1.hdslb.com/bfs/new_dyn/{i}.png", "width": 960, "height": 720}
+        for i in order
+    ]}}
+
+    async def handle(request):
+        assert request.method == "GET"
+        if request.url.path.endswith("/nav"):
+            return wbi_nav()
+        assert request.url.path.endswith("/feed/space")
+        return httpx.Response(200, json={"code": 0, "data": {"items": [item]}})
+
+    expected = [{"path": f"/bfs/new_dyn/{i}.png", "width": 960, "height": 720} for i in (1, 2)]
+    async with adapter_for(handle) as adapter:
+        result = await adapter.reconcile_dynamic_publication(
+            {"message_kind": "image", "images": expected}, author_uid="900", text=TEXT, started_at=100,
+        )
+    assert result["status"] == ("visible" if order == (1, 2) else "not_found")
+    assert ("receipt" in result) == (order == (1, 2))
+
+
 def wbi_nav():
     return httpx.Response(
         200,

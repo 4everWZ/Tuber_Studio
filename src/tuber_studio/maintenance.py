@@ -20,6 +20,10 @@ def empty_interrupted_rounds(store):
             continue
         if store.one("SELECT 1 FROM browsing_intents WHERE round_id=?", (row["id"],)):
             continue
+        if "browsing_comment_observations" in tables and store.one(
+            "SELECT 1 FROM browsing_comment_observations WHERE round_id=? LIMIT 1", (row["id"],)
+        ):
+            continue
         if "operation_continuations" in tables and store.one(
             "SELECT 1 FROM operation_continuations WHERE parent_round_id=?", (row["id"],)
         ):

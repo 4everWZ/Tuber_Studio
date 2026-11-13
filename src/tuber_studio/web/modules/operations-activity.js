@@ -4,6 +4,7 @@ import { contactLabel, contactReason, contactStatus } from "./message-labels.js?
 const pageSize = 10;
 const readLabels = { complete: "完整阅读", fully_read: "完整阅读", full: "完整阅读", partial: "部分阅读", sampled_visual: "抽样画面", sampled_audio: "抽样语音", title_only: "仅看标题", comments_only: "只看评论", not_read: "未阅读", none: "未阅读", new: "尚未观看", started: "已开始观看", reading: "阅读中", viewed: "已看过" };
 const statusLabels = { published: "已发送", publish_uncertain: "结果待确认", automatic_skipped: "未发送", failed: "发送失败", pending_review: "待审核", approved: "已保存", copied: "已复制", rejected: "已拒绝", private_handoff: "已转私信", received: "收到来信", queued: "排队生成中" };
+const commentOutcomeLabels = { new_reply: "本轮新回", previous_reply: "此前已回", same_account: "同账号已回 · 归属未确认", pending_verification: "待核对" };
 
 export function mainReplySummary(item) {
   if (item.main_replies > 0) return `今日已发主评 ${item.main_replies} 条`;
@@ -63,7 +64,7 @@ export function initOperationsActivity(api) {
       const read = item.fully_read === true ? "完整阅读" :
         item.fully_read === false && ["complete", "full", "fully_read"].includes(item.read_state) ? "已看过" :
           readLabels[item.read_state] || (item.watched ? "已看过" : "未阅读");
-      const result = (itemKind === "message" ? contactStatus(item) : null) || statusLabels[item.status] || TuberFormatters.humanizeStatus(item.status || "running").label;
+      const result = commentOutcomeLabels[item.comment_outcome] || (itemKind === "message" ? contactStatus(item) : null) || statusLabels[item.status] || TuberFormatters.humanizeStatus(item.status || "running").label;
       heading.append(title, node("span", itemKind === "video" ? read : result, "badge"));
       row.append(heading);
       const preferences = { like: "喜欢", not_interested: "不感兴趣", neutral: "一般" };
@@ -73,7 +74,20 @@ export function initOperationsActivity(api) {
       if (reasons) row.append(node("p", safeMessage(reasons), "daily-video-reason"));
       const replies = node("div", null, "daily-video-replies");
       if (itemKind === "video") replies.append(node("span", `${mainReplySummary(item)}${item.comment_replies > 0 ? ` · 今日跟帖 ${item.comment_replies} 条` : ""}`, "hint"));
-      if (itemKind !== "video") replies.append(node("p", item.text || item.content || (item.status === "private_handoff" ? "在私信工作台查看" : item.status === "pending_review" || item.status === "queued" ? "尚未生成回复正文" : "正文未保留")));
+      if (itemKind !== "video") replies.append(node("p", item.account_reply_text || item.confirmed_reply_text || item.text || item.content || item.source_text || (item.status === "private_handoff" ? "在私信工作台查看" : item.status === "pending_review" || item.status === "queued" ? "尚未生成回复正文" : "正文未保留")));
+      if (itemKind === "comment") {
+        const ownership = [item.own_resource === true ? (item.bvid ? "自有投稿" : "自有动态") : "",
+          item.own_thread === true ? "号主的楼" : item.own_thread === false ? "观众的楼" : ""].filter(Boolean);
+        if (ownership.length) replies.append(node("small", ownership.join(" · "), "hint"));
+        for (const [name, href] of [["原评论", item.source_href], ["已确认回复", item.sent_href]]) {
+          if (!href) continue;
+          const source = node("a", name, "win-link-btn");
+          source.href = href;
+          source.target = "_blank";
+          source.rel = "noreferrer";
+          replies.append(source);
+        }
+      }
       for (const reply of itemKind === "video" && kind === "videos" ? item.replies || [] : []) {
         const outcome = statusLabels[reply.status] || reply.status;
         const target = reply.recipient_name || (reply.kind === "top_level" ? "视频评论区" : "原评论作者");
