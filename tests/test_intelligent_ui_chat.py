@@ -263,6 +263,15 @@ def test_live_proposal_runs_existing_control_once_and_demo_shortcut_remains_avai
         assert client.post(url, json={}).status_code == 200
         assert actions.count("start") == 1
 
+        async def model(messages, schema, *, max_tokens):
+            return {"action": "stop"}
+
+        monkeypatch.setattr(runtime.llm, "generate_json", model)
+        runtime.inference.status["mode"] = "live"
+        runtime.operations_waiting = lambda: True
+        stopped = client.post(path, json={"request_id": str(uuid4()), "message": "停一下"})
+        assert stopped.json()["card"]["data"]["state"] == "stopped"
+
 
 def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(settings, monkeypatch):
     class MultipartPlatform(ControlledPlatform):

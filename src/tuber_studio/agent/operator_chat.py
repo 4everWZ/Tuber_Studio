@@ -100,6 +100,7 @@ _POLICY_FIELDS = {
     "dynamics": {"enabled", "auto_publish"},
 }
 _CONTROL_ACTIONS = {"operation_control", "start_operations", "start_live"}
+_ACTIVE_VIDEO_STATES = {"waiting", "queued", "running"}
 
 
 class OperatorChat:
@@ -156,12 +157,19 @@ class OperatorChat:
                 task = self.browsing.repo.round(data["id"])
                 if task and str(task["account_id"]) == account:
                     tasks[task["id"]] = {"status": task["status"], "bvid": data["selection"]["bvid"]}
+        for row in self.store.all(
+            "SELECT id,status,json_extract(config,'$.operator_selection.bvid') AS bvid FROM browsing_rounds "
+            "WHERE account_id=? AND character_id=? AND character_version=? AND status IN ('waiting','queued','running') "
+            "AND json_extract(config,'$.full_video')=1 ORDER BY updated_at DESC LIMIT 12",
+            (account, char["id"], char["version"]),
+        ):
+            tasks.setdefault(row["id"], {"status": row["status"], "bvid": row["bvid"]})
         return events, tasks, focus
 
     async def _model(self, instruction, content, model, *, max_tokens=512):
         messages = [{"role": "system", "content": instruction}, {"role": "user", "content": dump(content)}]
         try:
-            async with asyncio.timeout(90), self.runtime.offline_generation("video"):
+            async with asyncio.timeout(90), self._generation_slot():
                 provider = self.runtime.llm
                 generate = getattr(provider, "generate_operator_json", provider.generate_json)
                 value = await budgeted_call(provider, lambda: generate(messages, model.model_json_schema(), max_tokens=max_tokens),
@@ -169,6 +177,13 @@ class OperatorChat:
             return model.model_validate(value)
         except (ValueError, TimeoutError, httpx.HTTPError) as error:
             raise HTTPException(503, "模型暂时无法理解这条消息，可重试或使用快捷操作。") from error
+
+    def _generation_slot(self):
+        if self.runtime.inference.status.get("mode") == "live":
+            # The live profile already has a language provider. Use its lock so
+            # an operator can ask to stop even while operation lanes are paused.
+            return self.runtime.generation_lock
+        return self.runtime.offline_generation("video")
 
     async def _intent(self, message, events, tasks, focus):
         return await self._model(
@@ -320,7 +335,7 @@ class OperatorChat:
                 scope = self._scope(char)
                 event = {"event_id": "operator:" + request_id, "text": data.message,
                          "sender_name": "号主", "is_operator": True}
-                async with self.runtime.offline_generation("video"):
+                async with self._generation_slot():
                     try:
                         reply, _ = await self.runtime.generate_reply(scope, char, event, mode="operator_chat")
                     except (ValueError, TimeoutError, httpx.HTTPError) as error:
@@ -509,23 +524,30 @@ class OperatorChat:
         return {"reply_text": text, "card": {"type": "video_browsing", "data": data}}
 
     async def _stop(self, reference, tasks):
-        active = [key for key, task in tasks.items() if task["status"] in {"waiting", "queued", "running"}]
+        active = [key for key, task in tasks.items() if task["status"] in _ACTIVE_VIDEO_STATES]
         if self.browsing.operations.policy()["enabled"] or self.browsing.operations.starting:
             active.append("operations")
         if self.runtime.live.state != "stopped":
             active.append("live")
         if reference is None and len(active) == 1:
             reference = active[0]
-        if reference == "operations":
+        if reference == "operations" and reference in active:
             await self.browsing.stop()
             return {"reply_text": "已请求自主运营收尾。", "binding": self._control_binding(self.runtime.character),
                     "card": {"type": "operation_control", "data": {}}}
-        if reference == "live":
+        if reference == "live" and reference in active:
             await self.runtime.control("stop")
             return {"reply_text": "已请求停止直播会话。", "card": {"type": "live_studio_hud", "data": {}}}
         if reference in tasks:
+            if reference not in active:
+                return self._video_result(reference, "这条视频任务当前未运行。")
             await self.browsing.update_full_video(reference, resume=False)
             return self._video_result(reference, "已请求停止指定视频任务。")
+        if reference == "operations":
+            return {"reply_text": "自主运营当前已停止。", "binding": self._control_binding(self.runtime.character),
+                    "card": {"type": "operation_control", "data": {}}}
+        if reference == "live":
+            return {"reply_text": "直播会话当前已停止。", "card": {"type": "live_studio_hud", "data": {}}}
         return {"reply_text": "要停自主运营、直播还是某个指定视频？" if active else "当前没有在运行的任务。", "card": None}
 
     def _control_binding(self, char):
