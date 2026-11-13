@@ -78,6 +78,7 @@ async def test_acknowledges_only_verified_alert_and_rejects_stale_snapshot(brows
     with pytest.raises(ValueError, match="已变化"):
         acknowledge_issues(browsing, [observation])
     assert {item["id"] for item in browsing.discovery.records()["issues"]} == {"another", "repeat"}
+    assert clear_issues(browsing)["issues"] == []
 
 
 async def test_acknowledgement_counts_restart_with_the_new_version_window(browsing, monkeypatch):
