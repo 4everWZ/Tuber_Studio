@@ -236,6 +236,10 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         app.state.browsing.discovery.remember_account("100")
         recalled, turn = send("那件公开经历")
         assert turn["reply_text"] == "确认后的事实"
+        assert client.patch(f"{path}/public-experiences/{saved['id']}", json={"status": "archived"}).status_code == 200
+        assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条公开经历当前不可引用。"
+        recalled, turn = send("那件公开经历")
+        assert turn["reply_text"] == "确认后的事实"
         assert client.delete(f"{path}/public-experiences/{saved['id']}").status_code == 200
         assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条公开经历当前不可引用。"
         app.state.browsing.discovery.remember_account("200")

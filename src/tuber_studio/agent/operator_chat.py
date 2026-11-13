@@ -210,8 +210,12 @@ class OperatorChat:
 
     def _visible(self, result):
         if memory := result.get("memory"):
-            rows = self._experience_rows(item_id=memory["id"], active_only=True)
-            if not rows or rows[0]["updated_at"] != memory["updated_at"] or not self.runtime.daily_memory._source_evidence(rows[0]):
+            rows = self._experience_rows(item_id=memory["id"])
+            if (
+                not rows or rows[0]["status"] not in {"active", "archived"}
+                or rows[0]["updated_at"] != memory["updated_at"]
+                or not self.runtime.daily_memory._source_evidence(rows[0])
+            ):
                 return {"reply_text": "这条公开经历当前不可引用。", "card": None}
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
@@ -430,7 +434,7 @@ class OperatorChat:
         if kind == "public_experiences":
             return {"reply_text": "这是当前角色的公开经历。", "card": {"type": kind, "data": {}}}
         if kind == "recall_experience":
-            items = self.experiences(active_only=True)["items"]
+            items = [item for item in self.experiences()["items"] if item["status"] in {"active", "archived"}]
             found = [item for item in items if topic and topic in item["anecdote"]]
             if len(found) != 1:
                 return {"reply_text": "请指明要查的公开经历。", "card": {"type": "public_experiences", "data": {}}}
