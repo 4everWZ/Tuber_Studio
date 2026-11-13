@@ -1,5 +1,5 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
-import { operationControlCard } from "./operator-chat-control.js?v=20261113.03";
+import { operationControlCard } from "./operator-chat-control.js?v=20261113.05";
 
 const statuses = {
   queued: "排队中", waiting: "等待资源", running: "运行中", completed: "已完成", paused: "已暂停",
@@ -29,6 +29,59 @@ function link(text, href) {
 
 function videoHref(bvid, suffix = "") {
   return /^BV[0-9A-Za-z]{10}$/.test(bvid) ? `https://www.bilibili.com/video/${bvid}${suffix}` : "";
+}
+
+function platformLink(value) {
+  return typeof value === "string" && /^https:\/\/(?:www\.|t\.)bilibili\.com\//.test(value);
+}
+
+function eventContent(item, heading = "h2") {
+  const section = node("section", null, "operator-chat-memory");
+  const { source, reply } = item;
+  section.append(node(heading, item.title));
+  for (const entry of [source, item.material].filter(Boolean)) {
+    const type = { comment: "原评论", subtitle: "字幕", visual: "画面观察" }[entry.kind] || "来源";
+    const description = [type, entry.author, entry.uid ? `UID ${entry.uid}` : "", entry.start != null ? `${Math.floor(entry.start)} 秒` : ""].filter(Boolean).join(" · ");
+    section.append(platformLink(entry.href) ? link(description, entry.href) : node("p", description, "hint"));
+    section.append(node("blockquote", entry.text, "quoted-text"));
+  }
+  if (reply?.state === "confirmed" && reply.text) {
+    section.append(platformLink(reply.href) ? link("已送达的回复", reply.href) : node("strong", "已送达的回复"));
+    section.append(node("blockquote", reply.text, "quoted-text"));
+  }
+  return section;
+}
+
+function experienceProposal(root, turn, { api, path }) {
+  const { event, fact } = turn.card.data;
+  const form = node("form"), label = node("label", "确认可公开的事实"), input = node("textarea");
+  const note = node("p", null, "hint"), submit = node("button", "确认加入公开经历", "primary");
+  input.value = fact;
+  input.maxLength = 150;
+  input.required = true;
+  submit.type = "submit";
+  note.setAttribute("role", "status");
+  label.append(input);
+  form.append(label, submit, note);
+  root.append(eventContent(event), form);
+  if (turn.card.data.confirmed) {
+    submit.disabled = input.readOnly = true;
+    note.textContent = "已保存公开经历。";
+  }
+  form.onsubmit = async action => {
+    action.preventDefault();
+    if (submit.disabled) return;
+    submit.disabled = input.readOnly = true;
+    note.textContent = "正在保存…";
+    try {
+      await api(`${path}/${turn.request_id}/public-experience`, { method: "POST", body: { fact: input.value.trim() } });
+      note.textContent = "已保存公开经历。";
+    } catch (error) {
+      note.textContent = safeMessage(error.message);
+      submit.disabled = input.readOnly = false;
+    }
+  };
+  return { update() {} };
 }
 
 function dynamicCard(root, initial, api) {
@@ -111,6 +164,10 @@ function coverageDetails(data, container) {
       for (const [caption, value] of [["字幕", range.subtitle], ["音频", range.audio], ["画面", range.visual]]) {
         item.append(node("p", `${caption} · ${materialSummary(value)}`, "hint"));
       }
+      for (const highlight of range.visual?.highlights || []) {
+        const location = videoHref(data.selection?.bvid, `?p=${part.part}&t=${Math.floor(highlight.start)}`);
+        if (location && highlight.text) item.append(link(`${Math.floor(highlight.start)} 秒`, location), ` ${highlight.text}`);
+      }
       ranges.append(item);
     }
     detail.append(ranges);
@@ -129,20 +186,33 @@ function videoCard(root, turn, { api, path }) {
   const actions = node("div", null, "actions");
   const record = link("查看轮次", "#automation-records");
   const cancel = button("取消取材"), resume = button("继续取材");
+  const comments = node("div");
   actions.append(record, cancel, resume);
-  root.append(title, state, selection, report, actions, note);
+  root.append(title, state, selection, report, comments, actions, note);
 
   function update(next) {
     if (busy || signature === JSON.stringify(next)) return;
     signature = JSON.stringify(next);
     data = next;
     title.textContent = data.full_video ? data.coverage?.title || `指定视频取材${data.selection?.bvid ? ` · ${data.selection.bvid}` : ""}` : "只读浏览";
-    state.textContent = data.full_video && data.status === "completed" ? "取材完成" : label(data.status);
+    const phases = { watching: "正在看视频", comments: "正在逛评论区", complete: "已完成" };
+    const viewing = { watched: "看完", subtitles_only: "字幕已读完 · 画面覆盖有缺口",
+      visual_only: "画面已全程扫描 · 无可用字幕", partial: "视频材料覆盖有缺口" };
+    state.textContent = [activeVideo.has(data.status) || data.status === "completed" ? phases[data.phase] || label(data.status) : label(data.status),
+      viewing[data.coverage?.viewing]].filter(Boolean).join(" · ");
     selection.textContent = data.selection?.ranges?.length ? data.selection.ranges.map(range => `P${range.part} · ${range.start}–${range.end} 秒`).join("；") : "";
     selection.hidden = !selection.textContent;
     note.textContent = safeMessage(data.error);
     report.hidden = !data.coverage?.parts?.length;
     if (report.open) coverageDetails(data, coverage);
+    comments.replaceChildren();
+    if (data.comments) {
+      const text = data.comments.at_end ? "已读到平台可见末页" : `已读 ${data.comments.pages_read || 0} 页`;
+      comments.append(node("p", text, "hint"));
+      for (const item of data.comments.links || []) {
+        if (platformLink(item.url)) comments.append(link(item.text || "查看原评论", item.url), node("br"));
+      }
+    }
     record.hidden = !data.id;
     if (data.id) record.href = `#automation/round/${encodeURIComponent(data.id)}`;
     cancel.hidden = !data.full_video || !activeVideo.has(data.status);
@@ -285,7 +355,7 @@ function experienceCard(root, initial, { api, path, privateTurns }) {
     if (!data.length) items.append(node("p", "暂无公开经历。", "hint"));
     for (const item of data) {
       const row = node("section", null, "operator-chat-memory");
-      const source = { confirmed_turn: "号主确认", public_thread: "公开评论", runtime_event: "运行记录" }[item.source?.kind];
+      const source = { confirmed_turn: "号主确认", public_thread: "公开评论", runtime_event: "运行记录", operation_event: "运营记录" }[item.source?.kind];
       const memoryStatus = { active: "可公开使用", archived: "已归档", pending_review: "已撤销公开" }[item.status];
       row.append(node("strong", item.headline), node("p", [source, item.highlight_date, memoryStatus].filter(Boolean).join(" · "), "hint"));
       row.append(node("p", item.anecdote || item.quote));
@@ -294,13 +364,17 @@ function experienceCard(root, initial, { api, path, privateTurns }) {
         if (href) row.append(link(`原评论 · ${entry.bvid}`, href));
         if (entry.quote) row.append(node("blockquote", entry.quote, "quoted-text"));
       }
+      for (const entry of item.source?.items || []) {
+        if (platformLink(entry.href)) row.append(link("原始来源", entry.href));
+      }
       const actions = node("div", null, "actions");
-      for (const [caption, newStatus] of [["归档", "archived"], ["撤销公开", "pending_review"]]) {
+      const states = item.status === "active" ? [["归档", "archived"], ["撤销公开", "pending_review"]] : [["恢复公开", "active"]];
+      for (const [caption, newStatus] of states) {
         const control = button(caption);
         control.onclick = () => mutate(async () => {
-          await api(`${path}/public-experiences/${item.id}`, { method: "PATCH", body: { status: newStatus } });
-          return data.filter(current => current.id !== item.id);
-        }, newStatus === "archived" ? "已归档，可在角色记忆查看。" : "已撤销公开资格，可在角色记忆查看。");
+          const updated = await api(`${path}/public-experiences/${item.id}`, { method: "PATCH", body: { status: newStatus } });
+          return data.map(current => current.id === item.id ? updated : current);
+        }, { archived: "已归档。", pending_review: "已撤销公开资格。", active: "已恢复公开。" }[newStatus]);
         actions.append(control);
       }
       const remove = button("删除");
@@ -325,15 +399,48 @@ export function createOperatorCard(root, turn, context) {
   const { type, data } = turn.card;
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);
   if (type === "video_browsing") return videoCard(root, turn, context);
-  if (type === "operation_control") return operationControlCard(root, data, context);
+  if (type === "operation_control") return operationControlCard(root, data, { ...context, turn });
   if (type === "video_activity") return activityCard(root, data);
   if (type === "public_experiences") return experienceCard(root, data, context);
-  if (type === "live_studio_hud") {
-    const state = node("p", null, "muted");
-    const update = value => { state.textContent = label(value.state) + (value.muted ? " · 静音" : ""); };
+  if (type === "operation_events") {
+    const items = node("ol");
+    for (const event of data.items) {
+      const item = node("li");
+      item.append(eventContent(event, "h3"));
+      items.append(item);
+    }
+    root.append(items);
+  }
+  if (type === "operation_event") root.append(eventContent(data.event));
+  if (type === "experience_proposal") return experienceProposal(root, turn, context);
+  if (["live_studio_hud", "live_confirmation"].includes(type)) {
+    const state = node("p", null, "muted"), note = node("p", null, "hint");
+    const confirm = button("确认开启直播会话");
+    let busy = false, revision = 0;
+    note.setAttribute("role", "status");
+    const update = value => {
+      state.textContent = value.enabled ? label(value.state) + (value.muted ? " · 静音" : "") : "当前设备尚未启用直播功能";
+      confirm.disabled = busy || !value.enabled || value.state === "live";
+    };
     root.append(node("h2", "直播状态"), state, link("打开直播工作台", "#live"));
+    if (type === "live_confirmation") root.append(confirm, note);
+    confirm.onclick = async () => {
+      if (busy) return;
+      revision++;
+      busy = confirm.disabled = true;
+      note.textContent = "正在检查并切换资源…";
+      try {
+        const value = await context.api(`${context.path}/turns/${turn.request_id}/confirm/live`, { method: "POST", body: {} });
+        busy = false;
+        update(value.card.data);
+        note.textContent = "直播会话已开启。";
+      } catch (error) {
+        note.textContent = safeMessage(error.message);
+        busy = confirm.disabled = false;
+      }
+    };
     update(data);
-    return { update, needsRefresh: () => true };
+    return { update, revision: () => revision, needsRefresh: () => !busy };
   }
   return { update() {} };
 }

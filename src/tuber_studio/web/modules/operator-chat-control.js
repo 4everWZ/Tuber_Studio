@@ -24,7 +24,7 @@ const currentMode = (status, field) => {
   return !values[field.enabled] ? "0" : field.automatic && values[field.automatic] ? "2" : "1";
 };
 
-export function operationControlCard(root, initialStatus, { api, reflectAutomation, controls }) {
+export function operationControlCard(root, initialStatus, { api, path, turn, reflectAutomation, controls }) {
   let status = initialStatus;
   const choices = [];
   const state = node("p", null, "hint");
@@ -85,21 +85,17 @@ export function operationControlCard(root, initialStatus, { api, reflectAutomati
     controls.pending = true;
     reflectAutomation(status);
     note.textContent = action === "stop" ? "正在请求收尾…" : "正在确认运营权限…";
-    const written = [];
     let result;
     try {
       if (action === "stop") {
         result = await api("/api/automation/stop", { method: "POST", body: { emergency: false } });
       } else {
-        let fresh = await api("/api/automation");
+        const fresh = await api("/api/automation");
         if (scopeOf(fresh) !== scope) {
           throw new Error("运营账号或角色已变更，请按当前状态重新确认权限。");
         }
-        for (const [group, url, title] of [
-          ["browsing", "/api/automation/settings", "公开互动"],
-          ["messages", "/api/messages/policy", "私信"],
-          ["dynamics", "/api/dynamics/policy", "动态"],
-        ]) {
+        const body = {};
+        for (const group of ["browsing", "messages", "dynamics"]) {
           const changed = choices.filter(field => field.group === group && field.changed);
           if (!changed.length) continue;
           const patch = {};
@@ -107,18 +103,15 @@ export function operationControlCard(root, initialStatus, { api, reflectAutomati
             patch[enabled] = select.value !== "0";
             if (automatic) patch[automatic] = select.value === "2";
           }
-          const body = group === "messages" ? { ...readGroup(fresh, group), ...patch } : patch;
-          const saved = await api(url, { method: "PUT", body });
-          if (group === "browsing") fresh = saved;
-          for (const field of changed) field.changed = false;
-          written.push(title);
+          body[group] = patch;
         }
-        result = action === "start" ? await api("/api/automation/enable", { method: "POST", body: { enabled: true } }) :
-          await api("/api/automation");
+        const response = await api(`${path}/turns/${turn.request_id}/confirm/${action}`, { method: "POST", body });
+        result = response.card.data;
+        for (const field of choices) field.changed = false;
       }
       note.textContent = action === "save" ? "权限已保存。" : result.state === "draining" ? "本批收尾后停止。" : labels[result.state] || "控制状态已更新。";
     } catch (error) {
-      note.textContent = `${written.length ? `已保存${written.join("、")}权限。` : ""}${safeMessage(error.message)}`;
+      note.textContent = safeMessage(error.message);
       try { result = await api("/api/automation"); } catch { /* The next status refresh will reconcile the card. */ }
     } finally {
       controls.pending = false;

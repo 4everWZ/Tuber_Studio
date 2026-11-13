@@ -394,6 +394,10 @@ class LlamaCppProvider:
         """A bounded schema-constrained task, independent of compaction output."""
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling())
 
+    async def generate_operator_json(self, messages, schema, *, max_tokens):
+        return await self._generate_json(messages, schema, max_tokens=max_tokens,
+                                         sampling=self.sampling() | {"temperature": 0}, thinking_limit=96)
+
     async def generate_live_json(self, messages, schema, *, max_tokens):
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling(), live=True)
 
@@ -405,11 +409,13 @@ class LlamaCppProvider:
         }
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=sampling)
 
-    async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False):
+    async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False, thinking_limit=None):
         self._begin_generation_observation()
         json_schema_text(schema, max_tokens)
         await self.ensure_capacity()
         max_tokens, live_parameters = self._live_budget(max_tokens, live)
+        if thinking_limit is not None and self.live_thinking_budget_supported and self.config.get("enable_thinking"):
+            live_parameters = {"thinking_budget_tokens": thinking_limit}
         messages = single_system_messages(provider_identity_messages(self, messages))
         tokens = await self.count_tokens(messages)
         self.last_tokens = tokens

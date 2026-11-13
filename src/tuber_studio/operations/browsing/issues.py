@@ -20,7 +20,12 @@ def issue_history(browsing, issues):
         seen = ack.get("counts", {}).get(identity, 0)
         total = issue.get("occurrences", 1)
         newer = issue.get("updated_at", 0) > ack.get("at", 0)
-        if identity in ack.get("counts", {}) and total > seen:
+        selected = ack.get("selected", {}).get(identity)
+        if selected and total >= selected["count"]:
+            count = total - selected["count"]
+        elif selected:
+            count = total
+        elif identity in ack.get("counts", {}) and total > seen:
             # Several failures can share a clock tick. The counter is stronger
             # evidence of a new occurrence than their wall-clock timestamp.
             count = total - seen
@@ -45,4 +50,23 @@ def clear_issues(browsing):
         key = _identity(issue)
         counts[key] = issue.get("total_occurrences", counts.get(key, 0) + issue.get("occurrences", 1))
     browsing.store.set(_key(browsing), {"at": time.time(), "counts": counts})
+    return browsing.discovery.records()
+
+
+def acknowledge_issues(browsing, observations):
+    """Acknowledge only the occurrences present in the operator's verified snapshot."""
+    key = _key(browsing)
+    history = browsing.discovery.records()["issue_history"]
+    current = {issue["id"]: issue for issue in history}
+    ack = browsing.store.get(key, {})
+    selected = dict(ack.get("selected", {}))
+    for observation in observations:
+        issue = current.get(observation["id"])
+        if not issue or observation["updated_at"] != issue.get("updated_at"):
+            raise ValueError("告警记录已变化，请按新记录核对")
+        count = observation["occurrences"]
+        if count != issue.get("occurrences", 1):
+            raise ValueError("告警发生次数已变化，请按新记录核对")
+        selected[_identity(issue)] = {"count": count}
+    browsing.store.set(key, ack | {"selected": selected})
     return browsing.discovery.records()

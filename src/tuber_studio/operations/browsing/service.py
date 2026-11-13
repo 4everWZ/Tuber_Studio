@@ -372,7 +372,7 @@ class BrowsingService:
             self.store.set("browsing_review_session", previous)
             raise
 
-    async def set_enabled(self, enabled):
+    async def set_enabled(self, enabled, *, guard=None):
         if type(enabled) is not bool:
             raise ValueError("enabled须为布尔值")
         if not enabled:
@@ -395,6 +395,8 @@ class BrowsingService:
                 raise ValueError("自主运营启动已取消")
             if self.blockers:
                 raise ValueError("；".join(self.blockers))
+            if guard is not None:
+                guard()
             self.operations.configure(
                 {"enabled": True}, account_id=self.account, character=self.runtime.character
             )

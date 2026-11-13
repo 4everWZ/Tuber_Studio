@@ -336,7 +336,7 @@ class DailyMemoryService:
             and proof["kind"] in {"runtime_event", "operator_note"}
         ]
 
-    def confirm_operator_experience(self, character, request_id, fact):
+    def confirm_operator_experience(self, character, request_id, fact, *, sources=None):
         source_ref = f"operator-public:{request_id}"
         previous = self.store.one(
             "SELECT id,quote FROM daily_highlights WHERE character_id=? AND character_version=? AND source_ref=?",
@@ -346,9 +346,12 @@ class DailyMemoryService:
             if previous["quote"] != fact:
                 raise ValueError("这段对话已有确认的公开经历")
             return previous["id"]
+        proof = self._source_proof("operator_note", source_ref, fact)
+        if sources:
+            proof["operation_sources"] = sources
         return self.record_highlight(
             character["id"], character["version"], self.business_date(time.time()), "community_meme",
-            "号主确认的公开经历", fact, fact, source_ref=source_ref, operator_confirmed=True,
+            "号主确认的公开经历", fact, fact, source_ref=source_ref, source_evidence=proof,
         )
 
     def business_date(self, now):
@@ -985,8 +988,12 @@ class DailyMemoryService:
         if set(updates) & {"headline", "quote", "anecdote"} or updates.get("status") == "active":
             confirmed = self.store.one("SELECT * FROM daily_highlights WHERE id=?", (highlight_id,))
             if confirmed and confirmed["category"] != "public_incident":
+                proof = self._source_proof("operator_note", confirmed["source_ref"], confirmed["quote"])
+                previous = json.loads(confirmed.get("source_evidence") or "{}") or {}
+                if previous.get("operation_sources"):
+                    proof["operation_sources"] = previous["operation_sources"]
                 self.store.execute("UPDATE daily_highlights SET source_evidence=? WHERE id=?",
-                    (json.dumps(self._source_proof("operator_note", confirmed["source_ref"], confirmed["quote"]), ensure_ascii=False), highlight_id))
+                    (json.dumps(proof, ensure_ascii=False), highlight_id))
         self.store.db.commit()
         row = self.store.one("SELECT * FROM daily_highlights WHERE id = ?", (highlight_id,))
         if not row:

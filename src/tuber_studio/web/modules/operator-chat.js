@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261113.06";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261113.09";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 
 const path = "/api/chat/intelligent";
@@ -176,8 +176,12 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   function mountTurn(turn) {
     const existing = turns.get(turn.request_id);
     if (existing) {
-      if (turn.card) existing.card?.update(turn.card.type === "operation_control" ? getAutomationStatus?.() || turn.card.data : turn.card.data);
-      return null;
+      if (existing.turn.card?.type === turn.card?.type) {
+        existing.turn = turn;
+        existing.section.querySelector(".operator-chat-reply").textContent = turn.reply_text;
+        if (turn.card) existing.card?.update(turn.card.type === "operation_control" ? getAutomationStatus?.() || turn.card.data : turn.card.data);
+        return null;
+      }
     }
     const section = node("article", null, "operator-chat-turn");
     section.dataset.requestId = turn.request_id;
@@ -190,6 +194,10 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       if (turn.card.type === "operation_control" && getAutomationStatus?.()) card.update(getAutomationStatus());
     }
     turns.set(turn.request_id, { turn, section, card });
+    if (existing) {
+      existing.section.replaceWith(section);
+      return null;
+    }
     return section;
   }
 
@@ -222,7 +230,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     try {
       const result = await api(`${path}?limit=${pageSize}`);
       if (!active || request !== recentRequest || currentEpoch !== epoch || pending) return;
-      const nextScope = `${result.character_id || result.character}/${result.character_version ?? ""}`;
+      const nextScope = `${result.character_id || result.character}/${result.character_version ?? ""}/${result.account_id || ""}`;
       if (scope !== null && scope !== nextScope) reset();
       const first = scope === null;
       const follow = first || nearEnd();
@@ -250,7 +258,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     try {
       const result = await api(`${path}?limit=${pageSize}&before=${encodeURIComponent(nextCursor)}`);
       if (currentEpoch !== epoch) return;
-      const resultScope = `${result.character_id || result.character}/${result.character_version ?? ""}`;
+      const resultScope = `${result.character_id || result.character}/${result.character_version ?? ""}/${result.account_id || ""}`;
       if (resultScope !== scope) { await refresh(); return; }
       setHistoryNote("");
       const oldHeight = timeline.scrollHeight;
@@ -272,14 +280,15 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   async function refreshCards() {
     if (!active || cardRefreshPending) return;
     const automation = getAutomationStatus?.();
-    if (scope && automation?.character?.id && scope !== `${automation.character.id}/${automation.character.version ?? ""}`) {
+    if (scope && automation?.character?.id && (scope.split("/").slice(0, 2).join("/") !== `${automation.character.id}/${automation.character.version ?? ""}` ||
+        (automation.account_id && scope.split("/")[2] !== String(automation.account_id)))) {
       await refresh();
       return;
     }
     if (automation) syncAutomationCards(automation);
     const bounds = timeline.getBoundingClientRect();
     const visible = [...turns.values()].filter(entry => {
-      if (!entry.card?.needsRefresh?.()) return false;
+      if (!entry.turn.memory_dependent && !entry.card?.needsRefresh?.()) return false;
       const rect = entry.section.getBoundingClientRect();
       return rect.top < bounds.bottom && rect.bottom > bounds.top;
     }).slice(-4);
@@ -288,9 +297,14 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     cardRefreshPending = true;
     try {
       await Promise.allSettled(visible.map(async entry => {
-        const revision = entry.card.revision?.();
+        const revision = entry.card?.revision?.();
         const result = await api(`${path}/turns/${entry.turn.request_id}`);
-        if (!active || currentEpoch !== epoch || revision !== entry.card.revision?.() || !entry.card.needsRefresh?.() || !result.card) return;
+        if (!active || currentEpoch !== epoch || revision !== entry.card?.revision?.()) return;
+        if (entry.turn.memory_dependent) {
+          mountTurn(result);
+          return;
+        }
+        if (!entry.card?.needsRefresh?.() || !result.card) return;
         const follow = nearEnd();
         entry.card.update(result.card.data);
         if (follow) scrollEnd();

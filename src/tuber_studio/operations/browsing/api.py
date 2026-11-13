@@ -1,8 +1,16 @@
 """Authenticated status, control, and records for video browsing."""
 
 from fastapi import Body, Depends, Query
+from pydantic import Field
 
-from .issues import clear_issues
+from ...models import StrictModel
+from .issues import acknowledge_issues, clear_issues
+
+
+class IssueObservation(StrictModel):
+    id: str = Field(min_length=1, max_length=200)
+    updated_at: float = Field(ge=0, allow_inf_nan=False)
+    occurrences: int = Field(ge=1, strict=True)
 
 
 def register_browsing_api(app, browsing, require_admin):
@@ -25,6 +33,10 @@ def register_browsing_api(app, browsing, require_admin):
     async def clear_errors():
         return clear_issues(browsing)
 
+    @app.post("/api/automation/issues/acknowledge", dependencies=dependencies)
+    async def acknowledge(observations: list[IssueObservation] = Body(min_length=1, max_length=100)):
+        return acknowledge_issues(browsing, [item.model_dump() for item in observations])
+
     @app.get("/api/automation/discovery/history", dependencies=dependencies)
     async def discovery_history(
         day: str | None = None, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=50)
@@ -46,6 +58,7 @@ def register_browsing_api(app, browsing, require_admin):
         kind: str = "all",
         page: int = Query(1, ge=1),
         page_size: int = Query(10, ge=1, le=50),
+        round_id: str | None = Query(None, max_length=128),
     ):
         from .activity_history import activity
 
@@ -56,6 +69,7 @@ def register_browsing_api(app, browsing, require_admin):
             kind=kind,
             page=page,
             page_size=page_size,
+            round_id=round_id,
             visible_since=browsing.store.get("browsing_history_visible_since", 0),
         )
 

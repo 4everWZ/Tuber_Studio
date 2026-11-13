@@ -28,6 +28,7 @@ export function initIssueLog(api, page) {
       const severity = item.severity || (["retry_wait", "recovered"].includes(item.status) ? "warning" : "error");
       return {
         severity, unread: item.unread_occurrences ?? item.occurrences ?? 1,
+        observation: { id: item.id, updated_at: item.updated_at, occurrences: item.total_occurrences ?? item.occurrences ?? 1 },
         text: `${severity === "warning" ? "告警" : "错误"} · ${item.bvid ? item.bvid + " · " : ""}${item.error}${item.occurrences > 1 ? `（记录 ${item.occurrences} 次）` : ""}`,
         time: item.updated_at, href: item.href || (item.round_id ? `#automation/round/${item.round_id}${item.bvid ? "/" + item.id : ""}` : null),
       };
@@ -40,7 +41,7 @@ export function initIssueLog(api, page) {
     const unread = items.filter(item => item.unread > 0).length;
     $("workspace-issues").textContent = unread ? `告警与错误 · ${unread}` : "告警与错误";
     if (page() !== "issues" && (page() !== "automation" || $("operation-activity-issues")?.hidden !== false)) return;
-    const [rootId, filterId] = views[page() === "issues" ? 0 : 1];
+    const [rootId, filterId, , feedbackId] = views[page() === "issues" ? 0 : 1];
     const root = $(rootId);
     const filter = $(filterId)?.value || "all";
     const filtered = items.filter(item => filter === "all" || item.severity === filter);
@@ -49,6 +50,24 @@ export function initIssueLog(api, page) {
       const row = node("article", null, "issue-row");
       row.append(node("p", item.text), node("span", `${item.unread ? `未读 ${item.unread} 次` : "已读"} · ${time(item.time)}`, "hint"));
       if (item.href && item.href !== "#issues") row.append(link("打开相关位置", item.href));
+      if (item.observation && item.unread) {
+        const button = node("button", "标为已读");
+        button.type = "button";
+        button.onclick = async () => {
+          button.disabled = true;
+          ++request;
+          try {
+            const data = await api("/api/automation/issues/acknowledge", { method: "POST", body: [item.observation] });
+            ++request;
+            applyRecords(data);
+            $(feedbackId).textContent = "已标为已读。";
+          } catch (error) {
+            $(feedbackId).textContent = safeMessage(error.message);
+            button.disabled = false;
+          }
+        };
+        row.append(button);
+      }
       root.append(row);
     }
     if (!filtered.length) root.append(node("p", "暂无匹配的告警或错误。", "hint"));

@@ -517,6 +517,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
             comment_kind=comment_kind,
             reply_kind=comment_kind,
             recipient_name=recipient,
+            recipient_uid=str(target["recipient"]) if comment_kind == "reply" and str(target.get("recipient", "")).isdigit() else None,
             round_id=row["round_id"],
             source_text=target.get("source_text") or "",
             **details,

@@ -2,9 +2,9 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261113.06";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261113.09";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
-import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261112.01";
+import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261113.01";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261113.02";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";

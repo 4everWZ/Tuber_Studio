@@ -1,9 +1,10 @@
 import time
 
+import pytest
 from test_browsing import BV
 from test_browsing import browsing as browsing
 
-from tuber_studio.operations.browsing.issues import clear_issues
+from tuber_studio.operations.browsing.issues import acknowledge_issues, clear_issues
 from tuber_studio.store import dump
 
 
@@ -62,6 +63,21 @@ async def test_another_occurrence_in_the_same_clock_tick_remains_unread(browsing
     assert clear_issues(browsing)["issues"] == []
     add_error(browsing, "third", clock)
     assert browsing.discovery.records()["issues"][0]["occurrences"] == 1
+
+
+async def test_acknowledges_only_verified_alert_and_rejects_stale_snapshot(browsing):
+    browsing.discovery.remember_account("100")
+    clock = time.time()
+    add_error(browsing, "first", clock - 2)
+    add_error(browsing, "another", clock - 1)
+    browsing.store.execute("UPDATE browsing_rounds SET error='仍未修复' WHERE id='another'")
+    initial = next(item for item in browsing.discovery.records()["issue_history"] if item["id"] == "first")
+    observation = {key: initial[key] for key in ("id", "updated_at", "occurrences")}
+    assert [item["id"] for item in acknowledge_issues(browsing, [observation])["issues"]] == ["another"]
+    add_error(browsing, "repeat", clock)
+    with pytest.raises(ValueError, match="已变化"):
+        acknowledge_issues(browsing, [observation])
+    assert {item["id"] for item in browsing.discovery.records()["issues"]} == {"another", "repeat"}
 
 
 async def test_acknowledgement_counts_restart_with_the_new_version_window(browsing, monkeypatch):

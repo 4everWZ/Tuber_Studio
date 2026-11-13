@@ -8,30 +8,10 @@ from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
-from tuber_studio.agent.operator_chat import action_for
 from tuber_studio.app import create_app
+from tuber_studio.agent import operator_facts
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
-
-
-@pytest.mark.parametrize(("message", "expected"), [
-    ("不要发个动态：测试", "chat"),
-    ("「去刷视频：鲸鱼」是举例", "chat"),
-    ("你准备开播吗？", "chat"),
-    ("发个动态是什么意思？", "chat"),
-    ("请发个动态：聊聊白饭", "dynamic"),
-    ("写动态：聊聊白饭，保存为草稿", "dynamic"),
-    ("先别写动态：聊聊白饭", "chat"),
-    ("去刷视频看看原神新版本", "browse"),
-    ("准备开播", "live"),
-    ("今天刷了多少视频？", "video_activity"),
-    ("查看公开经历", "public_experiences"),
-    ("启动自主运营", "operation_control"),
-    ("不要启动自主运营", "chat"),
-    ("看完整视频：" + BV, "full_video"),
-])
-def test_intelligent_chat_only_dispatches_direct_commands(message, expected):
-    assert action_for(message)[0] == expected
 
 
 def test_preview_request_survives_completion_and_policy_edits(store):
@@ -61,6 +41,9 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         return await generate(messages, character, event_id, source_text)
 
     async def dynamic_model(messages, schema, *, max_tokens):
+        if schema.get("title") == "ChatIntent":
+            message = json.loads(messages[1]["content"])["message"]
+            return {"action": "live_status" if message == "准备开播" else "chat"}
         source = json.loads(messages[1]["content"])["public_sources"][0]
         packets.append(messages)
         return {
@@ -96,7 +79,7 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         sources = app.state.dynamics._sources()
         assert [source["text"] for source in sources] == ["海底小屋放了一盆草"]
 
-        dynamic = {"request_id": str(uuid4()), "message": "发个动态：聊白饭"}
+        dynamic = {"request_id": str(uuid4()), "message": "发个动态：聊白饭", "intent": {"action": "dynamic", "topic": "聊白饭"}}
         card = client.post(path, json=dynamic).json()["card"]
         post_id = card["data"]["id"]
         assert client.post(path, json=dynamic).json()["card"]["data"]["id"] == post_id
@@ -106,7 +89,7 @@ def test_chat_persists_private_turns_and_resolves_real_task_cards(settings, monk
         assert response.status_code == 400  # this isolated app has no platform credentials
         assert app.state.dynamics._post(post_id)["content"] == "换成这句白饭。"
 
-        browse = {"request_id": str(uuid4()), "message": "去刷视频：原神"}
+        browse = {"request_id": str(uuid4()), "message": "去刷视频：原神", "intent": {"action": "browse", "topic": "原神"}}
         assert client.post(path, json=browse).json()["card"]["data"]["preview"]
         assert client.post(path, json=browse).json()["card"]["data"]["preview"]
         assert writes == [dict(preview=True, video_only=True, request_id=browse["request_id"], video=None, keywords=["原神"])]
@@ -150,7 +133,7 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
             "UPDATE browsing_tasks SET status='viewed_without_comment',material_key='valid',payload=? WHERE id=?",
             ('{"coverage":"all_available_cc","missing_parts":[]}', task_id),
         )
-        query = {"request_id": str(uuid4()), "message": "今天刷了多少视频？"}
+        query = {"request_id": str(uuid4()), "message": "今天刷了多少视频？", "intent": {"action": "video_activity"}}
         card = client.post(path, json=query).json()["card"]
         assert card["type"] == "video_activity"
         data = card["data"]
@@ -161,8 +144,12 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
         assert client.post(path, json=query | {"request_id": str(uuid4())}).json()["card"]["data"]["started"] == 1
 
 
-def test_explicit_public_experience_and_operations_cards_use_current_sources(settings):
+def test_explicit_public_experience_and_operations_cards_use_current_sources(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
+    async def model(messages, schema, *, max_tokens):
+        return {"action": "chat"}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/chat/intelligent"
         turn = {"request_id": str(uuid4()), "message": "这句私下保留"}
@@ -174,13 +161,13 @@ def test_explicit_public_experience_and_operations_cards_use_current_sources(set
         assert item["source"] == {"kind": "confirmed_turn", "request_id": turn["request_id"]}
         memory_url = path + f"/public-experiences/{item['id']}"
         assert client.get(memory_url).json() == item
-        lookup = {"request_id": str(uuid4()), "message": "查看公开经历"}
+        lookup = {"request_id": str(uuid4()), "message": "查看公开经历", "intent": {"action": "public_experiences"}}
         lookup_url = path + "/turns/" + lookup["request_id"]
         assert client.post(path, json=lookup).json()["card"]["data"] == {"items": [item]}
         for status in ("archived", "pending_review", "active"):
             assert client.patch(memory_url, json={"status": status}).json()["status"] == status
             items = client.get(lookup_url).json()["card"]["data"]["items"]
-            assert bool(items) == (status == "active")
+            assert items[0]["status"] == status
             assert bool(app.state.dynamics._sources()) == (status == "active")
         assert client.delete(memory_url).json()["ok"]
         assert client.get(memory_url).status_code == 404
@@ -192,12 +179,84 @@ def test_explicit_public_experience_and_operations_cards_use_current_sources(set
         assert client.delete(path + f"/public-experiences/{foreign}").status_code == 404
         assert client.delete(f"/api/daily-memory/{foreign}").status_code == 404
 
-        command = {"request_id": str(uuid4()), "message": "启动自主运营"}
+        command = {"request_id": str(uuid4()), "message": "启动自主运营", "intent": {"action": "start_operations"}}
         control = client.post(path, json=command).json()["card"]
         assert control["type"] == "operation_control" and control["data"]["policy"]["enabled"] is False
         updated = client.put("/api/automation/settings", json={"reply_enabled": True}).json()
         current = client.get(path + "/turns/" + command["request_id"]).json()["card"]["data"]
         assert current["permissions"] == updated["permissions"] and current["permissions"]["replies"] == "review"
+        assert client.post(path + f"/turns/{command['request_id']}/confirm/start", json={}).status_code == 409
+
+
+def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    events = [
+        {"bvid": BV, "title": name, "source": {"kind": "comment", "text": quote, "author": name, "uid": str(index),
+         "href": f"https://www.bilibili.com/video/{BV}#reply{index}"}, "reply": {"state": "confirmed", "text": "知道了"}}
+        for index, name, quote in [(1, "甲", "第一句"), (2, "乙", "第二句")]
+    ]
+    monkeypatch.setattr(operator_facts, "daily_events", lambda *args: [event.copy() for event in events])
+
+    async def model(messages, schema, *, max_tokens):
+        payload = json.loads(messages[1]["content"])
+        if schema["title"] == "EventSelection":
+            return {"items": [2, 1]}
+        message = payload["message"]
+        action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
+                  "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience"}[message]
+        reference = next((item["reference"] for item in payload["events"] if item["position"] == 2), None)
+        return {"action": action, "reference": reference, "topic": "确认后的事实" if action == "recall_experience" else ""}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        path = "/api/chat/intelligent"
+
+        def send(text):
+            request = str(uuid4())
+            response = client.post(path, json={"request_id": request, "message": text})
+            assert response.status_code == 200, response.text
+            return request, response.json()
+
+        _, activity = send("今天有什么趣事")
+        assert [item["title"] for item in activity["card"]["data"]["items"]] == ["乙", "甲"]
+        events.reverse()
+        assert len(client.get(path).json()["turns"]) == 1
+        assert send("第二件是谁讲的")[1]["reply_text"] == "是甲说的（UID 1）。"
+        assert send("后来回了没")[1]["card"]["data"]["event"]["reply"]["text"] == "知道了"
+        proposal, turn = send("把它记成公开经历")
+        assert turn["card"]["data"]["fact"] == "第一句"
+        saved = client.post(f"{path}/{proposal}/public-experience", json={"fact": "确认后的事实"}).json()
+        assert saved["source"]["items"][0]["text"] == "第一句"
+        recalled, turn = send("那件公开经历")
+        assert turn["reply_text"] == "确认后的事实"
+        assert client.delete(f"{path}/public-experiences/{saved['id']}").status_code == 200
+        assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条公开经历当前不可引用。"
+        app.state.browsing.discovery.remember_account("200")
+        assert client.get(f"{path}/turns/{proposal}").json()["card"] is None
+
+
+def test_live_proposal_runs_existing_control_once_and_demo_shortcut_remains_available(settings, monkeypatch):
+    settings.data["features"]["live_enabled"] = True
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime = app.state.runtime
+    actions = []
+    original = runtime.control
+
+    async def control(action):
+        actions.append(action)
+        return await original(action)
+
+    monkeypatch.setattr(runtime, "control", control)
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        path = "/api/chat/intelligent"
+        request = {"request_id": str(uuid4()), "message": "开始直播"}
+        assert client.post(path, json=request).status_code == 503
+        proposed = client.post(path, json=request | {"intent": {"action": "start_live"}}).json()
+        assert proposed["card"]["data"]["state"] == "stopped" and actions == []
+        url = f"{path}/turns/{request['request_id']}/confirm/live"
+        assert client.post(url, json={}).json()["card"]["data"]["state"] == "live"
+        assert client.post(url, json={}).status_code == 200
+        assert actions.count("start") == 1
 
 
 def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(settings, monkeypatch):
@@ -295,7 +354,8 @@ def test_specified_video_can_resume_when_previously_unavailable_subtitles_appear
     path, identity = "/api/chat/intelligent", str(uuid4())
     turn = f"{path}/turns/{identity}"
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
-        assert client.post(path, json={"request_id": identity, "message": "看完整视频：" + BV}).status_code == 200
+        assert client.post(path, json={"request_id": identity, "message": "看完整视频：" + BV,
+                                      "intent": {"action": "full_video"}}).status_code == 200
 
         def wait_for(status):
             for _ in range(200):
