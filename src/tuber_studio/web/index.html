@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/continuation.css">
   <link rel="stylesheet" href="/static/memes.css?v=20261113.02">
   <link rel="stylesheet" href="/static/workbench.css?v=20261113.02">
-  <link rel="stylesheet" href="/static/chat.css?v=20261113.03">
+  <link rel="stylesheet" href="/static/chat.css?v=20261113.06">
 </head>
 <body class="win-desktop">
   <main id="login" class="login-shell" hidden>
@@ -57,23 +57,23 @@
     <button type="button" id="workspace-backdrop" aria-label="关闭栏目" tabindex="-1"></button>
 
     <div class="main-shell win-main-shell">
-      <header class="topbar win-command-bar">
+      <header class="topbar win-command-bar" data-chat-hide>
         <div class="command-bar-left">
           <button type="button" id="workspace-menu" class="btn-command-toggle" aria-controls="workspace-sidebar" aria-expanded="false">
             <span aria-hidden="true">☰</span> 导航
           </button>
           
 
-          <a href="#characters" id="workspace-character" class="win-badge-pill" title="查看当前角色设定">
+          <a href="#characters" id="workspace-character" class="win-badge-pill" title="查看当前角色设定" data-chat-hide>
             <span class="pill-text">角色待确认</span>
           </a>
 
-          <a href="#settings" class="service-status-capsule win-badge-pill" id="service-status-capsule" title="查看推理端点与健康度">
+          <a href="#settings" class="service-status-capsule win-badge-pill" id="service-status-capsule" title="查看推理端点与健康度" data-chat-hide>
             <span class="status-dot" aria-hidden="true"></span>
             <span class="status-text">推理状态待检查</span>
           </a>
 
-          <div class="mode-workspace win-segmented-bar">
+          <div class="mode-workspace win-segmented-bar" data-chat-hide>
             <div class="mode-buttons" role="group" aria-label="推理模式" aria-describedby="resource-mode-feedback">
               <button type="button" data-inference-mode="text" aria-pressed="false" disabled class="btn-segment">
                 运营模式
@@ -86,7 +86,7 @@
           </div>
         </div>
 
-        <div class="command-bar-right">
+        <div class="command-bar-right" data-chat-hide>
           <a href="#automation" id="discovery-top-state" class="win-quick-status" title="自主运营当前状态">
             <span class="status-indicator"></span> 自主运营 · 读取中
           </a>
@@ -168,7 +168,7 @@
         <!-- page: overview -->
       </main>
 
-      <footer class="win-statusbar">
+      <footer class="win-statusbar" data-chat-hide>
         <div class="statusbar-panel panel-mode">
           <span class="sb-label">模式:</span>
           <span id="sb-status-mode" class="sb-val">运营模式</span>
@@ -198,6 +198,6 @@
   <script src="/static/account.js?v=20261113.01" defer></script>
   <script src="/static/daily-memory.js?v=20261113.03" defer></script>
   <script src="/static/interactive-games.js?v=20261107.12" defer></script>
-  <script type="module" src="/static/app.js?v=20261113.05"></script>
+  <script type="module" src="/static/app.js?v=20261113.06"></script>
 </body>
 </html>

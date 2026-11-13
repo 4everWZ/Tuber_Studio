@@ -1,7 +1,20 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
     <h1 id="operator-chat-title">与大肥鱼对话</h1>
-    <button id="operator-chat-clear" type="button">清空私聊</button>
+    <div id="operator-chat-more" class="operator-chat-popup">
+      <button id="operator-chat-more-toggle" class="operator-chat-icon" type="button" aria-label="更多对话操作" aria-expanded="false" aria-controls="operator-chat-more-panel"><span aria-hidden="true">···</span></button>
+      <div id="operator-chat-more-panel" class="operator-chat-menu operator-chat-menu-end" hidden>
+        <button id="operator-chat-clear" type="button">清空私聊</button>
+      </div>
+    </div>
+    <span id="operator-chat-model-state" class="operator-chat-model-state" role="status">推理状态待确认</span>
+    <details id="operator-chat-model-details" class="operator-chat-model-state operator-chat-model-details" hidden>
+      <summary>连接异常</summary>
+      <div class="operator-chat-menu">
+        <p id="operator-chat-model-error"></p>
+        <a href="#settings">推理端点与模型设置</a>
+      </div>
+    </details>
   </header>
   <div id="operator-chat-timeline" class="operator-chat-timeline">
     <div class="operator-chat-older">
@@ -11,29 +24,34 @@
     <div id="operator-chat-feed" class="operator-chat-feed" role="log" aria-label="私聊消息"></div>
   </div>
   <form id="operator-chat-form" class="operator-chat-compose">
-    <div class="operator-chat-suggestions">
-      <button type="button" data-chat-prompt="发个动态：">写动态</button>
-      <button type="button" data-chat-prompt="去刷视频：">刷视频</button>
-      <button type="button" id="operator-chat-full-video" aria-pressed="false">看完整视频</button>
-      <button type="button" data-chat-prompt="查看公开经历" data-chat-query>公开经历</button>
-      <button type="button" data-chat-prompt="今天刷了多少视频" data-chat-query>今日观看</button>
-      <button type="button" data-chat-prompt="自主运营" data-chat-query>自主运营</button>
-      <button type="button" data-chat-prompt="查看直播状态">直播状态</button>
-    </div>
-    <label id="operator-chat-input-label" for="operator-chat-input">给大肥鱼发消息</label>
-    <textarea id="operator-chat-input" rows="2" maxlength="2000" required></textarea>
     <fieldset id="operator-chat-video-fields" class="operator-chat-video-fields" hidden disabled>
       <legend>指定视频</legend>
       <label>视频 BV 号或链接<input id="operator-chat-video-id" required placeholder="BV… 或视频链接"></label>
       <div id="operator-chat-video-ranges"></div>
       <div class="actions">
         <button id="operator-chat-add-range" type="button">限定分 P 和时段</button>
-        <button id="operator-chat-text-mode" type="button">返回对话输入</button>
       </div>
     </fieldset>
-    <div class="operator-chat-actions">
-      <span id="operator-chat-status" class="operator-chat-status" role="status"></span>
-      <button class="primary" id="operator-chat-send" type="submit">发送</button>
+    <span id="operator-chat-status" class="operator-chat-status" role="status"></span>
+    <div class="operator-chat-pill">
+      <div id="operator-chat-shortcuts" class="operator-chat-popup">
+        <button id="operator-chat-shortcuts-toggle" class="operator-chat-icon" type="button" aria-label="对话快捷操作" aria-expanded="false" aria-controls="operator-chat-shortcuts-panel"><span aria-hidden="true">+</span></button>
+        <div id="operator-chat-shortcuts-panel" class="operator-chat-menu operator-chat-menu-up" hidden>
+          <button type="button" data-chat-action="dynamic">写动态</button>
+          <button type="button" data-chat-action="browse">刷视频</button>
+          <button type="button" data-chat-action="full_video">看完整视频</button>
+          <button type="button" data-chat-action="public_experiences">公开经历</button>
+          <button type="button" data-chat-action="video_activity">今日观看</button>
+          <button type="button" data-chat-action="operation_control">自主运营</button>
+          <button type="button" data-chat-action="live_status">直播状态</button>
+          <button type="button" data-chat-action="clock">当前时间</button>
+          <button type="button" data-chat-action="activity">运营动态</button>
+        </div>
+      </div>
+      <button id="operator-chat-clear-action" class="operator-chat-selected-action" type="button" hidden></button>
+      <label id="operator-chat-input-label" class="operator-chat-sr-only" for="operator-chat-input">给大肥鱼发消息</label>
+      <textarea id="operator-chat-input" rows="1" maxlength="2000" placeholder="给大肥鱼发消息"></textarea>
+      <button class="primary operator-chat-icon operator-chat-send" id="operator-chat-send" type="submit" aria-label="发送"><span aria-hidden="true">↑</span></button>
     </div>
   </form>
 </section>
