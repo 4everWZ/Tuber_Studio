@@ -563,7 +563,7 @@ test("the dynamic comment attachment shows ordered participants and one exact li
   const post = { id: 1, status: "pending_review", content: "动态正文", sources: [{ text: "原素材", source_url: video }],
     comment_card: { comments: [{ author: "观众甲", uid: "42", quote: "前因", url: `${video}#reply1` },
       { author: "鱼鱼", quote: "后续", url: `${video}#reply2` }],
-      links: [{ bvid: "BV1d8pU6xEZX", url: `${video}#reply2` }], omitted: 1 },
+      links: [{ bvid: "BV1d8pU6xEZX", url: `${video}#reply2` }], omitted: 1, page_count: 2 },
   };
   renderDynamicPost({ dynamicPosts: [post], dynamicPostId: 1, dynamicMemeCache: new Map() }, {
     ...sourceDependencies(), display: String, publicSettings: value => value,
@@ -576,9 +576,9 @@ test("the dynamic comment attachment shows ordered participants and one exact li
   assert.equal(links.children.length, 1);
   assert.equal(links.children[0].href, `${video}#reply2`);
   assert.equal(byId("dynamic-post-sources").children[0].children.some(child => child.tagName === "A"), false);
-  const image = byId("dynamic-meme-image").children[0];
-  assert.equal(image.src, "/api/dynamics/posts/1/comment-card");
-  image.onerror();
+  const images = byId("dynamic-meme-image").children;
+  assert.deepEqual(images.map(image => image.src), ["/api/dynamics/posts/1/comment-card?page=1", "/api/dynamics/posts/1/comment-card?page=2"]);
+  images[1].onerror();
   assert.match(byId("dynamic-meme-availability").textContent, /暂无法预览/);
 });
 
