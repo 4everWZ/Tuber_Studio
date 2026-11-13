@@ -24,7 +24,8 @@ class Body(httpx.AsyncByteStream):
         yield self.data
 
 
-async def test_numbered_variable_rate_track_matches_reference_frame(tmp_path):
+@pytest.mark.parametrize("full_range", [False, True], ids=["limited-range", "full-range"])
+async def test_numbered_variable_rate_track_matches_reference_frame(tmp_path, full_range):
     decoder = FfmpegTiles()
     if not decoder.available:
         pytest.skip("FFmpeg and FFprobe are required")
@@ -35,6 +36,7 @@ async def test_numbered_variable_rate_track_matches_reference_frame(tmp_path):
     command = [decoder.ffmpeg, "-v", "error", "-f", "rawvideo", "-pixel_format", "gray", "-video_size", "96x64",
                "-framerate", "10", "-i", "pipe:0", "-vf", "setpts=PTS+floor(N/3)*0.07/TB", "-fps_mode", "vfr",
                "-c:v", "libx264", "-g", "10", "-keyint_min", "10", "-sc_threshold", "0", "-bf", "2",
+               "-bsf:v", f"h264_metadata=video_full_range_flag={int(full_range)}",
                "-movflags", "empty_moov+default_base_moof+frag_keyframe+global_sidx", str(path)]
     subprocess.run(command, input=raw, check=True, capture_output=True)
     media = path.read_bytes()
@@ -52,21 +54,61 @@ async def test_numbered_variable_rate_track_matches_reference_frame(tmp_path):
     # Decode the complete track sequentially through the same JPEG output format.
     # H.264/JPEG range conversion can change brightness; raw input bytes are not
     # a decoded-frame oracle across FFmpeg versions.
-    reference_jpegs = subprocess.check_output([
-        decoder.ffmpeg, "-v", "error", "-threads", "1", "-filter_threads", "1",
-        "-i", str(path), "-map", "0:v:0", "-an", "-sn", "-dn",
-        "-vf", "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease",
-        "-fps_mode", "passthrough", "-c:v", "mjpeg", "-q:v", "3", "-threads", "1",
-        "-f", "image2pipe", "pipe:1",
-    ])
-    reference_pixels = subprocess.check_output([
-        decoder.ffmpeg, "-v", "error", "-f", "mjpeg", "-i", "pipe:0",
-        "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1",
-    ], input=reference_jpegs)
+    reference_jpegs = subprocess.check_output(
+        [
+            decoder.ffmpeg,
+            "-v",
+            "error",
+            "-threads",
+            "1",
+            "-filter_threads",
+            "1",
+            "-i",
+            str(path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-sn",
+            "-dn",
+            "-vf",
+            "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease",
+            "-fps_mode",
+            "passthrough",
+            "-c:v",
+            "mjpeg",
+            "-q:v",
+            "3",
+            "-threads",
+            "1",
+            "-f",
+            "image2pipe",
+            "pipe:1",
+        ]
+    )
+    reference_pixels = subprocess.check_output(
+        [
+            decoder.ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "mjpeg",
+            "-i",
+            "pipe:0",
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray",
+            "pipe:1",
+        ],
+        input=reference_jpegs,
+    )
     frame_size = 96 * 64
     assert len(reference_pixels) == len(times) * frame_size
-    references = [reference_pixels[start:start + frame_size]
-                  for start in range(0, len(reference_pixels), frame_size)]
+    references = [
+        reference_pixels[start : start + frame_size] for start in range(0, len(reference_pixels), frame_size)
+    ]
     reads = []
 
     def serve(request):
