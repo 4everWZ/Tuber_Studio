@@ -21,7 +21,7 @@ async def test_review_runs_same_decisions_and_keeps_drafts_without_sending(brows
     assert not browsing.store.all("SELECT * FROM account_writes")
 
 
-async def test_stop_drains_admitted_batch_and_keeps_review_fence_until_completion(browsing, monkeypatch):
+async def test_stop_checkpoints_started_read_and_keeps_review_fence(browsing, monkeypatch):
     entered, release = asyncio.Event(), asyncio.Event()
     original = browsing.adapter.subtitles
 
@@ -45,8 +45,8 @@ async def test_stop_drains_admitted_batch_and_keeps_review_fence_until_completio
         await browsing.run(automatic=True, interaction_only=True)
     release.set()
     await asyncio.wait_for(drain, 3)
-    assert browsing.repo.round(result["id"])["status"] == "completed"
-    assert browsing.intents()[0]["status"] == "pending_review" and not browsing.adapter.sent
+    assert browsing.repo.round(result["id"])["status"] == "paused"
+    assert not browsing.intents() and not browsing.adapter.sent
     assert browsing.status()["state"] == "off"
     assert browsing.status()["review_session"]["state"] == "stopped"
 
@@ -75,23 +75,25 @@ async def test_emergency_can_interrupt_drain_and_revokes_writes_before_cancel(br
         await browsing.set_enabled(True)
 
 
-async def test_inflight_submission_finishes_during_ordinary_stop(browsing):
+async def test_inflight_submission_finishes_during_ordinary_stop(browsing, monkeypatch):
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def before_submit():
+    async def publish(target, text, *, before_send):
+        before_send()
         entered.set()
         await release.wait()
+        browsing.adapter.sent.append((target, text))
+        return {"code": 0, "rpid": "900"}
 
-    browsing.adapter.before_submit = before_submit
+    monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
     await browsing.configure({"discovery_enabled": True, "top_level_auto_publish": True})
     await browsing.set_enabled(True)
-    round_ = await browsing.run(automatic=True, video_only=True)
+    await browsing.run(automatic=True, video_only=True)
     await asyncio.wait_for(entered.wait(), 3)
     assert (await browsing.stop())["state"] == "draining"
     drain = browsing.drain_task
     release.set()
     await asyncio.wait_for(drain, 3)
-    assert browsing.repo.round(round_["id"])["status"] == "completed"
     assert browsing.intents()[0]["status"] == "published" and len(browsing.adapter.sent) == 1
     assert browsing.status()["state"] == "off"
 

@@ -91,7 +91,7 @@ async def test_video_comment_and_notification_share_the_same_discussion_turn(bro
     assert not browsing.runtime._conversation_turns
 
 
-async def test_waiting_video_comment_refreshes_its_discussion_without_scrolling_and_uses_reply_share(
+async def test_waiting_video_comment_refreshes_its_discussion_without_scrolling_and_uses_background_priority(
     browsing, monkeypatch
 ):
     await browsing.preflight()
@@ -115,7 +115,7 @@ async def test_waiting_video_comment_refreshes_its_discussion_without_scrolling_
         }
 
     async def response(row, material, context, *args):
-        assert operation_lane.get() == "reply"
+        assert operation_lane.get() == "background"
         assert context["source"]["text"] == "刚更新的评论"
         assert context["timeline"][0]["text"] == "刚更新的评论"
         return ResponseDecision(action="skip", reason="no_interest")

@@ -1,5 +1,6 @@
 """Verified invitations use the private worker; ordinary discussion stays public."""
 
+import asyncio
 import copy
 
 import pytest
@@ -235,6 +236,14 @@ async def test_verified_response_bypasses_skip_model_and_hands_off_once(browsing
     assert reply.contact_trigger == "invitation" and "盐水实验" in reply.contact_purpose
     intent = await handoff_comment(browsing, row, reply, target, context, None, [])
     draft, = browsing.store.all("SELECT * FROM dm_drafts")
+    assert draft["status"] == "queued" and draft["text"] is None
+    browsing.repo.finish_round(row["id"], "completed")
+    await browsing.messages.open()
+    await browsing.messages.resume_pending()
+    async with asyncio.timeout(3):
+        while draft["status"] != ("published" if automatic else "pending_review"):
+            await asyncio.sleep(0.005)
+            draft = browsing.store.one("SELECT * FROM dm_drafts WHERE id=?", (draft["id"],))
     assert draft["account_id"] == "100" and draft["platform_user_id"] == "300"
     assert draft["text"] and not draft["proposed_text"]
     assert draft["status"] == ("published" if automatic else "pending_review"), draft
@@ -267,9 +276,7 @@ async def test_comment_only_metadata_owner_is_reused_without_reading_video_mater
 
     monkeypatch.setattr(browsing.decisions, "_response", response)
     main = await finished(browsing, automatic=True, video_only=True)
-    assert main["status"] == "completed" and captured == []
-    result = await finished(browsing, automatic=True, interaction_only=True)
-    assert result["status"] == "completed" and captured == ["200"]
+    assert main["status"] == "completed" and captured == ["200"]
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
 
 
@@ -291,8 +298,7 @@ async def test_schema_ignoring_fake_handoff_is_rejected_before_creating_private_
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", generic)
     main = await finished(browsing, automatic=True, video_only=True)
-    assert main["status"] == "completed" and schemas == []
-    await finished(browsing, automatic=True, interaction_only=True)
+    assert main["status"] == "completed"
     assert schemas and all("handoff_private" not in actions(schema) for schema in schemas)
     assert not browsing.store.all("SELECT * FROM dm_drafts")
     assert not browsing.store.one("SELECT id FROM browsing_intents WHERE kind='private_handoff'")

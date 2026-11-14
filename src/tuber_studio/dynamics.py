@@ -559,6 +559,8 @@ class Dynamics:
             self.memes.release(owner, keep_asset_id=meme_id)
             if status == "rejected":
                 self.memes.release(owner)
+        if browsing := getattr(self.runtime, "browsing", None):
+            browsing.sends.withdraw("dynamics", post_id)
         return self._post(post_id)
 
     def _status(self, post_id, status, error=None, receipt=None):
@@ -1099,6 +1101,8 @@ class Dynamics:
                             epoch=authorization_epoch,
                         )
                         return True
+                    if automatic and (browsing := getattr(self.runtime, "browsing", None)):
+                        browsing.sends.assert_ready("dynamics", post_id)
                     token = self.operations.reserve(
                         account_id,
                         character,
@@ -1763,7 +1767,10 @@ class Dynamics:
             ):
                 self._automatic_post_id = decision["post_id"]
                 try:
-                    await self.publish(decision["post_id"], automatic=True)
+                    if browsing := getattr(self.runtime, "browsing", None):
+                        browsing.sends.enqueue("dynamics", decision["post_id"])
+                    else:
+                        await self.publish(decision["post_id"], automatic=True)
                 except ValueError:
                     pass  # Durable post status/schedule is the actionable outcome.
                 finally:
@@ -1800,7 +1807,11 @@ class Dynamics:
                 try:
                     async with self.operations.automatic_work() as admitted:
                         if admitted:
-                            await self.evaluate()
+                            browsing = getattr(self.runtime, "browsing", None)
+                            if browsing and not policy["auto_publish"] and not browsing.review_capacity("dynamics"):
+                                self._schedule(policy["evaluate_interval_seconds"], "动态审核积压")
+                            else:
+                                await self.evaluate()
                 except asyncio.CancelledError:
                     raise
                 except Exception:

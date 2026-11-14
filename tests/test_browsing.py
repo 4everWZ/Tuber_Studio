@@ -306,6 +306,14 @@ async def finished(service, **args):
     return service.repo.round(result["id"])
 
 
+async def wait_for_sends(service):
+    async with asyncio.timeout(2):
+        while service.sends.active or service.store.one(
+            "SELECT 1 FROM operation_send_queue WHERE wake_at<=? LIMIT 1", (time.time(),)
+        ):
+            await asyncio.sleep(0.005)
+
+
 async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     await browsing.configure({"max_model_calls": 1, "decision_max_tokens": 512})
@@ -314,7 +322,8 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
     first = await finished(browsing, automatic=True, video_only=True)
     assert not browsing.repo.video_retry(first, BV)
     assert {task["status"] for task in browsing.tasks(round_id=first["id"])} == {"selected"}
-    assert any(task.get("phase") == "comment_queue" for task in browsing.tasks(round_id=first["id"]))
+    assert browsing.store.one("SELECT bvid FROM browsing_batch_comment_pages")["bvid"] == BV
+    await wait_for_sends(browsing)
     assert first["config"]["max_model_calls"] == 0
     assert first["budget"]["model_calls"] == 2
     assert [name for name, _ in browsing.runtime.llm.calls] == [
@@ -324,7 +333,7 @@ async def test_discovery_batch_has_no_hidden_shared_request_allowance(browsing):
     assert len(browsing.adapter.sent) == 1
     replies = await finished(browsing, automatic=True, interaction_only=True)
     assert replies["status"] == "completed"
-    assert {task["status"] for task in browsing.tasks(round_id=replies["id"])} == {"comments_checked"}
+    assert not browsing.tasks(round_id=replies["id"])
 
 
 async def test_video_preview_leaves_authorized_inbox_to_its_own_round(browsing, monkeypatch):
@@ -421,7 +430,8 @@ async def test_interaction_round_replies_to_own_upload_while_discovery_reads(bro
         row = await finished(browsing, automatic=True, interaction_only=True)
         assert row["status"] == "completed" and row["id"] != reading, row
         assert browsing.repo.round(reading)["status"] == "running"
-        assert [target["parent"] for target, _ in browsing.adapter.sent] == ["801", "802"], (
+        await wait_for_sends(browsing)
+        assert [target["parent"] for target, _ in browsing.adapter.sent] == ["802", "801"], (
             browsing.store.all("SELECT id,status,error FROM browsing_events")
         )
         await browsing.stop(emergency=True)
@@ -621,6 +631,15 @@ async def test_discovery_defers_failed_attempt_then_continues_other_videos(brows
             }
         ),
     )
+    finish_attempt = browsing.repo.finish_video_attempt
+
+    def finish_without_wall_clock_wait(row, candidate, task_id, failures):
+        finish_attempt(row, candidate, task_id, failures)
+        if 0 < failures < 3:
+            for table, key in (("browsing_tasks", "id"), ("browsing_batch_items", "task_id")):
+                browsing.store.execute(f"UPDATE {table} SET payload=json_set(payload,'$.next_at',0) WHERE {key}=?", (task_id,))
+
+    monkeypatch.setattr(browsing.repo, "finish_video_attempt", finish_without_wall_clock_wait)
     events = []
     prepare = browsing._prepare_evidence
     publish = browsing.publish
@@ -737,20 +756,14 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
 
     browsing.comments.credentials = {"sessdata": "test", "csrf": "test"}
     texts = []
-    published, allow_bookkeeping = asyncio.Event(), asyncio.Event()
-    evaluate = browsing.decisions._evaluate_task
-
-    async def evaluate_with_pause(result, row, metrics):
-        await evaluate(result, row, metrics)
-        if any(item["status"] == "published" for item in browsing.intents()):
-            published.set()
-            await allow_bookkeeping.wait()
+    published = asyncio.Event()
 
     async def publish(target, text, *, before_send):
         before_send()
         texts.append(text)
         if len(texts) == 1:
             raise PlatformRejected(12051, "请修改正文")
+        published.set()
         return {"code": 0, "rpid": "901"}
 
     async def decide(self, row):
@@ -761,14 +774,13 @@ async def test_discovery_agent_revises_definite_rejection_and_resubmits(browsing
         return "原来盐水的密度会影响鸡蛋浮沉，鱼鱼记住啦。"
 
     monkeypatch.setattr(browsing.adapter, "publish_top_level", publish)
-    monkeypatch.setattr(browsing.decisions, "_evaluate_task", evaluate_with_pause)
     monkeypatch.setattr(FeedbackModel, "decide", decide)
     monkeypatch.setattr(FeedbackModel, "revise", revise)
     await browsing.open()
     await start_automation(browsing)
     async with asyncio.timeout(5):
         await published.wait()
-        allow_bookkeeping.set()
+        await wait_for_sends(browsing)
         await browsing.set_enabled(False)
     assert len(texts) == 2 and texts[0] != texts[1]
     records = browsing.discovery.records()
@@ -1441,6 +1453,7 @@ async def test_revisited_video_replies_to_new_comments_without_another_main_repl
     await browsing._current_account()
     await finished(browsing, automatic=True, video_only=True)
     await finished(browsing, automatic=True, interaction_only=True)
+    await wait_for_sends(browsing)
     browsing.store.save_character(browsing.runtime.character)
     for value in browsing.store.all("SELECT path FROM browsing_materials"):
         from pathlib import Path
@@ -1453,7 +1466,12 @@ async def test_revisited_video_replies_to_new_comments_without_another_main_repl
     )
     await finished(browsing, automatic=True, video_only=True)
     await finished(browsing, automatic=True, interaction_only=True)
-    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "501", "502"]
+    await wait_for_sends(browsing)
+    assert [target["parent"] for target, _ in browsing.adapter.sent] == ["0", "501", "502"], (
+        [(item["kind"], item["status"], item["error"]) for item in browsing.intents()],
+        browsing.operations.last_send_error,
+        browsing.store.all("SELECT status,error FROM browsing_events"),
+    )
     assert not [name for name, _ in browsing.runtime.llm.calls if name == "ContentDecision"]
     assert len([name for name, _ in browsing.runtime.llm.calls if name == "ResponseDecision"]) == 3
     assert len([item for item in browsing.intents() if item["kind"] == "top_level"]) == 1

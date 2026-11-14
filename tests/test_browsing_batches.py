@@ -119,10 +119,6 @@ async def test_normal_operations_uses_video_and_comment_queues_together(browsing
     assert row["status"] == "completed"
     assert len(browsing.store.all("SELECT * FROM browsing_watch_starts")) == 2
     assert len([intent for intent in browsing.intents() if intent["kind"] == "top_level"]) == 2
-    assert not [intent for intent in browsing.intents() if intent["kind"] == "reply_public"]
-    reply_row = await finished(browsing, automatic=True, interaction_only=True)
-    assert reply_row["status"] == "completed"
-    await finished(browsing, automatic=True, interaction_only=True)
     assert len([intent for intent in browsing.intents() if intent["kind"] == "reply_public"]) == 2
     assert not browsing.adapter.sent
 
@@ -277,7 +273,7 @@ async def test_comment_visit_does_not_hold_the_only_new_video_window(browsing, m
     try:
         await asyncio.wait_for(entered_video.wait(), 1)
         assert not reply.done()
-        assert lanes == [("comment_visit", "reply"), ("new_video", "video")]
+        assert lanes == [("comment_visit", "background"), ("new_video", "background")]
     finally:
         release_reply.set()
         await asyncio.gather(reply, video)

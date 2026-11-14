@@ -2,11 +2,14 @@
 
 import asyncio
 import json
+import math
 import re
 import time
 from uuid import uuid4
 
 from ...direct_messages import MessagePolicy
+from ...operation_sends import OperationSends
+from ...operation_turns import operation_checkpoint, operation_lane
 from ...providers import public_error
 from ...store import dump
 from . import batches as batches_tasks
@@ -43,10 +46,13 @@ class BrowsingService:
         self.notifications = NotificationInbox(store, self._read, self.adapter)
         self.active = {}
         self.comment_active = {}
+        self.event_active = set()
+        self.event_changed = asyncio.Event()
         self.comment_windows = {}
-        self.loop = self.poller = None
+        self.loop = self.poller = self.interaction_worker = None
         self.changed = asyncio.Event()
         self.interactions_changed = asyncio.Event()
+        self.notification_schedule = asyncio.Event()
         self.closed = False
         self.started_at = time.time()
         self.heartbeats = set()
@@ -55,10 +61,11 @@ class BrowsingService:
         self.account = None
         self.last_error = None
         self.ready_signature = None
-        self.sync_lock = asyncio.Lock()
         self.discovery = BackgroundDiscovery(self)
         self.decisions = BrowsingDecisions(self)
         self.publication = BrowsingPublication(self)
+        self.sends = OperationSends(store, self.operations, self.operation_scope, self._send_automatic)
+        self.operations.on_reserved = self.sends.attempt_started
         self.drain_task = None
         self.abort_task = None
         self.control_generation = 0
@@ -194,11 +201,16 @@ class BrowsingService:
             "vision": self.evidence.visual.capabilities(),
             "active_round": rounds[0] if rounds else None,
             "active_rounds": rounds,
+            "backlog": self.backlog_status(persist=False),
+            "send_error": self.operations.last_send_error,
+            "waiting_round": self.waiting_round(),
             "discovery": self.discovery.status(),
             "metrics": {
                 "cache_hits": self.evidence.hits,
                 "merged_reads": self.evidence.merged,
                 "notifications": self.notifications.last,
+                "model_queue": self.runtime.operation_turns.stats,
+                "send_queue": self.sends.stats,
             },
             "daily_watch": self.repo.quotas.watch_status(
                 self.account or control["account_id"],
@@ -226,6 +238,8 @@ class BrowsingService:
         )
         self.changed.set()
         self.interactions_changed.set()
+        self.notification_schedule.set()
+        self.sends.changed.set()
         return self.status()
 
     async def _current_account(self, expected=None):
@@ -390,7 +404,7 @@ class BrowsingService:
         if self.operations.policy()["emergency"]:
             raise ValueError("紧急停止仍有效")
         if self.operations.draining:
-            raise ValueError("当前批次正在收尾")
+            raise ValueError("当前动作正在收尾")
         if self.operations.starting:
             raise ValueError("自主运营正在启动")
         if self.operations.policy()["enabled"]:
@@ -407,9 +421,21 @@ class BrowsingService:
                 raise ValueError("；".join(self.blockers))
             if guard is not None:
                 guard()
-            self.operations.configure(
+            previous = self.operations.policy()
+            current = self.operations.configure(
                 {"enabled": True}, account_id=self.account, character=self.runtime.character
             )
+            resume_epoch = self.store.get("operation_send_resume_epoch")
+            if (resume_epoch is not None and previous["epoch"] in {resume_epoch, resume_epoch + 1}
+                    and self.store.get("operation_send_resume_permissions") in (None, self.send_permissions())
+                    and not self.effective().get("review_session_id")
+                    and all(previous[key] == current[key] for key in ("account_id", "character_id", "character_version"))):
+                self.store.execute(
+                    "UPDATE operation_send_queue SET epoch=? WHERE epoch=? AND account_id=? AND character_id=? AND character_version=?",
+                    (current["epoch"], resume_epoch, self.account, current["character_id"], current["character_version"]),
+                )
+                self.store.set("operation_send_resume_epoch", None)
+                self.store.set("operation_send_resume_permissions", None)
             self.discovery.remember_account(self.account)
             await self.messages.resume_pending()
             if generation != self.control_generation:
@@ -428,6 +454,9 @@ class BrowsingService:
         self.dynamics.changed.set()
         self.changed.set()
         self.interactions_changed.set()
+        self.notification_schedule.set()
+        self.sends.start()
+        self.sends.changed.set()
         return self.status()
 
     async def stop(self, *, emergency=False):
@@ -437,23 +466,37 @@ class BrowsingService:
             self.control_generation += 1
             if self.operations.policy()["enabled"] and not self.operations.starting:
                 self.operations.draining = True
+                self.event_changed.set()
+                self.sends.changed.set()
                 admitted = tuple(task for identity, task in self.active.items() if not self.repo.round(identity)["preview"])
                 admitted += self.operations.admitted_work
                 if admitted:
                     self.drain_task = asyncio.create_task(self._drain(admitted))
                 else:
                     self._finish_stop()
-            else:
-                # The same endpoint still cancels a stand-alone read-only preview.
+            elif self.operations.starting:
                 await self._abort_operations()
+            else:
+                standard_previews = [
+                    child for identity, child in self.active.items()
+                    if not self.repo.round(identity)["config"].get("full_video")
+                ]
+                for child in standard_previews:
+                    child.cancel()
+                await asyncio.gather(*standard_previews, return_exceptions=True)
         return self.status()
 
     def _finish_stop(self):
+        policy = self.operations.policy()
+        if policy["enabled"] and not policy["emergency"]:
+            self.store.set("operation_send_resume_epoch", policy["epoch"])
+            self.store.set("operation_send_resume_permissions", self.send_permissions())
         self.operations.configure({"enabled": False})
         review = self.store.get("browsing_review_session", {})
         if review and review.get("state") in {None, "starting", "running"}:
             self.store.set("browsing_review_session", review | {"state": "stopped", "ended_at": time.time()})
         self.operations.draining = False
+        self.sends.changed.set()
         self.last_error = None
         self.notifications.pause(self.account)
         if self.account:
@@ -469,6 +512,12 @@ class BrowsingService:
     async def _abort_operations(self, *, emergency=False):
         self.control_generation += 1
         self.operations.draining = True
+        if emergency:
+            self.store.set("operation_send_resume_epoch", None)
+            self.store.set("operation_send_resume_permissions", None)
+        elif (policy := self.operations.policy())["enabled"]:
+            self.store.set("operation_send_resume_epoch", policy["epoch"])
+            self.store.set("operation_send_resume_permissions", self.send_permissions())
         self.operations.configure({"enabled": False, **({"emergency": True} if emergency else {})})
         if emergency:
             self.store.execute(
@@ -485,6 +534,7 @@ class BrowsingService:
                 self.drain_task.cancel()
                 await asyncio.gather(self.drain_task, return_exceptions=True)
                 self.drain_task = None
+            await self.sends.close()
             children = list(self.active.values())
             for child in children:
                 child.cancel()
@@ -503,6 +553,8 @@ class BrowsingService:
 
     async def _gate(self):
         identity = read_round.get()
+        if checkpoint := operation_checkpoint.get():
+            checkpoint()
         if identity:
             self.repo.reserve_budget(identity, reads=1)
         async with self.read_lock:
@@ -680,6 +732,7 @@ class BrowsingService:
         interaction_only=False,
         video_only=False,
         comment_visit=False,
+        local_interactions=False,
         keywords=None,
         request_id=None,
     ):
@@ -703,7 +756,7 @@ class BrowsingService:
         if interaction_only:
             if not automatic or not self.operations.policy()["enabled"] or not self.account:
                 raise ValueError("互动轮次尚未授权")
-            config = self.effective() | {"interaction_only": True}
+            config = self.effective() | {"interaction_only": True, "local_interactions": local_interactions}
         else:
             if not automatic and self.discovery.round_id:
                 raise ValueError("自动刷视频本轮进行中，请稍后再预览")
@@ -746,6 +799,12 @@ class BrowsingService:
             return {"status": "deferred", "reason": "OC有界延后计划尚未到期"}
         if automatic and not self.operations.accepting_work:
             raise ValueError("自主运营已停止接纳新轮次")
+        if config.get("autonomous_batch"):
+            character = self.runtime.character
+            scope = {"account_id": self.account, "character_id": character["id"],
+                     "character_version": character["version"], "config": config}
+            if not self.repo.batches.has_open_round(scope) and not self.page_capacity():
+                return {"status": "deferred", "reason": "评论积压达到高水位"}
         row, created = self.repo.create_round(
             self.account, self.runtime.character, config, self.operations.policy()["epoch"], preview,
             request_id=request_id,
@@ -760,6 +819,165 @@ class BrowsingService:
             "reused": not created,
             "preview": bool(row["preview"]),
         }
+
+    def send_permissions(self):
+        config = self.configured()
+        saved = self.store.get("message_policy", {})
+        dynamics = self.store.get("dynamic_policy", {})
+        return {
+            "browsing": {key: value for key, value in config.items() if key.endswith(("_enabled", "_auto_publish"))},
+            "messages": {key: saved.get(key) for key in ("enabled", "auto_send", "allow_comment_handoff")},
+            "dynamics": {key: dynamics.get(key) for key in ("enabled", "auto_publish")},
+        }
+
+    def waiting_round(self):
+        account, character, version = self.operation_scope()
+        return self.store.one(
+            """SELECT r.id, r.status,
+                      (SELECT COUNT(*) FROM browsing_batch_items i WHERE i.batch_id=b.id
+                       AND i.status NOT IN ('completed','skipped','later','daily_wait')) AS remaining
+               FROM browsing_rounds r JOIN browsing_batches b ON b.round_id=r.id
+               WHERE r.account_id=? AND r.character_id=? AND r.character_version=? AND r.status='paused'
+               AND b.state='paused' AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=?
+               ORDER BY r.created_at LIMIT 1""",
+            (account, character, version, self.effective().get("review_session_id", "")),
+        )
+
+    def operation_scope(self):
+        control = self.operations.policy()
+        if control["enabled"]:
+            return control["account_id"], control["character_id"], control["character_version"]
+        return self.discovery.history_scope()
+
+    def backlog_status(self, *, persist=True):
+        account, character, version = self.operation_scope()
+        review = self.effective().get("review_session_id")
+        now = time.time()
+        scope = {"account": account, "character": character, "version": version, "review": review,
+                 "mentions": self.effective()["mention_reply_enabled"], "now": now}
+        heads = self.store.one(
+            comment_reader_tasks.eligible_event_heads() + """
+            SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM heads
+            WHERE position=1 AND kind='comment_visit'
+              AND COALESCE(CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END,0)<=:now
+            """, scope,
+        )
+        rate = max(0.2, float(self.store.get("operation_background_heads_per_minute", 2.9)))
+        high, low = max(1, math.ceil(5 * rate)), max(0, math.ceil(2 * rate) - 1)
+        age = max(0, now - heads["oldest"]) if heads["oldest"] is not None else 0
+        key = f"operation_discovery_paused:{account}:{character}:{version}:{review or ''}"
+        old = self.store.get(key, False)
+        paused = (heads["count"] > low or age > 120) if old else (heads["count"] >= high or age >= 300)
+        if persist and paused != old:
+            self.store.set(key, paused)
+        waiting = self.store.one(
+            """SELECT COUNT(*) AS count FROM browsing_events WHERE account_id=:account
+               AND ((status='reply_deferred' OR status='received') AND
+                   CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END>:now)""", scope,
+        )
+        sends = self.store.one(
+            """SELECT COUNT(*) AS queued, COALESCE(SUM(wake_at>:now),0) AS deferred
+               FROM operation_send_queue WHERE account_id=:account AND character_id=:character
+                 AND character_version=:version""", scope,
+        )
+        discovery = self.store.one(
+            """SELECT COUNT(*) AS n, AVG(created_at-timestamp) AS mean_seconds,
+                      MAX(created_at-timestamp) AS max_seconds FROM browsing_events
+               WHERE account_id=:account AND kind<>'comment_visit' AND timestamp>0
+                 AND created_at>=timestamp AND created_at>=:now-86400""", scope,
+        )
+        inbox = self.store.one(
+            """SELECT COUNT(*) AS n, AVG(received_at-sent_at) AS mean_seconds,
+                      MAX(received_at-sent_at) AS max_seconds FROM dm_inbox
+               WHERE account_id=:account AND character_id=:character AND sent_at>0
+                 AND received_at>=sent_at AND received_at>=:now-86400""", scope,
+        )
+        uncertain = {}
+        for channel, table in (("comments", "browsing_intents"), ("messages", "dm_drafts"),
+                               ("dynamics", "dynamic_posts")):
+            uncertain[channel] = self.store.one(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE account_id=? AND character_id=? AND status='publish_uncertain'",
+                (account, character),
+            )["n"]
+        return {"discovery_delay": {"direct_public": discovery, "direct_messages": inbox},
+                "ready_heads": heads["count"], "oldest_seconds": int(age), "high_heads": high,
+                "low_heads": low, "heads_per_minute": rate, "discovery_paused": paused,
+                "waiting_comments": waiting["count"], "sends": sends,
+                "review": self.review_counts(account, character), "uncertain": uncertain}
+
+    def review_counts(self, account, character):
+        result = {}
+        for channel, table in (("comments", "browsing_intents"), ("messages", "dm_drafts"),
+                               ("dynamics", "dynamic_posts")):
+            policy = "AND kind<>'private_handoff'" if channel == "comments" else ""
+            result[channel] = self.store.one(
+                f"SELECT COUNT(*) AS n FROM {table} AS d WHERE account_id=? AND character_id=? "
+                f"AND status='pending_review' {policy} AND NOT EXISTS("
+                "SELECT 1 FROM operation_send_queue AS q WHERE q.channel=? AND q.source_id=CAST(d.id AS TEXT))",
+                (account, character, "browsing" if channel == "comments" else channel),
+            )["n"]
+        return result
+
+    def review_capacity(self, channel, row=None):
+        if row and row["preview"]:
+            return True
+        account, character, _ = self.discovery.history_scope()
+        if row:
+            account, character = row["account_id"], row["character_id"]
+            if row["config"].get("review_session_id"):
+                return True
+        if self.effective().get("review_session_id"):
+            return True
+        limit = self.operations.policy()["max_per_day"] or 20
+        return self.review_counts(account, character)[channel] < limit
+
+    def page_capacity(self):
+        state = self.backlog_status()
+        return not state["discovery_paused"] and state["ready_heads"] < state["high_heads"]
+
+    async def _send_automatic(self, item):
+        identity, channel = item["source_id"], item["channel"]
+        control = self.operations.policy()
+        if not self.operations.accepting_work:
+            return False
+        if item["epoch"] != control["epoch"]:
+            return True
+        if channel == "browsing":
+            candidate = self.store.one(
+                "SELECT status,kind,round_id FROM browsing_intents WHERE id=? AND auto_authorized=1", (identity,)
+            )
+            if candidate and candidate["status"] == "publish_uncertain":
+                await self.publication._reconcile(identity)
+            elif candidate and candidate["status"] == "pending_review" and self.publication._action_allowed(
+                candidate["kind"], self.effective()
+            ):
+                origin = self.repo.round(candidate["round_id"])
+                if not origin or origin["preview"] or origin["status"] in {"cancelled", "invalid"}:
+                    return True
+                self.store.execute("UPDATE browsing_intents SET epoch=? WHERE id=?", (control["epoch"], identity))
+                await self.publish(identity, automatic=True)
+        elif channel == "messages":
+            draft = self.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))
+            if draft and draft["status"] == "pending_review" and self.messages.policy()["auto_send"]:
+                self.messages.authorizations[int(identity)] = control["epoch"]
+                await self.messages.send(int(identity), automatic=True, authorization_epoch=control["epoch"])
+        elif channel == "dynamics":
+            post = self.dynamics._post(identity)
+            if post and post["status"] == "pending_review" and self.dynamics.policy()["auto_publish"]:
+                self.dynamics._automatic_post_id = post["id"]
+                try:
+                    await self.dynamics.publish(post["id"], automatic=True)
+                finally:
+                    self.dynamics._automatic_post_id = None
+        return True
+
+    def queue_publication(self, identity):
+        context = operation_lane.get()
+        self.sends.enqueue("browsing", identity, direct=context == "direct")
+
+    def check_step(self, row):
+        if self.operations.draining and not row["preview"]:
+            raise asyncio.CancelledError("自主运营收尾，保留当前进度")
 
     def _check_round(self, row):
         current = self.runtime.character
@@ -816,6 +1034,8 @@ class BrowsingService:
         return discovery_tasks.candidate_view(self, row, item)
 
     async def video_comment_context(self, row, bvid):
+        if row.get("config", {}).get("autonomous_batch"):
+            return await comment_reader_tasks.round_comment_page(self, row, bvid)
         return await comment_reader_tasks.video_comment_context(self, row, bvid)
 
     def commit_comment_context(self, context):
@@ -826,9 +1046,6 @@ class BrowsingService:
 
     async def _process_discovery_video(self, row, candidate, metrics, semaphore):
         return await batches_tasks.process_discovery_video(self, row, candidate, metrics, semaphore)
-
-    async def defer_comment_visit(self, row, bvid, metrics):
-        return await batches_tasks.defer_comment_visit(self, row, bvid, metrics)
 
     async def _run_discovery_video(self, row, candidate, metrics):
         return await batches_tasks.run_discovery_video(self, row, candidate, metrics)
@@ -1001,18 +1218,24 @@ class BrowsingService:
         )
 
     async def _run_interactions(self, row, metrics):
-        await comment_reader_tasks.run_interactions(self, row, metrics)
-        await batches_tasks.process_comment_visits(self, row, metrics)
-        await self._process_events(row, metrics)
+        discovery_paused = self.backlog_status()["discovery_paused"]
+        if not row["config"].get("local_interactions"):
+            await comment_reader_tasks.run_interactions(self, row, metrics)
+        claimed = await self._process_events(row, metrics)
+        if self.page_capacity() and (row["config"]["reply_enabled"] or row["config"].get("comment_like_enabled")):
+            if not await comment_reader_tasks.read_old_comment_page(self, row):
+                await batches_tasks.process_comment_visits(self, row, metrics)
+        claimed += await self._process_events(row, metrics)
+        if claimed and self.operations.accepting_work:
+            self.interactions_changed.set()
+        if discovery_paused and not self.backlog_status()["discovery_paused"]:
+            self.changed.set()
 
     async def _collect_own_comments(self, row):
         return await comment_reader_tasks.collect_own_comments(self, row)
 
-    async def _process_events(self, row, metrics, *, own_only=False):
-        return await comment_reader_tasks.process_events(self, row, metrics, own_only=own_only)
-
-    async def _process_event_batch(self, row, metrics, own_only):
-        return await comment_reader_tasks.process_event_batch(self, row, metrics, own_only)
+    async def _process_events(self, row, metrics, *, own_only=False, batch_only=False):
+        return await comment_reader_tasks.process_events(self, row, metrics, own_only=own_only, batch_only=batch_only)
 
     async def _event(self, event_row, row, metrics):
         return await comment_reader_tasks.event(self, event_row, row, metrics)
@@ -1056,15 +1279,17 @@ class BrowsingService:
             self.store.set("operations_policy", policy)
         for record in self.store.all("SELECT key FROM kv WHERE key LIKE 'browsing_discovery_pending:%'"):
             self.store.set(record["key"], False)
+        self.sends.start()
         self.loop = asyncio.create_task(self._loop())
         self.poller = asyncio.create_task(self._notifications_loop())
+        self.interaction_worker = asyncio.create_task(self._interaction_loop())
 
     async def close(self):
         self.closed = True
-        for task in (self.loop, self.poller):
-            if task:
-                task.cancel()
-        await asyncio.gather(*(t for t in (self.loop, self.poller) if t), return_exceptions=True)
+        workers = tuple(task for task in (self.loop, self.poller, self.interaction_worker) if task)
+        for task in workers:
+            task.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
         await self.stop()
         await self.evidence.close()
 
@@ -1072,10 +1297,10 @@ class BrowsingService:
         while True:
             self.changed.clear()
             try:
-                if not self.discovery_tasks():
-                    started = await self._start_full_video()
-                    if not started and self.operations.accepting_work and self.effective()["discovery_enabled"]:
-                        await self.run(automatic=True, video_only=True)
+                await self._start_full_video()
+                if (not self.discovery_tasks() and self.operations.accepting_work
+                        and self.effective()["discovery_enabled"]):
+                    await self.run(automatic=True, video_only=True)
             except Exception as error:
                 self.last_error = public_error(error)
             try:
@@ -1085,15 +1310,46 @@ class BrowsingService:
 
     async def _notifications_loop(self):
         while True:
-            self.interactions_changed.clear()
+            self.notification_schedule.clear()
             try:
-                if self.operations.accepting_work and self.has_interactions():
-                    await self.run(automatic=True, interaction_only=True)
+                if self.operations.accepting_work and self.has_interactions() and self.account:
+                    async with self.operations.automatic_work() as admitted:
+                        if admitted:
+                            character = self.runtime.character
+                            scope = {"account_id": self.account, "preview": False,
+                                     "character_id": character["id"], "character_version": character["version"],
+                                     "epoch": self.operations.policy()["epoch"], "config": self.effective()}
+                            def verify_poll_scope():
+                                self.check_step(scope)
+                                self._check_round(scope)
+
+                            checkpoint = operation_checkpoint.set(verify_poll_scope)
+                            try:
+                                await comment_reader_tasks.run_interactions(self, scope, {"failures": 0})
+                            except asyncio.CancelledError:
+                                if asyncio.current_task().cancelling() or not self.operations.draining:
+                                    raise
+                            finally:
+                                operation_checkpoint.reset(checkpoint)
+                                self.interactions_changed.set()
             except Exception as error:
                 self.last_error = public_error(error)
             try:
-                await asyncio.wait_for(
-                    self.interactions_changed.wait(), self.policy()["notification_interval_seconds"]
-                )
+                await asyncio.wait_for(self.notification_schedule.wait(), self.policy()["notification_interval_seconds"])
+            except TimeoutError:
+                pass
+
+    async def _interaction_loop(self):
+        while True:
+            self.interactions_changed.clear()
+            try:
+                if self.operations.accepting_work and self.has_interactions() and self.account:
+                    result = await self.run(automatic=True, interaction_only=True, local_interactions=True)
+                    if worker := self.active.get(result["id"]):
+                        await asyncio.shield(worker)
+            except Exception as error:
+                self.last_error = public_error(error)
+            try:
+                await asyncio.wait_for(self.interactions_changed.wait(), self.policy()["notification_interval_seconds"])
             except TimeoutError:
                 pass

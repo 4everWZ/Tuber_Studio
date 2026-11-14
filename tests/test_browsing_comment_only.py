@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import pytest
-from test_browsing import BV, batch_plan_wire, finished, model_packet
+from test_browsing import BV, batch_plan_wire, finished, model_packet, wait_for_sends
 from test_browsing import browsing as browsing
 
 from tuber_studio.operation_turns import operation_lane
@@ -59,12 +59,11 @@ def forbid_video_content(browsing, monkeypatch):
     monkeypatch.setattr(browsing.adapter, "subtitles", forbidden)
 
 
-async def finish_comment_handoff(browsing):
-    main = await finished(browsing, automatic=True, video_only=True)
-    assert main["status"] == "completed"
-    queued = browsing.repo.batches.pending_comment_visits(main)
-    assert queued, "The completed video batch must retain its independent comment queue"
-    return await finished(browsing, automatic=True, interaction_only=True)
+async def finish_comment_round(browsing):
+    row = await finished(browsing, automatic=True, video_only=True)
+    assert row["status"] == "completed"
+    await wait_for_sends(browsing)
+    return row
 
 
 @pytest.mark.parametrize("automatic", [False, True])
@@ -72,7 +71,7 @@ async def test_new_video_can_go_straight_to_real_comments_without_watch_main_rep
     _, calls = await enable_comment_choices(browsing, monkeypatch, automatic=automatic)
     attach_comment_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
-    row = await finish_comment_handoff(browsing)
+    row = await finish_comment_round(browsing)
     assert row["status"] == "completed" and row["metrics"]["failures"] == 0
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
     assert not browsing.store.all("SELECT * FROM browsing_video_progress")
@@ -82,7 +81,7 @@ async def test_new_video_can_go_straight_to_real_comments_without_watch_main_rep
     assert intents[0]["target"]["parent"] == "601"
     assert intents[0]["material_keys"] == [] and intents[0]["evidence"] == ["public:601"]
     assert intents[0]["status"] == ("published" if automatic else "pending_review")
-    assert calls == [("CandidateBatchPlan", "video"), ("ResponseDecision", "reply")]
+    assert calls == [("CandidateBatchPlan", "background"), ("ResponseDecision", "background")]
     task = browsing.tasks(round_id=row["id"])[0]
     assert task["reason"] == "先看看评论里大家用了多少盐，再接着聊"
     assert task["task_kind"] == "comment_visit" and "video_preference" not in task
@@ -97,7 +96,7 @@ async def test_full_watch_quota_does_not_block_new_video_comments_and_later_watc
     await browsing.configure({"daily_watch_limit": 1})
     assert browsing.repo.quotas.start_watch("other-task", "100", "whale", "BV1xx411c7mD", 1)
     attach_comment_source(browsing, monkeypatch)
-    first = await finish_comment_handoff(browsing)
+    first = await finish_comment_round(browsing)
     assert first["status"] == "completed" and len(browsing.intents()) == 1
     assert not browsing.repo.content_progress(first, BV)
     assert not browsing.store.one("SELECT task_id FROM browsing_watch_starts WHERE bvid=?", (BV,))
@@ -110,7 +109,7 @@ async def test_full_watch_quota_does_not_block_new_video_comments_and_later_watc
     assert len([intent for intent in browsing.intents() if intent["kind"] == "top_level"]) == 1
 
 
-async def test_comment_only_keeps_scroll_cursor_and_checks_new_comments_on_return(browsing, monkeypatch):
+async def test_comment_only_round_reads_one_newest_page_and_keeps_old_cursor(browsing, monkeypatch):
     await enable_comment_choices(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
     phase, reads = 1, []
@@ -122,15 +121,15 @@ async def test_comment_only_keeps_scroll_cursor_and_checks_new_comments_on_retur
         return {"items": [comment()] if phase == 1 else [comment("603", "603")], "next_page": start_page + 1}
 
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
-    first = await finish_comment_handoff(browsing)
+    first = await finish_comment_round(browsing)
     key = "browsing_comment_page:100:whale:" + BV
-    assert first["status"] == "completed" and browsing.store.get(key) == 2
+    assert first["status"] == "completed" and browsing.store.get(key) is None
     browsing.repo.recover()
     phase = 2
-    second = await finish_comment_handoff(browsing)
-    assert second["status"] == "completed" and browsing.store.get(key) == 3
-    assert reads == [(1, True), (1, False), (1, True), (2, False)]
-    assert {intent["target"]["parent"] for intent in browsing.intents()} == {"601", "602", "603"}
+    second = await finish_comment_round(browsing)
+    assert second["status"] == "completed" and browsing.store.get(key) is None
+    assert reads == [(1, True), (1, True)]
+    assert {intent["target"]["parent"] for intent in browsing.intents()} == {"601", "602"}
     assert not browsing.store.all("SELECT * FROM browsing_video_progress")
     assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
 
@@ -157,7 +156,7 @@ async def test_manual_reread_keeps_comment_only_task_kind_and_does_not_start_wat
     await enable_comment_choices(browsing, monkeypatch)
     attach_comment_source(browsing, monkeypatch)
     forbid_video_content(browsing, monkeypatch)
-    row = await finish_comment_handoff(browsing)
+    row = await finish_comment_round(browsing)
     task = browsing.tasks(round_id=row["id"])[0]
     browsing.store.execute("DELETE FROM browsing_intents")
     browsing.store.execute("DELETE FROM browsing_comment_progress")
@@ -192,11 +191,11 @@ async def test_comment_visit_reuses_existing_material_without_changing_viewing_d
     monkeypatch.setattr(browsing.adapter, "video_metadata", forbidden_metadata)
     mode["action"] = "comments"
     calls.clear()
-    second = await finish_comment_handoff(browsing)
+    second = await finish_comment_round(browsing)
     assert second["status"] == "completed"
     assert browsing.store.one("SELECT * FROM browsing_video_progress WHERE bvid=?", (BV,)) == before
     assert browsing.store.all("SELECT * FROM browsing_watch_starts") == watches
-    assert calls == [("CandidateBatchPlan", "video"), ("ResponseDecision", "reply")]
+    assert calls == [("CandidateBatchPlan", "background"), ("ResponseDecision", "background")]
     assert len([intent for intent in browsing.intents() if intent["kind"] == "top_level"]) == 1
     reply = next(intent for intent in browsing.intents() if intent["kind"] == "reply_public")
     assert reply["material_keys"] and reply["evidence"] == ["public:601"]
@@ -215,7 +214,7 @@ async def test_comment_only_agent_can_wait_without_inventing_video_content_or_ma
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", wait)
-    row = await finish_comment_handoff(browsing)
+    row = await finish_comment_round(browsing)
     assert row["status"] == "completed" and not browsing.intents()
     decision = browsing.store.one("SELECT decision FROM browsing_comment_progress")
     assert decision and '"action": "wait"' in decision["decision"]
@@ -238,7 +237,7 @@ async def test_invalid_comment_keeps_model_selection_reason_and_separate_validat
         return await original(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", pause)
-    row = await finish_comment_handoff(browsing)
+    row = await finish_comment_round(browsing)
     task = browsing.tasks(round_id=row["id"])[0]
     assert task["status"] == "comments_checked"
     assert task["reason"] == "先看看评论里大家用了多少盐，再接着聊"

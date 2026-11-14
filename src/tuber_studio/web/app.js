@@ -16,7 +16,7 @@ import {
   getAutomationStatus,
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261114.1";
+} from "./modules/operations.js?v=20261114.3";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261113.02";
 import { initPersonalization } from "./modules/personalization.js?v=20261114.1";
 import {

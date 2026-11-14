@@ -1,11 +1,12 @@
 """Real comment-to-DM execution with SQLite and isolated delivery transport."""
 
+import asyncio
 import json
 import time
 
 import pytest
 from test_browsing import browsing as browsing
-from test_browsing import finished, model_packet
+from test_browsing import finished, model_packet, wait_for_sends
 from test_browsing_comment_only import (
     comment,
     enable_comment_choices,
@@ -57,16 +58,25 @@ async def prepare_handoff(browsing, monkeypatch, *, automatic):
     return transport
 
 
+async def finish_private_handoff(browsing):
+    await browsing.messages.open()
+    await browsing.messages.resume_pending()
+    async with asyncio.timeout(3):
+        while browsing.store.one("SELECT status FROM dm_drafts WHERE status IN ('queued','generating')"):
+            await asyncio.sleep(0.005)
+    await wait_for_sends(browsing)
+    return browsing.store.one("SELECT * FROM dm_drafts")
+
+
 @pytest.mark.parametrize("automatic", [False, True])
 async def test_comment_only_handoff_preserves_real_source_and_private_body_once(browsing, monkeypatch, automatic):
     transport = await prepare_handoff(browsing, monkeypatch, automatic=automatic)
     first = await finished(browsing, automatic=True, video_only=True)
     assert first["status"] == "completed", first
-    assert not browsing.intents() and not transport.sent
-    reply_round = await finished(browsing, automatic=True, interaction_only=True)
-    assert reply_round["status"] == "completed", reply_round
+    assert not transport.sent
+    assert browsing.store.one("SELECT status FROM dm_drafts")["status"] == "queued"
     intent, = browsing.intents()
-    draft = browsing.store.one("SELECT * FROM dm_drafts")
+    draft = await finish_private_handoff(browsing)
     assert intent["kind"] == intent["status"] == "private_handoff"
     assert intent["text"] == "" and draft["text"]
     assert draft["status"] == ("published" if automatic else "pending_review"), draft
@@ -78,7 +88,7 @@ async def test_comment_only_handoff_preserves_real_source_and_private_body_once(
     assert "source_event" not in evidence and evidence["material_keys"] == []
     assert evidence["public_source_thread"]["source"]["text"] == INVITATION
     assert evidence["public_source_thread"]["target"]["parent"] == "601"
-    assert evidence["origin_round_id"] == reply_round["id"]
+    assert evidence["origin_round_id"] == first["id"]
     assert "原评论请求私聊" in intent["reason"] and INVITATION.rstrip("。！？!?；;\n") in intent["reason"]
     assert intent["target"]["private_draft_id"] == draft["id"]
     assert draft["text"] not in json.dumps(browsing.inbox(), ensure_ascii=False)
@@ -103,9 +113,7 @@ async def test_handoff_source_changed_at_send_is_retained_without_send(browsing,
     monkeypatch.setattr(browsing.adapter, "read_video_reply", changed)
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed"
-    row = await finished(browsing, automatic=True, interaction_only=True)
-    assert row["status"] == "partial"
-    draft = browsing.store.one("SELECT * FROM dm_drafts")
+    draft = await finish_private_handoff(browsing)
     assert draft["status"] == "pending_review" and draft["text"]
     assert draft["platform_user_id"] == "300"
     assert not transport.sent and not browsing.adapter.sent
@@ -170,9 +178,7 @@ async def test_watched_video_handoff_reuses_caption_evidence_and_private_pipelin
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", discuss)
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed", row
-    row = await finished(browsing, automatic=True, interaction_only=True)
-    assert row["status"] == "completed", row
-    draft = browsing.store.one("SELECT * FROM dm_drafts")
+    draft = await finish_private_handoff(browsing)
     assert draft["status"] == "pending_review"
     evidence = json.loads(draft["video_evidence"])
     assert evidence["material_keys"] and evidence["segments"]
@@ -193,8 +199,7 @@ async def test_source_is_checked_again_at_private_send_after_generation(browsing
 
     monkeypatch.setattr(browsing.adapter, "read_video_reply", changing)
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
-    await finished(browsing, automatic=True, interaction_only=True)
-    draft = browsing.store.one("SELECT * FROM dm_drafts")
+    draft = await finish_private_handoff(browsing)
     assert checks == 1 and draft["text"]
     assert draft["status"] == "pending_review"
     assert not transport.sent and not browsing.adapter.sent
@@ -213,8 +218,7 @@ async def test_send_rechecks_real_mention_uid_even_when_nickname_and_text_match(
 
     monkeypatch.setattr(browsing.adapter, "read_video_thread", read_thread, raising=False)
     assert (await finished(browsing, automatic=True, video_only=True))["status"] == "completed"
-    await finished(browsing, automatic=True, interaction_only=True)
-    draft = browsing.store.one("SELECT status,text FROM dm_drafts")
+    draft = await finish_private_handoff(browsing)
     assert reads == ["601", "601"] and draft["text"] and draft["status"] == "not_initiated"
     assert not transport.sent and not browsing.adapter.sent
 

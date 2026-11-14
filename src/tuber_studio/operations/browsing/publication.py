@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from contextlib import nullcontext
 from uuid import uuid4
 
 from ...comment_materials import model_comment_materials, validate_comment_material_sources
@@ -80,7 +81,7 @@ class BrowsingPublication:
             policy["business_timezone"],
         )
 
-    def _intent(self, row, kind, target, response, material_keys, evidence_ids):
+    def _intent(self, row, kind, target, response, material_keys, evidence_ids, *, transaction_owned=False):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
         target = target | {"generation_identity": getattr(response, "_generation_identity", None)
                            or runtime_identity(self.browsing.runtime, character, row["account_id"])}
@@ -127,9 +128,10 @@ class BrowsingPublication:
                     for value in covered_ids if value != source]
         if covered_ids:
             target["covered_comment_ids"] = covered_ids
-        with store.db:
+        with nullcontext() if transaction_owned else store.db:
             if coverage:
-                store.db.execute("BEGIN IMMEDIATE")
+                if not transaction_owned:
+                    store.db.execute("BEGIN IMMEDIATE")
                 if any(self.source_intent(row, key) for key in [source_key, *coverage]):
                     return None
             inserted = store.db.execute(
@@ -214,6 +216,7 @@ class BrowsingPublication:
             "UPDATE browsing_intents SET status=?,text=?,auto_authorized=0,error=?,updated_at=? WHERE id=?",
             (new_status, text, issue if row["kind"] in _COMMENT_KINDS else row["error"], time.time(), identity),
         )
+        self.browsing.sends.withdraw("browsing", identity)
         return self.browsing.repo.decode(
             self.browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,))
         )
@@ -744,6 +747,8 @@ class BrowsingPublication:
                     )
                 ):
                     raise ValueError("准备期间候选或审核状态已变化，保留最新状态")
+                if automatic:
+                    self.browsing.sends.assert_ready("browsing", identity)
                 if automatic and not self._action_allowed(row["kind"], self.browsing.effective()):
                     raise ValueError("自动回应授权已停止")
                 if is_like and not self.browsing.effective().get("comment_like_enabled"):

@@ -66,7 +66,7 @@ async def test_comment_only_parent_start_does_not_probe_or_start_video_discovery
         raise AssertionError("Video discovery was not enabled")
 
     async def run(**kwargs):
-        assert kwargs == {"automatic": True, "interaction_only": True}
+        assert kwargs == {"automatic": True, "interaction_only": True, "local_interactions": True}
         inbox.set()
         return {"id": "inbox"}
 

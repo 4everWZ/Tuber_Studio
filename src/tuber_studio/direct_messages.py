@@ -33,6 +33,7 @@ from .operation_feedback import (
 from .operation_generation import generate_with_recovery, generation_requires_review, reply_generation_binding
 from .operation_identity import runtime_identity
 from .operation_text import operation_output_diagnostics, validate_operation_text
+from .operation_turns import operation_ready_at
 from .operations_control import canonical_intent
 from .platforms.bilibili import PublishUncertain
 from .platforms.bilibili_messages import (
@@ -41,7 +42,7 @@ from .platforms.bilibili_messages import (
     message_sequence,
 )
 from .providers import public_error
-from .publication_errors import PlatformRejected, UnknownPublication
+from .publication_errors import PlatformRejected, SendLimitReached, UnknownPublication
 
 
 class MessagePolicy(StrictModel):
@@ -102,7 +103,7 @@ class DirectMessages:
         self.adapter, self.injected = adapter, adapter is not None
         self.memes = memes
         self.credential_signature = None
-        self.queue = asyncio.Queue(maxsize=40)
+        self.queue = asyncio.PriorityQueue(maxsize=40)
         self.worker = self.poller = None
         self.closed = False
         self.changed = asyncio.Event()
@@ -308,6 +309,8 @@ class DirectMessages:
                 self._inbox_cutoff(str(own_uid))
             count, errors = 0, []
             for uid in users[:20]:
+                if automatic and not self.operations.accepting_work:
+                    break
                 require_current_account()
                 if not self.policy()["enabled"] or (automatic and not self.policy()["auto_poll"]):
                     break
@@ -324,6 +327,7 @@ class DirectMessages:
                     imported, _ = await self._sync_history(
                         adapter, uid, own_uid, known["display_name"] if known else f"UID {uid}",
                         require_read_permission, cutoff=self._inbox_cutoff(str(own_uid)) if automatic else None,
+                        background=automatic,
                     )
                     count += imported
                 except (ValueError, KeyError, TypeError) as error:
@@ -335,7 +339,9 @@ class DirectMessages:
             self.error = "；".join(errors)[:500] or None
             return {"imported": count, "errors": errors}
 
-    async def _sync_history(self, adapter, uid, account, name, guard, *, cutoff=None, require_latest=False):
+    async def _sync_history(
+        self, adapter, uid, account, name, guard, *, cutoff=None, require_latest=False, background=False
+    ):
         if not hasattr(adapter, "history_page"):
             rows = await adapter.history(uid)
             guard()
@@ -349,6 +355,8 @@ class DirectMessages:
         refreshed_head = not before
         count = 0
         for _ in range(3):
+            if background and not self.operations.accepting_work:
+                return count, False
             rows, next_page, latest = await adapter.history_page(uid, before=before)
             guard()
             if self.runtime.character["id"] != scope[1]:
@@ -477,17 +485,19 @@ class DirectMessages:
         candidates = self.store.all(
             """WITH newest AS (
                    SELECT id,platform,platform_user_id,sent_at,
+                          MIN(received_at) OVER (PARTITION BY platform,platform_user_id) AS waiting_since,
                           ROW_NUMBER() OVER (PARTITION BY platform,platform_user_id ORDER BY sequence DESC,sent_at DESC,id DESC) AS rank
                    FROM dm_inbox i WHERE account_id=? AND character_id=? AND sent_at>=?
                    AND NOT EXISTS (SELECT 1 FROM dm_incoming_settlements s WHERE s.incoming_id=i.id)
                    AND NOT EXISTS (SELECT 1 FROM dm_sync_cursors c WHERE c.account_id=i.account_id
                        AND c.character_id=i.character_id AND c.platform_user_id=i.platform_user_id AND c.before_sequence<>0)
-               ) SELECT id FROM newest n WHERE rank=1 AND NOT EXISTS (
+               ) SELECT id,waiting_since FROM newest n WHERE rank=1 AND NOT EXISTS (
                    SELECT 1 FROM dm_drafts d WHERE d.account_id=? AND d.character_id=?
                    AND d.platform=n.platform AND d.platform_user_id=n.platform_user_id
                    AND ((d.source_kind='message' AND d.source_id=n.id) OR
-                        (d.status IN ('queued','generating','publishing','publish_uncertain') AND d.character_version=?))
-               ) ORDER BY sent_at DESC,id DESC LIMIT ?""",
+                        (d.status IN ('queued','generating','publishing','publish_uncertain') AND d.character_version=?
+                         AND (d.source_kind='message' OR d.status IN ('publishing','publish_uncertain'))))
+               ) ORDER BY waiting_since,id LIMIT ?""",
             (
                 account_id,
                 self.runtime.character["id"],
@@ -499,7 +509,10 @@ class DirectMessages:
             ),
         )
         for candidate in candidates:
-            self.enqueue("message", candidate["id"], automatic=True, continuous=True)
+            self.enqueue(
+                "message", candidate["id"], automatic=self.policy()["auto_send"], continuous=True,
+                waiting_since=candidate["waiting_since"],
+            )
 
     def _source(self, kind, identity, character):
         table = "dm_inbox" if kind == "message" else "comments" if kind == "comment" else None
@@ -529,6 +542,9 @@ class DirectMessages:
         proposal_identity=None,
         contact_trigger=None,
         continuous=False,
+        managed_handoff=False,
+        waiting_since=None,
+        transaction_owned=False,
     ):
         self._enabled()
         character = character or self.runtime.character
@@ -556,35 +572,42 @@ class DirectMessages:
         )
         if kind == "comment":
             trigger["contact_trigger"] = contact_trigger
+            if managed_handoff:
+                trigger["managed_handoff"] = True
+                trigger["handoff_epoch"] = self.operations.policy()["epoch"]
         elif continuous:
             trigger["continuous"] = True
+            trigger["waiting_since"] = waiting_since or now
         if automatic and self.operations.policy()["enabled"]:
             trigger["automatic_epoch"] = self.operations.policy()["epoch"]
-        draft_id = self.store.execute(
-            "INSERT INTO dm_drafts(platform,platform_user_id,display_name,source_kind,source_id,character_id,character_version,status,reason,created_at,updated_at,account_id,video_evidence,contact_type,purpose,trigger_source,proposed_text,proposal_identity) VALUES(?,?,?,?,?,?,?,'queued',?,?,?,?,?,?,?,?,?,?)",
-            (
-                source["platform"],
-                source["platform_user_id"],
-                source["display_name"],
-                kind,
-                identity,
-                character["id"],
-                character["version"],
-                reason,
-                now,
-                now,
-                account_id,
-                encoded,
-                "reply" if kind == "message" else "outreach",
-                str(purpose).strip(),
-                json.dumps(trigger, ensure_ascii=False),
-                validate_operation_text(proposed_text) if proposed_text else "",
-                json.dumps(proposal_identity, ensure_ascii=False) if proposal_identity else None,
-            ),
-        ).lastrowid
-        self.authorizations[draft_id] = (
-            self.operations.policy()["epoch"] if automatic and self.operations.policy()["enabled"] else None
-        )
+        with nullcontext() if transaction_owned else self.store.db:
+            draft_id = self.store.db.execute(
+                "INSERT INTO dm_drafts(platform,platform_user_id,display_name,source_kind,source_id,character_id,character_version,status,reason,created_at,updated_at,account_id,video_evidence,contact_type,purpose,trigger_source,proposed_text,proposal_identity) VALUES(?,?,?,?,?,?,?,'queued',?,?,?,?,?,?,?,?,?,?)",
+                (
+                    source["platform"],
+                    source["platform_user_id"],
+                    source["display_name"],
+                    kind,
+                    identity,
+                    character["id"],
+                    character["version"],
+                    reason,
+                    now,
+                    now,
+                    account_id,
+                    encoded,
+                    "reply" if kind == "message" else "outreach",
+                    str(purpose).strip(),
+                    json.dumps(trigger, ensure_ascii=False),
+                    validate_operation_text(proposed_text) if proposed_text else "",
+                    json.dumps(proposal_identity, ensure_ascii=False) if proposal_identity else None,
+                ),
+            ).lastrowid
+            self.authorizations[draft_id] = (
+                self.operations.policy()["epoch"] if automatic and self.operations.policy()["enabled"] else None
+            )
+            if managed_handoff:
+                self.store.db.execute("UPDATE dm_drafts SET resume_pending=1 WHERE id=?", (draft_id,))
         if schedule:
             self._schedule(draft_id, automatic)
         return draft_id
@@ -1122,7 +1145,13 @@ class DirectMessages:
                 return
             scope = (draft["account_id"], draft["character_id"], "dm:" + draft["platform"], draft["platform_user_id"])
             async with self.runtime.conversation_turn(scope):
-                return await self._generate_owned(identity, automatic)
+                trigger = json.loads(draft["trigger_source"] or "{}")
+                waited = time.time() - trigger.get("waiting_since", draft["created_at"])
+                ready = operation_ready_at.set(time.monotonic() - max(0, waited))
+                try:
+                    return await self._generate_owned(identity, automatic)
+                finally:
+                    operation_ready_at.reset(ready)
         except MessageInputChanged:
             return
         except asyncio.CancelledError:
@@ -1154,9 +1183,29 @@ class DirectMessages:
                 )
             raise
 
+    def _direct_waiting(self, draft):
+        if not getattr(self.runtime, "browsing", None):
+            return False
+        scope = (draft["account_id"], draft["character_id"], draft["character_version"], draft["platform_user_id"])
+        return bool(self.store.one(
+            """SELECT 1 FROM dm_drafts d WHERE account_id=? AND character_id=? AND character_version=?
+               AND platform_user_id=? AND source_kind='message'
+               AND (status IN ('queued','generating','publishing')
+                 OR EXISTS(SELECT 1 FROM operation_send_queue q WHERE q.channel='messages'
+                           AND q.source_id=CAST(d.id AS TEXT) AND q.wake_at<=?))
+               LIMIT 1""", (*scope, time.time()),
+        ))
+
     async def _generate_owned(self, identity, automatic):
         draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
         if not draft or draft["status"] != "queued":
+            return
+        trigger = json.loads(draft["trigger_source"] or "{}")
+        if trigger.get("managed_handoff") and self._direct_waiting(draft):
+            self.store.execute(
+                "UPDATE dm_drafts SET resume_pending=1,next_attempt_at=? WHERE id=?",
+                (time.time() + 1, identity),
+            )
             return
         if draft["source_kind"] == "message" and self.store.one(
             "SELECT 1 FROM dm_sync_cursors WHERE account_id=? AND character_id=? AND platform_user_id=? AND before_sequence<>0",
@@ -1221,7 +1270,22 @@ class DirectMessages:
             if not self._check_outreach(draft, self._event(draft, character)):
                 return
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-        async with self.runtime.offline_generation("direct" if draft["source_kind"] == "message" else "background"):
+        if (draft["source_kind"] == "comment" and not automatic
+                and (browsing := getattr(self.runtime, "browsing", None))
+                and not browsing.review_capacity("messages")):
+            self.store.execute(
+                "UPDATE dm_drafts SET resume_pending=1,next_attempt_at=?,error='私信审核积压' WHERE id=?",
+                (time.time() + self.policy()["poll_interval_seconds"], identity),
+            )
+            return
+        trigger = json.loads(draft["trigger_source"] or "{}")
+        managed = automatic or draft["resume_pending"] or trigger.get("continuous")
+        async with self.runtime.offline_generation(
+            "direct" if draft["source_kind"] == "message" and managed else "background"
+        ):
+            if managed and self.operations.draining:
+                self.store.execute("UPDATE dm_drafts SET resume_pending=1 WHERE id=?", (identity,))
+                return
             if draft.get("resume_pending") and not self._processing_authorized():
                 return
             if not self.injected and (
@@ -1257,7 +1321,8 @@ class DirectMessages:
                 account_id=draft["account_id"],
             )
             meter = (
-                GenerationMeter(self.runtime.browsing_repository, origin["id"]) if origin else nullcontext()
+                GenerationMeter(self.runtime.browsing_repository, origin["id"])
+                if origin and origin["status"] in {"queued", "running"} else nullcontext()
             )
             with meter:
                 snapshot = runtime_identity(self.runtime, character, draft["account_id"])
@@ -1362,7 +1427,10 @@ class DirectMessages:
             and not check.get("output", {}).get("needs_review")
         ):
             self._origin_round(draft, active=True)
-            await self.send(identity, automatic=True, authorization_epoch=authorization_epoch, _conversation_owned=True)
+            if browsing := getattr(self.runtime, "browsing", None):
+                browsing.sends.enqueue("messages", identity, direct=draft["source_kind"] == "message")
+            else:
+                await self.send(identity, automatic=True, authorization_epoch=authorization_epoch, _conversation_owned=True)
 
     def _origin_round(self, draft, *, active):
         evidence = json.loads(draft.get("video_evidence") or "null")
@@ -1371,10 +1439,11 @@ class DirectMessages:
             return None
         repository = self.runtime.browsing_repository
         parent = repository.round(identity)
+        trigger = json.loads(draft.get("trigger_source") or "{}")
         if (
             not parent
-            or (active and parent["status"] not in {"queued", "running"})
-            or parent["deadline"] is not None and parent["deadline"] <= time.time()
+            or active and parent["status"] in {"cancelled", "invalid", "archived"}
+            or active and trigger.get("managed_handoff") and parent["preview"]
             or parent["account_id"] != draft["account_id"]
             or parent["character_id"] != draft["character_id"]
             or parent["character_version"] != draft["character_version"]
@@ -1420,6 +1489,8 @@ class DirectMessages:
             self.memes.release(owner, keep_asset_id=meme_id)
             if status == "rejected":
                 self.memes.release(owner)
+        if browsing := getattr(self.runtime, "browsing", None):
+            browsing.sends.withdraw("messages", identity)
         return {
             "status": status,
             "text": text.strip(),
@@ -1777,6 +1848,8 @@ class DirectMessages:
                 raise ValueError("私信尚未审核、已发送或结果待核对，不能发送")
             if automatic and json.loads(row["answer_check"] or "{}").get("output", {}).get("needs_review"):
                 raise ValueError("正文诊断尚待审核，未自动发送")
+            if automatic and row["source_kind"] == "comment" and self._direct_waiting(row):
+                raise SendLimitReached("等待同一收件人的直接来信处理", time.time() + 1)
             character = self.store.character(row["character_id"], row["character_version"])
             source = self._source(row["source_kind"], row["source_id"], character)
             if source["platform_user_id"] != row["platform_user_id"] or source["platform"] != row["platform"]:
@@ -1792,25 +1865,7 @@ class DirectMessages:
                 < self._inbox_cutoff(row["account_id"])
             ):
                 raise ValueError("历史来信不自动追发，保留草稿")
-            for seconds, maximum in ((3600, policy["max_per_hour"]), (86400, policy["max_per_day"])):
-                if (
-                    maximum
-                    and self.store.one(
-                        "SELECT COUNT(*) AS n FROM dm_attempts WHERE started_at>?", (time.time() - seconds,)
-                    )["n"]
-                    >= maximum
-                ):
-                    raise ValueError("私信发送达到已配置频率上限")
-            if self.store.one(
-                "SELECT id FROM dm_attempts WHERE platform_user_id=? AND started_at>?"
-                + (" AND draft_id<>?" if revision_ticket else ""),
-                (
-                    row["platform_user_id"],
-                    time.time() - policy["recipient_cooldown_seconds"],
-                    *((identity,) if revision_ticket else ()),
-                ),
-            ):
-                raise ValueError("该用户私信发送仍在冷却中")
+            # The account ledger applies the channel quota and cooldown atomically.
             adapter = await self._adapter()
             account_id = (
                 str(source.get("account_id") or "injected-test-account")
@@ -1949,6 +2004,8 @@ class DirectMessages:
                         source["comment_id"] if row["source_kind"] == "comment" else source["message_id"],
                         character["id"],
                     )
+                    if automatic and browsing:
+                        browsing.sends.assert_ready("messages", identity)
                     if reserve and token is None:
                         token = self.operations.reserve(
                             account_id,
@@ -2199,7 +2256,11 @@ class DirectMessages:
     def _schedule(self, identity, automatic):
         if identity in self._scheduled:
             return
-        self.queue.put_nowait((identity, automatic))
+        draft = self.store.one("SELECT source_kind,created_at,trigger_source FROM dm_drafts WHERE id=?", (identity,))
+        if not draft:
+            return
+        waiting_since = json.loads(draft["trigger_source"] or "{}").get("waiting_since", draft["created_at"])
+        self.queue.put_nowait((draft["source_kind"] != "message", waiting_since, identity, automatic))
         self._scheduled.add(identity)
 
     async def resume_pending(self):
@@ -2231,7 +2292,7 @@ class DirectMessages:
         scope = "account_id=?" if not self.injected else "account_id IN (?, '')"
         rows = self.store.all(
             "SELECT * FROM dm_drafts WHERE status='queued' AND resume_pending=1 AND next_attempt_at<=? "
-            f"AND character_id=? AND character_version=? AND {scope} ORDER BY created_at,id LIMIT 3",
+            f"AND character_id=? AND character_version=? AND {scope} ORDER BY (source_kind<>'message'),created_at,id LIMIT 3",
             (time.time(), self.runtime.character["id"], self.runtime.character["version"], str(account_id)),
         )
         for row in rows:
@@ -2239,14 +2300,6 @@ class DirectMessages:
                 break
             if row["id"] in self._scheduled:
                 continue
-            if row.get("video_evidence"):
-                evidence = json.loads(row["video_evidence"])
-                if original := evidence.pop("origin_round_id", None):
-                    evidence["retained_origin_round_id"] = original
-                    self.store.execute(
-                        "UPDATE dm_drafts SET video_evidence=? WHERE id=?",
-                        (json.dumps(evidence, ensure_ascii=False), row["id"]),
-                    )
             trigger = json.loads(row.get("trigger_source") or "{}")
             current = self.operations.policy()
             automatic = bool(self.policy()["auto_send"] and trigger.get("automatic_epoch") == current["epoch"]
@@ -2262,7 +2315,7 @@ class DirectMessages:
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
         while not self.queue.empty():
-            identity, _ = self.queue.get_nowait()
+            _, _, identity, _ = self.queue.get_nowait()
             self._scheduled.discard(identity)
             self.queue.task_done()
         self.authorizations.clear()
@@ -2314,7 +2367,7 @@ class DirectMessages:
 
     async def _work(self):
         while True:
-            identity, automatic = await self.queue.get()
+            _, _, identity, automatic = await self.queue.get()
             managed = automatic
             try:
                 queued = self.store.one("SELECT resume_pending,trigger_source FROM dm_drafts WHERE id=?", (identity,))
@@ -2348,10 +2401,14 @@ class DirectMessages:
                         self.error = public_error(error)
 
     async def _poll(self):
+        poll_at = 0.0
         while True:
             self.changed.clear()
             policy = self.policy()
-            if policy["enabled"] and policy["auto_poll"]:
+            if not self.operations.accepting_work or not policy["auto_poll"]:
+                poll_at = 0.0
+            if self.operations.accepting_work and policy["enabled"] and policy["auto_poll"] and time.monotonic() >= poll_at:
+                poll_at = time.monotonic() + policy["poll_interval_seconds"]
                 try:
                     async with self.operations.automatic_work() as admitted:
                         if admitted:
@@ -2363,7 +2420,22 @@ class DirectMessages:
                     await self._resume_pending()
                 except Exception as error:
                     self.error = public_error(error)
+            delay = self.policy()["poll_interval_seconds"]
+            if poll_at > time.monotonic():
+                delay = min(delay, poll_at - time.monotonic())
+            if policy["enabled"] and self.operations.accepting_work:
+                control = self.operations.policy()
+                account, character, version = (control[key] for key in (
+                    "account_id", "character_id", "character_version"
+                ))
+                pending = self.store.one(
+                    "SELECT MIN(next_attempt_at) AS next_at FROM dm_drafts WHERE account_id=? AND character_id=? "
+                    "AND character_version=? AND status='queued' AND resume_pending=1 AND next_attempt_at>?",
+                    (account, character, version, time.time()),
+                )
+                if pending["next_at"] is not None:
+                    delay = min(delay, max(0.05, pending["next_at"] - time.time()))
             try:
-                await asyncio.wait_for(self.changed.wait(), self.policy()["poll_interval_seconds"])
+                await asyncio.wait_for(self.changed.wait(), delay)
             except TimeoutError:
                 pass

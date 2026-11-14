@@ -9,7 +9,7 @@ from contextlib import nullcontext
 import psutil
 
 from ...generation_meter import BrowsingBudgetDeferred
-from ...operation_turns import operation_lane
+from ...operation_turns import operation_checkpoint, operation_lane
 from ...providers import public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
@@ -31,6 +31,17 @@ class BrowsingBatches:
                 status TEXT NOT NULL,position INTEGER NOT NULL,task_id TEXT,error TEXT,
                 PRIMARY KEY(batch_id,bvid));
             CREATE INDEX IF NOT EXISTS browsing_batch_pending ON browsing_batch_items(batch_id,status,position);
+            CREATE TABLE IF NOT EXISTS browsing_batch_comment_pages(
+                batch_id TEXT NOT NULL,bvid TEXT NOT NULL,document TEXT NOT NULL,
+                PRIMARY KEY(batch_id,bvid));
+            CREATE TABLE IF NOT EXISTS browsing_comment_revisits(
+                account_id TEXT NOT NULL,character_id TEXT NOT NULL,character_version INTEGER NOT NULL,
+                review_session TEXT NOT NULL,bvid TEXT NOT NULL,round_id TEXT NOT NULL,
+                page INTEGER,next_at REAL NOT NULL,error TEXT,
+                PRIMARY KEY(account_id,character_id,character_version,review_session,bvid));
+            CREATE TABLE IF NOT EXISTS browsing_batch_comment_events(
+                batch_id TEXT NOT NULL,event_id TEXT NOT NULL,
+                PRIMARY KEY(batch_id,event_id));
             CREATE TABLE IF NOT EXISTS browsing_title_decisions(
                 account_id TEXT NOT NULL,character_id TEXT NOT NULL,bvid TEXT NOT NULL,
                 title_hash TEXT NOT NULL,decision TEXT NOT NULL,updated_at REAL NOT NULL,
@@ -226,36 +237,62 @@ class BrowsingBatches:
                 (task_id, identity, bvid),
             )
 
-    def comment_visit(self, row, bvid):
-        item = self.store.one(
-            "SELECT payload FROM browsing_batch_items WHERE batch_id=? AND bvid=?",
-            (row["config"]["batch_id"], bvid),
-        )
-        if not item:
-            return None
-        candidate = json.loads(item["payload"]) | {"task_kind": "comment_visit"}
-        self.store.execute(
-            "UPDATE browsing_batch_items SET kind='comment_visit',status='selected',task_id=NULL,payload=? WHERE batch_id=? AND bvid=?",
-            (dump(candidate), row["config"]["batch_id"], bvid),
-        )
-        return candidate
+    def has_open_round(self, row):
+        return bool(self.store.one(
+            "SELECT 1 FROM browsing_batches b JOIN browsing_rounds r ON r.id=b.round_id "
+            "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
+            "AND r.preview=0 AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=? "
+            "AND b.state IN ('retrieving','ready','paused') LIMIT 1",
+            (row["account_id"], row["character_id"], row["character_version"],
+             row["config"].get("review_session_id", "")),
+        ))
+
+    def pending_comment_events(self, row):
+        from .comment_reader import eligible_event_heads, event_scope
+
+        return self.store.one(
+            eligible_event_heads() + """
+            SELECT COUNT(*) AS n FROM heads
+            WHERE position=1
+              AND COALESCE(CASE WHEN json_valid(error) THEN json_extract(error,'$.next_at') END,0)<=:now
+              AND EXISTS(
+                  SELECT 1 FROM browsing_batch_comment_events item
+                  JOIN browsing_events event ON event.id=item.event_id
+                  WHERE item.batch_id=:batch AND event.status IN
+                        ('received','source_verified','context_ready','reply_deferred')
+                    AND json_extract(event.payload,'$.resource_type')=heads.resource_type
+                    AND CAST(json_extract(event.payload,'$.oid') AS TEXT)=heads.resource
+                    AND CAST(json_extract(event.payload,'$.root') AS TEXT)=heads.root
+              )
+            """, event_scope(row) | {"batch": row["config"]["batch_id"], "now": time.time()},
+        )["n"]
 
     def pending_comment_visits(self, row):
-        """Read a bounded reply-lane snapshot; original items remain the durable queue."""
         items = self.store.all(
-            "SELECT i.* FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id "
-            "JOIN browsing_rounds r ON r.id=b.round_id "
-            "LEFT JOIN browsing_tasks t ON t.id=i.task_id "
-            "LEFT JOIN browsing_rounds owner ON owner.id=t.round_id "
-            "WHERE r.account_id=? AND r.character_id=? AND r.character_version=? "
-            "AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=? "
-            "AND r.preview=? AND i.kind='comment_visit' "
-            "AND (i.status IN ('selected','running','paused','failed') OR "
-            "(i.status='daily_wait' AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=?)) "
-            "AND (owner.id IS NULL OR owner.status NOT IN ('queued','running')) "
-            "ORDER BY b.created_at,i.position,i.bvid",
-            (row["account_id"], row["character_id"], row["character_version"],
-             row["config"].get("review_session_id", ""), int(row["preview"]), time.time()),
+            """
+            WITH eligible AS (
+                SELECT i.batch_id,i.bvid,i.payload,b.created_at,i.position
+                FROM browsing_batch_items i JOIN browsing_batches b ON b.id=i.batch_id
+                JOIN browsing_rounds r ON r.id=b.round_id
+                LEFT JOIN browsing_tasks t ON t.id=i.task_id
+                LEFT JOIN browsing_rounds owner ON owner.id=t.round_id
+                WHERE r.account_id=:account AND r.character_id=:character
+                  AND r.character_version=:version AND r.preview=:preview
+                  AND COALESCE(json_extract(r.config,'$.review_session_id'),'')=:review
+                  AND i.kind='comment_visit'
+                  AND NOT EXISTS(SELECT 1 FROM browsing_batch_comment_pages p
+                                 WHERE p.batch_id=i.batch_id AND p.bvid=i.bvid)
+                  AND (i.status IN ('selected','running','paused','failed')
+                       OR i.status='daily_wait' AND COALESCE(json_extract(i.payload,'$.next_at'),0)<=:now)
+                  AND (owner.id IS NULL OR owner.status NOT IN ('queued','running'))
+            ), selected AS (
+                SELECT bvid FROM eligible GROUP BY bvid ORDER BY MIN(created_at), MIN(position), bvid LIMIT :limit
+            )
+            SELECT e.* FROM eligible e JOIN selected s ON s.bvid=e.bvid ORDER BY e.created_at,e.position,e.bvid
+            """,
+            {"account": row["account_id"], "character": row["character_id"], "version": row["character_version"],
+             "review": row["config"].get("review_session_id", ""), "preview": int(row["preview"]),
+             "now": time.time(), "limit": row["config"]["workers"]},
         )
         candidates = {}
         for item in items:
@@ -263,7 +300,7 @@ class BrowsingBatches:
                 "task_kind": "comment_visit", "comment_batch_ids": [],
             })
             candidate["comment_batch_ids"].append(item["batch_id"])
-        return list(candidates.values())[:row["config"]["workers"]]
+        return list(candidates.values())
 
     def waiting_until(self, row, bvid):
         value = self.store.one(
@@ -290,7 +327,7 @@ class BrowsingBatches:
             "invalid": "completed", "awaiting_review": "completed",
             "deferred_daily": "daily_wait",
             "checkpoint": "paused", "failed": "paused", "cancelled": "paused",
-            "paused": "paused", "retry_wait": "paused",
+            "paused": "paused", "retry_wait": "daily_wait",
         }
         state = states[status]
         current = json.loads(item["payload"])
@@ -313,16 +350,17 @@ class BrowsingBatches:
         if not identity:
             return False
         remaining = self.store.one(
-            "SELECT COUNT(*) AS n FROM browsing_batch_items WHERE batch_id=? AND kind<>'comment_visit' "
+            "SELECT COUNT(*) AS n FROM browsing_batch_items WHERE batch_id=? "
             "AND status NOT IN ('completed','skipped','later','daily_wait')",
             (identity,),
         )["n"]
         batch = self.get(row)
-        state = "invalid" if status == "invalid" else "paused" if remaining or batch["plan"] is None else "completed"
+        remaining += self.pending_comment_events(row)
+        state = "invalid" if status == "invalid" else "paused" if remaining or batch["plan"] is None or status == "paused" else "completed"
         if state == "paused":
             self.store.execute(
                 "UPDATE browsing_batch_items SET status='paused' WHERE batch_id=? "
-                "AND kind<>'comment_visit' AND status='running'",
+                "AND status='running'",
                 (identity,),
             )
         self.store.execute(
@@ -335,6 +373,7 @@ async def execute(browsing, row, notifications_only):
     identity, started = row["id"], time.monotonic()
     token = read_round.set(identity)
     lane = operation_lane.set("priority" if row["config"].get("full_video") else "background")
+    checkpoint = operation_checkpoint.set(lambda: browsing.check_step(row))
     metrics = {
         "workers": row["config"]["workers"],
         "prepared": 0,
@@ -367,7 +406,7 @@ async def execute(browsing, row, notifications_only):
             poll_interactions = not video_only and (
                 not row["preview"] or notifications_only or not browsing.operations.policy()["enabled"]
             )
-            if poll_interactions:
+            if poll_interactions and not row["config"].get("autonomous_batch"):
                 await browsing.sync_notifications(row)
                 await browsing._process_events(row, metrics)
             if not notifications_only or browsing.store.get(
@@ -380,12 +419,18 @@ async def execute(browsing, row, notifications_only):
                 if row["config"].get("autonomous_batch"):
                     async with asyncio.TaskGroup() as group:
                         for candidate in candidates:
-                            if candidate.get("task_kind") == "comment_visit":
-                                browsing.interactions_changed.set()
-                                continue
                             group.create_task(
                                 browsing._process_discovery_video(row, candidate, metrics, semaphore)
                             )
+                    browsing.check_step(row)
+                    while browsing.repo.batches.pending_comment_events(row):
+                        browsing.event_changed.clear()
+                        if not await browsing._process_events(row, metrics, batch_only=True):
+                            browsing.check_step(row)
+                            if not browsing.event_active:
+                                break
+                            await browsing.event_changed.wait()
+                        browsing.check_step(row)
                     status = "partial" if metrics["failures"] else "completed"
                     return
                 tasks = [browsing.repo.task(identity, c) for c in candidates]
@@ -400,20 +445,15 @@ async def execute(browsing, row, notifications_only):
                     if poll_interactions:
                         await browsing._process_events(row, metrics)
                     if result:
-                        result_lane = operation_lane.set(
-                            "background"
-                        )
-                        try:
-                            await browsing.decisions._evaluate_task(result, row, metrics)
-                        finally:
-                            operation_lane.reset(result_lane)
+                        await browsing.decisions._evaluate_task(result, row, metrics)
                 if poll_interactions:
                     await browsing._process_events(row, metrics)
             status = "partial" if metrics["failures"] else "completed"
     except (asyncio.CancelledError, Exception) as error:
         stopping = not row["preview"] and not browsing.operations.policy()["enabled"]
         if isinstance(error, asyncio.CancelledError) or stopping:
-            status, task_error = "cancelled", "父轮取消"
+            status = "paused" if browsing.operations.draining and not browsing.operations.policy()["emergency"] else "cancelled"
+            task_error = "运营已收尾，保留进度" if status == "paused" else "父轮取消"
         else:
             continuation = getattr(error, "continuation", None)
             status = (
@@ -422,8 +462,9 @@ async def execute(browsing, row, notifications_only):
             )
             browsing.last_error = round_error = task_error = public_error(error)
         browsing.store.execute(
-            "UPDATE browsing_tasks SET status='cancelled',error=? WHERE round_id=? AND status IN ('discovered','claimed','preparing','evidence_ready')",
-            (task_error, identity),
+            "UPDATE browsing_tasks SET status=?,error=? WHERE round_id=? "
+            "AND status IN ('discovered','claimed','preparing','evidence_ready')",
+            ("paused" if status == "paused" else "cancelled", task_error, identity),
         )
     finally:
         browsing.comment_windows.pop(identity, None)
@@ -442,6 +483,7 @@ async def execute(browsing, row, notifications_only):
         browsing.repo.finish_round(identity, status, metrics, round_error)
         if row["config"].get("batch_id"):
             browsing.interactions_changed.set()
+        operation_checkpoint.reset(checkpoint)
         operation_lane.reset(lane)
         read_round.reset(token)
 
@@ -473,7 +515,7 @@ async def resume_batch_publications(browsing, row, bvid):
                     (public_error(error), item["id"]),
                 )
         elif browsing.publication._action_allowed(item["kind"], browsing.effective()):
-            await browsing.publish(item["id"], automatic=True)
+            browsing.queue_publication(item["id"])
 
 
 async def process_discovery_video(browsing, row, candidate, metrics, semaphore):
@@ -486,19 +528,12 @@ async def process_discovery_video(browsing, row, candidate, metrics, semaphore):
         else semaphore
     )
     async with window:
+        browsing.check_step(row)
         lane = operation_lane.set("background")
         try:
             await browsing._run_discovery_video(row, candidate, metrics)
         finally:
             operation_lane.reset(lane)
-
-
-async def defer_comment_visit(browsing, row, bvid, metrics):
-    if not row["config"].get("batch_id"):
-        return
-    candidate = browsing.repo.batches.comment_visit(row, bvid)
-    if candidate:
-        browsing.interactions_changed.set()
 
 
 async def process_comment_visits(browsing, row, metrics):
@@ -510,26 +545,23 @@ async def process_comment_visits(browsing, row, metrics):
         finally:
             browsing.comment_active.pop(key, None)
 
-    async with asyncio.TaskGroup() as group:
-        for candidate in browsing.repo.batches.pending_comment_visits(row):
-            key = (row["account_id"], row["character_id"], row["character_version"],
-                   row["config"].get("review_session_id", ""), candidate["bvid"])
-            if key not in browsing.comment_active:
-                browsing.comment_active[key] = group.create_task(visit(candidate, key))
+    for candidate in browsing.repo.batches.pending_comment_visits(row):
+        browsing.check_step(row)
+        if not browsing.page_capacity():
+            break
+        key = (row["account_id"], row["character_id"], row["character_version"],
+               row["config"].get("review_session_id", ""), candidate["bvid"])
+        if key not in browsing.comment_active:
+            task = asyncio.create_task(visit(candidate, key))
+            browsing.comment_active[key] = task
+            await task
+            break
 
 
 async def run_discovery_video(browsing, row, candidate, metrics):
     """Execute one queue attempt; a later round may resume interrupted work."""
     bvid = candidate["bvid"]
     comment_batch_ids = candidate.get("comment_batch_ids")
-    if not comment_batch_ids and row["config"].get("autonomous_batch") and browsing.store.one(
-        "SELECT 1 FROM browsing_rounds WHERE status='waiting' AND account_id=? AND character_id=? "
-        "AND character_version=? AND json_extract(config,'$.full_video')=1 LIMIT 1",
-        (row["account_id"], row["character_id"], row["character_version"]),
-    ):
-        # In-flight video work reaches its normal checkpoint. Candidates that
-        # are still waiting for a worker retain their original batch positions.
-        return
     saved = None if comment_batch_ids else browsing.repo.video_retry(row, bvid)
     failures = saved["failures"] if saved else 0
     if failures >= 3:

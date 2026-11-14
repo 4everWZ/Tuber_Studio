@@ -41,7 +41,7 @@ async def test_notification_retry_keeps_source_and_waits_until_eligible(browsing
     assert view["error"] == details["message"] and view["next_at"] == details["next_at"]
 
 
-async def test_new_public_replies_insert_without_starving_an_older_reply(browsing, monkeypatch):
+async def test_direct_public_replies_claim_oldest_discussions_first(browsing, monkeypatch):
     row, _ = browsing.repo.create_round("100", browsing.runtime.character, browsing.policy(), 0, True)
     for identity, timestamp in (("old", 1), ("middle", 2), ("new", 3)):
         browsing.store.execute(
@@ -56,12 +56,12 @@ async def test_new_public_replies_insert_without_starving_an_older_reply(browsin
 
     monkeypatch.setattr(browsing, "_event", reply)
     await browsing._process_events(row, {"failures": 0})
-    assert handled == ["new", "old"]
+    assert handled == ["old", "middle", "new"]
     browsing.store.execute(
         "INSERT INTO browsing_events VALUES('newer','100','reply','newer',4,'received','{}',NULL,4)"
     )
     await browsing._process_events(row, {"failures": 0})
-    assert handled == ["new", "old", "newer", "middle"]
+    assert handled == ["old", "middle", "new", "newer"]
 
 
 async def test_notifications_keep_each_discussion_in_source_order_without_blocking_new_other_threads(browsing, monkeypatch):
@@ -79,9 +79,9 @@ async def test_notifications_keep_each_discussion_in_source_order_without_blocki
 
     monkeypatch.setattr(browsing, "_event", reply)
     await browsing._process_events(row, {"failures": 0})
-    assert handled == ["new-other", "older-floor"]
+    assert handled == ["older-floor", "new-other"]
     await browsing._process_events(row, {"failures": 0})
-    assert handled == ["new-other", "older-floor", "newer-floor"]
+    assert handled == ["older-floor", "new-other", "newer-floor"]
 
 
 async def test_deferred_discussion_head_is_not_overtaken_by_a_newer_message_in_the_same_thread(browsing, monkeypatch):

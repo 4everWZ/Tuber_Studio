@@ -245,9 +245,7 @@ async def test_output_limit_keeps_diagnostic_without_feedback_or_cross_round_mod
         assert main["status"] == ("completed" if comments else "partial")
         assert browsing.repo.batches.get(main)["state"] == "completed"
         if comments:
-            reply = await finished(browsing, automatic=True, interaction_only=True)
-            assert reply["status"] == "completed"
-            diagnostic = browsing.tasks(round_id=reply["id"])[0]["repetition_decisions"][0]
+            diagnostic = browsing.tasks(round_id=main["id"])[0]["repetition_decisions"][0]
             assert diagnostic["state"] == "invalid" and diagnostic["comment_id"] == "601"
             assert not browsing.store.all("SELECT * FROM browsing_comment_progress")
             assert not browsing.store.all("SELECT * FROM browsing_watch_starts")
@@ -304,10 +302,8 @@ async def test_actual_deferred_private_candidate_is_only_visible_in_private_cont
     try:
         row = await finished(browsing, automatic=True, video_only=True)
         assert row["status"] == "completed"
-        reply = await finished(browsing, automatic=True, interaction_only=True)
-        assert reply["status"] == "completed"
         # Query the actual public task DTO, including its duplicate nested payload.
-        tasks = browsing.tasks(round_id=reply["id"])
+        tasks = browsing.tasks(round_id=row["id"])
         public = json.dumps(tasks, ensure_ascii=False)
         assert "仅供私信查看的实际生成草稿" not in public
         resolution = tasks[0]["repetition_decisions"][0]
@@ -342,6 +338,14 @@ async def test_real_send_limit_is_persisted_as_scheduling_instead_of_a_failed_re
     await authorize(browsing)
     row = await finished(browsing, automatic=True, video_only=True)
     assert row["status"] == "completed" and row["metrics"]["failures"] == 0
+    if not on_resume:
+        from test_browsing import wait_for_sends
+
+        await wait_for_sends(browsing)
+        queued = browsing.store.one("SELECT wake_at FROM operation_send_queue")
+        assert queued["wake_at"] == next_at
+        assert not browsing.adapter.sent and not browsing.repo.video_retry(row, BV)
+        return
     task = browsing.tasks(round_id=row["id"])[0]
     assert task["status"] == "deferred_daily" and task["payload"]["retry_kind"] == "send_limit"
     assert task["payload"]["next_at"] == next_at

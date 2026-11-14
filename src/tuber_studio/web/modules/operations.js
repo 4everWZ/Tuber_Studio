@@ -58,7 +58,7 @@ export function renderOperationsQuickBar(status) {
   $("op-save-quick-config").disabled = roundSettingsSaving;
 
   const policyEnabled = status.policy?.enabled === true;
-  const labels = { starting: "正在检查启动条件", draining: "正在收尾当前批次", stopping: "正在停止自主运营",
+  const labels = { starting: "正在检查启动条件", draining: "正在收尾当前动作", stopping: "正在停止自主运营",
     blocked: "自主运营受阻", running: "自主运营中", off: "自主运营已停止", emergency: "已紧急停止" };
   $("op-home-state").textContent = status.policy?.emergency ? labels.emergency : labels[status.state] || (policyEnabled ? labels.running : labels.off);
   $("discovery-top-state").textContent = $("op-home-state").textContent;
@@ -82,14 +82,37 @@ export function renderOperationsQuickBar(status) {
   if (stopRoundBtn) {
     stopRoundBtn.disabled = emergency || transitioning || controlPending || (!policyEnabled && !hasActiveRound);
     stopRoundBtn.textContent = policyEnabled ? "停止自主运营" : "停止只读预览";
-    stopRoundBtn.title = policyEnabled ? "完成本批后停止接纳新任务" : "取消当前只读预览";
+    stopRoundBtn.title = policyEnabled ? "当前动作完成后保存进度并停止" : "取消当前只读预览";
   }
 
   const roundSummary = $("op-active-rounds");
   if (roundSummary) {
     const names = activeRounds.map(round => round.config?.interaction_only ? "互动收件箱" :
       round.preview ? "只读预览" : "刷视频");
-    roundSummary.textContent = hasActiveRound ? `当前轮次 · ${names.join(" · ")}` : "暂无正在执行的轮次";
+    roundSummary.textContent = hasActiveRound ? `当前轮次 · ${names.join(" · ")}`
+      : status.waiting_round ? `视频轮次已保存 · 待续跑${status.waiting_round.remaining ? ` · 剩余 ${status.waiting_round.remaining} 项` : ""}`
+      : "暂无正在执行的轮次";
+  }
+
+  const backlog = status.backlog;
+  const backlogPanel = $("op-backlog");
+  if (backlogPanel) backlogPanel.hidden = !backlog;
+  if (backlog && backlogPanel) {
+    const seconds = backlog.oldest_seconds ?? 0;
+    const age = seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+    $("op-backlog-heading").textContent = [
+      `后台评论 ${backlog.ready_heads} 楼`, `最老等待 ${age}`,
+      backlog.discovery_paused ? "新视频与旧页暂缓" : "",
+    ].filter(Boolean).join(" · ");
+    const review = backlog.review || {};
+    $("op-backlog-detail").textContent = [
+      `评论延后 ${backlog.waiting_comments}`,
+      `发送排队 ${backlog.sends.queued}（延期 ${backlog.sends.deferred}）`,
+      `待审核 评论 ${review.comments}／私信 ${review.messages}／动态 ${review.dynamics}`,
+      `待核对 ${Object.values(backlog.uncertain || {}).reduce((sum, count) => sum + count, 0)}`,
+      `楼头水位 ${backlog.low_heads}–${backlog.high_heads}`,
+      status.send_error || "",
+    ].filter(Boolean).join(" · ");
   }
 
   const previewBtn = $("op-preview-round");

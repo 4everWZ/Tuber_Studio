@@ -52,6 +52,8 @@ class BrowsingRepository:
                 id TEXT PRIMARY KEY,account_id TEXT,kind TEXT,source_key TEXT,timestamp REAL,
                 status TEXT,payload TEXT,error TEXT,created_at REAL,
                 UNIQUE(account_id,kind,id));
+            CREATE INDEX IF NOT EXISTS browsing_events_work
+                ON browsing_events(account_id,status,kind,created_at);
             CREATE TABLE IF NOT EXISTS browsing_cursors(
                 account_id TEXT,kind TEXT,watermark REAL,cursor TEXT,initialized INTEGER,
                 PRIMARY KEY(account_id,kind));
@@ -222,7 +224,7 @@ class BrowsingRepository:
                 "UPDATE browsing_rounds SET status='queued',deadline=?,error=NULL,updated_at=?,budget=? "
                 "WHERE id=? AND status='waiting' AND NOT EXISTS(SELECT 1 FROM browsing_rounds "
                 "WHERE account_id=? AND status IN ('queued','running') "
-                "AND COALESCE(json_extract(config,'$.interaction_only'),0)=0)",
+                "AND json_extract(config,'$.full_video')=1)",
                 (now + row["config"]["deadline_seconds"], now, dump(dict.fromkeys(row["budget"], 0)),
                  identity, row["account_id"]),
             )
@@ -483,7 +485,7 @@ class BrowsingRepository:
                     "UPDATE browsing_tasks SET status=?,payload=? WHERE id=?",
                     ("skipped" if failures == 3 else "retry_wait", dump(payload), task_id),
                 )
-                self.batches.outcome(task_id, "skipped" if failures == 3 else "retry_wait")
+                self.batches.outcome(task_id, "skipped" if failures == 3 else "retry_wait", payload=payload)
             else:
                 self.store.db.execute(
                     "DELETE FROM browsing_video_retries WHERE account_id=? AND character_id=? AND character_version=? AND bvid=?",

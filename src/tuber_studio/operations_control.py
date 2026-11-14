@@ -48,6 +48,8 @@ class OperationsControl:
         self.store = store
         self.starting = False
         self.draining = False
+        self.last_send_error = None
+        self.on_reserved = None
         self._admitted = set()
         store.db.executescript("""
             CREATE TABLE IF NOT EXISTS account_writes(
@@ -73,6 +75,7 @@ class OperationsControl:
             # Requires explicit manual activation by the user clicking "开启自主运营" in UI.
             policy = store.get("operations_policy", {})
             if policy.get("enabled"):
+                store.set("operation_send_resume_epoch", self.policy()["epoch"])
                 policy["enabled"] = False
                 store.set("operations_policy", policy)
             review = store.get("browsing_review_session", {})
@@ -166,6 +169,8 @@ class OperationsControl:
 
     def assert_allowed(self, *, automatic, channel, account_id, character, epoch=None):
         self.assert_review_writable(account_id)
+        if automatic and self.draining:
+            raise ValueError("运营正在收尾，保留待发送草稿")
         return self.assert_authorized(automatic=automatic, channel=channel, account_id=account_id,
                                       character=character, epoch=epoch)
 
@@ -307,21 +312,14 @@ class OperationsControl:
                     ).fetchone()[0]
                     raise SendLimitReached("达到渠道发送上限，等待可用名额", oldest + seconds)
             cooldown = max(policy["recipient_cooldown_seconds"], limits.get("recipient_cooldown_seconds", 0))
-            if (
-                recipient
-                and cooldown
-                and db.execute(
-                    "SELECT 1 FROM operation_write_attempts WHERE account_id=? AND recipient=? AND started_at>? "
-                    "AND NOT(root_token=? AND resolved_status='rejected')",
-                    (
-                        str(account_id),
-                        str(recipient),
-                        now - cooldown,
-                        previous["root_token"] if previous else "",
-                    ),
-                ).fetchone()
-            ):
-                raise ValueError("该用户跨渠道回复仍在冷却中")
+            if recipient and cooldown:
+                last = db.execute(
+                    "SELECT MAX(started_at) FROM operation_write_attempts WHERE account_id=? "
+                    "AND recipient=? AND started_at>? AND NOT(root_token=? AND resolved_status='rejected')",
+                    (str(account_id), str(recipient), now - cooldown, previous["root_token"] if previous else ""),
+                ).fetchone()[0]
+                if last is not None:
+                    raise SendLimitReached("该用户跨渠道回复仍在冷却中", last + cooldown)
             if admission_hook is not None:
                 admission_hook(token)
             values = (
@@ -342,6 +340,8 @@ class OperationsControl:
                 self.revisions.bind_initial(token, binding)
             else:
                 self.revisions.insert_retry(revision_ticket, previous, values)
+        if automatic and self.on_reserved:
+            self.on_reserved()
         return token
 
     def finish(self, token, status, *, receipt=None, error=None):

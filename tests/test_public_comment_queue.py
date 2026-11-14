@@ -4,7 +4,7 @@ import time
 import pytest
 from test_browsing import BV, finished, model_packet
 from test_browsing import browsing as browsing
-from test_browsing_comment_only import enable_comment_choices, finish_comment_handoff
+from test_browsing_comment_only import enable_comment_choices, finish_comment_round
 
 from tuber_studio.platforms.bilibili import PublishUncertain
 
@@ -36,10 +36,10 @@ async def test_duplicate_notification_and_visit_share_context(browsing, monkeypa
                       "comment_id": "601", "source_text": source["content"]}
     browsing.store.execute("INSERT INTO browsing_events VALUES('incoming','100','reply','601',?,'received',?,NULL,?)",
                            (time.time() - 1, json.dumps(event), time.time()))
-    await finish_comment_handoff(browsing)
-    expected_calls = [("CandidateBatchPlan", "video")]
+    await finish_comment_round(browsing)
+    expected_calls = [("CandidateBatchPlan", "background")]
     if not operator_replied:
-        expected_calls.append(("ResponseDecision", "reply"))
+        expected_calls.append(("ResponseDecision", "direct"))
     assert calls == expected_calls
     rows = browsing.store.all("SELECT kind,status,payload FROM browsing_events ORDER BY kind")
     status = "operator_replied" if operator_replied else "drafted"
@@ -67,7 +67,7 @@ async def test_operator_reply_is_rechecked_when_publishing_a_prepared_visit_draf
 
     monkeypatch.setattr(browsing.adapter, "fetch", fetch)
     monkeypatch.setattr(browsing.adapter, "read_video_thread", thread, raising=False)
-    await finish_comment_handoff(browsing)
+    await finish_comment_round(browsing)
     intent, = browsing.intents()
     browsing.review(intent["id"], "approve")
     items.append(item("603", uid="100", parent="601"))
@@ -151,7 +151,7 @@ async def test_comment_like_after_reply_quota_is_full_is_single_and_reconcilable
         return await generate(messages, schema, max_tokens=max_tokens)
 
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", choose)
-    await finish_comment_handoff(browsing)
+    await finish_comment_round(browsing)
     assert len(offered) == 2 and "reply_public" in offered[0] and "reply_public" not in offered[1]
     assert "like_comment" in offered[1]
     assert [target["parent"] for target, _ in browsing.adapter.sent] == ["601"]

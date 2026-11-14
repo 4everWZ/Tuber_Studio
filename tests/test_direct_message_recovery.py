@@ -140,7 +140,7 @@ async def test_saving_private_permissions_while_parent_stopped_does_not_resume_o
     assert not messages.adapter.sent
 
 
-def test_private_handoff_accepts_unbounded_parent_but_still_rejects_stopped_parent(messages):
+def test_private_handoff_accepts_completed_and_paused_parent_but_rejects_cancellation(messages):
     import json
 
     from tuber_studio.operations.browsing.models import BrowsingPolicy
@@ -154,6 +154,10 @@ def test_private_handoff_accepts_unbounded_parent_but_still_rejects_stopped_pare
     }
     assert parent["deadline"] is None
     assert messages._origin_round(draft, active=True)["id"] == parent["id"]
+    repository.finish_round(parent["id"], "completed")
+    assert messages._origin_round(draft, active=True)["status"] == "completed"
     repository.finish_round(parent["id"], "paused")
+    assert messages._origin_round(draft, active=True)["status"] == "paused"
+    repository.finish_round(parent["id"], "cancelled")
     with pytest.raises(ValueError, match="已停止"):
         messages._origin_round(draft, active=True)

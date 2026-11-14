@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 from test_browsing import BV, model_packet
 from test_browsing import browsing as browsing
-from test_browsing_comment_only import comment, enable_comment_choices, finish_comment_handoff
+from test_browsing_comment_only import comment, enable_comment_choices, finish_comment_round
 
 from tuber_studio.comment_materials import (
     article_excerpt,
@@ -124,7 +124,7 @@ async def test_real_reply_entry_uses_current_attachment_and_falls_back_on_articl
     monkeypatch.setattr(browsing.adapter, "read_comment_image", read_image, raising=False)
     monkeypatch.setattr(browsing.runtime.llm, "generate_json", collect)
     browsing.replace_visual_provider(Visual())
-    result = await finish_comment_handoff(browsing)
+    result = await finish_comment_round(browsing)
     assert result["metrics"]["failures"] == 0 and not browsing.adapter.sent
     assert calls == [("article", "12"), ("image", IMAGE), ("vision", 2)]
     assert len(packets) == 1 and packets[0]["comment_materials"] == [

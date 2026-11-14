@@ -25,6 +25,7 @@ from ...publication_errors import SendLimitReached
 from ...store import dump
 from .comment_reader import (
     CommentProgress,
+    enqueue_comment_visit,
     evaluate_comment_visit,
     handoff_comment,
     merge_continuous_comments,
@@ -298,6 +299,7 @@ class BrowsingDecisions:
             async with self.browsing.runtime.offline_generation():
                 if metrics is not None:
                     metrics["lock_wait_seconds"] += time.monotonic() - wait
+                self.browsing.check_step(row)
                 guard()
                 tokens = None
                 with GenerationMeter(self.browsing.repo, row["id"]):
@@ -702,7 +704,7 @@ class BrowsingDecisions:
             response, [key], response.evidence_ids,
         )
         if intent and intent["auto_authorized"]:
-            await self.browsing.publish(intent["id"], automatic=True)
+            self.browsing.queue_publication(intent["id"])
 
     async def _evaluate_task(self, result, row, metrics):
         if result.get("comment_only"):
@@ -923,7 +925,7 @@ class BrowsingDecisions:
                     payload["intent_id"] = intent["id"]
                     status = "selected"
                     if intent["auto_authorized"]:
-                        await self.browsing.publish(intent["id"], automatic=True)
+                        self.browsing.queue_publication(intent["id"])
 
             like_enabled = row["config"].get("video_like_enabled", False)
             fav_enabled = row["config"].get("video_fav_enabled", False)
@@ -959,7 +961,7 @@ class BrowsingDecisions:
                         payload["like_intent_id"] = like_intent["id"]
                         status = "selected"
                         if like_intent["auto_authorized"]:
-                            await self.browsing.publish(like_intent["id"], automatic=True)
+                            self.browsing.queue_publication(like_intent["id"])
 
                 if engagement_decision.should_favorite and fav_enabled:
                     fav_source_key = canonical_intent("bilibili", bvid, "favorite", row["character_id"])
@@ -987,20 +989,22 @@ class BrowsingDecisions:
                         payload["fav_intent_id"] = fav_intent["id"]
                         status = "selected"
                         if fav_intent["auto_authorized"]:
-                            await self.browsing.publish(fav_intent["id"], automatic=True)
+                            self.browsing.queue_publication(fav_intent["id"])
 
             may_discuss = (
                 result.get("task_kind") == "comment_visit"
                 or direct_response is None
                 or direct_response.action in {"reply_public", "read_comments"}
             )
-            defer_comments = (
-                row["config"].get("batch_id")
-                and payload.get("task_kind", "new_video") == "new_video"
-                and comment_actions
-                and chosen
-                and may_discuss
+            defer_comments = bool(
+                row["config"].get("autonomous_batch") and comment_actions
             )
+            if defer_comments:
+                context = await self.browsing.video_comment_context(row, bvid)
+                with self.browsing.store.db:
+                    enqueue_comment_visit(
+                        self.browsing, row, identity, material["metadata"], context.get("items", [])
+                    )
             comments_complete = True
             if row["config"].get("reply_enabled", False) and chosen and not defer_comments and may_discuss:
                 if context is None:
@@ -1042,8 +1046,6 @@ class BrowsingDecisions:
                 fully_read=material["coverage"] == "all_available_cc" and not material.get("missing_parts"),
             )
             metrics["viewed"] += 1
-            if defer_comments:
-                await self.browsing.defer_comment_visit(row, bvid, metrics)
         except (DailyReplyLimitReached, SendLimitReached) as error:
             self.browsing.repo.complete(
                 identity,
@@ -1233,7 +1235,7 @@ class BrowsingDecisions:
                 if not thread_intent:
                     return None
                 if thread_intent["auto_authorized"]:
-                    await self.browsing.publish(thread_intent["id"], automatic=True)
+                    self.browsing.queue_publication(thread_intent["id"])
                 return thread_intent
         finally:
             operation_lane.reset(lane)
