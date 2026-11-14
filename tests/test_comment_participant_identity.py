@@ -10,6 +10,7 @@ from test_comments import comments as comments
 from tuber_studio.bilibili_account import PROFILE_CACHE_KEY, signature
 from tuber_studio.models import Reply
 from tuber_studio.operation_identity import identity_snapshot
+from tuber_studio.runtime import Runtime
 
 
 async def test_comment_account_switch_does_not_inherit_other_account_or_unbound_assistant_history(comments, store, monkeypatch):
@@ -103,15 +104,73 @@ async def test_manual_comment_keeps_real_mentions_and_speaking_account_through_g
     assert len(store.all("SELECT * FROM drafts")) == 1
 
 
-@pytest.mark.parametrize("profile_available,diagnostic", [(True, False), (False, False), (True, True)])
-async def test_profile_change_regenerates_the_approved_comment_before_one_send(comments, store, monkeypatch, profile_available, diagnostic):
-    from tuber_studio.runtime import Runtime
+@pytest.mark.parametrize("account_changed", [False, True], ids=["same-uid", "different-uid"])
+async def test_manual_publish_keeps_reviewed_text_and_verifies_current_uid(comments, store, monkeypatch, account_changed):
+    runtime = comments.runtime
+    comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
+    state = {"account_uid": "100", "account_display_name": "旧账号名", "account_bio": "旧简介"}
+    verified_uids = []
 
-    # This case covers the real diagnostic boundary, beyond the lightweight
-    # comment worker fixture's normal scheduling-only generate_reply stub.
+    async def self_uid():
+        uid = state["account_uid"]
+        verified_uids.append(uid)
+        return uid
+
+    def current(character=None, account_id=None):
+        return identity_snapshot(state, character or runtime.character)
+
+    monkeypatch.setattr(comments.adapter, "self_uid", self_uid, raising=False)
+    monkeypatch.setattr(runtime, "identity_snapshot", current)
+    monkeypatch.setattr(runtime, "generate_reply", Runtime.generate_reply.__get__(runtime, Runtime))
+    video, comment = "BV1d8pU6xEZX", "321"
+    comments.import_items(video, [{"comment_id": comment, "platform_user_id": "neighbor", "content": "你现在叫什么名字？"}])
+    source = store.one("SELECT id FROM comments")
+    comments.enqueue([source["id"]])
+    await asyncio.wait_for(comments.queue.join(), 3)
+    row = store.one("SELECT * FROM drafts")
+    generation_identity = json.loads(row["answer_check"])["generation_identity"]
+    assert generation_identity["identity_version"] == current()["identity_version"]
+    original = " 这句话是我审核过的。\n保留首尾空格和换行。 "
+    comments.review(row["id"], "approve", original)
+    state.update(account_uid="200" if account_changed else "100", account_display_name="新账号名", account_bio="新简介")
+    assert current()["identity_version"] != generation_identity["identity_version"]
+    verified_uids.clear()
+
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Manual publication must not read the profile or call the model")
+
+    monkeypatch.setattr(comments.adapter, "account_profile", unexpected, raising=False)
+    monkeypatch.setattr(runtime, "refresh_identity", unexpected)
+    monkeypatch.setattr(runtime, "generate_reply", unexpected)
+    monkeypatch.setattr(runtime.llm, "generate", unexpected)
+    if account_changed:
+        with pytest.raises(ValueError, match="该草稿属于其他账号"):
+            await comments.publish(row["id"])
+        assert not comments.adapter.sent and not store.all("SELECT * FROM account_writes")
+    else:
+        await comments.publish(row["id"])
+        assert comments.adapter.sent == [(video, comment, original)]
+        assert store.all("SELECT account_id,status FROM account_writes") == [{"account_id": "100", "status": "published"}]
+    assert verified_uids == [state["account_uid"]]
+    saved = store.one("SELECT * FROM drafts")
+    assert saved["status"] == ("approved" if account_changed else "published")
+    assert saved["text"] == original and saved["account_id"] == "100"
+    assert json.loads(saved["answer_check"])["generation_identity"] == generation_identity
+
+
+@pytest.mark.parametrize(("profile_available", "diagnostic"), [
+    pytest.param(True, False, id="send"),
+    pytest.param(False, False, id="profile-unavailable"),
+    pytest.param(True, True, id="needs-review"),
+])
+async def test_automatic_publish_refreshes_comment_profile_and_honors_new_diagnostics(
+    comments, store, monkeypatch, profile_available, diagnostic
+):
     monkeypatch.setattr(comments.runtime, "generate_reply", Runtime.generate_reply.__get__(comments.runtime, Runtime))
     comments.credentials = {"sessdata": "test-session", "csrf": "test-csrf"}
     state = {"platform": "bilibili", "account_uid": "injected-test-account", "account_display_name": "旧账号名", "account_bio": "旧简介"}
+    comments.operations.configure({"enabled": True}, account_id=state["account_uid"], character=comments.runtime.character)
+    store.set("browsing_policy", {"reply_enabled": True, "reply_auto_publish": True})
 
     def current(character=None, account_id=None):
         return identity_snapshot(state, character or comments.runtime.character)
@@ -134,7 +193,6 @@ async def test_profile_change_regenerates_the_approved_comment_before_one_send(c
     await asyncio.wait_for(comments.queue.join(), 3)
     row = store.one("SELECT * FROM drafts")
     old_text = row["text"]
-    comments.review(row["id"], "approve")
     calls = []
 
     async def generate(messages, character, event_id, source_text=None):
@@ -145,22 +203,23 @@ async def test_profile_change_regenerates_the_approved_comment_before_one_send(c
     monkeypatch.setattr(comments.runtime.llm, "generate", generate)
     if not profile_available:
         with pytest.raises(ValueError, match="主页暂不可读"):
-            await comments.publish(row["id"])
+            await comments.publish(row["id"], automatic=True)
         retained = store.one("SELECT * FROM drafts")
-        assert retained["status"] == "approved" and retained["text"] == old_text
+        assert retained["status"] == "pending_review" and retained["text"] == old_text
         assert not calls and not comments.adapter.sent
         return
     if diagnostic:
-        with pytest.raises(ValueError):
-            await comments.publish(row["id"])
+        with pytest.raises(ValueError, match="正文诊断尚待审核"):
+            await comments.publish(row["id"], automatic=True)
         retained = store.one("SELECT * FROM drafts")
         assert retained["status"] == "pending_review"
         check = json.loads(retained["answer_check"])
         assert check["output"]["needs_review"] and check["continuation"]["state"] == "awaiting_review"
         assert len(calls) == 1 and not comments.adapter.sent
         comments.review(row["id"], "approve")
-    await comments.publish(row["id"])
+    await comments.publish(row["id"], automatic=not diagnostic)
     sent = store.one("SELECT * FROM drafts")
     assert sent["status"] == "published" and sent["text"].startswith("现在的账号名")
-    assert len(calls) == 1 and len(comments.adapter.sent) == 1
+    assert len(calls) == 1
+    assert comments.adapter.sent == [("BV1d8pU6xEZX", "321", sent["text"])]
     assert json.loads(sent["answer_check"])["generation_identity"]["identity_version"] == current()["identity_version"]
