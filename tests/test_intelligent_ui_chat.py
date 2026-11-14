@@ -294,7 +294,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         message = payload["message"]
         action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
                   "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience",
-                  "查看公开经历": "public_experiences"}[message]
+                  "查看公开经历": "public_experiences", "你记得我什么": "memory_summary"}[message]
         reference = next((item["reference"] for item in payload["events"] if item["position"] == 2), None)
         return {"action": action, "reference": reference, "topic": "第一句" if action == "recall_experience" else ""}
 
@@ -321,6 +321,8 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         saved, = client.get(memory_path).json()["organized"]
         assert saved["source"]["references"][0]["text"] == "第一句"
         assert saved["channels"] == ["operator"]
+        summary_id, turn = send("你记得我什么")
+        assert turn["card"]["data"]["groups"] == client.get(memory_path).json()["summary"]
         listing, turn = send("查看公开经历")
         assert turn["card"]["data"]["items"] == [{
             "headline": saved["headline"], "anecdote": "第一句", "links": [events[1]["source"]["href"]],
@@ -332,6 +334,7 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         recalled, turn = send("那件公开经历")
         assert turn["reply_text"] == "第一句" and turn["memory_dependent"]
         assert client.delete(f"{memory_path}/organized/{saved['id']}").status_code == 200
+        assert client.get(f"{path}/turns/{summary_id}").json()["card"]["data"]["groups"] == []
         assert client.get(f"{path}/turns/{listing}").json()["card"]["data"]["items"] == []
         assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条回复引用的记忆已变更。"
 
