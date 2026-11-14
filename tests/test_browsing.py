@@ -623,6 +623,16 @@ async def test_discovery_defers_failed_attempt_then_continues_other_videos(brows
     )
     events = []
     prepare = browsing._prepare_evidence
+    publish = browsing.publish
+    finish_publication = asyncio.Event()
+
+    async def publish_video(identity, *, automatic=False):
+        result = await publish(identity, automatic=automatic)
+        intent = next(item for item in browsing.intents() if item["id"] == identity)
+        if intent["target"]["bvid"] == first:
+            # A confirmed send can precede the video task's final recovery checkpoint.
+            await finish_publication.wait()
+        return result
 
     async def prepare_video(video, *args, **kwargs):
         events.append(video)
@@ -635,6 +645,7 @@ async def test_discovery_defers_failed_attempt_then_continues_other_videos(brows
 
     monkeypatch.setattr(browsing.adapter, "discover", discover)
     monkeypatch.setattr(browsing, "_prepare_evidence", prepare_video)
+    monkeypatch.setattr(browsing, "publish", publish_video)
     await browsing.open()
     await start_automation(browsing)
     async with asyncio.timeout(5):
@@ -645,6 +656,9 @@ async def test_discovery_defers_failed_attempt_then_continues_other_videos(brows
         ):
             await asyncio.sleep(0.01)
     await browsing.set_enabled(False)
+    finish_publication.set()
+    if draining := browsing.drain_task:
+        await asyncio.wait_for(draining, 5)
     assert events[:3] == [first, second, first]
     if failed_reads == 3:
         assert events[3] == first
