@@ -27,6 +27,11 @@ class Model:
     async def generate_json(self, messages, schema, *, max_tokens):
         self.requests.append((messages, schema, max_tokens))
         payload = json.loads(messages[1]["content"])
+        if payload.get("task") == "dynamic_grounding":
+            return {"checks": [
+                {"sentence": number, "verdict": "expression", "quotes": []}
+                for number, _ in enumerate(payload["sentences"], 1)
+            ]}
         if payload.get("task") == "operations_memory_summary":
             return {
                 "entries": [

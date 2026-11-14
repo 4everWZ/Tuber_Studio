@@ -4,7 +4,13 @@ import httpx
 import pytest
 
 from tuber_studio.platforms.bilibili import BilibiliAdapter, PublishUncertain
-from tuber_studio.platforms.bilibili_dynamics import PublishCancelled, publish_image, publish_text
+from tuber_studio.platforms.bilibili_dynamics import (
+    PublishCancelled,
+    edit_dynamic_caption,
+    publish_image,
+    publish_text,
+    read_dynamic_caption,
+)
 
 
 @pytest.fixture
@@ -35,6 +41,8 @@ async def platform():
                 "image_url": f"https://i0.hdslb.com/bfs/new_dyn/{page}.png",
                 "image_width": 960, "image_height": 720, "img_size": 0.5,
             }})
+        if request.url.path.endswith("/edit/infos"):
+            return httpx.Response(200, json={"code": 0, "data": {"remain_edit_times": 2, "commercial": {"valid": True}}})
         if isinstance(outcome, Exception):
             raise outcome
         return httpx.Response(200, json=outcome)
@@ -90,6 +98,31 @@ async def test_signed_exact_payload_single_write_and_receipt(platform):
         "url": "https://t.bilibili.com/987654321",
     }
     assert "private-" not in str(receipt)
+
+
+async def test_caption_edit_uses_original_dynamic_id_and_preserves_platform_image(platform):
+    adapter, requests, outcome = platform
+    identifier = "1270460143781281810"
+    image = "https://i0.hdslb.com/bfs/new_dyn/1.png"
+    outcome["data"] = {"item": {
+        "id_str": identifier, "type": "DYNAMIC_TYPE_DRAW",
+        "modules": {"module_author": {"mid": 100}, "module_dynamic": {
+            "desc": None,
+            "major": {"opus": {"summary": {"text": "旧正文"}, "pics": [{"url": image, "width": 960, "height": 512}]}},
+        }},
+    }}
+    with pytest.raises(ValueError, match="不属于当前账号"):
+        await read_dynamic_caption(adapter, identifier, "200")
+    original = await read_dynamic_caption(adapter, identifier, "100")
+    assert original["text"] == "旧正文"
+    outcome["data"] = {}
+    await edit_dynamic_caption(adapter, identifier, "改正正文", original["pictures"], before_send=lambda: None)
+    write, = [request for request in requests if request.method == "POST"]
+    assert write.url.path == "/x/dynamic/feed/edit/dyn"
+    payload = json.loads(write.content)
+    assert payload["dyn_id_str"] == identifier and payload["dyn_req"]["scene"] == 2
+    assert payload["dyn_req"]["pics"] == [{"img_src": image, "img_width": 960, "img_height": 512}]
+    assert payload["dyn_req"]["content"]["contents"][0]["raw_text"] == "改正正文"
 
 
 @pytest.mark.parametrize("content", ["海底小剧场（memory:1）", "今天开饭啦[reply:24]", "fictional=1"])

@@ -33,6 +33,8 @@ from .memory_organizer import MemorySuggestion
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
+_DYNAMIC_URL = re.compile(r"https://(?:www\.bilibili\.com/opus/|t\.bilibili\.com/)([1-9][0-9]{0,19})(?![0-9])")
+_DYNAMIC_ID = re.compile(r"(?<![0-9])([1-9][0-9]{14,19})(?![0-9])")
 _TIMECODE = re.compile(r"(?<![0-9:])(?:(\d{1,3}):)?(\d{1,4}):([0-5]\d)(?:\.(\d{1,3}))?(?![0-9:])")
 _PART = re.compile(r"(?<![A-Za-z0-9])P\s*([1-9]\d{0,3})(?!\d)", re.I)
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
@@ -69,7 +71,7 @@ class VideoSelection(StrictModel):
 class ChatIntent(StrictModel):
     action: Literal[
         "chat", "clarify", "clock", "activity", "event_details", "event_author", "event_reply",
-        "video_activity", "dynamic", "browse", "full_video", "public_experiences", "remember_event",
+        "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
         "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
         "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory",
         "game_status", "game_handoff", "live_history",
@@ -220,7 +222,8 @@ class OperatorChat:
             "今日趣事和今天看了什么选 activity，询问数量选 video_activity。"
             "问运营事件的原话或内容、作者、是否回过分别选 event_details、event_author、event_reply。"
             "列出公开经历选 public_experiences，查某条已经记下的经历选 recall_experience，把事件直接记下来选 remember_event。"
-            "写动态选 dynamic，按主题刷视频选 browse，要求指定 BV 看完选 full_video。"
+            "写新动态选 dynamic，修改已经发布的动态选 edit_dynamic。"
+            "按主题刷视频选 browse，要求指定 BV 看完选 full_video。"
             "指定分 P 的一段视频时限用 part、seconds（起点）和 end_seconds（终点），有歧义就问。"
             "查看、开始自主运营分别选 operation_control、start_operations。直播状态和开启分别选 live_status、start_live。"
             "停止任务选 stop，继续指定视频任务选 resume_video，问指定视频的进度或已看的内容选 video_details。"
@@ -271,6 +274,18 @@ class OperatorChat:
                 "SELECT 1 FROM dynamic_posts WHERE id=?", (identifier,)
             ) else None
             return result | {"card": card | {"data": self._draft_view(row)}}
+        if card["type"] == "dynamic_edit":
+            try:
+                edit = self.dynamics.dynamic_edit(
+                    card["data"]["request_id"], self._account(), self.runtime.character["id"],
+                )
+            except ValueError:
+                return result | {"reply_text": "当前账号无法查看这条修订。", "card": None}
+            return result | {"card": card | {"data": {
+                "request_id": edit["request_id"], "original": json.loads(edit["original"])["text"],
+                "caption": edit["outgoing"], "status": edit["status"], "error": edit["error"],
+                "url": f"https://www.bilibili.com/opus/{edit['platform_id']}",
+            }}}
         if card["type"] == "video_browsing":
             row = self.browsing.repo.round(card["data"]["id"])
             if row:
@@ -477,6 +492,14 @@ class OperatorChat:
                 char, request_id, topic or "想象中的海底小窝日常，保持为角色小故事"
             )
             return {"reply_text": "草稿已保存。", "card": {"type": "dynamic_draft", "data": self._draft_view(row)}}
+        if kind == "edit_dynamic":
+            identifiers = set(_DYNAMIC_URL.findall(data.message) or _DYNAMIC_ID.findall(data.message))
+            if len(identifiers) != 1:
+                return {"reply_text": "请给我一条要修改的动态链接或动态 ID。", "card": None}
+            edit = await self.dynamics.propose_dynamic_edit(char, request_id, identifiers.pop(), data.message)
+            return {"reply_text": "已准备好原动态的修订。", "card": {
+                "type": "dynamic_edit", "data": {"request_id": edit["request_id"]},
+            }}
         if kind == "browse":
             if len(topic) > 100:
                 raise ValueError("浏览范围请控制在100字以内")

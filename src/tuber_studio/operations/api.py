@@ -2,6 +2,7 @@
 
 import asyncio
 from typing import Literal
+from uuid import UUID
 
 import httpx
 from fastapi import Body, Depends, HTTPException, Query
@@ -229,3 +230,8 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
             if row["status"] in {"pending_review", "approved"} and not row.get("attempted_at"):
                 expected = dynamics.review(post_id, "approve", data["text"])["content"]
         return await dynamics.publish(post_id, expected_text=expected) if expected else await dynamics.publish(post_id)
+
+    @app.post("/api/dynamics/edits/{request_id}/apply", dependencies=[Depends(require_admin)])
+    async def apply_dynamic_edit(request_id: UUID):
+        edit = await dynamics.apply_dynamic_edit(str(request_id))
+        return {key: edit[key] for key in ("request_id", "platform_id", "status", "error")}

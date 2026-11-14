@@ -8,9 +8,12 @@ import time
 import unicodedata
 from datetime import datetime
 
+import httpx
+
 from .context_delivery import memory_source_allowed
 from .daily_memory import DailyMemoryService
 from .dynamic_comment_card import comment_card, render_comment_card
+from .dynamic_grounding import review_caption
 from .generation_meter import budgeted_json
 from .meme_selection import select_meme
 from .operation_continuations import content_hash
@@ -35,8 +38,10 @@ from .platforms.bilibili_dynamics import (
     PublishCancelled,
     PublishPreparationCancelled,
     PublishPreparationFailed,
+    edit_dynamic_caption,
     publish_image,
     publish_text,
+    read_dynamic_caption,
     validate_text,
 )
 from .platforms.bilibili_images import bfs_image_path
@@ -65,7 +70,8 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "挑一件值得分享的事，以角色的口吻讲给刚听说这件事的关注者。"
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
-                "按材料说清起因、你做了什么和后来怎样，篇幅随话题。"
+                "一句日常观察、感想或评论区趣事就可以单独分享，篇幅随话题。"
+                "材料确实有经过时可按实际经过讲。动作、次数和结果以素材为准。"
                 "分享时选post，content写动态正文，source_ids填一项来源。暂缓时选wait，content留空。"
                 "reason说明决定，next_evaluation_seconds是下次评估间隔。"
             ),
@@ -125,6 +131,12 @@ class Dynamics:
             " source_ids TEXT,sources TEXT,status TEXT,receipt TEXT,error TEXT,created_at REAL,"
             " updated_at REAL,published_at REAL,attempted_at REAL,content_hash TEXT,manual INTEGER)",
             "CREATE INDEX IF NOT EXISTS dynamic_posts_attempt ON dynamic_posts(attempted_at)",
+            "CREATE TABLE IF NOT EXISTS dynamic_edits(request_id TEXT PRIMARY KEY, post_id INTEGER NOT NULL,"
+            " account_id TEXT NOT NULL, character_id TEXT NOT NULL, platform_id TEXT NOT NULL,"
+            " original TEXT NOT NULL, caption TEXT NOT NULL, outgoing TEXT NOT NULL, status TEXT NOT NULL,"
+            " error TEXT)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS dynamic_edits_inflight ON dynamic_edits(post_id)"
+            " WHERE status IN ('submitting','pending_verification')",
         ):
             store.execute(sql)
         if "meme_id" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
@@ -160,6 +172,10 @@ class Dynamics:
             data["enabled"] = False
             store.set("dynamic_policy", data)
             self._schedule(86400, "存在不确定动态写入，请先人工核对平台再重新开启运营")
+        store.execute(
+            "UPDATE dynamic_edits SET status='pending_verification',error='请核对原动态的编辑结果'"
+            " WHERE status='submitting'"
+        )
 
     def policy(self):
         base = DEFAULT_POLICY | self.store.get("dynamic_policy", {})
@@ -610,13 +626,30 @@ class Dynamics:
             },
         )
 
-    def _outgoing(self, row, character):
-        value = {"text": row["content"]}
+    @staticmethod
+    def _comment_links(row):
         if card := row["comment_card"]:
             links = card["comments"] if card.get("legacy") else card["links"]
-            value["text"] += "\n\n" + "\n".join(
-                f"原评论：{url}" for url in dict.fromkeys(item["url"] for item in links)
-            )
+            return list(dict.fromkeys(item["url"] for item in links))
+        return []
+
+    @classmethod
+    def _outgoing_text(cls, row, text):
+        if links := cls._comment_links(row):
+            text += "\n\n" + "\n".join(f"原评论：{url}" for url in links)
+        return text
+
+    @classmethod
+    def _edit_caption(cls, row, text):
+        text = validate_text(text)
+        if links := cls._comment_links(row):
+            known = "|".join(re.escape(url) for url in links)
+            text = re.sub(rf"(?:\s*原评论(?:链接)?\s*[：:]\s*(?:{known}))+\s*\Z", "", text)
+        return validate_text(text)
+
+    def _outgoing(self, row, character):
+        value = {"text": self._outgoing_text(row, row["content"])}
+        if card := row["comment_card"]:
             pages = card.get("page_count", 1)
             value["comment_card_sha256"] = hashlib.sha256(render_comment_card(card)).hexdigest()
             if pages > 1:
@@ -919,21 +952,39 @@ class Dynamics:
         # Model regeneration may wait for the inference lock. Finish it before
         # acquiring the shared platform write lock used by other generators.
         await self._refresh_post_identity(post_id, automatic, authorization_epoch)
+        checked = None
+        if automatic:
+            checked = self._post(post_id)
+            self._check_automatic_draft(checked, self.policy())
+            if not self._valid_sources(checked):
+                self._status(post_id, "invalidated", "人物版本或公开来源已变化")
+                raise ValueError("人物版本或公开来源已变化，需重新评估")
+            try:
+                async with self.runtime.offline_generation("video"):
+                    self._check_automatic_draft(checked, self.policy())
+                    if self._post(post_id) != checked or not self._valid_sources(checked):
+                        raise ValueError("草稿或公开来源已变化")
+                    supported = await review_caption(self.runtime.llm, checked["content"], checked["sources"])
+            except (ValueError, TimeoutError, httpx.HTTPError):
+                error = "动态事实核对未完成，保留待审"
+            else:
+                error = None if supported else "正文中的动作、次数或结果缺少来源支持，保留待审"
+            if error:
+                if self._post(post_id) == checked:
+                    with self.store.db:
+                        self.store.db.execute("UPDATE dynamic_posts SET error=? WHERE id=?", (error, post_id))
+                        self.store.db.execute(
+                            "UPDATE dynamic_decisions SET error=? WHERE id=?", (error, checked["decision_id"]),
+                        )
+                raise ValueError(error)
         async with self.comments.publish_lock:
             row, policy = self._post(post_id), self.policy()
             if expected_text is not None and row["content"] != expected_text:
                 raise ValueError("草稿已变化，请重新检查当前正文")
             if automatic:
-                if (
-                    not (policy["enabled"] and policy["auto_publish"])
-                    or row["manual"]
-                    or self._automatic_post_id != post_id
-                ):
-                    raise ValueError("未授权自动发布此动态")
-                if row["status"] != "pending_review":
-                    raise ValueError("动态不能重复发布")
-                if operation_output_diagnostics(row["content"])["needs_review"]:
-                    raise ValueError("正文诊断尚待审核，未自动发布")
+                self._check_automatic_draft(row, policy)
+                if row != checked:
+                    raise ValueError("草稿已变化，请重新核对当前正文")
             elif row["status"] != "approved":
                 raise ValueError("请先审核通过动态")
             if not policy["credentials_configured"]:
@@ -1158,6 +1209,14 @@ class Dynamics:
                 self.memes.release(f"dynamic-draft:{post_id}")
             return self._post(post_id)
 
+    def _check_automatic_draft(self, row, policy):
+        if not (policy["enabled"] and policy["auto_publish"]) or row["manual"] or self._automatic_post_id != row["id"]:
+            raise ValueError("未授权自动发布此动态")
+        if row["status"] != "pending_review":
+            raise ValueError("动态不能重复发布")
+        if operation_output_diagnostics(row["content"])["needs_review"]:
+            raise ValueError("正文诊断尚待审核，未自动发布")
+
     def _check_used_sources(self, row):
         wanted = set(row["source_ids"])
         for other in self.store.all(
@@ -1325,6 +1384,148 @@ class Dynamics:
                 raise ValueError("本次没有可保存的动态正文")
             saved = self._save_decision(character, True, data, [source], generation_identity=identity, schedule=False)
             return self._post(saved["post_id"])
+
+    def dynamic_edit(self, request_id, account, character_id):
+        row = self.store.one(
+            "SELECT * FROM dynamic_edits WHERE request_id=? AND account_id=? AND character_id=?",
+            (request_id, account, character_id),
+        )
+        if row is None:
+            raise ValueError("未找到当前账号和角色的动态修订")
+        if row["status"] == "draft":
+            post = self._post(row["post_id"])
+            caption = self._edit_caption(post, row["caption"])
+            row = row | {"caption": caption, "outgoing": self._outgoing_text(post, caption)}
+        return row
+
+    async def propose_dynamic_edit(self, character, request_id, identifier, instruction):
+        adapter = self.comments.adapter
+        account = str(await self.comments.account_id())
+        if self.store.one("SELECT 1 FROM dynamic_edits WHERE request_id=?", (request_id,)):
+            previous = self.dynamic_edit(request_id, account, character["id"])
+            if previous["platform_id"] != identifier:
+                raise ValueError("这次修订请求已绑定另一条动态")
+            return previous
+        post = self.store.one(
+            "SELECT id FROM dynamic_posts WHERE status='published' AND account_id=? AND character_id=?"
+            " AND json_extract(receipt,'$.dynamic_id')=?",
+            (account, character["id"], identifier),
+        )
+        if not post:
+            raise ValueError("找不到当前账号和角色从工作台发布的这条动态")
+        row = self._post(post["id"])
+        original = await read_dynamic_caption(adapter, identifier, account)
+        if not self._valid_sources(row):
+            raise ValueError("原动态的公开来源已变化")
+        async with self.runtime.offline_generation("video"):
+            result = await budgeted_json(self.runtime.llm, [
+                {"role": "system", "content": (
+                    "按号主的要求改写一条已经发布的动态。只输出可直接使用的正文。"
+                    "事实以公开来源为准，原动态可能有错。可以只写一句日常感想。"
+                    "删除无依据的动作、次数和结果。原评论链接由程序添加。"
+                )},
+                {"role": "user", "content": _json({
+                    "instruction": instruction, "original": original["text"],
+                    "public_sources": [
+                        {key: value for key, value in source.items() if key != "memory_dependencies"}
+                        for source in row["sources"]
+                    ],
+                })},
+            ], {
+                "type": "object", "additionalProperties": False, "required": ["caption"],
+                "properties": {"caption": {"type": "string", "minLength": 1}},
+            }, max_tokens=1024)
+        if not isinstance(result, dict) or set(result) != {"caption"}:
+            raise ValueError("模型未返回完整的动态修订")
+        if adapter is not self.comments.adapter or self._post(row["id"]) != row or not self._valid_sources(row):
+            raise ValueError("账号、动态或公开来源已变化")
+        caption = self._edit_caption(row, result["caption"])
+        self.store.execute(
+            "INSERT INTO dynamic_edits VALUES(?,?,?,?,?,?,?,?,?,NULL)",
+            (request_id, row["id"], account, character["id"], identifier, _json(original),
+             caption, self._outgoing_text(row, caption), "draft"),
+        )
+        return self.dynamic_edit(request_id, account, character["id"])
+
+    async def apply_dynamic_edit(self, request_id):
+        async with self.comments.publish_lock:
+            adapter = self.comments.adapter
+            credentials = dict(self.comments.credentials)
+            account = str(await self.comments.account_id())
+            character = self._character()
+            edit = self.dynamic_edit(request_id, account, character["id"])
+            if edit["status"] == "applied":
+                return edit
+            row = self._post(edit["post_id"])
+            identifier = edit["platform_id"]
+            original = json.loads(edit["original"])
+
+            def guard():
+                if (
+                    adapter is not self.comments.adapter or self.comments.credentials != credentials
+                    or self._character() != character
+                ):
+                    raise ValueError("编辑期间账号或角色已变化")
+                self.operations.assert_allowed(
+                    automatic=False, channel="dynamics", account_id=account, character=character,
+                )
+
+            actual = await read_dynamic_caption(adapter, identifier, account)
+            expected = original | {"text": edit["outgoing"]}
+            if actual != expected and edit["status"] != "pending_verification":
+                if actual != original or not self._valid_sources(row):
+                    raise ValueError("原动态或公开来源已变化，请重新生成修订")
+                if self.store.one(
+                    "SELECT 1 FROM dynamic_edits WHERE post_id=? AND status IN ('submitting','pending_verification')",
+                    (row["id"],),
+                ):
+                    raise ValueError("这条动态还有待核对的编辑")
+
+                def reserve():
+                    guard()
+                    if self._post(row["id"]) != row or not self._valid_sources(row):
+                        raise ValueError("原动态的公开来源已变化")
+                    self.store.execute(
+                        "UPDATE dynamic_edits SET status='submitting',caption=?,outgoing=?,error=NULL WHERE request_id=?",
+                        (edit["caption"], edit["outgoing"], request_id),
+                    )
+
+                try:
+                    await edit_dynamic_caption(adapter, identifier, edit["outgoing"], original["pictures"],
+                                               before_send=reserve)
+                except PlatformRejected as error:
+                    self.store.execute(
+                        "UPDATE dynamic_edits SET status='draft',error=? WHERE request_id=?",
+                        (str(error), request_id),
+                    )
+                    raise
+                except (PublishUncertain, asyncio.CancelledError) as error:
+                    self.store.execute(
+                        "UPDATE dynamic_edits SET status='pending_verification',error='编辑结果待核对' "
+                        "WHERE request_id=? AND status='submitting'", (request_id,),
+                    )
+                    if isinstance(error, asyncio.CancelledError):
+                        raise
+                else:
+                    self.store.execute(
+                        "UPDATE dynamic_edits SET status='pending_verification',error='编辑结果待核对' WHERE request_id=?",
+                        (request_id,),
+                    )
+                try:
+                    actual = await read_dynamic_caption(adapter, identifier, account)
+                except (ValueError, httpx.HTTPError):
+                    return self.dynamic_edit(request_id, account, character["id"])
+            if actual == expected:
+                guard()
+                with self.store.db:
+                    self.store.db.execute(
+                        "UPDATE dynamic_posts SET content=?,content_hash=?,updated_at=? WHERE id=?",
+                        (edit["caption"], _content_hash(edit["caption"]), time.time(), row["id"]),
+                    )
+                    self.store.db.execute(
+                        "UPDATE dynamic_edits SET status='applied',error=NULL WHERE request_id=?", (request_id,),
+                    )
+            return self.dynamic_edit(request_id, account, character["id"])
 
     async def evaluate(self, manual=False):
         async with self.evaluation_lock:

@@ -190,6 +190,75 @@ def test_chat_history_cursor_and_activity_are_bound_to_current_scope(settings):
         assert client.post(path, json=query | {"request_id": str(uuid4())}).json()["card"]["data"]["started"] == 1
 
 
+@pytest.mark.parametrize("unknown", [False, True])
+def test_chat_corrects_original_dynamic_without_reposting(settings, monkeypatch, unknown):
+    from tuber_studio import dynamics as module
+
+    app = create_app(settings, adapter=ControlledPlatform())
+    studio = app.state.dynamics
+    identifier = "1270460143781281810"
+    source = {"id": "reply:example", "type": "published_reply", "text": "有人提到了赛博保险。"}
+    monkeypatch.setattr(studio, "_sources", lambda: [source])
+    old = "我在评论区连着认错对象。第三次才翻回原楼找人把话接对。"
+    new = "评论区有人说要卖我赛博保险。"
+    picture = {"img_src": "https://i0.hdslb.com/bfs/new_dyn/1.png", "img_width": 960, "img_height": 512}
+    remote = {"text": old, "pictures": [picture]}
+    writes = []
+
+    async def read(adapter, target, account):
+        assert target == identifier and account == "100"
+        return dict(remote)
+
+    async def write(adapter, target, text, pictures, *, before_send):
+        before_send()
+        writes.append((target, text, pictures))
+        if unknown:
+            raise module.PublishUncertain("编辑回执不明")
+        remote["text"] = text
+
+    async def generate(messages, schema, *, max_tokens):
+        if schema.get("title") == "ChatIntent":
+            return {"action": "edit_dynamic"}
+        packet = json.loads(messages[1]["content"])
+        assert packet["original"] == old
+        assert packet["public_sources"] == [source]
+        return {"caption": new}
+
+    monkeypatch.setattr(module, "read_dynamic_caption", read)
+    monkeypatch.setattr(module, "edit_dynamic_caption", write)
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", generate)
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        app.state.browsing.discovery.remember_account("100")
+        store = app.state.runtime.store
+        receipt = {"dynamic_id": identifier, "code": 0, "platform": "bilibili"}
+        row = studio._save_decision(app.state.runtime.character, False, {
+            "action": "post", "reason": "评论区互动", "content": old,
+            "source_ids": [source["id"]], "next_evaluation_seconds": 1800,
+        }, [source], schedule=False)
+        post_id = row["post_id"]
+        store.execute("UPDATE dynamic_posts SET account_id='100' WHERE id=?", (post_id,))
+        studio._status(post_id, "published", receipt=receipt)
+        posted_at = studio._post(post_id)["published_at"]
+        request_id = str(uuid4())
+        response = client.post("/api/chat/intelligent", json={
+            "request_id": request_id, "message": f"修改 https://www.bilibili.com/opus/{identifier}，原评论里没有认错人。",
+        })
+        card = response.raise_for_status().json()["card"]
+        assert card["type"] == "dynamic_edit" and card["data"]["caption"] == new
+        assert not writes
+        path = f"/api/dynamics/edits/{request_id}/apply"
+        result = client.post(path).raise_for_status().json()
+        if unknown:
+            assert result["status"] == "pending_verification"
+            assert client.post(path).raise_for_status().json()["status"] == "pending_verification"
+            assert studio._post(post_id)["content"] == old
+            remote["text"] = new
+        assert client.post(path).raise_for_status().json()["status"] == "applied"
+        assert writes == [(identifier, new, [picture])]
+        post = studio._post(post_id)
+        assert post["content"] == new and post["receipt"] == receipt and post["published_at"] == posted_at
+
+
 def test_operations_card_refreshes_permissions_and_confirmation(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     async def model(messages, schema, *, max_tokens):

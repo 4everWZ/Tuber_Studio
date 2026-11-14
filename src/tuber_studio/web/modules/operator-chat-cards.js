@@ -323,6 +323,33 @@ function experienceCard(root, initial) {
 export function createOperatorCard(root, turn, context) {
   const { type, data } = turn.card;
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);
+  if (type === "dynamic_edit") {
+    const note = node("p", "", "hint");
+    note.setAttribute("role", "status");
+    const apply = button("确认修改原动态");
+    const before = node("details");
+    before.append(node("summary", "修改前"), node("p", data.original, "quoted-text"));
+    root.append(link("打开原动态", data.url), before, node("p", data.caption, "quoted-text"), apply, note);
+    let busy = false;
+    function update(value) {
+      apply.disabled = busy || value.status === "applied";
+      apply.textContent = value.status === "pending_verification" ? "核对编辑结果" : "确认修改原动态";
+      note.textContent = value.error || (value.status === "applied" ? "已核对原动态更新。" : "");
+    }
+    apply.onclick = async () => {
+      busy = apply.disabled = true;
+      try {
+        const value = await context.api(`/api/dynamics/edits/${data.request_id}/apply`, { method: "POST" });
+        busy = false;
+        update(value);
+      } catch (error) {
+        busy = apply.disabled = false;
+        note.textContent = safeMessage(error.message);
+      }
+    };
+    update(data);
+    return { update };
+  }
   if (type === "video_browsing") return videoCard(root, turn, context);
   if (type === "operation_control") return operationControlCard(root, data, { ...context, turn });
   if (type === "video_activity") return activityCard(root, data);
