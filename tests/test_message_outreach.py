@@ -3,6 +3,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from test_direct_messages import incoming
@@ -141,7 +142,19 @@ async def test_review_mode_still_checks_invitation_and_never_queues_uninvited_dr
     assert not checks and not generated and not messages.adapter.sent
 
 
-async def test_outreach_is_not_reviewable_until_body_generation_finishes(messages, monkeypatch):
+async def test_invited_outreach_generation_requests_background_lane(messages, monkeypatch):
+    generated, _ = await setup_delivery(messages, monkeypatch, auto_send=False)
+    identity = invite(messages, proposal=False)
+    turns = messages.runtime.operation_turns
+    acquire = AsyncMock(wraps=turns.acquire)
+    monkeypatch.setattr(turns, "acquire", acquire)
+    await messages._generate(identity, True)
+    assert [call.args[0] for call in acquire.await_args_list] == ["background"]
+    assert len(generated) == 1
+    assert not messages.adapter.sent
+
+
+async def test_outreach_is_not_reviewable_until_body_generation_finishes(messages, monkeypatch, wait_for_worker_start):
     _, checks = await setup_delivery(messages, monkeypatch, auto_send=False)
     identity = invite(messages, proposal=False)
     entered, release = asyncio.Event(), asyncio.Event()
@@ -154,15 +167,18 @@ async def test_outreach_is_not_reviewable_until_body_generation_finishes(message
 
     monkeypatch.setattr(messages.runtime, "generate_reply", delayed)
     task = asyncio.create_task(messages._generate(identity, True))
-    await asyncio.wait_for(entered.wait(), 2)
     try:
+        await wait_for_worker_start(task, entered)
         assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "generating"
         assert not messages.store.one("SELECT id FROM dm_drafts WHERE id=? AND status='pending_review'", (identity,))
         with pytest.raises(ValueError, match="不能编辑或审核"):
             messages.review(identity, "approve")
-    finally:
         release.set()
         await task
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
     assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "pending_review"
     assert not checks and not messages.adapter.sent
 

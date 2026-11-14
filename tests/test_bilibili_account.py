@@ -557,10 +557,13 @@ async def test_concurrent_credential_replacements_reject_stale_snapshot(settings
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["sessions", "history", "generation_uid", "generation_wait"])
-async def test_private_reads_reject_account_changed_while_awaiting(settings, network, monkeypatch, phase):
+async def test_private_reads_reject_account_changed_while_awaiting(
+    settings, network, monkeypatch, wait_for_worker_start, phase
+):
     app = create_app(settings)
     comments, messages = app.state.comments, app.state.messages
     started, release = asyncio.Event(), asyncio.Event()
+    pending = None
     try:
         await app.state.bilibili_account.configure(SECRET)
         await messages.configure({"enabled": True})
@@ -590,6 +593,8 @@ async def test_private_reads_reject_account_changed_while_awaiting(settings, net
             monkeypatch.setattr(adapter, "history_page", lambda uid, *, before: blocked((rows, 0, 0)))
             pending = asyncio.create_task(messages.sync())
         else:
+            generate = AsyncMock()
+            monkeypatch.setattr(app.state.runtime, "generate_reply", generate)
             inbox, _ = messages.ingest(
                 {
                     "message_id": "333",
@@ -610,14 +615,13 @@ async def test_private_reads_reject_account_changed_while_awaiting(settings, net
                 )
 
                 @asynccontextmanager
-                async def waiting_model(lane):
-                    assert lane == "dm"
+                async def waiting_model(lane=None):
                     await blocked(None)
                     yield
 
                 monkeypatch.setattr(app.state.runtime, "offline_generation", waiting_model)
             pending = asyncio.create_task(messages._generate(draft, False))
-        await asyncio.wait_for(started.wait(), timeout=2)
+        await wait_for_worker_start(pending, started)
         await comments.replace_credentials(SECRET | {"sessdata": "new-private-account"})
         release.set()
         with pytest.raises(ValueError, match="账号已变更"):
@@ -627,8 +631,12 @@ async def test_private_reads_reject_account_changed_while_awaiting(settings, net
         if phase in {"sessions", "history"}:
             assert app.state.store.one("SELECT COUNT(*) AS n FROM dm_inbox")["n"] == 0
         else:
+            generate.assert_not_awaited()
             row = app.state.store.one("SELECT * FROM dm_drafts WHERE id=?", (draft,))
             assert row["status"] == "failed" and not row["text"]
     finally:
         release.set()
+        if pending is not None:
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
         await close_unstarted(app)

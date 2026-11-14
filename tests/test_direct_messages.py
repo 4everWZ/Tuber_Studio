@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -101,6 +102,31 @@ async def test_unpublished_private_draft_does_not_become_sent_context(messages):
     window = messages.runtime.context.existing(messages.scope(draft), messages.runtime.character)
     assert not window or draft["text"] not in window["history"]
     assert not messages.adapter.sent and draft["receipt"] is None
+
+
+@pytest.mark.parametrize(
+    ("automatic", "continuous", "expected_lane"),
+    [
+        pytest.param(False, False, "background", id="manual"),
+        pytest.param(False, True, "direct", id="continuous-review"),
+        pytest.param(True, False, "direct", id="automatic"),
+    ],
+)
+async def test_incoming_generation_requests_lane_for_queue_origin(
+    messages, monkeypatch, automatic, continuous, expected_lane
+):
+    account_id = "injected-test-account"
+    messages.operations.configure({"enabled": True}, account_id=account_id, character=messages.runtime.character)
+    identity = messages.enqueue(
+        "message", incoming(messages, account_id=account_id), continuous=continuous, schedule=False
+    )
+    turns = messages.runtime.operation_turns
+    acquire = AsyncMock(wraps=turns.acquire)
+    monkeypatch.setattr(turns, "acquire", acquire)
+    await messages._generate(identity, automatic)
+    assert [call.args[0] for call in acquire.await_args_list] == [expected_lane]
+    assert messages.store.one("SELECT status FROM dm_drafts WHERE id=?", (identity,))["status"] == "pending_review"
+    assert not messages.adapter.sent
 
 
 async def test_comment_handoff_reads_only_the_draft_account_public_context(messages):

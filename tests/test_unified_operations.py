@@ -30,7 +30,6 @@ async def test_video_only_parent_start_does_not_enable_or_probe_private_messages
 
     async def run(**kwargs):
         calls.append(kwargs)
-        assert kwargs == {"automatic": True, "video_only": True}
         video.set()
         return {"id": "video"}
 
@@ -45,7 +44,7 @@ async def test_video_only_parent_start_does_not_enable_or_probe_private_messages
     assert status["permissions"]["top_level"] == "review"
     assert not browsing.messages.policy()["auto_poll"] and not browsing.messages.policy()["auto_send"]
     assert not hasattr(browsing.discovery, "worker")
-    assert len(calls) == 1
+    assert calls == [{"automatic": True, "video_only": True}]
     await browsing.set_enabled(False)
     assert browsing.store.get("browsing_policy") == before
 
@@ -61,12 +60,13 @@ async def test_comment_only_parent_start_does_not_probe_or_start_video_discovery
         }
     )
     inbox = asyncio.Event()
+    calls = []
 
     async def no_video(*args, **kwargs):
         raise AssertionError("Video discovery was not enabled")
 
     async def run(**kwargs):
-        assert kwargs == {"automatic": True, "interaction_only": True, "local_interactions": True}
+        calls.append(kwargs)
         inbox.set()
         return {"id": "inbox"}
 
@@ -75,6 +75,7 @@ async def test_comment_only_parent_start_does_not_probe_or_start_video_discovery
     await browsing.open()
     status = await browsing.set_enabled(True)
     await wait_for(inbox)
+    assert calls == [{"automatic": True, "interaction_only": True, "local_interactions": True}]
     assert status["permissions"]["replies"] == "review"
     assert not status["permissions"]["video_enabled"]
     assert status["policy"]["enabled"]
