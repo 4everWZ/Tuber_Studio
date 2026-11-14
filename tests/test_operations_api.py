@@ -10,8 +10,14 @@ class ReadOnlyPlatform:
         pass
 
 
-def test_dynamic_routes_require_admin_and_overlay_does_not_grant_access(settings):
+def test_dynamic_routes_require_admin_and_overlay_does_not_grant_access(settings, monkeypatch):
     app = create_app(settings, ReadOnlyPlatform())
+
+    async def wait_decision(messages, schema, *, max_tokens):
+        return {"action": "wait", "reason": "这次先不发", "content": "", "source_ids": [],
+                "next_evaluation_seconds": 1800}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", wait_decision)
     with TestClient(app) as client:
         for path in ("policy", "posts", "decisions", "memories", "memory-summary"):
             assert client.get(f"/api/dynamics/{path}").status_code == 401
