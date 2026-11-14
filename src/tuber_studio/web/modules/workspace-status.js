@@ -1,5 +1,5 @@
 import { $ } from "./core.js";
-import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261111.07";
+import { renderControls, renderServiceStatusCapsule } from "./live.js?v=20261114.1";
 import { renderVoicePreview } from "./voices.js";
 import { describe, label, occupancyText, tokenCount } from "./workspace-display.js";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";

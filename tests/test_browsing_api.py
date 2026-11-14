@@ -142,7 +142,24 @@ def test_default_disabled_visual_unavailable_and_semantics_still_require_review(
     assert "审核" in status["sending_note"]
     assert not status["effective"]["dynamics"].get("enabled", False)
     assert status["active_round"] is None
-    assert status["blockers"]
+    assert status["startup_check"] == "pending" and status["blockers"] == []
+
+
+def test_startup_check_reports_failure_then_recovers(admin, monkeypatch):
+    browsing = admin.app.state.browsing
+    check_model = browsing.check_browsing_model
+
+    async def failing_model():
+        raise ValueError("测试端点不可用")
+
+    monkeypatch.setattr(browsing, "check_browsing_model", failing_model)
+    failed = admin.post("/api/automation/preflight").raise_for_status().json()
+    assert failed["startup_check"] == "failed"
+    assert failed["blockers"] == ["模型不可用：测试端点不可用"]
+    assert not failed["automatic_sending_ready"]
+    monkeypatch.setattr(browsing, "check_browsing_model", check_model)
+    recovered = admin.post("/api/automation/preflight").raise_for_status().json()
+    assert recovered["startup_check"] == "ready" and recovered["blockers"] == []
 
 
 @pytest.mark.parametrize("patch", [{"enabled": False, "automatic": True}, {"enabled": "true"}, {}])
@@ -190,6 +207,7 @@ def test_real_api_preview_evidence_and_approval_do_not_implicitly_submit(admin):
     assert admin.put("/api/automation/settings", json=config | {"top_level_enabled": True}).status_code == 200
     preflight = admin.post("/api/automation/preflight").json()
     assert preflight["account_id"] == "100" and preflight["blockers"] == []
+    assert preflight["startup_check"] == "ready"
     response = admin.post("/api/automation/round", json={"preview": True})
     assert response.status_code == 200
     assert wait_round(admin, response.json()["id"])["status"] == "completed"

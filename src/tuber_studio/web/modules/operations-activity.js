@@ -165,7 +165,10 @@ export function initOperationsActivity(api) {
   refresh.setRound = value => {
     if (roundId === value) return;
     roundId = value;
-    if (roundId) refresh.setKind("comments");
+    if (roundId) {
+      filter.value = "all";
+      refresh.setKind("comments");
+    }
     else page = 1;
     date.disabled = $("discovery-history-today").disabled = Boolean(roundId);
   };

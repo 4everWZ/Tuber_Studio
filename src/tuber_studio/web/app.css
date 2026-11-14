@@ -709,7 +709,8 @@ tr:hover td {
 .capability-light.is-yellow::before { background: #bc7807; }
 .capability-light.is-red::before { background: #bd3434; }
 .capability-legend { font-size: .8rem; color: var(--muted); }
-.capability-blocker { font-size: .85rem; color: var(--danger); }
+.capability-blocker { font-size: .85rem; color: var(--muted); }
+.capability-blocker.is-error { color: var(--danger); }
 .discovery-status-compact { border-top: 1px solid var(--line); padding-block: 10px; }
 .discovery-status-compact > summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .discovery-status-compact p { margin: 5px 0; }

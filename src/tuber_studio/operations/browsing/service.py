@@ -49,7 +49,8 @@ class BrowsingService:
         self.closed = False
         self.started_at = time.time()
         self.heartbeats = set()
-        self.blockers = ["尚未核验当前账号及模型"]
+        self.blockers = []
+        self.preflight_lock = asyncio.Lock()
         self.account = None
         self.last_error = None
         self.ready_signature = None
@@ -160,6 +161,7 @@ class BrowsingService:
 
     def status(self):
         control = self.operations.policy()
+        ready = self.ready_signature is not None and self.ready_signature == self.credential_signature()
         rounds = [self.repo.round(i) for i in self.active]
         self.status_sequence += 1
         return {
@@ -185,6 +187,8 @@ class BrowsingService:
                 "browsing": self.effective(),
             },
             "blockers": self.blockers,
+            "startup_check": ("checking" if self.preflight_lock.locked() or self.operations.starting else
+                              "failed" if self.blockers else "ready" if ready else "pending"),
             "last_error": self.last_error,
             "vision": self.evidence.visual.capabilities(),
             "active_round": rounds[0] if rounds else None,
@@ -201,7 +205,7 @@ class BrowsingService:
                 self.policy().get("daily_watch_limit", 0),
                 self.policy().get("business_timezone", "Asia/Taipei"),
             ),
-            "automatic_sending_ready": self.comments.policy()["credentials_configured"] and not self.blockers,
+            "automatic_sending_ready": self.comments.policy()["credentials_configured"] and ready and not self.blockers,
             "semantic_validation": self.store.get("browsing_semantic_validation", {}),
             "sending_note": "按设置中已开放的动作与审核方式运行",
             "cache": self.runtime.cache.usage("browsing"),
@@ -261,7 +265,13 @@ class BrowsingService:
         )
 
     async def preflight(self, *, for_automation=False):
+        async with self.preflight_lock:
+            await self._check_preflight(for_automation=for_automation)
+        return self.status()
+
+    async def _check_preflight(self, *, for_automation):
         self.blockers = []
+        self.ready_signature = None
         try:
             await self._current_account()
         except (ValueError, AttributeError) as error:
@@ -323,7 +333,6 @@ class BrowsingService:
                 except ValueError as error:
                     self.blockers.append("私信读取不可用：" + public_error(error))
         self.ready_signature = self.credential_signature() if not self.blockers else None
-        return self.status()
 
     def credential_signature(self):
         return (

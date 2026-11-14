@@ -1,13 +1,15 @@
 "use strict";
 
 class BilibiliAccountUI {
-  constructor({header, settings = null, api, notify, onSessionRevoked = () => {}, onChange = () => {}}) {
+  constructor({header, settings = null, badges = [], api, notify, onSessionRevoked = () => {}, onChange = () => {}}) {
     this.header = header; this.settings = settings; this.api = api; this.notify = notify;
     this.onSessionRevoked = onSessionRevoked; this.onChange = onChange;
     this.value = null; this.active = false; this.loading = false; this.pending = false;
     this.sequence = 0; this.requestError = ""; this.avatarKey = null;
     this.resetPending = false; this.tokenPresented = false; this.sensitiveValues = []; this.lastRefreshAttempt = 0;
     this.login = null;
+    this.badges = badges;
+    for (const badge of badges) badge.innerHTML = `<span class="account-avatar"><span aria-hidden="true" data-badge-initial>B站</span><img alt="" hidden></span><span class="account-badge-name"></span><span class="account-state"></span>`;
     header.innerHTML = `<div class="bilibili-account" aria-label="B站账号">
       <span class="account-avatar"><span data-avatar-placeholder aria-hidden="true">B站</span><img data-avatar alt="" referrerpolicy="no-referrer" hidden></span>
       <div class="account-identity"><div class="account-name-line"><strong data-name>账号状态待读取</strong><span data-status class="account-state" role="status">待读取</span><small data-profile-note hidden>上次核验资料</small></div><div class="account-profile"><span data-uid>UID —</span><span data-coins>硬币 —</span><span data-fans>粉丝 —</span></div><span data-header-error class="account-inline-error" hidden></span></div>
@@ -109,6 +111,25 @@ class BilibiliAccountUI {
     this.h("[data-header-error]").textContent = error; this.h("[data-header-error]").hidden = !error;
     this.h("[data-avatar-placeholder]").textContent = profile?.name ? Array.from(profile.name)[0] : "B站";
     const avatarKey = profile?.avatar_url ? `${profile.uid}:${profile.avatar_url}` : null;
+    for (const badge of this.badges) {
+      const state = this.stateLabel();
+      badge.setAttribute("aria-label", `B站账号 ${name} · ${state}，打开账号与登录`);
+      badge.title = `${name} · ${state}${error ? " · " + error : ""}`;
+      badge.querySelector(".account-badge-name").textContent = name;
+      const badgeState = badge.querySelector(".account-state");
+      badgeState.textContent = state;
+      badgeState.dataset.state = this.requestError ? "error" : value?.state || "unknown";
+      const initial = badge.querySelector("[data-badge-initial]");
+      initial.textContent = profile?.name ? Array.from(profile.name)[0] : "B站";
+      const image = badge.querySelector("img");
+      if (badge.dataset.avatar !== (avatarKey || "")) {
+        badge.dataset.avatar = avatarKey || "";
+        image.hidden = false;
+        if (avatarKey) image.src = `/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`;
+        else { image.hidden = true; image.removeAttribute("src"); }
+        image.onerror = () => { image.hidden = true; };
+      }
+    }
     if (avatarKey !== this.avatarKey) {
       this.avatarKey = avatarKey; this.h("[data-avatar]").hidden = true; this.h("[data-avatar-placeholder]").hidden = false;
       if (avatarKey) this.h("[data-avatar]").src = `/api/account/bilibili/avatar?v=${encodeURIComponent(avatarKey)}`;

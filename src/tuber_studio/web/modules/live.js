@@ -55,7 +55,8 @@ export function renderServiceStatusCapsule(status, settings) {
   const state = inferenceDisplay(status, settings);
   const online = state.connected;
   capsule.className = `service-status-capsule ${online === false ? "offline" : online ? "online" : ""}`;
-  capsule.querySelector(".status-text").textContent = state.text;
+  capsule.querySelector(".status-text").textContent = state.connected === true ? "已连接" :
+    state.connected === false ? "连接异常" : state.connection === "离线演示" ? state.connection : "待连接";
 }
 
 export async function switchResourceMode(target, model, {

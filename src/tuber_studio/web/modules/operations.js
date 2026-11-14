@@ -1,6 +1,6 @@
 import { $, safeMessage, notice } from "./core.js";
 import { initPermissionMatrix, renderPermissionStatus, saveMatrixSettings } from "./permission-matrix.js?v=20261113.01";
-import { renderOperationCapabilities } from "./operation-capabilities.js?v=20261113.01";
+import { renderOperationCapabilities } from "./operation-capabilities.js?v=20261114.1";
 
 let currentAutomationStatus = null;
 let statusRequest = 0;

@@ -6,3 +6,17 @@
 .account-qr img{display:block;max-width:100%;height:auto;background:white}
 #inference-node-panel dd{overflow-wrap:anywhere}
 @media(max-width:760px){.topbar.account-topbar{gap:7px;padding-top:8px;padding-bottom:8px}.topbar.account-topbar #resource-mode-help{display:none}.topbar.account-topbar .status-line{font-size:11px}.topbar.account-topbar .account-profile{font-size:10px}}
+.account-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.account-badge:hover .account-badge-name { text-decoration: underline; }
+.account-badge .account-avatar { width: 26px; height: 26px; flex-basis: 26px; font-size: 11px; }
+.account-badge-name { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .operator-chat-heading .account-badge-name, .operator-chat-heading .account-state { display: none; }
+}

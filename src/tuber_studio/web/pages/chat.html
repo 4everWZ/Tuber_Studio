@@ -1,11 +1,14 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
     <h1 id="operator-chat-title">与大肥鱼对话</h1>
-    <div id="operator-chat-more" class="operator-chat-popup">
-      <button id="operator-chat-more-toggle" class="operator-chat-icon" type="button" aria-label="更多对话操作" aria-expanded="false" aria-controls="operator-chat-more-panel"><span aria-hidden="true">···</span></button>
-      <div id="operator-chat-more-panel" class="operator-chat-menu operator-chat-menu-end" hidden>
-        <button id="operator-chat-clear" type="button">清空私聊</button>
+    <div class="operator-chat-heading-actions">
+      <div id="operator-chat-more" class="operator-chat-popup">
+        <button id="operator-chat-more-toggle" class="operator-chat-icon" type="button" aria-label="更多对话操作" aria-expanded="false" aria-controls="operator-chat-more-panel"><span aria-hidden="true">···</span></button>
+        <div id="operator-chat-more-panel" class="operator-chat-menu operator-chat-menu-end" hidden>
+          <button id="operator-chat-clear" type="button">清空私聊</button>
+        </div>
       </div>
+      <a href="#accounts" id="chat-account-badge" class="account-badge" aria-label="B站账号"></a>
     </div>
     <span id="operator-chat-model-state" class="operator-chat-model-state" role="status">推理状态待确认</span>
     <details id="operator-chat-model-details" class="operator-chat-model-state operator-chat-model-details" hidden>

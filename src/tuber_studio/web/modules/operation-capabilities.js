@@ -54,7 +54,12 @@ export function renderOperationCapabilities(status) {
   const blocker = $("op-capability-blocker");
   if (blocker) {
     const reasons = (status.blockers || []).map(safeMessage);
-    blocker.hidden = !reasons.length && !status.policy?.emergency;
-    blocker.textContent = status.policy?.emergency ? "已紧急停止。" : reasons.length ? `${status.policy?.enabled ? "运行受阻" : "启动检查"}：${reasons.join("；")}` : "";
+    const checking = status.startup_check === "checking";
+    const failed = !checking && reasons.length > 0;
+    const emergency = status.policy?.emergency === true;
+    blocker.classList.toggle("is-error", failed || emergency);
+    blocker.hidden = !emergency && !failed && !checking && status.startup_check !== "pending";
+    blocker.textContent = emergency ? "已紧急停止。" : checking ? "启动检查中…" :
+      failed ? reasons.join("；") : status.startup_check === "pending" ? "启动时核验" : "";
   }
 }

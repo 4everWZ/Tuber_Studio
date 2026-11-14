@@ -17,7 +17,8 @@ function account() {
       setAttribute() {}, removeAttribute() {}, classList: {toggle() {}}});
     return nodes.get(selector);
   };
-  Object.assign(ui, {settings: null, active: true, pending: false, loading: false, sequence: 0,
+  const badge = {querySelector: ui.h, dataset: {}, setAttribute() {}};
+  Object.assign(ui, {settings: null, badges: [badge], active: true, pending: false, loading: false, sequence: 0,
     requestError: "", sensitiveValues: [], avatarKey: null, notify() {},
     value: {state: "logged_in", checked_at: 1700000000, configured: {sessdata: true, csrf: true},
       profile: {uid: "123", name: "大肥鱼", coins: 3.5, fans: 42, avatar_url: "https://i0.hdslb.com/bfs/x"}}});
@@ -38,6 +39,8 @@ test("management API read failure retains last profile, avatar, and verified tim
   assert.equal(ui.h("[data-profile-note]").hidden, false);
   assert.match(ui.h("[data-profile-note]").textContent, /上次资料.*2023/);
   assert.equal(ui.h("[data-status]").textContent, "状态读取失败");
+  assert.equal(ui.h(".account-badge-name").textContent, "大肥鱼");
+  assert.equal(ui.h(".account-state").textContent, "状态读取失败");
 });
 
 test("explicit refresh transport failure marks a stale profile instead of showing logged in", async () => {
@@ -56,4 +59,7 @@ test("an explicit account clear removes the old identity", () => {
   ui.accept({state: "not_configured", configured: {sessdata: false, csrf: false}, profile: null});
   assert.equal(ui.h("[data-uid]").textContent, "UID —");
   assert.equal(ui.h("[data-profile-note]").hidden, true);
+  assert.equal(ui.h(".account-badge-name").textContent, "B站账号");
+  assert.equal(ui.h(".account-state").textContent, "未配置");
+  assert.equal(ui.h("img").hidden, true);
 });

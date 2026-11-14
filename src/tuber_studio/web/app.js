@@ -5,7 +5,7 @@ import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.3";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261114.1";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261114.2";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261113.02";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";
@@ -16,7 +16,7 @@ import {
   getAutomationStatus,
   initOperationsModule,
   updatePermissionCapsule as updateCapsuleModule,
-} from "./modules/operations.js?v=20261113.03";
+} from "./modules/operations.js?v=20261114.1";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261113.02";
 import { initPersonalization } from "./modules/personalization.js?v=20261114.1";
 import {
@@ -32,13 +32,13 @@ import {
 import {
   renderControls,
   initLiveModule,
-} from "./modules/live.js?v=20261111.07";
+} from "./modules/live.js?v=20261114.1";
 
 import {
   badge, cell, dateTime, describe, display, empty, label, list, occupancyText, setBadge, tokenCount,
 } from "./modules/workspace-display.js?v=20261107.23";
 import { initWorkspaceNavigation } from "./modules/workspace-navigation.js?v=20261113.01";
-import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261111.07";
+import { refreshWorkspaceClock, renderContext, renderWorkspaceStatus } from "./modules/workspace-status.js?v=20261114.1";
 
 const api = async (path, options = {}) => {
   const source = location.hash || "#chat";
@@ -125,6 +125,7 @@ const memeGallery = new MemeGallery($("meme-gallery"), api, notice, () => {
 });
 const accountPanel = new BilibiliAccountUI({
   header: $("global-bilibili-account"),
+  badges: [$("top-account-badge"), $("chat-account-badge")],
   settings: $("account-settings"),
   api,
   notify: notice,
