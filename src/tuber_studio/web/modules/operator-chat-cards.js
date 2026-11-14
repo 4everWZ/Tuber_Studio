@@ -1,4 +1,5 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
+import { memoryGroupNames } from "./personalization.js?v=20261114.1";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 
 const statuses = {
@@ -376,6 +377,18 @@ export function createOperatorCard(root, turn, context) {
     return { update, needsRefresh: () => ["queued", "generating", "synthesizing", "ready_to_play", "playing"].includes(current) };
   }
   if (type === "public_experiences") return experienceCard(root, data);
+  if (type === "memory_summary") {
+    const update = value => {
+      root.replaceChildren();
+      for (const group of value.groups) {
+        root.append(node("strong", memoryGroupNames[group.kind]), node("p", group.notes.map(note => note.text).join(" ")));
+      }
+      if (!value.groups.length) root.append(node("p", "暂无可用的长期记忆。", "hint"));
+      root.append(link("管理记忆", "#personalization"));
+    };
+    update(data);
+    return { update, needsRefresh: () => true };
+  }
   if (type === "operation_events") {
     const items = node("ol");
     for (const event of data.items) {

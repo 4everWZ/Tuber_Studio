@@ -189,14 +189,20 @@ class DailyMemoryService:
             return proof
         return self._legacy_source_evidence(row)
 
-    def organized(self, scope, *, limit=100, item_id=None):
+    def organized(self, scope, *, limit=100, item_id=None, unclassified=False):
+        private_unclassified = (
+            "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
+            "AND json_extract(source_evidence,'$.scene') IS NULL "
+            "AND json_extract(source_evidence,'$.summary_kind') IS NULL"
+        )
         rows = self.store.all(
             "SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? "
             "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.memory_kind') END IS NOT NULL "
             "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END=? "
             "AND (? IS NULL OR id=?) "
+            f"AND CASE WHEN json_valid(source_evidence) THEN ({private_unclassified}) = ? END "
             "ORDER BY updated_at DESC,id DESC LIMIT ?",
-            (scope[1], scope[2], scope[0], item_id, item_id, limit),
+            (scope[1], scope[2], scope[0], item_id, item_id, int(unclassified), limit),
         )
         result = []
         for row in rows:
@@ -204,6 +210,40 @@ class DailyMemoryService:
                 result.append(row | {"memory_kind": proof["memory_kind"], "source": proof["memory_source"],
                                      "channels": proof.get("channels", []), "proof": proof})
         return result
+
+    def summary(self, scope):
+        groups = {"preference": [], "decision": [], "experience": []}
+        for row in self.organized(scope):
+            if row["status"] != "active":
+                continue
+            kind = "experience" if row["memory_kind"] == "experience" else row["proof"].get("summary_kind", "preference")
+            notes = groups[kind]
+            if len(notes) < 3 and all(item["text"] != row["anecdote"] for item in notes):
+                notes.append({"id": row["id"], "text": row["anecdote"]})
+        return [{"kind": kind, "notes": notes} for kind, notes in groups.items() if notes]
+
+    def resolve_legacy_private(self, scope, row, decision):
+        current = self.organized(scope, item_id=row["id"], unclassified=True)
+        if not current or current[0]["updated_at"] != row["updated_at"]:
+            return
+        if not decision or decision.action == "skip" or not decision.note.strip() or not decision.headline.strip():
+            # Preserve the original chat and prevent this source from being saved again.
+            proof = row["proof"]
+            for key in {*proof.get("preference_sources", []), row["source_ref"], row["source"]["key"]}:
+                self.store.db.execute(
+                    "INSERT INTO memory_organization VALUES(?,?,?,?,?,'skipped',?) "
+                    "ON CONFLICT(account,character,version,source) DO UPDATE SET status='skipped',updated_at=excluded.updated_at "
+                    "WHERE memory_organization.status!='deleted'",
+                    (*scope, key, "", time.time()),
+                )
+            self.store.db.execute("DELETE FROM daily_highlights WHERE id=?", (row["id"],))
+            return
+        proof = row["proof"] | {"summary_kind": decision.summary_kind}
+        self.store.db.execute(
+            "UPDATE daily_highlights SET headline=?,anecdote=?,tags=?,source_evidence=?,updated_at=? WHERE id=?",
+            (decision.headline.strip(), decision.note.strip(), dump_memory(decision.tags), dump_memory(proof),
+             time.time(), row["id"]),
+        )
 
     def preference(self, scope):
         account, character, _ = scope
@@ -264,6 +304,7 @@ class DailyMemoryService:
                      memory_source={"key": key, "at": source["at"], "references": source.get("references", []),
                                     "thread": source.get("anchor")})
         if kind == "private":
+            proof["summary_kind"] = decision.summary_kind
             previous = existing["proof"].get("preference_sources", [source_ref]) if existing else []
             proof["preference_sources"] = list(dict.fromkeys([*previous, key]))
         if target:

@@ -13,11 +13,11 @@ from tuber_studio.models import Reply
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 
 
-def add_turn(runtime, text):
+def add_turn(runtime, text, **result):
     scope = runtime.memory_organizer.scope()
     identity = str(uuid4())
     runtime.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
-                          (identity, *scope[1:], text, json.dumps({"account_id": scope[0]}), time.time()))
+                          (identity, *scope[1:], text, json.dumps({"account_id": scope[0], **result}), time.time()))
     return identity
 
 
@@ -125,6 +125,18 @@ async def test_private_memory_updates_after_worker_restart_and_stays_private(set
     app.state.browsing.discovery.remember_account("100")
     scope = runtime.memory_organizer.scope()
     try:
+        task_id = add_turn(runtime, "本场只讲 BV 的 P2 结论，验收样例有内部链接", memory_intent="live_handoff")
+        temporary = {"key": f"turn:{task_id}", "kind": "private", "text": "本场只讲视频结论", "at": time.time()}
+        with runtime.store.db:
+            runtime.daily_memory.save_organized(scope, temporary, MemorySuggestion(
+                action="add", existing_id=None, headline="本场直播", note="本场只讲视频结论", tags=["直播"],
+            ), None)
+            runtime.store.db.execute(
+                "UPDATE daily_highlights SET source_evidence=json_remove(source_evidence,'$.summary_kind') WHERE source_ref=?",
+                (temporary["key"],),
+            )
+        assert not runtime.daily_memory.summary(scope)
+        assert not runtime.daily_memory.recall_organized(scope, "operator", "本场只讲视频结论")
         add_turn(runtime, "以后运营汇报先说结论")
         assert await runtime.memory_organizer.run_once() == 1
         first, = runtime.daily_memory.recall_organized(scope, "operator", "汇报")
@@ -137,6 +149,10 @@ async def test_private_memory_updates_after_worker_restart_and_stays_private(set
         assert await runtime.memory_organizer.run_once() == 1
         latest, = runtime.daily_memory.recall_organized(scope, "operator", "汇报")
         assert latest["id"] == first["id"] and latest["quote"].endswith("先说风险")
+        assert runtime.daily_memory.summary(scope) == [
+            {"kind": "preference", "notes": [{"id": latest["id"], "text": latest["anecdote"]}]},
+        ]
+        assert runtime.store.one("SELECT 1 FROM operator_chat_turns WHERE request_id=?", (task_id,))
         app.state.browsing.discovery.remember_account("200")
         assert not runtime.daily_memory.organized(runtime.memory_organizer.scope())
         app.state.browsing.discovery.remember_account("100")

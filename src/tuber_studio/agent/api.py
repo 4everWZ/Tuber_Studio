@@ -215,6 +215,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
         organized = runtime.daily_memory.organized(scope, limit=limit)
         return {"highlights": highlights,
                 "organized": [organized_view(row) for row in organized], "organization": runtime.memory_organizer.state(),
+                "summary": runtime.daily_memory.summary(scope),
                 "scope": token, "enabled": runtime.daily_memory.preference(scope)["enabled"]}
 
     @app.get("/api/daily-memory/recent-events", dependencies=[Depends(require_admin)])

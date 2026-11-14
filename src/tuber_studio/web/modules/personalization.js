@@ -2,6 +2,7 @@ import { $, node } from "./core.js";
 
 const endpoint = "/api/daily-memory";
 const channelNames = { operator: "号主私聊", live: "直播", comment: "回帖", dynamic: "动态" };
+export const memoryGroupNames = { preference: "长期偏好", decision: "持续决定", experience: "可复用经验" };
 const clip = (text, limit) => {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > limit ? line.slice(0, limit) + "…" : line;
@@ -147,37 +148,50 @@ export function initPersonalization(model, api) {
   }
 
   function renderReport(value, redraw) {
-    const organized = value.organized;
     const state = value.organization;
     const status = {
       running: "正在后台整理", waiting: "等待模型空闲", disabled: "自动整理已停用",
       retry: state.error ? `后台整理失败：${state.error}` : "后台整理失败，稍后重试",
     }[state.status];
     organizerStatus.textContent = status || "";
-    if (!redraw) {
-      const progress = $("memory-summary-progress");
-      if (progress) {
-        progress.textContent = status || "";
-        progress.hidden = !status;
-      }
-      return;
-    }
+    if (!redraw) return;
 
     const overview = $("memory-summary-list");
     overview.replaceChildren();
-    const active = organized.filter(item => item.status === "active");
-    const earlier = value.highlights.filter(item => item.status === "active");
-    const notes = [...active, ...earlier].slice(0, 5);
-    for (const item of notes) {
+    const groups = value.summary || [];
+    for (const group of groups) {
       const entry = node("article");
-      entry.append(node("strong", item.headline), node("p", item.anecdote));
+      entry.append(node("strong", memoryGroupNames[group.kind]),
+        node("p", group.notes.map(note => note.text).join(" ")));
+      const changes = node("details");
+      changes.append(node("summary", "更正或删除"));
+      for (const note of group.notes) {
+        const item = value.organized.find(item => item.id === note.id);
+        if (!item) continue;
+        const form = node("form");
+        const label = node("label", item.headline);
+        const input = node(item.choices ? "select" : "textarea");
+        for (const choice of item.choices || []) input.append(new Option(choice, choice));
+        input.value = note.text;
+        input.required = true;
+        input.maxLength = 150;
+        const save = node("button", "保存更正", "win-btn");
+        save.type = "submit";
+        const path = `/organized/${note.id}`;
+        form.onsubmit = event => {
+          event.preventDefault();
+          return mutate(path, { method: "PATCH", body: { note: input.value.trim() } }, save, "记忆已更新。");
+        };
+        label.append(input);
+        form.append(label, save, action("删除", event => {
+          if (confirm("确认删除这条记忆吗？")) mutate(path, { method: "DELETE" }, event.currentTarget, "记忆已删除。");
+        }));
+        changes.append(form);
+      }
+      entry.append(changes);
       overview.append(entry);
     }
-    if (!notes.length) overview.append(node("p", "暂无已保存的记忆。", "hint"));
-    const overviewStatus = node("p", status || "", "hint");
-    overviewStatus.id = "memory-summary-progress";
-    overviewStatus.hidden = !status;
-    overview.append(overviewStatus);
+    if (!groups.length) overview.append(node("p", "暂无已保存的长期记忆。", "hint"));
     renderEntries();
     renderEarlier(value.highlights);
   }
@@ -199,9 +213,10 @@ export function initPersonalization(model, api) {
         return;
       }
       const first = !report;
-      const redraw = first || JSON.stringify([report.organized, report.highlights]) !==
-        JSON.stringify([value.organized, value.highlights]);
-      const deferRedraw = redraw && background && !manager.hidden && manager.contains(document.activeElement);
+      const redraw = first || JSON.stringify([report.summary, report.organized, report.highlights]) !==
+        JSON.stringify([value.summary, value.organized, value.highlights]);
+      const deferRedraw = redraw && background &&
+        (manager.contains(document.activeElement) || summary.contains(document.activeElement));
       if (!deferRedraw) report = value;
       memoryLoad.hidden = true;
       if (first) showManager(false, false);
@@ -268,18 +283,20 @@ export function initPersonalization(model, api) {
     const version = scopeVersion;
     target.disabled = true;
     memoryWriting = true;
-    organizerStatus.textContent = "";
+    const fromSummary = summary.contains(target);
+    const feedback = fromSummary ? $("memory-summary-feedback") : organizerStatus;
+    feedback.textContent = "";
     try {
       await api(`${endpoint}${path}?scope=${encodeURIComponent(scope)}`, options);
       if (version !== scopeVersion) return;
       await loadReport();
       if (version !== scopeVersion || !memory.open) return;
-      organizerStatus.textContent = message;
-      if (!target.isConnected) $("search-memory").focus({ preventScroll: true });
+      feedback.textContent = message;
+      if (!target.isConnected) (fromSummary ? manageButton : $("search-memory")).focus({ preventScroll: true });
     } catch (error) {
       if (version !== scopeVersion) return;
       if (error.status === 409) refreshScope();
-      else organizerStatus.textContent = `操作失败：${error.message}`;
+      else feedback.textContent = `操作失败：${error.message}`;
     } finally {
       memoryWriting = false;
       target.disabled = false;

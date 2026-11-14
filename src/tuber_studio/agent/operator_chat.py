@@ -73,7 +73,7 @@ class ChatIntent(StrictModel):
         "chat", "clarify", "clock", "activity", "event_details", "event_author", "event_reply",
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
         "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
-        "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory",
+        "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory", "memory_summary",
         "game_status", "game_handoff", "live_history",
     ]
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
@@ -233,6 +233,7 @@ class OperatorChat:
             "‘本场说一下刚才玩到哪’选 live_handoff，source=game。‘以后直播都先讲结果’选 live_preference。"
             "查直播里实际讲过或用过的打法选 live_history，topic 填要找的关键词。"
             "‘忘掉直播先讲结果这条’选 forget_memory，topic 填要删除的记忆名称或内容。"
+            "‘你记得我什么’或‘看看你记住了哪些偏好’选 memory_summary。"
             "问当前游戏玩到哪选 game_status；把一个已支持的动作交给模拟游戏选 game_handoff 并填 game_action。"
             "明确提到星露谷或植物大战僵尸时填 game，分别用 stardew_valley 或 pvz。"
             "任务和事件仅能使用已给出的 reference。第几件输出 position，使用 position 时无需复制 reference。"
@@ -264,7 +265,7 @@ class OperatorChat:
         if memory or (audit and audit.get("organized_memory")):
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
-                  if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory"}}
+                  if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory", "memory_intent"}}
         card = result.get("card")
         if card is None:
             return result
@@ -312,6 +313,10 @@ class OperatorChat:
             return result | {"card": {"type": "operation_event", "data": {"event": card["data"]["event"]}}}
         if card["type"] == "public_experiences":
             return result | {"card": card | {"data": {"items": self._saved_experiences()}}}
+        if card["type"] == "memory_summary":
+            memory = self.runtime.daily_memory
+            scope = self.runtime.memory_organizer.scope()
+            return result | {"card": card | {"data": {"groups": memory.summary(scope)}}}
         if card["type"] == "video_activity":
             return result | {"card": card | {"data": self.video_activity(card["data"])}}
         return result
@@ -445,7 +450,7 @@ class OperatorChat:
                     pending.cancellable = False
                 result = await self._action(intent, char, request_id, data, events, tasks, focus)
             self._check_scope(char, account, account_may_resolve=True)
-            result |= {"account_id": self._account(), "submission": submission}
+            result |= {"account_id": self._account(), "submission": submission, "memory_intent": intent.action}
             self.store.execute(
                 "INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
                 (request_id, char["id"], char["version"], data.message, dump(result), time.time()),
@@ -476,6 +481,8 @@ class OperatorChat:
             return await self._save_live_preference(char, request_id, data.message)
         if kind == "forget_memory":
             return self._forget_memory(topic)
+        if kind == "memory_summary":
+            return {"reply_text": "这是我记住的内容。", "card": {"type": "memory_summary", "data": {}}}
         if kind == "live_history":
             return self._live_history(char, topic)
         if kind in {"game_status", "game_handoff"}:
