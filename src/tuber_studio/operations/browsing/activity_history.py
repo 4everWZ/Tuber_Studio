@@ -725,6 +725,8 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
         }
     result = {"day": base["day"], "timezone": base["timezone"], "days": sorted(days, reverse=True),
               "kind": kind, "counts": counts, "items": filtered}
+    if kind == "comments":
+        result["comment_filter"] = comment_filter
     result = _paginate(result, page, page_size) if paginate else result
     comment_rows = [item for item in result["items"] if item["kind"] == "comment" and item.get("bvid")]
     if comment_rows:

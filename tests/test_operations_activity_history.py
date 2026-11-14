@@ -272,6 +272,7 @@ def test_comment_result_filter_runs_before_pagination_and_uses_operation_day(cha
         (json.dumps({"root": "88", "parent": "99", "recipient": "20", "source_text": "可查原评"}), "103"),
     )
     result = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page_size=1)
+    assert result["comment_filter"] == "replied"
     assert result["total"] == result["counts"]["sent"] == result["pages"] == 2
     assert result["items"][0]["source_href"].endswith("#reply99")
     page_two = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page=2, page_size=1)

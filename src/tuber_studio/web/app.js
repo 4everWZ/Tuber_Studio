@@ -5,7 +5,7 @@ import { api as baseApi } from "./modules/api.js";
 import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.3";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261114.2";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261114.3";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261113.02";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";

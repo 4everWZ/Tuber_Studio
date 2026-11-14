@@ -25,6 +25,7 @@ export function initOperationsActivity(api) {
   const feedback = $("discovery-history-feedback"), previous = $("discovery-history-prev"), next = $("discovery-history-next");
   const filter = $("comment-activity-filter"), filterControl = $("comment-activity-filter-control");
   let page = 1, request = 0, signature = "", kind = "all", roundId = null;
+  let displayedQuery = "", pendingQuery = "";
   const expanded = new Map(), renderedRows = new Map();
 
   function render(data) {
@@ -135,18 +136,42 @@ export function initOperationsActivity(api) {
   }
 
   async function refresh() {
-    const current = ++request;
+    const commentFilter = kind === "comments" ? filter.value || "all" : "all";
     const query = new URLSearchParams({ page: String(page), page_size: String(pageSize), kind });
     if (roundId) query.set("round_id", roundId);
     else if (date.value) query.set("day", date.value);
-    if (kind === "comments" && filter.value && filter.value !== "all") query.set("comment_filter", filter.value);
+    if (commentFilter !== "all") query.set("comment_filter", commentFilter);
+    const queryKey = String(query);
+    if (queryKey === pendingQuery) return;
+    const current = ++request;
+    pendingQuery = queryKey;
+    if (displayedQuery !== queryKey) {
+      displayedQuery = queryKey;
+      for (const [key, entry] of renderedRows) expanded.set(key, entry.info.open);
+      renderedRows.clear();
+      signature = "";
+      list.replaceChildren();
+      $("discovery-history-counts").textContent = "";
+      $("discovery-history-page").textContent = "";
+      previous.disabled = next.disabled = true;
+      feedback.textContent = "正在读取活动记录…";
+    }
     try {
       const data = await api(`/api/automation/activity?${query}`);
       if (current !== request) return;
+      if (commentFilter !== "all" && data.comment_filter !== commentFilter) {
+        feedback.textContent = "当前工作台后端未应用评论筛选。更新并重启工作台后再刷新。";
+        return;
+      }
       render(data);
+      query.set("page", String(page));
+      if (!roundId) query.set("day", date.value);
+      displayedQuery = String(query);
       feedback.textContent = "";
     } catch (error) {
       if (current === request) feedback.textContent = `记录读取失败：${safeMessage(error.message)}`;
+    } finally {
+      if (current === request) pendingQuery = "";
     }
   }
 
