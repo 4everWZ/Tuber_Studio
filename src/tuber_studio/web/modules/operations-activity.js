@@ -59,13 +59,14 @@ export function initOperationsActivity(api) {
       const video = itemKind === "comment" && item.bvid;
       const dynamic = itemKind === "comment" && !video && item.thread?.resource?.startsWith("dynamic:")
         ? item.thread.resource.slice("dynamic:".length) : null;
-      const title = node(item.href || itemKind === "video" || video || dynamic ? "a" : "strong",
+      const commentHref = itemKind === "comment" && (item.source_href || item.sent_href);
+      const href = commentHref || (video ? `https://www.bilibili.com/video/${encodeURIComponent(video)}` :
+        dynamic ? `https://t.bilibili.com/${encodeURIComponent(dynamic)}` :
+          item.href || (itemKind === "video" && `https://www.bilibili.com/video/${encodeURIComponent(item.bvid)}`));
+      const title = node(href ? "a" : "strong",
         video ? item.video_title || video : dynamic ? "原动态" : label);
       title.dataset.activityControl = "title";
-      if (item.href || itemKind === "video" || video || dynamic) {
-        const href = video ? `https://www.bilibili.com/video/${encodeURIComponent(video)}` :
-          dynamic ? `https://t.bilibili.com/${encodeURIComponent(dynamic)}` :
-            item.href || `https://www.bilibili.com/video/${encodeURIComponent(item.bvid)}`;
+      if (href) {
         title.href = href;
         if (/^https?:\/\//i.test(href)) { title.target = "_blank"; title.rel = "noreferrer"; }
       }

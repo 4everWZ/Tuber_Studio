@@ -605,6 +605,61 @@ def test_specified_video_reuses_range_checkpoints_and_reconnects_under_same_id(s
         assert client.get(turn_url).json()["card"]["data"]["status"] == "unavailable"
 
 
+@pytest.mark.parametrize("case", ["success", "private-fragment", "account-switch"])
+def test_operator_discussion_to_dynamic_uses_only_sanitized_material(settings, monkeypatch, case):
+    platform = ControlledPlatform()
+    app = create_app(settings, adapter=platform)
+    runtime = app.state.runtime
+    app.state.browsing.discovery.remember_account("100")
+    private_name, private_url = "样例甲", "https://internal.invalid/fixture"
+    safe = "用两盏小灯试出画面层次。"
+
+    async def assistant(messages, schema, **options):
+        return {"action": "chat", "reply_markdown": "可以先开一盏暖光，再用冷光补轮廓。"}
+
+    async def sanitize(messages, schema, *, max_tokens):
+        packet = json.loads(messages[-1]["content"])
+        assert schema["title"] == "PublicText" and packet["用途"] == "动态"
+        assert private_name in json.dumps(packet, ensure_ascii=False)
+        assert any("补轮廓" in turn.get("content", "") for turn in packet["资料"])
+        return {"text": f"{private_name}说：{safe}" if case == "private-fragment" else safe}
+
+    async def draft(messages, schema, *, max_tokens):
+        packet = json.loads(messages[1]["content"])
+        source, = packet["public_sources"]
+        assert source["text"] == safe
+        wire = json.dumps(messages, ensure_ascii=False)
+        assert private_name not in wire and private_url not in wire and "补轮廓" not in wire
+        if case == "account-switch":
+            app.state.browsing.discovery.remember_account("200")
+        return {"action": "post", "reason": "想分享布光", "content": "小窝的两盏灯，各管一半层次。",
+                "source_ids": [source["id"]], "next_evaluation_seconds": 1800}
+
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", assistant, raising=False)
+    monkeypatch.setattr(runtime.llm, "generate_operator_json", sanitize, raising=False)
+    monkeypatch.setattr(runtime.llm, "generate_json", draft)
+    with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
+        client.cookies.set("tuber_overlay", settings.overlay_token)
+        path = "/api/chat/intelligent"
+        client.post(path, json={"request_id": str(uuid4()), "message": f"姓名：{private_name}，聊聊布光 {private_url}"}).raise_for_status()
+        command = {"request_id": str(uuid4()), "message": "把刚才聊的布光写成动态",
+                   "intent": {"action": "dynamic", "source": "discussion"}}
+        response = client.post(path, json=command)
+        if case != "success":
+            if case == "private-fragment":
+                assert response.raise_for_status().json()["card"] is None
+            else:
+                assert response.status_code == 400 and "账号或角色已变化" in response.text
+            assert app.state.dynamics.list_posts() == [] and platform.sent == []
+            return
+        result = response.raise_for_status().json()
+        assert result["card"]["type"] == "dynamic_draft"
+        assert client.post(path, json=command).raise_for_status().json() == result
+        post, = app.state.dynamics.list_posts()
+        assert post["sources"][0]["text"] == safe and post["comment_card"] is None
+        assert post["status"] == "pending_review" and platform.sent == []
+
+
 def test_operator_video_to_live_uses_only_handoff_text_and_player_receipt(settings, monkeypatch):
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform, video_evidence_factory=lambda runtime: TestVisual())

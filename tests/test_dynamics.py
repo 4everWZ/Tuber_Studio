@@ -49,6 +49,9 @@ class Model:
             )
         if self.hook:
             await self.hook()
+        if self.output is None and not payload["public_sources"]:
+            return {"action": "wait", "reason": "这次先不发", "content": "", "source_ids": [],
+                    "next_evaluation_seconds": 1800}
         return (
             json.loads(self.output)
             if self.output is not None
@@ -242,8 +245,10 @@ def test_long_card_keeps_ancestors_and_confirmed_outcome_across_pages(service, m
     bvid, root, account = "BV1d8pU6xEZX", "51", "100"
     actor = {"character_id": service._character()["id"], "account_uid": account}
     items = [{"comment_id": str(i), "thread_id": root, "parent_comment_id": str(i - 1) if i > 51 else None,
-              "platform_user_id": "111", "display_name": "观众甲", "content": f"评论原话 {i}", "created_at": i}
+              "platform_user_id": str(110 + i % 2), "display_name": "观众甲" if i % 2 else "观众乙",
+              "content": f"评论原话 {i}", "created_at": i}
              for i in range(51, 59)]
+    items.append(items[1] | {"comment_id": "80", "parent_comment_id": root, "content": "无关支线"})
     with store.db:
         observe_thread(store, actor | {"account_id": account, "id": "round-a"}, bvid, items, via="comment_visit")
         store.db.execute(
@@ -263,7 +268,10 @@ def test_long_card_keeps_ancestors_and_confirmed_outcome_across_pages(service, m
     }], store=store, actor=actor)
     assert card["page_count"] == 2 and card["missing"] == 0
     assert [entry["comment_id"] for entry in card["comments"]] == [str(i) for i in range(51, 60)]
+    assert card["comments"][0]["reply_to"] is None
+    assert card["comments"][2]["reply_to"] == "观众乙"
     assert card["comments"][-1]["quote"] == "确认回复"
+    assert card["comments"][-1]["reply_to"] == "观众乙"
     assert card["links"] == [{"bvid": bvid, "url": f"https://www.bilibili.com/video/{bvid}#reply53"}]
     assert dynamic_comment_card.render_comment_card(card, 0) != dynamic_comment_card.render_comment_card(card, 1)
 
@@ -425,6 +433,41 @@ async def test_enabled_auto_publishes_only_new_background_decision(service):
         await service.publish(post["id"])
 
 
+@pytest.mark.parametrize("verdict", ["expression", "unsupported"])
+async def test_autonomous_dynamic_can_share_a_thought_without_comment_sources(service, monkeypatch, verdict):
+    caption = "海底小窝的灯一亮，我就想把今天的灵感画下来。"
+    service.runtime.llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": caption,
+                                             "source_ids": [], "next_evaluation_seconds": 1800})
+    generate = service.runtime.llm.generate_json
+
+    async def model(messages, schema, *, max_tokens):
+        payload = json.loads(messages[1]["content"])
+        if payload.get("task") == "dynamic_grounding":
+            assert payload["evidence"] == []
+            return {"checks": [{"sentence": 1, "verdict": verdict, "quotes": []}]}
+        return await generate(messages, schema, max_tokens=max_tokens)
+
+    monkeypatch.setattr(service.runtime.llm, "generate_json", model)
+    await service.set_policy({"enabled": True})
+    decision = await service.evaluate()
+    post = service._post(decision["post_id"])
+    assert post["sources"] == [] and post["comment_card"] is None
+    assert post["status"] == ("published" if verdict == "expression" else "pending_review")
+    assert [text for _, text in service.sent] == ([caption] if verdict == "expression" else [])
+
+
+async def test_unselected_memory_revocation_invalidates_an_unsourced_draft(service):
+    identifier = public_memory(service)
+    service.runtime.llm.output = json.dumps({"action": "post", "reason": "分享随想", "content": "我想画一幅画。",
+                                             "source_ids": [], "next_evaluation_seconds": 1800})
+    decision = await service.evaluate(manual=True)
+    post = service._post(decision["post_id"])
+    assert post["sources"] == [] and service._valid_sources(post)
+    service.mark_memory(identifier, False)
+    assert not service._valid_sources(post)
+    assert not service.sent
+
+
 @pytest.mark.parametrize("case", ["invented", "supported", "missing_sentence", "invented_quote", "offline"])
 async def test_automatic_dynamic_checks_actual_caption_against_public_thread(service, monkeypatch, case):
     draft = published_reply(service)
@@ -510,7 +553,7 @@ async def test_only_explicit_public_memory_enters_prompt(service):
     memory(service, "用户的私人数据XYZ", role="user")
     memory(service, "未执行的角色计划", kind="role_plan")
     assert (await service.evaluate(manual=True))["action"] == "wait"
-    assert not service.runtime.llm.calls
+    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["public_sources"] == []
     assert [m["id"] for m in service.list_memories()] == [private_id]
     public_memory(service, text="明确允许公开的虚构角色故事")
     await service.evaluate(manual=True)
@@ -566,7 +609,6 @@ async def test_deleted_public_comment_invalidates(service):
         "{} trailing",
         "{}",
         '{"action":"post","reason":"r","content":"c","source_ids":["memory:999"],"next_evaluation_seconds":1800}',
-        '{"action":"post","reason":"r","content":"c","source_ids":[],"next_evaluation_seconds":1800}',
         '{"action":"wait","reason":"r","content":"c","source_ids":[],"next_evaluation_seconds":0}',
     ],
 )
@@ -697,7 +739,8 @@ async def test_normalized_duplicate_and_used_sources_block_repetition(service):
     await service.publish(first["post_id"])
     calls = len(service.runtime.llm.calls)
     assert (await service.evaluate(manual=True))["action"] == "wait"
-    assert len(service.runtime.llm.calls) == calls
+    assert len(service.runtime.llm.calls) == calls + 1
+    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["public_sources"] == []
     public_memory(service, text="另一条公开的虚构故事")
     second = await service.evaluate(manual=True)
     service.review(second["post_id"], "approve", "海底小剧场。")
@@ -1115,7 +1158,8 @@ async def test_rejected_source_is_not_regenerated_by_autonomous_publisher(servic
     await service.set_policy({"enabled": True})
     due(service)
     assert (await service.evaluate())["action"] == "wait"
-    assert len(service.runtime.llm.calls) == count and service.sent == []
+    assert len(service.runtime.llm.calls) == count + 1 and service.sent == []
+    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["public_sources"] == []
 
 
 async def test_decision_with_internal_source_id_in_body_is_not_a_publishable_draft(service):

@@ -2,9 +2,11 @@
 
 import json
 import re
+from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -39,7 +41,7 @@ def _legacy_card(sources):
     return None
 
 
-def comment_card(sources, *, store=None, actor=None, legacy=False):
+def comment_card(sources, *, store=None, actor=None, legacy=False, timezone="Asia/Taipei"):
     sources = sorted(sources, key=lambda item: item.get("type") != "public_incident")
     if legacy:
         return _legacy_card(sources)
@@ -53,7 +55,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
         if not url:
             return
         entries.setdefault(url, {
-            "quote": quote.strip(), "url": url, "author": author or "作者资料未保存",
+            "quote": quote, "url": url, "author": author or "作者资料未保存",
             "uid": str(uid) if uid else None, "created_at": _time(created_at),
             "comment_id": str(identifier), "parent_comment_id": str(parent) if parent else None,
         })
@@ -112,7 +114,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
                                     "parent_comment_id": legacy["parent_comment_id"]}
                     if not item:
                         if public_discussion_url(bvid, identifier) not in entries:
-                            missing.add((bvid, identifier))
+                            missing.add(public_discussion_url(bvid, identifier))
                         return None
                     add(bvid, identifier, item["text"], author=item["author_name"], uid=item["author_uid"],
                         created_at=item["created_at"], parent=item["parent_comment_id"])
@@ -135,7 +137,7 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
                 # Keep confirmed outcomes and the comments needed to understand them.
                 outcomes = [item for item in thread["comments"] if item["publication"] == "confirmed"
                             and item["comment_id"] in descendants]
-                for outcome in outcomes:
+                for outcome in outcomes[-2:]:
                     identifier = outcome["comment_id"]
                     while identifier:
                         identifier = add_ancestor(identifier)
@@ -163,8 +165,15 @@ def comment_card(sources, *, store=None, actor=None, legacy=False):
     selected = sorted(entries.values(), key=lambda item: (
         item["created_at"] or 0, int(item["comment_id"]),
     ) if all_times else (int(item["comment_id"]),))[:MAX_QUOTES * MAX_CARD_PAGES]
-    return {"version": 2, "comments": selected, "links": list(links.values()),
-            "omitted": len(entries) - len(selected), "missing": len(missing),
+    zone = ZoneInfo(timezone)
+    for item in selected:
+        parent_id = item["parent_comment_id"]
+        parent = entries.get(item["url"].split("#", 1)[0] + f"#reply{parent_id}") if parent_id else None
+        item["reply_to"] = parent["author"] if parent else None
+        item["time_label"] = (datetime.fromtimestamp(item["created_at"], zone).strftime("%Y-%m-%d %H:%M")
+                              if item["created_at"] else None)
+    return {"version": 3, "comments": selected, "links": list(links.values()),
+            "omitted": len(entries) - len(selected), "missing": len(missing - entries.keys()),
             "page_count": (len(selected) + MAX_QUOTES - 1) // MAX_QUOTES}
 
 
@@ -256,6 +265,13 @@ def render_comment_card(card, page=0):
         quotes = [" ".join(comment["quote"].split()) for comment in card["comments"][:4]]
         return _render(tuple(quote[:177] + "…" if len(quote) > 178 else quote for quote in quotes))
     comments = card["comments"]
+    if card.get("version") == 3:
+        entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"],
+                         item["reply_to"], item["time_label"])
+                        for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES])
+        return _render_thread(entries, page + 1, card["page_count"],
+                              card["omitted"] if page + 1 == card["page_count"] else 0,
+                              card["missing"] if page == 0 else 0)
     if card.get("version") == 2:
         entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"] is not None)
                         for item in comments[page * MAX_QUOTES:(page + 1) * MAX_QUOTES])
@@ -264,6 +280,59 @@ def render_comment_card(card, page=0):
     entries = tuple((item["author"], item["uid"], item["quote"], item["parent_comment_id"] is not None)
                     for item in comments)
     return _render_discussion(entries, card["omitted"])
+
+
+@lru_cache(maxsize=16)
+def _render_thread(entries, page, pages, omitted, missing):
+    width = 960
+    body, meta = _font(28), _font(21)
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    rows = []
+    for author, uid, quote, parent, recipient, posted_at in entries:
+        left = 76 if parent else 34
+        heading = author[:40] + (f"   UID {uid}" if uid else "")
+        recipient = (f"回复 @{recipient[:40]}" if recipient else f"回复评论 {parent}") if parent else ""
+        text = quote.strip()
+        if len(text) > 800:
+            text = text[:799] + "…"
+        lines = [line for paragraph in text.splitlines()
+                 for line in _wrap(measure, paragraph, body, width - left - 34)]
+        if len(lines) > 30:
+            lines = [*lines[:29], "…（全文见原评论）"]
+        rows.append((left, heading, recipient, lines, posted_at))
+    note = []
+    if omitted:
+        note.append(f"另有 {omitted} 条，见原评论链接")
+    if missing:
+        note.append(f"有 {missing} 条关键原评未取得")
+    height = 90 + sum(59 + 34 * bool(to) + 38 * len(lines) + 34 * bool(at)
+                      for _, _, to, lines, at in rows) + len(note) * 33
+    canvas = Image.new("RGB", (width, height), "#ffffff")
+    draw = ImageDraw.Draw(canvas)
+    draw.text((34, 20), "评论摘录", fill="#20242b", font=body)
+    if pages > 1:
+        draw.text((width - 34, 28), f"{page} / {pages}", anchor="ra", fill="#646b76", font=meta)
+    y = 69
+    for left, heading, recipient, lines, posted_at in rows:
+        draw.line((left, y, width - 34, y), fill="#e5e8ed")
+        draw.text((left, y + 14), heading, fill="#505862", font=meta)
+        y += 45
+        if recipient:
+            draw.text((left, y), recipient, fill="#096fa2", font=meta)
+            y += 34
+        for line in lines:
+            draw.text((left, y), line, fill="#20242b", font=body)
+            y += 38
+        if posted_at:
+            draw.text((left, y + 2), posted_at, fill="#646b76", font=meta)
+            y += 34
+        y += 14
+    for line in note:
+        draw.text((34, y), line, fill="#646b76", font=meta)
+        y += 33
+    image = BytesIO()
+    canvas.save(image, format="PNG")
+    return image.getvalue()
 
 
 @lru_cache(maxsize=16)

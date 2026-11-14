@@ -83,7 +83,11 @@ function renderCommentConversation(container, card, links, node) {
     const row = node("li");
     const participant = node("div");
     participant.append(node("strong", comment.author || "用户名未保留"));
-    const metadata = [comment.uid && `UID ${comment.uid}`, comment.created_at != null && localDateTime(comment.created_at)].filter(Boolean);
+    const recipient = comment.reply_to ? `回复 @${comment.reply_to}` :
+      comment.parent_comment_id ? `回复评论 ${comment.parent_comment_id}` : "";
+    if (recipient) participant.append(node("span", ` · ${recipient}`));
+    const metadata = [comment.uid && `UID ${comment.uid}`,
+      comment.time_label || (comment.created_at != null && localDateTime(comment.created_at))].filter(Boolean);
     if (metadata.length) participant.append(node("span", ` · ${metadata.join(" · ")}`, "hint"));
     row.append(participant, node("p", comment.quote));
     conversation.append(row);

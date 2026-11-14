@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from ...message_outreach import contact_state
 from .comment_timeline import comment_activity, comment_href, comment_thread, resource_key
 from .quotas import publication_time
+from .thread_context import COMMENT_ID
 
 _AUTO = "r.preview=0 AND (json_extract(r.config,'$.discovery_publish')=1 OR json_extract(r.config,'$.autonomous_batch')=1)"
 _PRIORITY = "json_extract(r.config,'$.full_video')=1"
@@ -462,12 +463,12 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
         replied_id = None if status == "publish_uncertain" else (
             receipt.get("rpid") or receipt.get("comment_id") or observed.get("comment_id") or (matched or {}).get("comment_id")
         )
-        source_href = comment_href(resource, comment)
+        source_href = comment_href(resource, comment) if COMMENT_ID.fullmatch(str(comment)) else None
         return {
             "thread": {key: thread[key] for key in ("resource", "root_id", "root_author_uid", "resource_author_uid")},
             "source_comment_id": str(comment) if source_href and comment else None,
             "source_href": source_href,
-            "sent_href": comment_href(resource, replied_id) if replied_id else None,
+            "sent_href": comment_href(resource, replied_id) if COMMENT_ID.fullmatch(str(replied_id)) else None,
             "comment_outcome": outcome,
             "account_reply_text": (observed.get("text") or (matched or {}).get("text")) if outcome == "same_account" else None,
             "confirmed_reply_text": matched.get("text") if matched and outcome == "previous_reply" else None,

@@ -67,12 +67,13 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
         {
             "role": "system",
             "content": (
-                "挑一件值得分享的事，以角色的口吻讲给刚听说这件事的关注者。"
+                "你是作为自己在写动态。由你决定今天想分享什么，或者暂时不发。"
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
-                "一句日常观察、感想或评论区趣事就可以单独分享，篇幅随话题。"
-                "材料确实有经过时可按实际经过讲。动作、次数和结果以素材为准。"
-                "分享时选post，content写动态正文，source_ids填一项来源。暂缓时选wait，content留空。"
+                "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
+                "只有实际使用材料才填一项 source_ids。纯感想、玩笑或明确的虚构可留空。"
+                "讲到真实发生的动作、次数和结果时，用可公开的材料支持。"
+                "分享时选post，content写动态正文。暂缓时选wait，content留空。"
                 "reason说明决定，next_evaluation_seconds是下次评估间隔。"
             ),
         },
@@ -149,6 +150,8 @@ class Dynamics:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN generation_identity TEXT")
         if "comment_card_snapshot" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN comment_card_snapshot TEXT")
+        if "context_sources" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
+            store.execute("ALTER TABLE dynamic_posts ADD COLUMN context_sources TEXT")
         if "send_payload" not in {row[1] for row in store.db.execute("PRAGMA table_info(dynamic_posts)")}:
             store.execute("ALTER TABLE dynamic_posts ADD COLUMN send_payload TEXT")
         if "generation_continuation_id" not in {
@@ -491,6 +494,11 @@ class Dynamics:
         post["comment_card"] = json.loads(snapshot) if snapshot is not None else comment_card(post["sources"], legacy=True)
         return continuation_view(self.runtime, "dynamics", post)
 
+    def _comment_card(self, sources, actor):
+        browsing = getattr(self.runtime, "browsing", None)
+        timezone = browsing.policy().get("business_timezone", "Asia/Taipei") if browsing else "Asia/Taipei"
+        return comment_card(sources, store=self.store, actor=actor, timezone=timezone)
+
     def comment_card_image(self, post_id, page=0):
         card = self._post(post_id)["comment_card"]
         if not card:
@@ -509,11 +517,11 @@ class Dynamics:
             )
         current = {s["id"]: s for s in self._sources()}
         dependencies = [item for source in sources for item in source.get("memory_dependencies", [])]
+        dependencies.extend(json.loads(row.get("context_sources") or "[]"))
         originals = [{key: value for key, value in source.items() if key != "memory_dependencies"} for source in sources]
         return (
             row["character_id"] == char["id"]
             and row["character_version"] == char["version"]
-            and bool(row["sources"])
             and all(current.get(s["id"]) == s for s in originals + dependencies)
         )
 
@@ -766,6 +774,8 @@ class Dynamics:
                 self._status(post_id, "rejected", data["reason"])
                 raise ValueError("身份更新后模型决定暂不发布：" + data["reason"])
             selected = [source for source in row["sources"] if source["id"] in data["source_ids"]]
+            if len(selected) != len(row["sources"]):
+                raise ValueError("身份更新后的正文缺少原来源，请重新评估")
             self.store.execute(
                 "UPDATE dynamic_posts SET content=?,content_hash=?,reason=?,sources=?,source_ids=?,"
                 "generation_identity=?,comment_card_snapshot=?,updated_at=?,error=NULL WHERE id=?",
@@ -776,7 +786,7 @@ class Dynamics:
                     _json(selected),
                     _json(data["source_ids"]),
                     _json(identity),
-                    _json(comment_card(selected, store=self.store, actor=identity)),
+                    _json(self._comment_card(selected, identity)),
                     time.time(),
                     post_id,
                 ),
@@ -1246,7 +1256,7 @@ class Dynamics:
                 "source_ids": {
                     "type": "array",
                     "maxItems": min(len(sources), 1),
-                    "items": {"type": "string", "enum": [source["id"] for source in sources]},
+                    "items": {"type": "string", **({"enum": [source["id"] for source in sources]} if sources else {})},
                 },
                 "next_evaluation_seconds": {"type": "integer", "minimum": 300, "maximum": 86400},
             },
@@ -1272,7 +1282,7 @@ class Dynamics:
         allowed = {s["id"] for s in sources}
         if not isinstance(ids, list) or len(ids) > 1 or any(not isinstance(i, str) for i in ids):
             raise ValueError("模型来源列表无效")
-        if not set(ids) <= allowed or (data["action"] == "post" and not ids):
+        if not set(ids) <= allowed:
             raise ValueError("模型引用了未授权来源")
         seconds = data["next_evaluation_seconds"]
         if type(seconds) is not int or not 300 <= seconds <= 86400:
@@ -1284,7 +1294,7 @@ class Dynamics:
         return data
 
     def _save_decision(
-        self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True
+        self, char, manual, data, sources, error=None, *, generation_identity=None, schedule=True, account_id=None
     ):
         now = time.time()
         selected = [s for s in sources if s["id"] in data["source_ids"]]
@@ -1295,6 +1305,7 @@ class Dynamics:
         ]
         if selected and memory_dependencies:
             selected[0] = selected[0] | {"memory_dependencies": memory_dependencies}
+            memory_dependencies = []
         model = str(self.settings.data["llm"].get("model", self.settings.data["llm"]["kind"]))
         next_at = now + data["next_evaluation_seconds"]
         with self.store.db:
@@ -1320,8 +1331,8 @@ class Dynamics:
             if data["action"] == "post":
                 post_id = self.store.db.execute(
                     "INSERT INTO dynamic_posts(decision_id,character_id,character_version,model,content,reason,"
-                    "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id,comment_card_snapshot) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "source_ids,sources,status,created_at,updated_at,content_hash,manual,account_id,comment_card_snapshot,context_sources) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         decision_id,
                         char["id"],
@@ -1336,8 +1347,9 @@ class Dynamics:
                         now,
                         _content_hash(data["content"]),
                         int(manual),
-                        getattr(self.comments, "display_account_id", lambda: "")() or "",
-                        _json(comment_card(selected, store=self.store, actor=generation_identity)),
+                        account_id if account_id is not None else getattr(self.comments, "display_account_id", lambda: "")() or "",
+                        _json(self._comment_card(selected, generation_identity)),
+                        _json(memory_dependencies),
                     ),
                 ).lastrowid
                 self.store.db.execute("UPDATE dynamic_decisions SET post_id=? WHERE id=?", (post_id, decision_id))
@@ -1349,11 +1361,13 @@ class Dynamics:
             self._schedule(data["next_evaluation_seconds"], error)
         return next(d for d in self.list_decisions(100) if d["id"] == decision_id)
 
-    async def create_operator_draft(self, character, request_id, topic):
-        source = {"id": f"operator-topic:{request_id}", "type": "operator_topic", "text": topic}
+    async def create_operator_draft(self, character, request_id, topic, *, account=""):
+        source = {"id": f"operator-topic:{request_id}", "type": "operator_topic",
+                  "text": topic or "选一个你自己想分享的话题"}
+        sources = [source]
         async with self.evaluation_lock:
             existing = self.store.one(
-                "SELECT id, character_id, character_version, sources FROM dynamic_posts "
+                "SELECT id, character_id, character_version, sources, account_id FROM dynamic_posts "
                 "WHERE manual=1 AND source_ids=?",
                 (_json([source["id"]]),),
             )
@@ -1361,32 +1375,38 @@ class Dynamics:
                 if (
                     (existing["character_id"], existing["character_version"])
                     != (character["id"], character["version"])
-                    or json.loads(existing["sources"]) != [source]
+                    or json.loads(existing["sources"]) != sources
+                    or existing["account_id"] != account
                 ):
                     raise ValueError("请求已用于其他动态草稿")
                 return self._post(existing["id"])
-            identity = runtime_identity(self.runtime, character)
+            scope = self.runtime.browsing.discovery.history_scope
+            if str(scope()[0] or "") != account:
+                raise ValueError("账号已切换，请重新交接动态素材")
+            identity = runtime_identity(self.runtime, character, account or None)
             messages = dynamic_decision_messages(
-                character, [], [source], current_time=datetime.now().astimezone().isoformat()
+                character, [], sources, current_time=datetime.now().astimezone().isoformat()
             )
             messages.append({
                 "role": "system",
-                "content": "为号主在 operator_topic 提出的主题写一条动态草稿，选 post 并引用这项来源。",
+                "content": ("根据 operator_topic 写一条动态草稿，选 post 并引用这项来源。" if topic else
+                            "从你自己感兴趣的话题写一条动态草稿，选 post。"),
             })
             async with self.runtime.offline_generation("background"):
                 result = await budgeted_json(
-                    self.runtime.llm, identity_messages(messages, identity), self.decision_schema([source]),
+                    self.runtime.llm, identity_messages(messages, identity), self.decision_schema(sources),
                     max_tokens=512,
                 )
             current = self._character()
             if (current["id"], current["version"]) != (character["id"], character["version"]) or (
-                runtime_identity(self.runtime, current) != identity
-            ):
+                runtime_identity(self.runtime, current, account or None) != identity
+            ) or str(scope()[0] or "") != account:
                 raise ValueError("生成期间账号或角色已变化")
-            data = self._parse(result, [source])
-            if data["action"] != "post":
+            data = self._parse(result, sources)
+            if data["action"] != "post" or data["source_ids"] != [source["id"]]:
                 raise ValueError("本次没有可保存的动态正文")
-            saved = self._save_decision(character, True, data, [source], generation_identity=identity, schedule=False)
+            saved = self._save_decision(character, True, data, sources, generation_identity=identity,
+                                        schedule=False, account_id=account)
             return self._post(saved["post_id"])
 
     def dynamic_edit(self, request_id, account, character_id):
@@ -1543,7 +1563,7 @@ class Dynamics:
             generation_identity = runtime_identity(self.runtime, char)
             base = {
                 "action": "wait",
-                "reason": "暂无获准公开的记忆或已发布互动",
+                "reason": "暂缓动态评估",
                 "content": "",
                 "source_ids": [],
                 "next_evaluation_seconds": policy["evaluate_interval_seconds"],
@@ -1552,9 +1572,6 @@ class Dynamics:
                 base["reason"] = "直播队列繁忙，延后动态评估"
                 return self._save_decision(char, manual, base, [])
             sources = self._summary_sources()
-            used_ids = self._used_source_ids()
-            if not any(source["id"] not in used_ids for source in sources):
-                return self._save_decision(char, manual, base, [])
             if not manual:
                 try:
                     self._quota()
@@ -1567,6 +1584,7 @@ class Dynamics:
                 {"content": p["content"], "published_at": p["published_at"]}
                 for p in self.list_posts("published", 5)
                 if p["character_id"] == char["id"] and p["character_version"] == char["version"]
+                and not json.loads(p.get("context_sources") or "[]")
                 and not any(
                     s.get("memory_version") or s.get("memory_dependencies")
                     or (s["id"].startswith(("memory:", "experience:", "incident:")) and (
@@ -1623,9 +1641,6 @@ class Dynamics:
                         public_sources.extend(self.memory_summary.public_sources(summary))
                     used_ids = self._used_source_ids()
                     public_sources = [source for source in public_sources if source["id"] not in used_ids]
-                    if not public_sources:
-                        base["reason"] = "运营记忆摘要暂无新的可发布摘录"
-                        return self._save_decision(char, manual, base, [])
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])
@@ -1640,6 +1655,7 @@ class Dynamics:
                         "character": {"id": char["id"], "version": char["version"]},
                         "source_sha256": content_hash(public_sources),
                         "self_identity": generation_identity,
+                        **({"evaluation_time": current_time} if not public_sources else {}),
                     }
 
                     async def invoke_model(packet, schema):
@@ -1675,7 +1691,7 @@ class Dynamics:
                         max_tokens=maximum,
                         guard=guard,
                         diagnose=diagnose,
-                                context_data={"public_sources": public_sources},
+                        context_data={"public_sources": public_sources},
                         allow_web_fetch=True,
                     )
                     selected_sources = [by_id[source_id] for source_id in data["source_ids"]]
