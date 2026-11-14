@@ -25,7 +25,7 @@ from .operation_continuations import ContinuationCoordinator, content_hash
 from .operation_generation import generate_with_recovery, hold_comment_body, reply_generation_binding
 from .operation_identity import identity_messages, identity_snapshot
 from .operation_text import operation_output_diagnostics
-from .operation_turns import OperationTurns, operation_lane
+from .operation_turns import OperationTurns, operation_lane, operation_ready_at, operation_ticket
 from .operations.browsing.repository import BrowsingRepository
 from .operations_control import OperationsControl
 from .providers import VoiceService, public_error, reuse_turn_token_counts
@@ -159,11 +159,13 @@ class Runtime:
     async def offline_generation(self, lane=None):
         lane = lane or operation_lane.get()
         if lane:
-            await self.operation_turns.acquire(lane)
+            ticket = await self.operation_turns.acquire(lane, operation_ready_at.get())
+            token = operation_ticket.set((self.operation_turns, ticket))
             try:
                 yield
             finally:
-                self.generation_lock.release()
+                operation_ticket.reset(token)
+                self.operation_turns.release(ticket)
             return
         while True:
             while self.operations_waiting():

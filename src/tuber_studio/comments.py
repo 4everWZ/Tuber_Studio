@@ -677,7 +677,7 @@ class Comments:
         while True:
             while self._live_pending():
                 await asyncio.sleep(0.2)
-            async with self.runtime.offline_generation("reply"):
+            async with self.runtime.offline_generation("background"):
                 if self._live_pending():
                     continue
                 # Recheck after waiting for the GPU: another request may already
@@ -926,7 +926,7 @@ class Comments:
         browsing = getattr(self.runtime, "browsing", None)
         materials = await self._attach_current_materials(browsing, source, event) if browsing else []
         scope = self.account_context_scope(row["video_id"], row["thread_id"], "bilibili", account_id=account)
-        async with self.runtime.offline_generation("reply"):
+        async with self.runtime.offline_generation("background"):
             fresh = self._draft_source(draft_id)
             if not fresh or any(fresh[key] != row[key] for key in ("text", "status", "content", "account_id")):
                 raise ValueError("更新身份期间草稿或来源已变化，保留当前内容")

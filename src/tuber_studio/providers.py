@@ -20,6 +20,7 @@ from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_l
 from .models import OperationReply, Reply
 from .operation_identity import provider_identity_messages
 from .operation_text import operation_character
+from .operation_turns import mark_model_request, prepare_model_request
 from .sse import event_data
 
 SYSTEM_RULES = (
@@ -265,7 +266,9 @@ class LlamaCppProvider:
         self.last_tokens = tokens
         if tokens + 1 > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("重建输入超出真实token预算")
+        await prepare_model_request()
         reservation = reserve_generation(tokens, 1)
+        mark_model_request()
         response = await self.client.post(
             "/v1/chat/completions",
             json={
@@ -302,7 +305,9 @@ class LlamaCppProvider:
         self.last_tokens = tokens
         if tokens + max_tokens > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("压缩输入超窗")
+        await prepare_model_request()
         reservation = reserve_generation(tokens, max_tokens)
+        mark_model_request()
         response = await self.client.post(
             "/v1/chat/completions",
             json={
@@ -355,7 +360,9 @@ class LlamaCppProvider:
         schema = Reply.model_json_schema()
         schema["properties"]["reply_to"]["items"] = {"type": "string", "enum": [event_id]}
         schema["properties"]["reply_to"]["maxItems"] = 1
+        await prepare_model_request()
         reservation = reserve_generation(self.last_tokens, output_budget)
+        mark_model_request()
         response = await self.client.post(
             "/v1/chat/completions",
             json={
@@ -442,7 +449,9 @@ class LlamaCppProvider:
         self.last_tokens = tokens
         if tokens + max_tokens > window:
             raise ContextWindowExceeded("结构化输入超出真实token预算；禁止静默丢弃数据")
+        await prepare_model_request()
         reservation = reserve_generation(tokens, max_tokens, conservative_input=conservative)
+        mark_model_request()
         payload = {
             "model": self.config.get("model", "local"),
             "messages": messages,

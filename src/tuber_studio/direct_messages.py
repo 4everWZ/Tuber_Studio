@@ -1221,7 +1221,7 @@ class DirectMessages:
             if not self._check_outreach(draft, self._event(draft, character)):
                 return
             draft = self.store.one("SELECT * FROM dm_drafts WHERE id=?", (identity,))
-        async with self.runtime.offline_generation("dm"):
+        async with self.runtime.offline_generation("direct" if draft["source_kind"] == "message" else "background"):
             if draft.get("resume_pending") and not self._processing_authorized():
                 return
             if not self.injected and (

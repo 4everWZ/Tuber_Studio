@@ -8,6 +8,8 @@ inert, so live and independent operations keep their existing accounting.
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+from .operation_turns import mark_model_request, prepare_model_request
+
 current_meter = ContextVar("generation_meter", default=None)
 
 
@@ -91,21 +93,25 @@ def reserve_generation(input_tokens, output_tokens, *, conservative_input=False)
 
 async def budgeted_call(provider, callback, messages, *, max_tokens, input_tokens=None):
     """Legacy/custom providers get admission; native HTTP providers meter themselves."""
-    if current_meter.get() is None or getattr(provider, "generation_metered", False):
+    if getattr(provider, "generation_metered", False):
         return await callback()
-    count = input_tokens if input_tokens is not None else await provider.count_tokens(messages)
-    reservation = reserve_generation(count, max_tokens)
+    reservation = None
+    if current_meter.get() is not None:
+        count = input_tokens if input_tokens is not None else await provider.count_tokens(messages)
+        reservation = reserve_generation(count, max_tokens)
+    await prepare_model_request()
+    mark_model_request()
     value = await callback()
     settle_generation(reservation, getattr(provider, "last_usage", {}))
     return value
 
 
 async def budgeted_json(provider, messages, schema, *, max_tokens, input_tokens=None):
-    if current_meter.get() is None or getattr(provider, "generation_metered", False):
+    if getattr(provider, "generation_metered", False):
         return await provider.generate_json(messages, schema, max_tokens=max_tokens)
     counted = (
         provider.prepare_json_messages(messages, schema, max_tokens=max_tokens)
-        if hasattr(provider, "prepare_json_messages")
+        if current_meter.get() is not None and hasattr(provider, "prepare_json_messages")
         else messages
     )
     return await budgeted_call(

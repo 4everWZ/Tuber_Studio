@@ -395,7 +395,7 @@ def enqueue_own_comments(browsing, account, cutoff, target, items):
 
 async def process_events(browsing, row, metrics, *, own_only=False):
     async with browsing.sync_lock:
-        lane = operation_lane.set("reply")
+        lane = operation_lane.set("background")
         try:
             await browsing._process_event_batch(row, metrics, own_only)
         finally:

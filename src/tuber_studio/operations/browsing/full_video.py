@@ -642,7 +642,7 @@ async def execute(browsing, row, metrics):
         save()
         watch_dirty = False
         browsing.repo.mark_watch_result(row, bvid, coverage=current["viewing"] if not selection["ranges"] else "partial")
-        lane = operation_lane.set("reply")
+        lane = operation_lane.set("priority")
         try:
             await _read_comments(browsing, row, identity, payload, material, save, metrics)
         finally:

@@ -14,6 +14,7 @@ from .http_api import api_client, models_health, response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
 from .operation_identity import provider_identity_messages
+from .operation_turns import mark_model_request, prepare_model_request
 from .providers import (
     DemoProvider,
     LlamaCppProvider,
@@ -107,6 +108,7 @@ class APIProvider:
                 payload["response_format"]["schema"] = schema
         if thinking_budget is not None:
             payload.update(thinking_budget_tokens=thinking_budget, reasoning_format="deepseek")
+        await prepare_model_request()
         reservation = (
             reserve_generation(
                 self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
@@ -114,6 +116,7 @@ class APIProvider:
             if probe
             else None
         )
+        mark_model_request()
         data = await response_json(
             self.client,
             "POST",

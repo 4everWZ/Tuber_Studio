@@ -422,7 +422,7 @@ class BrowsingPublication:
         async def invoke(packet):
             return await browsing.runtime.llm.generate_json(packet, schema, max_tokens=request["config"]["decision_max_tokens"])
 
-        async with browsing.runtime.offline_generation("reply"):
+        async with browsing.runtime.offline_generation("background"):
             wire, audit = await generate_with_recovery(
                 browsing.runtime, channel="generation.browsing_identity", identity=identity + ":" + current["identity_version"],
                 binding={"task": "generation", "account_id": account,

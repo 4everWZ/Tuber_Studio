@@ -1124,7 +1124,7 @@ class BrowsingDecisions:
         metadata = material["metadata"] if material else metadata
         bvid = metadata["bvid"]
         scope = (str(row["account_id"]), row["character_id"], bvid, root_id)
-        lane = operation_lane.set("reply")
+        lane = operation_lane.set("background")
         try:
             async with self.browsing.runtime.conversation_turn(scope) as waited:
                 self.browsing._check_round(row)

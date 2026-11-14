@@ -3,122 +3,74 @@ import asyncio
 from tuber_studio.operation_turns import OperationTurns
 
 
-async def test_chat_interleaves_without_advancing_the_operations_rotation():
+async def order(lanes, *, skip=()):
     lock = asyncio.Lock()
     turns = OperationTurns(lock, lambda: False)
-    order = []
+    output = []
+    await lock.acquire()
 
-    async def request(lane):
-        await turns.acquire(lane)
-        try:
-            order.append(lane)
-        finally:
-            lock.release()
+    async def run(name, lane, ready):
+        ticket = await turns.acquire(lane, ready)
+        if name not in skip:
+            turns.started(ticket)
+        output.append(name)
+        turns.release(ticket)
 
-    async with asyncio.timeout(2):
-        async with lock:
-            tasks = [asyncio.create_task(request(lane)) for lane in
-                     ("video", "dm", "dm", "reply", "reply", "chat", "chat", "chat")]
-            await asyncio.sleep(0)
-        await asyncio.gather(*tasks)
-    assert order == ["chat", "reply", "chat", "dm", "chat", "video", "reply", "dm"]
+    tasks = [asyncio.create_task(run(*job)) for job in lanes]
+    await asyncio.sleep(0)
+    lock.release()
+    await asyncio.wait_for(asyncio.gather(*tasks), 3)
+    return output
 
 
-async def test_contended_model_turns_rotate_two_replies_two_dms_one_video():
+async def test_direct_heads_share_wait_order_and_yield_after_two_requests():
+    assert await order([
+        ("older public", "direct", 1), ("video", "background", 1),
+        ("newer public", "direct", 4), ("dm", "direct", 2),
+        ("dynamic", "background", 2), ("chat", "chat", 1),
+    ]) == ["chat", "older public", "dm", "video", "newer public", "dynamic"]
+
+
+async def test_reused_proposal_does_not_consume_a_turn():
+    assert await order([
+        ("reuse", "direct", 1), ("dm", "direct", 2), ("reply", "direct", 3),
+        ("mention", "direct", 4), ("video", "background", 1),
+    ], skip={"reuse"}) == ["reuse", "dm", "reply", "video", "mention"]
+
+
+async def test_priority_video_yields_to_other_background_after_its_step():
+    assert await order([
+        ("old", "background", 1), ("video P1", "priority", 2), ("video P2", "priority", 2),
+    ]) == ["video P1", "old", "video P2"]
+
+
+async def test_late_direct_head_runs_at_next_resource_release():
     lock = asyncio.Lock()
     turns = OperationTurns(lock, lambda: False)
-    processed = []
-
-    async def request(lane, number):
-        await turns.acquire(lane)
-        try:
-            processed.append((lane, number))
-            await asyncio.sleep(0)
-        finally:
-            lock.release()
-
-    async with asyncio.timeout(2):
-        async with lock:
-            tasks = [
-                asyncio.create_task(request(lane, i))
-                for lane, count in (
-                    ("video", 2),
-                    ("dm", 4),
-                    ("reply", 4),
-                )
-                for i in range(count)
-            ]
-            await asyncio.sleep(0)
-        await asyncio.gather(*tasks)
-    assert processed == [
-        ("reply", 0),
-        ("dm", 0),
-        ("video", 0),
-        ("reply", 1),
-        ("dm", 1),
-        ("reply", 2),
-        ("dm", 2),
-        ("video", 1),
-        ("reply", 3),
-        ("dm", 3),
-    ]
+    first = await turns.acquire("background")
+    turns.started(first)
+    older = asyncio.create_task(turns.acquire("background"))
+    await asyncio.sleep(0)
+    direct = asyncio.create_task(turns.acquire("direct"))
+    await asyncio.sleep(0)
+    turns.release(first)
+    ticket = await asyncio.wait_for(direct, 2)
+    assert not older.done()
+    turns.release(ticket)
+    turns.release(await asyncio.wait_for(older, 2))
 
 
-async def test_empty_dm_share_is_borrowed_by_replies_and_video_without_waiting():
+async def test_second_request_reenters_queue_at_safe_point():
     lock = asyncio.Lock()
     turns = OperationTurns(lock, lambda: False)
-    processed = []
-
-    async def request(lane, number):
-        await turns.acquire(lane)
-        try:
-            processed.append((lane, number))
-            await asyncio.sleep(0)
-        finally:
-            lock.release()
-
-    async with asyncio.timeout(2):
-        async with lock:
-            tasks = [
-                asyncio.create_task(request(lane, number))
-                for lane, count in (("video", 2), ("reply", 4))
-                for number in range(count)
-            ]
-            await asyncio.sleep(0)
-        await asyncio.gather(*tasks)
-    assert processed == [
-        ("reply", 0),
-        ("video", 0),
-        ("reply", 1),
-        ("reply", 2),
-        ("video", 1),
-        ("reply", 3),
-    ]
-
-
-async def test_new_dm_gets_a_turn_before_an_existing_video_backlog_is_drained():
-    lock = asyncio.Lock()
-    turns = OperationTurns(lock, lambda: False)
-    first_started, continue_first = asyncio.Event(), asyncio.Event()
-    processed = []
-
-    async def request(lane, number):
-        await turns.acquire(lane)
-        try:
-            processed.append((lane, number))
-            if lane == "video" and number == 0:
-                first_started.set()
-                await continue_first.wait()
-            await asyncio.sleep(0)
-        finally:
-            lock.release()
-
-    async with asyncio.timeout(2):
-        tasks = [asyncio.create_task(request("video", number)) for number in range(5)]
-        await first_started.wait()
-        tasks.append(asyncio.create_task(request("dm", 0)))
-        await asyncio.sleep(0)
-        continue_first.set()
-        await asyncio.gather(*tasks)
-    assert processed[:2] == [("video", 0), ("dm", 0)]
-    assert [number for lane, number in processed if lane == "video"] == list(range(5))
+    first = await turns.acquire("background")
+    turns.started(first)
+    direct = asyncio.create_task(turns.acquire("direct"))
+    await asyncio.sleep(0)
+    second = asyncio.create_task(turns.next_request(first))
+    ticket = await asyncio.wait_for(direct, 2)
+    assert not second.done()
+    turns.started(ticket)
+    turns.release(ticket)
+    await asyncio.wait_for(second, 2)
+    turns.release(first)

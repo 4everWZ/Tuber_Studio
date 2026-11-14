@@ -735,7 +735,7 @@ class Dynamics:
                 self.runtime.llm, packet, self.decision_schema(row["sources"]), max_tokens=maximum
             )
 
-        async with self.runtime.offline_generation("video"):
+        async with self.runtime.offline_generation("background"):
             guard()
             data, audit = await generate_with_recovery(
                 self.runtime,
@@ -960,7 +960,7 @@ class Dynamics:
                 self._status(post_id, "invalidated", "人物版本或公开来源已变化")
                 raise ValueError("人物版本或公开来源已变化，需重新评估")
             try:
-                async with self.runtime.offline_generation("video"):
+                async with self.runtime.offline_generation("background"):
                     self._check_automatic_draft(checked, self.policy())
                     if self._post(post_id) != checked or not self._valid_sources(checked):
                         raise ValueError("草稿或公开来源已变化")
@@ -1369,7 +1369,7 @@ class Dynamics:
                 "role": "system",
                 "content": "为号主在 operator_topic 提出的主题写一条动态草稿，选 post 并引用这项来源。",
             })
-            async with self.runtime.offline_generation("video"):
+            async with self.runtime.offline_generation("background"):
                 result = await budgeted_json(
                     self.runtime.llm, identity_messages(messages, identity), self.decision_schema([source]),
                     max_tokens=512,
@@ -1417,7 +1417,7 @@ class Dynamics:
         original = await read_dynamic_caption(adapter, identifier, account)
         if not self._valid_sources(row):
             raise ValueError("原动态的公开来源已变化")
-        async with self.runtime.offline_generation("video"):
+        async with self.runtime.offline_generation("background"):
             result = await budgeted_json(self.runtime.llm, [
                 {"role": "system", "content": (
                     "按号主的要求改写一条已经发布的动态。只输出可直接使用的正文。"
@@ -1581,7 +1581,7 @@ class Dynamics:
             messages = identity_messages(messages, generation_identity)
             selected, selection_failed = None, False
             try:
-                async with self.runtime.offline_generation("video"):
+                async with self.runtime.offline_generation("background"):
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"
                         return self._save_decision(char, manual, base, [])

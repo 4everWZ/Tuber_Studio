@@ -334,7 +334,7 @@ class BrowsingBatches:
 async def execute(browsing, row, notifications_only):
     identity, started = row["id"], time.monotonic()
     token = read_round.set(identity)
-    lane = operation_lane.set("video")
+    lane = operation_lane.set("priority" if row["config"].get("full_video") else "background")
     metrics = {
         "workers": row["config"]["workers"],
         "prepared": 0,
@@ -401,7 +401,7 @@ async def execute(browsing, row, notifications_only):
                         await browsing._process_events(row, metrics)
                     if result:
                         result_lane = operation_lane.set(
-                            "reply" if result.get("task_kind") == "comment_visit" else "video"
+                            "background"
                         )
                         try:
                             await browsing.decisions._evaluate_task(result, row, metrics)
@@ -486,7 +486,7 @@ async def process_discovery_video(browsing, row, candidate, metrics, semaphore):
         else semaphore
     )
     async with window:
-        lane = operation_lane.set("reply" if revisit else "video")
+        lane = operation_lane.set("background")
         try:
             await browsing._run_discovery_video(row, candidate, metrics)
         finally:
