@@ -184,7 +184,9 @@ class OperatorChat:
                 if task and (str(task["account_id"]), task["character_id"], task["character_version"]) == (
                     account, char["id"], char["version"]
                 ):
-                    tasks[task["id"]] = {"status": task["status"], "bvid": data["selection"]["bvid"]}
+                    selection = task["config"].get("operator_selection") or data.get("selection") or {}
+                    if bvid := selection.get("bvid"):
+                        tasks[task["id"]] = {"status": task["status"], "bvid": bvid}
         for row in self.store.all(
             "SELECT id,status,json_extract(config,'$.operator_selection.bvid') AS bvid FROM browsing_rounds "
             "WHERE account_id=? AND character_id=? AND character_version=? AND status IN ('waiting','queued','running') "
