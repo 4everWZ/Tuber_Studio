@@ -64,35 +64,80 @@ jobs:
           uv run --locked --with numpy==2.2.6 --with onnx==1.17.0 --with PyYAML==6.0.2 \
             --with-requirements tools/deployment/business-requirements.txt \
             pytest -q --junitxml=tmp/ci-results/pytest.xml
-      - name: Generate program-only context without runtime or model downloads
-        run: |
-          uv run --locked python tools/jetson/package-ready.py --root "$PWD" --output "$PWD/tmp/ci-ready-image"
-          uv run --locked python tools/ci/audit_program.py --assets tmp/ci-ready-image --output tmp/ci-results/program-contract.json
-      - name: Package the program independently of Docker
-        env:
-          PROGRAM_REPOSITORY: ${{ github.repository }}
-        run: |
-          mkdir -p tmp/ci-program
-          uv run --locked python tools/ci/package_program.py --output tmp/ci-program/program.tar.gz --repository "$PROGRAM_REPOSITORY" > tmp/ci-program/program-evidence.json
-          cp tools/jetson/run-ready.sh tmp/ci-program/run-ready.sh
-      - name: Downloadable program and launcher
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: jetson-program-${{ github.sha }}
-          path: tmp/ci-program/
-          if-no-files-found: error
-          retention-days: 30
       - name: CPU check evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cpu-checks-${{ github.sha }}
-          path: tmp/ci-results/
+          path: tmp/ci-results/pytest.xml
           if-no-files-found: warn
+          overwrite: true
           retention-days: 14
+
+  program-package:
+    name: Jetson program package verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Project uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.8'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Generate program-only context without runtime or model downloads
+        run: |
+          uv run --locked --no-dev python tools/jetson/package-ready.py --root "$PWD" --output "$PWD/tmp/ci-ready-image"
+          uv run --locked --no-dev python tools/ci/audit_program.py --assets tmp/ci-ready-image --output tmp/ci-program/program-contract.json
+      - name: Package the program independently of Docker
+        env:
+          PROGRAM_REPOSITORY: ${{ github.repository }}
+        run: |
+          uv run --locked --no-dev python tools/ci/package_program.py --output tmp/ci-program/program.tar.gz --repository "$PROGRAM_REPOSITORY" > tmp/ci-program/program-evidence.json
+          cp tools/jetson/run-ready.sh tmp/ci-program/run-ready.sh
+      - name: Program package candidate and audit evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jetson-program-candidate-${{ github.sha }}
+          path: tmp/ci-program/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  program-release:
+    name: Publish verified Jetson program artifact
+    needs: [checks, program-package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download the candidate from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: jetson-program-candidate-${{ github.sha }}
+          path: tmp/ci-program/
+      - name: Downloadable program and launcher
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jetson-program-${{ github.sha }}
+          path: |
+            tmp/ci-program/program.tar.gz
+            tmp/ci-program/run-ready.sh
+            tmp/ci-program/program-evidence.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
 
   image:
     name: Reusable ARM64 environment (build only when absent)
+    needs: [checks, program-package]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&

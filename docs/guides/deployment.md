@@ -24,7 +24,7 @@ B 站凭证在「设置 → 账号与权限」保存SESSDATA和CSRF／bili_jct�
 
 该命令只检查，不改文件；每次都会分别报告 lint 和 format 的结果，任一失败就返回非零退出码。仅看到 `ruff check` 成功不代表格式检查通过。格式问题可运行 `uv run --locked ruff format src tests tools` 修复，检查差异后重新运行上述入口；修改之后再提交，不要把修改前的检查结果当作当前提交已通过。
 
-CI 运行 Python／Node 功能测试。Lint 和格式检查保留为本地命令，可用 `--format-advisory` 将格式差异作为提示。Python 测试通过后交付独立程序包。
+CI 分开运行 Python CPU 测试、独立程序包校验和可选组件的 Node 测试。CPU 测试与打包校验均通过后才交付正式程序包。失败的运行仍可分别查看 CPU 测试报告和打包日志，打包校验成功时也可查看候选包的审计记录。Lint 和格式检查保留为本地命令，可用 `--format-advisory` 将格式差异作为提示。
 
 代码检查不替代功能测试。运行受改动影响的 pytest 测试，并以对应 PR 提交的 Linux CPU CI 结果确认完整套件与打包结果。若本地因 NumPy、ONNX 或 PyYAML 等可选依赖缺失而跳过测试，应如实报告；不要因此修改 Jetson 的生产依赖。
 
@@ -90,7 +90,7 @@ Docker 环境提供 CUDA／原生 Torch、llama-server、锁定的 Python 依赖
 
 ### 首次安装：程序包与环境镜像分开
 
-从[成功的GitHub Actions运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载jetson-program-<完整commit>产物，内含program.tar.gz、run-ready.sh和program-evidence.json。在新版本专用目录解压，随后由具有Docker权限的普通数据所有者运行：
+从[成功的 GitHub Actions 运行](https://github.com/4everWZ/Tuber_Studio/actions/workflows/ci.yml)下载正式 `jetson-program-<完整 commit>`，内含 `program.tar.gz`、`run-ready.sh` 和 `program-evidence.json`。`jetson-program-candidate-<完整 commit>` 用于检查打包内容和审计记录。在新版本专用目录解压正式程序包，随后由具有 Docker 权限的普通数据所有者运行：
 
     tar -xzf program.tar.gz
     bash run-ready.sh --data /path/to/tuber-data --host 127.0.0.1
@@ -142,7 +142,7 @@ GHCR镜像拉取需要宿主Docker daemon可访问GHCR与其层CDN；私有包�
 
 ### 环境镜像何时更新
 
-Jetson 基础镜像与程序测试、打包独立运行。环境标识只依赖pyproject.toml、uv.lock、Dockerfile、TTS依赖清单及固定Genie依赖；应用、WebUI、角色／素材、初始化和运维脚本变动不改变标识。CI先查询env-<指纹>，已发布则跳过构建；只有新环境未发布时才构建ARM64镜像。默认分支的environment-r36.4别名仅在目标环境变更时更新。
+CPU 测试和程序包校验均通过后，符合发布条件的运行才会发布 Jetson 基础镜像或更新 GHCR 别名。环境标识只依赖 `pyproject.toml`、`uv.lock`、`Dockerfile`、TTS 依赖清单及固定 Genie 依赖，应用、WebUI、角色／素材、初始化和运维脚本变动不改变标识。CI 先查询 `env-<指纹>`，只有新环境尚未发布时才构建 ARM64 镜像。默认分支的 `environment-r36.4` 别名仅在目标环境变更时更新。
 
 CI另外发布可选online-env-<指纹>环境：在已发布的基础环境上只增加Node和npm依赖，不重建CUDA／Python底座。指纹由基础环境、组件Dockerfile及package.json／package-lock.json决定；helper、UI和其他程序代码更新复用同一镜像。组件协议测试通过后发布扩展环境，默认分支的environment-online-r36.4别名也会在复用已发布环境时对齐。目标机器安装后仍需真实搜索、取流与播放器验收。
 

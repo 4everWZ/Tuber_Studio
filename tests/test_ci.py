@@ -146,9 +146,48 @@ def test_fixed_action_revisions_and_publish_permission_scope():
     assert "pull_request" in workflow["on"] and "workflow_dispatch" in workflow["on"]
     assert "workflow_dispatch" in workflow["jobs"]["image"]["if"]
     assert "github.event_name == 'push'" in workflow["jobs"]["image"]["if"]
-    assert not workflow["jobs"]["image"].get("needs")
-    assert set(workflow["jobs"]["online-image"]["needs"]) == {"image", "song-component"}
     steps = workflow["jobs"]["image"]["steps"]
     build = next(step for step in steps if step.get("id") == "build")
     assert build["if"] == "steps.lookup.outputs.missing == 'true'"
     assert build["with"]["build-contexts"] == "environment_contract=tmp/ci-environment"
+
+
+def test_jetson_release_requires_independent_cpu_and_program_verification():
+    yaml = pytest.importorskip("yaml")
+    source = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    jobs = yaml.load(source, Loader=yaml.BaseLoader)["jobs"]
+    prereqs = {"checks", "program-package"}
+    for name in prereqs:
+        assert not jobs[name].get("needs")
+        assert "if" not in jobs[name]
+    for name in ("program-release", "image"):
+        assert set(jobs[name]["needs"]) == prereqs
+        assert not any(
+            status in jobs[name].get("if", "") for status in ("always()", "failure()", "cancelled()")
+        )
+    assert set(jobs["online-image"]["needs"]) == {"image", "song-component"}
+
+    package_steps = jobs["program-package"]["steps"]
+    package_commands = "\n".join(step.get("run", "") for step in package_steps)
+    assert all(
+        command in package_commands
+        for command in (
+            "tools/jetson/package-ready.py",
+            "tools/ci/audit_program.py",
+            "tools/ci/package_program.py",
+        )
+    )
+    candidate = next(
+        step["with"] for step in package_steps if step.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    download, publish = jobs["program-release"]["steps"]
+    assert download["uses"].startswith("actions/download-artifact@")
+    assert publish["uses"].startswith("actions/upload-artifact@")
+    assert download["with"]["name"] == candidate["name"] == "jetson-program-candidate-${{ github.sha }}"
+    assert {"run-id", "repository", "github-token"}.isdisjoint(download["with"])
+    assert publish["with"]["name"] == "jetson-program-${{ github.sha }}"
+    assert {Path(path).name for path in publish["with"]["path"].splitlines()} == {
+        "program.tar.gz",
+        "run-ready.sh",
+        "program-evidence.json",
+    }
