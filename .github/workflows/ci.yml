@@ -54,10 +54,10 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Locked project environment
         run: uv sync --locked --group dev
-      - name: Image decoder for catalog contracts
+      - name: Image decoder and Chinese fonts for rendering contracts
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
       - name: Unit and CPU graph contracts
         run: |
           mkdir -p tmp/ci-results
