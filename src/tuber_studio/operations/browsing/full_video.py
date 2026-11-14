@@ -16,7 +16,6 @@ from .evidence import (
     visual_gaps,
 )
 from .round_context import agent_depth
-from .thread_context import comment_source, public_discussion_url
 
 
 def _plan(metadata, selection):
@@ -428,19 +427,16 @@ def _check_page(context, page):
     return following
 
 
-def _record_comments(browsing, row, identity, metadata, comments, context):
+def _record_comments(browsing, row, identity, metadata, context):
     active = _interaction_scope(browsing, row)
     interactive = bool(active and (active["config"]["reply_enabled"] or active["config"].get("comment_like_enabled")))
     with browsing.store.db:
-        enqueue_comment_visit(browsing, active or row, identity, metadata, context.get("items", []), interactive=interactive)
+        items = context.get("items", [])
+        enqueue_comment_visit(browsing, row, identity, metadata, items, interactive=False)
+        if interactive:
+            enqueue_comment_visit(browsing, active, identity, metadata, items)
     if interactive:
         browsing.interactions_changed.set()
-    links = {source["comment_id"]: source for source in comments["links"]}
-    for item in context.get("items", []):
-        if item.get("comment_id"):
-            source = comment_source(item)
-            links[source["comment_id"]] = source | {"url": public_discussion_url(metadata["bvid"], source["comment_id"])}
-    comments["links"] = list(links.values())[:24]
 
 
 def _thread_cursors(browsing, comments, items):
@@ -465,7 +461,7 @@ async def _read_thread_pages(browsing, row, identity, metadata, comments, save):
         context = await browsing._read(browsing.adapter.video_thread_page, target, page=progress["page"])
         following = _check_page(context, progress["page"])
         browsing._check_round(row)
-        _record_comments(browsing, row, identity, metadata, comments, context)
+        _record_comments(browsing, row, identity, metadata, context)
         comments["thread_pages_read"] = comments.get("thread_pages_read", 0) + 1
         if following:
             progress["page"] = following
@@ -489,7 +485,7 @@ async def _read_comments(browsing, row, identity, payload, material, save, metri
             context = await video_comment_context(browsing, row, bvid, scroll=True, newest=True, latest_only=True)
             _check_resource(metadata, context)
             browsing._check_round(row)
-            _record_comments(browsing, row, identity, metadata, comments, context)
+            _record_comments(browsing, row, identity, metadata, context)
             _thread_cursors(browsing, comments, context.get("items", []))
             save()
             newest = False
@@ -509,7 +505,7 @@ async def _read_comments(browsing, row, identity, payload, material, save, metri
         page = (context.get("_scroll_progress") or {}).get("page", 1)
         following = _check_page(context, page)
         browsing._check_round(row)
-        _record_comments(browsing, row, identity, metadata, comments, context)
+        _record_comments(browsing, row, identity, metadata, context)
         _thread_cursors(browsing, comments, context.get("items", []))
         comments["pages_read"] += 1
         comments["root_page"] = {"following": following, "context": {"_scroll_progress": context.get("_scroll_progress")}}
@@ -592,7 +588,7 @@ async def execute(browsing, row, metrics):
         payload["metadata"] = {key: metadata[key] for key in ("bvid", "title")}
         payload["full_coverage"] = current
         payload["phase"] = "watching"
-        payload.setdefault("comment_progress", {"pages_read": 0, "next_page": None, "at_end": False, "links": []})
+        payload.setdefault("comment_progress", {"pages_read": 0, "next_page": None, "at_end": False}).pop("links", None)
         if not material["parts"] and not browsing.repo.quotas.start_watch(
             identity, row["account_id"], row["character_id"], bvid, row["config"]["daily_watch_limit"],
             row["config"]["business_timezone"],

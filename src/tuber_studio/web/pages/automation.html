@@ -34,6 +34,14 @@
       <button type="button" data-activity-kind="dynamics" aria-pressed="false">动态</button>
       <a href="#automation/issues" class="button quiet">异常</a>
     </div>
+    <label id="comment-activity-filter-control" class="history-day-label" hidden>评论结果
+      <select id="comment-activity-filter">
+        <option value="all">全部</option>
+        <option value="read">仅读</option>
+        <option value="replied">已回复</option>
+        <option value="pending_review">待审核</option>
+      </select>
+    </label>
     <p id="discovery-history-counts" class="hint"></p>
     <p id="discovery-history-feedback" class="error-text" role="status"></p>
     <div id="discovery-activity-list"><p class="hint">正在读取活动记录…</p></div>

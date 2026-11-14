@@ -1,5 +1,7 @@
 """Authenticated status, control, and records for video browsing."""
 
+from typing import Literal
+
 from fastapi import Body, Depends, Query
 from pydantic import Field
 
@@ -56,6 +58,7 @@ def register_browsing_api(app, browsing, require_admin):
     async def operation_activity(
         day: str | None = None,
         kind: str = "all",
+        comment_filter: Literal["all", "read", "replied", "pending_review"] = "all",
         page: int = Query(1, ge=1),
         page_size: int = Query(10, ge=1, le=50),
         round_id: str | None = Query(None, max_length=128),
@@ -67,6 +70,7 @@ def register_browsing_api(app, browsing, require_admin):
             browsing,
             day=day,
             kind=kind,
+            comment_filter=comment_filter,
             page=page,
             page_size=page_size,
             round_id=round_id,

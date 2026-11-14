@@ -74,7 +74,12 @@ async def test_priority_video_resumes_shared_cursor_and_waits_for_last_thread_pa
     assert result["status"] == "completed" and result["phase"] == "complete", result["error"]
     assert result["comments"]["pages_read"] == 1 and result["comments"]["thread_pages_read"] == 2
     assert result["comments"]["at_end"] and browsing.store.get(cursor) == 1
-    assert [link["comment_id"] for link in result["comments"]["links"]] == ["601", "602", "603", "604"]
+    from tuber_studio.operations.browsing.activity_history import activity
+
+    comments = activity(browsing, kind="comments", round_id=identity, comment_filter="read")
+    assert comments["total"] and all(row["video_title"] != BV for row in comments["items"])
+    assert all(row["source_href"] for row in comments["items"])
+    assert "links" not in result["comments"]
     assert calls == [("newest", 1), ("root", 3), ("thread", 1), ("thread", 2), ("newest", 1), ("thread", 2)]
     assert frame_windows == [(0, 15), (15, 30)]
     assert len(inputs) == 1 and not inputs[0]["has_visual"]

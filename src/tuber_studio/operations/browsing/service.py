@@ -572,7 +572,7 @@ class BrowsingService:
             if payload.get("inspection") else None,
             "phase": payload.get("phase", "watching"),
             "comments": {key: comment_progress.get(key) for key in (
-                "pages_read", "thread_pages_read", "next_page", "at_end", "links",
+                "pages_read", "thread_pages_read", "next_page", "at_end",
             )} if comment_progress else None,
             "yielded": status == "waiting" and payload.get("yielded", False),
             "error": row["error"] or (task["error"] if task else None),

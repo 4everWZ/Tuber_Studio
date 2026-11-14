@@ -3,7 +3,7 @@ import { contactLabel, contactReason, contactStatus } from "./message-labels.js?
 
 const pageSize = 10;
 const readLabels = { complete: "完整阅读", fully_read: "完整阅读", full: "完整阅读", partial: "部分阅读", sampled_visual: "抽样画面", sampled_audio: "抽样语音", title_only: "仅看标题", comments_only: "只看评论", not_read: "未阅读", none: "未阅读", new: "尚未观看", started: "已开始观看", reading: "阅读中", viewed: "已看过" };
-const statusLabels = { published: "已发送", publish_uncertain: "结果待确认", automatic_skipped: "未发送", failed: "发送失败", pending_review: "待审核", approved: "已保存", copied: "已复制", rejected: "已拒绝", private_handoff: "已转私信", received: "收到来信", queued: "排队生成中" };
+const statusLabels = { read: "仅读", published: "已发送", publish_uncertain: "待核对", automatic_skipped: "未发送", failed: "发送失败", pending_review: "待审核", approved: "已保存", copied: "已复制", rejected: "已拒绝", private_handoff: "已转私信", received: "收到来信", queued: "排队生成中" };
 const commentOutcomeLabels = { new_reply: "本轮新回", previous_reply: "此前已回", same_account: "同账号已回 · 归属未确认", pending_verification: "待核对" };
 
 export function mainReplySummary(item) {
@@ -23,7 +23,8 @@ export function mainReplySummary(item) {
 export function initOperationsActivity(api) {
   const list = $("discovery-activity-list"), date = $("discovery-history-day");
   const feedback = $("discovery-history-feedback"), previous = $("discovery-history-prev"), next = $("discovery-history-next");
-  let page = 1, request = 0, signature = "", kind = "all";
+  const filter = $("comment-activity-filter"), filterControl = $("comment-activity-filter-control");
+  let page = 1, request = 0, signature = "", kind = "all", roundId = null;
   const expanded = new Map(), renderedRows = new Map();
 
   function render(data) {
@@ -37,7 +38,7 @@ export function initOperationsActivity(api) {
     previous.disabled = page <= 1;
     next.disabled = page >= (data.pages || Math.ceil(data.total / pageSize) || 1);
     $("discovery-history-page").textContent = `第 ${page} / ${data.pages || Math.ceil(data.total / pageSize) || 1} 页 · 共 ${data.total} 条记录`;
-    const current = JSON.stringify([data.day, kind, page, data.items]);
+    const current = JSON.stringify([data.day, kind, roundId, filter.value, page, data.items]);
     if (current === signature) return;
     signature = current;
     for (const [key, entry] of renderedRows) expanded.set(key, entry.info.open);
@@ -54,10 +55,16 @@ export function initOperationsActivity(api) {
       const heading = node("div", null, "daily-video-heading");
       const names = { comment: item.reply_kind === "top_level" || item.comment_kind === "top_level" ? "视频主评" : "评论回复", message: contactLabel(item), dynamic: "动态" };
       const label = itemKind === "video" ? item.title || item.bvid : item.title || [names[itemKind], item.recipient_name].filter(Boolean).join(" · ");
-      const title = node(item.href || itemKind === "video" ? "a" : "strong", label);
+      const video = itemKind === "comment" && item.bvid;
+      const dynamic = itemKind === "comment" && !video && item.thread?.resource?.startsWith("dynamic:")
+        ? item.thread.resource.slice("dynamic:".length) : null;
+      const title = node(item.href || itemKind === "video" || video || dynamic ? "a" : "strong",
+        video ? item.video_title || video : dynamic ? "原动态" : label);
       title.dataset.activityControl = "title";
-      if (item.href || itemKind === "video") {
-        const href = item.href || `https://www.bilibili.com/video/${encodeURIComponent(item.bvid)}`;
+      if (item.href || itemKind === "video" || video || dynamic) {
+        const href = video ? `https://www.bilibili.com/video/${encodeURIComponent(video)}` :
+          dynamic ? `https://t.bilibili.com/${encodeURIComponent(dynamic)}` :
+            item.href || `https://www.bilibili.com/video/${encodeURIComponent(item.bvid)}`;
         title.href = href;
         if (/^https?:\/\//i.test(href)) { title.target = "_blank"; title.rel = "noreferrer"; }
       }
@@ -102,6 +109,13 @@ export function initOperationsActivity(api) {
       const summary = node("summary", "处理详情");
       summary.dataset.activityControl = "summary";
       info.append(summary);
+      if (itemKind === "comment" && (video || dynamic)) {
+        const action = item.href?.startsWith("#comments/") ? node("a", label) : node("span", label);
+        if (item.href?.startsWith("#comments/")) action.href = item.href;
+        const line = node("p");
+        line.append(action);
+        info.append(line);
+      }
       if (reasons) info.append(node("p", safeMessage(reasons)));
       const progress = result;
       info.append(node("p", `${item.bvid || names[itemKind] || "活动"} · ${progress}${item.updated_at ? ` · ${new Date(item.updated_at * 1000).toLocaleString("zh-CN")}` : ""}`, "hint"));
@@ -123,7 +137,9 @@ export function initOperationsActivity(api) {
   async function refresh() {
     const current = ++request;
     const query = new URLSearchParams({ page: String(page), page_size: String(pageSize), kind });
-    if (date.value) query.set("day", date.value);
+    if (roundId) query.set("round_id", roundId);
+    else if (date.value) query.set("day", date.value);
+    if (kind === "comments" && filter.value && filter.value !== "all") query.set("comment_filter", filter.value);
     try {
       const data = await api(`/api/automation/activity?${query}`);
       if (current !== request) return;
@@ -135,6 +151,7 @@ export function initOperationsActivity(api) {
   }
 
   date.addEventListener("change", () => { page = 1; return refresh(); });
+  filter.addEventListener("change", () => { page = 1; return refresh(); });
   previous.onclick = () => { page = Math.max(1, page - 1); return refresh(); };
   next.onclick = () => { page++; return refresh(); };
   $("discovery-history-today").onclick = () => { date.value = ""; page = 1; return refresh(); };
@@ -142,7 +159,15 @@ export function initOperationsActivity(api) {
   refresh.setKind = nextKind => {
     kind = nextKind;
     page = 1;
+    filterControl.hidden = kind !== "comments";
     for (const button of $("operation-activity-kinds").querySelectorAll("[data-activity-kind]")) button.setAttribute("aria-pressed", String(button.dataset.activityKind === kind));
+  };
+  refresh.setRound = value => {
+    if (roundId === value) return;
+    roundId = value;
+    if (roundId) refresh.setKind("comments");
+    else page = 1;
+    date.disabled = $("discovery-history-today").disabled = Boolean(roundId);
   };
   $("operation-activity-kinds").addEventListener("click", event => {
     const button = event.target.closest("[data-activity-kind]");

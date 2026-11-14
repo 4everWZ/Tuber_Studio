@@ -180,15 +180,16 @@ function videoCard(root, turn, { api, path }) {
   const record = link("查看轮次", "#automation-records");
   const cancel = button("取消取材"), resume = button("继续取材");
   const comments = node("div");
+  const findings = node("ul", null, "operator-chat-video-findings");
   const excerpt = node("div");
   actions.append(record, cancel, resume);
-  root.append(title, state, selection, excerpt, report, comments, actions, note);
+  root.append(title, state, selection, excerpt, findings, comments, report, actions, note);
 
   function update(next) {
     if (busy || signature === JSON.stringify(next)) return;
     signature = JSON.stringify(next);
     data = next;
-    title.textContent = data.selection?.frame ? "按时码查看画面" :
+    title.textContent = data.selection?.frame ? data.coverage?.title || "按时码查看画面" :
       data.full_video ? data.coverage?.title || `指定视频取材${data.selection?.bvid ? ` · ${data.selection.bvid}` : ""}` : "只读浏览";
     const phases = { watching: "正在看视频", comments: "正在逛评论区", complete: "已完成" };
     const viewing = { watched: "看完", subtitles_only: "字幕已读完 · 画面覆盖有缺口",
@@ -197,7 +198,11 @@ function videoCard(root, turn, { api, path }) {
       data.yielded ? "已保存进度 · 等待下一次调度" : label(data.status);
     state.textContent = [taskState,
       viewing[data.coverage?.viewing]].filter(Boolean).join(" · ");
-    selection.textContent = data.selection?.ranges?.length ? data.selection.ranges.map(range => `P${range.part} · ${range.start}–${range.end} 秒`).join("；") : "";
+    const parts = data.coverage?.parts || [];
+    const ranges = data.selection?.ranges || [];
+    selection.textContent = ranges.length ? ranges.slice(0, 3).map(range => `P${range.part} · ${range.start}–${range.end} 秒`).join("；") +
+      (ranges.length > 3 ? ` 等 ${ranges.length} 段` : "") : parts.length > 1 ? `全部 ${parts.length} 个分 P` :
+        parts.length ? `P${parts[0].part} · 0–${parts[0].duration} 秒` : "";
     selection.hidden = !selection.textContent;
     note.textContent = safeMessage(data.error);
     excerpt.replaceChildren();
@@ -225,6 +230,22 @@ function videoCard(root, turn, { api, path }) {
       excerpt.append(link(`P${data.excerpt.part} · ${Math.floor(data.excerpt.start)} 秒`, data.excerpt.source_url),
         node("blockquote", data.excerpt.text, "quoted-text"));
     }
+    findings.replaceChildren();
+    if (!data.inspection && !data.excerpt && parts.length) {
+      const material = parts.flatMap(part => part.ranges.flatMap(range => (range.highlights || [])
+        .map(item => ({ ...item, part: part.part }))))
+        .filter(item => item.text && platformLink(item.source_url));
+      const unique = [...new Map(material.map(item => [item.text.trim(), item])).values()];
+      const picks = unique.length <= 3 ? unique : [unique[0], unique[Math.floor(unique.length / 2)], unique.at(-1)];
+      for (const item of picks) {
+        const row = node("li");
+        const text = item.text.replace(/\s+/g, " ").trim();
+        row.append(link(`P${item.part} · ${formatTimecode(item.start)}`, item.source_url),
+          ` · ${item.kind} · ${text.length > 140 ? text.slice(0, 140) + "…" : text}`);
+        findings.append(row);
+      }
+    }
+    findings.hidden = !findings.childElementCount;
     report.hidden = !data.coverage?.parts?.length;
     if (report.open) coverageDetails(data, coverage);
     comments.replaceChildren();
@@ -232,9 +253,7 @@ function videoCard(root, turn, { api, path }) {
       const text = data.comments.at_end ? "已读到平台可见末页" :
         `已读 ${data.comments.pages_read || 0} 页根评论${data.comments.thread_pages_read ? `、${data.comments.thread_pages_read} 页楼内评论` : ""}`;
       comments.append(node("p", text, "hint"));
-      for (const item of data.comments.links || []) {
-        if (platformLink(item.url)) comments.append(link(item.text || "查看原评论", item.url), node("br"));
-      }
+      if (data.id) comments.append(link("查看评论记录", `#automation/comments/${encodeURIComponent(data.id)}`));
     }
     record.hidden = !data.id;
     if (data.id) record.href = `#automation/round/${encodeURIComponent(data.id)}`;

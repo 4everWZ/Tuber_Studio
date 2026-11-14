@@ -255,3 +255,26 @@ def test_archived_retained_main_draft_is_not_embedded_in_a_new_comment_visit(cha
 def test_invalid_activity_kind_is_rejected(channels):
     with pytest.raises(ValueError, match="活动类型"):
         activity(channels, kind="private-everything")
+
+
+def test_comment_result_filter_runs_before_pagination_and_uses_operation_day(channels):
+    before = stamp("2026-11-07T15:59:00+00:00")
+    after = stamp("2026-11-07T16:01:00+00:00")
+    old, current = round_row(channels), round_row(channels)
+    reply(channels, old, "101", before, kind="top_level")
+    task(channels, old, "historical", before)
+    reply(channels, current, "102", after, kind="top_level")
+    reply(channels, current, "103", after + 1)
+    reply(channels, current, "104", after + 2, status="pending_review")
+    reply(channels, current, "105", after + 3, status="publish_uncertain")
+    channels.store.execute(
+        "UPDATE browsing_intents SET target=json_patch(target,?) WHERE id=?",
+        (json.dumps({"root": "88", "parent": "99", "recipient": "20", "source_text": "可查原评"}), "103"),
+    )
+    result = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page_size=1)
+    assert result["total"] == result["counts"]["sent"] == result["pages"] == 2
+    assert result["items"][0]["source_href"].endswith("#reply99")
+    page_two = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page=2, page_size=1)
+    assert page_two["items"][0]["comment_kind"] == "top_level"
+    pending = activity(channels, day="2026-11-08", kind="comments", comment_filter="pending_review")
+    assert pending["total"] == 1 and pending["items"][0]["status"] == "pending_review"

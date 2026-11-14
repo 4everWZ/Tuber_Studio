@@ -72,7 +72,8 @@ def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
         "json_extract(t.payload,'$.phase') AS phase,json_extract(t.payload,'$.full_coverage.viewing') AS viewing,"
         "EXISTS(SELECT 1 FROM browsing_watch_starts w WHERE w.account_id=r.account_id "
         "AND w.character_id=r.character_id AND w.task_id=t.id) AS metered_watch,"
-        "COALESCE(json_extract(t.payload,'$.metadata.title'),json_extract(t.payload,'$.title')) AS title,"
+        "COALESCE(json_extract(t.payload,'$.metadata.title'),json_extract(t.payload,'$.full_coverage.title'),"
+        "json_extract(t.payload,'$.title')) AS title,"
         "COALESCE(json_extract(t.payload,'$.explanation'),json_extract(t.payload,'$.response_decision.explanation'),"
         "json_extract(t.payload,'$.decisions[0].explanation'),"
         "json_extract(t.payload,'$.selection.explanation')) AS explanation,"
@@ -344,7 +345,8 @@ def history(browsing, *, day=None, page=1, page_size=10, visible_since=None):
     return _paginate(_video_data(browsing, day=day, visible_since=visible_since), page, page_size)
 
 
-def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_since=None, round_id=None, paginate=True):
+def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, page_size=10, visible_since=None,
+             round_id=None, paginate=True):
     """Operator-only daily outcomes across public and private channels.
 
     Message bodies are read only for this view. They never become video source
@@ -362,6 +364,8 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
     }
     if kind not in kinds:
         raise ValueError("活动类型须为 all、videos、comments、messages、dynamics 或 public")
+    if comment_filter not in {"all", "read", "replied", "pending_review"}:
+        raise ValueError("无效的评论活动筛选")
     if round_id and day is None:
         account, character = browsing.discovery.history_scope()[:2]
         recent = browsing.store.one(
@@ -447,7 +451,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
                         and (item["created_at"] is None or item["created_at"] <= row["updated_at"])), None)
         if status == "publish_uncertain":
             outcome = "pending_verification"
-        elif status == "published" and receipt.get("rpid"):
+        elif status == "published" and (receipt.get("rpid") or receipt.get("comment_id")) and receipt.get("code", 0) == 0:
             outcome = "new_reply"
         elif status == "operator_replied" and observed.get("comment_id"):
             outcome = "same_account"
@@ -456,7 +460,7 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
         else:
             outcome = None
         replied_id = None if status == "publish_uncertain" else (
-            receipt.get("rpid") or observed.get("comment_id") or (matched or {}).get("comment_id")
+            receipt.get("rpid") or receipt.get("comment_id") or observed.get("comment_id") or (matched or {}).get("comment_id")
         )
         source_href = comment_href(resource, comment)
         return {
@@ -705,6 +709,52 @@ def activity(browsing, *, day=None, kind="all", page=1, page_size=10, visible_si
         filtered = [item for item in items if item["kind"] in {"video", "comment"}]
     else:
         filtered = items if kind == "all" else [item for item in items if item["kind"] == kinds[kind]]
+    if kind == "comments":
+        replied = {"new_reply", "previous_reply", "same_account"}
+        if comment_filter == "read":
+            filtered = [item for item in filtered if item["status"] == "read" and not item.get("comment_outcome")]
+        elif comment_filter == "replied":
+            filtered = [item for item in filtered if item.get("comment_outcome") in replied]
+        elif comment_filter == "pending_review":
+            filtered = [item for item in filtered if item["status"] == "pending_review"]
+        counts = {
+            "total": len(filtered),
+            "sent": sum(item.get("comment_outcome") in replied for item in filtered),
+            "pending": sum(item["status"] == "pending_review" for item in filtered),
+            "failed": sum(item["status"] == "failed" for item in filtered),
+        }
     result = {"day": base["day"], "timezone": base["timezone"], "days": sorted(days, reverse=True),
               "kind": kind, "counts": counts, "items": filtered}
-    return _paginate(result, page, page_size) if paginate else result
+    result = _paginate(result, page, page_size) if paginate else result
+    comment_rows = [item for item in result["items"] if item["kind"] == "comment" and item.get("bvid")]
+    if comment_rows:
+        bvids = sorted({item["bvid"] for item in comment_rows})
+        titles = _comment_video_titles(store, account, character, bvids, by_video, round_id)
+        for item in comment_rows:
+            item["video_title"] = titles.get(item["bvid"]) or item["bvid"]
+    return result
+
+
+def _comment_video_titles(store, account, character, bvids, by_video, round_id):
+    titles = {bvid: by_video[bvid]["title"] for bvid in bvids
+              if bvid in by_video and by_video[bvid].get("title") not in {None, "", bvid}}
+    placeholders = ",".join("?" for _ in bvids)
+    tasks = (
+        "SELECT t.bvid,COALESCE(json_extract(t.payload,'$.metadata.title'),"
+        "json_extract(t.payload,'$.full_coverage.title'),json_extract(t.payload,'$.title')) AS title "
+        "FROM browsing_tasks t JOIN browsing_rounds r ON r.id=t.round_id "
+        f"WHERE r.account_id=? AND r.character_id=? AND t.bvid IN ({placeholders})"
+    )
+    sources = (
+        (tasks + " AND r.id=? ORDER BY t.updated_at DESC", (account, character, *bvids, round_id)),
+        ("SELECT bvid,json_extract(material,'$.metadata.title') AS title FROM browsing_video_progress "
+         f"WHERE account_id=? AND character_id=? AND bvid IN ({placeholders})", (account, character, *bvids)),
+        (tasks + " ORDER BY t.updated_at DESC", (account, character, *bvids)),
+    )
+    for query, parameters in sources:
+        if len(titles) == len(bvids):
+            break
+        for row in store.all(query, parameters):
+            if row["title"] and row["title"] != row["bvid"]:
+                titles.setdefault(row["bvid"], row["title"])
+    return titles

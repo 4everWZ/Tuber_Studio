@@ -2,10 +2,10 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.2";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.3";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
-import { initOperationsActivity } from "./modules/operations-activity.js?v=20261113.01";
+import { initOperationsActivity } from "./modules/operations-activity.js?v=20261114.1";
 import { initInferenceProvidersUI, publicSettings } from "./modules/providers.js?v=20261113.02";
 import { initVoiceSettings, renderVoicePreview, voiceAvailability } from "./modules/voices.js";
 import { MemeGallery, MemePicker, memePreview } from "./memes.js?v=20261111.08";
@@ -371,6 +371,9 @@ async function loadWorkspacePage({ anchor, routeKind, routeId, taskId }) {
     if (routeKind === "review" && routeId === "task" && /^[\w-]+$/.test(taskId || "")) await commentQueue.trackGeneration(taskId);
     else await commentQueue.open(anchor || routeKind === "sources" ? "sources" : queueView, validKey ? `${channel}/${identity}` : null);
   } else if (model.page === "automation") {
+    const commentRound = routeKind === "comments" && /^[\w-]+$/.test(routeId || "") ? routeId : null;
+    refreshOperationsActivity.setRound(commentRound);
+    if (routeKind === "comments" && !commentRound) refreshOperationsActivity.setKind("comments");
     if (routeKind === "video") { history.replaceState(null, "", "#automation"); refreshOperationsActivity.setKind("videos"); }
     const showIssues = routeKind === "issues";
     $("operation-activity-history").hidden = showIssues;
