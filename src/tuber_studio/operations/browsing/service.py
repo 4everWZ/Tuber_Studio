@@ -1161,12 +1161,14 @@ class BrowsingService:
             self.store.execute("UPDATE dm_drafts SET video_evidence=? WHERE id=?", (dump(value), draft["id"]))
         self.assert_comment_evidence({"video_evidence": value})
 
-    async def _refresh_material_keys(self, keys, versions):
+    async def _refresh_material_keys(self, keys, versions, *, allow_expired=False):
         result = []
         for key, version in zip(keys, versions, strict=True):
             try:
-                material = self.evidence.load(key)
+                material = self.evidence.load(key, allow_expired=allow_expired)
             except EvidenceUnavailable:
+                if allow_expired:
+                    raise
                 source = self.store.one("SELECT bvid FROM browsing_materials WHERE id=?", (key,))
                 if not source:
                     raise ValueError("原始来源标识已移除，不能恢复旧证据") from None

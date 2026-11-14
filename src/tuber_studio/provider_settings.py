@@ -8,6 +8,7 @@ import httpx
 from .api_providers import VisionService, create_llm
 from .config import atomic_bytes, normalize_broker_llm, uses_broker_llm, validate_api_key
 from .deployment_profiles import select_local_voice
+from .http_api import inference_transport
 from .inference_profiles import DAFEIYU_9B_CONTEXT, DAFEIYU_9B_MODEL, LLM_MODELS, llm_resource_key
 from .providers import VoiceService, public_error
 from .runtime_modes import require_model_idle
@@ -355,11 +356,13 @@ async def apply_settings(runtime, body):
             broker_conf = data.get("inference_broker", {})
             if broker_conf.get("enabled"):
                 old_inference = runtime.inference.client
+                base_url = broker_conf.get("base_url", "http://127.0.0.1:9012")
                 runtime.inference.client = httpx.AsyncClient(
-                    base_url=broker_conf.get("base_url", "http://127.0.0.1:9012"),
+                    base_url=base_url,
                     headers={"X-Tuber-Inference-Key": settings.inference_token},
                     timeout=httpx.Timeout(400, connect=5),
                     trust_env=False,
+                    transport=inference_transport(base_url, remote=broker_conf.get("deployment") == "remote"),
                 )
                 if old_inference is not None:
                     old_clients.append(old_inference)

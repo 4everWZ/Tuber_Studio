@@ -15,7 +15,7 @@ import httpx
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction, approx_token_count
 from .generation_meter import reserve_generation, settle_generation
-from .http_api import api_client, models_health, response_bytes
+from .http_api import api_client, inference_transport, models_health, response_bytes
 from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
 from .models import OperationReply, Reply
 from .operation_identity import provider_identity_messages
@@ -144,6 +144,7 @@ class LlamaCppProvider:
             timeout=httpx.Timeout(config.get("timeout_seconds", 90), connect=10),
             trust_env=False,
             headers={"X-Tuber-Inference-Key": inference_token} if inference_token else None,
+            transport=inference_transport(config["base_url"]),
         )
         self.last_tokens = None
         self.last_usage = {}
@@ -685,6 +686,7 @@ class VoiceService:
                 timeout=config.get("timeout_seconds", 45),
                 trust_env=False,
                 headers={"X-Tuber-Inference-Key": tts_key} if tts_key else None,
+                transport=inference_transport(config["base_url"]),
             )
         )
 

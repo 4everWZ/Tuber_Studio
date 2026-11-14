@@ -582,6 +582,7 @@ class FeedbackPublication:
         automatic=False,
         epoch=None,
         reconcile=None,
+        revise_on_rejection=True,
     ):
         while True:
             existing = self.coordinator.find(channel, identity)
@@ -657,8 +658,9 @@ class FeedbackPublication:
                     feedback = rejection.feedback() | {
                         "write_token": rejection.write_token,
                         "content_hash": content_hash(payload),
-                        "preparation_error": message,
                     }
+                    if message:
+                        feedback["preparation_error"] = message
                     saved = self.coordinator.find(channel, identity)
                     if saved:
                         self.coordinator.record_feedback(
@@ -669,6 +671,10 @@ class FeedbackPublication:
                             channel, identity, attempt["binding"], feedback, original_output=payload
                         )
                     self.coordinator._state(saved["id"], state, feedback=feedback)
+
+                if not revise_on_rejection:
+                    checkpoint_rejection(None)
+                    raise
 
                 try:
                     prepared = prepared or await prepare()

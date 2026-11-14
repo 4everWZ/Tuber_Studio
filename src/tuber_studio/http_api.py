@@ -1,5 +1,6 @@
 """Operator-configured HTTP endpoints; credentials never become model input."""
 
+import asyncio
 import ipaddress
 import json
 from urllib.parse import urlsplit
@@ -7,6 +8,48 @@ from urllib.parse import urlsplit
 import httpx
 
 from .compaction import ContextWindowExceeded
+
+_TAILSCALE_NETWORKS = (
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fd7a:115c:a1e0::/48"),
+)
+
+
+class InferenceTransport(httpx.AsyncHTTPTransport):
+    """Reconnect before delivery, and replay safe inference reads before headers."""
+
+    retry_delays = (0.5, 1.5, 3.0)
+
+    async def handle_async_request(self, request):
+        replayable = request.method in {"GET", "HEAD"} or (
+            request.method == "POST" and request.url.path.rsplit("/", 1)[-1] in {"apply-template", "tokenize"}
+        )
+        for delay in (*self.retry_delays, None):
+            try:
+                response = await super().handle_async_request(request)
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if delay is None:
+                    raise
+            except (httpx.ReadError, httpx.ReadTimeout, httpx.WriteError, httpx.WriteTimeout, httpx.RemoteProtocolError):
+                if delay is None or not replayable:
+                    raise
+            else:
+                if delay is None or not replayable or response.status_code not in {502, 504}:
+                    return response
+                await response.aclose()
+            await asyncio.sleep(delay)
+
+
+def inference_transport(base_url, *, remote=False):
+    host = urlsplit(base_url).hostname or ""
+    try:
+        address = ipaddress.ip_address(host)
+        tailnet = any(address in network for network in _TAILSCALE_NETWORKS)
+    except ValueError:
+        tailnet = host.rstrip(".").endswith(".ts.net")
+    if remote or tailnet:
+        return InferenceTransport(trust_env=False)
+    return None
 
 
 def endpoint(value):
@@ -32,7 +75,7 @@ def endpoint(value):
         try:
             address = ipaddress.ip_address(host)
             local = (
-                address.is_private or address.is_loopback or address in ipaddress.ip_network("100.64.0.0/10")
+                address.is_private or address.is_loopback or any(address in network for network in _TAILSCALE_NETWORKS)
             )
         except ValueError:
             local = host in {"localhost", "host.docker.internal", "jetson"} or host.endswith(".local")
@@ -42,12 +85,15 @@ def endpoint(value):
 
 
 def api_client(config, api_key=None):
+    base_url = endpoint(config["base_url"])
+    transport = inference_transport(base_url)
     return httpx.AsyncClient(
-        base_url=endpoint(config["base_url"]),
+        base_url=base_url,
         headers={"Authorization": "Bearer " + api_key} if api_key else {},
         timeout=httpx.Timeout(config.get("timeout_seconds", 40), connect=5),
         trust_env=False,
         follow_redirects=False,
+        **({"transport": transport} if transport else {}),
     )
 
 

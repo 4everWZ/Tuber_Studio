@@ -12,6 +12,7 @@ from tuber_studio.comments import Comments
 from tuber_studio.generation_meter import GenerationMeter
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.platforms.bilibili_browsing import BrowsingAdapter
+from tuber_studio.publication_errors import PlatformRejected
 
 BV = "BV1d8pU6xEZX"
 
@@ -154,33 +155,34 @@ async def test_operator_reply_closes_manual_draft_before_any_post(settings, stor
         await service.close()
 
 
-async def test_unversioned_legacy_draft_regenerates_before_the_feedback_write(settings, store, runtime, monkeypatch):
-    from tuber_studio.models import OperationReply
-
+async def test_manual_publish_sends_legacy_body_without_identity_refresh_or_revision(settings, store, runtime, monkeypatch):
     service, identity, posted, requests = await prepared_service(settings, store, runtime)
     store.execute("UPDATE drafts SET answer_check=NULL WHERE id=?", (identity,))
-    regenerated = []
-    refreshed_body = "本鲸用当前账号重新接这锅饭的话题，火候放慢一点。"
+    original = store.one("SELECT text FROM drafts WHERE id=?", (identity,))["text"]
 
-    async def regenerate(scope, character, event, relationship=None, mode="live", *, context=None):
-        regenerated.append(event)
-        assert mode == "comment_draft" and context is not None
-        assert event["account_id"] == "100" and event["text"] == "今天煮饭怎么做？"
-        return OperationReply(spoken_text=refreshed_body, emotion="cheerful", animation_id="talk_happy",
-                              reply_to=[event["event_id"]]), {
-            "generation_identity": runtime.identity_snapshot(character, "100")
-        }
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Manual publication must not refresh generation identity or call the model")
 
-    monkeypatch.setattr(runtime, "generate_reply", regenerate)
+    monkeypatch.setattr(runtime, "refresh_identity", unexpected)
+    monkeypatch.setattr(runtime, "generate_reply", unexpected)
     try:
-        result = await service.publish(identity)
-        assert len(regenerated) == 1
-        assert posted[0]["message"] == [refreshed_body]
-        captured = json.loads(store.one("SELECT answer_check FROM drafts WHERE id=?", (identity,))["answer_check"])
-        assert captured["generation_identity"] == runtime.identity_snapshot(runtime.character, "100")
-        assert result["status"] == "pending_review" and len(requests) == 4
+        with pytest.raises(PlatformRejected) as rejected:
+            await service.publish(identity)
+        assert rejected.value.code == 12025 and len(posted) == 1 and not requests
+        assert posted[0]["message"] == [original]
+        assert store.one("SELECT text,status FROM drafts WHERE id=?", (identity,)) == {"text": original, "status": "approved"}
+        assert runtime.continuations.find("comments", identity)["state"] == "checkpoint"
+        with pytest.raises(ValueError, match="正文未变化"):
+            await service.publish(identity)
+        assert len(posted) == 1 and not requests
     finally:
         await service.close()
+
+
+async def reject_manual_publish(service, identity):
+    with pytest.raises(PlatformRejected):
+        await service.publish(identity)
+    return service.runtime.continuations.find("comments", identity)["id"]
 
 
 async def test_definite_length_rejection_revises_then_manual_approval_reuses_same_intent(
@@ -188,7 +190,9 @@ async def test_definite_length_rejection_revises_then_manual_approval_reuses_sam
 ):
     service, identity, posted, requests = await prepared_service(settings, store, runtime)
     try:
-        result = await service.publish(identity)
+        continuation_id = await reject_manual_publish(service, identity)
+        assert not requests
+        result = await service.resume_continuation(identity, continuation_id)
         assert result["status"] == "pending_review" and len(posted) == 1
         saved = store.one("SELECT * FROM drafts WHERE id=?", (identity,))
         assert saved["status"] == "pending_review" and saved["text"] == result["text"]
@@ -215,7 +219,8 @@ async def test_definite_length_rejection_revises_then_manual_approval_reuses_sam
 async def test_high_explicit_budget_does_not_strand_body_after_decision_refund(settings, store, runtime):
     service, identity, posted, requests = await prepared_service(settings, store, runtime, max_tokens=65536)
     try:
-        assert (await service.publish(identity))["status"] == "pending_review"
+        continuation_id = await reject_manual_publish(service, identity)
+        assert (await service.resume_continuation(identity, continuation_id))["status"] == "pending_review"
         assert [item["max_tokens"] for item in requests] == [1, 65536, 1, 65536]
         row = runtime.continuations.find("comments", identity)
         assert row["budget"] == {"model_calls": 4, "input_tokens": 800, "output_tokens": 42}
@@ -261,7 +266,8 @@ async def test_platform_revision_diagnostic_is_manual_only_but_clean_revision_ke
 async def test_platform_feedback_can_defer_without_another_write(settings, store, runtime, action, state):
     service, identity, posted, requests = await prepared_service(settings, store, runtime, action=action)
     try:
-        result = await service.publish(identity)
+        continuation_id = await reject_manual_publish(service, identity)
+        result = await service.resume_continuation(identity, continuation_id)
         assert result["continuation"]["state"] == state
         assert len(posted) == 1 and len(requests) == 2
         assert not store.one("SELECT * FROM operation_write_retries")
@@ -277,8 +283,11 @@ async def test_human_can_edit_approve_and_submit_after_definite_rejection_withou
     if mode == "disabled":
         service.operations.configure({"max_recoveries": 0})
     try:
-        result = await service.publish(identity)
-        assert result["continuation"]["state"] == ("checkpoint" if mode == "disabled" else "waiting")
+        continuation_id = await reject_manual_publish(service, identity)
+        if mode == "wait":
+            assert (await service.resume_continuation(identity, continuation_id))["continuation"]["state"] == "waiting"
+        else:
+            assert runtime.continuations.get(continuation_id)["state"] == "checkpoint"
         calls = len(requests)
         corrected = "我自己改好的饭锅回复，火候慢一点。"
         service.review(identity, "approve", text=corrected)
@@ -305,8 +314,7 @@ async def test_human_revision_still_requires_changed_approved_bound_idle_manual_
     service, identity, posted, requests = await prepared_service(settings, store, runtime)
     service.operations.configure({"max_recoveries": 0})
     try:
-        result = await service.publish(identity)
-        continuation_id = result["continuation"]["id"]
+        continuation_id = await reject_manual_publish(service, identity)
         original = store.one("SELECT text FROM drafts WHERE id=?", (identity,))["text"]
         text = original if failure == "unchanged" else "人工重新写好的新正文。"
         service.review(identity, "reject" if failure == "unapproved" else "approve", text=text)
@@ -339,8 +347,7 @@ async def test_expired_recovery_owner_is_fenced_by_manual_revision(settings, sto
     service, identity, posted, requests = await prepared_service(settings, store, runtime)
     service.operations.configure({"max_recoveries": 0})
     try:
-        result = await service.publish(identity)
-        continuation_id = result["continuation"]["id"]
+        continuation_id = await reject_manual_publish(service, identity)
         store.execute(
             "UPDATE operation_continuations SET owner='expired-agent',lease_until=? WHERE id=?",
             (time.time() - 1, continuation_id),
@@ -410,7 +417,8 @@ async def test_existing_parent_meter_is_reused_without_double_reservation(settin
     parent, _ = runtime.browsing_repository.create_round("100", runtime.character, config, 0, True)
     try:
         with GenerationMeter(runtime.browsing_repository, parent["id"]):
-            assert (await service.publish(identity))["status"] == "pending_review"
+            continuation_id = await reject_manual_publish(service, identity)
+            assert (await service.resume_continuation(identity, continuation_id))["status"] == "pending_review"
         row = runtime.continuations.find("comments", identity)
         assert row["parent_round_id"] == parent["id"] and row["deadline"] == parent["deadline"]
         assert row["budget"]["model_calls"] == 4 and row["budget"]["output_tokens"] == 42
@@ -428,7 +436,8 @@ async def test_tight_parent_rejects_generation_before_an_extra_request(settings,
     )
     try:
         with GenerationMeter(runtime.browsing_repository, parent["id"]):
-            result = await service.publish(identity)
+            continuation_id = await reject_manual_publish(service, identity)
+            result = await service.resume_continuation(identity, continuation_id)
         assert result["continuation"]["state"] == "checkpoint"
         assert result["continuation"]["budget"]["model_calls"] == 1
         assert len(requests) == 1 and requests[0]["max_tokens"] == 1 and len(posted) == 1
@@ -470,16 +479,19 @@ async def test_source_changed_during_rejected_post_keeps_original_feedback_witho
     settings, store, runtime, monkeypatch
 ):
     service, identity, posted, requests = await prepared_service(settings, store, runtime)
-    prepare = service._publication_context
+    publish = service.adapter.publish
 
     async def changed(*args, **kwargs):
-        store.execute("UPDATE comments SET content='原帖在请求期间已变化'")
-        return await prepare(*args, **kwargs)
+        try:
+            return await publish(*args, **kwargs)
+        finally:
+            store.execute("UPDATE comments SET content='原帖在请求期间已变化'")
 
-    monkeypatch.setattr(service, "_publication_context", changed)
+    monkeypatch.setattr(service.adapter, "publish", changed)
     try:
-        with pytest.raises(ValueError, match="不一致"):
-            await service.publish(identity)
+        continuation_id = await reject_manual_publish(service, identity)
+        with pytest.raises(ValueError, match="原始目标或来源已变化"):
+            await service.resume_continuation(identity, continuation_id)
         row = runtime.continuations.find("comments", identity)
         root = store.one("SELECT token FROM account_writes")
         assert (

@@ -817,7 +817,7 @@ class BrowsingAdapter(BilibiliAdapter):
                     "type": target["type"],
                     "root": target["root"],
                     "parent": target["parent"],
-                    "message": text.strip(),
+                    "message": text,
                     "plat": 1,
                     "csrf": self._csrf,
                     "csrf_token": self._csrf,

@@ -173,7 +173,7 @@ def _source_time(value):
             return None
 
 
-async def publish_queue_selection(store, comments, browsing, data):
+def prepare_queue_selection(store, data):
     if set(data) != {"items"} or not isinstance(data["items"], list) or not data["items"]:
         raise ValueError("请选择要发布的回复")
     selection, seen = [], set()
@@ -208,42 +208,45 @@ async def publish_queue_selection(store, comments, browsing, data):
         return (_source_time(row["source_at"]) if use_time else 0, int(parent) if COMMENT_ID.fullmatch(parent) else 0,
                 row["created_at"])
 
-    results = [None] * len(selection)
+    ordered = []
     for group in groups.values():
         if len(group) > 1:
             use_time = all(_source_time(selection[index][1]["source_at"]) for index in group)
             group = sorted(group, key=lambda index: order(index, use_time))
-        for index in group:
-            item, snapshot = selection[index]
-            channel, identity = item["channel"], item["id"]
-            service = comments if channel == "comments" else browsing
-            service_id = int(identity) if channel == "comments" else identity
-            error = None
-            try:
-                current = _publication_row(store, channel, identity)
-                if not current:
-                    raise ValueError("草稿不存在或无法公开发送")
-                if channel == "comments" and (
-                    not VIDEO_ID.fullmatch(current["resource"] or "") or not COMMENT_ID.fullmatch(current["parent"] or "")
-                ):
-                    raise ValueError("草稿须绑定实际的 B 站视频和评论")
-                if current["status"] in REVIEW_STATES:
-                    expected = item.get("updated_at", snapshot["updated_at"] if snapshot else None)
-                    if current["updated_at"] != expected:
-                        raise ValueError("草稿在选择后已变化，请检查最新正文")
-                    if current["status"] != "approved" or "text" in item:
-                        service.review(service_id, "approve", item.get("text"))
-                    await service.publish(service_id)
-            except Exception as exc:
-                error = public_error(exc)
+        ordered.extend((index, *selection[index]) for index in group)
+    return ordered
+
+
+async def publish_queue_selection(store, comments, browsing, selection):
+    for index, item, snapshot in selection:
+        channel, identity = item["channel"], item["id"]
+        service = comments if channel == "comments" else browsing
+        service_id = int(identity) if channel == "comments" else identity
+        error = None
+        try:
             current = _publication_row(store, channel, identity)
-            result = {"channel": channel, "id": identity, "status": current["status"] if current else "failed"}
-            if error:
-                result["error"] = error
-            if current and current["receipt"]:
-                result["receipt"] = json.loads(current["receipt"])
-            results[index] = result
-    return {"items": results}
+            if not current:
+                raise ValueError("草稿不存在或无法公开发送")
+            if channel == "comments" and (
+                not VIDEO_ID.fullmatch(current["resource"] or "") or not COMMENT_ID.fullmatch(current["parent"] or "")
+            ):
+                raise ValueError("草稿须绑定实际的 B 站视频和评论")
+            if current["status"] in REVIEW_STATES:
+                expected = item.get("updated_at", snapshot["updated_at"] if snapshot else None)
+                if current["updated_at"] != expected:
+                    raise ValueError("草稿在选择后已变化，请检查最新正文")
+                if current["status"] != "approved" or "text" in item:
+                    service.review(service_id, "approve", item.get("text"))
+                await service.publish(service_id)
+        except Exception as exc:
+            error = public_error(exc)
+        current = _publication_row(store, channel, identity)
+        result = {"channel": channel, "id": identity, "status": current["status"] if current else "failed"}
+        if error:
+            result["error"] = error
+        if current and current["receipt"]:
+            result["receipt"] = json.loads(current["receipt"])
+        yield index, result
 
 
 def queue_detail(store, comments, browsing, channel, identity):

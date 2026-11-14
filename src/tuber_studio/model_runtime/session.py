@@ -4,6 +4,7 @@ import asyncio
 
 import httpx
 
+from ..http_api import inference_transport
 from ..inference_node_client import refresh_capabilities
 from ..providers import public_error
 from ..runtime_modes import (
@@ -26,6 +27,7 @@ class InferenceRuntime:
                 headers={"X-Tuber-Inference-Key": settings.inference_token},
                 timeout=httpx.Timeout(400, connect=5),
                 trust_env=False,
+                transport=inference_transport(broker["base_url"], remote=broker.get("deployment") == "remote"),
             )
             if broker.get("enabled")
             else None

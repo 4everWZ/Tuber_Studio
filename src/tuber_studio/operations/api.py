@@ -1,21 +1,24 @@
 """Bilibili account, comments, and dynamics routes."""
 
 import asyncio
+from contextlib import aclosing
 from typing import Literal
 from uuid import UUID
 
 import httpx
-from fastapi import Body, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi import Body, Depends, Header, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
 
 from ..comment_workbench import (
     generation_task,
     list_queue,
+    prepare_queue_selection,
     publish_queue_selection,
     queue_detail,
     queue_selection,
 )
 from ..providers import public_error
+from ..sse import encode_event
 
 
 def register_operations_api(app, store, account, comments, browsing, dynamics, require_admin):
@@ -134,9 +137,28 @@ def register_operations_api(app, store, account, comments, browsing, dynamics, r
         )
 
     @app.post("/api/comments/workbench/batch-publish", dependencies=[Depends(require_admin)])
-    async def comment_queue_batch_publish(data: dict = Body(...)):
-        async with comment_batch_lock:
-            return await publish_queue_selection(store, comments, browsing, data)
+    async def comment_queue_batch_publish(data: dict = Body(...), accept: str = Header("")):
+        selection = prepare_queue_selection(store, data)
+        results = [None] * len(selection)
+
+        async def publish():
+            async with comment_batch_lock:
+                async for index, result in publish_queue_selection(store, comments, browsing, selection):
+                    results[index] = result
+                    yield result
+
+        if "text/event-stream" in accept:
+            async def stream():
+                async with aclosing(publish()) as updates:
+                    async for result in updates:
+                        yield encode_event("progress", result)
+                yield encode_event("done", {"items": results})
+
+            return StreamingResponse(stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+        async for _ in publish():
+            pass
+        return {"items": results}
 
     @app.get("/api/comments/workbench/{channel}/{identity}", dependencies=[Depends(require_admin)])
     async def comment_queue_detail(channel: Literal["comments", "browsing", "jobs"], identity: str):

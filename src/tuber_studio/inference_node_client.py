@@ -10,7 +10,7 @@ import httpx
 from .api_providers import VisionService, create_llm
 from .config import atomic_bytes, validate_api_key
 from .deployment_profiles import business_configuration
-from .http_api import endpoint, response_json
+from .http_api import endpoint, inference_transport, response_json
 from .inference_profiles import (
     DAFEIYU_9B_MODEL,
     DAFEIYU_MODEL,
@@ -122,6 +122,7 @@ async def pair_node(runtime, body):
         headers={"X-Tuber-Inference-Key": token},
         timeout=httpx.Timeout(600, connect=5),
         trust_env=False,
+        transport=inference_transport(base, remote=True),
     )
     created, adopted = [], False
     try:

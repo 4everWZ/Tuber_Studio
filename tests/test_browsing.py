@@ -1043,15 +1043,15 @@ async def test_adapter_replacement_cannot_publish_with_old_account_credentials(b
     assert not previous.sent and not replacement.sent
 
 
-async def test_expired_evidence_is_reread_and_compared_before_manual_publish(browsing):
+async def test_expired_evidence_is_checked_and_reused_for_manual_publish(browsing):
     await finished(browsing, preview=True)
     intent = browsing.intents()[0]
     browsing.review(intent["id"], "approve")
     browsing.store.execute("UPDATE browsing_materials SET expires_at=0")
     result = await browsing.publish(intent["id"])
     assert result["status"] == "published"
-    assert result["material_keys"] != intent["material_keys"]
-    assert browsing.evidence.load(result["material_keys"][0])
+    assert result["material_keys"] == intent["material_keys"]
+    assert browsing.evidence.load(result["material_keys"][0], allow_expired=True)
 
 
 async def test_emergency_during_preflight_to_http_means_no_submit(browsing):

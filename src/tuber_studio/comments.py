@@ -807,7 +807,7 @@ class Comments:
         status = "approved" if action == "approve" else "rejected"
         self.store.execute(
             "UPDATE drafts SET text=?,status=?,error=NULL,updated_at=? WHERE id=?",
-            (text.strip(), status, time.time(), draft_id),
+            (text, status, time.time(), draft_id),
         )
         if action == "reject":
             source = self.store.one("SELECT * FROM comments WHERE id=?", (row["comment_id"],))
@@ -903,13 +903,14 @@ class Comments:
         )
 
     async def _refresh_draft_identity(self, draft_id, automatic, epoch):
-        """Regenerate an unsent reply under current account facts, keeping approval."""
+        """Refresh an automatic draft under the current account facts."""
+        if not automatic:
+            return
         refresh = getattr(self.runtime, "refresh_identity", None)
         if refresh is None or not hasattr(self.adapter, "account_profile"):
             return
         row = self._draft_source(draft_id)
-        allowed = {"pending_review"} if automatic else {"approved", "copied"}
-        if not row or row["status"] not in allowed:
+        if not row or row["status"] != "pending_review":
             return
         validate_comment_body(row["text"], recipient_name=row["display_name"] or "")
         character = self.store.character(row["character_id"], row["character_version"])
@@ -1084,7 +1085,7 @@ class Comments:
 
     async def publish(self, draft_id, automatic=False, *, authorization_epoch=None):
         feedback = FeedbackPublication(self.runtime, self.store, self.operations)
-
+        confirmed = None if automatic else self.store.one("SELECT text FROM drafts WHERE id=?", (draft_id,))
         return await feedback.submit(
             "comments",
             draft_id,
@@ -1095,12 +1096,13 @@ class Comments:
                 authorization_epoch=authorization_epoch,
                 revision_ticket=ticket,
                 binding=binding,
-                body_hash=body_hash,
+                body_hash=content_hash(confirmed) if confirmed else body_hash,
             ),
             apply_revision=lambda prepared, text: self._apply_revision(draft_id, prepared, text),
             automatic=automatic,
             epoch=authorization_epoch,
             reconcile=lambda token, prepared: self._reconcile(draft_id),
+            revise_on_rejection=automatic,
         )
 
     async def _publish_once(
@@ -1202,9 +1204,10 @@ class Comments:
                 audit = json.loads(row["answer_check"] or "{}")
                 self.runtime.validate_memory_delivery(audit)
                 captured = audit.get("generation_identity")
-                if hasattr(self.adapter, "account_profile") and captured and captured.get("identity_version") != runtime_identity(
-                    self.runtime, character, account_id
-                )["identity_version"]:
+                if (
+                    automatic and hasattr(self.adapter, "account_profile") and captured
+                    and captured.get("identity_version") != runtime_identity(self.runtime, character, account_id)["identity_version"]
+                ):
                     raise ValueError("发送前身份资料已更新，保留草稿重新生成")
                 fresh = self._draft_source(draft_id)
                 if (

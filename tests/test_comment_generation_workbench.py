@@ -152,13 +152,19 @@ def test_batch_publish_orders_one_floor_and_keeps_partial_outcomes_and_original_
         assert review["total"] == selection["total"] == 3 and review["items"][0]["can_publish"]
         items = [{key: item[key] for key in ("id", "channel", "updated_at")} for item in selection["items"]]
         items[0]["updated_at"] -= 1
-        items[2]["text"] = "本鱼认真答了这一条。"
+        items[2]["text"] = " 本鱼认真答了这一条。\n"
         endpoint = "/api/comments/workbench/batch-publish"
-        result = client.post(endpoint, json={"items": items}).raise_for_status().json()["items"]
+        response = client.post(endpoint, json={"items": items}, headers={"Accept": "text/event-stream"}).raise_for_status()
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = [(event.removeprefix("event: "), json.loads(payload.removeprefix("data: ")))
+                  for event, payload in (frame.splitlines() for frame in response.text.strip().split("\n\n"))]
+        assert [name for name, _ in events] == ["progress", "progress", "progress", "done"]
+        result = events[-1][1]["items"]
+        assert [row for _, row in events[:-1]] == result[::-1]
         assert [item["id"] for item in result] == [item["id"] for item in items]
         assert [item["status"] for item in result] == ["pending_review", "publish_uncertain", "published"]
         assert "已变化" in result[0]["error"] and result[2]["receipt"]["rpid"] == 901
         assert [entry[1] for entry in platform.sent] == ["101", "102"]
-        assert platform.sent[0][2] == "本鱼认真答了这一条。"
+        assert platform.sent[0][2] == items[2]["text"]
         assert client.post(endpoint, json={"items": items}).raise_for_status().json()["items"][1]["status"] == "publish_uncertain"
         assert len(platform.sent) == 2

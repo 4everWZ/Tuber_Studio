@@ -102,29 +102,22 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     syncBatchControls();
   }
 
-  function showBatchResults(items, submitted) {
-    const counts = { published: 0, publish_uncertain: 0, skipped: 0, failed: 0 };
-    const results = $("queue-batch-results");
-    results.replaceChildren();
-    for (const result of items) {
-      const key = keyOf(result);
-      const { status, error } = result;
-      const outcome = ["published", "publish_uncertain"].includes(status) ? status :
-        ["skipped", "operator_replied", "rejected", "copied", "private_handoff", "publishing", "invalidated"].includes(status) ? "skipped" : "failed";
-      counts[outcome]++;
-      const item = node("li");
-      const label = { published: "已发送", publish_uncertain: "待核对", skipped: "已跳过", failed: "未发送" }[outcome];
-      const route = status === "skipped" || status === "failed" ? `#comments/${key}` : `#comments/${queueViewForStatus(status)}/${key}`;
-      const state = outcome === "skipped" && statuses[status] ? `（${statuses[status]}）` : "";
-      item.append(link(submitted.get(key)?.excerpt?.slice(0, 80) || "查看草稿", route), ` · ${label}${state}`);
-      if (error) item.append(` · ${safeMessage(error)}`);
-      results.append(item);
-    }
+  function showBatchResult(result, submitted, counts) {
+    const key = keyOf(result);
+    const { status, error } = result;
+    const outcome = ["published", "publish_uncertain"].includes(status) ? status :
+      ["skipped", "operator_replied", "rejected", "copied", "private_handoff", "publishing", "invalidated"].includes(status) ? "skipped" : "failed";
+    counts[outcome]++;
+    const item = node("li");
+    const label = { published: "已发送", publish_uncertain: "待核对", skipped: "已跳过", failed: "未发送" }[outcome];
+    const route = status === "skipped" || status === "failed" ? `#comments/${key}` : `#comments/${queueViewForStatus(status)}/${key}`;
+    const state = outcome === "skipped" && statuses[status] ? `（${statuses[status]}）` : "";
+    item.append(link(submitted.get(key)?.excerpt?.slice(0, 80) || "查看草稿", route), ` · ${label}${state}`);
+    if (error) item.append(` · ${safeMessage(error)}`);
+    $("queue-batch-results").append(item);
     const summary = `批量发布 · 已发送 ${counts.published} · 待核对 ${counts.publish_uncertain} · 已跳过 ${counts.skipped} · 未发送 ${counts.failed}`;
     $("queue-batch-summary").textContent = summary;
     batchResult.hidden = false;
-    batchResult.open = false;
-    setBatchProgress("");
   }
 
   function emptyDetail(text) {
@@ -429,6 +422,7 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     }
     $("queue-records").hidden = false;
     $("comment-source-records").hidden = view !== "sources";
+    $("selected-comment-count").hidden = view !== "sources";
     $("queue-list").hidden = view === "sources";
     $("queue-list-title").textContent = view === "sources" ? "选择要回复的评论" : generation ? "本次生成的回复" : "评论草稿";
     $("queue-show-all").hidden = !generation;
@@ -522,20 +516,37 @@ export function initCommentQueue(api, refreshSources, discoveryStatus, { onDraft
     busy = detail.inert = true;
     ++version;
     batchResult.hidden = true;
+    batchResult.open = false;
+    $("queue-batch-results").replaceChildren();
     syncBatchControls();
-    setBatchProgress(`正在提交 ${items.length} 条草稿…`);
-    try {
-      const result = await api(`${workbench}/batch-publish`, { method: "POST", body: { items } });
-      for (const row of result.items) {
-        const key = keyOf(row);
-        if (["published", "publish_uncertain"].includes(row.status)) draftEdits.delete(key);
-        if (["published", "operator_replied"].includes(row.status) && selected === key && view === "review" && batchScope === scope) {
-          clearProcessedSelection();
-        }
+    const completed = new Set();
+    const counts = { published: 0, publish_uncertain: 0, skipped: 0, failed: 0 };
+    const progress = () => setBatchProgress(`已处理 ${completed.size} / ${items.length} 条`);
+    const applyResult = row => {
+      const key = keyOf(row);
+      if (completed.has(key)) return;
+      completed.add(key);
+      if (["published", "publish_uncertain", "operator_replied"].includes(row.status)) draftEdits.delete(key);
+      if (view === "review" && batchScope === scope) {
+        checkedDrafts.delete(key);
+        allSelected = false;
+        syncBatchControls();
+        if (["published", "operator_replied"].includes(row.status) && selected === key) clearProcessedSelection();
+        progress();
       }
-      showBatchResults(result.items, submitted);
+      showBatchResult(row, submitted, counts);
+    };
+    progress();
+    try {
+      const result = await api(`${workbench}/batch-publish`, {
+        method: "POST", body: { items }, headers: { Accept: "text/event-stream" },
+        onEvent: (event, row) => { if (event === "progress") applyResult(row); },
+      });
+      for (const row of result.items) applyResult(row);
     } catch (error) {
-      setBatchProgress(`未取得本次发布结果：${safeMessage(error.message)}。请先核对草稿状态与回执。`);
+      if (batchScope === scope) {
+        setBatchProgress(`已取得 ${completed.size} / ${items.length} 条结果。连接失败：${safeMessage(error.message)}。请先核对其余草稿的状态与回执。`);
+      }
     } finally {
       if (batchScope === scope) {
         for (const key of submitted.keys()) checkedDrafts.delete(key);

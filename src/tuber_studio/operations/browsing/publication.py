@@ -199,7 +199,7 @@ class BrowsingPublication:
             raise ValueError("当前候选不能审核")
         if text is not None and not isinstance(text, str):
             raise ValueError("正文须为字符串")
-        text = row["text"] if text is None else text.strip()
+        text = row["text"] if text is None else text
         text = "" if row["kind"] == "comment_like" else validate_operation_text(text)
         issue = None
         if row["kind"] in _COMMENT_KINDS:
@@ -355,12 +355,14 @@ class BrowsingPublication:
         )
 
     async def _refresh_intent_identity(self, identity, automatic):
+        if not automatic:
+            return
         browsing = self.browsing
         refresh = getattr(browsing.runtime, "refresh_identity", None)
         if refresh is None or not hasattr(browsing.adapter, "account_profile"):
             return
         row = browsing.repo.decode(browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (identity,)))
-        if not row or row["kind"] not in {"top_level", "reply_public"} or row["status"] not in {"approved", "pending_review"}:
+        if not row or row["kind"] not in _COMMENT_KINDS or row["status"] != "pending_review":
             return
         validate_comment_body(row["text"], recipient_name=row["target"].get("recipient_name") or "")
         character = browsing.store.character(row["character_id"], row["character_version"])
@@ -595,7 +597,8 @@ class BrowsingPublication:
         return await feedback.reconcile("browsing", identity, read, commit)
 
     async def publish(self, identity, *, automatic=False):
-        row = self.browsing.store.one("SELECT epoch,round_id,kind FROM browsing_intents WHERE id=?", (identity,))
+        row = self.browsing.store.one("SELECT epoch,kind,text FROM browsing_intents WHERE id=?", (identity,))
+        manual_comment = row and row["kind"] in _COMMENT_KINDS and not automatic
         try:
             if row and row["kind"] == "comment_like":
                 return await self._publish_once(identity, automatic=automatic)
@@ -606,12 +609,14 @@ class BrowsingPublication:
                 identity,
                 prepare=lambda: self._publication_context(identity, automatic),
                 send=lambda ticket, binding, body_hash: self._publish_once(
-                    identity, automatic=automatic, revision_ticket=ticket, binding=binding, body_hash=body_hash
+                    identity, automatic=automatic, revision_ticket=ticket, binding=binding,
+                    body_hash=content_hash({"text": row["text"]}) if manual_comment else body_hash,
                 ),
                 apply_revision=lambda prepared, text: self._apply_revision(identity, prepared, text),
                 automatic=automatic,
                 epoch=row["epoch"] if row and automatic else None,
                 reconcile=lambda token, prepared: self._reconcile(identity),
+                revise_on_rejection=not manual_comment,
             )
         except UnknownPublication:
             if not automatic:
@@ -674,13 +679,15 @@ class BrowsingPublication:
             signature = self.browsing.credential_signature()
             if account != row["account_id"]:
                 raise ValueError("候选来源账号已变化")
-            row["material_keys"] = await self.browsing._refresh_material_keys(
-                row["material_keys"], json.loads(row["input_version"])
+            keys = await self.browsing._refresh_material_keys(
+                row["material_keys"], json.loads(row["input_version"]),
+                allow_expired=not automatic and row["kind"] in _COMMENT_KINDS,
             )
-            self.browsing.store.execute(
-                "UPDATE browsing_intents SET material_keys=? WHERE id=?",
-                (dump(row["material_keys"]), identity),
-            )
+            if keys != row["material_keys"]:
+                row["material_keys"] = keys
+                self.browsing.store.execute(
+                    "UPDATE browsing_intents SET material_keys=? WHERE id=?", (dump(keys), identity)
+                )
             if row["kind"] not in ("top_level", "video_like", "video_fav"):
                 target = row["target"]
                 verified = await self._verify_reply_source(target, account)
@@ -726,7 +733,7 @@ class BrowsingPublication:
                 if signature != self.browsing.credential_signature() or self.browsing.closed:
                     raise ValueError("账号／服务已变化，取消提交")
                 captured = row["target"].get("generation_identity")
-                if captured and captured.get("identity_version") != runtime_identity(
+                if automatic and captured and captured.get("identity_version") != runtime_identity(
                     self.browsing.runtime, character, account
                 )["identity_version"]:
                     raise ValueError("发送前身份资料已更新，保留草稿重新生成")

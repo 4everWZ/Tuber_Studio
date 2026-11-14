@@ -1,68 +1,46 @@
-"""A renamed platform identity regenerates a queued reply, not its target."""
-
-import json
+"""Manual publication preserves approved browsing text under identity changes."""
 
 import pytest
 from test_browsing import browsing as browsing
 from test_browsing import finished
 
 from tuber_studio.operation_identity import identity_snapshot
+from tuber_studio.publication_errors import PlatformRejected
 
 
-@pytest.mark.parametrize("profile_available,internal_ref", [(True, False), (False, False), (True, True)])
-async def test_identity_changes_refresh_the_approved_public_intent_without_another_approval(browsing, monkeypatch, profile_available, internal_ref):
+@pytest.mark.parametrize("rejected", [False, True])
+async def test_manual_browsing_publish_preserves_approved_text_without_the_model(browsing, monkeypatch, rejected):
     state = {"platform": "bilibili", "account_uid": "100", "account_display_name": "旧名字", "account_bio": "旧简介"}
 
     def current(character=None, account_id=None):
         return identity_snapshot(state, character or browsing.runtime.character)
 
-    async def refresh(character=None, account_id=None):
-        if not profile_available:
-            raise ValueError("主页暂不可读")
-        state.update(account_display_name="新名字", account_bio="白饭仍然喜欢")
-        return current(character, account_id)
-
     monkeypatch.setattr(browsing.runtime, "identity_snapshot", current)
     await finished(browsing, preview=True)
     intent = browsing.intents()[0]
-    browsing.review(intent["id"], "approve")
-    source_key = intent["source_key"]
+    original = " 本鲸也想试试盐水浮鸡蛋。\n这次记得先把水称好。 "
+    browsing.review(intent["id"], "approve", original)
+    state.update(account_display_name="新名字", account_bio="白饭仍然喜欢")
+    browsing.store.execute("UPDATE browsing_materials SET expires_at=0")
 
-    async def profile():
-        return {}
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Manual publication must not refresh generation identity, retake evidence or call the model")
 
-    monkeypatch.setattr(browsing.adapter, "account_profile", profile, raising=False)
-    monkeypatch.setattr(browsing.runtime, "refresh_identity", refresh)
-    original = browsing.runtime.llm.generate_json
-    generated = []
-
-    async def generate(messages, schema, *, max_tokens):
-        generated.append(messages)
-        value = await original(messages, schema, max_tokens=max_tokens)
-        if schema.get("title") == "ResponseDecision":
-            value["text"] = ("先看ref:1。" if internal_ref else "") + "本鲸换好新门牌，还想接着聊盐水里浮起来的鸡蛋。"
-        return value
-
-    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
-    if not profile_available:
-        with pytest.raises(ValueError, match="主页暂不可读"):
+    monkeypatch.setattr(browsing.adapter, "account_profile", unexpected, raising=False)
+    monkeypatch.setattr(browsing.runtime, "refresh_identity", unexpected)
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", unexpected)
+    monkeypatch.setattr(browsing, "_prepare_evidence", unexpected)
+    if rejected:
+        browsing.adapter.failure = PlatformRejected(12051, "请修改正文")
+        with pytest.raises(PlatformRejected, match="请修改正文"):
             await browsing.publish(intent["id"])
-        assert not generated and not browsing.adapter.sent
-        assert browsing.intents()[0]["status"] == "approved"
-        return
-    if internal_ref:
-        with pytest.raises(ValueError):
-            await browsing.publish(intent["id"])
-        saved = browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],))
-        assert saved["status"] == "pending_review" and not saved["auto_authorized"]
-        assert len(generated) == 1 and not browsing.adapter.sent
-        audit = browsing.runtime.continuations.get(json.loads(saved["target"])["generation_continuation_id"])
-        assert audit["state"] == "awaiting_review" and "内部引用标识" in audit["feedback"]["message"]
-        assert audit["current_output"]["text"] == saved["text"]
-        browsing.review(intent["id"], "approve")
-    await browsing.publish(intent["id"])
+        continuation = browsing.runtime.continuations.find("browsing", intent["id"])
+        assert continuation["state"] == "checkpoint"
+        assert continuation["trigger_feedback"]["code"] == 12051
+        assert continuation["original_output"]["text"] == original
+    else:
+        await browsing.publish(intent["id"])
     saved = browsing.store.one("SELECT * FROM browsing_intents WHERE id=?", (intent["id"],))
-    assert saved["status"] == "published" and saved["source_key"] == source_key
-    assert len(generated) == 1 and len(browsing.adapter.sent) == 1
-    assert "新名字" in json.dumps(generated[0], ensure_ascii=False)
-    assert json.loads(saved["target"])["generation_identity"]["identity_version"] == current()["identity_version"]
+    assert saved["status"] == ("approved" if rejected else "published")
+    assert saved["text"] == original and saved["source_key"] == intent["source_key"]
+    assert [text for _, text in browsing.adapter.sent] == [original]

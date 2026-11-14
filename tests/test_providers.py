@@ -3,7 +3,74 @@ import json
 import httpx
 import pytest
 
+from tuber_studio.http_api import InferenceTransport, inference_transport
 from tuber_studio.providers import LlamaCppProvider, reuse_turn_token_counts, validate_reply
+
+
+@pytest.mark.parametrize(
+    "method,path,failures,expected_calls",
+    [
+        ("GET", "/llm/props", [httpx.ReadError, 502], 3),
+        ("POST", "/tokenize", [httpx.RemoteProtocolError], 2),
+        ("POST", "/v1/chat/completions", [httpx.ConnectError, httpx.ConnectTimeout], 3),
+        ("POST", "/v1/chat/completions", [httpx.ReadError], 1),
+        ("POST", "/mode", [httpx.RemoteProtocolError], 1),
+        ("POST", "/v1/chat/completions", [502], 1),
+        ("GET", "/health", [401], 1),
+        ("GET", "/health", [httpx.ConnectError] * 4, 4),
+    ],
+)
+async def test_tailnet_inference_retries_before_delivery_or_for_safe_reads(
+    monkeypatch, method, path, failures, expected_calls
+):
+    calls = []
+
+    async def send(_transport, request):
+        calls.append((request.url.path, await request.aread()))
+        result = failures[len(calls) - 1] if len(calls) <= len(failures) else 200
+        if isinstance(result, type):
+            raise result("controlled connection failure", request=request)
+        return httpx.Response(result, content=b"response")
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", send)
+    monkeypatch.setattr(InferenceTransport, "retry_delays", (0, 0, 0))
+    transport = inference_transport("http://100.64.0.10:9012")
+    async with httpx.AsyncClient(transport=transport, base_url="http://100.64.0.10:9012") as client:
+        options = {"json": {"text": "same body"}} if method == "POST" else {}
+        if expected_calls <= len(failures) and isinstance(failures[-1], type):
+            with pytest.raises(failures[-1]):
+                await client.request(method, path, **options)
+        else:
+            response = await client.request(method, path, **options)
+            assert response.status_code == (failures[-1] if expected_calls <= len(failures) else 200)
+    assert len(calls) == expected_calls and len(set(calls)) == 1
+
+
+async def test_tailnet_stream_connection_failure_does_not_replay_started_generation(monkeypatch):
+    calls = 0
+
+    class InterruptedBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'data: {"choices":[{"delta":{"content":"part"}}]}\n\n'
+            raise httpx.ReadError("controlled stream interruption")
+
+    async def send(_transport, request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("controlled connect error", request=request)
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=InterruptedBody())
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", send)
+    monkeypatch.setattr(InferenceTransport, "retry_delays", (0, 0, 0))
+    provider = LlamaCppProvider({"base_url": "https://agx.example.ts.net"})
+    chunks = []
+    try:
+        with pytest.raises(httpx.ReadError):
+            await provider._stream_json({}, httpx.Timeout(5), chunks.append)
+    finally:
+        await provider.close()
+    assert calls == 2 and chunks == ["part"]
 
 
 def test_oc_wording_and_style_length_are_flexible_but_event_binding_is_checked(store):
