@@ -26,6 +26,7 @@ from ..sse import encode_event
 from ..store import dump
 from . import operator_facts
 from .assistant_output import AssistantTextStream
+from .dynamic_chat_material import DynamicChatMaterial
 from .handoff import (
     LIVE_STYLE,
     LIVE_STYLE_GROUP,
@@ -184,6 +185,7 @@ class OperatorChat:
             "CREATE INDEX IF NOT EXISTS operator_chat_history "
             "ON operator_chat_turns(character_id,character_version,created_at DESC,request_id DESC)"
         )
+        dynamics.chat_material = DynamicChatMaterial(runtime)
 
     def _scope(self, character):
         return "operator:" + dump([self._account(), character["id"]])

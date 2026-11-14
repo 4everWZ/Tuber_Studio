@@ -26,7 +26,7 @@ class MemorySuggestion(StrictModel):
     summary_kind: Literal["preference", "decision"] = "preference"
 
 
-def _chat_source(result):
+def is_chat_turn(result):
     action = result.get("memory_intent") or (result.get("submission", {}).get("intent") or {}).get("action")
     if action:
         return action == "chat"
@@ -124,7 +124,7 @@ class MemoryOrganizer:
         for turn in private:
             yield {"key": "turn:" + turn["request_id"], "kind": "private", "text": turn["message"],
                    "at": turn["created_at"], "revision": turn["request_id"],
-                   "temporary": not _chat_source(json.loads(turn["result"]))}
+                   "temporary": not is_chat_turn(json.loads(turn["result"]))}
         if not account:
             return
         public = self.store.all(
@@ -193,7 +193,7 @@ class MemoryOrganizer:
                     "SELECT result FROM operator_chat_turns WHERE request_id=? AND character_id=? AND character_version=?",
                     (row["source"]["key"].removeprefix("turn:"), *scope[1:]),
                 )
-                if turn and not _chat_source(json.loads(turn["result"])):
+                if turn and not is_chat_turn(json.loads(turn["result"])):
                     memory.resolve_legacy_private(scope, row, None)
         if (isinstance(runtime.llm, DemoProvider) or runtime.operations_waiting()
                 or runtime.generation_lock.locked() or any(runtime.operation_turns.queues.values())):

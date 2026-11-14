@@ -70,6 +70,8 @@ def dynamic_decision_messages(character, recent_posts, public_sources, *, curren
                 "你是作为自己在写动态。由你决定今天想分享什么，或者暂时不发。"
                 "public_incident是公开经历和原评论，published_reply是来评和你当时发出的回复，"
                 "public_memory是角色故事摘录，runtime_event是运行记录，operator_note是号主确认的经历。"
+                "daily_chat是角色从日常对话挑出的可公开感受或反应，只写角色自己的视角。"
+                "如选 daily_chat，填对应来源 ID。它的文字已经写好，content 直接使用这段文字。"
                 "随想、创作、兴趣、日常观察、角色小故事或公开互动都可以独立成稿，篇幅随话题。"
                 "只有实际使用材料才填一项 source_ids。纯感想、玩笑或明确的虚构可留空。"
                 "讲到真实发生的动作、次数和结果时，用可公开的材料支持。"
@@ -120,6 +122,7 @@ class Dynamics:
         self._automatic_post_id = None
         self.memory_summary = OperationsMemory(store)
         self.daily_memory = getattr(runtime, "daily_memory", None) or DailyMemoryService(store)
+        self.chat_material = None
         for sql in (
             "CREATE TABLE IF NOT EXISTS dynamic_memory_public(memory_id INTEGER PRIMARY KEY,"
             " fingerprint TEXT NOT NULL,marked_at REAL NOT NULL)",
@@ -359,6 +362,9 @@ class Dynamics:
             result = self.daily_memory.public_incident_sources(char["id"], char["version"])
             result.extend(self.daily_memory.public_experience_sources(char["id"], char["version"]))
         if scope and preference["enabled"]:
+            if self.chat_material:
+                result.extend(source | {"memory_preference_revision": preference["revision"]}
+                              for source in self.chat_material.sources(scope))
             for row in self.daily_memory.organized(scope, limit=100):
                 if row["status"] != "active" or "dynamic" not in row["channels"]:
                     continue
@@ -729,10 +735,7 @@ class Dynamics:
         messages = identity_messages(
             dynamic_decision_messages(
                 character,
-                [
-                    {"content": post["content"], "published_at": post["published_at"]}
-                    for post in self.list_posts("published", 5)
-                ],
+                self._recent_public_posts(character),
                 row["sources"],
                 current_time=datetime.now().astimezone().isoformat(),
             ),
@@ -1243,6 +1246,23 @@ class Dynamics:
         live = getattr(self.runtime, "live", None)
         return live is not None and live.state in {"live", "paused"} and live.busy
 
+    def _recent_public_posts(self, character):
+        _, preference = self._memory_preference()
+        return [
+            {"content": post["content"], "published_at": post["published_at"]}
+            for post in self.list_posts("published", 5)
+            if (post["character_id"], post["character_version"]) == (character["id"], character["version"])
+            and not json.loads(post.get("context_sources") or "[]")
+            and not any(
+                source.get("memory_version") or source.get("memory_dependencies")
+                or (source["id"].startswith(("memory:", "experience:", "incident:")) and (
+                    not preference["enabled"]
+                    or source.get("memory_preference_revision", 0) != preference["revision"]
+                ))
+                for source in post["sources"]
+            )
+        ]
+
     @staticmethod
     def decision_schema(sources):
         return {
@@ -1289,6 +1309,10 @@ class Dynamics:
             raise ValueError("模型下次评估间隔无效")
         if data["action"] == "post":
             data["content"] = validate_text(data["content"])
+            # Selecting a private-side product is a decision to publish that
+            # finished caption. Keep its wording across the public boundary.
+            if material := next((s for s in sources if s["id"] in ids and s["type"] == "daily_chat"), None):
+                data["content"] = validate_text(material["text"])
         elif data["content"] != "":
             raise ValueError("等待决定不得包含待发布正文")
         return data
@@ -1571,7 +1595,6 @@ class Dynamics:
             if not manual and self._live_busy():
                 base["reason"] = "直播队列繁忙，延后动态评估"
                 return self._save_decision(char, manual, base, [])
-            sources = self._summary_sources()
             if not manual:
                 try:
                     self._quota()
@@ -1580,29 +1603,33 @@ class Dynamics:
                     return self._save_decision(char, manual, base, [])
             current_time = datetime.now().astimezone().isoformat()
             memory_preference = self._memory_preference()
-            recent_posts = [
-                {"content": p["content"], "published_at": p["published_at"]}
-                for p in self.list_posts("published", 5)
-                if p["character_id"] == char["id"] and p["character_version"] == char["version"]
-                and not json.loads(p.get("context_sources") or "[]")
-                and not any(
-                    s.get("memory_version") or s.get("memory_dependencies")
-                    or (s["id"].startswith(("memory:", "experience:", "incident:")) and (
-                        not memory_preference[1]["enabled"]
-                        or s.get("memory_preference_revision", 0) != memory_preference[1]["revision"]
-                    ))
-                    for s in p["sources"]
-                )
-            ]
             messages = dynamic_decision_messages(
                 char,
-                recent_posts,
+                self._recent_public_posts(char),
                 [],
                 current_time=current_time,
             )
             messages = identity_messages(messages, generation_identity)
             selected, selection_failed = None, False
             try:
+                scope, preference = memory_preference
+                if not manual and self.chat_material and scope and scope[0] and preference["enabled"]:
+
+                    def can_collect():
+                        return (
+                            self._memory_preference() == memory_preference
+                            and self.policy()["enabled"] and not self.operations.draining and not self._live_busy()
+                        )
+
+                    try:
+                        await self.chat_material.collect(scope, char, authorized=can_collect)
+                    except (ValueError, TimeoutError, httpx.HTTPError):
+                        # Leave these turns available for the next scheduled evaluation.
+                        pass
+                    if not can_collect():
+                        base["reason"] = "私聊取材期间账号、角色或运营状态已变化，延后动态评估"
+                        return self._save_decision(char, manual, base, [])
+                sources = self._summary_sources()
                 async with self.runtime.offline_generation("background"):
                     if not manual and self._live_busy():
                         base["reason"] = "直播队列繁忙，延后动态评估"

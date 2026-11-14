@@ -8,6 +8,7 @@ import pytest
 
 from tuber_studio import dynamics as module
 from tuber_studio import web_fetch
+from tuber_studio.agent.operator_chat import OperatorChat
 from tuber_studio.dynamics import Dynamics
 from tuber_studio.memory import GroundedMemory
 from tuber_studio.platforms.bilibili import PublishUncertain
@@ -298,6 +299,14 @@ async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approva
     post_id = (await service.evaluate(manual=True))["post_id"]
     previous = json.loads(service._post(post_id)["generation_identity"])
     service.review(post_id, "approve")
+    # Identity refresh and scheduled evaluation share the same history boundary.
+    checked_caption = "已从私聊清除的公开成品"
+    service.store.execute(
+        "INSERT INTO dynamic_posts(character_id,character_version,content,sources,status,published_at) "
+        "VALUES(?,?,?,?,'published',?)",
+        (char["id"], char["version"], checked_caption,
+         json.dumps([{"id": "daily-chat:removed", "memory_version": 1}]), time.time()),
+    )
 
     async def refresh(character=None, account_id=None):
         assert not service.comments.publish_lock.locked()
@@ -323,6 +332,7 @@ async def test_dynamic_refreshes_identity_regenerates_and_keeps_existing_approva
     assert identity["account_display_name"] == "新名字"
     assert identity["identity_version"] != previous["identity_version"]
     assert "新名字" in service.runtime.llm.calls[-1][0]["content"]
+    assert json.loads(service.runtime.llm.calls[-1][1]["content"])["recent_public_posts"] == []
 
 
 async def test_dynamic_identity_verification_failure_keeps_approved_draft_unsent(service):
@@ -454,6 +464,131 @@ async def test_autonomous_dynamic_can_share_a_thought_without_comment_sources(se
     assert post["sources"] == [] and post["comment_card"] is None
     assert post["status"] == ("published" if verdict == "expression" else "pending_review")
     assert [text for _, text in service.sent] == ([caption] if verdict == "expression" else [])
+
+
+@pytest.mark.parametrize(
+    "mode", ["auto", "repair", "review", "private", "rejected", "copied", "invented_action", "deleted", "manual",
+             "memory_off", "memory_toggled", "expired", "scope_change"]
+)
+async def test_autonomous_dynamic_extracts_private_chat_only_at_the_handoff(service, monkeypatch, mode):
+    account = "injected-test-account"
+    active, other = service._character(), "other-account"
+    scope = (account, active["id"], active["version"])
+    service.runtime.memory_organizer = SimpleNamespace(scope=lambda: scope)
+    service.comments.display_account_id = lambda: account
+    queued = []
+    browsing = SimpleNamespace(
+        account=account, policy=lambda: {},
+        sends=SimpleNamespace(enqueue=lambda channel, identifier: queued.append((channel, identifier)),
+                              assert_ready=lambda *_: None, withdraw=lambda *_: None),
+    )
+    from tuber_studio.operations.browsing.repository import BrowsingRepository
+
+    BrowsingRepository(service.store)
+    service.runtime.browsing = browsing
+    OperatorChat(service.runtime, service.store, browsing, service)
+    turn_id = str(uuid4())
+    question = "帮我想一下今晚在家可以吃点什么"
+    original = f"姓名：验收样例甲，内部链接 https://private.invalid/a。{question}？"
+    caption = "说到晚饭，本鲸第一反应还是热腾腾的白饭。"
+    for identifier, owner, message, action in [
+        (turn_id, account, ("别发动态。" if mode == "private" else "") + original, "chat"),
+        (str(uuid4()), other, "别的账号原话", "chat"),
+        (str(uuid4()), account, "指定视频任务的参数", "full_video"),
+    ]:
+        service.store.execute(
+            "INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)",
+            (identifier, active["id"], active["version"], message, json.dumps({
+                "account_id": owner, "private": True, "memory_intent": action, "reply_text": "热腾腾的白饭好香！",
+            }), time.time()),
+        )
+
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens):
+        nonlocal scope
+        packet = json.loads(messages[1]["content"])
+        task = packet.get("task", "dynamic")
+        calls.append(task)
+        raw = json.dumps(packet, ensure_ascii=False)
+        if task == "dynamic_private_chat_selection":
+            assert len(packet["turns"]) == 1 and packet["turns"][0]["discussion"] == original
+            text = {
+                "copied": question + "，这是原话直接照抄的测试句。",
+                "repair": "下雨了，想陪你慢慢吃碗白饭。",
+            }.get(mode, caption)
+            return {"source": 1, "text": text, "private_fragments": []}
+        if task == "dynamic_private_chat_review":
+            assert packet["turn"]["discussion"] == original
+            if mode == "repair" and packet["candidate"] != caption:
+                return {"safe": False, "describes_completed_action": False,
+                        "revised": {"text": caption, "private_fragments": []}}
+            assert packet["candidate"] == caption
+            if mode == "scope_change":
+                scope = (other, *scope[1:])
+            return {"safe": mode != "rejected", "describes_completed_action": mode == "invented_action"}
+        for forbidden in ("晚饭？", "验收样例甲", "private.invalid", "别的账号原话", "指定视频任务的参数", turn_id):
+            assert forbidden not in raw
+        if task == "dynamic_grounding":
+            return {"checks": [{"sentence": 1, "verdict": "supported", "quotes": [caption]}]}
+        if not packet["public_sources"]:
+            return {"action": "wait", "reason": "暂无素材", "content": "", "source_ids": [],
+                    "next_evaluation_seconds": 1800}
+        source, = packet["public_sources"]
+        assert source["type"] == "daily_chat" and source["text"] == caption
+        return {"action": "post", "reason": "想分享自己的反应", "content": "模型临时改写了别的事。", "source_ids": [source["id"]],
+                "next_evaluation_seconds": 1800}
+
+    monkeypatch.setattr(service.runtime.llm, "generate_json", generate)
+    if mode == "memory_off":
+        service.daily_memory.set_preference(scope, False)
+    if mode == "repair":
+        monkeypatch.setattr(service.runtime.llm, "generate_assistant_json", generate, raising=False)
+    await service.set_policy({"enabled": True, "auto_publish": mode not in {"review", "deleted", "memory_toggled", "expired"}})
+    decision = await service.evaluate(manual=mode == "manual")
+    assert decision["action"] != "error", (decision, calls)
+    if mode in {"private", "rejected", "copied", "invented_action", "manual", "memory_off", "scope_change"}:
+        assert decision["action"] == "wait" and not service.sent
+        expected = {
+            "rejected": ["dynamic_private_chat_selection", "dynamic_private_chat_review", "dynamic"],
+            "invented_action": ["dynamic_private_chat_selection", "dynamic_private_chat_review", "dynamic"],
+            "scope_change": ["dynamic_private_chat_selection", "dynamic_private_chat_review"],
+            "copied": ["dynamic_private_chat_selection", "dynamic"],
+        }
+        assert calls == expected.get(mode, ["dynamic"])
+        return
+    post = service._post(decision["post_id"])
+    if mode in {"auto", "repair"}:
+        from tuber_studio.operations.browsing.service import BrowsingService
+
+        assert queued == [("dynamics", post["id"])] and not service.sent
+        browsing.operations = service.operations
+        browsing.dynamics = service
+        assert await BrowsingService._send_automatic(browsing, {
+            "channel": "dynamics", "source_id": str(post["id"]), "epoch": service.operations.policy()["epoch"],
+        })
+        post = service._post(post["id"])
+    assert post["status"] == ("published" if mode in {"auto", "repair"} else "pending_review")
+    assert [text for _, text in service.sent] == ([caption] if mode in {"auto", "repair"} else [])
+    assert post["sources"][0]["text"] == caption
+    if mode == "deleted":
+        service.store.execute("DELETE FROM operator_chat_turns WHERE request_id=?", (turn_id,))
+        assert service.chat_material.sources(scope) == []
+        assert not service._valid_sources(post)
+    if mode == "expired":
+        service.store.execute("UPDATE operator_chat_turns SET created_at=? WHERE request_id=?", (time.time() - 86401, turn_id))
+        assert service.chat_material.sources(scope) == []
+        assert not service._valid_sources(post)
+    if mode == "memory_toggled":
+        service.daily_memory.set_preference(scope, False)
+        assert not service._valid_sources(post)
+        service.daily_memory.set_preference(scope, True)
+        assert not service._valid_sources(post)
+    if mode == "review":
+        due(service)
+        calls.clear()
+        assert (await service.evaluate())["action"] == "wait"
+        assert calls == ["dynamic"] and not service.sent
 
 
 async def test_unselected_memory_revocation_invalidates_an_unsourced_draft(service):
