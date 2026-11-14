@@ -229,6 +229,9 @@ function videoCard(root, turn, { api, path }) {
     if (platformLink(data.excerpt?.source_url)) {
       excerpt.append(link(`P${data.excerpt.part} · ${Math.floor(data.excerpt.start)} 秒`, data.excerpt.source_url),
         node("blockquote", data.excerpt.text, "quoted-text"));
+      if (data.excerpt.original_text) {
+        excerpt.append(node("small", `B 站原字幕「${data.excerpt.original_text}」，已校正`, "hint"));
+      }
     }
     findings.replaceChildren();
     if (!data.inspection && !data.excerpt && parts.length) {

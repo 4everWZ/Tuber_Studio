@@ -2,7 +2,7 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.3";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.4";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261113.02";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261114.3";
@@ -45,7 +45,7 @@ const api = async (path, options = {}) => {
   try {
     return await baseApi(path, options, showLogin);
   } catch (error) {
-    if (model.authenticated && error.status !== 401) issueLog.record(error.message, source);
+    if (model.authenticated && error.status !== 401 && error.name !== "AbortError") issueLog.record(error.message, source);
     throw error;
   }
 };

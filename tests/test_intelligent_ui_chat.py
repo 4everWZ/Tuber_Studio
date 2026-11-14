@@ -10,6 +10,7 @@ from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
 from tuber_studio.agent import operator_facts
+from tuber_studio.agent.assistant_output import AssistantTextStream
 from tuber_studio.app import create_app
 from tuber_studio.live.game_livestream import GameLivestreamService
 from tuber_studio.models import Reply
@@ -17,6 +18,95 @@ from tuber_studio.operation_identity import provider_identity_messages
 from tuber_studio.operations.browsing.models import BrowsingPolicy
 from tuber_studio.operations.browsing.repository import BrowsingRepository
 from tuber_studio.providers import Audio
+
+
+def test_incremental_assistant_output_handles_json_escapes_and_excludes_tool_fields():
+    for wire, expected in [
+        (json.dumps({"action": "chat", "reply_markdown": '鲸鲸 🌊\n"白饭"', "topic": "内部字段"}), '鲸鲸 🌊\n"白饭"'),
+        (json.dumps({"action": "stop", "reply_markdown": "不应显示"}), ""),
+    ]:
+        fragments = []
+        stream = AssistantTextStream(fragments.append)
+        for char in wire:
+            stream.feed(char)
+        assert "".join(fragments) == expected
+
+
+def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    calls = []
+
+    async def generate(messages, schema, *, max_tokens, on_content, on_stage):
+        calls.append(messages)
+        assert "reply_markdown" in schema["properties"]
+        on_stage("generating")
+        on_content('{"action":"chat","reply_markdown":"**白饭')
+        on_content('**，分你半碗。"}')
+        return {"action": "chat", "reply_markdown": "**白饭**，分你半碗。"}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
+    with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
+        path = "/api/chat/intelligent"
+        payload = {"request_id": str(uuid4()), "message": "鱼鱼今天吃了几碗饭"}
+        response = client.post(path + "/stream", json=payload)
+        assert response.status_code == 200
+        assert 'event: delta\ndata: "**白饭"' in response.text
+        assert 'event: delta\ndata: "**，分你半碗。"' in response.text
+        assert "event: done" in response.text
+        assert client.post(path, json=payload).json()["reply_text"] == "**白饭**，分你半碗。"
+        assert len(calls) == 1
+        assert len(client.get(path).json()["turns"]) == 1
+
+
+def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+
+    async def generate(messages, schema, *, max_tokens, on_content, on_stage):
+        return {"action": "inspect_video_frame", "part": 0, "seconds": 1}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
+    with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
+        response = client.post("/api/chat/intelligent/stream", json={
+            "request_id": str(uuid4()), "message": "帮我看一下视频中的一帧",
+        })
+        assert "event: error" in response.text
+        assert "event: done" not in response.text
+        assert not app.state.store.one("SELECT 1 FROM browsing_rounds")
+
+
+@pytest.mark.parametrize("change", ["account", "character", "memory"])
+def test_assistant_rechecks_private_scope_before_delivery(settings, monkeypatch, change):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime, browsing = app.state.runtime, app.state.browsing
+    memory = runtime.daily_memory
+
+    async def generate(messages, schema, *, max_tokens, on_content, on_stage):
+        on_stage("generating")
+        if change == "account":
+            browsing.discovery.remember_account("200")
+        elif change == "character":
+            char = runtime.character
+            monkeypatch.setattr(type(runtime), "character", property(lambda self: char | {"version": 999}))
+        else:
+            assert on_content is None
+            memory.set_preference(runtime.memory_organizer.scope(), False)
+        if on_content:
+            on_content('{"action":"chat","reply_markdown":"旧作用域的文字')
+        return {"action": "chat", "reply_markdown": "旧作用域的文字"}
+
+    if change == "memory":
+        monkeypatch.setattr(memory, "recall_organized", lambda *args, **kwargs: [{"headline": "私有", "anecdote": "私有文字"}])
+        monkeypatch.setattr(memory, "organized_reference", lambda entry: {"id": "fixture", "version": 1})
+    monkeypatch.setattr(runtime.llm, "generate_assistant_json", generate, raising=False)
+    with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
+        browsing.discovery.remember_account("100")
+        response = client.post("/api/chat/intelligent/stream", json={
+            "request_id": str(uuid4()), "message": "还记得刚才的事吗",
+        })
+        assert "event: error" in response.text
+        assert "event: delta" not in response.text
+        assert "旧作用域的文字" not in response.text
+        assert not app.state.store.one("SELECT 1 FROM operator_chat_turns")
 
 
 async def test_stop_generation_cancels_only_the_bound_chat_and_releases_model(settings, monkeypatch):

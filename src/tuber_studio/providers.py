@@ -20,6 +20,7 @@ from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_l
 from .models import OperationReply, Reply
 from .operation_identity import provider_identity_messages
 from .operation_text import operation_character
+from .sse import event_data
 
 SYSTEM_RULES = (
     "你是运行于大肥鱼工坊的 AI 角色。以当前角色的第一人称接着聊，语气随关系和话题。角色设定："
@@ -220,7 +221,7 @@ class LlamaCppProvider:
             self.profile_error = public_error(error)
             raise
 
-    async def _token_count(self, messages):
+    async def _token_count(self, messages, *, enable_thinking=None):
         # Count the actual chat template, including role delimiters, rather than estimating Chinese characters.
         model = {"model": self.config["model"]} if self.broker_model_routing else {}
         response = await self.client.post(
@@ -229,7 +230,8 @@ class LlamaCppProvider:
                 **model,
                 "messages": single_system_messages(provider_identity_messages(self, messages)),
                 "add_generation_prompt": True,
-                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
+                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)
+                                         if enable_thinking is None else enable_thinking},
             },
         )
         response.raise_for_status()
@@ -398,6 +400,12 @@ class LlamaCppProvider:
         return await self._generate_json(messages, schema, max_tokens=max_tokens,
                                          sampling=self.sampling() | {"temperature": 0}, thinking_limit=96)
 
+    async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
+        return await self._generate_json(
+            messages, schema, max_tokens=max_tokens, sampling=self.sampling(),
+            enable_thinking=False, on_content=on_content, on_stage=on_stage, bounded_assistant=True,
+        )
+
     async def generate_live_json(self, messages, schema, *, max_tokens):
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling(), live=True)
 
@@ -409,7 +417,8 @@ class LlamaCppProvider:
         }
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=sampling)
 
-    async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False, thinking_limit=None):
+    async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False, thinking_limit=None,
+                             on_content=None, on_stage=None, enable_thinking=None, bounded_assistant=False):
         self._begin_generation_observation()
         json_schema_text(schema, max_tokens)
         await self.ensure_capacity()
@@ -417,32 +426,47 @@ class LlamaCppProvider:
         if thinking_limit is not None and self.live_thinking_budget_supported and self.config.get("enable_thinking"):
             live_parameters = {"thinking_budget_tokens": thinking_limit}
         messages = single_system_messages(provider_identity_messages(self, messages))
-        tokens = await self.count_tokens(messages)
+        window = self.config["context_tokens"] * 95 // 100
+        # A local Qwen byte-token upper bound with ample room for the chat template.
+        # Other models and tight windows use the exact tokenizer as before.
+        upper = sum(len(message["content"].encode("utf-8")) + 128 for message in messages) * 2 + 1024
+        conservative = (bounded_assistant and self.config.get("model", "").startswith("dafeiyu-qwen35-9b:")
+                        and upper + max_tokens <= window)
+        if conservative:
+            tokens = upper
+        elif enable_thinking is None:
+            tokens = await self.count_tokens(messages)
+        else:
+            tokens = await self._token_count(messages, enable_thinking=enable_thinking)
+        thinking = self.config.get("enable_thinking", False) if enable_thinking is None else enable_thinking
         self.last_tokens = tokens
-        if tokens + max_tokens > self.config["context_tokens"] * 95 // 100:
+        if tokens + max_tokens > window:
             raise ContextWindowExceeded("结构化输入超出真实token预算；禁止静默丢弃数据")
-        reservation = reserve_generation(tokens, max_tokens)
-        response = await self.client.post(
-            "/v1/chat/completions",
-            json={
-                "model": self.config.get("model", "local"),
-                "messages": messages,
-                **sampling,
-                "max_tokens": max_tokens,
-                **live_parameters,
-                "stream": False,
-                "chat_template_kwargs": {"enable_thinking": self.config.get("enable_thinking", False)},
-                **({"reasoning_format": "deepseek"} if self.config.get("enable_thinking", False) else {}),
-                "response_format": {"type": "json_object", "schema": schema},
-                **({"seed": self.config["seed"]} if "seed" in self.config else {}),
-            },
-            timeout=httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5),
-        )
-        self.last_http_status = response.status_code
-        if response.status_code == 400 and "context" in response.text.lower():
-            raise ContextWindowExceeded("模型结构化输入超窗")
-        response.raise_for_status()
-        data = response.json()
+        reservation = reserve_generation(tokens, max_tokens, conservative_input=conservative)
+        payload = {
+            "model": self.config.get("model", "local"),
+            "messages": messages,
+            **sampling,
+            "max_tokens": max_tokens,
+            **live_parameters,
+            "stream": False,
+            "chat_template_kwargs": {"enable_thinking": thinking},
+            **({"reasoning_format": "deepseek"} if thinking else {}),
+            "response_format": {"type": "json_object", "schema": schema},
+            **({"seed": self.config["seed"]} if "seed" in self.config else {}),
+        }
+        timeout = httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5)
+        if on_stage:
+            on_stage("generating")
+        if on_content is not None:
+            data = await self._stream_json(payload, timeout, on_content)
+        else:
+            response = await self.client.post("/v1/chat/completions", json=payload, timeout=timeout)
+            self.last_http_status = response.status_code
+            if response.status_code == 400 and "context" in response.text.lower():
+                raise ContextWindowExceeded("模型结构化输入超窗")
+            response.raise_for_status()
+            data = response.json()
         self._observe_generation(data)
         choices = data.get("choices") if isinstance(data, dict) else None
         if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
@@ -457,12 +481,49 @@ class LlamaCppProvider:
         if (
             not isinstance(usage, dict)
             or type(usage.get("prompt_tokens")) is not int
-            or (usage["prompt_tokens"] != tokens)
+            or (not 0 < usage["prompt_tokens"] <= tokens if conservative else usage["prompt_tokens"] != tokens)
         ):
             raise ValueError("模型未确认结构化输入完整计量；未采用结果")
         value = parse_json_object(message.get("content"))
+        self.last_tokens = usage["prompt_tokens"]
         settle_generation(reservation, usage)
         return value
+
+    async def _stream_json(self, payload, timeout, on_content):
+        chunks, usage, finish = [], {}, None
+        complete = False
+        payload |= {"stream": True, "stream_options": {"include_usage": True}}
+        async with self.client.stream("POST", "/v1/chat/completions", json=payload, timeout=timeout) as response:
+            self.last_http_status = response.status_code
+            response.raise_for_status()
+            if "text/event-stream" not in response.headers.get("content-type", ""):
+                raise ValueError("推理服务没有返回模型流")
+            async for fragment in event_data(response.aiter_lines()):
+                if fragment == "[DONE]":
+                    complete = True
+                    break
+                packet = parse_json_object(fragment)
+                if packet.get("error"):
+                    raise ValueError("模型流返回错误")
+                if packet.get("usage"):
+                    usage = packet["usage"]
+                choices = packet.get("choices", [])
+                if not choices:
+                    continue
+                if len(choices) != 1 or not isinstance(choices[0], dict):
+                    raise ValueError("模型流返回多个结果")
+                choice = choices[0]
+                delta = choice.get("delta") or {}
+                if delta.get("tool_calls") or delta.get("function_call"):
+                    raise ValueError("模型流返回未授权的工具调用")
+                content = delta.get("content")
+                if isinstance(content, str) and content:
+                    chunks.append(content)
+                    on_content(content)
+                finish = choice.get("finish_reason") or finish
+        if not complete:
+            raise ValueError("模型流意外中断")
+        return {"usage": usage, "choices": [{"finish_reason": finish, "message": {"content": "".join(chunks)}}]}
 
 
 def json_schema_text(schema, max_tokens):

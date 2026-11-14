@@ -10,6 +10,8 @@
 
 更新程序文件后重启原业务进程，再刷新工作台。工作区静态文件可先于运行中的 Python 路由更新。部署验收从实际端口确认 `GET /api/daily-memory/preferences` 和 `GET /api/characters/deleted` 均返回 200，再打开个性化验证开关。评论筛选验收从活动页选「待审核」，确认请求返回 `comment_filter: pending_review`，列表和计数随之更新。
 
+号主逐字对话从 `POST /api/chat/intelligent/stream` 接收 SSE。当前 9B 直连可用。通过节点代理走语言生成的部署需同步更新代理程序，并从使用方验证首字与取消。业务日志记录阶段耗时和 token 用量。
+
 运营使用 AGX 上独立的 llama.cpp CUDA 容器，已核验 `dafeiyu-qwen35-9b:1.0.0` 的 Q4_K_M 权重、Q8_0 投影器、262,144 窗口和 `q4_0` K/V。新安装的运营和直播均默认引用同一 9B，按固定 Hugging Face 发布版本准备资产，默认开启思考。直播使用 Genie 语音和图片／GIF 形象，9B 与 Genie 的共驻和首音待实机复验。 [部署指南](guides/deployment.md) · [可选 Live2D](guides/live/avatar.md)
 
 电脑工作台保存的运营和直播语言模型均已指向现用 9B 端点，重载后从设置接口读回一致。现有 Genie 语音仍由原节点提供。直播档切换和实际播放待核验，改动前的业务配置留在版本目录的 `rollback/studio-before-live-9b-20261113.json`。

@@ -20,6 +20,7 @@ GENERATION_FIELDS = {
     "max_tokens",
     "n_predict",
     "stream",
+    "stream_options",
     "cache_prompt",
     "response_format",
     "chat_template_kwargs",
@@ -92,6 +93,15 @@ def validate_llm_request(path, body, *, context_tokens=131072):
         raise ValueError("Unsupported text inference fields; tools, files and remote media are disabled")
     if "messages" in body:
         _plain_messages(body["messages"])
+    if "stream" in body and type(body["stream"]) is not bool:
+        raise ValueError("stream must be a boolean")
+    if body.get("stream") and path != "v1/chat/completions":
+        raise ValueError("Streaming is supported for language chat completions only")
+    if "stream_options" in body and (
+        not body.get("stream") or body["stream_options"] != {"include_usage": True}
+        or type(body["stream_options"]["include_usage"]) is not bool
+    ):
+        raise ValueError("Only streaming usage totals are supported")
     if "content" in body and not isinstance(body["content"], str):
         raise ValueError("Tokenization accepts plain text only")
     if "prompt" in body:

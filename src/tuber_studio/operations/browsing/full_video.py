@@ -7,6 +7,7 @@ from uuid import uuid4
 from ...generation_meter import BrowsingBudgetDeferred
 from ...operation_turns import operation_lane
 from ...providers import DemoProvider, public_error
+from .caption_corrections import CORRECTED_VIDEOS, corrected_caption
 from .comment_reader import commit_comment_context, enqueue_comment_visit, video_comment_context
 from .evidence import (
     STORYBOARD_SCAN_QUESTION,
@@ -170,7 +171,8 @@ def _visual_report(material, part, interval, provider, scans, bvid):
 
 def _highlights(material, part, interval, bvid):
     sources = sorted(
-        ((segment, "画面" if source.get("visual") else "字幕")
+        ((segment if source.get("visual") or source.get("asr") else corrected_caption(bvid, source["cid"], segment),
+          "画面" if source.get("visual") else "字幕")
          for source in material["parts"] if str(source["cid"]) == part["cid"]
          for segment in source["segments"] if (segment["start"] < interval["end"]
                                                 or segment["start"] == interval["end"] == part["duration"])
@@ -181,9 +183,26 @@ def _highlights(material, part, interval, bvid):
         sources = [sources[round(index * (len(sources) - 1) / 11)] for index in range(12)]
     return [
         {"id": source["id"], "start": source["start"], "text": source["text"][:500], "kind": kind,
-         "source_url": _source_url(bvid, part["part"], source["start"])}
+         "source_url": _source_url(bvid, part["part"], source["start"]),
+         **({"original_text": source["original_text"]} if "original_text" in source else {})}
         for source, kind in sources
     ]
+
+
+def correct_coverage_captions(coverage, bvid):
+    if not coverage or bvid not in CORRECTED_VIDEOS:
+        return coverage
+    return coverage | {"parts": [
+        part | {"ranges": [
+            interval | ({"highlights": [
+                corrected_caption(bvid, part.get("cid"), entry)
+                if entry.get("kind") == "字幕" else entry
+                for entry in interval["highlights"]
+            ]} if "highlights" in interval else {})
+            for interval in part["ranges"]
+        ]}
+        for part in coverage["parts"]
+    ]}
 
 
 async def _visual_batch(browsing, row, identity, material, cid, *, timestamps=None, windows=None, precise=False, allow_fallback=True,

@@ -145,6 +145,31 @@ async def test_buffered_upstream_body_holds_global_gpu_lease(tmp_path):
     await broker.close()
 
 
+async def test_language_stream_holds_global_gpu_lease_until_generator_closes(tmp_path):
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'data: {"choices":[]}\n\n'
+            await asyncio.Event().wait()
+
+    async def post(request, key):
+        return (httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=Body())
+                if key == "llm2b" else httpx.Response(200, content=b"wav"))
+
+    broker, _ = setup_broker(tmp_path, post, mode="live")
+    await broker.initialize()
+    stream = broker.stream_llm("llm2b", "v1/chat/completions", {"stream": True})
+    try:
+        assert (await anext(stream)).startswith(b"data: ")
+        tts = asyncio.create_task(broker.forward("tts", "tts", b"{}"))
+        await asyncio.sleep(0)
+        assert broker.lock.locked() and not tts.done()
+        await stream.aclose()
+        assert (await asyncio.wait_for(tts, 2)).body == b"wav"
+    finally:
+        await stream.aclose()
+        await broker.close()
+
+
 async def test_cancelled_generation_confirms_stop_before_next_resource(tmp_path):
     entered, release = asyncio.Event(), asyncio.Event()
 

@@ -5,7 +5,7 @@ import json
 import re
 import shlex
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ...operation_generation import hold_comment_body
@@ -17,6 +17,7 @@ from ...subtitle_presentation import (
     render_blocks,
     validate_time,
 )
+from .caption_corrections import corrected_caption
 from .models import MAX_DECISION_REASON_CHARACTERS, ContentDecision, ResponseDecision
 
 RESPONSE_ACTOR_INSTRUCTION = (
@@ -616,6 +617,7 @@ class ContentDecisionInput:
             str(part["cid"]): (page, part) for page, part in enumerate(self.metadata.get("parts", []), 1)
         }
         self.parts, self.sources = {}, {}
+        self.caption_text = {}
         identities = set()
         for index, part in enumerate(material["parts"], 1):
             cid = str(part["cid"])
@@ -652,6 +654,19 @@ class ContentDecisionInput:
                 self.sources[cid, identity] = SourceSegment(
                     source_part, position, identity, segment["text"], start, end
                 )
+                if source_part.kind == "subtitle":
+                    corrected = corrected_caption(self.metadata.get("bvid"), cid, segment)
+                    if corrected is not segment:
+                        self.caption_text[cid, identity] = corrected["text"]
+
+    def render_source(self, block):
+        sources = tuple(
+            replace(source, text=self.caption_text[source.part.cid, source.id])
+            if (source.part.cid, source.id) in self.caption_text else source
+            for source in block.sources
+        )
+        display = replace(block, sources=sources)
+        return self.text_renderer(display) if self.text_renderer else display.text
 
     def present(self, chunk):
         """Return short text and bindings; structured source IDs stay private."""
@@ -695,7 +710,7 @@ class ContentDecisionInput:
             )
         return {
             "metadata": metadata,
-            "content": render_blocks(blocks, text_renderer=self.text_renderer),
+            "content": render_blocks(blocks, text_renderer=self.render_source),
             "segments": [{"id": block.alias, "part": block.part.index} for block in blocks],
             "parts": [self.parts[index].wire() for index in used_parts],
             "missing_parts": missing,

@@ -392,10 +392,12 @@ class DailyMemoryService:
     def memory_match(self, row, text):
         return self._score_highlight_match(row, self._extract_recall_keywords(text), text)
 
-    def recall_organized(self, scope, channel, text, *, resource=None, thread=None, participant=None):
+    def recall_organized(self, scope, channel, text, *, resource=None, thread=None, participant=None,
+                         specific_experiences=False):
         if not self.preference(scope)["enabled"]:
             return []
         matched = []
+        keywords = self._extract_recall_keywords(text) if specific_experiences else set()
         for row in self.organized(scope):
             if row["status"] != "active" or channel != "operator" and channel not in row["channels"]:
                 continue
@@ -406,6 +408,10 @@ class DailyMemoryService:
             score = self.memory_match(row, text)
             if channel == "comment" and anchor and not same_thread:
                 continue
+            if specific_experiences and row["memory_kind"] == "experience" and not same_thread:
+                subject = row["headline"] + row["anecdote"]
+                if row["headline"] not in text and not any(len(word) >= 3 and word in subject for word in keywords):
+                    continue
             if same_thread or score >= 3:
                 matched.append((20 * same_thread + 5 * same_person + score, row))
         relevant = [row for _, row in sorted(matched, key=lambda item: -item[0]) if not row["proof"].get("scene")]

@@ -1,6 +1,7 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261114.3";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261114.4";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
+import { renderAssistantAnswer } from "./operator-chat-answer.js";
 
 const path = "/api/chat/intelligent";
 const pageSize = 20;
@@ -191,25 +192,32 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   function mountTurn(turn) {
     const existing = turns.get(turn.request_id);
+    const cardTurn = turn.sources?.length && ["operation_events", "operation_event"].includes(turn.card?.type)
+      ? { ...turn, card: null } : turn;
     if (existing) {
-      if (existing.turn.card?.type === turn.card?.type) {
+      if (existing.cardType === cardTurn.card?.type) {
+        if (JSON.stringify([existing.turn.reply_text, existing.turn.reply_sections, existing.turn.sources]) !==
+            JSON.stringify([turn.reply_text, turn.reply_sections, turn.sources])) {
+          renderAssistantAnswer(existing.section.querySelector(".operator-chat-reply"), turn);
+        }
         existing.turn = turn;
-        existing.section.querySelector(".operator-chat-reply").textContent = turn.reply_text;
-        if (turn.card) existing.card?.update(turn.card.type === "operation_control" ? getAutomationStatus?.() || turn.card.data : turn.card.data);
+        if (cardTurn.card) existing.card?.update(turn.card.type === "operation_control" ? getAutomationStatus?.() || turn.card.data : turn.card.data);
         return null;
       }
     }
     const section = node("article", null, "operator-chat-turn");
     section.dataset.requestId = turn.request_id;
-    section.append(node("p", turn.message, "operator-chat-user"), node("p", turn.reply_text, "operator-chat-reply"));
+    const answer = node("div", null, "operator-chat-reply");
+    renderAssistantAnswer(answer, turn);
+    section.append(node("p", turn.message, "operator-chat-user"), answer);
     let card;
-    if (turn.card) {
+    if (cardTurn.card) {
       const cardRoot = node("div", null, "operator-chat-card");
-      card = createOperatorCard(cardRoot, turn, { api, path, reflectAutomation, controls });
+      card = createOperatorCard(cardRoot, cardTurn, { api, path, reflectAutomation, controls });
       section.append(cardRoot);
       if (turn.card.type === "operation_control" && getAutomationStatus?.()) card.update(getAutomationStatus());
     }
-    turns.set(turn.request_id, { turn, section, card });
+    turns.set(turn.request_id, { turn, section, card, cardType: cardTurn.card?.type });
     if (existing) {
       existing.section.replaceWith(section);
       return null;
@@ -219,6 +227,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
 
   function reset() {
     epoch++;
+    inFlight?.controller.abort();
     inFlight = null;
     turns.clear();
     feed.replaceChildren();
@@ -379,13 +388,47 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     const key = JSON.stringify(payload);
     const request = retry?.key === key ? retry.request : { request_id: requestId(), ...payload };
     const currentEpoch = epoch, initialValue = input.value, initialAction = selectedAction;
-    inFlight = { request, stopping: false };
+    const controller = new AbortController();
+    inFlight = { request, stopping: false, controller };
     ++recentRequest;
     setPending(true);
     setMessage("");
     progress.textContent = payload.video_selection ? "正在安排取材…" : "正在生成回复…";
+    const user = node("p", payload.message, "operator-chat-user");
+    const answer = node("div", null, "operator-chat-reply");
+    const transient = node("article", null, "operator-chat-turn");
+    transient.append(user, answer);
+    const follow = nearEnd();
+    feed.append(transient);
+    if (follow) scrollEnd();
+    let partial = "", renderFrame = 0;
+    const stages = { queued: "等待推理", preparing: "正在整理上下文", generating: "正在回复", working: "正在查询或安排任务" };
     try {
-      const result = await api(path, { method: "POST", body: request });
+      let result;
+      try {
+        result = await api(`${path}/stream`, { method: "POST", body: request, signal: controller.signal, onEvent(event, value) {
+          if (currentEpoch !== epoch) return;
+          if (event === "stage" && !partial) {
+            answer.replaceChildren(node("span", stages[value] || "", "hint"));
+            progress.textContent = stages[value] || "";
+          }
+          if (event === "delta") {
+            partial += value;
+            if (!renderFrame) renderFrame = requestAnimationFrame(() => {
+              renderFrame = 0;
+              const follow = nearEnd();
+              renderAssistantAnswer(answer, { reply_format: "markdown", reply_text: partial });
+              if (follow) scrollEnd();
+            });
+          }
+        } });
+      } catch (error) {
+        if (!error.streamEvent && (error.status === 404 || error.status === 405)) {
+          result = await api(path, { method: "POST", body: request, signal: controller.signal });
+        } else {
+          throw error;
+        }
+      }
       if (currentEpoch !== epoch) return;
       if (result.stopped) {
         retry = null;
@@ -405,7 +448,8 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       retry = null;
       const follow = nearEnd();
       const section = mountTurn({ ...request, ...result });
-      if (section) feed.append(section);
+      if (section) transient.replaceWith(section);
+      else transient.remove();
       if (follow) scrollEnd();
       setMessage("");
       progress.textContent = "";
@@ -413,8 +457,14 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       if (currentEpoch !== epoch) return;
       retry = { key, request };
       progress.textContent = "";
-      setMessage(`${safeMessage(error.message)} 可再次发送。`, true);
+      setMessage(safeMessage(error.message), true);
+      const again = node("button", "重试", "quiet operator-chat-retry");
+      again.type = "button";
+      again.onclick = () => submit(payload, fromComposer);
+      status.append(" ", again);
     } finally {
+      cancelAnimationFrame(renderFrame);
+      transient.remove();
       if (currentEpoch === epoch) {
         inFlight = null;
         setPending(false);

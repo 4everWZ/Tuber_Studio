@@ -60,7 +60,7 @@
 .operator-chat-feed { display: grid; gap: 1.2rem; padding-block: .5rem .85rem; overflow-wrap: anywhere; }
 .operator-chat-turn { display: grid; gap: .5rem; }
 .operator-chat-turn p { margin: 0; white-space: pre-wrap; }
-.operator-chat-user, .operator-chat-reply {
+.operator-chat-user {
   width: fit-content;
   max-width: min(86%, 56rem);
   padding: .65rem .9rem;
@@ -68,7 +68,64 @@
   color: var(--ink);
 }
 .operator-chat-user { justify-self: end; background: #dfeaf5; }
-.operator-chat-reply { justify-self: start; background: #f1f2f3; }
+.operator-chat-reply {
+  min-width: 0;
+  width: min(100%, 65rem);
+  padding: .45rem 0 .8rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.operator-chat-reply > :first-child { margin-top: 0; }
+.operator-chat-reply > :last-child { margin-bottom: 0; }
+.operator-chat-reply p { margin: .65rem 0; }
+.operator-chat-reply h1, .operator-chat-reply h2, .operator-chat-reply h3 {
+  margin: 1.25rem 0 .35rem;
+  line-height: 1.35;
+}
+.operator-chat-reply h1 { font-size: 1.4rem; }
+.operator-chat-reply h2 { font-size: 1.2rem; }
+.operator-chat-reply h3 { font-size: 1.05rem; }
+.operator-chat-reply pre, .operator-chat-reply code { background: var(--soft); border-radius: .35rem; }
+.operator-chat-reply pre { overflow-x: auto; padding: .8rem; }
+.operator-chat-reply code { padding: .1rem .25rem; }
+.operator-chat-reply pre code { padding: 0; }
+.operator-chat-reply table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.operator-chat-reply th, .operator-chat-reply td {
+  border-bottom: 1px solid var(--line);
+  padding: .55rem .8rem;
+  text-align: start;
+}
+.operator-chat-reply blockquote { margin-inline: 0; padding-inline: .85rem; border-inline-start: 2px solid var(--line); }
+.chat-stories { margin: 0; padding-inline-start: 1.4rem; }
+.chat-stories > li + li { margin-block-start: .75rem; }
+.chat-stories p, .chat-source-chip { display: inline; }
+.chat-source-chip { margin-inline-start: .45rem; }
+.chat-source-chip summary, .chat-sources summary { cursor: pointer; }
+.chat-source-chip summary {
+  display: inline-block;
+  border-radius: 2rem;
+  background: var(--soft);
+  padding: .06rem .55rem;
+  font-size: .8rem;
+  vertical-align: baseline;
+}
+.chat-source-chip[open] summary { background: #dfeaf5; }
+.chat-source-preview {
+  margin: .5rem 0;
+  padding: .65rem .85rem;
+  border: 1px solid var(--line);
+  border-radius: .75rem;
+  font-size: .88rem;
+}
+.chat-source-preview section + section { margin-top: .65rem; }
+.chat-source-preview p { display: block; margin: .15rem 0; }
+.chat-source-preview small { display: block; color: var(--muted); }
+.chat-sources { margin-top: .65rem; font-size: .88rem; }
 .operator-chat-card {
   display: grid;
   justify-self: start;
@@ -229,6 +286,7 @@
 .operator-chat-status { font-size: .86rem; }
 .operator-chat-status:empty { display: none; }
 .operator-chat-status-error { color: var(--danger); }
+.operator-chat-retry { font-size: inherit; padding: .15rem .45rem; }
 @media (prefers-reduced-motion: reduce) {
   #operator-chat-send, .operator-chat-arrow, .operator-chat-stop { transition: none; }
   #operator-chat-send:active:not(:disabled) { transform: none; }

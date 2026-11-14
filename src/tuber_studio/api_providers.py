@@ -270,6 +270,11 @@ class APIProvider:
         settle_generation(reservation, self.last_usage)
         return value
 
+    async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
+        if on_stage:
+            on_stage("generating")
+        return await self.generate_json(messages, schema, max_tokens=max_tokens)
+
 
 class VisionProvider(Protocol):
     async def describe(self, prompt: str, image: bytes, mime_type: str) -> str: ...

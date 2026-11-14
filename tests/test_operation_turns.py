@@ -3,6 +3,27 @@ import asyncio
 from tuber_studio.operation_turns import OperationTurns
 
 
+async def test_chat_interleaves_without_advancing_the_operations_rotation():
+    lock = asyncio.Lock()
+    turns = OperationTurns(lock, lambda: False)
+    order = []
+
+    async def request(lane):
+        await turns.acquire(lane)
+        try:
+            order.append(lane)
+        finally:
+            lock.release()
+
+    async with asyncio.timeout(2):
+        async with lock:
+            tasks = [asyncio.create_task(request(lane)) for lane in
+                     ("video", "dm", "dm", "reply", "reply", "chat", "chat", "chat")]
+            await asyncio.sleep(0)
+        await asyncio.gather(*tasks)
+    assert order == ["chat", "reply", "chat", "dm", "chat", "video", "reply", "dm"]
+
+
 async def test_contended_model_turns_rotate_two_replies_two_dms_one_video():
     lock = asyncio.Lock()
     turns = OperationTurns(lock, lambda: False)

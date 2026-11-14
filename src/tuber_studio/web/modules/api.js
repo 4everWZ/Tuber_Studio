@@ -10,6 +10,39 @@ export async function api(path, options = {}, onUnauthorized = null) {
     config.body = JSON.stringify(body);
   }
   const response = await fetch(path, config);
+  if (response.ok && options.onEvent && response.headers.get("content-type")?.includes("text/event-stream")) {
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += chunk.value;
+        let boundary;
+        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          if (frame.startsWith(":")) continue;
+          const [event, data] = frame.split("\n");
+          const value = JSON.parse(data.slice(6));
+          switch (event.slice(7)) {
+            case "done": return value;
+            case "error": {
+              const error = new Error(value.message);
+              error.status = value.status;
+              error.streamEvent = true;
+              throw error;
+            }
+            default: options.onEvent(event.slice(7), value);
+          }
+        }
+      }
+      throw new Error("回复连接已中断");
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
   const text = await response.text();
   let result;
   try {

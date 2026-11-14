@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..operations.browsing.activity_history import activity
+from ..operations.browsing.caption_corrections import CORRECTED_VIDEOS, corrected_caption
 from ..operations.browsing.comment_timeline import comment_href, comment_thread
 
 
@@ -12,7 +13,7 @@ def now(browsing):
     return datetime.now(ZoneInfo(browsing.policy()["business_timezone"]))
 
 
-def _excerpt(browsing, account, character, bvid):
+def _excerpt(browsing, account, character, bvid, *, match=None, related_text=None):
     scope = {"account_id": account, "character_id": character}
     progress = browsing.repo.content_progress(scope, bvid)
     priority = browsing.repo.watch_evidence(scope, bvid)
@@ -20,7 +21,7 @@ def _excerpt(browsing, account, character, bvid):
     pages = {str(part["cid"]): part.get("page", index)
              for index, part in enumerate(material.get("metadata", {}).get("parts", []), 1)}
     for part in material.get("parts", []):
-        if part.get("asr"):
+        if part.get("asr") or (match and part.get("visual")):
             continue
         for segment in part.get("segments", []):
             if text := segment.get("text"):
@@ -28,8 +29,17 @@ def _excerpt(browsing, account, character, bvid):
                 if not number:
                     continue
                 start = segment.get("start") or 0
-                return {"text": text, "kind": "visual" if part.get("visual") else "subtitle", "part": number,
-                        "start": start, "href": f"https://www.bilibili.com/video/{bvid}?p={number}&t={int(start)}"}
+                if match and (match["part"], match["start"], match["text"]) != (number, start, text):
+                    continue
+                evidence = segment if part.get("visual") else corrected_caption(bvid, part["cid"], segment)
+                if related_text is not None and (
+                    "original_text" not in evidence or evidence["text"] not in related_text
+                ):
+                    continue
+                return {"text": evidence.get("text", text), "kind": "visual" if part.get("visual") else "subtitle",
+                        "part": number, "start": start, "end": segment.get("end"),
+                        "href": f"https://www.bilibili.com/video/{bvid}?p={number}&t={int(start)}",
+                        **({"original_text": evidence["original_text"]} if "original_text" in evidence else {})}
     return None
 
 
@@ -102,9 +112,9 @@ def daily_events(browsing, day):
                            "same_account": "same_account_replied"}.get(comment.get("comment_outcome")):
                 reply = {"state": state, "text": comment.get("confirmed_reply_text") or comment.get("account_reply_text"),
                          "href": comment.get("sent_href")}
-        if bvid and bvid not in excerpts:
+        if not source and bvid and bvid not in excerpts:
             excerpts[bvid] = _excerpt(browsing, account, character, bvid)
-        material = excerpts.get(bvid)
+        material = None if source else excerpts.get(bvid)
         if not source and not material:
             continue
         href = comment_href(resource)
@@ -132,3 +142,34 @@ def recent_events(browsing, *, limit=6):
             if len(items) == limit:
                 break
     return {"day": current.date().isoformat(), "timezone": str(current.tzinfo), "items": list(items.values())}
+
+
+def report_candidates(events, limit=6):
+    """Choose one story per resource, with related comments available for context."""
+    groups = {}
+    for event in events:
+        key = event.get("resource") or event["source"].get("href") or event["title"]
+        group = groups.setdefault(key, [])
+        if len(group) < 3:
+            group.append(event)
+    return list(groups.values())[:limit]
+
+
+def event_sources(browsing, event, *, include_saved_material=False):
+    """Keep original links and quotes outside the generated answer."""
+    sources = [event["source"]]
+    if include_saved_material and event.get("bvid"):
+        material = event.get("material")
+        if material is None and event["source"]["kind"] == "comment" and event["bvid"] in CORRECTED_VIDEOS:
+            account, character, _ = browsing.discovery.history_scope()
+            material = _excerpt(browsing, account, character, event["bvid"], related_text=event["source"]["text"])
+        elif material and material["kind"] == "subtitle":
+            account, character, _ = browsing.discovery.history_scope()
+            current = _excerpt(browsing, account, character, event["bvid"], match=material)
+            if current and current.get("original_text") == material["text"]:
+                material = current
+        if material:
+            sources.append(material)
+    if (reply := event.get("reply")) and reply.get("state"):
+        sources.append(reply | {"kind": "reply"})
+    return sources

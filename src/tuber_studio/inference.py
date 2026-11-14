@@ -17,8 +17,9 @@ from pathlib import Path
 
 import httpx
 import psutil
+from anyio import CancelScope
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from .config import normalize_broker_llm
 from .inference_cache import cache_summary, scan_cache
@@ -1221,21 +1222,38 @@ class InferenceBroker:
                 validate_llm_request(path, body, context_tokens=self.context_tokens)
             except ValueError as error:
                 raise HTTPException(422, str(error)) from None
-            if body.get("stream", False) is not False:
-                raise HTTPException(422, "Only buffered inference is supported")
-            key = key or self.selected
-            if key != self.selected:
-                await self._switch_model(key)
-            if path not in {"warmup", "tokenize"}:
-                body["model"] = RESOURCES[key].alias
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            key, data = await self._llm_request(key, path, body)
             return await self._forward(key, path, data)
+
+    async def _llm_request(self, key, path, body):
+        key = key or self.selected
+        if key != self.selected:
+            await self._switch_model(key)
+        if path not in {"warmup", "tokenize"}:
+            body["model"] = RESOURCES[key].alias
+        return key, json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+    async def stream_llm(self, key, path, body):
+        async with self.lock:
+            key, data = await self._llm_request(key, path, body)
+            async with self._inference_request(key):
+                async with self.client.stream(
+                    "POST", RESOURCES[key].url + "/" + path, content=data,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    if response.status_code >= 500:
+                        raise HTTPException(503, "Inference worker failed; the next request must reload it")
+                    if not response.is_success or "text/event-stream" not in response.headers.get("content-type", ""):
+                        raise HTTPException(422, "Worker refused the streaming request")
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
 
     async def forward(self, key, path, body):
         async with self.lock:
             return await self._forward(key, path, body)
 
-    async def _forward(self, key, path, body):
+    @asynccontextmanager
+    async def _inference_request(self, key):
         self.check_resources()
         if key == "tts" and self.mode != "live":
             raise HTTPException(409, "Switch to live mode before synthesizing speech")
@@ -1255,39 +1273,24 @@ class InferenceBroker:
             if self.mode != "live":
                 await self._activate(key)
             self.check_resources()
-            if path == "warmup":
-                return JSONResponse(await self.read(key, "props"))
-            response = await self.client.post(
-                RESOURCES[key].url + "/" + path,
-                content=body,
-                headers={"Content-Type": "application/json"},
-            )
-            # httpx post buffers the body before returning. The GPU lease is
-            # held through this point even when the upstream sends chunked WAV.
-            if response.status_code >= 500:
-                # A failed CUDA worker must not remain advertised as ready.
-                # A subsequent live request rebuilds TTS first when required.
+            yield
+        except HTTPException as error:
+            if error.status_code == 503 and self._target_touched:
                 await self.runner.stop(key)
-                self.active, self.state = None, "error"
-                self.error = "Inference worker failed; the next request must reload it"
-            return Response(
-                response.content,
-                status_code=response.status_code,
-                media_type=response.headers.get("content-type", "application/octet-stream"),
-            )
-        except HTTPException:
+                self.active, self.state, self.error = None, "error", "Inference worker failed; the next request must reload it"
             raise
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, GeneratorExit):
             self.state, self.error = "stopping", "Inference request was cancelled"
             cleanup = asyncio.create_task(self.runner.stop(key)) if self._target_touched else None
             if cleanup is None:
                 self.active, self.state, self.error = None, "cold", None
                 raise
-            while not cleanup.done():
-                try:
-                    await asyncio.shield(cleanup)
-                except asyncio.CancelledError:
-                    continue
+            with CancelScope(shield=True):
+                while not cleanup.done():
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError:
+                        continue
             cleanup.result()
             self.active, self.state, self.error = None, "cold", None
             raise
@@ -1297,6 +1300,25 @@ class InferenceBroker:
                 await self.runner.stop(key)
             self.active = None
             raise HTTPException(503, self.error) from None
+
+    async def _forward(self, key, path, body):
+        async with self._inference_request(key):
+            if path == "warmup":
+                return JSONResponse(await self.read(key, "props"))
+            response = await self.client.post(
+                RESOURCES[key].url + "/" + path,
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+            # Buffer through the end of the upstream response while holding the GPU lease.
+            if response.status_code >= 500:
+                await self.runner.stop(key)
+                self.active, self.state = None, "error"
+                self.error = "Inference worker failed; the next request must reload it"
+            return Response(
+                response.content, status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/octet-stream"),
+            )
 
     async def close(self):
         self._observation_stop.set()
@@ -1600,6 +1622,25 @@ def create_app(root: Path | None = None, *, broker=None, warm_start=True, node_c
         target = resolve_llm_resource_key(body["model"]) if "model" in body else None
         if path in {"warmup", "tokenize"}:
             body.pop("model", None)
+        if body.get("stream"):
+            try:
+                validate_llm_request(path, body, context_tokens=manager.context_tokens)
+            except ValueError as error:
+                raise HTTPException(422, str(error)) from None
+
+            async def stream():
+                source = manager.stream_llm(target, path, body)
+                try:
+                    async for chunk in source:
+                        yield chunk
+                except HTTPException:
+                    yield b'data: {"error":{"message":"Language stream failed"}}\n\n'
+                finally:
+                    with CancelScope(shield=True):
+                        await source.aclose()
+
+            return StreamingResponse(stream(), media_type="text/event-stream",
+                                     headers={"X-Accel-Buffering": "no"})
         return await cancellable(request, manager.forward_llm(target, path, body))
 
     @app.api_route("/llm", methods=["GET", "POST"])

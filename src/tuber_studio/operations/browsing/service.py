@@ -17,6 +17,7 @@ from . import task_views as task_views_tasks
 from .decisions import BrowsingDecisions
 from .discovery import BackgroundDiscovery
 from .evidence import BrowsingEvidence, EvidenceUnavailable
+from .full_video import correct_coverage_captions
 from .models import (
     BrowsingPolicy,
     browsing_filter_reason,
@@ -567,7 +568,9 @@ class BrowsingService:
             "SELECT payload,error FROM browsing_tasks WHERE round_id=?", (row["id"],)
         ))
         payload = task["payload"] if task else {}
-        coverage = payload.get("full_coverage")
+        coverage = correct_coverage_captions(
+            payload.get("full_coverage"), row["config"]["operator_selection"]["bvid"],
+        )
         comment_progress = payload.get("comment_progress")
         status = row["status"]
         inspection = row["config"]["operator_selection"].get("frame")

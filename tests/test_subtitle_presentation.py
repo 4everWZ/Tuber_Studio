@@ -48,6 +48,18 @@ def segments(value):
     return [dict(segment, cid=part["cid"]) for part in value["parts"] for segment in part["segments"]]
 
 
+def test_caption_correction_displays_corrected_word_but_keeps_original_source():
+    value = material(["晶晶"], track="2145470070871501568", cid="43363598647")
+    value["metadata"]["bvid"] = "BV1Lv4a6XE7z"
+    data, bindings = ContentDecisionInput(value).present(segments(value))
+    assert "鲸鲸" in data["content"]
+    assert next(iter(bindings.values())).sources[0].text == "晶晶"
+    assert value["parts"][0]["segments"][0]["text"] == "晶晶"
+    value["metadata"]["bvid"] = "BVunrelated"
+    data, _ = ContentDecisionInput(value).present(segments(value))
+    assert "晶晶" in data["content"]
+
+
 def decision(ids):
     return ContentDecision(interest="like", worth_commenting=True, reason="specific_detail", evidence_ids=ids)
 
