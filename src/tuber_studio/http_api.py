@@ -78,7 +78,7 @@ def endpoint(value):
                 address.is_private or address.is_loopback or any(address in network for network in _TAILSCALE_NETWORKS)
             )
         except ValueError:
-            local = host in {"localhost", "host.docker.internal", "jetson"} or host.endswith(".local")
+            local = host in {"localhost", "host.docker.internal", "jetson", "omni-gateway"} or host.endswith(".local")
         if not local:
             raise ValueError("公网API须使用HTTPS；本地服务可使用HTTP")
     return value.rstrip("/")

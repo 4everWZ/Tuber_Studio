@@ -1,0 +1,39 @@
+# Tuber Studio Omni 业务部署
+
+应用和基础设施分别启动。应用加入基础设施创建的外部 Docker 网络 `tuber-omni`，以 `omni-gateway:8000` 访问推理，以 `mediamtx` 访问媒体服务器。网关上的 `omni-default` 指向现场核验的模型。默认容器端口 9020 只发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。
+
+## Core
+
+在仓库根目录执行。先从基础设施管理员取得分配给 Core 的网关服务令牌，并将它存入 `deploy/omni/secrets/gateway-core.token`。`secrets/` 用宿主目录权限限制访问，容器内 UID/GID 65532 需要可读各自的令牌文件。可用 `OMNI_CORE_TOKEN_FILE` 指向授权的其他文件。
+
+```sh
+docker compose -f deploy/omni/app-compose.yml config --quiet
+docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
+curl --fail http://127.0.0.1:9020/healthz
+```
+
+从 Core 挂载的 `/data/admin-token` 读取首次管理令牌，在工作台登录。选择独立局域网端口时设置 `TUBER_CORE_BIND` 和 `TUBER_CORE_PORT`。可信 HTTPS 入口可在同网络反向代理 Core，`TUBER_CORE_TRUSTED_PROXIES` 用逗号分隔的代理地址或子网填写。HTTPS 页面用于浏览器音视频设备采集。
+
+初次创建数据卷时，Core 用 OpenAI 兼容 Chat Completions 接入 `http://omni-gateway:8000/v1`，上下文采用首测配置的 12,288 tokens，可按服务实报修改。网关钥匙只用于该地址。视觉从设置中选择已验证端点。基础语音沿用预录回退，合成语音沿用独立 Genie 或已验收 TTS 配置。Core 健康检查覆盖应用和数据库启动。推理能力由网关及实际请求核对。
+
+`core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷可用 `TUBER_CORE_MODE=demo` 运行离线演示，或用 `TUBER_CORE_MODE=existing` 要求已有配置。切换已存在的配置通过工作台及部署准入完成。
+
+## GIF Avatar 与 OBS 媒体
+
+启用前分别配置 `secrets/gateway-media.token`、`secrets/media-access.token` 和 `secrets/media-publish.password`。前者是媒体桥自己的网关服务令牌，后二者用于访问媒体桥与 MediaMTX 发布。发布用户为 `tuber-publisher`，内部地址为 `rtsp://mediamtx:8554/program`。
+
+```sh
+docker compose -f deploy/omni/app-compose.yml --profile media up -d --build --wait
+```
+
+媒体桥通过 `omni-media:8080` 提供服务，同网络也可按 `tuber-avatar` 寻址。宿主机可经 `127.0.0.1:9080` 探测健康状态。渲染读取仓库已有的鲸鱼娘 GIF。神经驱动作为待独立验收的可选渲染器。OBS 和浏览器从现场媒体入口获取 `/program/whep`，用独立的节目观看凭据 `tuber-viewer`。媒体入口须对终端发布可达的 ICE 候选。端口和编码边界见 [Omni 部署契约](../../docs/specs/foundation/omni-deployment.md)。
+
+## 按需 Remotion
+
+配置 `TUBER_REMOTION_IMAGE` 为已导入的合规 worker 镜像、`TUBER_REMOTION_INPUT_DIR` 为任务输入目录、`secrets/gateway-remotion.token` 为独立服务令牌。worker 从只读的 `/input` 取任务数据，在独立的 `/output` 卷写入产物。
+
+```sh
+docker compose -f deploy/omni/app-compose.yml --profile remotion up -d remotion-worker
+```
+
+每次启动前，准入任务通过 `GET /api/mode` 确认 `batch`。外部 worker 需在领取每个渲染任务前检查同一模式，按其任务协议处理切入 `live` 后的在途任务。仓库当前提供 Compose 接入和启动准入，Remotion 渲染程序及运行期暂停行为由外部 worker 提供。

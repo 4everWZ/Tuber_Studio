@@ -9,8 +9,15 @@ from fastapi.testclient import TestClient
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings
 from tuber_studio.deployment_profiles import business_configuration, mode_configuration
+from tuber_studio.http_api import endpoint
 from tuber_studio.inference import RESOURCES
 from tuber_studio.provider_settings import ProviderConfigurationError, apply_settings, proposal
+
+
+def test_omni_gateway_can_use_http_only_at_the_internal_alias():
+    assert endpoint("http://omni-gateway:8000/v1") == "http://omni-gateway:8000/v1"
+    with pytest.raises(ValueError, match="公网API须使用HTTPS"):
+        endpoint("http://omni-gateway.example:8000/v1")
 
 
 def test_paired_provider_settings_survive_restart_and_live_round_trip(settings):

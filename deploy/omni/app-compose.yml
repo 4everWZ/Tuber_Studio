@@ -1,0 +1,123 @@
+name: tuber-omni-app
+
+services:
+  tuber-core:
+    image: ${TUBER_CORE_IMAGE:-tuber-studio-core:local}
+    build:
+      context: ../..
+      dockerfile: deploy/omni/Dockerfile
+    hostname: ${TUBER_CORE_HOSTNAME:-tuber-core}
+    restart: unless-stopped
+    init: true
+    environment:
+      TUBER_CORE_MODE: ${TUBER_CORE_MODE:-omni}
+      OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
+      OMNI_CONTEXT_TOKENS: ${OMNI_CONTEXT_TOKENS:-12288}
+      OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_core
+      FORWARDED_ALLOW_IPS: ${TUBER_CORE_TRUSTED_PROXIES:-127.0.0.1}
+    secrets: [omni_gateway_core]
+    volumes:
+      - core-data:/data
+    ports:
+      - "${TUBER_CORE_BIND:-127.0.0.1}:${TUBER_CORE_PORT:-9020}:9020"
+    networks: [omni]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:9020/healthz', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # GIF Avatar renderer and OBS media bridge run in the same process.
+  omni-media:
+    profiles: [media]
+    image: ${TUBER_MEDIA_IMAGE:-tuber-studio-omni-media:local}
+    build:
+      context: ./media
+    restart: unless-stopped
+    init: true
+    environment:
+      OMNI_GATEWAY_URL: http://omni-gateway:8000
+      OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_media
+      OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
+      MEDIA_ACCESS_TOKEN_FILE: /run/secrets/omni_media_access
+      MEDIA_PUBLISH_URL: rtsp://mediamtx:8554/program
+      MEDIA_PUBLISH_USER: tuber-publisher
+      MEDIA_PUBLISH_PASSWORD_FILE: /run/secrets/omni_media_publish
+      AVATAR_ASSETS: /assets/whale
+    secrets: [omni_gateway_media, omni_media_access, omni_media_publish]
+    volumes:
+      - type: bind
+        source: ../../assets/whale
+        target: /assets/whale
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "${TUBER_MEDIA_BIND:-127.0.0.1}:${TUBER_MEDIA_PORT:-9080}:8080"
+    networks:
+      omni:
+        aliases: [tuber-avatar]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/healthz', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  remotion-admission:
+    profiles: [remotion]
+    image: ${TUBER_CORE_IMAGE:-tuber-studio-core:local}
+    command: ["python", "/opt/tuber/check_batch.py"]
+    environment:
+      OMNI_GATEWAY_MODE_URL: http://omni-gateway:8000/api/mode
+      OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_remotion
+    secrets: [omni_gateway_remotion]
+    networks: [omni]
+
+  # This profile expects a supplied worker implementing the gateway mode contract.
+  remotion-worker:
+    profiles: [remotion]
+    image: ${TUBER_REMOTION_IMAGE:-tuber-remotion-worker:local}
+    pull_policy: never
+    depends_on:
+      remotion-admission:
+        condition: service_completed_successfully
+    environment:
+      OMNI_GATEWAY_URL: http://omni-gateway:8000
+      OMNI_GATEWAY_MODE_URL: http://omni-gateway:8000/api/mode
+      OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_remotion
+      OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
+      REMOTION_INPUT_DIR: /input
+      REMOTION_OUTPUT_DIR: /output
+    secrets: [omni_gateway_remotion]
+    volumes:
+      - type: bind
+        source: ${TUBER_REMOTION_INPUT_DIR:-./render-input}
+        target: /input
+        read_only: true
+        bind:
+          create_host_path: false
+      - remotion-artifacts:/output
+    networks: [omni]
+
+networks:
+  omni:
+    external: true
+    name: ${TUBER_OMNI_NETWORK:-tuber-omni}
+
+volumes:
+  core-data:
+  remotion-artifacts:
+
+secrets:
+  omni_gateway_core:
+    file: ${OMNI_CORE_TOKEN_FILE:-./secrets/gateway-core.token}
+  omni_gateway_media:
+    file: ${OMNI_MEDIA_TOKEN_FILE:-./secrets/gateway-media.token}
+  omni_media_access:
+    file: ${MEDIA_ACCESS_TOKEN_FILE:-./secrets/media-access.token}
+  omni_media_publish:
+    file: ${MEDIA_PUBLISH_PASSWORD_FILE:-./secrets/media-publish.password}
+  omni_gateway_remotion:
+    file: ${OMNI_REMOTION_TOKEN_FILE:-./secrets/gateway-remotion.token}

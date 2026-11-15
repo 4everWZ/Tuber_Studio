@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+FROM ghcr.io/astral-sh/uv:0.11.8 AS uv
+FROM node:24-bookworm-slim AS songs
+WORKDIR /songs
+COPY components/song_requests/package.json components/song_requests/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+FROM python:3.12-slim-bookworm
+COPY --from=uv /uv /usr/local/bin/uv
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o 65532 -g 65532 -m 0700 /data
+
+WORKDIR /opt/tuber
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project --no-cache
+COPY src ./src
+COPY config ./config
+COPY assets ./assets
+COPY components/song_requests/helper.cjs components/song_requests/matching.cjs ./components/song_requests/
+COPY --from=songs /usr/local/bin/node /usr/local/bin/node
+COPY --from=songs /songs/node_modules ./components/song_requests/node_modules
+COPY deploy/omni/core_entrypoint.py deploy/omni/check_batch.py ./
+
+ENV PATH="/opt/tuber/.venv/bin:$PATH" \
+    PYTHONPATH="/opt/tuber/src" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TUBER_RUNTIME=/data \
+    HOME=/data
+EXPOSE 9020
+USER 65532:65532
+CMD ["python", "/opt/tuber/core_entrypoint.py"]
