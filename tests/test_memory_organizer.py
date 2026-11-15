@@ -45,6 +45,86 @@ def test_memory_switch_persists_per_account_and_character(settings):
         assert client.get(path).json() == disabled
 
 
+def test_memory_summary_ask_and_correct_existing_note(settings):
+    app = create_app(settings)
+    path = "/api/daily-memory"
+    with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+        runtime = app.state.runtime
+        discovery = app.state.browsing.discovery
+        discovery.remember_account("100")
+        scope = runtime.memory_organizer.scope()
+        source_text = "以后运营汇报先讲结论"
+        source = {"key": "turn:summary-source", "kind": "private", "text": source_text, "at": time.time()}
+        with runtime.store.db:
+            runtime.daily_memory.save_organized(scope, source, MemorySuggestion(
+                action="add", existing_id=None, headline="运营汇报顺序", note=source_text, tags=["汇报"],
+            ), None)
+
+        report = client.get(path).raise_for_status().json()
+        token = report["scope"]
+        item, = report["organized"]
+        assert report["summary_updated_at"] == item["updated_at"]
+        assert report["summary"][0]["notes"][0]["id"] == item["id"]
+        client.put(path + "/preferences", json={"scope": token, "enabled": False}).raise_for_status()
+
+        def interact(action, text, scope_token=token):
+            return client.post(path + "/summary", json={"scope": scope_token, "action": action, "text": text})
+
+        assert interact("ask", "你记得我什么？").raise_for_status().json()["items"] == [item]
+        assert interact("ask", "你记得我对运营汇报有什么要求？").raise_for_status().json()["items"] == [item]
+        assert interact("ask", "天气预报").raise_for_status().json()["status"] == "no_match"
+        updated = interact("update", "把「运营汇报顺序」改成以后运营汇报先讲风险").raise_for_status().json()
+        assert updated["status"] == "updated"
+        assert updated["item"]["id"] == item["id"]
+        assert updated["item"]["anecdote"] == "以后运营汇报先讲风险"
+        assert updated["item"]["quote"] == source_text
+        edit = f"{path}/organized/{item['id']}?scope={token}"
+        assert client.patch(edit + f"&revision={item['updated_at']}", json={"note": "过期更正"}).status_code == 412
+        discovery.remember_account("200")
+        assert interact("ask", "你记得我什么？").status_code == 409
+        other = client.get(path).raise_for_status().json()
+        assert interact("ask", "你记得我什么？", other["scope"]).raise_for_status().json()["items"] == []
+        discovery.remember_account("100")
+        client.delete(edit).raise_for_status()
+        assert interact("ask", "你记得我什么？").raise_for_status().json()["items"] == []
+        assert client.get(path).raise_for_status().json()["summary_updated_at"] is None
+
+
+def test_memory_summary_proposal_requires_exact_request_text_and_applies_once(settings):
+    app = create_app(settings)
+    path = "/api/daily-memory"
+    content = "以后运营汇报先看风险"
+    with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+        runtime = app.state.runtime
+        scope = runtime.memory_organizer.scope()
+        original = "以后运营汇报先讲结论"
+        source = {"key": "turn:proposal-source", "kind": "private", "text": original, "at": time.time()}
+        with runtime.store.db:
+            runtime.daily_memory.save_organized(scope, source, MemorySuggestion(
+                action="add", existing_id=None, headline="运营汇报顺序", note=original, tags=["汇报"],
+            ), None)
+        report = client.get(path).raise_for_status().json()
+        item, = report["organized"]
+        body = {"scope": report["scope"], "action": "update", "text": f"运营汇报这条我改主意了，{content}"}
+        replacement = "以后运营汇报先讲进度"
+
+        async def propose(messages, schema, *, max_tokens):
+            assert json.loads(messages[-1]["content"])["candidates"] == [
+                {"item_id": item["id"], "title": item["headline"], "current": original},
+            ]
+            return {"item_id": item["id"], "replacement": replacement}
+
+        runtime.llm.generate_json = propose
+        assert client.post(path + "/summary", json=body).raise_for_status().json()["status"] == "clarify"
+        replacement = content
+        proposal = client.post(path + "/summary", json=body).raise_for_status().json()
+        assert (proposal["status"], proposal["note"], proposal["item"]) == ("proposal", content, item)
+        assert client.get(path).raise_for_status().json()["organized"] == [item]
+        edit = f"{path}/organized/{item['id']}?scope={report['scope']}&revision={item['updated_at']}"
+        assert client.patch(edit, json={"note": proposal["note"]}).raise_for_status().json()["anecdote"] == content
+        assert client.patch(edit, json={"note": proposal["note"]}).status_code == 412
+
+
 async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(settings):
     app = create_app(settings)
     runtime = app.state.runtime

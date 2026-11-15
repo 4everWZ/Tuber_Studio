@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .agent.api import register_agent_api
 from .agent.operator_chat import register_operator_chat
+from .agent.task_api import register_task_api
+from .agent.task_tools import create_task_runtime
 from .auth_sessions import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -82,6 +84,7 @@ def create_app(
     )
     browsing = BrowsingService(settings, store, runtime, comments, messages, dynamics, visual=visual)
     runtime.browsing = browsing
+    runtime.tasks = create_task_runtime(runtime, store, browsing)
     login_attempts = {}
 
     @asynccontextmanager
@@ -94,11 +97,15 @@ def create_app(
             await messages.open()
             await browsing.open()
             runtime.memory_organizer.start()
+            runtime.tasks.start()
             yield
         finally:
             try:
-                await runtime.memory_organizer.close()
-                await browsing.close()
+                try:
+                    await runtime.tasks.close()
+                finally:
+                    await runtime.memory_organizer.close()
+                    await browsing.close()
             finally:
                 try:
                     await messages.close()
@@ -221,6 +228,7 @@ def create_app(
     register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin)
     register_agent_api(app, settings, runtime, store, comments, require_admin, default_character=seeds[0])
     register_operator_chat(app, runtime, store, browsing, dynamics, require_admin)
+    register_task_api(app, runtime.tasks, require_admin)
     register_model_api(app, settings, runtime, require_admin)
     register_operations_api(app, store, account, comments, browsing, dynamics, require_admin)
     register_message_api(app, messages, require_admin)

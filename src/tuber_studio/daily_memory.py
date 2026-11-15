@@ -204,14 +204,14 @@ class DailyMemoryService:
             return proof
         return self._legacy_source_evidence(row)
 
-    def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None):
+    def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None, exact_title=None):
         private_unclassified = (
             "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
             "AND json_extract(source_evidence,'$.scene') IS NULL "
             "AND json_extract(source_evidence,'$.summary_kind') IS NULL"
         )
         query = ""
-        parameters = [scope[1], scope[2], scope[0], item_id, item_id, int(unclassified)]
+        parameters = [scope[1], scope[2], scope[0], item_id, item_id, int(unclassified), exact_title, exact_title]
         if recall is not None:
             channel, keywords, resource, thread = recall
             document = ("lower(headline || ' ' || quote || ' ' || anecdote || ' ' || tags)" if channel == "operator"
@@ -231,6 +231,7 @@ class DailyMemoryService:
             "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END=? "
             "AND (? IS NULL OR id=?) "
             f"AND CASE WHEN json_valid(source_evidence) THEN ({private_unclassified}) = ? END "
+            "AND (? IS NULL OR headline=?) "
             + query +
             "ORDER BY updated_at DESC,id DESC LIMIT ?",
             (*parameters, limit),
@@ -281,9 +282,11 @@ class DailyMemoryService:
         excerpts = [" ".join(ref["text"].split())[:150] for ref in ordered[:2]]
         return {"text": "；".join(f"「{text}」" for text in excerpts), "references": ordered}
 
-    def summary(self, scope):
+    def summary(self, scope, *, organized=None):
+        if organized is None:
+            organized = self.organized(scope)
         groups = {"preference": [], "decision": [], "experience": []}
-        for row in self.organized(scope):
+        for row in organized:
             if row["status"] != "active":
                 continue
             kind = "experience" if row["memory_kind"] == "experience" else row["proof"].get("summary_kind", "preference")
@@ -471,8 +474,8 @@ class DailyMemoryService:
         return self._score_highlight_match(row, self._extract_recall_keywords(text), text)
 
     def recall_organized(self, scope, channel, text, *, resource=None, thread=None, participant=None,
-                         specific_experiences=False):
-        if not self.preference(scope)["enabled"]:
+                         specific_experiences=False, manual_inspection=False):
+        if not (manual_inspection and channel == "operator") and not self.preference(scope)["enabled"]:
             return []
         matched = []
         keywords = self._extract_recall_keywords(text)

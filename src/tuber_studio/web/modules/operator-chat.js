@@ -1,11 +1,13 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261115.1";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261116.1";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
+import { initTaskActivity } from "./task-activity.js";
 
 const path = "/api/chat/intelligent";
 const pageSize = 20;
 const shortcutInputs = {
+  agent_task: { label: "交办任务", placeholder: "交代目标、材料和你需要的结果", command: "" },
   dynamic: { label: "写动态", placeholder: "输入动态主题", command: "发个动态" },
   browse: { label: "刷视频", placeholder: "输入话题、视频 BV 号或链接", command: "去刷视频" },
   full_video: { label: "看完整视频" },
@@ -46,6 +48,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   let epoch = 0, recentRequest = 0, historyPending = false, cardRefreshPending = false;
   const viewport = window.visualViewport;
   const shell = form.closest(".win-main-shell");
+  const taskActivity = initTaskActivity(api, requestId);
 
   function sizeChat() {
     if (active && viewport?.scale === 1) shell.style.setProperty("--operator-chat-height", `${viewport.height}px`);
@@ -213,7 +216,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     let card;
     if (cardTurn.card) {
       const cardRoot = node("div", null, "operator-chat-card");
-      card = createOperatorCard(cardRoot, cardTurn, { api, path, reflectAutomation, controls });
+      card = createOperatorCard(cardRoot, cardTurn, { api, path, reflectAutomation, controls, openTask: taskActivity.open });
       section.append(cardRoot);
       if (turn.card.type === "operation_control" && getAutomationStatus?.()) card.update(getAutomationStatus());
     }
@@ -230,6 +233,7 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     inFlight?.controller.abort();
     inFlight = null;
     turns.clear();
+    taskActivity.close(false);
     feed.replaceChildren();
     input.value = videoId.value = "";
     rangeList.replaceChildren();
@@ -263,6 +267,10 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       const follow = first || nearEnd();
       scope = nextScope;
       $("operator-chat-title").textContent = result.character;
+      const avatar = $("chat-agent-avatar");
+      avatar.hidden = !result.avatar;
+      if (result.avatar && avatar.getAttribute("src") !== result.avatar) avatar.src = result.avatar;
+      else if (!result.avatar) avatar.removeAttribute("src");
       for (const turn of result.turns) {
         const section = mountTurn(turn);
         if (section || first) feed.append(section || turns.get(turn.request_id).section);
@@ -369,8 +377,8 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
       const shortcut = shortcutInputs[selectedAction];
       if (!shortcut) return { message: topic };
       return {
-        message: topic ? `${shortcut.command}：${topic}` : shortcut.command,
-        intent: { action: selectedAction, ...(topic ? { topic } : {}) },
+        message: shortcut.command && topic ? `${shortcut.command}：${topic}` : topic || shortcut.command,
+        intent: { action: selectedAction, ...(topic && selectedAction !== "agent_task" ? { topic } : {}) },
       };
     }
     const bvid = /^(?:https:\/\/www\.bilibili\.com\/video\/)?(BV[0-9A-Za-z]{10})(?:\/?(?:[?#].*)?)$/.exec(videoId.value.trim())?.[1];
@@ -542,6 +550,6 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
   return {
     refresh, refreshCards, renderModel,
     reset() { active = false; sizeChat(); reset(); },
-    leave() { active = false; sizeChat(); closeMenus(); },
+    leave() { active = false; sizeChat(); closeMenus(); taskActivity.close(false); },
   };
 }

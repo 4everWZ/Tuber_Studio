@@ -6,6 +6,7 @@
 .win-main-shell:has(.operator-chat:not([hidden])) > [data-chat-hide] { display: none; }
 .win-content:has(> .operator-chat:not([hidden])) { display: flex; min-height: 0; padding: 0; }
 .operator-chat {
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(88%, 1440px);
@@ -13,6 +14,32 @@
   min-height: 0;
   margin-inline: auto;
 }
+.chat-activity-toggle { padding: .32rem .62rem; border-radius: .6rem; white-space: nowrap; }
+.chat-activity {
+  position: absolute;
+  z-index: 3;
+  inset: 3.35rem 0 4.75rem auto;
+  width: min(100%, 29rem);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: .9rem;
+  background: var(--panel, white);
+  padding: .85rem 1rem;
+  box-shadow: 0 .4rem 1.5rem #0002;
+  overflow-wrap: anywhere;
+}
+.chat-activity[hidden] { display: none; }
+.chat-activity-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.chat-activity-header h2 { margin: 0; font-size: 1.05rem; }
+.chat-activity-group { margin: .8rem 0 .2rem; font-size: .9rem; }
+.chat-activity-list { list-style: none; padding: 0; margin: .65rem 0; }
+.chat-task-row { display: grid; justify-items: start; gap: .2rem; width: 100%; padding: .6rem; text-align: left; }
+.chat-activity-list li + li { margin-top: .4rem; }
+.chat-task-steps { padding-inline-start: 1.4rem; }
+.chat-task-steps pre { white-space: pre-wrap; max-height: 14rem; overflow: auto; }
+.chat-task-steer { display: grid; gap: .45rem; }
+.chat-task-steer textarea { display: block; width: 100%; }
+#chat-activity-content > button { margin: .3rem .5rem .3rem 0; }
 .operator-chat-heading {
   position: relative;
   z-index: 2;
@@ -23,8 +50,17 @@
   min-height: 3.25rem;
   padding-block: .4rem;
 }
-.operator-chat-heading h1 {
+.chat-agent-identity {
   grid-area: 1 / 2;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  min-width: 0;
+}
+.chat-agent-identity img { width: 2rem; height: 2rem; object-fit: contain; }
+.chat-agent-identity img[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .chat-agent-identity img { display: none; } }
+.operator-chat-heading h1 {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;

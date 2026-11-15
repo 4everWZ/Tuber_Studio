@@ -36,6 +36,7 @@ from .handoff import (
     video_findings,
 )
 from .memory_organizer import MemorySuggestion
+from .task_tools import bound_owner
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
@@ -50,7 +51,8 @@ _EXPERIENCE_SOURCE = (
 )
 _EVENT_ACTIONS = {"event_details", "event_author", "event_reply", "remember_event", "full_video"}
 _TASK_REFERENCE_ACTIONS = {"live_handoff", "stop", "resume_video", "video_details", "inspect_video_frame"}
-_ACTIVITY_TOPIC = re.compile(r"运营|趣事|运行记录|互动记录|评论区|[刷看](?:过|了)(?:了)?[哪什么几]|\b(?:activity log|comment history)\b", re.I)
+_ACTIVITY_TOPIC = re.compile(r"运营|趣事|运行记录|互动记录|评论区|[刷看](?:过|了)(?:了)?[哪什么几]|"
+                             r"今天.{0,16}(?:开心|高兴|想分享|发生了什么)|\b(?:activity log|comment history)\b", re.I)
 _ORDINAL_REFERENCE = re.compile(r"第\s*([一二三两123])\s*[件条个]")
 _ORDINALS = {"一": 1, "二": 2, "两": 2, "三": 3, "1": 1, "2": 2, "3": 3}
 _CONTINUED_REFERENCE = re.compile(r"那[条件个]|刚才|后来|然后")
@@ -71,6 +73,8 @@ _SCENE_ACTIONS = (
     (r"直播|开播|下播|本场|弹幕|已播|播过", ("live_status", "start_live", "live_handoff", "live_preference", "live_history")),
     (r"游戏|星露谷|植物大战僵尸|存档|种作物|种向日葵|浇水|砍树|接管", ("game_status", "game_handoff")),
     (r"停[止掉下了]|先停|暂停|结束|下播|关掉", ("stop",)),
+    (r"号主|主人|B\s*站.*(?:账号|主页)|(?:账号|主页).*B\s*站", ("owner_profile",)),
+    (r"交办|后台|做完.{0,5}(?:告诉|通知|发给)|搜(?:索|集|一下)|调研|查.{0,10}(?:网页|资料)|做.{0,4}研究", ("agent_task",)),
 )
 
 
@@ -109,7 +113,7 @@ class ChatIntent(StrictModel):
         "video_activity", "dynamic", "edit_dynamic", "browse", "full_video", "public_experiences", "remember_event",
         "operation_control", "start_operations", "live_status", "start_live", "stop", "resume_video", "video_details",
         "recall_experience", "inspect_video_frame", "live_handoff", "live_preference", "forget_memory", "memory_summary",
-        "game_status", "game_handoff", "live_history",
+        "game_status", "game_handoff", "live_history", "owner_profile", "agent_task",
     ]
     topic: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     reference: Annotated[str, StringConstraints(max_length=90)] | None = None
@@ -312,13 +316,7 @@ class OperatorChat:
             raise HTTPException(503, "模型暂时无法理解这条消息，可重试或使用快捷操作。") from error
 
     def _generation_slot(self):
-        if self.runtime.inference.status.get("mode") == "live" or (
-            self.runtime.inference.client is None and self.runtime.live.state in {"live", "paused"}
-        ):
-            # The live profile already has a language provider. Use its lock so
-            # an operator can ask to stop even while operation lanes are paused.
-            return self.runtime.generation_lock
-        return self.runtime.offline_generation("chat")
+        return self.runtime.operator_generation()
 
     async def _intent(self, message):
         return await self._model(
@@ -340,12 +338,12 @@ class OperatorChat:
             saved = json.loads(row["result"])
             if (not saved.get("private") or saved.get("memory_intent", "chat") != "chat"
                     or saved.get("organized_memory") or saved.get("memory")):
-                break
+                continue
             if not discussion and not saved.get("assistant_context"):
-                break
+                continue
             reply = saved.get("reply_text", "")
             if not reply:
-                break
+                continue
             pairs.append(({"role": "user", "content": row["message"][:320]},
                           {"role": "assistant", "content": reply[:420]}))
         return [message for pair in reversed(pairs) for message in pair]
@@ -424,6 +422,7 @@ class OperatorChat:
                         "用 position 指定序号，topic 可填明确原话、标题或主题。分 P 与时码用 part、seconds、end_seconds。"
                         "叫停运营或直播时 reference 填 operations 或 live。直播交接注明 video、discussion 或 game，"
                         "动态引用私聊注明 discussion。live_preference 处理长期直播习惯。"
+                        "owner_profile 查询角色绑定的 B 站号主。agent_task 委派需搜索、浏览网页或多步完成的工作。"
                         "不要猜旧事件、任务 ID 或结果。"
                     )
                 messages = [*role, {"role": "system", "content": instruction}]
@@ -520,6 +519,9 @@ class OperatorChat:
         card = result.get("card")
         if card is None:
             return result
+        if card["type"] == "agent_task":
+            task = self.runtime.tasks.current(card["data"]["id"])
+            return result | {"card": card | {"data": self.runtime.tasks.view(task) if task else card["data"]}}
         if card["type"] == "dynamic_draft":
             identifier = card["data"]["id"]
             row = self.dynamics._post(identifier) if self.store.one(
@@ -650,8 +652,11 @@ class OperatorChat:
             "SELECT * FROM operator_chat_turns WHERE character_id=? AND character_version=? "
             + boundary + " ORDER BY created_at DESC,request_id DESC LIMIT ?", (*scope, *cursor, limit + 1),
         )
+        avatar = next((entry["url"] for entry in self.runtime.settings.assets(char)
+                       if entry.get("tag") == "idle" and entry["url"].startswith("/assets/")), None)
         return {
             "character": char["name"],
+            "avatar": avatar,
             "character_id": char["id"], "character_version": char["version"], "account_id": self._account(),
             "turns": [self.visible_turn(row) for row in reversed(rows[:limit])],
             "next_cursor": rows[limit - 1]["request_id"] if len(rows) > limit else None,
@@ -832,6 +837,20 @@ class OperatorChat:
             return {"reply_text": current.strftime("现在是 %H:%M（%Z）。"), "card": None}
         if kind == "activity":
             return await self._activity(request_id, char)
+        if kind == "owner_profile":
+            try:
+                profile = await bound_owner(self.runtime, char)
+            except (ValueError, TimeoutError, httpx.HTTPError):
+                return {"reply_text": "暂时无法核验绑定号主的 B 站主页，可以稍后重试。", "card": None}
+            if "error" in profile:
+                return {"reply_text": profile["error"], "card": None}
+            return {"reply_text": f"查到了，角色绑定的 B 站号主是 {profile['name']}（UID {profile['uid']}）。",
+                    "card": {"type": "owner_profile", "data": profile}}
+        if kind == "agent_task":
+            task = self.runtime.tasks.create(request_id, data.message, source_key=request_id)
+            return {"reply_text": "我会继续处理，进度和结果可以在活动里查看。", "card": {
+                "type": "agent_task", "data": {"id": task["id"]},
+            }}
         if kind == "live_handoff":
             return await self._live_handoff(intent, char, request_id, data.message, tasks)
         if kind == "live_preference":

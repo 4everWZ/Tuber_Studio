@@ -3,9 +3,13 @@
 import logging
 import random
 import time
+from copy import deepcopy
+from hashlib import sha256
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from ..store import dump
 
 logger = logging.getLogger(__name__)
 
@@ -482,23 +486,32 @@ class GameLivestreamService:
         self.active_game_id: str = "stardew_valley"
         self.is_playing: bool = True
         self.owner = "studio"
+        self.control_version = 0
         self.last_handoff = None
         if store and (saved := store.get("simulation_save")):
-            self.active_game_id = saved["game"]
-            self.owner = saved["owner"]
-            self.last_handoff = saved.get("last_handoff")
-            for game, adapter in self.adapters.items():
-                for field, value in saved["adapters"].get(game, {}).items():
-                    if field in adapter.save_fields:
-                        setattr(adapter, field, value)
+            self._restore(saved)
+
+    def _restore(self, saved):
+        self.active_game_id = saved["game"]
+        self.owner = saved["owner"]
+        self.control_version = saved.get("control_version", 0)
+        self.last_handoff = saved.get("last_handoff")
+        for game, adapter in self.adapters.items():
+            for field, value in saved["adapters"].get(game, {}).items():
+                if field in adapter.save_fields:
+                    setattr(adapter, field, value)
+
+    def _snapshot(self):
+        return {
+            "game": self.active_game_id, "owner": self.owner, "last_handoff": self.last_handoff,
+            "control_version": self.control_version,
+            "adapters": {name: {field: getattr(adapter, field) for field in adapter.save_fields}
+                         for name, adapter in self.adapters.items()},
+        }
 
     def _save(self):
         if self.store:
-            self.store.set("simulation_save", {
-                "game": self.active_game_id, "owner": self.owner, "last_handoff": self.last_handoff,
-                "adapters": {name: {field: getattr(adapter, field) for field in adapter.save_fields}
-                             for name, adapter in self.adapters.items()},
-            })
+            self.store.set("simulation_save", self._snapshot())
 
     def status(self):
         return {"active_game_id": self.active_game_id, "is_active": self.is_active(),
@@ -509,18 +522,32 @@ class GameLivestreamService:
     def transfer_control(self, owner):
         if owner not in {"studio", "operator"}:
             raise ValueError("游戏控制权应为工作台或号主")
+        if owner != self.owner:
+            self.control_version += 1
         self.owner = owner
         self._save()
         return self.status()
 
-    def handoff(self, request_id, game, action):
+    def action_guard(self):
+        return sha256(dump(self._snapshot()).encode()).hexdigest()
+
+    def handoff_receipt(self, request_id, game, action):
+        if self.store and (saved := self.store.get(f"simulation_handoff:{request_id}")):
+            if (saved["game"], saved["requested_action"]) != (game, action):
+                raise ValueError("该请求编号已授权其他游戏动作")
+            return saved["result"]
         if self.last_handoff and self.last_handoff["request"] == request_id:
             return self.last_handoff["result"]
+
+    def handoff(self, request_id, game, action):
+        if saved := self.handoff_receipt(request_id, game, action):
+            return saved
         if self.owner != "studio" or game != self.active_game_id:
             raise ValueError("当前游戏已切换或由号主接管")
         adapter = self.get_active_adapter()
         if action != "step" and action not in adapter.actions:
             raise ValueError("当前游戏不支持这个动作")
+        before = deepcopy(self._snapshot()) if self.store else None
         if action == "step":
             step = adapter.decide_and_step()
             result = step["result"] | {"action": step.get("action") or step["result"].get("action")}
@@ -528,7 +555,16 @@ class GameLivestreamService:
             result = adapter.execute_action(action)
         result = result | {"game": game, "state": adapter.get_status()["summary"]}
         self.last_handoff = {"request": request_id, "result": result}
-        self._save()
+        if self.store:
+            try:
+                with self.store.db:
+                    self.store.db.executemany("INSERT OR REPLACE INTO kv VALUES(?,?)", (
+                        ("simulation_save", dump(self._snapshot())),
+                        (f"simulation_handoff:{request_id}", dump({"game": game, "requested_action": action, "result": result})),
+                    ))
+            except Exception:
+                self._restore(before)
+                raise
         return result
 
     def manual_action(self, action, params=None):
@@ -547,6 +583,8 @@ class GameLivestreamService:
             raise ValueError(f"未找到目标游戏: {target_game_id}，可用游戏: {list(self.adapters.keys())}")
 
         old_game = self.get_active_adapter().display_name
+        if target_game_id != self.active_game_id:
+            self.control_version += 1
         self.active_game_id = target_game_id
         self._save()
         new_game = self.get_active_adapter().display_name

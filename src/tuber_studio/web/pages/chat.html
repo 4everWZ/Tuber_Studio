@@ -1,7 +1,11 @@
 <section data-section="chat" class="operator-chat" hidden>
   <header class="operator-chat-heading">
-    <h1 id="operator-chat-title">与大肥鱼对话</h1>
+    <div class="chat-agent-identity">
+      <img id="chat-agent-avatar" alt="" hidden>
+      <h1 id="operator-chat-title">与大肥鱼对话</h1>
+    </div>
     <div class="operator-chat-heading-actions">
+      <button id="chat-activity-toggle" class="chat-activity-toggle" type="button" aria-expanded="false" aria-controls="chat-activity">活动</button>
       <div id="operator-chat-more" class="operator-chat-popup">
         <button id="operator-chat-more-toggle" class="operator-chat-icon" type="button" aria-label="更多对话操作" aria-expanded="false" aria-controls="operator-chat-more-panel"><span aria-hidden="true">···</span></button>
         <div id="operator-chat-more-panel" class="operator-chat-menu operator-chat-menu-end" hidden>
@@ -26,6 +30,14 @@
     </div>
     <div id="operator-chat-feed" class="operator-chat-feed" role="log" aria-label="私聊消息"></div>
   </div>
+  <aside id="chat-activity" class="chat-activity" aria-labelledby="chat-activity-title" hidden>
+    <header class="chat-activity-header">
+      <h2 id="chat-activity-title">活动</h2>
+      <button id="chat-activity-close" class="operator-chat-icon" type="button" aria-label="关闭活动">×</button>
+    </header>
+    <p id="chat-activity-status" class="hint" role="status" hidden></p>
+    <div id="chat-activity-content"></div>
+  </aside>
   <form id="operator-chat-form" class="operator-chat-compose">
     <fieldset id="operator-chat-video-fields" class="operator-chat-video-fields" hidden disabled>
       <legend>指定视频</legend>
@@ -41,6 +53,7 @@
       <div id="operator-chat-shortcuts" class="operator-chat-popup">
         <button id="operator-chat-shortcuts-toggle" class="operator-chat-icon" type="button" aria-label="对话快捷操作" aria-expanded="false" aria-controls="operator-chat-shortcuts-panel"><span aria-hidden="true">+</span></button>
         <div id="operator-chat-shortcuts-panel" class="operator-chat-menu operator-chat-menu-up" hidden>
+          <button type="button" data-chat-action="agent_task">交办任务</button>
           <button type="button" data-chat-action="dynamic">写动态</button>
           <button type="button" data-chat-action="browse">刷视频</button>
           <button type="button" data-chat-action="full_video">看完整视频</button>

@@ -7,6 +7,9 @@ const clip = (text, limit) => {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > limit ? line.slice(0, limit) + "…" : line;
 };
+const memoryDate = value => new Date(value * 1000).toLocaleString("zh-CN", {
+  dateStyle: "medium", timeStyle: "short",
+});
 
 function sourceLink(label, href) {
   if (!/^https:\/\/(?:www\.bilibili\.com\/video\/BV[0-9A-Za-z]+|t\.bilibili\.com\/\d+)(?:[/?#]|$)/.test(href || "")) {
@@ -27,6 +30,25 @@ function errorState(area, text, retry) {
   area.replaceChildren(node("p", text), button);
 }
 
+function renderSources(item) {
+  const details = node("details");
+  details.append(node("summary", "查看来源"));
+  if (item.memory_kind === "private") {
+    const when = item.source.at ? ` · ${memoryDate(item.source.at)}` : "";
+    details.append(node("p", `号主对话${when}`, "hint"));
+  }
+  if (item.quote) details.append(node("blockquote", item.quote));
+  for (const ref of item.source.references || []) {
+    const link = sourceLink(ref.text, ref.href);
+    if (link) {
+      const line = node("p");
+      line.append(link);
+      details.append(line);
+    }
+  }
+  return details;
+}
+
 export function initPersonalization(model, api) {
   const memory = $("memory-summary-dialog");
   const recent = $("recent-events-dialog");
@@ -38,6 +60,11 @@ export function initPersonalization(model, api) {
   const manageButton = $("open-memory-items");
   const manager = $("memory-items");
   const summary = $("memory-summary");
+  const summaryUpdated = $("memory-summary-updated");
+  const requestForm = $("memory-summary-request");
+  const requestInput = $("memory-summary-question");
+  const requestStatus = $("memory-summary-request-status");
+  const requestResult = $("memory-summary-request-result");
   const recentList = $("recent-memory-list");
   const organizerStatus = $("daily-memory-notice");
   const retryPreference = $("retry-memory-preference");
@@ -51,6 +78,16 @@ export function initPersonalization(model, api) {
   let readingRecent = 0;
   let savingPreference = false;
   let memoryWriting = false;
+  let summaryRequest;
+
+  function resetSummaryRequest() {
+    summaryRequest?.abort();
+    summaryRequest = undefined;
+    requestForm.reset();
+    requestStatus.textContent = "";
+    requestResult.replaceChildren();
+    for (const button of requestForm.querySelectorAll("button")) button.disabled = false;
+  }
 
   function showPreference(value) {
     preference = value;
@@ -125,7 +162,10 @@ export function initPersonalization(model, api) {
       }
     });
   }
-  memory.addEventListener("close", () => { readingReport++; });
+  memory.addEventListener("close", () => {
+    readingReport++;
+    resetSummaryRequest();
+  });
   recent.addEventListener("close", () => { readingRecent++; });
 
   function showManager(open, focus = true) {
@@ -156,16 +196,28 @@ export function initPersonalization(model, api) {
     organizerStatus.textContent = status || "";
     if (!redraw) return;
 
+    summaryUpdated.hidden = !value.summary_updated_at;
+    if (value.summary_updated_at) {
+      summaryUpdated.dateTime = new Date(value.summary_updated_at * 1000).toISOString();
+      summaryUpdated.textContent = `最近更新 ${memoryDate(value.summary_updated_at)}`;
+    }
     const overview = $("memory-summary-list");
     overview.replaceChildren();
     const groups = value.summary || [];
     for (const group of groups) {
       const entry = node("article");
-      entry.append(node("strong", memoryGroupNames[group.kind]));
+      entry.append(node("h3", memoryGroupNames[group.kind]));
+      const sources = node("details");
+      sources.append(node("summary", "来源"));
       for (const note of group.notes) {
         const paragraph = node("p", note.text + " ");
         if (memoryVisibility[note.visibility]) paragraph.append(node("small", memoryVisibility[note.visibility], "hint"));
         entry.append(paragraph);
+        const item = value.organized.find(item => item.id === note.id);
+        if (!item) continue;
+        const reference = renderSources(item);
+        reference.firstElementChild.textContent = item.headline;
+        sources.append(reference);
       }
       const changes = node("details");
       changes.append(node("summary", "更正或删除"));
@@ -192,6 +244,7 @@ export function initPersonalization(model, api) {
         }));
         changes.append(form);
       }
+      if (sources.childElementCount > 1) entry.append(sources);
       entry.append(changes);
       overview.append(entry);
     }
@@ -199,6 +252,72 @@ export function initPersonalization(model, api) {
     renderEntries();
     renderEarlier(value.highlights);
   }
+
+  requestForm.onsubmit = async event => {
+    event.preventDefault();
+    const text = requestInput.value.trim();
+    if (!text || !report || summaryRequest || memoryWriting) return;
+    const mode = event.submitter?.value === "update" ? "update" : "ask";
+    const controller = new AbortController();
+    summaryRequest = controller;
+    const version = scopeVersion;
+    const scope = report.scope;
+    const buttons = requestForm.querySelectorAll("button[type='submit']");
+    for (const button of buttons) button.disabled = true;
+    requestResult.replaceChildren();
+    requestStatus.textContent = mode === "ask" ? "正在查找记忆…" : "正在识别要更新的记忆…";
+    try {
+      const result = await api(endpoint + "/summary", {
+        method: "POST", body: { scope, action: mode, text }, signal: controller.signal,
+      });
+      if (controller.signal.aborted || version !== scopeVersion || !memory.open) return;
+      if (result.scope !== scope) {
+        refreshScope();
+        return;
+      }
+      if (result.status === "found") {
+        for (const item of result.items) {
+          const entry = node("article");
+          entry.append(node("strong", item.headline), node("p", item.anecdote), renderSources(item));
+          requestResult.append(entry);
+        }
+        requestStatus.textContent = `找到 ${result.items.length} 条相关记忆。`;
+      } else if (result.status === "no_match") {
+        requestStatus.textContent = "没有找到相关的已保存记忆。";
+      } else if (result.status === "updated") {
+        await loadReport();
+        if (controller.signal.aborted || version !== scopeVersion || !memory.open) return;
+        requestStatus.textContent = `已更新「${result.item.headline}」。`;
+        if (requestInput.value.trim() === text) requestInput.value = "";
+      } else if (result.status === "proposal") {
+        const { item, note } = result;
+        requestStatus.textContent = "请核对要更新的条目。";
+        const entry = node("article");
+        entry.append(node("strong", item.headline), node("p", `当前内容 · ${item.anecdote}`),
+          node("p", `更新为 · ${note}`), action("应用更正", async event => {
+            const saved = await mutate(`/organized/${item.id}`, { method: "PATCH", body: { note } },
+              event.currentTarget, "记忆已更新。", item.updated_at);
+            if (saved && version === scopeVersion && memory.open) {
+              requestResult.replaceChildren();
+              requestStatus.textContent = `已更新「${item.headline}」。`;
+              requestInput.focus({ preventScroll: true });
+            }
+          }));
+        requestResult.append(entry);
+      } else {
+        requestStatus.textContent = "请写出一条记忆的标题和更正后的内容，或从条目中直接编辑。";
+      }
+    } catch (error) {
+      if (controller.signal.aborted || version !== scopeVersion || !memory.open) return;
+      if (error.status === 409) refreshScope();
+      else requestStatus.textContent = `操作失败：${error.message}`;
+    } finally {
+      if (summaryRequest === controller) {
+        summaryRequest = undefined;
+        for (const button of buttons) button.disabled = false;
+      }
+    }
+  };
 
   async function loadReport({ background = false } = {}) {
     if (background && memoryWriting) return;
@@ -281,17 +400,20 @@ export function initPersonalization(model, api) {
     return button;
   }
 
-  async function mutate(path, options, target, message) {
-    if (!report || target.disabled || memoryWriting) return;
+  async function mutate(path, options, target, message, revision) {
+    if (!report || target.disabled || memoryWriting || summaryRequest) return;
     const scope = report.scope;
     const version = scopeVersion;
     target.disabled = true;
     memoryWriting = true;
     const fromSummary = summary.contains(target);
-    const feedback = fromSummary ? $("memory-summary-feedback") : organizerStatus;
+    const feedback = requestForm.contains(target) ? requestStatus :
+      fromSummary ? $("memory-summary-feedback") : organizerStatus;
+    const query = new URLSearchParams({ scope });
+    if (revision !== undefined) query.set("revision", revision);
     feedback.textContent = "";
     try {
-      await api(`${endpoint}${path}?scope=${encodeURIComponent(scope)}`, options);
+      await api(`${endpoint}${path}?${query}`, options);
       if (version !== scopeVersion) return;
       await loadReport();
       if (version !== scopeVersion || !memory.open) return;
@@ -442,6 +564,8 @@ export function initPersonalization(model, api) {
     settingsStatus.textContent = "";
     preview.textContent = "正在读取…";
     recentList.replaceChildren();
+    resetSummaryRequest();
+    summaryUpdated.hidden = true;
     $("memory-summary-list").replaceChildren();
     $("organized-memory-list").replaceChildren();
     $("daily-memory-list").replaceChildren();

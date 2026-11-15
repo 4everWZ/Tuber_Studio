@@ -11,7 +11,7 @@ from uuid import uuid4
 from ..daily_memory import MemoryChanged
 from ..models import Event, Reply
 from ..providers import public_error
-from ..store import character_card
+from ..store import character_card, dump
 from .activity_filter import ActivitySummary, LiveActivityFilter
 from .draw_and_guess import DrawAndGuessService
 from .game_livestream import GameLivestreamService
@@ -265,6 +265,27 @@ class LiveSession:
         if not job or job["session_id"] != session:
             return {"status": "unavailable"}
         return {"status": job["status"], "spoken": job["text"] if job["status"] == "completed" else None}
+
+    async def cancel_handoff(self, request_id, session):
+        job = self.store.one(
+            "SELECT j.id,j.event_id,j.status FROM jobs j JOIN events e ON e.id=j.event_id WHERE e.event_key=?",
+            (dump([HANDOFF_PLATFORM, session, request_id]),),
+        )
+        if not job:
+            return
+        if job["status"] in TERMINAL:
+            return self.handoff_result(session, job["id"])
+        reason = "Agent 交接已取消"
+        if self.current_id == job["id"]:
+            await self.cancel_current(reason)
+        elif job["id"] in self.queue:
+            self.queue.remove(job["id"])
+            self.store.update_job(job["id"], status="cancelled", error=reason)
+            self.store.execute("UPDATE events SET status='cancelled',reason=? WHERE id=?", (reason, job["event_id"]))
+        result = self.handoff_result(session, job["id"])
+        if result["status"] not in TERMINAL:
+            raise ValueError("直播交接的停止结果待核对")
+        return result
 
     async def _submit(self, event, *, online_snapshot=None, verified_account_id=None, internal=False, handoff_account=None):
         session_id = self.session_id

@@ -1,5 +1,6 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
-import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261115.1";
+import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261116.1";
+import { renderAssistantAnswer } from "./operator-chat-answer.js";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 
 const statuses = {
@@ -345,6 +346,28 @@ function experienceCard(root, initial) {
 
 export function createOperatorCard(root, turn, context) {
   const { type, data } = turn.card;
+  if (type === "agent_task") {
+    const open = button("查看任务");
+    const status = node("p", "", "hint");
+    status.setAttribute("role", "status");
+    const detail = node("div", null, "chat-task-result");
+    let active = true, message = "";
+    const update = value => {
+      active = !["completed", "cancelled", "failed"].includes(value.status);
+      status.textContent = ({ awaiting_approval: "等待确认", needs_input: "等待你的答复", waiting: "等待工具结果",
+                              cancelled: "已停止", scheduled: "已预约" })[value.status] || label(value.status || "queued");
+      if (message !== (value.message || "")) {
+        message = value.message || "";
+        renderAssistantAnswer(detail, { reply_format: "markdown", reply_text: message });
+      }
+      detail.hidden = !message;
+    };
+    open.onclick = () => context.openTask(data.id);
+    root.append(status, detail, open);
+    update(data);
+    return { update, needsRefresh: () => active };
+  }
+  if (type === "owner_profile") root.append(link("打开绑定号主的 B 站主页", data.url));
   if (type === "dynamic_draft") return dynamicCard(root, data, context.api);
   if (type === "dynamic_edit") {
     const note = node("p", "", "hint");

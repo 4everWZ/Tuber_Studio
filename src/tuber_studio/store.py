@@ -124,7 +124,7 @@ class Store:
             if not self.one("SELECT id FROM characters WHERE id=?", (seed["id"],)):
                 self.save_character(seed)
         upgrade_bundled_characters(self, seeds)
-        if self.get("active_character") is None:
+        if seeds and self.get("active_character") is None:
             self.set("active_character", seeds[0]["id"])
 
     def close(self):

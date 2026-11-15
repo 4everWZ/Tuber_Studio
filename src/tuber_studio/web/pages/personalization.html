@@ -22,7 +22,10 @@
 
 <dialog id="memory-summary-dialog" class="personalization-dialog" aria-labelledby="memory-summary-title">
   <header>
-    <h2 id="memory-summary-title">记忆摘要</h2>
+    <div class="memory-summary-heading">
+      <h2 id="memory-summary-title">记忆摘要</h2>
+      <time id="memory-summary-updated" class="hint" hidden></time>
+    </div>
     <form method="dialog"><button type="submit" class="personalization-close" aria-label="关闭记忆摘要" autofocus>×</button></form>
   </header>
   <div class="personalization-dialog-body">
@@ -31,6 +34,16 @@
       <div id="memory-summary-list" class="memory-detail-list"></div>
       <p id="memory-summary-feedback" class="hint" role="status"></p>
       <button type="button" id="open-memory-items" class="personalization-button">管理记忆条目</button>
+      <form id="memory-summary-request">
+        <label for="memory-summary-question">询问或更新记忆</label>
+        <textarea id="memory-summary-question" rows="2" maxlength="500" required placeholder="例：你记得我对运营汇报有什么要求？"></textarea>
+        <div class="actions">
+          <button type="submit" class="win-btn" value="ask">询问</button>
+          <button type="submit" class="win-btn" value="update">更新</button>
+        </div>
+        <p id="memory-summary-request-status" class="hint" role="status"></p>
+        <div id="memory-summary-request-result" class="memory-detail-list"></div>
+      </form>
     </div>
     <div id="memory-items" hidden>
       <div class="memory-toolbar">

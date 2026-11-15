@@ -180,6 +180,13 @@ class Runtime:
                 self.generation_lock.release()
             return
 
+    def operator_generation(self, lane="chat"):
+        if self.inference.status.get("mode") == "live" or (
+            self.inference.client is None and self.live.state in {"live", "paused"}
+        ):
+            return self.generation_lock
+        return self.offline_generation(lane)
+
     def operations_waiting(self):
         profiles = self.settings.data.get("work_mode_profiles")
         node = self.inference.status

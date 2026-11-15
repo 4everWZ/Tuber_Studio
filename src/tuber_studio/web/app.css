@@ -284,6 +284,11 @@ p { margin-block: .55em 1em; }
 .personalization-dialog h2 { margin: 0; font-size: 1.14rem; font-weight: 650; }
 .personalization-close { width: 36px; height: 36px; border: 0; border-radius: 50%; padding: 0; font-size: 1.35rem; background: transparent; }
 .personalization-dialog-body { overflow: auto; padding: 15px 20px 20px; overscroll-behavior: contain; }
+.memory-summary-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem .8rem; }
+#memory-summary-list h3 { margin: .55rem 0 .15rem; font-size: .93rem; }
+#memory-summary-request { border-top: 1px solid var(--line); padding-block-start: .7rem; margin-block-start: .85rem; }
+#memory-summary-request label { display: block; margin-block-end: .3rem; }
+#memory-summary-question { display: block; width: 100%; box-sizing: border-box; resize: vertical; }
 .personalization-load:not([hidden]) { min-height: 180px; display: grid; align-content: center; justify-items: center; gap: 12px; text-align: center; }
 .memory-detail-list { display: grid; }
 .memory-detail-list article { min-width: 0; overflow-wrap: anywhere; padding-block: 11px; }
