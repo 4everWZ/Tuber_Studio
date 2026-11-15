@@ -20,7 +20,7 @@
 & tools/deployment/run-business.ps1 -Data runtime -Config runtime/studio.json -Background
 ```
 
-更新程序文件后重启原业务进程，再刷新工作台。工作区静态文件可先于运行中的 Python 路由更新。部署验收从实际端口确认 `GET /api/daily-memory/preferences` 和 `GET /api/characters/deleted` 均返回 200，再打开个性化验证开关。评论筛选验收从活动页选「待审核」，确认请求返回 `comment_filter: pending_review`，列表和计数随之更新。
+更新程序文件后重启原业务进程，再刷新工作台。工作区静态文件可先于运行中的 Python 路由更新。部署验收从实际端口确认 `GET /api/daily-memory/preferences` 和 `GET /api/characters/deleted` 均返回 200，再打开个性化验证开关。评论筛选验收从活动页打开「评论」，核对默认「回复」及两个类型标签。切换「仅读」或「全部」时，主评和楼内回复的新发计数保持一致。
 
 自主运营重启后保持待命，启动时检查原批次及就绪发送的授权。验证运营首页的积压、最老等待、发送延期以及安全收尾。真实平台观察和受控发送范围见[调度验收](../evaluations/results/operations-scheduler-20261114.md)。
 

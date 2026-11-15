@@ -267,15 +267,25 @@ def test_comment_result_filter_runs_before_pagination_and_uses_operation_day(cha
     reply(channels, current, "103", after + 1)
     reply(channels, current, "104", after + 2, status="pending_review")
     reply(channels, current, "105", after + 3, status="publish_uncertain")
+    reply(channels, current, "106", after + 4)
+    channels.store.execute("UPDATE browsing_intents SET receipt=? WHERE id='106'", (json.dumps({
+        "rpid": "106", "code": -1, "published_at": after + 4,
+    }),))
     channels.store.execute(
         "UPDATE browsing_intents SET target=json_patch(target,?) WHERE id=?",
         (json.dumps({"root": "88", "parent": "99", "recipient": "20", "source_text": "可查原评"}), "103"),
     )
+    manual_comment(channels, 1, after)
+    channels.store.execute("UPDATE drafts SET receipt=?", (json.dumps({"comment_id": 103, "published_at": after + 0.5}),))
     result = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page_size=1)
     assert result["comment_filter"] == "replied"
-    assert result["total"] == result["counts"]["sent"] == result["pages"] == 2
+    assert result["total"] == result["pages"] == 3
+    assert result["counts"] == {"total": 3, "sent": 2, "sent_top_level": 1, "sent_replies": 1, "pending": 0, "failed": 0}
     assert result["items"][0]["source_href"].endswith("#reply99")
-    page_two = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page=2, page_size=1)
-    assert page_two["items"][0]["comment_kind"] == "top_level"
-    pending = activity(channels, day="2026-11-08", kind="comments", comment_filter="pending_review")
-    assert pending["total"] == 1 and pending["items"][0]["status"] == "pending_review"
+    page_three = activity(channels, day="2026-11-08", kind="comments", comment_filter="replied", page=3, page_size=1)
+    assert page_three["items"][0]["comment_kind"] == "top_level"
+    assert page_three["counts"] == result["counts"]
+    read = activity(channels, day="2026-11-08", kind="comments", comment_filter="read")
+    assert read["total"] == 0 and read["counts"]["sent"] == 2
+    all_comments = activity(channels, day="2026-11-08", kind="comments", comment_filter="all")
+    assert all_comments["counts"]["pending"] == 1 and all_comments["counts"]["sent"] == 2

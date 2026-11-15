@@ -134,8 +134,10 @@ def test_comment_timeline_merges_discovery_and_distinguishes_round_outcomes(serv
     assert outcomes["new_reply"]["own_resource"] and not outcomes["new_reply"]["own_thread"]
     assert outcomes["same_account"]["account_reply_text"] == "同账号回复"
     assert outcomes["pending_verification"]["sent_href"] is None
-    old = activity(service, day="2026-11-08", kind="comments", round_id=revisit["id"])["items"][0]
-    assert old["comment_outcome"] == "previous_reply"
+    assert data["counts"]["sent_replies"] == 1
+    revisit_data = activity(service, day="2026-11-08", kind="comments", round_id=revisit["id"], comment_filter="replied")
+    assert revisit_data["items"][0]["comment_outcome"] == "previous_reply"
+    assert revisit_data["items"][0]["comment_kind"] == "reply" and revisit_data["counts"]["sent"] == 0
 
 
 def test_recent_events_keep_thread_identity_when_receipt_is_confirmed(service, monkeypatch):

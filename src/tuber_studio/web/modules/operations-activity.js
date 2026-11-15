@@ -34,6 +34,8 @@ export function initOperationsActivity(api) {
     const counts = data.counts || data.summary || {};
     $("discovery-history-counts").textContent = (kind === "videos" ? [
       `当日视频 ${counts.videos ?? data.total ?? 0}`, `看过 ${counts.watched ?? 0}`, `回复 ${counts.replies ?? 0}`, `跳过 ${counts.skipped ?? 0}`,
+    ] : kind === "comments" ? [
+      `${roundId ? "本轮当日新发" : "当日新发"} 主评 ${counts.sent_top_level}`, `楼内回复 ${counts.sent_replies}`,
     ] : [`当日总计 ${counts.total ?? data.total ?? 0}`, `已发送 ${counts.sent ?? 0}`, `待审核 ${counts.pending ?? 0}`])
       .concat(counts.failed > 0 ? [`异常 ${counts.failed}`] : []).join(" · ");
     previous.disabled = page <= 1;
@@ -74,7 +76,15 @@ export function initOperationsActivity(api) {
         item.fully_read === false && ["complete", "full", "fully_read"].includes(item.read_state) ? "已看过" :
           readLabels[item.read_state] || (item.watched ? "已看过" : "未阅读");
       const result = commentOutcomeLabels[item.comment_outcome] || (itemKind === "message" ? contactStatus(item) : null) || statusLabels[item.status] || TuberFormatters.humanizeStatus(item.status || "running").label;
-      heading.append(title, node("span", itemKind === "video" ? read : result, "badge"));
+      const status = node("span", itemKind === "video" ? read : result, "badge");
+      if (itemKind === "comment") {
+        const type = item.comment_kind || item.reply_kind;
+        const badges = node("span", null, "comment-activity-badges");
+        badges.append(node("span", type === "top_level" ? "主评" : type === "reply" ? "楼内回复" : "评论楼", "badge"), status);
+        heading.append(title, badges);
+      } else {
+        heading.append(title, status);
+      }
       row.append(heading);
       const preferences = { like: "喜欢", not_interested: "不感兴趣", neutral: "一般" };
       const preference = preferences[item.video_preference];
@@ -137,11 +147,11 @@ export function initOperationsActivity(api) {
   }
 
   async function refresh() {
-    const commentFilter = kind === "comments" ? filter.value || "all" : "all";
+    const commentFilter = kind === "comments" ? filter.value || "replied" : "all";
     const query = new URLSearchParams({ page: String(page), page_size: String(pageSize), kind });
     if (roundId) query.set("round_id", roundId);
     else if (date.value) query.set("day", date.value);
-    if (commentFilter !== "all") query.set("comment_filter", commentFilter);
+    if (kind === "comments") query.set("comment_filter", commentFilter);
     const queryKey = String(query);
     if (queryKey === pendingQuery) return;
     const current = ++request;
@@ -160,7 +170,8 @@ export function initOperationsActivity(api) {
     try {
       const data = await api(`/api/automation/activity?${query}`);
       if (current !== request) return;
-      if (commentFilter !== "all" && data.comment_filter !== commentFilter) {
+      if (kind === "comments" && (data.comment_filter !== commentFilter ||
+          !Number.isInteger(data.counts?.sent_top_level) || !Number.isInteger(data.counts?.sent_replies))) {
         feedback.textContent = "当前工作台后端未应用评论筛选。更新并重启工作台后再刷新。";
         return;
       }
@@ -192,7 +203,7 @@ export function initOperationsActivity(api) {
     if (roundId === value) return;
     roundId = value;
     if (roundId) {
-      filter.value = "all";
+      filter.value = "replied";
       refresh.setKind("comments");
     }
     else page = 1;

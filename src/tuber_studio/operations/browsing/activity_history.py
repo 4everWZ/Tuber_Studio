@@ -47,6 +47,16 @@ def _day_window(day, timezone):
     return start.timestamp(), end.timestamp()
 
 
+def _confirmed_comment_id(status, receipt):
+    if status != "published" or not isinstance(receipt, dict) or receipt.get("code", 0) != 0:
+        return None
+    for field in ("rpid", "comment_id"):
+        identifier = str(receipt.get(field))
+        if COMMENT_ID.fullmatch(identifier):
+            return identifier
+    return None
+
+
 def _video_data(browsing, *, day=None, visible_since=None, round_id=None):
     """Return one row per video, with successful replies counted only once.
 
@@ -437,22 +447,29 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
             )
 
     def thread_details(resource, root, comment, row, target=None):
+        receipt = _json(row.get("receipt"), {})
+        status = row["status"]
+        confirmed_id = _confirmed_comment_id(status, receipt)
         if not resource or not root:
+            if confirmed_id:
+                source_href = comment_href(resource, comment) if COMMENT_ID.fullmatch(str(comment)) else None
+                return {
+                    "comment_outcome": "new_reply", "sent_href": comment_href(resource, confirmed_id),
+                    "source_comment_id": str(comment) if source_href else None, "source_href": source_href,
+                }
             return {}
         root = str(root)
         key = (resource, root)
         if key not in threads:
             threads[key] = comment_thread(store, resource, root, account_id=account, character_id=character)
         thread = threads[key]
-        receipt = _json(row.get("receipt"), {})
-        status = row["status"]
         observed = (target or {}).get("account_reply") or {}
         matched = next((item for item in reversed(thread["comments"]) if
                         item["parent_comment_id"] == str(comment) and item["publication"]
                         and (item["created_at"] is None or item["created_at"] <= row["updated_at"])), None)
         if status == "publish_uncertain":
             outcome = "pending_verification"
-        elif status == "published" and (receipt.get("rpid") or receipt.get("comment_id")) and receipt.get("code", 0) == 0:
+        elif confirmed_id:
             outcome = "new_reply"
         elif status == "operator_replied" and observed.get("comment_id"):
             outcome = "same_account"
@@ -461,7 +478,7 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
         else:
             outcome = None
         replied_id = None if status == "publish_uncertain" else (
-            receipt.get("rpid") or receipt.get("comment_id") or observed.get("comment_id") or (matched or {}).get("comment_id")
+            confirmed_id or observed.get("comment_id") or (matched or {}).get("comment_id")
         )
         source_href = comment_href(resource, comment) if COMMENT_ID.fullmatch(str(comment)) else None
         return {
@@ -512,7 +529,9 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
         if not include(at):
             continue
         resource = resource_key(target)
-        root = target.get("root") or _json(row.get("receipt"), {}).get("rpid")
+        root = target.get("root")
+        if comment_kind == "top_level" and not root:
+            root = _confirmed_comment_id(row["status"], _json(row.get("receipt"), {}))
         details = thread_details(resource, root, target.get("parent") or root, row, target)
         if details:
             listed_threads.add((resource, str(root), row["round_id"]))
@@ -589,6 +608,7 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
             add(row, channel="comment", identity=f"comment/thread/{resource}/{root}/{observed_round}",
                 text="", source_text=(source or {}).get("text"), title="浏览评论楼", href=comment_href(resource, root),
                 round_id=observed_round, bvid=resource if not resource.startswith("dynamic:") else None,
+                comment_kind="reply" if outcome else None,
                 **thread_details(resource, root, target_id, row))
 
     if kind != "public" and account and "dm_inbox" in tables:
@@ -712,6 +732,13 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
         filtered = items if kind == "all" else [item for item in items if item["kind"] == kinds[kind]]
     if kind == "comments":
         replied = {"new_reply", "previous_reply", "same_account"}
+        sent = {}
+        for item in filtered:
+            if start <= item["updated_at"] < end and (
+                identifier := _confirmed_comment_id(item["status"], item["receipt"])
+            ):
+                sent.setdefault(identifier, item["comment_kind"])
+        sent_top_level = sum(value == "top_level" for value in sent.values())
         if comment_filter == "read":
             filtered = [item for item in filtered if item["status"] == "read" and not item.get("comment_outcome")]
         elif comment_filter == "replied":
@@ -720,7 +747,9 @@ def activity(browsing, *, day=None, kind="all", comment_filter="all", page=1, pa
             filtered = [item for item in filtered if item["status"] == "pending_review"]
         counts = {
             "total": len(filtered),
-            "sent": sum(item.get("comment_outcome") in replied for item in filtered),
+            "sent": len(sent),
+            "sent_top_level": sent_top_level,
+            "sent_replies": len(sent) - sent_top_level,
             "pending": sum(item["status"] == "pending_review" for item in filtered),
             "failed": sum(item["status"] == "failed" for item in filtered),
         }

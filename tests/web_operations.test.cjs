@@ -434,7 +434,7 @@ test("unified activity distinguishes approved drafts, received messages and succ
   assert.match(calls[0], /\/api\/automation\/activity\?.*kind=all/);
   const rows = byId("discovery-activity-list").children;
   assert.equal(rows[0].children[1].children[0].textContent, "已有主评");
-  assert.equal(rows[1].children[0].children[1].textContent, "待审核");
+  assert.equal(rows[1].children[0].children[1].children[1].textContent, "待审核");
   assert.equal(rows[2].children[0].children[1].textContent, "收到来信");
   assert.equal(rows[3].children[0].children[1].textContent, "已发送");
   refresh.setKind("messages");
@@ -465,14 +465,16 @@ test("comment activity titles link to the original comment when known", async t 
   const video = "https://www.bilibili.com/video/BV1d8pU6xEZX";
   const target = "https://t.bilibili.com/123#reply44";
   const refresh = initOperationsActivity(async () => ({ day: "2026-11-15", page: 1, total: 3, pages: 1, items: [
-    { id: "1", kind: "comment", bvid: "BV1d8pU6xEZX", video_title: "视频标题", href: "#comments/browsing/1", source_href: `${video}#reply42`, sent_href: `${video}#reply43` },
-    { id: "2", kind: "comment", thread: { resource: "dynamic:123" }, source_href: target },
+    { id: "1", kind: "comment", comment_kind: "top_level", bvid: "BV1d8pU6xEZX", video_title: "视频标题", href: "#comments/browsing/1", source_href: `${video}#reply42`, sent_href: `${video}#reply43` },
+    { id: "2", kind: "comment", comment_kind: "reply", thread: { resource: "dynamic:123" }, source_href: target },
     { id: "3", kind: "comment", bvid: "BV1d8pU6xEZX", video_title: "视频标题" },
   ] }));
   await refresh();
   const titles = byId("discovery-activity-list").children.map(row => row.children[0].children[0]);
   assert.equal(titles[0].textContent, "视频标题");
   assert.deepEqual(titles.map(title => title.href), [`${video}#reply42`, target, video]);
+  const badges = byId("discovery-activity-list").children.map(row => row.children[0].children[1].children[0].textContent);
+  assert.deepEqual(badges, ["主评", "楼内回复", "评论楼"]);
 });
 
 test("activity updates preserve each stable record's expanded details", async t => {

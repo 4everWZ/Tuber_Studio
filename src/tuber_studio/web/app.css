@@ -677,6 +677,8 @@ tr:hover td {
 .daily-video-heading { display: flex; gap: 8px; align-items: start; }
 .daily-video-heading > a { flex: 1; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 .daily-video-heading .badge { flex-shrink: 0; }
+.comment-activity-badges { display: flex; flex-wrap: wrap; gap: 4px; justify-content: end; max-width: 52%; }
+.comment-activity-badges .badge { flex-shrink: 1; text-align: center; }
 .daily-video-reason { grid-column: 1; margin: 0; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .daily-video-replies { grid-column: 2; grid-row: 1 / span 2; }
 .daily-reply-row + .daily-reply-row { margin-top: 12px; }
