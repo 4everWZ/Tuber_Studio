@@ -14,9 +14,14 @@ function dom(t) {
     append(...children) { this.children.push(...children); }, appendChild(child) { this.children.push(child); },
     replaceChildren(...children) { this.children = children; },
     querySelector(selector) { return get(selector); }, querySelectorAll() { return []; },
-    getAttribute(name) { return this.attributes[name]; }, setAttribute(name, value) { this.attributes[name] = value; },
+    getAttribute(name) { return this.attributes[name] ?? null; }, setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) { delete this.attributes[name]; },
+    get src() { return this.getAttribute("src") || ""; }, set src(value) { this.setAttribute("src", value); },
+    get href() { return this.getAttribute("href") || ""; }, set href(value) { this.setAttribute("href", value); },
   });
   const get = id => { if (!elements.has(id)) elements.set(id, make()); return elements.get(id); };
+  const ownerImage = make();
+  get("oc-owner-avatar").querySelector = selector => selector === "img" ? ownerImage : null;
   const document = { getElementById: get, createElement: make, querySelector: get, querySelectorAll: () => [],
     addEventListener(type, handler) { (listeners[type] ||= []).push(handler); } };
   globalThis.document = document;
@@ -164,19 +169,30 @@ test("an older character request cannot replace the last selected character", as
   const { get } = dom(t);
   const { selectCharacter } = await import("../src/tuber_studio/web/modules/character-studio.js");
   const model = {};
+  const owner = { uid: "123", name: "当前号主", avatar_url: "https://i1.hdslb.com/bfs/face/current.jpg" };
   let finishOld;
   const dependencies = { api: async url => {
     if (url === "/api/characters/first") return new Promise(resolve => { finishOld = resolve; });
+    if (url === "/api/characters/third") return { id: "third", name: "未绑定角色", version: 1 };
     assert.equal(url, "/api/characters/second");
-    return { id: "second", name: "第二角色", version: 1 };
+    return { id: "second", name: "第二角色", version: 1, bilibili_owner: owner };
   } };
   const first = selectCharacter("first", model, dependencies);
   await selectCharacter("second", model, dependencies);
-  finishOld({ id: "first", name: "第一角色", version: 1 });
+  finishOld({ id: "first", name: "第一角色", version: 1, bilibili_owner: { uid: "456", name: "旧号主" } });
   await first;
   assert.equal(model.characterId, "second");
   assert.equal(get("editor-title").textContent, "编辑角色卡 · 第二角色");
   assert.equal(Object.hasOwn(JSON.parse(get("character-editor").value), "version"), false);
+  assert.equal(get("oc-owner-profile").textContent, "当前号主 · UID 123");
+  assert.equal(get("oc-owner-profile").href, "https://space.bilibili.com/123");
+  assert.equal(get("oc-owner-avatar").querySelector("img").src, owner.avatar_url);
+  await selectCharacter("third", model, dependencies);
+  assert.equal(model.characterId, "third");
+  assert.equal(get("oc-owner-profile").hidden, true);
+  assert.equal(get("oc-owner-profile").getAttribute("href"), null);
+  assert.equal(get("oc-owner-avatar").hidden, true);
+  assert.equal(get("oc-owner-avatar").querySelector("img").getAttribute("src"), null);
 });
 
 test("canceling a character switch retains both selection and unsaved edits", async t => {
