@@ -11,7 +11,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 import websockets
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-
 from publisher import PCM_RATE, ProgramPublisher, publish_address
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -78,8 +77,11 @@ async def session(client: WebSocket):
                 await publisher.start()
                 await client.send_json(opened)
                 await relay(client, engine, publisher)
-        except (WebSocketDisconnect, websockets.ConnectionClosed):
+                await client.close(code=1000)
+        except WebSocketDisconnect:
             pass
+        except websockets.ConnectionClosed:
+            await client.close(code=1011)
         except Exception as error:
             log.warning("omni media session failed: %s", type(error).__name__)
             await client.send_json({"type": "error", "error": {"message": "Program media session ended unexpectedly"}})
