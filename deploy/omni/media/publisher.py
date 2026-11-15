@@ -9,6 +9,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from PIL import Image, ImageSequence
 
 WIDTH, HEIGHT, FPS = 640, 360, 25
+VIDEO_FRAME_BYTES = WIDTH * HEIGHT * 3
 PCM_RATE = 24000
 PCM_PER_FRAME = PCM_RATE * 2 // FPS
 MAX_PENDING = PCM_RATE * 2 * 4
@@ -77,7 +78,8 @@ class ProgramPublisher:
                 "ffmpeg", "-nostdin", "-loglevel", "error",
                 "-thread_queue_size", "4", "-f", "rawvideo", "-pixel_format", "rgb24",
                 "-video_size", f"{WIDTH}x{HEIGHT}", "-framerate", str(FPS), "-i", f"pipe:{read}",
-                "-thread_queue_size", "4", "-f", "s16le", "-ar", str(PCM_RATE), "-ac", "1", "-i", "pipe:0",
+                "-probesize", "32", "-analyzeduration", "1", "-thread_queue_size", "4",
+                "-f", "s16le", "-ar", str(PCM_RATE), "-ac", "1", "-i", "pipe:0",
                 "-c:v", "libx264", "-threads:v", "2", "-profile:v", "baseline", "-preset", "ultrafast", "-tune", "zerolatency",
                 "-pix_fmt", "yuv420p", "-g", str(FPS), "-c:a", "libopus", "-ar", "48000", "-application", "lowdelay",
                 "-muxdelay", "0", "-rtsp_transport", "tcp", "-f", "rtsp", self.address,
@@ -92,6 +94,9 @@ class ProgramPublisher:
             except BaseException:
                 handle.close()
                 raise
+            # FFmpeg opens the pipes serially. Its first PCM packet can span several
+            # video ticks, so allow those video frames to wait while audio arrives.
+            transport.set_write_buffer_limits(high=4 * VIDEO_FRAME_BYTES, low=2 * VIDEO_FRAME_BYTES)
             self.video = asyncio.StreamWriter(transport, protocol, None, loop)
             self.task = asyncio.create_task(self.render())
         finally:
