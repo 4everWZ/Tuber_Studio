@@ -5,17 +5,23 @@ const { test } = require("node:test");
 const fs = require("node:fs");
 const path = require("node:path");
 
-test("OC tabs switch panels and visual edits preserve the rest of the saved persona", async t => {
+function dom(t) {
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
-      id, value: "", hidden: false, dataset: {}, listeners: {}, attributes: {},
+      id, value: "", hidden: false, dataset: {}, listeners: {}, attributes: {}, children: new Map(),
       classList: { toggle() {} },
       addEventListener(type, handler) { this.listeners[type] = handler; },
-      setAttribute(name, value) { this.attributes[name] = value; },
+      setAttribute(name, value) { this.attributes[name] = String(value); },
+      getAttribute(name) { return this.attributes[name] ?? null; },
+      removeAttribute(name) { delete this.attributes[name]; },
+      get src() { return this.getAttribute("src") || ""; }, set src(value) { this.setAttribute("src", value); },
+      get href() { return this.getAttribute("href") || ""; }, set href(value) { this.setAttribute("href", value); },
+      querySelector(selector) { return this.children.get(selector) ?? null; },
     });
     return elements.get(id);
   };
+  element("oc-owner-avatar").children.set("img", element("oc-owner-image"));
   const names = ["persona", "style", "assets", "json"];
   const tabs = names.map(name => Object.assign(element(`oc-tab-${name}`), { dataset: { tab: `tab-oc-${name}` } }));
   const panels = names.map(name => element(`tab-oc-${name}`));
@@ -24,6 +30,11 @@ test("OC tabs switch panels and visual edits preserve the rest of the saved pers
     querySelectorAll: selector => selector === ".oc-tab-btn" ? tabs : panels,
   };
   t.after(() => { delete globalThis.document; });
+  return { element, tabs, panels };
+}
+
+test("OC tabs switch panels and visual edits preserve the rest of the saved persona", async t => {
+  const { element, tabs, panels } = dom(t);
   const studio = await import("../src/tuber_studio/web/modules/character-studio.js");
   const character = JSON.parse(fs.readFileSync(path.join(__dirname, "../config/characters.json"), "utf8"))[0];
   const model = { character };
@@ -47,4 +58,45 @@ test("OC tabs switch panels and visual edits preserve the rest of the saved pers
   element("oc-name").listeners.input();
   assert.equal(JSON.parse(element("character-editor").value).name, "新名字");
   assert.equal(element("activate-character").textContent, "保存并激活");
+});
+
+
+test("owner lookup binds the verified profile and clearing removes its links and avatar", async t => {
+  const { element } = dom(t);
+  const studio = await import("../src/tuber_studio/web/modules/character-studio.js");
+  const character = { id: "whale", name: "大肥鱼", core: {}, style: {} };
+  const model = { character, characterSelection: 1 };
+  const owner = { uid: "123", name: "号主昵称", avatar_url: "https://i0.hdslb.com/bfs/face/example.jpg" };
+  const input = element("oc-bilibili-owner"), profile = element("oc-owner-profile");
+  const avatar = element("oc-owner-avatar"), image = avatar.querySelector("img");
+  element("character-editor").value = JSON.stringify(character);
+  studio.syncCharacterJsonToVisual(character);
+  studio.initCharacterStudioUI(model, { api: async url => {
+    assert.equal(url, "/api/characters/whale/bilibili-owner?account=https%3A%2F%2Fspace.bilibili.com%2F123");
+    return owner;
+  } });
+  assert.equal(profile.hidden, true);
+  assert.equal(avatar.hidden, true);
+  input.value = "https://space.bilibili.com/123";
+  input.listeners.input();
+  await element("oc-owner-lookup").listeners.click();
+  assert.deepEqual(JSON.parse(element("character-editor").value).bilibili_owner, owner);
+  assert.equal(input.value, owner.uid);
+  assert.equal(profile.textContent, "号主昵称 · UID 123");
+  assert.equal(profile.href, "https://space.bilibili.com/123");
+  assert.equal(profile.hidden, false);
+  assert.equal(avatar.hidden, false);
+  assert.equal(image.src, owner.avatar_url);
+  assert.equal(model.characterDirty, true);
+
+  input.setAttribute("aria-invalid", "true");
+  input.value = "";
+  input.listeners.input();
+  assert.equal(JSON.parse(element("character-editor").value).bilibili_owner, null);
+  assert.equal(profile.hidden, true);
+  assert.equal(profile.getAttribute("href"), null);
+  assert.equal(avatar.hidden, true);
+  assert.equal(image.getAttribute("src"), null);
+  assert.equal(input.getAttribute("aria-invalid"), null);
+  assert.equal(element("oc-owner-status").textContent, "");
 });
