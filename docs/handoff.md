@@ -3,12 +3,12 @@
 ## 当前状态
 
 - `main` 收录本轮评论直达链接、显示实际回复对象的动态配图，以及从近期私聊提炼角色日常的自主动态。动态模型只接收私聊侧核对过的公开成品。记忆设置变更、账号或角色切换、原对话删除与到期都会影响旧稿交付。 [动态规范](specs/operations/dynamic-operations.md) · [配图样例](../evaluations/results/dynamic-comment-excerpt-20261115.png)
-- 本机 9020 已运行评论直达和配图版本，本次交接检查时有一轮自主运营在跑。最新自主私聊取材改动随代码交接，待本轮收尾后按下方命令重启加载。实际平台发布以账号授权和回执为准。
+- 本机 9020 已加载原生聊天正文流和跨端记忆。压测前正常收尾，验收后按原权限恢复自主运营。评论直达、配图和私聊侧脱敏取材继续由现有入口提供。实际平台发布以账号授权和回执为准。 [复验](../evaluations/results/assistant-memory-20261115.md)
 - GitHub Actions 的 CPU 测试与 Jetson 打包并行。两项通过才交付正式程序包和写入 GHCR。上一版已在 GitHub Actions 验过双门禁。 [部署指南](guides/deployment.md) · [上一版 CI](https://github.com/4everWZ/Tuber_Studio/actions/runs/43613680003)
 
 ## 下次从这里接
 
-1. 在 9020 重启后，用当前 9B 和隔离账号回放一条普通私聊。查看实际送入动态的成品、草稿和队列状态，再核对清空原对话或关闭记忆后待发稿的变化。平台读写、确认回执、评论链接及图文的线上呈现分开验收。
+1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)
 3. 实际直播先查 9B 档与 Genie 配对，确认真实播完回执并测首音。和评论、私信一起跑持续负载时，分别记录平台发现、模型排队和发送等待。游戏实机继续沿现有模拟入口验证状态回传和接管。 [当前计划](plans/current.md) · [游戏接入](plans/game-livestream.md)
 
@@ -24,7 +24,7 @@
 
 自主运营重启后保持待命，启动时检查原批次及就绪发送的授权。验证运营首页的积压、最老等待、发送延期以及安全收尾。真实平台观察和受控发送范围见[调度验收](../evaluations/results/operations-scheduler-20261114.md)。
 
-号主逐字对话从 `POST /api/chat/intelligent/stream` 接收 SSE。当前 9B 直连可用。通过节点代理走语言生成的部署需同步更新代理程序，并从使用方验证首字与取消。业务日志记录阶段耗时和 token 用量。
+号主逐字对话从 `POST /api/chat/intelligent/stream` 接收 SSE。当前 9B 的原生正文流已通过节点代理实测。业务日志记录本地上下文、模型能力检查、调度等待、首字、输出规模和 token 用量。
 
 运营使用 AGX 上独立的 llama.cpp CUDA 容器，已核验 `dafeiyu-qwen35-9b:1.0.0` 的 Q4_K_M 权重、Q8_0 投影器、262,144 窗口和 `q4_0` K/V。新安装的运营和直播均默认引用同一 9B，按固定 Hugging Face 发布版本准备资产，默认开启思考。直播使用 Genie 语音和图片／GIF 形象，9B 与 Genie 的共驻和首音待实机复验。 [部署指南](guides/deployment.md) · [可选 Live2D](guides/live/avatar.md)
 
