@@ -14,6 +14,22 @@
       <div id="character-list" class="object-list" style="margin-top:10px;"></div>
 
       <div class="win-subgroup-box" style="margin-top:16px;">
+        <label class="win-subgroup-title" for="oc-bilibili-owner">B 站号主</label>
+        <input id="oc-bilibili-owner" maxlength="2048" placeholder="UID 或 B 站个人空间链接"
+               aria-describedby="oc-owner-help oc-owner-status" autocomplete="off" disabled>
+        <div class="actions" style="margin-top:8px;">
+          <button id="oc-owner-lookup" type="button" class="win-btn" disabled>查询账号</button>
+          <button id="oc-owner-current" type="button" class="win-btn" disabled>使用当前登录账号</button>
+        </div>
+        <div class="actions" style="margin-top:8px;">
+          <span id="oc-owner-avatar" class="account-avatar" hidden><img alt="" referrerpolicy="no-referrer"></span>
+          <a id="oc-owner-profile" target="_blank" rel="noopener noreferrer" hidden></a>
+          <span id="oc-owner-status" class="hint" role="status"></span>
+        </div>
+        <p id="oc-owner-help" class="hint">点击「保存角色」后生效。清空此项并保存可解除绑定。</p>
+      </div>
+
+      <div class="win-subgroup-box" style="margin-top:16px;">
         <div class="win-subgroup-title">新建角色卡</div>
         <form id="create-character-form">
           <label>新角色名称<input id="new-character-name" maxlength="60" placeholder="例如：电台大肥鱼" required></label>
@@ -43,19 +59,6 @@
       <!-- Tab 1: 核心设定 -->
       <div class="oc-tab-content active" id="tab-oc-persona" role="tabpanel" aria-labelledby="oc-tab-persona" style="margin-top:12px;">
         <label>角色名称<input id="oc-name" maxlength="60" disabled></label>
-        <label for="oc-bilibili-owner">B 站号主</label>
-        <input id="oc-bilibili-owner" maxlength="2048" placeholder="UID 或 B 站个人空间链接"
-               aria-describedby="oc-owner-help oc-owner-status" autocomplete="off" disabled>
-        <div class="actions" style="margin-top:8px;">
-          <button id="oc-owner-lookup" type="button" class="win-btn" disabled>查询账号</button>
-          <button id="oc-owner-current" type="button" class="win-btn" disabled>使用当前登录账号</button>
-        </div>
-        <div class="actions" style="margin-top:8px;">
-          <span id="oc-owner-avatar" class="account-avatar" hidden><img alt="" referrerpolicy="no-referrer"></span>
-          <a id="oc-owner-profile" target="_blank" rel="noopener noreferrer" hidden></a>
-          <span id="oc-owner-status" class="hint" role="status"></span>
-        </div>
-        <p id="oc-owner-help" class="hint">随角色卡保存。清空后保存可解除绑定。</p>
         <label>核心身份与世界观 (Identity)
           <textarea id="oc-identity" class="code-editor" rows="4"></textarea>
         </label>

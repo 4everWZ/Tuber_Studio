@@ -131,7 +131,7 @@ def test_character_list_uses_first_creation_time_across_versions_and_restore(sto
             "UPDATE character_versions SET created_at=? WHERE character_id=? AND version=?",
             (created_at, card["id"], card["version"]),
         )
-    expected = [newer["id"], older["id"], original["id"]]
+    expected = [original["id"], older["id"], newer["id"]]
     assert [card["id"] for card in store.characters()] == expected
 
     store.save_character(older | {"name": "新版本"})
@@ -140,7 +140,7 @@ def test_character_list_uses_first_creation_time_across_versions_and_restore(sto
     assert [card["id"] for card in store.characters()] == expected
 
     store.delete_character(newer["id"])
-    assert [card["id"] for card in store.characters()] == expected[1:]
+    assert [card["id"] for card in store.characters()] == expected[:-1]
     store.restore_character(newer["id"])
     assert [card["id"] for card in store.characters()] == expected
 

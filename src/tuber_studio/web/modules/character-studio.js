@@ -211,7 +211,13 @@ export function initCharacterStudioUI(model, {
     const el = $(id);
     if (el) {
       el.addEventListener("input", () => {
-        if (model.character) syncVisualToCharacterJson(model, id);
+        if (!model.character) return;
+        try {
+          syncVisualToCharacterJson(model, id);
+        } catch (error) {
+          if (id !== "oc-bilibili-owner") throw error;
+          $("oc-owner-status").textContent = "请先修正高级 JSON，再修改 B 站号主。";
+        }
       });
     }
   });
@@ -259,7 +265,14 @@ export function initCharacterStudioUI(model, {
       const owner = await api(useCurrent ? path : `${path}?account=${encodeURIComponent(account)}`);
       if (!isCurrent()) return;
       const editor = $("character-editor");
-      const card = JSON.parse(editor.value);
+      let card;
+      try {
+        card = JSON.parse(editor.value);
+        if (!card || typeof card !== "object" || Array.isArray(card)) throw new SyntaxError();
+      } catch {
+        status.textContent = "请先修正高级 JSON，再修改 B 站号主。";
+        return;
+      }
       card.bilibili_owner = owner;
       editor.value = JSON.stringify(card, null, 2);
       input.value = owner.uid;
@@ -340,7 +353,7 @@ export function initCharacterStudioUI(model, {
           if (error.field || first) {
             const json = $("character-editor");
             const field = $(error.field || fields[first?.field] || "character-editor");
-            const target = !json.closest("[hidden]") ? json : field;
+            const target = field.id !== "oc-bilibili-owner" && !json.closest("[hidden]") ? json : field;
             const panel = target.closest("[role=tabpanel]");
             if (panel?.hidden) tabs.find(tab => tab.dataset.tab === panel.id)?.click();
             target.setAttribute("aria-invalid", "true");
@@ -348,6 +361,7 @@ export function initCharacterStudioUI(model, {
           }
           const labels = { name: "角色名称", bilibili_owner: "B 站号主", voice_profile: "音色", avatar_manifest: "形象素材" };
           $("character-dirty").textContent = first ? `${labels[first.field] || first.field}：${first.message}` : error.message;
+          if (first?.field === "bilibili_owner") $("oc-owner-status").textContent = first.message;
           if (first) throw new Error($("character-dirty").textContent);
           throw error;
         }

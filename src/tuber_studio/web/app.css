@@ -545,10 +545,14 @@ tr:hover td {
   font-weight: 600;
 }
 
+.character-list-owner,
+#oc-owner-profile {
+  overflow-wrap: anywhere;
+}
+
 .character-list-owner {
   display: block;
   margin-top: 2px;
-  overflow-wrap: anywhere;
 }
 
 /* 素材卡片 */

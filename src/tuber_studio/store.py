@@ -171,7 +171,7 @@ class Store:
                 "SELECT c.id FROM characters c WHERE NOT EXISTS "
                 "(SELECT 1 FROM character_archives a WHERE a.character_id=c.id AND a.version=c.active_version) "
                 "ORDER BY (SELECT v.created_at FROM character_versions v WHERE v.character_id=c.id "
-                "ORDER BY v.version LIMIT 1) DESC, c.id"
+                "ORDER BY v.version LIMIT 1) ASC, c.id"
             )
         ]
 
