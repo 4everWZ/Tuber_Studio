@@ -107,6 +107,9 @@ async def generate_with_recovery(
     context_data=None,
     reuse_completed=False,
     allow_web_fetch=False,
+    allow_web_url=None,
+    web_search_source=None,
+    web_search_links=(),
 ):
     """Callers retain their existing generation-lock contract and source validator."""
     actor = captured_identity(messages) or runtime_identity(runtime, character, binding.get("account_id"))
@@ -225,7 +228,9 @@ async def generate_with_recovery(
                 value = checked(result["resume_value"], result["output"])
             else:
                 web_fetch = (
-                    OperationWebFetch(guard, context=page["resume_value"] if page else None, record=record_fetch)
+                    OperationWebFetch(guard, context=page["resume_value"] if page else None,
+                                      record=record_fetch, allow_url=allow_web_url, search_source=web_search_source,
+                                      source_links=web_search_links)
                     if can_fetch else None
                 )
                 value = await invoke(current, web_fetch)
@@ -236,6 +241,11 @@ async def generate_with_recovery(
                 if event.get("agreement_id") and dm_service:
                     await dm_service.fulfill_agreement(event["agreement_id"], proof_step)
         issue = diagnose(value) if diagnose else None
+        if web_search_source and getattr(value, "action", None) == "reply_public":
+            page = coordinator.generation_checkpoint(current["id"]).get("web_fetch")
+            receipt = page and page.get("context")
+            if receipt and receipt["status"] != "ok":
+                issue = issue or "网页取材未取得可用来源，保留回复供审核"
         if issue:
             raise GenerationFeedback(
                 issue, original_output=value, kind="style_diagnostic", accepted_value=value

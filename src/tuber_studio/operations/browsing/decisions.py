@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 import unicodedata
 from difflib import SequenceMatcher
@@ -106,6 +107,10 @@ class BrowsingDecisions:
     def _response_actor_data(self, row, data):
         character = self.browsing.store.character(row["character_id"], row["character_version"])
         actor = self.browsing.runtime.identity_snapshot(character, row.get("account_id"))
+        thread = data.get("thread") or {}
+        if data.get("kind") == "reply_public" and (thread.get("target") or {}).get("bvid"):
+            # Own-video notifications carry the title in this adapter field.
+            data = data | {"thread": {key: value for key, value in thread.items() if key != "public_text"}}
         bound = bind_response_actors(data, actor)
         thread = bound.get("thread") or {}
         target, source = thread.get("target") or {}, thread.get("source") or {}
@@ -181,6 +186,20 @@ class BrowsingDecisions:
                     "只看到了片段，可以就那个细节接话。"
                 )
             instruction += RESPONSE_ACTOR_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION
+            if response_input.comment_reply:
+                instruction += (
+                    " 先接当前评论实际问的事，回复引用当前评论。"
+                    "视频投稿者、画面里的人和来评者各按所给身份；信息不足可以问清楚或略过。"
+                    "自己的作品、经历或收藏以记录为准，平台会显示回复对象，text直接写要说的话。"
+                )
+                if response_input.comment_video_available:
+                    instruction += (
+                        " 只有当前原话指向视频细节且需要核查时，选read_more，"
+                        "在source_quote照抄需要核查的原句或短语。原话用本视频指代某个项目时，"
+                        "这一步可先查项目和作者提供的链接；已有信息够用就直接回应。"
+                    )
+                if data.get("video_lookup_quote"):
+                    instruction += " 补到的视频材料仅用于核查video_lookup_quote所指的细节，引用实际支持的字幕或画面。"
             if data.get("bilibili_owner"):
                 instruction += "\n" + BILIBILI_OWNER_INSTRUCTION
         content = (
@@ -234,6 +253,7 @@ class BrowsingDecisions:
                 allow_comments=data.get("allow_comments", True),
                 allow_visual=allow_visual,
                 grouped_comment_refs=response_input.grouped_comment_refs,
+                comment_video_available=response_input.comment_video_available,
             )
         elif schema is CandidateBatchPlan:
             allowed_videos = [item["bvid"] for item in data["candidates"]]
@@ -255,6 +275,7 @@ class BrowsingDecisions:
         diagnose=None,
         source_binding=None,
         max_tokens=None,
+        web_search_links=(),
     ):
         self.browsing._check_round(row)
         if schema is ResponseDecision:
@@ -278,6 +299,19 @@ class BrowsingDecisions:
         )
 
         thread = data.get("thread") or {}
+        target = thread.get("target") or {}
+
+        def allow_web_url(url):
+            host = url.host.rstrip(".")
+            if host != "bilibili.com" and not host.endswith(".bilibili.com"):
+                return True
+            bvid = target["bvid"].casefold()
+            aid = str(target.get("oid") or "")
+            path = url.path.casefold().split("/")
+            return bvid not in path and url.params.get("bvid", "").casefold() != bvid and (
+                not aid or f"av{aid}" not in path and url.params.get("aid") != aid
+            )
+
         profile_uid = (thread.get("source") or {}).get("author_uid")
         relations = self.browsing.runtime.relationships
         profile_revision = relations.profile_revision(
@@ -397,11 +431,13 @@ class BrowsingDecisions:
                         for key, value in data.items()
                         if key != "recent_public_responses"
                     },
+                    **({"web_search_links": web_search_links} if web_search_links else {}),
                 }
             ),
         }
         if response_input is not None:
-            binding["input_format"] = response_input.FORMAT_VERSION
+            binding["input_format"] = (response_input.COMMENT_FORMAT_VERSION if response_input.comment_reply
+                                       else response_input.FORMAT_VERSION)
         elif schema is CandidateBatchPlan:
             binding["input_format"] = "keyed-candidate-priorities-v4"
         if profile_revision is not None:
@@ -432,7 +468,10 @@ class BrowsingDecisions:
             reuse_completed=True,
             diagnose=lambda value: (response_input.diagnose(value) if response_input is not None else None)
             or (diagnose(value) if diagnose else None),
-            allow_web_fetch=response_input is not None,
+            allow_web_fetch=response_input is not None and (not response_input.comment_reply or bool(response_input.source_text)),
+            allow_web_url=allow_web_url if response_input and response_input.comment_reply and target.get("bvid") else None,
+            web_search_source=response_input.source_text if response_input and response_input.comment_reply else None,
+            web_search_links=web_search_links,
         )
         result = response_input.resolve(value) if response_input is not None else value
         if schema is ResponseDecision:
@@ -1266,7 +1305,10 @@ class BrowsingDecisions:
                     row["character_id"], "bilibili", str(uid), account_id=row["account_id"]
                 )
             }
-        if material and kind == "top_level" and material["coverage"] == "sampled_visual":
+        comment_reply = kind == "reply_public"
+        if comment_reply:
+            segments = []
+        elif material and material["coverage"] == "sampled_visual":
             segments = self._video_response_segments(material, allowed)
         else:
             segments = (
@@ -1287,8 +1329,8 @@ class BrowsingDecisions:
             "evidence": segments,
             "thread": {} if kind == "top_level" else context,
             **({"comment_materials": model_comment_materials(comment_materials)} if comment_materials else {}),
-            **({"video_source": self._metadata_summary(material["metadata"])} if material else {}),
-            "coverage": material["coverage"] if material else "public_text",
+            **({"video_source": self._metadata_summary(material["metadata"])} if material and not comment_reply else {}),
+            "coverage": material["coverage"] if material and not comment_reply else "public_text",
             **({"allow_public": allow_public, "allow_comment_like": allow_comment_like}
                if allow_comment_like or not allow_public else {}),
             **({"video_actions": True, "allow_visual": self.browsing.evidence.has_visual_provider()
@@ -1311,6 +1353,16 @@ class BrowsingDecisions:
             data["completed_actions"] = [{"action": "sample_frames", "result": "已补看所引用时码附近的画面"}]
         if not material:
             data["allowed_evidence_ids"] = list(allowed)
+        source_links = ()
+        if (comment_reply and material and (context.get("source") or {}).get("text", "").strip()
+                and (context.get("target") or {}).get("bvid") == material["metadata"].get("bvid")):
+            description = material["metadata"].get("description") or material["metadata"].get("desc") or ""
+            source_links = tuple(re.findall(r"https://[^\s<>\"'，。！、；）]+", description)[:4])
+            # Keep known footage out of the first packet. An exact quote from
+            # this comment is required before any video content is admitted.
+            data["comment_video_available"] = any(
+                segment["id"] in allowed for part in material["parts"] for segment in part["segments"]
+            )
         if kind != "top_level" and context.get("source") and context.get("target"):
             target = context["target"]
             # The current comment remains a real response source even when
@@ -1324,10 +1376,7 @@ class BrowsingDecisions:
                 "resource": target.get("bvid") or "dynamic:" + str(target["oid"]),
                 "comment_id": str(context["source"]["comment_id"]),
             }
-        response = await self._model(
-            row,
-            ResponseDecision,
-            data,
+        instruction = (
             RESPONSE_INSTRUCTION
             + (" comment_materials仅是当前原评的专栏摘录或图片抽样观察，"
                "用当前原评编号引用，依据实际读到的内容。" if comment_materials else "")
@@ -1344,21 +1393,49 @@ class BrowsingDecisions:
                 "video_preference填like/not_interested/neutral，preference_reason说说视频里具体哪点影响了你的偏好。"
                 if video_actions
                 else ""
-            ),
-            metrics,
-            diagnose=lambda value: (
-                self.repetition_reason(value.text, recent, context)
-                or (
-                    "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓"
-                    if operation_output_diagnostics(value.text)["needs_review"]
-                    else None
-                )
-                if value.action in {"reply_public", "handoff_private"}
-                else None
-            ),
+            )
         )
+
+        def diagnose(value):
+            if value.action not in {"reply_public", "handoff_private"}:
+                return None
+            return self.repetition_reason(value.text, recent, context) or (
+                "正文包含大量重复内容；结合表达意图选择保留、修订或暂缓"
+                if operation_output_diagnostics(value.text)["needs_review"]
+                else None
+            )
+
+        response = await self._model(row, ResponseDecision, data, instruction, metrics, diagnose=diagnose,
+                                     web_search_links=source_links)
+        if comment_reply and response.action == "read_more":
+            metadata = material["metadata"]
+            video_source = self._metadata_summary(metadata)
+            if description := metadata.get("description") or metadata.get("desc"):
+                video_source["description"] = description[:1000]
+            followup = data | {
+                "comment_video_available": False,
+                "video_lookup_quote": response.source_quote.strip(),
+                "video_source": video_source,
+                "coverage": material["coverage"],
+                "evidence": self._selected_video_segments(material, allowed),
+            }
+            response = await self._model(
+                row, ResponseDecision, followup, instruction, metrics, diagnose=diagnose, web_search_links=source_links,
+            )
         response._comment_materials = comment_materials
         return response
+
+    @staticmethod
+    def _selected_video_segments(material, allowed):
+        pages = {str(part["cid"]): page for page, part in enumerate(material["metadata"].get("parts", []), 1)}
+        selected = []
+        for part in material["parts"]:
+            cid = str(part["cid"])
+            kind = "画面观察" if part.get("visual") else "字幕"
+            label = f"P{pages[cid]} {kind}" if cid in pages else kind
+            selected.extend(dict(segment, cid=cid, source_label=label)
+                            for segment in part["segments"] if segment["id"] in allowed)
+        return selected
 
     @staticmethod
     def repetition_reason(text, recent, context):

@@ -55,7 +55,7 @@ def test_reference_namespace_has_exact_token_boundaries_and_invocation_local_cit
 
 
 @pytest.mark.parametrize("fetch_ok", [False, True])
-async def test_web_product_needs_no_whitelist_on_completed_generation_reuse(browsing, monkeypatch, fetch_ok):
+async def test_web_product_keeps_its_name_when_reusing_a_comment_decision(browsing, monkeypatch, fetch_ok):
     from tuber_studio import web_fetch
     from tuber_studio.operations.browsing.models import RESPONSE_INSTRUCTION, ResponseDecision
 
@@ -65,7 +65,11 @@ async def test_web_product_needs_no_whitelist_on_completed_generation_reuse(brow
         browsing.account, browsing.runtime.character,
         browsing.configured() | {"autonomous_batch": True}, 0, True,
     )
-    data = {"kind": "reply_public", "evidence": [{"id": "public:42", "text": "你怎么看这款键盘？"}], "thread": {}}
+    data = {
+        "kind": "reply_public",
+        "thread": {"source": {"comment_id": "42", "author_uid": "200", "text": "你怎么看 R84 这款键盘？"}},
+        "allowed_evidence_ids": ["public:42"],
+    }
     calls, fetched = [], []
 
     async def fetch(url):
@@ -76,7 +80,8 @@ async def test_web_product_needs_no_whitelist_on_completed_generation_reuse(brow
 
     async def generate(messages, schema, *, max_tokens):
         calls.append(schema["title"])
-        result = {"web_fetch": "https://example.org/R84"} if len(calls) == 1 else response("R84这款键盘我也想看看。")
+        result = ({"web_fetch": "https://example.org/R84", "source_quote": "R84 这款键盘"}
+                  if len(calls) == 1 else response("R84这款键盘我也想看看。"))
         browsing.runtime.llm.last_content = json.dumps(result, ensure_ascii=False)
         return result
 
@@ -88,6 +93,8 @@ async def test_web_product_needs_no_whitelist_on_completed_generation_reuse(brow
 
     result = await run()
     assert result.text == "R84这款键盘我也想看看。" and result.evidence_ids == ["public:42"]
+    state = browsing.runtime.continuations.get(result._generation_id)["state"]
+    assert state == ("completed" if fetch_ok else "awaiting_review")
     restored = await run()
     assert restored.text == result.text and restored.evidence_ids == result.evidence_ids
     assert calls == ["ResponseDecision", "ResponseDecision"]

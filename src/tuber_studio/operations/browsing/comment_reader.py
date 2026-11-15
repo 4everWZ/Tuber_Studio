@@ -17,6 +17,7 @@ from ...providers import public_error
 from ...publication_errors import SendLimitReached
 from ...store import dump
 from .comment_timeline import observe_thread, resource_key
+from .inputs import ResponseDecisionInput
 from .models import ResponseDecision
 from .quotas import DailyReplyLimitReached, day_window
 from .thread_context import comment_source, comment_thread_context, operator_reply, read_scoped_thread
@@ -111,6 +112,9 @@ class CommentProgress:
                 # Existing intents still own their targets, but bare decisions
                 # without an original anchor cannot authorize a new one.
                 return None
+            if (decision.action == "reply_public"
+                    and generation.get("input_format") != ResponseDecisionInput.COMMENT_FORMAT_VERSION):
+                return None
             decision._generation_id = generation.get("id")
             decision._generation_identity = generation.get("identity")
             decision._memory_audit = generation.get("memory_audit")
@@ -128,6 +132,7 @@ class CommentProgress:
                 dump(decision.model_dump() | {"generation": {
                     "id": decision._generation_id, "identity": decision._generation_identity,
                     "source_id": str(source["comment_id"]),
+                    "input_format": ResponseDecisionInput.COMMENT_FORMAT_VERSION,
                     **({"memory_audit": decision._memory_audit} if decision._memory_audit else {}),
                     **({"comment_materials": decision._comment_materials} if decision._comment_materials else {}),
                 }}),

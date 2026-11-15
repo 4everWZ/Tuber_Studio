@@ -372,12 +372,15 @@ class BrowsingPublication:
         if previous and previous.get("identity_version") == current["identity_version"]:
             return
         materials = self._intent_materials(row)
-        segments = [segment for material in materials for segment in browsing._segments(material)]
         target = row["target"]
         model_target = {key: value for key, value in target.items() if key not in {
             "generation_identity", "source_event", "source_discussion", "comment_materials",
         }}
         if row["kind"] == "reply_public":
+            # Refresh the wording with the originally cited material only.
+            cited = set(row["evidence"])
+            segments = [segment for material in materials
+                        for segment in browsing.decisions._selected_video_segments(material, cited)]
             if target.get("source_event"):
                 thread = await browsing._read(browsing.adapter.read_public_thread, target["source_event"])
             elif hasattr(browsing.adapter, "read_video_thread"):
@@ -397,6 +400,7 @@ class BrowsingPublication:
             else:
                 thread = thread | {"target": model_target}
         else:
+            segments = [segment for material in materials for segment in browsing._segments(material)]
             thread = {"target": model_target,
                       "video": [material["metadata"] for material in materials]}
         allowed = [segment["id"] for segment in segments]

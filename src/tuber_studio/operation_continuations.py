@@ -474,12 +474,14 @@ class ContinuationCoordinator:
 
     def generation_checkpoint(self, identity):
         steps = self.store.all(
-            "SELECT id,phase,status,output,resume_value FROM operation_continuation_steps "
+            "SELECT id,phase,status,output,context,resume_value FROM operation_continuation_steps "
             "WHERE continuation_id=? AND resume_value IS NOT NULL ORDER BY id",
             (identity,),
         )
         for step in steps:
             step["resume_value"] = json.loads(step["resume_value"])
+            if step["context"] is not None:
+                step["context"] = json.loads(step["context"])
             if step["output"] is not None:
                 step["output"] = json.loads(step["output"])
         return {step["phase"]: step for step in steps}

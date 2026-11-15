@@ -370,6 +370,7 @@ class ResponseDecision(StrictModel):
     evidence_ids: list[str] = Field(default_factory=list, max_length=8)
     covered_comments: list[str] = Field(default_factory=list, max_length=8)
     visual_targets: list[VisualTarget] = Field(default_factory=list, max_length=8)
+    source_quote: str = Field(default="", max_length=240)
 
     @model_validator(mode="after")
     def visual_targets_only_for_watch_frames(self):
@@ -475,6 +476,7 @@ def response_schema(
     allow_comments=True,
     allow_visual=True,
     grouped_comment_refs=(),
+    comment_video_available=False,
 ):
     """Constrain source IDs and channel consistency before the model emits text."""
     reasons = {
@@ -493,6 +495,8 @@ def response_schema(
                 "finish": ["specific_detail", "light_interaction", "no_interest"],
             }
         )
+    elif comment_video_available:
+        reasons["read_more"] = ["insufficient_evidence"]
     branches = []
     for action, allowed_reasons in reasons.items():
         if action == "watch_frames" and not allow_visual:
@@ -501,6 +505,7 @@ def response_schema(
             continue
         sending = action == "reply_public"
         grouped_reply = action == "reply_public" and grouped_comment_refs
+        comment_lookup = action == "read_more" and comment_video_available
         if sending and not evidence_ids:
             continue
         branches.append(
@@ -534,6 +539,8 @@ def response_schema(
                         "items": {"type": "string", "enum": sorted(grouped_comment_refs)}}} if grouped_reply else {}),
                     **({"visual_targets": visual_target_schema(evidence_ids)}
                        if action == "watch_frames" and evidence_ids else {}),
+                    **({"source_quote": {"type": "string", "minLength": 2, "maxLength": 240}}
+                       if comment_lookup else {}),
                     "text": {
                         "type": "string",
                         "minLength": 1 if sending else 0,
@@ -543,7 +550,8 @@ def response_schema(
                 },
                 "required": ["reason", "explanation", "action", "evidence_ids", "text"]
                 + (["video_preference", "preference_reason"] if video_actions else [])
-                + (["covered_comments"] if grouped_reply else []),
+                + (["covered_comments"] if grouped_reply else [])
+                + (["source_quote"] if comment_lookup else []),
             }
         )
     schema = {"title": "ResponseDecision", "type": "object", "oneOf": branches}

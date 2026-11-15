@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ...operation_generation import hold_comment_body
+from ...operation_text import verified_comment_quote
 from ...subtitle_presentation import (
     CitationBlock,
     SourcePart,
@@ -403,6 +404,7 @@ class ResponseDecisionInput:
     """One invocation-local alias per original reference; never merge citations."""
 
     FORMAT_VERSION = "public-response-reference-lines-v8"
+    COMMENT_FORMAT_VERSION = "comment-response-source-first-v1"
 
     def __init__(self, data):
         records = deepcopy(data.get("evidence", []))
@@ -444,17 +446,22 @@ class ResponseDecisionInput:
         self.allowed_aliases = frozenset(ref.alias for ref in refs)
         self._by_alias = {ref.alias: ref for ref in refs}
         thread = data.get("thread") or {}
-        self.recipient_name = (thread.get("source") or {}).get("author_name") or ""
+        source = thread.get("source") or {}
+        self.comment_reply = data.get("kind") == "reply_public"
+        self.comment_video_available = data.get("comment_video_available", False)
+        self.source_text = source.get("text") or ""
+        self.recipient_name = source.get("author_name") or ""
         self.allow_public = data.get("allow_public", True)
         self.allow_comment_like = data.get("allow_comment_like", False)
         group = {"public:" + str(item["comment_id"]) for item in thread.get("grouped_comments", [])}
         self.grouped_comment_refs = frozenset(ref.alias for ref in refs if ref.canonical_id in group)
         self.anchor_alias = next((ref.alias for ref in refs if ref.canonical_id ==
-            "public:" + str((thread.get("source") or {}).get("comment_id"))), None)
+            "public:" + str(source.get("comment_id"))), None)
         header = deepcopy(
             {key: value for key, value in data.items() if key not in {"evidence", "allowed_evidence_ids"}}
         )
-        header = compact_actor_context(header)
+        anchor_heading = f"[{self.anchor_alias}] 当前评论原文" if self.comment_reply and self.anchor_alias else None
+        header = compact_actor_context(header, current_text_ref=anchor_heading)
         if "self_actor" in header:
             header = {
                 **{key: header[key] for key in ("self_actor", "reply_target") if key in header},
@@ -465,13 +472,13 @@ class ResponseDecisionInput:
         for ref in refs:
             segment = ref.source()
             if segment is None:
-                source = (data.get("thread") or {}).get("source") or {}
                 if ref.canonical_id == "public:" + str(source.get("comment_id")) and isinstance(
                     source.get("text"), str
                 ):
                     if header.get("reply_target"):
                         header["reply_target"]["evidence_ref"] = ref.alias
-                        comment_lines.append(f"[{ref.alias}] 当前评论原文：见reply_target.text")
+                        if not anchor_heading:
+                            comment_lines.append(f"[{ref.alias}] 当前评论原文：见reply_target.text")
                     else:
                         comment_lines.append(f"[{ref.alias}] 当前评论原文：\n{source['text']}")
                 elif ref.alias in self.grouped_comment_refs:
@@ -502,6 +509,8 @@ class ResponseDecisionInput:
             }
             if extra:
                 lines.append("补充：" + json.dumps(extra, ensure_ascii=False, separators=(",", ":")))
+        if anchor_heading and header.get("reply_target"):
+            lines.append(f"{anchor_heading}：\n{self.source_text}")
         self._presentation = (
             json.dumps(header, ensure_ascii=False, separators=(",", ":"))
             + "\n\n所选材料：\n"
@@ -520,6 +529,13 @@ class ResponseDecisionInput:
             raise ValueError("回应引用不属于本次短编号")
         if any(target.evidence_id not in self.allowed_aliases for target in value.visual_targets):
             raise ValueError("画面时点不属于本次短编号")
+        if self.comment_reply and value.action == "read_more":
+            quote = verified_comment_quote(self.source_text, value.source_quote)
+            if not self.comment_video_available or not quote:
+                raise ValueError("补查视频须引用当前评论里需要核查的原话")
+            value.source_quote = quote
+        elif value.source_quote:
+            raise ValueError("仅评论补查接受原话定位")
         if value.action in {"reply_public", "handoff_private"} and not value.evidence_ids:
             raise ValueError("回应引用为空")
         if value.action == "reply_public" and not self.allow_public:
@@ -540,6 +556,8 @@ class ResponseDecisionInput:
         """Keep a defective body editable without admitting it to automatic send."""
         if value.action == "reply_public":
             hold_comment_body(value, value.text, recipient_name=self.recipient_name)
+            if self.comment_reply and self.anchor_alias not in value.evidence_ids:
+                return "回复只引用了背景材料，缺少当前评论的引用"
         aliases = {alias.casefold() for alias in re.findall(
             r"(?<![A-Za-z0-9_])ref:[1-9][0-9]*(?![A-Za-z0-9_])", value.text, re.IGNORECASE,
         )}

@@ -19,6 +19,7 @@ _FIELD_ASSIGNMENT = re.compile(
 _COMMENT_PROTOCOL_FIELDS = {
     "reply_target", "evidence_ids", "covered_comments", "video_preference",
     "preference_reason", "contact_purpose", "contact_trigger", "reply_to", "animation_id",
+    "source_quote", "web_search", "web_fetch",
 }
 
 
@@ -44,6 +45,15 @@ def validate_operation_text(text, *, label="正文"):
     if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", text):
         raise ValueError(label + "含无效控制字符")
     return text
+
+
+def verified_comment_quote(source, quote):
+    quote = quote.strip()
+    if len(quote) >= 2 and quote in source:
+        return quote
+    # Models can copy the short presentation reference along with the quote.
+    text = re.sub(r"^\[ref:[1-9][0-9]*\]\s*", "", quote)
+    return text if len(text) >= 2 and text in source else None
 
 
 def comment_body_issue(text, *, recipient_name=""):

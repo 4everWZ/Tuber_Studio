@@ -251,14 +251,15 @@ def test_compact_public_experience_references_only_exact_same_source_quote():
         assert compact_actor_context(unrelated)["own_public_experiences"][0]["public_sources"] == [changed]
 
 
-async def test_video_comment_can_cite_original_comment_alongside_video_and_publish_locally(browsing, monkeypatch):
+@pytest.mark.parametrize("lookup", [False, True])
+async def test_video_comment_uses_cached_video_only_after_quoting_the_request(browsing, monkeypatch, lookup):
     from test_browsing import BV
 
     row = await prepared_row(browsing)
     key, material = await browsing._prepare_evidence(BV, row["config"])
     source = {
         "comment_id": "501", "thread_id": "501", "parent_comment_id": None,
-        "platform_user_id": "200", "display_name": "观众", "content": "@汐 可以看看这条鱼的视频",
+        "platform_user_id": "200", "display_name": "观众", "content": "@汐 视频里鸡蛋浮起来是加了什么？",
         "mentions": [{"uid": "300", "name": "汐"}],
     }
     calls = []
@@ -267,11 +268,23 @@ async def test_video_comment_can_cite_original_comment_alongside_video_and_publi
         calls.append(copy.deepcopy(messages))
         content = messages[-1]["content"]
         alias = re.search(r"\[(ref:\d+)\] 当前评论原文", content)[1]
-        assert content.index("当前评论原文") < content.index("加盐之后")
+        actions = {b["properties"]["action"]["enum"][0] for b in schema["oneOf"]}
+        evidence = [alias]
+        if len(calls) == 1:
+            assert "加盐之后" not in content and "盐水实验" not in content
+            assert "read_more" in actions
+            if lookup:
+                return {"action": "read_more", "reason": "insufficient_evidence", "explanation": "核查视频中的步骤",
+                        "source_quote": "鸡蛋浮起来是加了什么", "evidence_ids": []}
+        else:
+            assert "read_more" not in actions
+            assert "video_lookup_quote" in content
+            assert content.rindex("当前评论原文") > content.index("加盐之后")
+            evidence.append(re.search(r"\[(ref:\d+)\|[^]]+\]P1 字幕 加盐之后", content)[1])
         return {
-            "action": "reply_public", "reason": "specific_detail", "explanation": "想顺着观众安利视频的话聊一句",
-            "text": "有人给朋友安利视频呢，我也来凑个热闹，这条鱼的出场方式还挺有意思。",
-            "evidence_ids": [alias],
+            "action": "reply_public", "reason": "specific_detail", "explanation": "接观众问鸡蛋的事",
+            "text": "加了盐，鸡蛋就浮起来啦。" if lookup else "你指的是鸡蛋浮起来前刚倒下去的东西吗？",
+            "evidence_ids": evidence,
         }
 
     async def read_reply(target):
@@ -284,12 +297,50 @@ async def test_video_comment_can_cite_original_comment_alongside_video_and_publi
         row, material, key, {segment["id"] for segment in browsing._segments(material)},
         source, [source], {"lock_wait_seconds": 0},
     )
-    assert len(calls) == 1 and result["evidence"] == ["public:501"]
+    expected = ["11:0", "public:501"] if lookup else ["public:501"]
+    assert len(calls) == (2 if lookup else 1) and result["evidence"] == expected
     assert result["material_keys"] == [key] and not browsing.adapter.sent
     browsing.review(result["id"], "approve")
     sent = await browsing.publish(result["id"])
-    assert sent["status"] == "published" and sent["evidence"] == ["public:501"]
+    assert sent["status"] == "published" and sent["evidence"] == expected
     assert browsing.adapter.sent == [(result["target"], result["text"])]
+
+
+@pytest.mark.parametrize("readable", [False, True])
+async def test_automatic_comment_uses_search_receipt_to_gate_publication(browsing, monkeypatch, readable):
+    from tuber_studio import web_fetch
+
+    row = await prepared_row(browsing)
+    monkeypatch.setattr(browsing.runtime.llm, "supports_operation_web_fetch", True, raising=False)
+    queries = []
+
+    async def discover(query):
+        queries.append(query)
+        return ["https://example.org/docs"] if readable else []
+
+    async def read(url):
+        return {"url": url, "title": "工具手册", "excerpt": "导出只支持单声道。", "truncated": False}
+
+    async def generate(messages, schema, *, max_tokens):
+        if not queries:
+            return {"web_search": ["工具 单声道导出"], "source_quote": "[ref:1] 能导出单声道吗"}
+        assert ("导出只支持单声道" in messages[-1]["content"]) == readable
+        return {"action": "reply_public", "reason": "specific_detail", "explanation": "回答导出格式",
+                "evidence_ids": ["ref:1"], "text": "它支持单声道导出。"}
+
+    monkeypatch.setattr(web_fetch, "search_public_web", discover)
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", read)
+    monkeypatch.setattr(browsing.runtime.llm, "generate_json", generate)
+    context = {"source": {"comment_id": "501", "author_uid": "200", "text": "请问这工具能导出单声道吗？"},
+               "target": {"oid": "900", "root": "501", "parent": "501"}}
+    value = await browsing.decisions._response(row, None, context, {"public:501"}, "reply_public",
+                                               {"lock_wait_seconds": 0})
+    task = browsing.runtime.continuations.get(value._generation_id)
+    assert task["state"] == ("completed" if readable else "awaiting_review")
+    step, = [item for item in task["revisions"] if item["phase"] == "web_fetch"]
+    assert step["context"]["tool"] == "web_search"
+    assert step["status"] == ("ok" if readable else "unavailable")
+    assert not browsing.adapter.sent
 
 
 async def test_response_recalls_own_public_incident_from_this_floor_without_keyword_trigger(browsing):

@@ -2,12 +2,18 @@
 
 import asyncio
 import ipaddress
+import re
 import socket
 import time
 from html.parser import HTMLParser
+from typing import Annotated
+from xml.etree.ElementTree import ParseError
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
+
+from .operation_text import verified_comment_quote
+from .web_search import search_public_web
 
 FETCH_TIMEOUT = 3.0
 MAX_DOWNLOAD = 128 * 1024
@@ -19,6 +25,12 @@ HTTPS_URL_PATTERN = (
 )
 REDIRECTS = {301, 302, 303, 307, 308}
 HIDDEN_TAGS = {"script", "style", "noscript", "template", "svg", "nav", "header", "footer"}
+GITHUB_REPOSITORY = re.compile(r"^/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/?$")
+TECHNICAL_TERM = re.compile(r"[A-Za-z][A-Za-z0-9]{2,}")
+
+
+def technical_terms(text):
+    return set(TECHNICAL_TERM.findall(text.casefold()))
 WEB_FETCH_INSTRUCTION = (
     '按当前材料回应。需要补查网页时，用 {"web_fetch":"完整HTTPS链接"} 读取摘录。'
 )
@@ -30,6 +42,20 @@ class WebFetchRequest(BaseModel):
     web_fetch: str = Field(min_length=1, max_length=MAX_URL, pattern=HTTPS_URL_PATTERN)
 
 
+class CommentWebFetchRequest(WebFetchRequest):
+    source_quote: str = Field(min_length=2, max_length=240)
+
+
+class WebSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    web_search: list[Annotated[str, Field(min_length=2, max_length=160)]] = Field(min_length=1, max_length=2)
+    source_quote: str = Field(min_length=2, max_length=240)
+
+
+WEB_SEARCH_SCHEMA = WebSearchRequest.model_json_schema()
+
+
 WEB_FETCH_SCHEMA = WebFetchRequest.model_json_schema()
 # Put the existing URL resource limit in the native pattern itself. An
 # unbounded pattern lets a small model enumerate links until the reply budget
@@ -37,6 +63,8 @@ WEB_FETCH_SCHEMA = WebFetchRequest.model_json_schema()
 # Split the bound: the deployed native engine rejects single finite repeats
 # above 2000 and can otherwise fall back to unconstrained generation.
 WEB_FETCH_SCHEMA["properties"]["web_fetch"] = {"type": "string", "pattern": HTTPS_URL_PATTERN}
+COMMENT_WEB_FETCH_SCHEMA = CommentWebFetchRequest.model_json_schema()
+COMMENT_WEB_FETCH_SCHEMA["properties"]["web_fetch"] = WEB_FETCH_SCHEMA["properties"]["web_fetch"]
 
 
 def source_url(value):
@@ -47,54 +75,119 @@ def source_url(value):
 class OperationWebFetch:
     """Offer one model-selected page before generating the task result."""
 
-    def __init__(self, guard, *, context=None, record=None):
+    def __init__(self, guard, *, context=None, record=None, allow_url=None, search_source=None, source_links=()):
         self.guard = guard
         self.context = context
         self.record = record
+        self.allow_url = allow_url
+        self.search_source = search_source
+        self.source_links = source_links
 
     async def complete(self, messages, schema, invoke):
         if self.context is None:
             instruction = WEB_FETCH_INSTRUCTION
+            tools = [WEB_FETCH_SCHEMA]
+            if self.search_source:
+                tools = [COMMENT_WEB_FETCH_SCHEMA, WEB_SEARCH_SCHEMA]
+                instruction += (
+                    ' 当前评论问到不熟悉的术语、外部事实或具体工具能力时，先查证。'
+                    ' 用 {"web_search":["检索词"],"source_quote":"需要查证的原评片段"}，'
+                    ' 查询只带公开术语和问题关键词；涉及两个项目时可分成两条短查询。'
+                    ' 已知具体网址才用web_fetch，同时填写source_quote。'
+                    ' 楼里其他人的话用来理解来龙去脉；这一条只是分享近况时，直接接话。'
+                )
             choices = schema.get("oneOf")
             wire_schema = (
-                schema | {"oneOf": [*choices, WEB_FETCH_SCHEMA]}
+                schema | {"oneOf": [*choices, *tools]}
                 if choices
-                else {"type": "object", "oneOf": [schema, WEB_FETCH_SCHEMA]}
+                else {"type": "object", "oneOf": [schema, *tools]}
             )
             choice = await invoke(
                 [*messages, {"role": "system", "content": instruction}],
                 wire_schema,
             )
-            if "web_fetch" not in choice:
+            if "web_fetch" not in choice and "web_search" not in choice:
                 return choice
-            request = WebFetchRequest.model_validate(choice)
             self.guard()
             started = time.monotonic()
-            result = await self._read(request.web_fetch)
-            receipt = {k: v for k, v in result.items() if k != "excerpt"} | {
-                "elapsed_ms": round((time.monotonic() - started) * 1000)
-            }
-            if result["status"] == "ok":
-                excerpt = result["excerpt"].replace("<", "\\u003c").replace(">", "\\u003e")
-                origin = (
-                    "" if result["url"] == str(source_url(request.web_fetch)) else f"\n来源 {result['url']}"
-                )
-                content = f"网页摘录：{excerpt}{origin}"
+            if "web_search" in choice:
+                request = WebSearchRequest.model_validate(choice)
+                request.source_quote = self._check_quote(request.source_quote)
+                receipt, content = await self._search(request)
             else:
-                content = "本轮未读到网页正文。结合现有材料回应当前问题。"
+                if self.search_source:
+                    request = CommentWebFetchRequest.model_validate(choice)
+                    request.source_quote = self._check_quote(request.source_quote)
+                else:
+                    request = WebFetchRequest.model_validate(choice)
+                result = await self._read(request.web_fetch)
+                receipt = {k: v for k, v in result.items() if k != "excerpt"}
+                if result["status"] == "ok":
+                    origin = "" if result["url"] == str(source_url(request.web_fetch)) else f"\n来源 {result['url']}"
+                    content = f"网页摘录：{result['excerpt']}{origin}"
+                else:
+                    content = "本轮未读到网页正文。结合现有材料回应当前问题。"
+            receipt["elapsed_ms"] = round((time.monotonic() - started) * 1000)
             selection = request.model_dump_json().replace("<", "\\u003c").replace(">", "\\u003e")
             self.context = [
                 {"role": "assistant", "content": selection},
-                {"role": "user", "content": content},
+                {"role": "user", "content": content.replace("<", "\\u003c").replace(">", "\\u003e")},
             ]
             if self.record is not None:
                 self.record(receipt, self.context)
             self.guard()
         return await invoke([*messages, *self.context], schema)
 
+    def _check_quote(self, quote):
+        matched = verified_comment_quote(self.search_source or "", quote)
+        if not matched:
+            raise ValueError("网页取材须定位当前评论原话")
+        return matched
+
+    async def _search(self, request):
+        async def discover(query):
+            try:
+                return await search_public_web(query)
+            except (TimeoutError, httpx.HTTPError, ValueError, ParseError):
+                return []
+
+        async def discover_and_read():
+            hits = await asyncio.gather(*(discover(query) for query in dict.fromkeys(request.web_search)))
+            urls = list(dict.fromkeys(url for group in hits for url in group if url != linked))
+            return await asyncio.gather(*(self._read(url) for url in urls))
+
+        # A project link supplied on the source itself is a better lead than a
+        # ranking for an ambiguous acronym. Only use it when the quote names it.
+        terms = technical_terms(self.search_source or request.source_quote)
+        linked = next((url for url in self.source_links if terms & technical_terms(url)), None)
+        if linked:
+            direct, found = await asyncio.gather(self._read(linked), discover_and_read())
+            if direct["status"] == "ok":
+                # Once the named project has its own source, add search hits
+                # for other named subjects rather than competing acronym matches.
+                other_terms = terms - technical_terms(linked)
+                found = [page for page in found if page["status"] == "ok"
+                         and other_terms & technical_terms(page["url"] + " " + page["title"])]
+            pages = [direct, *found]
+        else:
+            pages = await discover_and_read()
+        sources = [page for page in pages if page["status"] == "ok" and page["excerpt"]]
+        receipt = {"tool": "web_search", "status": "ok" if sources else "unavailable",
+                   "sources": [{k: page[k] for k in ("url", "title", "truncated")} for page in sources]}
+        content = (
+            "公开网页取材。只把确实读到且能回答原问题的部分作为依据。"
+            "能确认一部分时先回答这一部分，再说明还有哪一点未查到。"
+        )
+        for page in sources:
+            content += f"\n\n来源 {page['url']}\n{page['title']}\n{page['excerpt']}"
+        if not sources:
+            content += " 本次没有读到可用来源。可以说明查不到、询问缺少的信息或略过。"
+        return receipt, content
+
     async def _read(self, value):
         try:
-            return {"status": "ok", **await fetch_excerpt(value)}
+            options = {"allow_url": self.allow_url} if self.allow_url is not None else {}
+            return {"status": "ok", **await fetch_excerpt(value, **options)}
         except TimeoutError:
             return {"status": "timeout"}
         except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError, LookupError):
@@ -154,10 +247,11 @@ async def public_https_address(url):
     return host, address
 
 
-async def fetch_excerpt(value):
+async def fetch_excerpt(value, *, allow_url=None):
     if not 1 <= len(value) <= MAX_URL or any(c.isspace() or c == "\\" for c in value):
         raise ValueError("网页地址格式无效")
     url = source_url(value)
+    try_readme = True
     async with (
         asyncio.timeout(FETCH_TIMEOUT),
         httpx.AsyncClient(
@@ -167,23 +261,35 @@ async def fetch_excerpt(value):
         ) as client,
     ):
         for _ in range(3):
-            host, address = await public_https_address(url)
+            if allow_url is not None and not allow_url(url):
+                raise ValueError("网页已由当前任务的内容来源管理")
+            resource, accept = url, "text/html, text/plain, application/xhtml+xml, application/json"
+            if (try_readme and url.host == "github.com" and url.scheme == "https"
+                    and not url.userinfo and url.port is None
+                    and (repo := GITHUB_REPOSITORY.fullmatch(url.path))):
+                owner, name = repo.groups()
+                resource = httpx.URL(f"https://api.github.com/repos/{owner}/{name.removesuffix('.git')}/readme")
+                accept = "application/vnd.github.raw+json"
+            host, address = await public_https_address(resource)
             # Preserve the original Host and TLS verification while connecting only to the checked IP.
-            target = url.copy_with(host=address)
+            target = resource.copy_with(host=address)
             client.cookies.clear()
             async with client.stream(
                 "GET",
                 target,
                 headers={
                     "Host": f"[{host}]" if ":" in host else host,
-                    "Accept": "text/html, text/plain, application/xhtml+xml, application/json",
+                    "Accept": accept,
                     "Accept-Encoding": "gzip, deflate, identity",
                     "User-Agent": "TuberStudio-WebFetch/1.0",
                 },
                 extensions={"sni_hostname": host},
             ) as response:
+                if resource != url and response.status_code in {403, 404, 429}:
+                    try_readme = False
+                    continue
                 if response.status_code in REDIRECTS and (location := response.headers.get("location")):
-                    url = source_url(url.join(location))
+                    url = source_url(resource.join(location))
                     continue
                 response.raise_for_status()
                 return await read_excerpt(url, response)
@@ -192,7 +298,7 @@ async def fetch_excerpt(value):
 
 async def read_excerpt(url, response):
     media = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if not (media.startswith("text/") or media in {"application/xhtml+xml", "application/json"}):
+    if not (media.startswith("text/") or media in {"application/xhtml+xml", "application/json", "application/vnd.github.raw+json"}):
         raise ValueError("网页没有返回可读文本")
     encodings = response.headers.get("content-encoding", "identity").lower().split(",")
     if any(encoding.strip() not in {"identity", "gzip", "deflate"} for encoding in encodings):

@@ -11,6 +11,60 @@ from pydantic import ValidationError
 from tuber_studio import web_fetch
 
 
+@pytest.mark.parametrize("readable", [False, True])
+async def test_public_comment_search_opens_sources_instead_of_returning_search_snippets(monkeypatch, readable):
+    urls_opened, queries, receipts = [], [], []
+
+    async def discover(query):
+        queries.append(query)
+        return ["https://example.org/project", "https://example.org/unavailable"]
+
+    async def read(url):
+        urls_opened.append(url)
+        if readable and url.endswith("/project"):
+            return {"url": url, "title": "项目文档", "excerpt": "可以测量音高。", "truncated": False}
+        raise ValueError("来源不可读")
+
+    async def invoke(messages, schema):
+        if not any(message["role"] == "assistant" for message in messages):
+            assert ["web_search", "source_quote"] == schema["oneOf"][-1]["required"]
+            return {"web_search": ["产品 音高", "产品 官方文档"], "source_quote": "如何测音高"}
+        assert "https://example.org/unavailable" not in messages[-1]["content"]
+        assert ("可以测量音高" in messages[-1]["content"]) == readable
+        return {"action": "reply_public"}
+
+    monkeypatch.setattr(web_fetch, "search_public_web", discover)
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", read)
+    tool = web_fetch.OperationWebFetch(lambda: None, search_source="请问这个产品如何测音高？",
+                                      record=lambda receipt, _: receipts.append(receipt))
+    assert await tool.complete([], {"type": "object"}, invoke) == {"action": "reply_public"}
+    assert queries == ["产品 音高", "产品 官方文档"]
+    assert urls_opened == ["https://example.org/project", "https://example.org/unavailable"]
+    assert receipts[0]["tool"] == "web_search"
+    assert receipts[0]["status"] == ("ok" if readable else "unavailable")
+
+
+async def test_search_keeps_the_linked_project_and_other_subjects_from_the_comment(monkeypatch):
+    project = "https://github.com/owner/xyz-audio"
+    competing = "https://example.org/XYZ-desktop"
+    counterpart = "https://example.com/ABC-converter"
+
+    async def discover(_):
+        return [competing, counterpart]
+
+    async def read(url):
+        return {"url": url, "title": url, "excerpt": "文档内容", "truncated": False}
+
+    monkeypatch.setattr(web_fetch, "search_public_web", discover)
+    monkeypatch.setattr(web_fetch, "fetch_excerpt", read)
+    tool = web_fetch.OperationWebFetch(lambda: None, source_links=[project])
+    receipt, content = await tool._search(web_fetch.WebSearchRequest(
+        web_search=["XYZ ABC 比较"], source_quote="XYZ 可以检查 ABC 的导出吗？",
+    ))
+    assert [page["url"] for page in receipt["sources"]] == [project, counterpart]
+    assert competing not in content
+
+
 @pytest.mark.parametrize(("encoding", "compress"), [("gzip", gzip.compress), ("deflate", zlib.compress)])
 async def test_compressed_page_is_decoded_and_truncated_by_decoded_size(monkeypatch, encoding, compress):
     class Stream(httpx.AsyncByteStream):
