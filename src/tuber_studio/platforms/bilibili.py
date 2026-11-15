@@ -166,6 +166,14 @@ class BilibiliAdapter:
     async def close(self):
         await self.client.aclose()
 
+    async def public_profile(self, uid):
+        uid = _positive_id(uid)
+        data = await self._get("/x/web-interface/card", {"mid": uid})
+        card = data.get("card")
+        if not isinstance(card, dict) or _positive_id(card.get("mid")) != uid:
+            raise ValueError("B 站返回的资料与所填 UID 不一致")
+        return {"uid": uid, "name": card.get("name"), "avatar_url": card.get("face")}
+
     async def account_profile(self):
         if not self._sessdata:
             raise BilibiliAccountExpired("尚未配置B站登录")

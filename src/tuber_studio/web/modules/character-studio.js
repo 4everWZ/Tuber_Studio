@@ -24,9 +24,35 @@ function renderActivation(model) {
   }
 }
 
+function renderOwner(owner) {
+  const profile = $("oc-owner-profile");
+  if (!profile) return;
+  const avatar = $("oc-owner-avatar");
+  const image = avatar.querySelector("img");
+  const uid = owner?.uid;
+  const canLink = typeof uid === "string" && /^[1-9][0-9]{0,19}$/.test(uid) && typeof owner.name === "string";
+  profile.hidden = !canLink;
+  avatar.hidden = !canLink || !/^https:\/\/i[012]\.hdslb\.com\/bfs\/[\w/.~-]+$/.test(owner.avatar_url || "");
+  if (avatar.hidden) image.removeAttribute("src");
+  else image.src = owner.avatar_url;
+  if (canLink) {
+    profile.textContent = `${owner.name} · UID ${uid}`;
+    profile.href = `https://space.bilibili.com/${uid}`;
+  } else {
+    profile.removeAttribute("href");
+  }
+  $("oc-owner-status").textContent = "";
+  $("oc-bilibili-owner").removeAttribute("aria-invalid");
+}
+
 export function syncCharacterJsonToVisual(character) {
   if (!character) return;
   if ($("oc-name")) $("oc-name").value = character.name || "";
+  if ($("oc-bilibili-owner")) {
+    const owner = character.bilibili_owner;
+    $("oc-bilibili-owner").value = typeof owner === "string" ? owner : owner?.uid || "";
+    renderOwner(owner);
+  }
   if ($("oc-identity")) $("oc-identity").value = character.core?.identity || "";
   if ($("oc-background")) $("oc-background").value = character.core?.background || "";
   if ($("oc-traits")) {
@@ -51,6 +77,11 @@ export function syncVisualToCharacterJson(model, changedId) {
   const charObj = editableCard(JSON.parse($("character-editor").value));
   const changed = id => !changedId || changedId === id;
   if (changed("oc-name")) charObj.name = $("oc-name").value.trim();
+  if (changed("oc-bilibili-owner") && $("oc-bilibili-owner")) {
+    const account = $("oc-bilibili-owner").value.trim();
+    if (account !== charObj.bilibili_owner?.uid) charObj.bilibili_owner = account || null;
+    renderOwner(charObj.bilibili_owner);
+  }
 
   charObj.core = charObj.core || {};
   if (changed("oc-identity")) charObj.core.identity = $("oc-identity").value.trim();
@@ -84,7 +115,8 @@ export function syncVisualToCharacterJson(model, changedId) {
 export function setCharacterEditor(character, model) {
   model.character = character;
   $("character-editor").value = JSON.stringify(editableCard(character), null, 2);
-  ["oc-name", "character-editor", "save-character", "reset-character", "activate-character", "delete-character"].forEach(id => {
+  ["oc-name", "oc-bilibili-owner", "oc-owner-lookup", "oc-owner-current",
+    "character-editor", "save-character", "reset-character", "activate-character", "delete-character"].forEach(id => {
     if ($(id) && $(id).getAttribute?.("aria-busy") !== "true") $(id).disabled = false;
   });
   $("editor-title").textContent = `编辑角色卡 · ${character.name || character.id}`;
@@ -103,6 +135,9 @@ export function renderCharacterList(model, { busy, node, onSelect }) {
   model.characters.forEach(character => {
     const button = node("button", character.name || character.id, character.id === model.characterId ? "selected" : "");
     if (character.id === model.status?.character?.id) button.append(node("small", " · 已激活"));
+    if (character.bilibili_owner?.name) {
+      button.append(node("small", `B 站号主 · ${character.bilibili_owner.name}`, "hint character-list-owner"));
+    }
     button.addEventListener("click", () => busy(button, async () => {
       if (model.characterDirty && !confirm("角色配置有未保存修改。放弃修改并切换所选角色？")) return;
       await onSelect(character.id);
@@ -168,7 +203,7 @@ export function initCharacterStudioUI(model, {
   });
 
   const visualIds = [
-    "oc-name", "oc-identity", "oc-background", "oc-traits",
+    "oc-name", "oc-bilibili-owner", "oc-identity", "oc-background", "oc-traits",
     "oc-min-chars", "oc-max-chars", "oc-catchphrases", "oc-instructions",
     "oc-voice-profile", "oc-avatar-manifest"
   ];
@@ -201,6 +236,48 @@ export function initCharacterStudioUI(model, {
   };
 
   const doRenderList = () => renderCharacterList(model, { busy, node, onSelect: doSelect });
+
+  let ownerRequest = 0;
+  async function lookupOwner(useCurrent) {
+    const request = ++ownerRequest;
+    const input = $("oc-bilibili-owner");
+    const status = $("oc-owner-status");
+    const account = input.value.trim();
+    const selection = model.characterSelection;
+    const character = model.character;
+    const isCurrent = () => request === ownerRequest && selection === model.characterSelection &&
+      character === model.character && input.value.trim() === account;
+    if (!useCurrent && !account) {
+      status.textContent = "请输入 UID 或个人空间链接。";
+      input.focus();
+      return;
+    }
+    input.removeAttribute("aria-invalid");
+    status.textContent = "正在查询 B 站账号…";
+    try {
+      const path = `/api/characters/${encodeURIComponent(character.id)}/bilibili-owner`;
+      const owner = await api(useCurrent ? path : `${path}?account=${encodeURIComponent(account)}`);
+      if (!isCurrent()) return;
+      const editor = $("character-editor");
+      const card = JSON.parse(editor.value);
+      card.bilibili_owner = owner;
+      editor.value = JSON.stringify(card, null, 2);
+      input.value = owner.uid;
+      renderOwner(owner);
+      markCharacterDirty(model);
+    } catch (error) {
+      if (!isCurrent()) return;
+      status.textContent = error.message;
+      if (!useCurrent) input.setAttribute("aria-invalid", "true");
+    }
+  }
+  $("oc-owner-lookup")?.addEventListener("click", () => lookupOwner(false));
+  $("oc-owner-current")?.addEventListener("click", () => lookupOwner(true));
+  $("oc-bilibili-owner")?.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    lookupOwner(false);
+  });
 
   const doLoadCharacters = async () => {
     await loadCharacters(model, {
@@ -258,7 +335,8 @@ export function initCharacterStudioUI(model, {
         } catch (error) {
           const details = error.body?.detail;
           const first = Array.isArray(details) ? details[0] : null;
-          const fields = { name: "oc-name", voice_profile: "oc-voice-profile", avatar_manifest: "oc-avatar-manifest" };
+          const fields = { name: "oc-name", bilibili_owner: "oc-bilibili-owner",
+            voice_profile: "oc-voice-profile", avatar_manifest: "oc-avatar-manifest" };
           if (error.field || first) {
             const json = $("character-editor");
             const field = $(error.field || fields[first?.field] || "character-editor");
@@ -268,7 +346,7 @@ export function initCharacterStudioUI(model, {
             target.setAttribute("aria-invalid", "true");
             target.focus();
           }
-          const labels = { name: "角色名称", voice_profile: "音色", avatar_manifest: "形象素材" };
+          const labels = { name: "角色名称", bilibili_owner: "B 站号主", voice_profile: "音色", avatar_manifest: "形象素材" };
           $("character-dirty").textContent = first ? `${labels[first.field] || first.field}：${first.message}` : error.message;
           if (first) throw new Error($("character-dirty").textContent);
           throw error;

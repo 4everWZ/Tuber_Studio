@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import time
 from secrets import token_urlsafe
 from urllib.parse import urlsplit
@@ -13,6 +14,7 @@ import httpx
 import qrcode
 
 from .api_providers import validate_image
+from .models import BilibiliOwner
 from .platforms.bilibili import BilibiliAccountExpired
 from .platforms.bilibili_login import BilibiliPassport, credential_value
 
@@ -82,6 +84,23 @@ def avatar_url(value):
     return value if valid else None
 
 
+def space_uid(value):
+    value = value.strip()
+    if re.fullmatch(r"[1-9][0-9]{0,19}", value):
+        return value
+    if value.startswith("space.bilibili.com/"):
+        value = "https://" + value
+    try:
+        url = urlsplit(value)
+        if url.scheme in {"http", "https"} and url.netloc.lower() == "space.bilibili.com":
+            match = re.fullmatch(r"/([1-9][0-9]{0,19})/?", url.path)
+            if match:
+                return match[1]
+    except ValueError:
+        pass
+    raise ValueError("请输入 B 站 UID 或个人空间链接")
+
+
 class BilibiliAccount:
     def __init__(self, comments):
         self.comments = comments
@@ -145,6 +164,33 @@ class BilibiliAccount:
                 checked is None or time.time() - checked > ACCOUNT_CHECK_SECONDS or result["state"] != "logged_in"
             ),
         }
+
+    async def owner_profile(self, account=None):
+        status = self.status()
+        if account is None:
+            if status["verification_stale"] and status["configured"]["sessdata"]:
+                status = await self.refresh()
+            if status["state"] != "logged_in" or not status["profile"]:
+                raise ValueError("请先在账号与登录中核验当前 B 站账号")
+            profile = status["profile"]
+        else:
+            uid = space_uid(account)
+            profile = status["profile"] if status["state"] == "logged_in" else None
+            if not profile or profile["uid"] != uid:
+                lookup = getattr(self.comments.adapter, "public_profile", None)
+                if lookup is None:
+                    raise ValueError("当前平台适配器无法查询公开账号资料")
+                try:
+                    async with asyncio.timeout(12):
+                        profile = await lookup(uid)
+                except TimeoutError:
+                    raise ValueError("查询 B 站账号超时，请稍后重试") from None
+                if profile.get("uid") != uid:
+                    raise ValueError("B 站返回的资料与所填 UID 不一致")
+        name = profile.get("name")
+        if not isinstance(name, str) or not 0 < len(name.strip()) <= 100 or re.search(r"[\x00-\x1f\x7f]", name):
+            raise ValueError("B 站返回的账号昵称无效")
+        return BilibiliOwner(uid=profile["uid"], name=name.strip(), avatar_url=avatar_url(profile.get("avatar_url")))
 
     async def configure(self, body):
         if not isinstance(body, dict) or set(body) - {"sessdata", "csrf", "bili_jct", "refresh_token", "clear"}:

@@ -74,6 +74,12 @@ class OperationReply(Reply):
         return validate_operation_text(value)
 
 
+class BilibiliOwner(StrictModel):
+    uid: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+    name: str = Field(min_length=1, max_length=100)
+    avatar_url: str | None = None
+
+
 class Character(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[a-z0-9_-]{1,50}$")
@@ -87,6 +93,7 @@ class Character(BaseModel):
     avatar_manifest: str = "assets/whale/manifest.json"
     sources: list[str] = Field(default_factory=list)
     license_status: str = "unknown"
+    bilibili_owner: BilibiliOwner | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="before")
     @classmethod

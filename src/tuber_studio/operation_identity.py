@@ -9,6 +9,21 @@ _START = "<current-account-identity>"
 _END = "</current-account-identity>"
 _BLOCK = re.compile(r"\n?" + re.escape(_START) + r"\n(.*?)\n" + re.escape(_END), re.DOTALL)
 
+BILIBILI_OWNER_INSTRUCTION = (
+    "bilibili_owner 是当前角色绑定的 B 站号主。有人问你是谁家的鱼时，用自己的口吻回答，"
+    "号主昵称以这份资料为准。speaker_is_bilibili_owner 表示当前发言人的平台 UID 是否匹配。"
+)
+
+
+def bilibili_owner_context(character, platform, speaker_uid):
+    owner = character.get("bilibili_owner")
+    if not owner:
+        return {}
+    return {
+        "bilibili_owner": {"uid": owner["uid"], "name": owner["name"]},
+        "speaker_is_bilibili_owner": platform == "bilibili" and str(speaker_uid) == owner["uid"],
+    }
+
 
 def identity_snapshot(account_actor, character):
     """Version identity facts, excluding profile-check times and credentials."""

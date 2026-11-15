@@ -13,7 +13,7 @@ from ...generation_meter import BrowsingBudgetDeferred, GenerationMeter, budgete
 from ...message_outreach import confirmed_invitation
 from ...operation_continuations import content_hash
 from ...operation_generation import GenerationInvalid, generate_with_recovery
-from ...operation_identity import captured_identity
+from ...operation_identity import BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, captured_identity
 from ...operation_text import (
     operation_character,
     operation_output_diagnostics,
@@ -109,6 +109,7 @@ class BrowsingDecisions:
         bound = bind_response_actors(data, actor)
         thread = bound.get("thread") or {}
         target, source = thread.get("target") or {}, thread.get("source") or {}
+        bound.update(bilibili_owner_context(character, "bilibili", source.get("author_uid")))
         video = bound.get("video_source") or {}
         if target.get("bvid") and target["bvid"] == video.get("bvid") and video.get("owner_uid"):
             thread["resource_author_uid"] = str(video["owner_uid"])
@@ -180,6 +181,8 @@ class BrowsingDecisions:
                     "只看到了片段，可以就那个细节接话。"
                 )
             instruction += RESPONSE_ACTOR_INSTRUCTION + RESPONSE_REFERENCE_INSTRUCTION
+            if data.get("bilibili_owner"):
+                instruction += "\n" + BILIBILI_OWNER_INSTRUCTION
         content = (
             response_input.format()
             if response_input is not None

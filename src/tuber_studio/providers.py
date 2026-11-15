@@ -18,7 +18,7 @@ from .generation_meter import reserve_generation, settle_generation
 from .http_api import api_client, inference_transport, models_health, response_bytes
 from .llama_sampling import live_thinking_budget, llama_cpp_sampling, supports_live_thinking_budget
 from .models import OperationReply, Reply
-from .operation_identity import provider_identity_messages
+from .operation_identity import BILIBILI_OWNER_INSTRUCTION, bilibili_owner_context, provider_identity_messages
 from .operation_text import operation_character
 from .operation_turns import mark_model_request, prepare_model_request
 from .sse import event_data
@@ -96,6 +96,10 @@ def build_messages(character, event, relationship, mode="live"):
     # Logical history and its compacted summary belong to ContextManager. Do not
     # inject a second, empty history snapshot after the actual conversation.
     optional = {"active_lore": lore, "confirmed_relationship": relationship}
+    owner = bilibili_owner_context(character, event.get("platform"), event.get("platform_user_id"))
+    if owner:
+        optional.update(owner)
+        messages[1]["content"] += "\n" + BILIBILI_OWNER_INSTRUCTION
     if actors:
         optional.update(self_actor=actors["self_actor"], reply_target=actors.get("reply_target"),
                         thread=actors.get("thread"))

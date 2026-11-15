@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import Body, Depends, HTTPException, Path, Query
 from pydantic import Field, StrictBool, StringConstraints, ValidationError
 
+from ..bilibili_account import space_uid
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..models import Character, StrictModel
 from ..operation_continuations import content_hash
@@ -122,15 +123,37 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
     async def character(character_id: str):
         return character_card(store.managed_character(character_id))
 
+    @app.get("/api/characters/{character_id}/bilibili-owner", dependencies=[Depends(require_admin)])
+    async def character_owner(character_id: str, account: Annotated[str | None, Query(max_length=2048)] = None):
+        store.managed_character(character_id)
+        try:
+            return await runtime.account.owner_profile(account)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
     @app.put("/api/characters/{character_id}", dependencies=[Depends(require_admin)])
     async def save_character(character_id: str, data: dict = Body(...)):
         async with character_writes:
-            store.managed_character(character_id)
+            current = store.managed_character(character_id)
             card = editable_character(data)
             card.pop("version", None)
             card["id"] = character_id
             if isinstance(card.get("name"), str):
                 card["name"] = card["name"].strip()
+            previous_owner = current.get("bilibili_owner")
+            owner = card.get("bilibili_owner", previous_owner)
+            if owner is not None:
+                account = owner.get("uid") if isinstance(owner, dict) else owner
+                try:
+                    if not isinstance(account, str) or len(account) > 2048:
+                        raise ValueError("请输入 B 站 UID 或个人空间链接")
+                    uid = space_uid(account)
+                    if owner == previous_owner:
+                        card["bilibili_owner"] = previous_owner
+                    else:
+                        card["bilibili_owner"] = (await runtime.account.owner_profile(uid)).model_dump()
+                except ValueError as error:
+                    raise HTTPException(422, [{"field": "bilibili_owner", "message": str(error)}]) from error
             try:
                 data = Character.model_validate(card).model_dump()
             except ValidationError as error:
