@@ -20,7 +20,7 @@ curl --fail http://127.0.0.1:9020/healthz
 
 ## GIF Avatar 与 OBS 媒体
 
-启用前分别配置 `secrets/gateway-media.token`、`secrets/media-access.token` 和 `secrets/media-publish.password`。前者是媒体桥自己的网关服务令牌，后二者用于访问媒体桥与 MediaMTX 发布。发布用户为 `tuber-publisher`，内部地址为 `rtsp://mediamtx:8554/program`。
+启用前分别配置 `secrets/gateway-media.token`、`secrets/media-access.token` 和 `secrets/media-publish.password`。网关把媒体桥的独立令牌登记在 `OMNI_GATEWAY_TOKENS` 的 `media` 字段，节目双工连接建立时进入 Live Mode，断开后恢复网关的手动模式。另两个令牌分别用于访问媒体桥与 MediaMTX 发布。发布用户为 `tuber-publisher`，内部地址为 `rtsp://mediamtx:8554/program`。
 
 ```sh
 docker compose -f deploy/omni/app-compose.yml --profile media up -d --build --wait

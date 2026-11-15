@@ -34,8 +34,9 @@ def engine_url():
     target = urlsplit(os.getenv("OMNI_GATEWAY_URL", "http://omni-gateway:8000"))
     if target.scheme not in {"http", "https"} or not target.hostname or target.username or target.password:
         raise ValueError("invalid inference gateway URL")
+    query = "duplex=1&program=1" if os.getenv("OMNI_PROGRAM_PRIORITY") == "1" else "duplex=1"
     return urlunsplit(("wss" if target.scheme == "https" else "ws", target.netloc,
-                       target.path.rstrip("/") + "/v1/realtime", "duplex=1", ""))
+                       target.path.rstrip("/") + "/v1/realtime", query, ""))
 
 
 @app.get("/healthz")

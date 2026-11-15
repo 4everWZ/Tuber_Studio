@@ -39,6 +39,7 @@ services:
     environment:
       OMNI_GATEWAY_URL: http://omni-gateway:8000
       OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_media
+      OMNI_PROGRAM_PRIORITY: '1'
       OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
       MEDIA_ACCESS_TOKEN_FILE: /run/secrets/omni_media_access
       MEDIA_PUBLISH_URL: rtsp://mediamtx:8554/program
