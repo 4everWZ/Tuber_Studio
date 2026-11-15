@@ -9,7 +9,7 @@ from fastapi import Body, Depends, HTTPException, Path, Query
 from pydantic import Field, StrictBool, StringConstraints, ValidationError
 
 from ..bilibili_account import space_uid
-from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
+from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER, DailyMemoryService
 from ..models import Character, StrictModel
 from ..operation_continuations import content_hash
 from ..relationships import UserProfile
@@ -19,7 +19,7 @@ from .operator_facts import recent_events
 
 
 class OrganizedMemoryChange(StrictModel):
-    channels: list[Literal["live", "comment", "dynamic"]] | None = None
+    owner_only: StrictBool | None = None
     headline: str | None = Field(default=None, min_length=1, max_length=40)
     note: str | None = Field(default=None, min_length=1, max_length=150)
 
@@ -43,6 +43,9 @@ def organized_view(row):
     if row["status"] == "active":
         result["channels"] = ["operator", *result["channels"]]
     result["scene"] = row["proof"].get("scene")
+    result["can_share"] = bool(row["public_memory"] and row["status"] == "active")
+    result["owner_only"] = result["can_share"] and not row["channels"]
+    result["visibility"] = DailyMemoryService.memory_visibility(row)
     if result["scene"] == "live":
         result["choices"] = [text for key, text in LIVE_STYLE.items()
                              if LIVE_STYLE_GROUP[key] == row["proof"]["style_group"]]

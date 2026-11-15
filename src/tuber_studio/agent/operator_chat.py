@@ -25,7 +25,7 @@ from ..providers import build_messages
 from ..sse import encode_event
 from ..store import dump
 from . import operator_facts
-from .assistant_output import AssistantTextStream
+from .assistant_output import AssistantTextStream, assistant_markdown
 from .dynamic_chat_material import DynamicChatMaterial
 from .handoff import (
     LIVE_STYLE,
@@ -47,6 +47,29 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 logger = logging.getLogger("uvicorn.error").getChild("operator_chat")
 _EXPERIENCE_SOURCE = (
     "(category='public_incident' OR source_ref LIKE 'operator-public:%' OR source_ref LIKE 'system:downtime:%')"
+)
+_EVENT_ACTIONS = {"event_details", "event_author", "event_reply", "remember_event", "full_video"}
+_TASK_REFERENCE_ACTIONS = {"live_handoff", "stop", "resume_video", "video_details", "inspect_video_frame"}
+_ACTIVITY_TOPIC = re.compile(r"运营|趣事|运行记录|互动记录|评论区|[刷看](?:过|了)(?:了)?[哪什么几]|\b(?:activity log|comment history)\b", re.I)
+_ORDINAL_REFERENCE = re.compile(r"第\s*[一二三两123]\s*[件条个]")
+_CONTINUED_REFERENCE = re.compile(r"那[条件个]|刚才|后来|然后")
+_EVENT_QUERIES = (
+    (r"原话|原楼|原评论|[说讲]了什么", "event_details"),
+    (r"作者|谁.{0,3}[说讲写发]", "event_author"),
+    (r"回.{0,4}[吗沒没谁]|送达|回执", "event_reply"),
+    (r"记成.{0,4}经历|记下.{0,3}(?:这|那)", "remember_event"),
+)
+_SCENE_ACTIONS = (
+    (r"几点|时间|时区|时钟|\b(?:clock|time)\b", ("clock",)),
+    (r"自主运营|运营(?:状态|权限|设置|开关)|(?:启动|开启|开始|停止|暂停)\s*运营|运行状态",
+     ("operation_control", "start_operations")),
+    (r"视频|BV[0-9A-Za-z]{10}|分\s*P|P\d|取帧|看帧|看完|刷一|[接续继].{0,2}看|观看|[刷看](?:过|了)[哪什么几]",
+     ("browse", "full_video", "video_activity", "video_details", "resume_video", "inspect_video_frame")),
+    (r"动态|发帖|发个贴|写篇帖子|\bt\.bilibili\.com", ("dynamic", "edit_dynamic")),
+    (r"记忆|记得|记住|记成|记下|忘[掉记了]|公开经历", ("public_experiences", "recall_experience", "forget_memory", "memory_summary")),
+    (r"直播|开播|下播|本场|弹幕|已播|播过", ("live_status", "start_live", "live_handoff", "live_preference", "live_history")),
+    (r"游戏|星露谷|植物大战僵尸|存档|种作物|种向日葵|浇水|砍树|接管", ("game_status", "game_handoff")),
+    (r"停[止掉下了]|先停|暂停|结束|下播|关掉", ("stop",)),
 )
 
 
@@ -108,6 +131,7 @@ class AssistantDecision(ChatIntent):
     @model_validator(mode="after")
     def validate_reply(self):
         if self.action == "chat":
+            self.reply_markdown = assistant_markdown(self.reply_markdown)
             if not self.reply_markdown.strip() or re.search(r"<\s*/?\s*think(?:\s|>)", self.reply_markdown, re.I):
                 raise ValueError("私聊正文无效")
             if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]", self.reply_markdown):
@@ -115,6 +139,33 @@ class AssistantDecision(ChatIntent):
         elif self.reply_markdown.strip():
             raise ValueError("工具意图不可携带未核验正文")
         return self
+
+    @classmethod
+    def schema_for_turn(cls, message, *, chat_only=False, previous_card=None):
+        schema = cls.model_json_schema()
+        properties = schema["properties"]
+        actions = properties.pop("action")
+        available = {"chat"}
+        if not chat_only:
+            for pattern, names in _SCENE_ACTIONS:
+                if re.search(pattern, message, re.I):
+                    available.update(names)
+            if _ACTIVITY_TOPIC.search(message):
+                available.add("activity")
+            active_event = previous_card in {"operation_events", "operation_event"}
+            event_queries = {action for pattern, action in _EVENT_QUERIES if re.search(pattern, message)}
+            if not event_queries and (_ORDINAL_REFERENCE.search(message) or active_event and _CONTINUED_REFERENCE.search(message)):
+                event_queries.add("event_details")
+            available.update(event_queries)
+        reply = properties.pop("reply_markdown")
+        if available == {"chat"}:
+            schema["properties"] = {"action": actions | {"enum": ["chat"]}, "reply_markdown": reply}
+            schema["required"] = ["action", "reply_markdown"]
+        else:
+            available.add("clarify")
+            actions["enum"] = [action for action in actions["enum"] if action in available]
+            schema["properties"] = {"action": actions, "reply_markdown": reply, **properties}
+        return schema
 
 
 def _memory_query(message, character):
@@ -203,25 +254,29 @@ class OperatorChat:
         latest_list = False
         rows = self.store.all(
             "SELECT request_id,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
-            "ORDER BY created_at DESC,request_id DESC LIMIT 20", (char["id"], char["version"]),
+            "AND json_extract(result,'$.account_id')=? ORDER BY created_at DESC,request_id DESC LIMIT 20",
+            (char["id"], char["version"], self._account()),
         )
         account = self._account()
-        for row in rows:
+        follow_up = True
+        for age, row in enumerate(rows):
             result = json.loads(row["result"])
-            if result.get("account_id") != account:
-                continue
             card = result.get("card") or {}
             data = card.get("data", {})
             if card.get("type") == "operation_events" and not latest_list:
                 latest_list = True
                 for index, event in enumerate(data["items"], 1):
                     events[event["reference"]] = (index, event)
+                if follow_up and focus is None and len(data["items"]) == 1:
+                    focus = data["items"][0]["reference"]
             if card.get("type") == "operation_event":
                 event = data["event"]
                 if event.get("reference"):
                     events.setdefault(event["reference"], (0, event))
-                    if focus is None and not latest_list:
+                    if follow_up and focus is None and not latest_list:
                         focus = event["reference"]
+            elif card.get("type") != "operation_events":
+                follow_up = False
             if card.get("type") == "video_browsing" and data.get("full_video"):
                 task = self.browsing.repo.round(data["id"])
                 if task and (str(task["account_id"]), task["character_id"], task["character_version"]) == (
@@ -229,7 +284,7 @@ class OperatorChat:
                 ):
                     selection = task["config"].get("operator_selection") or data.get("selection") or {}
                     if bvid := selection.get("bvid"):
-                        tasks[task["id"]] = {"status": task["status"], "bvid": bvid}
+                        tasks.setdefault(task["id"], {"status": task["status"], "bvid": bvid, "focused": age == 0})
         for row in self.store.all(
             "SELECT id,status,json_extract(config,'$.operator_selection.bvid') AS bvid FROM browsing_rounds "
             "WHERE account_id=? AND character_id=? AND character_version=? AND status IN ('waiting','queued','running') "
@@ -260,68 +315,63 @@ class OperatorChat:
             return self.runtime.generation_lock
         return self.runtime.offline_generation("chat")
 
-    @staticmethod
-    def _intent_prompt(message, events, tasks, focus):
-        return (
-            "工具：clock 当前时间；activity 今日趣事或看过什么；video_activity 观看量；"
-            "event_details 原话、event_author 作者、event_reply 回没回、remember_event 记下这件事；"
-            "public_experiences 列经历、recall_experience 找某条；memory_summary 记得我什么、forget_memory 忘一条。"
-            "dynamic 写动态（要把这段私下讨论写成动态时填 source=discussion）、edit_dynamic 改已发布的动态；"
-            "browse 按主题刷、full_video 看指定 BV、"
-            "video_details 查视频进度内容、resume_video 续看、inspect_video_frame 精确看帧。"
-            "视频范围用 part/seconds/end_seconds，精确取帧保留毫秒。"
-            "operation_control 查看或配置运营、start_operations 启动；live_status 状态、start_live 开播、stop 停止"
-            "（reference 为已有任务、operations 或 live）。"
-            "live_handoff 交本场直播（source=video/discussion/game）、live_preference 今后直播偏好、live_history 查已播内容。"
-            "game_status 当前游戏进度、game_handoff 执行 game_action。"
-            "第几件填 position；已给出的目标才填 reference，承接当前事件可留空使用 focus。"
-            "搜索关键词和澄清问题填 topic。只执行当前明确交代的任务，引用、否定和讨论都按 chat。",
-            {"message": message, "focus": focus, "events": [{"reference": key, "position": index, "title": item["title"]}
-                                              for key, (index, item) in list(events.items())[:8]],
-             "video_tasks": [{"reference": key, **task} for key, task in list(tasks.items())[:6]]},
+    async def _intent(self, message):
+        return await self._model(
+            "识别当前消息的明确查询或任务。普通对话选 chat。"
+            "查询事件原话、作者或回执时，用 position 填已显示序号，或在 topic 填明确标题和原话。"
+            "有明确分 P 或时码时填 part、seconds、end_seconds。不要猜引文或任务 ID。",
+            {"message": message}, ChatIntent,
         )
 
-    async def _intent(self, message, events, tasks, focus):
-        return await self._model(*self._intent_prompt(message, events, tasks, focus), ChatIntent)
-
-    def _assistant_history(self, char, account):
+    def _assistant_history(self, char, account, *, discussion=False):
         rows = self.store.all(
             "SELECT message,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
             "AND json_extract(result,'$.account_id')=? "
-            "AND COALESCE(json_extract(result,'$.memory_intent'),'chat')='chat' "
-            "ORDER BY created_at DESC,request_id DESC LIMIT 8",
+            "ORDER BY created_at DESC,request_id DESC LIMIT 4",
             (char["id"], char["version"], account),
         )
-        history = []
-        for row in reversed(rows):
+        pairs = []
+        for row in rows:
             saved = json.loads(row["result"])
-            # A prior reply based on revocable memory may repeat the recalled material.
-            if not saved.get("private") or saved.get("organized_memory") or saved.get("memory"):
-                continue
-            history.extend(({"role": "user", "content": row["message"][:800]},
-                            {"role": "assistant", "content": saved.get("reply_text", "")[:900]}))
-        return history[-8:]
+            if (not saved.get("private") or saved.get("memory_intent", "chat") != "chat"
+                    or saved.get("organized_memory") or saved.get("memory")):
+                break
+            if not discussion and not saved.get("assistant_context"):
+                break
+            reply = saved.get("reply_text", "")
+            if not reply:
+                break
+            pairs.append(({"role": "user", "content": row["message"][:320]},
+                          {"role": "assistant", "content": reply[:420]}))
+        return [message for pair in reversed(pairs) for message in pair]
 
-    async def _assistant(self, data, request_id, char, account, events, tasks, focus, emit):
+    def _previous_card(self, char, account):
+        row = self.store.one(
+            "SELECT json_extract(result,'$.card.type') AS type FROM operator_chat_turns "
+            "WHERE character_id=? AND character_version=? AND json_extract(result,'$.account_id')=? "
+            "ORDER BY created_at DESC,request_id DESC LIMIT 1", (char["id"], char["version"], account),
+        )
+        return row["type"] if row else None
+
+    async def _assistant(self, data, request_id, char, account, emit):
         started = time.monotonic()
-        stage, acquired, generated, first_text = "queued", None, None, None
+        stage_times = {"preparing": started}
+        stage = "preparing"
+        first_text = None
+        model_characters = 0
         provider = None
 
         def report(value):
-            nonlocal stage, generated
+            nonlocal stage
             stage = value
-            if value == "generating":
-                generated = time.monotonic()
+            stage_times.setdefault(value, time.monotonic())
             if emit:
                 emit("stage", value)
 
-        report("queued")
+        report("preparing")
         try:
-            async with asyncio.timeout(150), self._generation_slot():
-                acquired = time.monotonic()
-                report("preparing")
+            async with asyncio.timeout(150):
                 self._check_scope(char, account)
-                provider = self.runtime.llm
                 memory = self.runtime.daily_memory
                 scope = self.runtime.memory_organizer.scope()
                 preference = memory.preference(scope)
@@ -338,29 +388,30 @@ class OperatorChat:
                 compact_core = {key: value for key, value in char["core"].items()
                                 if key not in {"examples", "variants", "appearance"}}
                 role = build_messages(char | {"core": compact_core}, event, {}, "operator_chat")[:-2]
-                instruction, packet = self._intent_prompt(data.message, events, tasks, focus)
-                directive = (
-                    '以角色第一人称接话或认真分析，直接回答形如 {"action":"chat","reply_markdown":"正文"}。'
-                    "陪聊用自然口吻，咨询、计划和写作优先交付用户要的内容，角色口癖点到为止。"
-                    "有几个要求就逐项给齐，可用 Markdown 段落、列表、表格或代码。"
-                    "Markdown 标题用 ##，表格分隔用 ASCII ---，段落之间用空行。"
-                    "吃饭、心情、海底小窝是角色日常，可以按想象回答。"
-                    '例：「今天吃了几碗饭？」→ {"action":"chat","reply_markdown":"一碗半。你再多问两句，可能就变两碗啦。"}。'
-                    "只回应最后一条用户消息，先答具体问题再接梗。"
-                    "需要真实记录或明确交代任务才选工具，省略 reply_markdown。"
-                    "问今天运营看到的趣事直接选 activity，问前一件的原话、作者或回复时用事件工具。"
-                    '例：「今天有什么趣事？」→ {"action":"activity"}。'
-                    '「第二件谁说的？」→ {"action":"event_author","position":2}。'
-                    "events 只用于定位真实来源，别根据标题猜事实。JSON 先写 action，再写正文或工具参数。"
+                previous = self._previous_card(char, account) if _CONTINUED_REFERENCE.search(data.message) else None
+                schema = AssistantDecision.schema_for_turn(data.message, chat_only=bool(data.intent), previous_card=previous)
+                actions = schema["properties"]["action"]["enum"]
+                instruction = (
+                    f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
+                    "听懂一句就接一句，闲聊不用追问目的。只有对方需要细节时才展开。正文填 reply_markdown，先写 action。"
+                    "只承接仍有关的对话。"
                 )
-                messages = [*role, {"role": "system", "content": directive + instruction},
-                            *self._assistant_history(char, account)]
+                if actions != ["chat"]:
+                    instruction += (
+                        "仅在用户明确查询真实记录或交办任务时选择工具并留空正文。可用 action："
+                        + "、".join(actions)
+                        + "。activity 查运营趣事；event_details／event_author／event_reply 查原话／作者／送达。"
+                        "用 position 指定序号，topic 可填明确原话、标题或主题。分 P 与时码用 part、seconds、end_seconds。"
+                        "叫停运营或直播时 reference 填 operations 或 live。直播交接注明 video、discussion 或 game，"
+                        "动态引用私聊注明 discussion。live_preference 处理长期直播习惯。"
+                        "不要猜旧事件、任务 ID 或结果。"
+                    )
+                messages = [*role, {"role": "system", "content": instruction}]
                 if notes:
-                    packet["private_memory"] = [{"topic": entry["headline"], "note": entry["anecdote"]}
-                                                for entry in notes]
-                packet.pop("message")
-                if notes or events or tasks:
-                    messages.append({"role": "user", "content": "可用的来源引用与记忆：" + dump(packet)})
+                    messages.append({"role": "system", "content": "与本轮相关的记忆资料，只作为背景：" + dump([
+                        {"topic": entry["headline"], "note": entry["anecdote"]} for entry in notes
+                    ])})
+                messages.extend(self._assistant_history(char, account))
                 messages.append({"role": "user", "content": data.message})
 
                 def deliver(text):
@@ -370,19 +421,36 @@ class OperatorChat:
                         first_text = time.monotonic()
                     emit("delta", text)
 
-                # Memory-dependent replies remain buffered until their revisions are checked.
-                stream = AssistantTextStream(deliver).feed if emit and not audit else None
-                schema = AssistantDecision.model_json_schema()
-                properties = schema["properties"]
-                schema["properties"] = {"action": properties.pop("action"),
-                                        "reply_markdown": properties.pop("reply_markdown"), **properties}
-                maximum = max(2048, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
-                value = await provider.generate_assistant_json(
-                    messages, schema, max_tokens=maximum, on_content=stream, on_stage=report,
-                )
-                decision = AssistantDecision.model_validate(value)
-                self._check_scope(char, account)
-                self.runtime.validate_memory_delivery(audit)
+                # Revocable content is buffered. Still consume the upstream stream
+                # to measure the first model chunk and cancel it promptly.
+                decoder = AssistantTextStream(deliver) if emit and not audit else None
+
+                def read_chunk(text):
+                    nonlocal model_characters
+                    stage_times.setdefault("model_first", time.monotonic())
+                    model_characters += len(text)
+                    if decoder:
+                        decoder.feed(text)
+
+                report("preflight")
+                if prepare := getattr(self.runtime.llm, "prepare_assistant_capacity", None):
+                    await prepare()
+                report("queued")
+                async with self._generation_slot():
+                    stage_times["acquired"] = time.monotonic()
+                    self._check_scope(char, account)
+                    self.runtime.validate_memory_delivery(audit)
+                    provider = self.runtime.llm
+                    maximum = max(1024, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
+                    value = await provider.generate_assistant_json(
+                        messages, schema, max_tokens=maximum, on_content=read_chunk if emit else None,
+                        on_stage=report,
+                    )
+                    decision = AssistantDecision.model_validate(value)
+                    if decision.action not in actions:
+                        raise ValueError("本轮没有请求此类运营记录")
+                    self._check_scope(char, account)
+                    self.runtime.validate_memory_delivery(audit)
                 stage = "validated"
                 return decision, audit
         except (ValueError, TimeoutError, httpx.HTTPError) as error:
@@ -393,14 +461,18 @@ class OperatorChat:
             raise
         finally:
             ended = time.monotonic()
-            usage = getattr(provider, "last_usage", {}) if generated is not None else {}
+            usage = getattr(provider, "last_usage", {}) if "generating" in stage_times else {}
+
+            def duration(begin, end):
+                return (stage_times[end] - stage_times[begin]) * 1000 if begin in stage_times and end in stage_times else -1
+
             logger.info(
-                "operator assistant stage=%s queue_ms=%.0f prepare_ms=%.0f first_text_ms=%.0f total_ms=%.0f "
-                "prompt_tokens=%s completion_tokens=%s",
-                stage, ((acquired or ended) - started) * 1000,
-                ((generated or ended) - acquired) * 1000 if acquired else -1,
-                (first_text - started) * 1000 if first_text else -1, (ended - started) * 1000,
-                usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                "operator assistant stage=%s context_ms=%.0f preflight_ms=%.0f queue_ms=%.0f capability_ms=%.0f count_ms=%.0f "
+                "model_wait_ms=%.0f first_text_ms=%.0f total_ms=%.0f model_chars=%s prompt_tokens=%s completion_tokens=%s",
+                stage, duration("preparing", "preflight"), duration("preflight", "queued"), duration("queued", "acquired"),
+                duration("checking_model", "counting"), duration("counting", "generating"),
+                duration("generating", "model_first"), (first_text - started) * 1000 if first_text else -1,
+                (ended - started) * 1000, model_characters, usage.get("prompt_tokens"), usage.get("completion_tokens"),
             )
 
     def _visible(self, result, *, historical=False):
@@ -420,7 +492,8 @@ class OperatorChat:
         if memory or (audit and audit.get("organized_memory")):
             result = result | {"memory_dependent": True}
         result = {key: value for key, value in result.items()
-                  if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory", "memory_intent"}}
+                  if key not in {"submission", "binding", "account_id", "memory", "confirmations", "organized_memory",
+                                 "memory_intent", "assistant_context"}}
         card = result.get("card")
         if card is None:
             return result
@@ -605,20 +678,19 @@ class OperatorChat:
                 ):
                     raise HTTPException(409, "该请求已绑定其他对话")
                 return self._visible(result)
-            events, tasks, focus = self._references(char)
             intent = data.intent or (ChatIntent(action="full_video") if data.video_selection else None)
             decision, audit = None, None
             if (intent is None or intent.action == "chat") and hasattr(self.runtime.llm, "generate_assistant_json"):
-                decision, audit = await self._assistant(data, request_id, char, account, events, tasks, focus, emit)
+                decision, audit = await self._assistant(data, request_id, char, account, emit)
                 if intent is not None and decision.action != "chat":
                     raise HTTPException(503, "这轮未生成可用的对话回复，可以重试。")
                 intent = decision
-            else:
-                intent = intent or await self._intent(data.message, events, tasks, focus)
+            elif intent is None:
+                intent = await self._intent(data.message)
             self._check_scope(char, account)
             if decision and decision.action == "chat":
                 result = {"reply_text": decision.reply_markdown.strip(), "reply_format": "markdown",
-                          "card": None, "private": True}
+                          "card": None, "private": True, "assistant_context": True}
                 if audit:
                     result["organized_memory"] = audit
             elif intent.action == "chat":
@@ -645,6 +717,10 @@ class OperatorChat:
                     emit("stage", "working")
                 if intent.action in _NONCANCELLABLE_ACTIONS:
                     pending.cancellable = False
+                if intent.action in _EVENT_ACTIONS | _TASK_REFERENCE_ACTIONS:
+                    events, tasks, focus = self._references(char)
+                else:
+                    events, tasks, focus = {}, {}, None
                 result = await self._action(intent, char, request_id, data, events, tasks, focus)
             self._check_scope(char, account, account_may_resolve=True)
             if decision and decision.action == "chat":
@@ -703,8 +779,26 @@ class OperatorChat:
 
     async def _action(self, intent, char, request_id, data, events, tasks, focus):
         kind, topic, reference = intent.action, intent.topic, intent.reference
-        if intent.position is not None and kind in {"event_details", "event_author", "event_reply", "remember_event", "full_video"}:
+        if intent.position is not None and kind in _EVENT_ACTIONS:
             reference = next((key for key, (index, _) in events.items() if index == intent.position), "")
+        elif kind in _EVENT_ACTIONS and reference is None and topic:
+            matching = [key for key, (_, event) in events.items()
+                        if topic in event["title"] or topic in event["source"]["text"]]
+            if not matching:
+                for index, event in enumerate(operator_facts.recent_events(self.browsing)["items"]):
+                    if topic in event["title"] or topic in event["source"]["text"]:
+                        key = f"{request_id}/source-{index + 1}"
+                        events[key] = (0, event | {"reference": key})
+                        matching.append(key)
+            if matching:
+                reference = matching[0] if len(matching) == 1 else ""
+        if kind in _TASK_REFERENCE_ACTIONS and kind != "stop" and reference is None:
+            videos = set(_MENTIONED_BV.findall(data.message))
+            matching = [key for key, task in tasks.items() if task["bvid"] in videos] if videos else (
+                [key for key, task in tasks.items() if task.get("focused")] or list(tasks)
+            )
+            if len(matching) == 1:
+                reference = matching[0]
         if data.video_selection and kind != "full_video":
             raise HTTPException(400, "视频范围只能用于指定视频任务")
         if kind == "clarify":
@@ -736,7 +830,7 @@ class OperatorChat:
         if kind == "dynamic":
             account = self._account()
             if intent.source == "discussion":
-                history = self._assistant_history(char, account)
+                history = self._assistant_history(char, account, discussion=True)
                 if not history and not topic:
                     return {"reply_text": "想写哪段讨论？", "card": None}
                 material = history + ([{"topic": topic}] if topic else [])

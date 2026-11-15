@@ -1,5 +1,5 @@
 import { $, node, safeMessage } from "./core.js?v=20261105.32";
-import { createOperatorCard } from "./operator-chat-cards.js?v=20261114.4";
+import { createOperatorCard } from "./operator-chat-cards.js?v=20261115.1";
 import { inferenceDisplay } from "./inference-status.js?v=20261111.07";
 import { renderAssistantAnswer } from "./operator-chat-answer.js";
 
@@ -402,7 +402,10 @@ export function initOperatorChat(api, { applyAutomationStatus, getAutomationStat
     feed.append(transient);
     if (follow) scrollEnd();
     let partial = "", renderFrame = 0;
-    const stages = { queued: "等待推理", preparing: "正在整理上下文", generating: "正在回复", working: "正在查询或安排任务" };
+    const stages = {
+      queued: "等待推理", preparing: "正在整理上下文", preflight: "正在检查模型", checking_model: "正在检查模型",
+      counting: "正在准备模型输入", generating: "正在回复", working: "正在查询或安排任务",
+    };
     try {
       let result;
       try {

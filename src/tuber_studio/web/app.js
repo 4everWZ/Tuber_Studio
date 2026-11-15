@@ -2,7 +2,7 @@
 
 import { $, node, notice, safeMessage } from "./modules/core.js?v=20261105.32";
 import { api as baseApi } from "./modules/api.js";
-import { initOperatorChat } from "./modules/operator-chat.js?v=20261114.4";
+import { initOperatorChat } from "./modules/operator-chat.js?v=20261115.1";
 import { commentQueueViews, initCommentQueue } from "./modules/comment-queue.js?v=20261114.01";
 import { initDiscoveryPanel, initIssueLog } from "./modules/discovery-panel.js?v=20261113.09";
 import { initOperationsActivity } from "./modules/operations-activity.js?v=20261115.2";
@@ -18,7 +18,7 @@ import {
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261114.3";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261115.2";
-import { initPersonalization } from "./modules/personalization.js?v=20261114.1";
+import { initPersonalization } from "./modules/personalization.js?v=20261115.1";
 import {
   selectedThread,
   initCommentsModule,

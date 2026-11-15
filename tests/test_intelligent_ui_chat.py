@@ -10,7 +10,7 @@ from test_browsing import BV, ControlledPlatform
 from test_browsing_evidence import PNG, TestVisual
 
 from tuber_studio.agent import operator_facts
-from tuber_studio.agent.assistant_output import AssistantTextStream
+from tuber_studio.agent.assistant_output import AssistantTextStream, assistant_markdown
 from tuber_studio.app import create_app
 from tuber_studio.live.game_livestream import GameLivestreamService
 from tuber_studio.models import Reply
@@ -23,6 +23,7 @@ from tuber_studio.providers import Audio
 def test_incremental_assistant_output_handles_json_escapes_and_excludes_tool_fields():
     for wire, expected in [
         (json.dumps({"action": "chat", "reply_markdown": '鲸鲸 🌊\n"白饭"', "topic": "内部字段"}), '鲸鲸 🌊\n"白饭"'),
+        (json.dumps({"action": "chat", "reply_markdown": '快来啦。”}”}'}), '快来啦。'),
         (json.dumps({"action": "stop", "reply_markdown": "不应显示"}), ""),
     ]:
         fragments = []
@@ -30,6 +31,8 @@ def test_incremental_assistant_output_handles_json_escapes_and_excludes_tool_fie
         for char in wire:
             stream.feed(char)
         assert "".join(fragments) == expected
+    assert assistant_markdown('这是对象 {"值": 1}') == '这是对象 {"值": 1}'
+    assert assistant_markdown('```js\n}\n```') == '```js\n}\n```'
 
 
 def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(settings, monkeypatch):
@@ -39,6 +42,10 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
     async def generate(messages, schema, *, max_tokens, on_content, on_stage):
         calls.append(messages)
         assert "reply_markdown" in schema["properties"]
+        assert "activity" not in schema["properties"]["action"]["enum"]
+        assert messages[-1] == {"role": "user", "content": "鱼鱼今天吃了几碗饭"}
+        assert all("旧报告的第三件" not in message["content"] and "旧模型刚才的错答" not in message["content"]
+                   for message in messages)
         on_stage("generating")
         on_content('{"action":"chat","reply_markdown":"**白饭')
         on_content('**，分你半碗。"}')
@@ -47,6 +54,17 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
     monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", generate, raising=False)
     with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 52000)) as client:
         path = "/api/chat/intelligent"
+        char = app.state.runtime.character
+        for message, saved, when in [
+            ("今天运营发生什么", {"card": {"type": "operation_events", "data": {"items": [
+                {"title": "旧报告的第三件", "reference": "old/1", "source": {"kind": "comment", "text": "旧原话"}},
+            ]}}}, 1),
+            ("之前的聊天", {"private": True, "reply_text": "旧模型刚才的错答"}, 2),
+        ]:
+            app.state.store.execute("INSERT INTO operator_chat_turns VALUES(?,?,?,?,?,?)", (
+                str(uuid4()), char["id"], char["version"], message, json.dumps(saved | {"account_id": ""}),
+                time.time() - 50 + when,
+            ))
         payload = {"request_id": str(uuid4()), "message": "鱼鱼今天吃了几碗饭"}
         response = client.post(path + "/stream", json=payload)
         assert response.status_code == 200
@@ -55,7 +73,7 @@ def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(set
         assert "event: done" in response.text
         assert client.post(path, json=payload).json()["reply_text"] == "**白饭**，分你半碗。"
         assert len(calls) == 1
-        assert len(client.get(path).json()["turns"]) == 1
+        assert len(client.get(path).json()["turns"]) == 3
 
 
 def test_assistant_rejects_invalid_tool_payload_before_dispatch(settings, monkeypatch):
@@ -378,17 +396,23 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
     monkeypatch.setattr(operator_facts, "daily_events", lambda *args: [event.copy() for event in events])
 
     async def model(messages, schema, *, max_tokens):
-        payload = json.loads(messages[1]["content"])
-        if schema["title"] == "EventSelection":
-            return {"items": [2, 1]}
-        message = payload["message"]
+        assert schema["title"] == "EventSelection"
+        return {"items": [2, 1]}
+
+    async def assistant(messages, schema, **options):
+        assert schema["title"] == "AssistantDecision"
+        message = messages[-1]["content"]
         action = {"今天有什么趣事": "activity", "第二件是谁讲的": "event_author", "后来回了没": "event_reply",
                   "把它记成公开经历": "remember_event", "那件公开经历": "recall_experience",
-                  "查看公开经历": "public_experiences", "你记得我什么": "memory_summary"}[message]
-        reference = next((item["reference"] for item in payload["events"] if item["position"] == 2), None)
-        return {"action": action, "reference": reference, "topic": "第一句" if action == "recall_experience" else ""}
+                  "查看公开经历": "public_experiences", "你记得我什么": "memory_summary",
+                  "现在去吃饭吧": "chat", "再查第一句是谁说的": "event_author"}[message]
+        assert action in schema["properties"]["action"]["enum"]
+        return {"action": action, "position": 2 if message.startswith("第二件") else None,
+                "topic": "第一句" if action == "recall_experience" or message.startswith("再查") else "",
+                "reply_markdown": "这就来。" if action == "chat" else ""}
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", model)
+    monkeypatch.setattr(app.state.runtime.llm, "generate_assistant_json", assistant, raising=False)
     with TestClient(app, base_url="http://127.0.0.1:8020", client=("127.0.0.1", 52000)) as client:
         path = "/api/chat/intelligent"
         app.state.browsing.discovery.remember_account("100")
@@ -410,14 +434,14 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         memory_path = "/api/daily-memory"
         saved, = client.get(memory_path).json()["organized"]
         assert saved["source"]["references"][0]["text"] == "第一句"
-        assert saved["channels"] == ["operator"]
+        assert saved["visibility"] == "shared"
         summary_id, turn = send("你记得我什么")
         assert turn["card"]["data"]["groups"] == client.get(memory_path).json()["summary"]
         listing, turn = send("查看公开经历")
         assert turn["card"]["data"]["items"] == [{
             "headline": saved["headline"], "anecdote": "第一句", "links": [events[1]["source"]["href"]],
         }]
-        assert not app.state.dynamics._sources()
+        assert any(source["id"] == f"organized:{saved['id']}" for source in app.state.dynamics._sources())
         app.state.browsing.discovery.remember_account("200")
         assert not client.get(memory_path).json()["organized"]
         app.state.browsing.discovery.remember_account("100")
@@ -427,6 +451,10 @@ def test_semantic_chat_binds_displayed_event_order_and_memory_version(settings, 
         assert client.get(f"{path}/turns/{summary_id}").json()["card"]["data"]["groups"] == []
         assert client.get(f"{path}/turns/{listing}").json()["card"]["data"]["items"] == []
         assert client.get(f"{path}/turns/{recalled}").json()["reply_text"] == "这条回复引用的记忆已变更。"
+        assert send("第二件是谁讲的")[1]["reply_text"].startswith("是甲说的")
+        send("现在去吃饭吧")
+        assert send("后来回了没")[1]["reply_text"] == "你指的是哪一件事？"
+        assert send("再查第一句是谁说的")[1]["reply_text"].startswith("是甲说的")
 
         legacy_request = str(uuid4())
         runtime = app.state.runtime

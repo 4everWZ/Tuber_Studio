@@ -1,7 +1,7 @@
 import { $, node } from "./core.js";
 
 const endpoint = "/api/daily-memory";
-const channelNames = { operator: "号主私聊", live: "直播", comment: "回帖", dynamic: "动态" };
+export const memoryVisibility = { owner: "仅号主", shared: "可跨端使用", live_rule: "直播规则" };
 export const memoryGroupNames = { preference: "长期偏好", decision: "持续决定", experience: "可复用经验" };
 const clip = (text, limit) => {
   const line = text.replace(/\s+/g, " ").trim();
@@ -161,15 +161,19 @@ export function initPersonalization(model, api) {
     const groups = value.summary || [];
     for (const group of groups) {
       const entry = node("article");
-      entry.append(node("strong", memoryGroupNames[group.kind]),
-        node("p", group.notes.map(note => note.text).join(" ")));
+      entry.append(node("strong", memoryGroupNames[group.kind]));
+      for (const note of group.notes) {
+        const paragraph = node("p", note.text + " ");
+        if (memoryVisibility[note.visibility]) paragraph.append(node("small", memoryVisibility[note.visibility], "hint"));
+        entry.append(paragraph);
+      }
       const changes = node("details");
       changes.append(node("summary", "更正或删除"));
       for (const note of group.notes) {
         const item = value.organized.find(item => item.id === note.id);
         if (!item) continue;
         const form = node("form");
-        const label = node("label", item.headline);
+        const label = node("label", `${item.headline} · ${memoryVisibility[item.visibility]}`);
         const input = node(item.choices ? "select" : "textarea");
         for (const choice of item.choices || []) input.append(new Option(choice, choice));
         input.value = note.text;
@@ -293,6 +297,7 @@ export function initPersonalization(model, api) {
       if (version !== scopeVersion || !memory.open) return;
       feedback.textContent = message;
       if (!target.isConnected) (fromSummary ? manageButton : $("search-memory")).focus({ preventScroll: true });
+      return true;
     } catch (error) {
       if (version !== scopeVersion) return;
       if (error.status === 409) refreshScope();
@@ -319,10 +324,9 @@ export function initPersonalization(model, api) {
       const edit = node("details");
       const path = `/organized/${item.id}`;
       const change = (body, target, message) => mutate(path, { method: "PATCH", body }, target, message);
-      const channels = item.channels.map(channel => channelNames[channel]).join("、");
       const date = new Date(item.updated_at * 1000).toLocaleString("zh-CN");
       entry.append(node("strong", item.headline), node("p", item.anecdote),
-        node("p", [statuses[item.status], channels, date].filter(Boolean).join(" · "), "hint"));
+        node("p", [memoryVisibility[item.visibility], archived ? statuses[item.status] : "", date].filter(Boolean).join(" · "), "hint"));
       edit.append(node("summary", "来源与编辑"));
       if (item.quote) edit.append(node("blockquote", item.quote));
       if (item.memory_kind === "private") {
@@ -348,21 +352,18 @@ export function initPersonalization(model, api) {
       const noteLabel = node("label", "记忆内容");
       noteLabel.append(note);
       form.append(titleLabel, noteLabel);
-      const boxes = [];
-      if (item.memory_kind === "experience" && !archived) {
-        const fields = node("fieldset", null, "memory-channels");
-        fields.append(node("legend", "允许对外使用"));
-        for (const channel of ["live", "comment", "dynamic"]) {
-          const label = node("label");
-          const box = node("input");
-          box.type = "checkbox";
-          box.value = channel;
-          box.checked = item.channels.includes(channel);
-          label.append(box, channelNames[channel]);
-          boxes.push(box);
-          fields.append(label);
-        }
-        form.append(fields);
+      if (item.can_share) {
+        const label = node("label", null, "memory-sharing");
+        const toggle = node("input");
+        toggle.type = "checkbox";
+        toggle.setAttribute("role", "switch");
+        toggle.checked = item.owner_only;
+        toggle.onchange = async () => {
+          const saved = await change({ owner_only: toggle.checked }, toggle, "记忆使用范围已更新。");
+          if (!saved) toggle.checked = item.owner_only;
+        };
+        label.append(toggle, "仅号主可用");
+        entry.append(label);
       }
       const save = node("button", "保存修改", "win-btn");
       save.type = "submit";
@@ -370,7 +371,6 @@ export function initPersonalization(model, api) {
       form.onsubmit = event => {
         event.preventDefault();
         const body = { headline: title.value.trim(), note: note.value.trim() };
-        if (boxes.length) body.channels = boxes.filter(box => box.checked).map(box => box.value);
         change(body, save, "记忆已更新。");
       };
       edit.append(form);

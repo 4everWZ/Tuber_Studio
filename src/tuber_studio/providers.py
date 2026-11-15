@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
+from time import monotonic
 from typing import Protocol
 
 import httpx
@@ -158,6 +159,7 @@ class LlamaCppProvider:
         self.profile_error = None
         self.is_sleeping = None
         self.live_thinking_budget_supported = None
+        self._assistant_capacity = None
 
     def sampling(self, *, summary=False):
         return llama_cpp_sampling(self.config, summary=summary, local_defaults=True)
@@ -195,7 +197,7 @@ class LlamaCppProvider:
         await self.ensure_capacity()
         return {"available": True, "detail": response.json(), "server_context_tokens": self.server_tokens}
 
-    async def ensure_capacity(self):
+    async def ensure_capacity(self, *, allow_warmup=True):
         try:
             window = self.config["context_tokens"]
             native = self.config.get("native_context_tokens", 131072)
@@ -206,6 +208,9 @@ class LlamaCppProvider:
             timeout = httpx.Timeout(20, connect=5) if self.uses_broker else 5
             response = await self.client.get("/props", timeout=timeout)
             if response.status_code == 503 and self.uses_broker:
+                if not allow_warmup:
+                    self._assistant_capacity = None
+                    return False
                 model = {"model": self.config["model"]} if self.broker_model_routing else {}
                 warmup = await self.client.post("/warmup", json=model, timeout=httpx.Timeout(120, connect=5))
                 warmup.raise_for_status()
@@ -222,10 +227,24 @@ class LlamaCppProvider:
                 raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}")
             self.live_thinking_budget_supported = supports_live_thinking_budget(properties)
             self.profile_error = None
+            self._assistant_capacity = (self._capacity_key(), monotonic() + 30)
+            return True
         except Exception as error:
+            self._assistant_capacity = None
             self.live_thinking_budget_supported = None
             self.profile_error = public_error(error)
             raise
+
+    def _capacity_key(self):
+        return tuple(self.config.get(name) for name in ("base_url", "model", "context_tokens", "native_context_tokens"))
+
+    def _assistant_capacity_current(self):
+        record = self._assistant_capacity
+        return bool(record and self._capacity_key() == record[0] and monotonic() < record[1])
+
+    async def prepare_assistant_capacity(self):
+        if not self._assistant_capacity_current():
+            await self.ensure_capacity(allow_warmup=False)
 
     async def _token_count(self, messages, *, enable_thinking=None):
         # Count the actual chat template, including role delimiters, rather than estimating Chinese characters.
@@ -413,10 +432,14 @@ class LlamaCppProvider:
                                          sampling=self.sampling() | {"temperature": 0}, thinking_limit=96)
 
     async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
-        return await self._generate_json(
-            messages, schema, max_tokens=max_tokens, sampling=self.sampling(),
-            enable_thinking=False, on_content=on_content, on_stage=on_stage, bounded_assistant=True,
-        )
+        try:
+            return await self._generate_json(
+                messages, schema, max_tokens=max_tokens, sampling=self.sampling(),
+                enable_thinking=False, on_content=on_content, on_stage=on_stage, bounded_assistant=True,
+            )
+        except (ValueError, httpx.HTTPError):
+            self._assistant_capacity = None
+            raise
 
     async def generate_live_json(self, messages, schema, *, max_tokens):
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling(), live=True)
@@ -433,12 +456,17 @@ class LlamaCppProvider:
                              on_content=None, on_stage=None, enable_thinking=None, bounded_assistant=False):
         self._begin_generation_observation()
         json_schema_text(schema, max_tokens)
-        await self.ensure_capacity()
+        if on_stage:
+            on_stage("checking_model")
+        if not bounded_assistant or not self._assistant_capacity_current():
+            await self.ensure_capacity()
         max_tokens, live_parameters = self._live_budget(max_tokens, live)
         if thinking_limit is not None and self.live_thinking_budget_supported and self.config.get("enable_thinking"):
             live_parameters = {"thinking_budget_tokens": thinking_limit}
         messages = single_system_messages(provider_identity_messages(self, messages))
         window = self.config["context_tokens"] * 95 // 100
+        if on_stage:
+            on_stage("counting")
         # A local Qwen byte-token upper bound with ample room for the chat template.
         # Other models and tight windows use the exact tokenizer as before.
         upper = sum(len(message["content"].encode("utf-8")) + 128 for message in messages) * 2 + 1024

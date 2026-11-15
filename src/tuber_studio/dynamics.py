@@ -369,9 +369,10 @@ class Dynamics:
                 if row["status"] != "active" or "dynamic" not in row["channels"]:
                     continue
                 anchor = row["source"].get("thread") or {}
-                references = row["source"]["references"]
+                public = row["public_memory"]
+                references = public["references"]
                 result.append({"id": f"organized:{row['id']}", "type": "public_incident", "fictional": False,
-                               "text": row["anecdote"], "memory_version": row["updated_at"],
+                               "text": public["text"], "memory_version": row["updated_at"],
                                "source_url": references[0]["href"], "public_sources": [
                                    {"bvid": anchor["resource"], "thread_id": anchor["root_id"],
                                     "comment_id": ref["comment_id"], "quote": ref["text"]} for ref in references

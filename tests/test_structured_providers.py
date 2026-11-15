@@ -122,6 +122,22 @@ async def test_structured_request_counts_actual_input_and_uses_supported_json_mo
     assert provider.last_tokens == 3
 
 
+async def test_assistant_reuses_verified_capacity_and_rechecks_on_model_change(providers):
+    provider, requests = await providers("local")
+    stages = []
+    await provider.prepare_assistant_capacity()
+    for _ in range(2):
+        assert await provider.generate_assistant_json(
+            MESSAGES, SCHEMA, max_tokens=32, on_stage=stages.append,
+        ) == {"entries": ["甲"]}
+    assert sum(request.url.path.endswith("/props") for request in requests) == 1
+    assert stages == ["checking_model", "counting", "generating"] * 2
+    provider.config["model"] = "replacement"
+    with pytest.raises(ValueError, match="model别名不一致"):
+        await provider.prepare_assistant_capacity()
+    assert sum(request.url.path.endswith("/props") for request in requests) == 2
+
+
 @pytest.mark.parametrize("kind", ["local", "api"])
 async def test_structured_capacity_is_checked_before_generating(providers, kind):
     provider, requests = await providers(kind, count=3880, actual=3880)

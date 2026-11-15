@@ -292,9 +292,8 @@ p { margin-block: .55em 1em; }
 .memory-detail-list article blockquote { padding-inline-start: 10px; border-inline-start: 2px solid var(--win-border-light); }
 .memory-detail-list summary, .older-memory-list > summary { cursor: pointer; }
 .memory-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-.memory-channels { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; }
-.memory-channels label { display: flex; align-items: center; gap: 6px; margin: 0; }
-.memory-channels input { margin: 0; }
+.memory-sharing { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.memory-sharing input { margin: 0; }
 .older-memory-list { margin-top: 14px; }
 @media (max-width: 520px) {
   .personalization-row, .personalization-dialog > header, .personalization-dialog-body { padding-inline: 13px; }

@@ -6,6 +6,19 @@ import re
 _ANSWER = re.compile(r'^\s*\{\s*"action"\s*:\s*"chat"\s*,\s*"reply_markdown"\s*:\s*"')
 _STRING_PREFIX = re.compile(r'(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*')
 _ANALYSIS_MARKER = re.compile(r"<\s*/?\s*(?:t(?:h(?:i(?:n(?:k)?)?)?)?)?$|<\s*/?\s*think\b", re.I)
+_WRAPPER_SUFFIX = re.compile(r'[\s"”}]+$')
+_MARKDOWN_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
+
+
+def assistant_markdown(text):
+    """Drop unmatched response framing at the end of the decoded prose."""
+    suffix = _WRAPPER_SUFFIX.search(text)
+    if not suffix or "}" not in suffix[0] or not text[:suffix.start()].strip():
+        return text
+    prose = _MARKDOWN_CODE.sub("", text)
+    if prose.count("}") <= prose.count("{") or prose.count("```") % 2:
+        return text
+    return text[:suffix.start()].rstrip()
 
 
 class AssistantTextStream:
@@ -22,8 +35,8 @@ class AssistantTextStream:
         start = _ANSWER.match(self.buffer)
         if not start:
             return
-        encoded = _STRING_PREFIX.match(self.buffer, start.end()).group()
-        decoded = json.loads('"' + encoded + '"')
+        encoded = _STRING_PREFIX.match(self.buffer, start.end())
+        decoded = json.loads('"' + encoded.group() + '"')
         # A UTF-16 pair can straddle chunks. Keep the high surrogate pending.
         if decoded and 0xD800 <= ord(decoded[-1]) <= 0xDBFF:
             decoded = decoded[:-1]
@@ -31,6 +44,12 @@ class AssistantTextStream:
         marker = _ANALYSIS_MARKER.search(decoded)
         if marker:
             decoded = decoded[:marker.start()]
+        decoded = assistant_markdown(decoded)
+        # A quote can be the first character of a leftover JSON wrapper.
+        # Wait for following prose or for the verified final answer.
+        closed = self.buffer[encoded.end():].startswith('"')
+        if not closed and (suffix := _WRAPPER_SUFFIX.search(decoded)) and suffix[0].strip():
+            decoded = decoded[:suffix.start()]
         if decoded.startswith(self.emitted) and len(decoded) > len(self.emitted):
             self.deliver(decoded[len(self.emitted):])
             self.emitted = decoded

@@ -150,7 +150,7 @@ async def test_private_memory_updates_after_worker_restart_and_stays_private(set
         latest, = runtime.daily_memory.recall_organized(scope, "operator", "汇报")
         assert latest["id"] == first["id"] and latest["quote"].endswith("先说风险")
         assert runtime.daily_memory.summary(scope) == [
-            {"kind": "preference", "notes": [{"id": latest["id"], "text": latest["anecdote"]}]},
+            {"kind": "preference", "notes": [{"id": latest["id"], "text": latest["anecdote"], "visibility": "owner"}]},
         ]
         assert runtime.store.one("SELECT 1 FROM operator_chat_turns WHERE request_id=?", (task_id,))
         app.state.browsing.discovery.remember_account("200")
@@ -184,15 +184,13 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
         with runtime.store.db:
             memory.save_organized(scope, source, proposal, None)
         candidate, = memory.organized(scope)
-        assert not memory.recall_organized(scope, "comment", "企鹅", resource=resource, thread="40")
-        memory.change_organized(scope, candidate["id"], channels=["comment", "live", "dynamic"])
         assert memory.recall_organized(scope, "comment", "接着说", resource=resource, thread="40")
         assert not memory.recall_organized(scope, "comment", "企鹅", resource=resource, thread="70")
         row, _ = app.state.browsing.repo.create_round(scope[0], runtime.character, BrowsingPolicy().model_dump(), 0, False)
         decision_input = {"thread": {"target": {"bvid": resource, "root": "40", "parent": "40"},
                                      "source": {"comment_id": "40", "text": "企鹅", "author_uid": "51"}}}
         bound = app.state.browsing.decisions._response_actor_data(row, decision_input)
-        assert any(item["text"] == "轮到第三只企鹅了" for item in bound["own_public_experiences"])
+        assert any("轮到第三只了" in item["text"] for item in bound["own_public_experiences"])
         source_snapshot = next(row for row in app.state.dynamics._sources() if row["id"] == f"organized:{candidate['id']}")
         dynamic = {"character_id": scope[1], "character_version": scope[2], "sources": [source_snapshot]}
         assert app.state.dynamics._valid_sources(dynamic)
@@ -207,14 +205,18 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
             "next_evaluation_seconds": 300,
         }, [other, source_snapshot], schedule=False)
         assert app.state.dynamics._valid_sources(app.state.dynamics._post(saved["post_id"]))
-        memory.change_organized(scope, candidate["id"], channels=["live"])
+        memory.change_organized(scope, candidate["id"], owner_only=True)
         with pytest.raises(ValueError, match="记忆已变更"):
             runtime.validate_memory_delivery(bound["_memory_audit"])
         assert not app.state.dynamics._valid_sources(dynamic)
         assert not app.state.dynamics._valid_sources(app.state.dynamics._post(saved["post_id"]))
+        assert not memory.recall_organized(scope, "live", "企鹅")
+        memory.change_organized(scope, candidate["id"], owner_only=False, note="号主家里那只叫松果糖。")
+        assert memory.organized(scope, item_id=candidate["id"])[0]["anecdote"] == "号主家里那只叫松果糖。"
 
         async def generate(messages, character, event_id, source_text):
-            assert any("第三只企鹅" in message["content"] for message in messages)
+            assert any("轮到第三只了" in message["content"] for message in messages)
+            assert all("松果糖" not in message["content"] for message in messages)
             memory.change_organized(scope, candidate["id"], delete=True)
             return Reply(spoken_text="轮到第三只企鹅了")
 
@@ -253,7 +255,7 @@ async def test_public_organizer_saves_one_experience_from_legacy_receipt(setting
             )
         assert await runtime.memory_organizer.run_once() == 1
         candidate, = runtime.daily_memory.organized(scope)
-        assert candidate["status"] == "active" and candidate["channels"] == []
+        assert candidate["status"] == "active" and candidate["channels"] == ["live", "comment", "dynamic"]
         matches = runtime.daily_memory.recall_organized(scope, "operator", "运营汇报")
         assert [item["id"] for item in matches] == [candidate["id"]]
         assert [item["text"] for item in candidate["source"]["references"]] == [target["source_text"], "第二只一直往前探头"]
@@ -285,7 +287,7 @@ def test_migrate_organized_memory_without_restoring_revoked_public_experience(se
         store.execute("UPDATE daily_highlights SET status='pending_review' WHERE id IN (?,?)", (saved["id"], revoked))
         migrated = DailyMemoryService(store)
         assert migrated.organized(scope) == [saved]
-        assert migrated.organized(scope)[0]["channels"] == []
+        assert migrated.organized(scope)[0]["channels"] == []  # Unbound account.
         assert store.one("SELECT status FROM daily_highlights WHERE id=?", (revoked,))["status"] == "pending_review"
     finally:
         store.close()

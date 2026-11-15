@@ -15,6 +15,17 @@ ANECDOTE_CATEGORIES = ("comment_anecdote", "live_highlight", "community_meme")
 HIGHLIGHT_CATEGORIES = (*ANECDOTE_CATEGORIES, "public_incident")
 HIGHLIGHT_STATUSES = ("active", "pending_review", "archived")
 MEMORY_CHANNELS = ("live", "comment", "dynamic")
+_PUBLIC_MEMORY_SOURCE = re.compile(
+    r"https://(?:www\.bilibili\.com/video/(?P<bvid>BV[0-9A-Za-z]{10})/?"
+    r"(?:\?(?:p|t)=[0-9]+(?:&(?:p|t)=[0-9]+)?)?"
+    r"|t\.bilibili\.com/(?P<dynamic>[1-9][0-9]{0,19}))"
+    r"(?:#reply(?P<comment>[1-9][0-9]{0,19}))?"
+)
+_MEMORY_CREDENTIAL = re.compile(
+    r"(?i)-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{12,}|"
+    r"gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b|"
+    r"(?:api[ _-]?key|access[ _-]?token|password|secret|密码|密钥|SESSDATA|bili_jct)\s*(?:是|为|[=:：])\s*[^\s，。；]{4,}"
+)
 HIGHLIGHT_ACCOUNT_FILTER = (
     "COALESCE(CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END,?)=?"
 )
@@ -22,6 +33,10 @@ HIGHLIGHT_ACCOUNT_FILTER = (
 
 class MemoryChanged(ValueError):
     """A generated reply refers to memory that changed before delivery."""
+
+
+def contains_memory_credential(text):
+    return bool(_MEMORY_CREDENTIAL.search(text or ""))
 
 
 RETROSPECTIVE_CUES = (
@@ -189,27 +204,82 @@ class DailyMemoryService:
             return proof
         return self._legacy_source_evidence(row)
 
-    def organized(self, scope, *, limit=100, item_id=None, unclassified=False):
+    def organized(self, scope, *, limit=100, item_id=None, unclassified=False, recall=None):
         private_unclassified = (
             "COALESCE(json_extract(source_evidence,'$.memory_kind'),'')='private' "
             "AND json_extract(source_evidence,'$.scene') IS NULL "
             "AND json_extract(source_evidence,'$.summary_kind') IS NULL"
         )
+        query = ""
+        parameters = [scope[1], scope[2], scope[0], item_id, item_id, int(unclassified)]
+        if recall is not None:
+            channel, keywords, resource, thread = recall
+            document = ("lower(headline || ' ' || quote || ' ' || anecdote || ' ' || tags)" if channel == "operator"
+                        else "lower(quote || ' ' || json_extract(source_evidence,'$.memory_source.references'))")
+            alternatives = [f"instr({document},?)>0" for _ in keywords]
+            parameters.extend(word.lower() for word in keywords)
+            if thread and resource:
+                alternatives.append("(json_extract(source_evidence,'$.memory_source.thread.resource')=? "
+                                    "AND json_extract(source_evidence,'$.memory_source.thread.root_id')=?)")
+                parameters.extend((resource, str(thread)))
+            if not alternatives:
+                return []
+            query = "AND status='active' AND (" + " OR ".join(alternatives) + ") "
         rows = self.store.all(
             "SELECT * FROM daily_highlights WHERE character_id=? AND character_version=? "
             "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.memory_kind') END IS NOT NULL "
             "AND CASE WHEN json_valid(source_evidence) THEN json_extract(source_evidence,'$.operation_account_id') END=? "
             "AND (? IS NULL OR id=?) "
             f"AND CASE WHEN json_valid(source_evidence) THEN ({private_unclassified}) = ? END "
+            + query +
             "ORDER BY updated_at DESC,id DESC LIMIT ?",
-            (scope[1], scope[2], scope[0], item_id, item_id, int(unclassified), limit),
+            (*parameters, limit),
         )
         result = []
         for row in rows:
             if proof := self._source_evidence(row):
-                result.append(row | {"memory_kind": proof["memory_kind"], "source": proof["memory_source"],
-                                     "channels": proof.get("channels", []), "proof": proof})
+                if any(contains_memory_credential(row[key]) for key in ("quote", "headline", "anecdote")):
+                    continue
+                source = proof["memory_source"]
+                public = self._public_memory_projection(proof, source)
+                channels = []
+                if row["status"] == "active":
+                    if proof.get("scene") == "live":
+                        channels = ["live"]
+                    elif public and not proof.get("owner_only"):
+                        channels = list(MEMORY_CHANNELS)
+                result.append(row | {"memory_kind": proof["memory_kind"], "source": source,
+                                     "channels": channels, "public_memory": public, "proof": proof})
         return result
+
+    @staticmethod
+    def _public_memory_projection(proof, source):
+        """Derive shared content from the source snapshot, never the editable note."""
+        if proof["memory_kind"] != "experience" or proof["kind"] != "viewer" or not proof.get("operation_account_id"):
+            return None
+        anchor = source.get("thread") or {}
+        references = []
+        for ref in source.get("references", []):
+            text = ref.get("text") or ""
+            match = _PUBLIC_MEMORY_SOURCE.fullmatch(ref.get("href") or "")
+            if not match or not text.strip() or contains_memory_credential(text):
+                continue
+            resource = match["bvid"] or f"dynamic:{match['dynamic']}"
+            if anchor and (resource != anchor.get("resource") or not match["comment"]):
+                continue
+            if ref.get("comment_id") and str(ref["comment_id"]) != match["comment"]:
+                continue
+            references.append({"href": match[0], "text": text, "comment_id": match["comment"],
+                               "author_uid": ref.get("author_uid"), "author_name": ref.get("author_name")})
+        primary = next((ref for ref in references if ref["text"] == proof["quote"]
+                        and (not anchor or ref["comment_id"] == str(anchor.get("comment_id")))), None)
+        if not primary:
+            return None
+        # Only include related references from a bound thread. A video finding
+        # has one original excerpt and no verified reply relationship.
+        ordered = [primary] + [ref for ref in references if anchor and ref is not primary]
+        excerpts = [" ".join(ref["text"].split())[:150] for ref in ordered[:2]]
+        return {"text": "；".join(f"「{text}」" for text in excerpts), "references": ordered}
 
     def summary(self, scope):
         groups = {"preference": [], "decision": [], "experience": []}
@@ -219,8 +289,14 @@ class DailyMemoryService:
             kind = "experience" if row["memory_kind"] == "experience" else row["proof"].get("summary_kind", "preference")
             notes = groups[kind]
             if len(notes) < 3 and all(item["text"] != row["anecdote"] for item in notes):
-                notes.append({"id": row["id"], "text": row["anecdote"]})
+                notes.append({"id": row["id"], "text": row["anecdote"], "visibility": self.memory_visibility(row)})
         return [{"kind": kind, "notes": notes} for kind, notes in groups.items() if notes]
+
+    @staticmethod
+    def memory_visibility(row):
+        if "live" in row["channels"] and row["proof"].get("scene") == "live":
+            return "live_rule"
+        return "shared" if row["channels"] else "owner"
 
     def resolve_legacy_private(self, scope, row, decision):
         current = self.organized(scope, item_id=row["id"], unclassified=True)
@@ -262,6 +338,8 @@ class DailyMemoryService:
         kind = source["kind"]
         rows = self.organized(scope)
         quote = source["text"]
+        if any(contains_memory_credential(text) for text in (quote, decision.headline, decision.note, *decision.tags)):
+            return False
         tags = sorted({tag.strip()[:24] for tag in decision.tags if tag.strip()})
         headline = decision.headline.strip()
         signature = re.sub(r"\W", "", headline).casefold()
@@ -300,7 +378,7 @@ class DailyMemoryService:
             return False
         source_ref = existing["source_ref"] if existing else key
         proof = self._source_proof("operator_note" if kind == "private" else "viewer", source_ref, quote)
-        proof.update(memory_kind=kind, operation_account_id=scope[0], channels=[],
+        proof.update(memory_kind=kind, operation_account_id=scope[0],
                      memory_source={"key": key, "at": source["at"], "references": source.get("references", []),
                                     "thread": source.get("anchor")})
         if kind == "private":
@@ -309,7 +387,6 @@ class DailyMemoryService:
             proof["preference_sources"] = list(dict.fromkeys([*previous, key]))
         if target:
             proof["scene"] = target
-            proof["channels"] = [target]
             proof["style_group"] = source["style_group"]
         at = time.time()
         fields = (headline, quote, decision.note.strip(), dump_memory(tags), dump_memory(proof), at)
@@ -327,7 +404,7 @@ class DailyMemoryService:
             )
         return True
 
-    def change_organized(self, scope, item_id, *, channels=None, headline=None, note=None, delete=False):
+    def change_organized(self, scope, item_id, *, owner_only=None, headline=None, note=None, delete=False):
         rows = self.organized(scope, item_id=item_id)
         if not rows:
             return None
@@ -335,6 +412,8 @@ class DailyMemoryService:
         proof = row["proof"]
         if headline is not None and not headline.strip() or note is not None and not note.strip():
             raise ValueError("记忆标题和内容不能为空")
+        if any(contains_memory_credential(text) for text in (headline, note)):
+            raise ValueError("记忆不能保存凭据")
         with self.store.db:
             if delete:
                 keys = {row["source_ref"], row["source"]["key"]}
@@ -365,12 +444,11 @@ class DailyMemoryService:
                          for key in keys if key.startswith("turn:")],
                     )
                 return {"id": item_id, "deleted": True}
-            if channels is not None:
-                if row["memory_kind"] != "experience" or set(channels) - set(MEMORY_CHANNELS):
-                    raise ValueError("这条记忆的渠道授权无效")
-                proof["channels"] = [channel for channel in MEMORY_CHANNELS if channel in channels]
-            if row["status"] != "active":
-                proof["channels"] = []
+            if owner_only is not None:
+                if not row["public_memory"] or row["status"] != "active":
+                    raise ValueError("只有已保存且有公开来源的经历可以切换共享")
+                proof["owner_only"] = owner_only
+            proof.pop("channels", None)
             self.store.db.execute(
                 "UPDATE daily_highlights SET headline=?,anecdote=?,source_evidence=?,updated_at=? WHERE id=?",
                 (headline or row["headline"], note or row["anecdote"], dump_memory(proof), time.time(), item_id),
@@ -397,19 +475,27 @@ class DailyMemoryService:
         if not self.preference(scope)["enabled"]:
             return []
         matched = []
-        keywords = self._extract_recall_keywords(text) if specific_experiences else set()
-        for row in self.organized(scope):
+        keywords = self._extract_recall_keywords(text)
+        search = sorted(keywords, key=lambda word: (-len(word), word))[:18]
+        for row in self.organized(scope, recall=(channel, search, resource, thread)):
             if row["status"] != "active" or channel != "operator" and channel not in row["channels"]:
                 continue
             anchor = row["source"].get("thread") or {}
             same_thread = bool(thread and resource == anchor.get("resource") and str(thread) == anchor.get("root_id"))
             same_person = bool(participant and any(str(ref.get("author_uid")) == str(participant)
                                for ref in row["source"]["references"]))
-            score = self.memory_match(row, text)
+            subject = row["headline"] + row["anecdote"]
+            if channel != "operator":
+                public = row["public_memory"]
+                if not public:
+                    continue  # Scene rules are added independently below.
+                subject = public["text"]
+                row = row | {"headline": "公开经历", "anecdote": subject, "quote": subject, "tags": "[]",
+                             "source": row["source"] | {"references": public["references"]}}
+            score = self._score_highlight_match(row, keywords, text)
             if channel == "comment" and anchor and not same_thread:
                 continue
             if specific_experiences and row["memory_kind"] == "experience" and not same_thread:
-                subject = row["headline"] + row["anecdote"]
                 if row["headline"] not in text and not any(len(word) >= 3 and word in subject for word in keywords):
                     continue
             if same_thread or score >= 3:
@@ -575,22 +661,28 @@ class DailyMemoryService:
 
     def public_incident_sources(self, character_id, character_version):
         rows = self.store.all(
-            "SELECT id,incident_key,headline,anecdote,public_sources FROM daily_highlights "
+            "SELECT id,incident_key,public_sources,updated_at FROM daily_highlights "
             "WHERE character_id=? AND character_version=? AND category='public_incident' AND status='active' "
             "ORDER BY highlight_date DESC,id DESC LIMIT 20",
             (character_id, character_version),
         )
-        return [
-            {
+        result = []
+        for row in rows:
+            sources = [ref for ref in json.loads(row["public_sources"] or "[]")
+                       if _PUBLIC_MEMORY_SOURCE.fullmatch(ref.get("url") or "")
+                       and ref.get("quote") and not contains_memory_credential(ref["quote"])]
+            if not sources:
+                continue
+            result.append({
                 "id": f"incident:{row['id']}",
                 "type": "public_incident",
                 "fictional": False,
-                "text": row["headline"] + "：" + row["anecdote"],
+                "text": "；".join(f"「{ref['quote'][:150]}」" for ref in sources[:2]),
                 "incident_key": row["incident_key"],
-                "public_sources": json.loads(row["public_sources"]),
-            }
-            for row in rows
-        ]
+                "public_sources": sources,
+                "memory_version": row["updated_at"],
+            })
+        return result
 
     def record_highlight(
         self,
@@ -914,7 +1006,7 @@ class DailyMemoryService:
         best_row = None
 
         for row in rows:
-            if row["id"] in exclude:
+            if row["id"] in exclude or row["category"] == "public_incident":
                 continue
             proof = self._source_evidence(row)
             if not proof or proof.get("operation_sources") or proof.get("memory_kind"):

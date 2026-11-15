@@ -1,5 +1,5 @@
 import { node, safeMessage } from "./core.js?v=20261105.32";
-import { memoryGroupNames } from "./personalization.js?v=20261114.1";
+import { memoryGroupNames, memoryVisibility } from "./personalization.js?v=20261115.1";
 import { operationControlCard } from "./operator-chat-control.js?v=20261113.12";
 
 const statuses = {
@@ -403,7 +403,12 @@ export function createOperatorCard(root, turn, context) {
     const update = value => {
       root.replaceChildren();
       for (const group of value.groups) {
-        root.append(node("strong", memoryGroupNames[group.kind]), node("p", group.notes.map(note => note.text).join(" ")));
+        root.append(node("strong", memoryGroupNames[group.kind]));
+        for (const note of group.notes) {
+          const paragraph = node("p", note.text + " ");
+          if (memoryVisibility[note.visibility]) paragraph.append(node("small", memoryVisibility[note.visibility], "hint"));
+          root.append(paragraph);
+        }
       }
       if (!value.groups.length) root.append(node("p", "暂无可用的长期记忆。", "hint"));
       root.append(link("管理记忆", "#personalization"));

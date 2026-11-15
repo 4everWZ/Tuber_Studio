@@ -38,6 +38,9 @@ def test_incident_deduplication_provenance_and_clear(store):
     assert source["fictional"] is False
     assert source["public_sources"][0]["url"].endswith("BV13S4i6fE82#reply323231188736")
     assert "你消息是不是回错了" == source["public_sources"][0]["quote"]
+    service.update_highlight(identifier, {"anecdote": "对话里的内部备注"})
+    assert service.public_incident_sources(char["id"], char["version"])[0]["text"] == "「你消息是不是回错了」"
+    assert service.recall_historical_highlight(char["id"], char["version"], "还记得内部备注吗") is None
     service.update_highlight(identifier, {"status": "archived"})
     assert service.context(char, "回错") == []
     assert incident(service, char) == identifier  # Reimport never silently reactivates it.
