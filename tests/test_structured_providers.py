@@ -138,6 +138,14 @@ async def test_assistant_reuses_verified_capacity_and_rechecks_on_model_change(p
     assert sum(request.url.path.endswith("/props") for request in requests) == 2
 
 
+async def test_native_plain_assistant_keeps_accounting_without_a_tool_schema(providers):
+    provider, requests = await providers("local", content="吃过啦，分你半碗。", thinking=True)
+    assert await provider.generate_assistant_text(MESSAGES, max_tokens=64) == "吃过啦，分你半碗。"
+    payload = json.loads(requests[-1].content)
+    assert "response_format" not in payload and payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert provider.last_tokens == 3
+
+
 @pytest.mark.parametrize("kind", ["local", "api"])
 async def test_structured_capacity_is_checked_before_generating(providers, kind):
     provider, requests = await providers(kind, count=3880, actual=3880)

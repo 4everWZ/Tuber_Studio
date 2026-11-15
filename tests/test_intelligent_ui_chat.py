@@ -35,6 +35,15 @@ def test_incremental_assistant_output_handles_json_escapes_and_excludes_tool_fie
     assert assistant_markdown('```js\n}\n```') == '```js\n}\n```'
 
 
+def test_plain_assistant_stream_sends_prose_without_transport_framing():
+    visible = []
+    stream = AssistantTextStream(visible.append, plain=True)
+    stream.feed("半碗，")
+    stream.feed("还给你留了一口。")
+    stream.feed("”}")
+    assert visible == ["半碗，", "还给你留了一口。"]
+
+
 def test_assistant_stream_persists_only_final_text_and_retries_under_same_id(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     calls = []

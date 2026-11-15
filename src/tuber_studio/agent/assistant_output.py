@@ -22,9 +22,10 @@ def assistant_markdown(text):
 
 
 class AssistantTextStream:
-    def __init__(self, deliver, *, limit=48_000):
+    def __init__(self, deliver, *, limit=48_000, plain=False):
         self.deliver = deliver
         self.limit = limit
+        self.plain = plain
         self.buffer = ""
         self.emitted = ""
 
@@ -32,14 +33,22 @@ class AssistantTextStream:
         self.buffer += content
         if len(self.buffer) > self.limit:
             raise ValueError("回复内容超出资源限制")
-        start = _ANSWER.match(self.buffer)
-        if not start:
-            return
-        encoded = _STRING_PREFIX.match(self.buffer, start.end())
-        decoded = json.loads('"' + encoded.group() + '"')
-        # A UTF-16 pair can straddle chunks. Keep the high surrogate pending.
-        if decoded and 0xD800 <= ord(decoded[-1]) <= 0xDBFF:
-            decoded = decoded[:-1]
+        if self.plain:
+            decoded = self.buffer.lstrip()
+            # Let the final decoder handle an unsolicited JSON wrapper.
+            if decoded.startswith("{"):
+                return
+            closed = False
+        else:
+            start = _ANSWER.match(self.buffer)
+            if not start:
+                return
+            encoded = _STRING_PREFIX.match(self.buffer, start.end())
+            decoded = json.loads('"' + encoded.group() + '"')
+            closed = self.buffer[encoded.end():].startswith('"')
+            # A UTF-16 pair can straddle chunks. Keep the high surrogate pending.
+            if decoded and 0xD800 <= ord(decoded[-1]) <= 0xDBFF:
+                decoded = decoded[:-1]
         # Internal analysis markers and protocol fields cannot become partial UI.
         marker = _ANALYSIS_MARKER.search(decoded)
         if marker:
@@ -47,9 +56,15 @@ class AssistantTextStream:
         decoded = assistant_markdown(decoded)
         # A quote can be the first character of a leftover JSON wrapper.
         # Wait for following prose or for the verified final answer.
-        closed = self.buffer[encoded.end():].startswith('"')
         if not closed and (suffix := _WRAPPER_SUFFIX.search(decoded)) and suffix[0].strip():
             decoded = decoded[:suffix.start()]
         if decoded.startswith(self.emitted) and len(decoded) > len(self.emitted):
             self.deliver(decoded[len(self.emitted):])
             self.emitted = decoded
+
+
+def plain_assistant_markdown(text):
+    if _ANSWER.match(text):
+        data = json.loads(text)
+        return data["reply_markdown"]
+    return text

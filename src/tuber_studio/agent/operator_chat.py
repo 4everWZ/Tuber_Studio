@@ -25,7 +25,7 @@ from ..providers import build_messages
 from ..sse import encode_event
 from ..store import dump
 from . import operator_facts
-from .assistant_output import AssistantTextStream, assistant_markdown
+from .assistant_output import AssistantTextStream, assistant_markdown, plain_assistant_markdown
 from .dynamic_chat_material import DynamicChatMaterial
 from .handoff import (
     LIVE_STYLE,
@@ -51,12 +51,13 @@ _EXPERIENCE_SOURCE = (
 _EVENT_ACTIONS = {"event_details", "event_author", "event_reply", "remember_event", "full_video"}
 _TASK_REFERENCE_ACTIONS = {"live_handoff", "stop", "resume_video", "video_details", "inspect_video_frame"}
 _ACTIVITY_TOPIC = re.compile(r"运营|趣事|运行记录|互动记录|评论区|[刷看](?:过|了)(?:了)?[哪什么几]|\b(?:activity log|comment history)\b", re.I)
-_ORDINAL_REFERENCE = re.compile(r"第\s*[一二三两123]\s*[件条个]")
+_ORDINAL_REFERENCE = re.compile(r"第\s*([一二三两123])\s*[件条个]")
+_ORDINALS = {"一": 1, "二": 2, "两": 2, "三": 3, "1": 1, "2": 2, "3": 3}
 _CONTINUED_REFERENCE = re.compile(r"那[条件个]|刚才|后来|然后")
 _EVENT_QUERIES = (
     (r"原话|原楼|原评论|[说讲]了什么", "event_details"),
-    (r"作者|谁.{0,3}[说讲写发]", "event_author"),
-    (r"回.{0,4}[吗沒没谁]|送达|回执", "event_reply"),
+    (r"作者|谁.{0,3}[说讲写发](?:过|出|的)", "event_author"),
+    (r"(?:回复|回过|回了|有回).{0,4}[吗沒没谁]|回没回|送达|回执", "event_reply"),
     (r"记成.{0,4}经历|记下.{0,3}(?:这|那)", "remember_event"),
 )
 _SCENE_ACTIONS = (
@@ -71,6 +72,10 @@ _SCENE_ACTIONS = (
     (r"游戏|星露谷|植物大战僵尸|存档|种作物|种向日葵|浇水|砍树|接管", ("game_status", "game_handoff")),
     (r"停[止掉下了]|先停|暂停|结束|下播|关掉", ("stop",)),
 )
+
+
+def event_query_actions(message):
+    return {action for pattern, action in _EVENT_QUERIES if re.search(pattern, message)}
 
 
 class VideoRange(StrictModel):
@@ -153,7 +158,7 @@ class AssistantDecision(ChatIntent):
             if _ACTIVITY_TOPIC.search(message):
                 available.add("activity")
             active_event = previous_card in {"operation_events", "operation_event"}
-            event_queries = {action for pattern, action in _EVENT_QUERIES if re.search(pattern, message)}
+            event_queries = event_query_actions(message)
             if not event_queries and (_ORDINAL_REFERENCE.search(message) or active_event and _CONTINUED_REFERENCE.search(message)):
                 event_queries.add("event_details")
             available.update(event_queries)
@@ -353,6 +358,18 @@ class OperatorChat:
         )
         return row["type"] if row else None
 
+    def _source_followup(self, message, char, account):
+        """Resolve unambiguous read projections directly on the displayed source."""
+        if re.search(r"不(?:用|要|必)|先别|如果", message) or not re.search(r"[？?]|什么|谁|吗|没", message):
+            return None
+        actions = event_query_actions(message)
+        if len(actions) != 1 or "remember_event" in actions:
+            return None
+        ordinal = _ORDINAL_REFERENCE.search(message)
+        if not ordinal and (not _CONTINUED_REFERENCE.search(message) or self._previous_card(char, account) != "operation_event"):
+            return None
+        return ChatIntent(action=actions.pop(), position=_ORDINALS[ordinal[1]] if ordinal else None)
+
     async def _assistant(self, data, request_id, char, account, emit):
         started = time.monotonic()
         stage_times = {"preparing": started}
@@ -391,11 +408,14 @@ class OperatorChat:
                 previous = self._previous_card(char, account) if _CONTINUED_REFERENCE.search(data.message) else None
                 schema = AssistantDecision.schema_for_turn(data.message, chat_only=bool(data.intent), previous_card=previous)
                 actions = schema["properties"]["action"]["enum"]
+                prepared_provider = self.runtime.llm
+                plain = getattr(prepared_provider, "generate_assistant_text", None) if actions == ["chat"] else None
                 instruction = (
                     f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
-                    "听懂一句就接一句，闲聊不用追问目的。只有对方需要细节时才展开。正文填 reply_markdown，先写 action。"
+                    "有具体问题先回答，再接梗。闲聊不用追问目的，按需要展开细节。"
                     "只承接仍有关的对话。"
                 )
+                instruction += "直接写号主看见的正文。" if plain else "正文填 reply_markdown，先写 action。"
                 if actions != ["chat"]:
                     instruction += (
                         "仅在用户明确查询真实记录或交办任务时选择工具并留空正文。可用 action："
@@ -423,7 +443,7 @@ class OperatorChat:
 
                 # Revocable content is buffered. Still consume the upstream stream
                 # to measure the first model chunk and cancel it promptly.
-                decoder = AssistantTextStream(deliver) if emit and not audit else None
+                decoder = AssistantTextStream(deliver, plain=bool(plain)) if emit and not audit else None
 
                 def read_chunk(text):
                     nonlocal model_characters
@@ -433,7 +453,7 @@ class OperatorChat:
                         decoder.feed(text)
 
                 report("preflight")
-                if prepare := getattr(self.runtime.llm, "prepare_assistant_capacity", None):
+                if prepare := getattr(prepared_provider, "prepare_assistant_capacity", None):
                     await prepare()
                 report("queued")
                 async with self._generation_slot():
@@ -441,11 +461,14 @@ class OperatorChat:
                     self._check_scope(char, account)
                     self.runtime.validate_memory_delivery(audit)
                     provider = self.runtime.llm
+                    if provider is not prepared_provider:
+                        raise HTTPException(409, "推理模型已切换，可重新发送")
                     maximum = max(1024, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
-                    value = await provider.generate_assistant_json(
-                        messages, schema, max_tokens=maximum, on_content=read_chunk if emit else None,
-                        on_stage=report,
-                    )
+                    options = {"max_tokens": maximum, "on_content": read_chunk if emit else None, "on_stage": report}
+                    if plain:
+                        value = {"action": "chat", "reply_markdown": plain_assistant_markdown(await plain(messages, **options))}
+                    else:
+                        value = await provider.generate_assistant_json(messages, schema, **options)
                     decision = AssistantDecision.model_validate(value)
                     if decision.action not in actions:
                         raise ValueError("本轮没有请求此类运营记录")
@@ -678,7 +701,8 @@ class OperatorChat:
                 ):
                     raise HTTPException(409, "该请求已绑定其他对话")
                 return self._visible(result)
-            intent = data.intent or (ChatIntent(action="full_video") if data.video_selection else None)
+            intent = data.intent or (ChatIntent(action="full_video") if data.video_selection else
+                                     self._source_followup(data.message, char, account))
             decision, audit = None, None
             if (intent is None or intent.action == "chat") and hasattr(self.runtime.llm, "generate_assistant_json"):
                 decision, audit = await self._assistant(data, request_id, char, account, emit)

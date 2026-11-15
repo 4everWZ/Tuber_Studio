@@ -36,6 +36,7 @@ REPLY_SCENES = {
 }
 
 _turn_token_counts = ContextVar("turn_token_counts", default=None)
+_ASSISTANT_CAPACITY_TTL = 90
 
 
 def reuse_turn_token_counts(function):
@@ -227,7 +228,7 @@ class LlamaCppProvider:
                 raise ValueError(f"模型服务实际上下文{self.server_tokens}小于配置{window}")
             self.live_thinking_budget_supported = supports_live_thinking_budget(properties)
             self.profile_error = None
-            self._assistant_capacity = (self._capacity_key(), monotonic() + 30)
+            self._assistant_capacity = (self._capacity_key(), monotonic() + _ASSISTANT_CAPACITY_TTL)
             return True
         except Exception as error:
             self._assistant_capacity = None
@@ -441,6 +442,17 @@ class LlamaCppProvider:
             self._assistant_capacity = None
             raise
 
+    async def generate_assistant_text(self, messages, *, max_tokens, on_content=None, on_stage=None):
+        try:
+            return await self._generate_json(
+                messages, None, max_tokens=max_tokens,
+                sampling=self.sampling() | {"dry_multiplier": 0.8, "dry_allowed_length": 4, "dry_penalty_last_n": 256},
+                enable_thinking=False, on_content=on_content, on_stage=on_stage, bounded_assistant=True,
+            )
+        except (ValueError, httpx.HTTPError):
+            self._assistant_capacity = None
+            raise
+
     async def generate_live_json(self, messages, schema, *, max_tokens):
         return await self._generate_json(messages, schema, max_tokens=max_tokens, sampling=self.sampling(), live=True)
 
@@ -455,7 +467,8 @@ class LlamaCppProvider:
     async def _generate_json(self, messages, schema, *, max_tokens, sampling, live=False, thinking_limit=None,
                              on_content=None, on_stage=None, enable_thinking=None, bounded_assistant=False):
         self._begin_generation_observation()
-        json_schema_text(schema, max_tokens)
+        if schema is not None:
+            json_schema_text(schema, max_tokens)
         if on_stage:
             on_stage("checking_model")
         if not bounded_assistant or not self._assistant_capacity_current():
@@ -494,7 +507,7 @@ class LlamaCppProvider:
             "stream": False,
             "chat_template_kwargs": {"enable_thinking": thinking},
             **({"reasoning_format": "deepseek"} if thinking else {}),
-            "response_format": {"type": "json_object", "schema": schema},
+            **({"response_format": {"type": "json_object", "schema": schema}} if schema is not None else {}),
             **({"seed": self.config["seed"]} if "seed" in self.config else {}),
         }
         timeout = httpx.Timeout(self.config.get("prefill_timeout_seconds", 600), connect=5)
@@ -526,9 +539,17 @@ class LlamaCppProvider:
             or (not 0 < usage["prompt_tokens"] <= tokens if conservative else usage["prompt_tokens"] != tokens)
         ):
             raise ValueError("模型未确认结构化输入完整计量；未采用结果")
-        value = parse_json_object(message.get("content"))
+        value = message.get("content")
+        if not isinstance(value, str):
+            raise ValueError("模型未返回文本")
+        if schema is not None:
+            value = parse_json_object(value)
         self.last_tokens = usage["prompt_tokens"]
         settle_generation(reservation, usage)
+        if bounded_assistant:
+            # A complete, accounted reply keeps the same model warm. Model
+            # changes and transport failures still invalidate the fingerprint.
+            self._assistant_capacity = (self._capacity_key(), monotonic() + _ASSISTANT_CAPACITY_TTL)
         return value
 
     async def _stream_json(self, payload, timeout, on_content):
