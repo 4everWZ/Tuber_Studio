@@ -23,9 +23,9 @@
 
 ## 独立 Omni 部署
 
-AGX 推理、Avatar 和媒体独立建仓、独立发布，与通用 Agent 并行推进。首个候选用 MiniCPM-o 4.5 验证双工与 Chat Completions 同服；Realtime-Venus 在官方原生实现上做候选对照。 [可行性和部署契约](../specs/foundation/omni-deployment.md)
+两套 Compose 已落地。独立基础设施仓库维护 MiniCPM-o 4.5、共享推理网关和 MediaMTX。业务仓库维护 Core 与 GIF Avatar 媒体桥。AGX 已通过两栈启动及模拟推理下的节目与 Agent 后台共驻。旧 llama.cpp 已停止，业务切换等待原生 Chat Completions 和 Realtime 的实机准入。 [业务 Compose](../../deploy/omni/README.md) · [部署验收](../../evaluations/results/omni-deployment-20261116.md) · [部署契约](../specs/foundation/omni-deployment.md)
 
-1. 盘点目标 AGX 当前系统、资源和兼容内核，从隔离版本验证固定 vLLM-Omni ARM64 组合。先验两种接口和真实语音打断，再根据模型支持情况决定是否量化。记录不支持的接口和回退。
+1. 当前 AGX 为 JetPack 6／R36.4.7。隔离加载官方 CUDA 12.9 Tegra 库后，已在 SM 8.7 上执行 PTX 8.8 计算。固定预编译 PyTorch 缺少该架构的内核，先构建同版本 SM 8.7 wheel，再验证容器计算、三个模型阶段、文字／视觉／双工、真实语音打断及可用内存。CUDA 13 的固定镜像留给适配的系统，首测用原精度。
 2. 在可信 HTTPS 的测试工作台接输入、输出及 Avatar，再接 OBS。先把现有形象接入确认时钟和播放回执，然后验证 Ditto 及备选驱动。试运行 Remotion 离线产物任务与通用工具，测和节目共驻。
 3. 通过[实机准入](../specs/foundation/omni-deployment.md#实机准入与切换)后按能力切换 AGX 生产模型，验旧入口和回退。业务迁到 AGX 时另做唯一写入者迁移和 Laptop 关机续跑验证，可独立回退业务与模型。
 

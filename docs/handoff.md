@@ -1,4 +1,4 @@
-# 项目交接 · 2026-11-15
+# 项目交接 · 2026-11-16
 
 ## 当前状态
 
@@ -10,7 +10,7 @@
 
 按[当前计划](plans/current.md#常驻-agent-与跨端记忆)，先用通用助手跑通流式对话、多步工具、持久任务及跨设备恢复，再接大肥鱼的角色、记忆、号主主页及领域能力。
 
-独立 Omni 部署可并行准备。先验 MiniCPM-o 4.5 的 AGX 双工及通用接口，再加 Avatar 与混合负载。现行运行配置见下，候选及切换准入见 [AGX Omni 部署](specs/foundation/omni-deployment.md)。
+独立 Omni 基础设施 Compose 和业务 Compose 已入 Git。业务 Compose 自持 Core 数据卷，包含已有 GIF Avatar 的媒体桥和可选 Remotion worker 准入。AGX 的两栈传输已用隔离模拟上游核验。CUDA 12.9 兼容库可在 AGX 执行 GPU 内核，预编译 PyTorch 缺少 SM 8.7 内核。模型加载等待同版本源码构建与容器实测。 [部署验收](../evaluations/results/omni-deployment-20261116.md) · [AGX Omni 部署](specs/foundation/omni-deployment.md) · [业务 Compose](../deploy/omni/README.md)
 
 1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)
@@ -30,9 +30,9 @@
 
 号主逐字对话从 `POST /api/chat/intelligent/stream` 接收 SSE。当前 9B 的原生正文流已通过节点代理实测。业务日志记录本地上下文、模型能力检查、调度等待、首字、输出规模和 token 用量。
 
-运营使用 AGX 上独立的 llama.cpp CUDA 容器，已核验 `dafeiyu-qwen35-9b:1.0.0` 的 Q4_K_M 权重、Q8_0 投影器、262,144 窗口和 `q4_0` K/V。新安装的运营和直播均默认引用同一 9B，按固定 Hugging Face 发布版本准备资产，默认开启思考。直播使用 Genie 语音和图片／GIF 形象，9B 与 Genie 的共驻和首音待实机复验。 [部署指南](guides/deployment.md) · [可选 Live2D](guides/live/avatar.md)
+AGX 上大肥鱼与 Spatial Home Edge 的旧 llama.cpp CUDA 容器均已停止。保留容器配置和资产。大肥鱼的 9B 历史基线为 `dafeiyu-qwen35-9b:1.0.0`，曾用 Q4_K_M 权重、Q8_0 投影器、262,144 窗口和 `q4_0` K/V。业务语言模型仍指向已停的端点，切换等待 Omni 实机验收。已有 Genie 语音端点继续提供照稿念和试听所需服务。 [部署指南](guides/deployment.md) · [可选 Live2D](guides/live/avatar.md)
 
-电脑工作台保存的运营和直播语言模型均已指向现用 9B 端点，重载后从设置接口读回一致。现有 Genie 语音仍由原节点提供。直播档切换和实际播放待核验，改动前的业务配置留在版本目录的 `rollback/studio-before-live-9b-20261113.json`。
+电脑工作台的运营和直播 9B 配置保留在原配置与版本目录中。候选容器使用隔离数据卷，切换时按唯一写入者的迁移顺序处理现有业务数据。 [迁移与回退](guides/deployment.md)
 
 Hub 的 9B 模型卡已同步号主对话和故事板取材流程，以及真实运营记录的追问复测。模型资产使用固定 `1.0.0` 修订。 [Hugging Face 模型卡更新](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf/commit/1bdd0b6422d6bb82302fe5e74f7ccae6bf5ed0d3) · [发布卡源稿](model-card.md)
 
