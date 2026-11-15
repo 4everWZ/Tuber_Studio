@@ -61,7 +61,9 @@ LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json
 
 ### AGX Orin 候选验收
 
-AGX Orin 64 GB 由 CPU 和 GPU 共享内存。本项目以约 32 GB 共驻预算验收。用目标运营或直播档实际运行，记录权重、配套视觉资产、4-bit K/V、服务模板、实开窗口、整机峰值和换页。 [9B 装配证据](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [9B 配对评估](../../../evaluations/results/dafeiyu-clean-9b-20261111.md)
+双工 Omni 推理和神经 Avatar 的独立部署、候选能力、共驻与切换条件见 [AGX Omni 部署](omni-deployment.md)。首测 MiniCPM-o 4.5 经网关以 `omni-default` 提供 Chat Completions 与 Realtime，Provider 按实际能力使用。将来仅在目标引擎版本和部署模式验证原生 Responses 后增设相应适配。现行 9B、视觉和 Genie 用于功能和质量对照及回退。
+
+AGX Orin 64 GB 由 CPU 和 GPU 共享内存。现行 9B 档以约 32 GB 共驻预算验收。用目标运营或直播档实际运行，记录权重、配套视觉资产、4-bit K/V、服务模板、实开窗口、整机峰值和换页。 [9B 装配证据](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [9B 配对评估](../../../evaluations/results/dafeiyu-clean-9b-20261111.md)
 
 状态探测遵守同一凭证绑定。临时输入的凭证不进入 URL 或日志，保存的凭证仅用于其绑定端点，内部 broker token 仅用于已配对节点的受控路径。检查临时地址使用明确提供给该地址的凭证，或执行无凭证探测。
 

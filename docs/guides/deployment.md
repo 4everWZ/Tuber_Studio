@@ -32,6 +32,8 @@ CI 分开运行 Python CPU 测试、独立程序包校验和可选组件的 Node
 
 ## 电脑业务主机与独立推理节点
 
+本节记录现有可安装方案。AGX Omni 仍在实机准备阶段。目标由独立仓库维护 `infra-compose.yml`（vLLM-Omni、共享推理网关、MediaMTX）与可独立发布的 `app-compose.yml`（Tuber Studio Core、Avatar Engine、按需 Remotion Worker 及后续应用）。应用通过网关使用 `omni-default`，按健康状态核对实际模型版本和协议。安装与切换命令待目标设备通过 [Omni 部署设计与准入](../specs/foundation/omni-deployment.md)后发布。
+
 默认部署由电脑运行工作台、平台工具、点歌和 OBS，局域网内 Jetson 提供受认证的推理。业务数据、平台凭据和登录会话保存在电脑，模型、音色模型及推理缓存留在 Jetson。数据归属与恢复见[跨主机规范](../specs/foundation/distributed-runtime.md)。
 
 电脑使用项目 Python 环境。在线点歌按需安装 Node.js 22 或更高版本，并执行下列第二条命令。

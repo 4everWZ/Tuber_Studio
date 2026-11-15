@@ -1,6 +1,6 @@
 # 游戏直播实施计划
 
-游戏实机在社区运营和直播之后推进，复用现有角色、推理、语音、账号和 OBS 工作台。实机接口与验收由[游戏契约草案](../specs/live/game-livestream.md)维护，业务与推理归属见[跨主机规范](../specs/foundation/distributed-runtime.md)。双机迁移、运营模型和点歌的设备证据保存在[实装报告](../../evaluations/results/distributed-operations-20261102.md)。
+游戏属于[常驻 Agent](current.md#常驻-agent-与跨端记忆)的目标范围。先用已有两款模拟验证共用目标、观察、动作、恢复和记忆接口，同时开展实机设计准备。后续按[游戏契约](../specs/live/game-livestream.md)逐款接入和验收，复用角色、推理、语音、账号及 OBS。双机迁移、运营模型和点歌的设备证据见[实装报告](../../evaluations/results/distributed-operations-20261102.md)。
 
 ## 现有离线能力
 
@@ -23,7 +23,7 @@
 
 ## 原需求覆盖与实施入口
 
-游戏实机属于后续扩展 TBD，尚未进入当前交付实施范围。原始输入的 v0.2 需求已归入[游戏规范](../specs/live/game-livestream.md)，临时输入不作为维护依赖。下表保留原 129 个需求 ID 的责任入口。DR、AR 及 AT-013–016 的非游戏部分参见双机实装报告，游戏部分继续按实机证据验收。
+两款实机均待接入、实测。原始 v0.2 需求由[游戏规范](../specs/live/game-livestream.md)维护。下表保留原 129 个需求 ID 的责任入口。DR、AR 及 AT-013–016 的非游戏部分参见双机实装报告，游戏部分继续按实机证据验收。
 
 | 原ID | 责任入口 | 阶段／核对重点 |
 | --- | --- | --- |

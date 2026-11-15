@@ -3,10 +3,14 @@
 ## 当前状态
 
 - `main` 收录本轮评论直达链接、显示实际回复对象的动态配图，以及从近期私聊提炼角色日常的自主动态。动态模型只接收私聊侧核对过的公开成品。记忆设置变更、账号或角色切换、原对话删除与到期都会影响旧稿交付。 [动态规范](specs/operations/dynamic-operations.md) · [配图样例](../evaluations/results/dynamic-comment-excerpt-20261115.png)
-- 本机 9020 已加载原生聊天正文流和跨端记忆。压测前正常收尾，验收后按原权限恢复自主运营。评论直达、配图和私聊侧脱敏取材继续由现有入口提供。实际平台发布以账号授权和回执为准。 [复验](../evaluations/results/assistant-memory-20261115.md)
+- 本机 9020 已加载原生聊天正文流和基于公开来源的记忆复用。压测前正常收尾，验收后按原权限恢复自主运营。评论直达、配图和私聊侧脱敏取材继续由现有入口提供。实际平台发布以账号授权和回执为准。 [复验](../evaluations/results/assistant-memory-20261115.md)
 - GitHub Actions 的 CPU 测试与 Jetson 打包并行。两项通过才交付正式程序包和写入 GHCR。上一版已在 GitHub Actions 验过双门禁。 [部署指南](guides/deployment.md) · [上一版 CI](https://github.com/4everWZ/Tuber_Studio/actions/runs/43613680003)
 
 ## 下次从这里接
+
+按[当前计划](plans/current.md#常驻-agent-与跨端记忆)，先用通用助手跑通流式对话、多步工具、持久任务及跨设备恢复，再接大肥鱼的角色、记忆、号主主页及领域能力。
+
+独立 Omni 部署可并行准备。先验 MiniCPM-o 4.5 的 AGX 双工及通用接口，再加 Avatar 与混合负载。现行运行配置见下，候选及切换准入见 [AGX Omni 部署](specs/foundation/omni-deployment.md)。
 
 1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)
