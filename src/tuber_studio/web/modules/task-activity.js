@@ -15,6 +15,27 @@ const stoppable = new Set(["queued", "scheduled", "running", "waiting", "needs_i
 const needsAttention = new Set(["needs_input", "awaiting_approval"]);
 const timeLabel = value => new Date(value * 1000).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 
+function observedStatus(tool, result) {
+  if (!result || result.error) return "";
+  if (tool === "operation_status") {
+    const labels = {
+      off: "未启动", starting: "正在启动", running: "运行中", draining: "正在收尾",
+      stopping: "正在停止", blocked: "已阻塞", emergency: "紧急停止",
+    };
+    return Object.hasOwn(labels, result.state) ? labels[result.state] : "";
+  }
+  if (tool === "live_status") {
+    const platform = { stopped: "已停止", live: "直播中", paused: "已暂停" };
+    const native = { idle: "空闲", starting: "正在启动", publishing: "正在发布", stopping: "正在停止", unavailable: "暂不可查" };
+    const program = result.native_program?.state;
+    const status = [];
+    if (Object.hasOwn(platform, result.state)) status.push(`平台直播${platform[result.state]}`);
+    if (Object.hasOwn(native, program)) status.push(`Omni 节目${native[program]}`);
+    return status.join("，");
+  }
+  return "";
+}
+
 function button(label) {
   const element = node("button", label);
   element.type = "button";
@@ -165,12 +186,16 @@ export function initTaskActivity(api, requestId) {
     const state = node("p", task.status === "scheduled" ? `已预约 · ${timeLabel(task.due)}` : states[task.status], "hint");
     state.setAttribute("role", "status");
     const result = node("div", null, "chat-task-result");
-    if (task.message) renderAssistantAnswer(result, { reply_format: "markdown", reply_text: task.message });
+    if (task.message) {
+      renderAssistantAnswer(result, { reply_format: "markdown", reply_text: task.message });
+      if (task.status === "completed") result.prepend(node("p", "助手总结", "hint"));
+    }
     const steps = node("ol", null, "chat-task-steps");
     for (const step of task.steps) {
       const item = node("li");
       const label = tools[step.tool] || step.tool;
-      const summary = step.result ? (step.result.error ? "有错误" : "已收到结果") : "等待结果";
+      const observation = observedStatus(step.tool, step.result);
+      const summary = observation || (step.result ? (step.result.error ? "有错误" : "已收到结果") : "等待结果");
       const details = node("details");
       details.append(node("summary", `${label} · ${summary}`));
       const result = step.result;

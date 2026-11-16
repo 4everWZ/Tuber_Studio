@@ -350,6 +350,7 @@ export function createOperatorCard(root, turn, context) {
     const open = button("查看任务");
     const status = node("p", "", "hint");
     status.setAttribute("role", "status");
+    const summary = node("p", "助手总结", "hint");
     const detail = node("div", null, "chat-task-result");
     let active = true, message = "";
     const update = value => {
@@ -361,9 +362,10 @@ export function createOperatorCard(root, turn, context) {
         renderAssistantAnswer(detail, { reply_format: "markdown", reply_text: message });
       }
       detail.hidden = !message;
+      summary.hidden = value.status !== "completed" || !message;
     };
     open.onclick = () => context.openTask(data.id);
-    root.append(status, detail, open);
+    root.append(status, summary, detail, open);
     update(data);
     return { update, needsRefresh: () => active };
   }
