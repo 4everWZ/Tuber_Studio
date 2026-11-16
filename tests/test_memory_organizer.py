@@ -3,6 +3,7 @@ import json
 import time
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -280,6 +281,103 @@ async def test_organization_cannot_create_memory_from_assistant_output(settings)
         await base.close()
         await app.state.browsing.close()
         runtime.store.close()
+
+
+async def test_shared_memory_keeps_owner_correction_after_two_client_restart(settings):
+    chat_path = "/api/chat/intelligent"
+    memory_path = "/api/daily-memory"
+    initial = "以后运营汇报先讲结论。"
+    pending = "以后运营汇报先讲进度。"
+    correction = "以后运营汇报先讲风险。"
+    false_reply = "我昨天去了雾湾驿站，寄给小明三张明信片。"
+    false_query = "还记得雾湾驿站吗？"
+    organized_sources = []
+
+    class CheckedProvider(OrganizerModel):
+        def __init__(self, provider):
+            self.provider = provider
+
+        def __getattr__(self, name):
+            return getattr(self.provider, name)
+
+        async def generate_json(self, messages, schema, *, max_tokens):
+            packet = json.loads(messages[-1]["content"])
+            organized_sources.extend(item["original"] for item in packet)
+            assert false_reply not in messages[-1]["content"]
+            decisions = await super().generate_json(messages, schema, max_tokens=max_tokens)
+            for decision in decisions.values():
+                decision.update(headline="运营汇报", note=false_reply)
+            return decisions
+
+        async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content, on_stage):
+            return {"action": "chat", "reply_markdown": false_reply}
+
+    def new_app():
+        app = create_app(settings)
+        runtime = app.state.runtime
+        runtime.llm = CheckedProvider(runtime.llm)
+        return app, runtime
+
+    def connected(app, device, cookies=None):
+        transport = httpx.ASGITransport(app=app, client=(f"203.0.113.{device}", 52000))
+        return httpx.AsyncClient(transport=transport, base_url="https://workbench.example", cookies=cookies)
+
+    async def send(client, message):
+        request_id = str(uuid4())
+        response = await client.post(chat_path + "/stream", json={"request_id": request_id, "message": message})
+        assert "event: done" in response.raise_for_status().text
+        return request_id
+
+    async def assert_transcript_is_not_recall(client, runtime, turn, scope_token):
+        history = (await client.get(chat_path)).raise_for_status().json()["turns"]
+        assert any(item["request_id"] == turn and item["reply_text"] == false_reply for item in history)
+        asked = await client.post(memory_path + "/summary", json={"scope": scope_token, "action": "ask", "text": false_query})
+        assert asked.raise_for_status().json()["items"] == []
+        character = runtime.character
+        memory_scope = "operator:" + json.dumps(["100", character["id"]], separators=(",", ":"))
+        entry = runtime.store.one("SELECT facts,kind FROM grounded_memory WHERE event_id=? AND role='assistant'",
+                                  (f"operator:{turn}",))
+        assert entry == {"facts": "[]", "kind": "operator_private"}
+        assert false_reply not in str(runtime.context.memory.retrieve(memory_scope, character, false_query)["evidence"])
+
+    app, runtime = new_app()
+    async with app.router.lifespan_context(app), connected(app, 10) as first, connected(app, 20) as second:
+        runtime.browsing.discovery.remember_account("100")
+        for client in (first, second):
+            assert (await client.get(memory_path)).status_code == 401
+            (await client.post("/api/auth", json={"token": settings.admin_token})).raise_for_status()
+        assert first.cookies != second.cookies
+        initial_turn = await send(first, initial)
+        await runtime.memory_organizer.run_once()
+        report = (await second.get(memory_path)).raise_for_status().json()
+        token = report["scope"]
+        note, = report["organized"]
+        assert note["anecdote"] == initial
+        await assert_transcript_is_not_recall(second, runtime, initial_turn, token)
+
+        preference = {"scope": token, "enabled": False}
+        (await first.put(memory_path + "/preferences", json=preference)).raise_for_status()
+        await send(second, pending)
+        change = {"scope": token, "action": "update", "text": "把「运营汇报」改成" + correction}
+        updated = (await first.post(memory_path + "/summary", json=change)).raise_for_status().json()["item"]
+        assert (updated["id"], updated["anecdote"], updated["quote"]) == (note["id"], correction, initial)
+        stale_path = f"{memory_path}/organized/{note['id']}"
+        stale = await second.patch(stale_path, params={"scope": token, "revision": note["updated_at"]},
+                                   json={"note": pending})
+        assert stale.status_code == 412
+        cookies = (first.cookies, second.cookies)
+
+    app, runtime = new_app()
+    async with app.router.lifespan_context(app), connected(app, 10, cookies[0]) as first, connected(app, 20, cookies[1]) as second:
+        preference["enabled"] = True
+        (await second.put(memory_path + "/preferences", json=preference)).raise_for_status()
+        await runtime.memory_organizer.run_once()
+        assert organized_sources == [initial, pending]
+        for client in (first, second):
+            report = (await client.get(memory_path)).raise_for_status().json()
+            assert report["organized"] == [updated]
+            assert report["summary"][0]["notes"] == [{"id": note["id"], "text": correction, "visibility": "owner"}]
+        await assert_transcript_is_not_recall(second, runtime, initial_turn, token)
 
 
 async def test_private_memory_updates_after_worker_restart_and_stays_private(settings):
