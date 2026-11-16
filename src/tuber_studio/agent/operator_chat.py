@@ -435,11 +435,7 @@ class OperatorChat:
                 previous = self._previous_card(char, account) if _CONTINUED_REFERENCE.search(data.message) else None
                 schema = AssistantDecision.schema_for_turn(data.message, chat_only=bool(data.intent), previous_card=previous)
                 actions = schema["properties"]["action"]["enum"]
-                plain = (
-                    getattr(prepared_provider, "generate_assistant_text", None)
-                    if actions == ["chat"] and (uses_model_card or not hasattr(prepared_provider, "uses_model_card"))
-                    else None
-                )
+                plain = getattr(prepared_provider, "generate_assistant_text", None) if actions == ["chat"] else None
                 instruction = (
                     f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
                     "有具体问题先回答，再接梗。闲聊不用追问目的，按需要展开细节。"

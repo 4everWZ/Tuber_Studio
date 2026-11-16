@@ -307,7 +307,7 @@ async def test_public_text_checks_estimated_and_actual_context(settings, transpo
 
 async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budget(settings, transport):
     captured, state = transport
-    state.update(model_card={"max_model_len": 40960}, count=40500, text="原文已读")
+    state.update(model_card={"max_model_len": 40960}, count=40500, text='{"reply_markdown":"原文已读"}')
     provider = APIProvider(
         settings.data["llm"] | {"model": "remote-model", "context_source": "model_card",
                                 "context_tokens": 12288, "enable_thinking": True, "prompt_token_endpoint": True},
@@ -316,12 +316,14 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
     try:
         assert (await provider.health())["server_context_tokens"] == 40960
         messages = [{"role": "user", "content": "请读完原文并复述结尾"}]
-        assert await provider.generate_assistant_text(messages, max_tokens=4096) == "原文已读"
+        schema = {"type": "object", "properties": {"reply_markdown": {"type": "string"}},
+                  "required": ["reply_markdown"]}
+        assert await provider.generate_assistant_json(messages, schema, max_tokens=4096) == {"reply_markdown": "原文已读"}
         assert [request.url.path.rsplit("/", 1)[-1] for request in captured] == ["models", "prompt_tokens", "completions"]
         requests = [json.loads(request.content) for request in captured if request.method == "POST"]
         assert "max_tokens" not in requests[0] and requests[-1]["max_tokens"] == 460
         assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": True}
-        assert requests[-1]["messages"] == messages
+        assert requests[-1]["messages"] == requests[0]["messages"] and requests[-1]["messages"][-1] == messages[-1]
         assert all(request.headers["authorization"] == "Bearer test-key" for request in captured)
         state["model_card"] = {"max_model_len": 32768}
         await provider.ensure_capacity(refresh=True)

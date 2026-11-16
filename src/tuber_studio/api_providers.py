@@ -264,7 +264,7 @@ class APIProvider:
         settle_generation(reservation, self.last_usage)
         return reply
 
-    async def generate_text(self, messages, *, max_tokens, on_content=None, use_remaining_window=False):
+    async def generate_text(self, messages, *, max_tokens):
         """Generate visible natural text with the same real API usage budget."""
         self.last_content = None
         self.last_finish_reason = None
@@ -273,16 +273,14 @@ class APIProvider:
         if type(max_tokens) is not int or max_tokens < 1:
             raise ValueError("文本输出预算须为正整数")
         count = await self.count_tokens(messages)
-        if use_remaining_window:
-            max_tokens = min(max_tokens, self.capacity_window - count)
-        if max_tokens < 1 or count + max_tokens > self.capacity_window:
+        if count + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("文本输入超出API窗口预算；禁止静默丢弃数据")
         reservation = reserve_generation(
             self.capacity_window - max_tokens,
             max_tokens,
             conservative_input=True,
         )
-        content, actual = await self._complete(messages, budget=max_tokens, on_content=on_content)
+        content, actual = await self._complete(messages, budget=max_tokens)
         if actual + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("API文本实际计量超窗；未采用结果")
         settle_generation(reservation, self.last_usage)
@@ -343,14 +341,6 @@ class APIProvider:
             messages, schema, max_tokens=max_tokens, use_remaining_window=self.uses_model_card,
             on_content=on_content if self.config.get("structured_output") == "json_schema" else None,
         )
-
-    async def generate_assistant_text(self, messages, *, max_tokens, on_content=None, on_stage=None):
-        if on_stage:
-            on_stage("generating")
-        return await self.generate_text(
-            messages, max_tokens=max_tokens, on_content=on_content, use_remaining_window=self.uses_model_card,
-        )
-
 
 class VisionProvider(Protocol):
     async def describe(self, prompt: str, image: bytes, mime_type: str) -> str: ...
