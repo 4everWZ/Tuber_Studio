@@ -67,6 +67,73 @@ async def test_task_restarts_at_saved_tool_checkpoint(tmp_path):
         store.close()
 
 
+@pytest.mark.parametrize(("phase", "finish"), [
+    ("plan", "generated"), ("decision", "generated"), ("plan", "timeout"), ("decision", "cancelled"),
+])
+async def test_agent_model_deadline_starts_after_background_admission(settings, monkeypatch, phase, finish):
+    app = create_app(settings, adapter=ControlledPlatform())
+    runtime, tasks = app.state.runtime, app.state.runtime.tasks
+    queued, generating, respond = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    acquire = runtime.operation_turns.acquire
+    loop = asyncio.get_running_loop()
+    monotonic = loop.time
+    offset = 0
+
+    async def notice_queue(lane, ready_at):
+        assert lane == "background"
+        queued.set()
+        return await acquire(lane, ready_at)
+
+    async def generate(messages, schema, *, max_tokens):
+        generating.set()
+        await respond.wait()
+        if phase == "plan":
+            return {"question": "请补充资料。"}
+        return {"action": "ask", "message": "请补充资料。"}
+
+    async def process_timers():
+        # Yield across deadline dispatch and the task cancellation it schedules.
+        for _ in range(2):
+            turn = loop.create_future()
+            loop.call_soon(turn.set_result, None)
+            await turn
+
+    if phase == "decision":
+        tasks.make_plan = None
+    monkeypatch.setattr(runtime.operation_turns, "acquire", notice_queue)
+    monkeypatch.setattr(runtime.llm, "generate_json", generate, raising=False)
+    monkeypatch.setattr(loop, "time", lambda: monotonic() + offset)
+    identity = str(uuid4())
+    async with app.router.lifespan_context(app):
+        async with runtime.generation_lock:
+            tasks.create(identity, "请核对准备材料")
+            await asyncio.wait_for(queued.wait(), 2)
+            active = tasks.active[1]
+            offset = 121
+            await process_timers()
+            assert not active.done()
+            assert not generating.is_set()
+            assert len(runtime.operation_turns.queues["background"]) == 1
+            assert tasks.current(identity)["status"] == "running"
+            assert tasks.current(identity)["steps"] == []
+            if finish == "cancelled":
+                result = await tasks.control(identity, 1, "cancel")
+                assert result["status"] == "cancelled"
+                assert not runtime.operation_turns.queues["background"]
+                assert not generating.is_set()
+                return
+
+        await asyncio.wait_for(generating.wait(), 2)
+        if finish == "timeout":
+            offset += 121
+        else:
+            respond.set()
+        await asyncio.wait_for(active, 2)
+        expected = "failed" if finish == "timeout" else "needs_input"
+        assert tasks.current(identity)["status"] == expected
+        assert not runtime.generation_lock.locked()
+
+
 async def test_chat_delegates_across_existing_services_and_cancels_video(settings, monkeypatch):
     monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
     platform = ControlledPlatform()

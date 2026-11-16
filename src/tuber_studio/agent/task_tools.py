@@ -223,7 +223,7 @@ def create_task_runtime(runtime, store, browsing):
         return [str(account or ""), character, version, runtime.character.get("_edit_identity")]
 
     async def request_json(messages, schema):
-        async with runtime.operator_generation("background"):
+        async with runtime.operator_generation("background"), asyncio.timeout(120):
             provider = runtime.llm
             return await budgeted_call(provider, lambda: provider.generate_json(messages, schema, max_tokens=1024),
                                        messages, max_tokens=1024)

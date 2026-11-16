@@ -102,6 +102,8 @@ class Tool:
 
 
 class TaskRuntime:
+    """Persist tasks and their tool calls. Model callbacks bound execution after admission."""
+
     def __init__(self, store, scope, decide, make_plan=None):
         self.store, self.scope, self.decide = store, scope, decide
         self.make_plan = make_plan
@@ -333,8 +335,7 @@ class TaskRuntime:
                 self._save(fresh, status="failed", message="任务未完成。\n\n" + delivery)
 
     async def _prepare_plan(self, task, tools):
-        async with asyncio.timeout(120):
-            plan = await self.make_plan(task["goal"], tools)
+        plan = await self.make_plan(task["goal"], tools)
         if self.scope() != task["scope"]:
             return
         if not plan.steps:
@@ -406,8 +407,7 @@ class TaskRuntime:
             if planned and not self.tools[planned].arguments.model_fields and self.tools[planned].review is None:
                 decision = TaskDecision(action="tool", tool=planned)
             else:
-                async with asyncio.timeout(120):
-                    decision = await self.decide(task["goal"], current_steps[-MAX_STEPS:], tools if used < MAX_STEPS else {})
+                decision = await self.decide(task["goal"], current_steps[-MAX_STEPS:], tools if used < MAX_STEPS else {})
             if self.scope() != task["scope"]:
                 return
             if decision.action == "finish" and planned is None:
