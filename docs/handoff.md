@@ -15,6 +15,12 @@
 2. **从调用方验收 API。** 网关提供带 Bearer 鉴权的 `/v1` 和稳定别名 `omni-default`。先走 `GET /healthz`、`GET /v1/models`、`POST /v1/chat/prompt_tokens` 和 `POST /v1/chat/completions`。用 Core 和一个独立调用方的两套服务令牌跑实际并发请求，覆盖普通与 SSE、视觉输入、结构化输出、排队和取消。模型端口留在内部网络。原生支持的能力以实际回包为准，Realtime 用无 OBS 的客户端核对。 [部署及准入规范](specs/foundation/omni-deployment.md#实机准入与切换)
 3. **验收实际长文质量与稳定性。** 首个复测基线是官方 MiniCPM-o 4.5 AWQ、40,960 的 Chat 窗口、4,096 的生成额度和 Thinker／Talker 的 INT4 KV。Core 继续读取模型卡实报窗口。用同一长文、中文工具任务和视觉用例核对输出与真实回执，并记录首包、完成时间、逐卡显存、主机内存和交换。达到准入后再接现有业务入口和切换默认推理端点。 [AGX 对照证据](../evaluations/results/omni-deployment-20261116.md)
 
+## 常驻 Agent 接手顺序
+
+现有 Agent 可从 Chats 接任务、在活动里继续、改口和取消。能力集中在已登记的工具。下一步先扩展现有任务 API 和业务执行层，让同一套任务能保存并约束对象、时间、数量、筛选、条件、授权及交付。先用不同领域验证精细选择、条件分支和真实回执。指定人、限定私信、视频时码和状态驱动的游戏任务都可作为用例。平台动作继续复用现有领域接口。 [能力缺口与实施入口](plans/current.md#对照-dots-的当前缺口与实施入口) · [任务控制设计](specs/foundation/agent-runtime.md#精细化委派与控制)
+
+首轮用隔离数据核对对象集合、动作授权、未知结果重启核对，以及从另一设备接续任务。随后补齐周期与事件触发、连接器、浏览器接管、文件产物和后台委派。工作站上的共享推理和 Agent 核心验收先行，OBS 随演出阶段推进。 [核心验收](plans/current.md#常驻-agent-与跨端记忆)
+
 ## 已知故障和业务数据
 
 - AGX 候选推理仍是 `unhealthy`。同场测试在 75 分 11.5 秒结束，整机最低可用内存 0.531 GiB，随后健康检查超时。Docker 未收到容器退出事件，重启候选失败。旧 llama.cpp 已停。 [故障记录](../evaluations/results/omni-deployment-20261116.md#单会话共驻终止记录)
