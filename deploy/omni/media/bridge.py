@@ -14,6 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from publisher import PCM_RATE, ProgramPublisher, publish_address
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app.state.program_publisher = None
 log = logging.getLogger(__name__)
 stage = asyncio.Lock()
 
@@ -40,7 +41,15 @@ def engine_url():
 
 @app.get("/healthz")
 async def health():
-    return {"process": "ready", "active_program": stage.locked(), "avatar": "studio-gif"}
+    publisher = app.state.program_publisher
+    active = publisher is not None and not publisher.task.done() and publisher.proc.returncode is None
+    if active:
+        state = "publishing"
+    elif publisher is not None:
+        state = "stopping"
+    else:
+        state = "starting" if stage.locked() else "idle"
+    return {"process": "ready", "active_program": active, "avatar": "studio-gif", "native_program": {"state": state}}
 
 
 @app.websocket("/session")
@@ -75,6 +84,7 @@ async def session(client: WebSocket):
                     return
                 publisher = ProgramPublisher(url, Path(os.getenv("AVATAR_ASSETS", "/assets/whale")))
                 await publisher.start()
+                app.state.program_publisher = publisher
                 await client.send_json(opened)
                 await relay(client, engine, publisher)
                 await client.close(code=1000)
@@ -87,8 +97,11 @@ async def session(client: WebSocket):
             await client.send_json({"type": "error", "error": {"message": "Program media session ended unexpectedly"}})
             await client.close(code=1011)
         finally:
-            if publisher:
-                await publisher.close()
+            try:
+                if publisher:
+                    await publisher.close()
+            finally:
+                app.state.program_publisher = None
 
 
 async def relay(client, engine, publisher):

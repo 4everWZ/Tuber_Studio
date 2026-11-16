@@ -1,11 +1,15 @@
 """Composition of existing studio services with private Agent task capabilities."""
 
+import asyncio
+import os
 import time
 from typing import Literal
 
+import httpx
 from pydantic import Field
 
 from ..generation_meter import budgeted_call
+from ..http_api import response_json
 from ..models import StrictModel
 from ..store import dump
 from ..web_fetch import WebFetchRequest, fetch_excerpt
@@ -38,6 +42,25 @@ async def bound_owner(runtime, character):
         return {"error": "这个角色尚未绑定 B 站号主。"}
     profile = await runtime.account.owner_profile(binding["uid"])
     return {"name": profile.name, "uid": profile.uid, "url": f"https://space.bilibili.com/{profile.uid}"}
+
+
+async def observed_live_status(runtime):
+    result = {}
+    if os.getenv("TUBER_NATIVE_PROGRAM_STATUS") == "1":
+        state = "unavailable"
+        try:
+            async with asyncio.timeout(1.5), httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
+                health = await response_json(client, "GET", "http://omni-media:8080/healthz")
+                program = health.get("native_program")
+                if health.get("process") == "ready" and isinstance(program, dict):
+                    reported = program.get("state")
+                    if reported in ("idle", "starting", "publishing", "stopping"):
+                        state = reported
+        except (TimeoutError, ValueError, httpx.HTTPError):
+            pass
+        result["native_program"] = {"state": state}
+    session = runtime.live
+    return result | {"state": session.state, "muted": session.muted, "session_id": session.session_id}
 
 
 def create_task_runtime(runtime, store, browsing):
@@ -89,8 +112,7 @@ def create_task_runtime(runtime, store, browsing):
                                         for event in events[:6]]}
 
     async def live(request, args):
-        session = runtime.live
-        return {"state": session.state, "muted": session.muted, "session_id": session.session_id}
+        return await observed_live_status(runtime)
 
     async def game(request, args):
         state = runtime.live.game_livestream.status()
@@ -181,7 +203,7 @@ def create_task_runtime(runtime, store, browsing):
         "operation_status": Tool("读取真实自主运营状态。", StrictModel, operations),
         "today_activity": Tool("读取当前业务日的公开运营事件和来源。", StrictModel, today),
         "inspect_video": Tool("按已知 BV 只读取材，等待原浏览服务完成并返回覆盖、时码与缺口。", Video, video, stop_video),
-        "live_status": Tool("读取当前真实直播会话与播放控制状态。", StrictModel, live),
+        "live_status": Tool("读取平台直播会话与播放控制状态，以及独立的 Omni 原生节目状态（若已配置）。", StrictModel, live),
         "live_handoff": Tool("提议向当前直播讲一段可公开的材料。需号主确认正文，实际播完才返回台词。",
                               LiveText, live_handoff, stop_handoff, review_live),
         "game_status": Tool("读取当前模拟游戏局面。", StrictModel, game),

@@ -36,7 +36,7 @@ from .handoff import (
     video_findings,
 )
 from .memory_organizer import MemorySuggestion
-from .task_tools import bound_owner
+from .task_tools import bound_owner, observed_live_status
 
 _BV = re.compile(r"(?:https://www\.bilibili\.com/video/)?(BV[0-9A-Za-z]{10})/?")
 _MENTIONED_BV = re.compile(r"(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])")
@@ -553,7 +553,10 @@ class OperatorChat:
                     return result | {"card": card | {"data": status}}
                 return result | {"card": card | {"data": card["data"] | {"status": row["status"]}}}
         if card["type"] == "live_studio_hud":
-            return result | {"card": card | {"data": self._live_view()}}
+            data = self._live_view()
+            if not historical and (program := card["data"].get("native_program")):
+                data["native_program"] = program
+            return result | {"card": card | {"data": data}}
         if card["type"] == "operation_control":
             return result | {"card": card | {"data": self.browsing.status() | card["data"]}}
         if card["type"] == "live_confirmation":
@@ -1011,9 +1014,18 @@ class OperatorChat:
             return {"reply_text": "这是该业务日的观看记录。", "card": {
                 "type": kind, "data": {"account_id": account, "timezone": timezone, **day_window(timezone)},
             }}
-        return {"reply_text": "这是直播工作台的当前状态。", "card": {
-            "type": "live_studio_hud", "data": self._live_view(),
-        }}
+        view = self._live_view()
+        text = "这是直播工作台的当前状态。"
+        if kind == "live_status":
+            status = await observed_live_status(self.runtime)
+            if program := status.get("native_program"):
+                labels = {
+                    "idle": "空闲", "starting": "正在启动", "publishing": "正在发布",
+                    "stopping": "正在停止", "unavailable": "状态暂不可查",
+                }
+                text = f"Omni 原生节目{labels[program['state']]}。"
+                view["native_program"] = program
+        return {"reply_text": text, "card": {"type": "live_studio_hud", "data": view}}
 
     async def _activity(self, request_id, char):
         day = operator_facts.now(self.browsing).date().isoformat()

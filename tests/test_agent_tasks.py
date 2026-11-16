@@ -6,6 +6,7 @@ import httpx
 from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
 
+from tuber_studio.agent import task_tools
 from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool, ToolWait
 from tuber_studio.app import create_app
 from tuber_studio.models import BilibiliOwner, Reply, StrictModel
@@ -63,6 +64,7 @@ async def test_task_restarts_at_saved_tool_checkpoint(tmp_path):
 
 
 async def test_chat_delegates_across_existing_services_and_cancels_video(settings, monkeypatch):
+    monkeypatch.delenv("TUBER_NATIVE_PROGRAM_STATUS", raising=False)
     platform = ControlledPlatform()
     app = create_app(settings, adapter=platform)
     tasks = app.state.runtime.tasks
@@ -92,6 +94,7 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
         assert response.json()["card"]["type"] == "agent_task", response.text
         await until(lambda: tasks.current(request_id)["status"] == "waiting")
         assert seen[0]["state"] == "off" and seen[1]["state"] == "stopped"
+        assert set(seen[1]) == {"state", "muted", "session_id"}
         assert seen[2]["simulated"] is True
         activity_url = f"/api/agent/tasks/{request_id}"
         # A second client reads the same task after chat has already returned.
@@ -110,6 +113,38 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
         assert (await owner.get(activity_url)).json()["message"] == "已按新要求继续。"
         app.state.browsing.discovery.remember_account("200")
         assert (await owner.get(activity_url)).status_code == 404
+
+
+async def test_live_status_reports_native_program_separately_in_tasks_and_chat(settings, monkeypatch):
+    monkeypatch.setenv("TUBER_NATIVE_PROGRAM_STATUS", "1")
+    app = create_app(settings, adapter=ControlledPlatform())
+    live_tool = app.state.runtime.tasks.tools["live_status"]
+    bridge_state = "publishing"
+
+    async def health(client, method, address):
+        assert method == "GET" and address == "http://omni-media:8080/healthz"
+        assert "authorization" not in client.headers
+        if bridge_state is None:
+            raise httpx.ConnectError("bridge offline")
+        return {"process": "ready", "native_program": {"state": bridge_state, "session_id": "must-not-forward"}}
+
+    monkeypatch.setattr(task_tools, "response_json", health)
+    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 54000))
+    async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as owner:
+        status = await live_tool.run(None, StrictModel())
+        assert status["state"] == "stopped" and status["native_program"] == {"state": "publishing"}
+        response = await owner.post("/api/chat/intelligent", json={
+            "request_id": str(uuid4()), "message": "查直播状态", "intent": {"action": "live_status"},
+        })
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["card"]["data"]["state"] == "stopped"
+        assert result["card"]["data"]["native_program"] == {"state": "publishing"}
+        assert result["reply_text"] == "Omni 原生节目正在发布。"
+        for bridge_state in ("idle", "unexpected", None):
+            status = await live_tool.run(None, StrictModel())
+            assert status["state"] == "stopped"
+            assert status["native_program"] == {"state": "idle" if bridge_state == "idle" else "unavailable"}
 
 
 async def test_approved_game_step_checks_control_and_replays_receipt(settings, monkeypatch):

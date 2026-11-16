@@ -46,6 +46,8 @@ docker compose -f deploy/omni/app-compose.yml --profile media up -d --build --wa
 
 媒体桥通过 `omni-media:8080` 提供服务，同网络也可按 `tuber-avatar` 寻址。宿主机可经 `127.0.0.1:9080` 探测健康状态。渲染读取仓库已有的鲸鱼娘 GIF。神经驱动作为待独立验收的可选渲染器。OBS 和浏览器从现场媒体入口获取 `/program/whep`，用独立的节目观看凭据 `tuber-viewer`。媒体入口须对终端发布可达的 ICE 候选。端口和编码边界见 [Omni 部署契约](../../docs/specs/foundation/omni-deployment.md)。
 
+Core 从媒体桥的 `/healthz` 读取原生节目发布进程状态，在 Chats 和 Agent 工具中与平台直播状态分别显示。媒体桥未运行时，节目状态显示为暂不可查。仅运行平台直播时，可设 `TUBER_NATIVE_PROGRAM_STATUS=0` 关闭该查询。
+
 ## 按需 Remotion
 
 配置 `TUBER_REMOTION_IMAGE` 为已导入的合规 worker 镜像、`TUBER_REMOTION_INPUT_DIR` 为任务输入目录、`secrets/gateway-remotion.token` 为独立服务令牌。worker 从只读的 `/input` 取任务数据，在独立的 `/output` 卷写入产物。
