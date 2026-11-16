@@ -553,40 +553,44 @@ class LlamaCppProvider:
         return value
 
     async def _stream_json(self, payload, timeout, on_content):
-        chunks, usage, finish = [], {}, None
-        complete = False
-        payload |= {"stream": True, "stream_options": {"include_usage": True}}
-        async with self.client.stream("POST", "/v1/chat/completions", json=payload, timeout=timeout) as response:
+        async with self.client.stream("POST", "/v1/chat/completions", json=chat_stream_payload(payload),
+                                      timeout=timeout) as response:
             self.last_http_status = response.status_code
-            response.raise_for_status()
-            if "text/event-stream" not in response.headers.get("content-type", ""):
-                raise ValueError("推理服务没有返回模型流")
-            async for fragment in event_data(response.aiter_lines()):
-                if fragment == "[DONE]":
-                    complete = True
-                    break
-                packet = parse_json_object(fragment)
-                if packet.get("error"):
-                    raise ValueError("模型流返回错误")
-                if packet.get("usage"):
-                    usage = packet["usage"]
-                choices = packet.get("choices", [])
-                if not choices:
-                    continue
-                if len(choices) != 1 or not isinstance(choices[0], dict):
-                    raise ValueError("模型流返回多个结果")
-                choice = choices[0]
-                delta = choice.get("delta") or {}
-                if delta.get("tool_calls") or delta.get("function_call"):
-                    raise ValueError("模型流返回未授权的工具调用")
-                content = delta.get("content")
-                if isinstance(content, str) and content:
-                    chunks.append(content)
-                    on_content(content)
-                finish = choice.get("finish_reason") or finish
-        if not complete:
-            raise ValueError("模型流意外中断")
-        return {"usage": usage, "choices": [{"finish_reason": finish, "message": {"content": "".join(chunks)}}]}
+            return await read_chat_stream(response, on_content)
+
+
+def chat_stream_payload(payload):
+    return payload | {"stream": True, "stream_options": {"include_usage": True}}
+
+
+async def read_chat_stream(response, on_content):
+    response.raise_for_status()
+    if "text/event-stream" not in response.headers.get("content-type", ""):
+        raise ValueError("推理服务没有返回模型流")
+    chunks, usage, finish = [], {}, None
+    async for fragment in event_data(response.aiter_lines()):
+        if fragment == "[DONE]":
+            return {"usage": usage, "choices": [{"finish_reason": finish, "message": {"content": "".join(chunks)}}]}
+        packet = parse_json_object(fragment)
+        if packet.get("error"):
+            raise ValueError("模型流返回错误")
+        if packet.get("usage"):
+            usage = packet["usage"]
+        choices = packet.get("choices", [])
+        if not choices:
+            continue
+        if len(choices) != 1 or not isinstance(choices[0], dict):
+            raise ValueError("模型流返回多个结果")
+        choice = choices[0]
+        delta = choice.get("delta") or {}
+        if delta.get("tool_calls") or delta.get("function_call"):
+            raise ValueError("模型流返回未授权的工具调用")
+        content = delta.get("content")
+        if isinstance(content, str) and content:
+            chunks.append(content)
+            on_content(content)
+        finish = choice.get("finish_reason") or finish
+    raise ValueError("模型流意外中断")
 
 
 def json_schema_text(schema, max_tokens):

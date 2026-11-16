@@ -18,10 +18,12 @@ from .operation_turns import mark_model_request, prepare_model_request
 from .providers import (
     DemoProvider,
     LlamaCppProvider,
+    chat_stream_payload,
     generate_operation_reply,
     json_schema_text,
     parse_json_object,
     public_error,
+    read_chat_stream,
     single_system_messages,
     validate_reply,
 )
@@ -79,7 +81,7 @@ class APIProvider:
             raise
 
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
-                        enable_thinking=None, thinking_budget=None):
+                        enable_thinking=None, thinking_budget=None, on_content=None):
         payload = {
             "model": self.config["model"],
             "messages": single_system_messages(provider_identity_messages(self, messages)),
@@ -122,15 +124,13 @@ class APIProvider:
             else None
         )
         mark_model_request()
-        data = await response_json(
-            self.client,
-            "POST",
-            "chat/completions",
-            payload=payload,
-            timeout=self.config.get(
-                "compaction_timeout_seconds" if summary else "prefill_timeout_seconds", 600
-            ),
-        )
+        timeout = self.config.get("compaction_timeout_seconds" if summary else "prefill_timeout_seconds", 600)
+        if on_content is None:
+            data = await response_json(self.client, "POST", "chat/completions", payload=payload, timeout=timeout)
+        else:
+            async with self.client.stream("POST", "chat/completions", json=chat_stream_payload(payload),
+                                          timeout=timeout) as response:
+                data = await read_chat_stream(response, on_content)
         choices = data.get("choices")
         if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise ValueError("API未返回唯一完整回答")
@@ -259,7 +259,7 @@ class APIProvider:
         ]
         return single_system_messages(provider_identity_messages(self, messages))
 
-    async def generate_json(self, messages, schema, *, max_tokens):
+    async def generate_json(self, messages, schema, *, max_tokens, on_content=None):
         self.last_content = None
         self.last_finish_reason = None
         self.last_usage = {}
@@ -271,7 +271,8 @@ class APIProvider:
         reservation = reserve_generation(
             self.config["context_tokens"] * 95 // 100 - max_tokens, max_tokens, conservative_input=True
         )
-        content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema)
+        content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema,
+                                               on_content=on_content)
         if actual + max_tokens > self.config["context_tokens"] * 95 // 100:
             raise ContextWindowExceeded("API结构化实际计量超窗；未采用结果")
         value = parse_json_object(content)
@@ -281,6 +282,8 @@ class APIProvider:
     async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
         if on_stage:
             on_stage("generating")
+        if self.config.get("structured_output") == "json_schema" and on_content is not None:
+            return await self.generate_json(messages, schema, max_tokens=max_tokens, on_content=on_content)
         return await self.generate_json(messages, schema, max_tokens=max_tokens)
 
 

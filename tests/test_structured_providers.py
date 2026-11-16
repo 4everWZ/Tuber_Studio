@@ -31,6 +31,7 @@ async def providers(settings):
         content='{"entries":["甲"]}',
         message_extra=None,
         thinking=False,
+        stream_response=None,
     ):
         config = settings.data["llm"] | {
             "base_url": "https://model.test/v1",
@@ -64,6 +65,8 @@ async def providers(settings):
                 }
                 return httpx.Response(200, json={"tokens": list(range(count))})
             body = json.loads(request.content)
+            if stream_response is not None and body.get("stream"):
+                return stream_response(body)
             probe = kind == "api" and body["max_tokens"] == 1
             message = {"content": None if probe else content, "reasoning_content": "私有推理"}
             if not probe:
@@ -136,6 +139,34 @@ async def test_assistant_reuses_verified_capacity_and_rechecks_on_model_change(p
     with pytest.raises(ValueError, match="model别名不一致"):
         await provider.prepare_assistant_capacity()
     assert sum(request.url.path.endswith("/props") for request in requests) == 2
+
+
+async def test_api_schema_assistant_streams_content_and_uses_final_accounting(providers):
+    fragments = ['{"entries":[', '"甲"]}']
+
+    def respond(payload):
+        assert payload["stream_options"] == {"include_usage": True}
+        assert payload["response_format"]["json_schema"]["schema"] == SCHEMA
+        packets = [
+            {"choices": [{"delta": {"content": part, "reasoning": "内部内容"}, "finish_reason": None}]}
+            for part in fragments
+        ]
+        packets.extend([
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+            {"choices": [], "usage": {"prompt_tokens": 11, "completion_tokens": 9}},
+        ])
+        stream = "".join("data: " + json.dumps(packet) + "\n\n" for packet in packets) + "data: [DONE]\n\n"
+        return httpx.Response(200, text=stream, headers={"Content-Type": "text/event-stream"})
+
+    provider, requests = await providers("api", stream_response=respond)
+    provider.config["structured_output"] = "json_schema"
+    seen = []
+    assert await provider.generate_assistant_json(MESSAGES, SCHEMA, max_tokens=32, on_content=seen.append) == {
+        "entries": ["甲"],
+    }
+    assert seen == fragments
+    assert len(requests) == 2 and provider.last_tokens == 11
+    assert provider.last_usage["completion_tokens"] == 9
 
 
 async def test_native_plain_assistant_keeps_accounting_without_a_tool_schema(providers):
