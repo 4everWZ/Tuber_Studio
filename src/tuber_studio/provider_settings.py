@@ -171,6 +171,7 @@ def proposal(settings, body):
                 if "structured_output" not in patch:
                     after.pop("structured_output", None)
                 after.pop("context_source", None)
+                after.pop("prompt_token_endpoint", None)
             if "native_context_tokens" in patch and "context_tokens" not in patch:
                 after["context_tokens"] = after["native_context_tokens"]
             normalize_broker_llm(data)

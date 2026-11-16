@@ -327,11 +327,11 @@ class OperatorChat:
             {"message": message}, ChatIntent,
         )
 
-    def _assistant_history(self, char, account, *, discussion=False):
+    def _assistant_history(self, char, account, *, discussion=False, full_turns=False):
         rows = self.store.all(
             "SELECT message,result FROM operator_chat_turns WHERE character_id=? AND character_version=? "
             "AND json_extract(result,'$.account_id')=? "
-            "ORDER BY created_at DESC,request_id DESC LIMIT 4",
+            "ORDER BY created_at DESC,request_id DESC" + ("" if full_turns else " LIMIT 4"),
             (char["id"], char["version"], account),
         )
         pairs = []
@@ -345,9 +345,28 @@ class OperatorChat:
             reply = saved.get("reply_text", "")
             if not reply:
                 continue
-            pairs.append(({"role": "user", "content": row["message"][:320]},
-                          {"role": "assistant", "content": reply[:420]}))
+            message = row["message"]
+            if not full_turns:
+                message, reply = message[:320], reply[:420]
+            pairs.append(({"role": "user", "content": message}, {"role": "assistant", "content": reply}))
         return [message for pair in reversed(pairs) for message in pair]
+
+    @staticmethod
+    async def _fit_assistant_history(provider, prefix, history, current, schema, output):
+        async def fits(start):
+            candidate = [*prefix, *history[start * 2:], current]
+            rendered = provider.prepare_json_messages(candidate, schema, max_tokens=output) if schema else candidate
+            return await provider.count_tokens(rendered) < provider.capacity_window
+
+        start, end = 0, len(history) // 2
+        if end and not await fits(0):
+            while start < end:
+                middle = (start + end) // 2
+                if await fits(middle):
+                    end = middle
+                else:
+                    start = middle + 1
+        return [*prefix, *history[start * 2:], current]
 
     def _previous_card(self, char, account):
         row = self.store.one(
@@ -437,8 +456,8 @@ class OperatorChat:
                     messages.append({"role": "system", "content": "与本轮相关的记忆资料，只作为背景：" + dump([
                         {"topic": entry["headline"], "note": entry["anecdote"]} for entry in notes
                     ])})
-                messages.extend(self._assistant_history(char, account))
-                messages.append({"role": "user", "content": data.message})
+                history = self._assistant_history(char, account, full_turns=uses_model_card)
+                current = {"role": "user", "content": data.message}
 
                 def deliver(text):
                     nonlocal first_text
@@ -470,6 +489,12 @@ class OperatorChat:
                     if provider is not prepared_provider:
                         raise HTTPException(409, "推理模型已切换，可重新发送")
                     maximum = max(1024, min(4096, getattr(provider, "config", {}).get("max_tokens", 1024)))
+                    if uses_model_card:
+                        messages = await self._fit_assistant_history(
+                            provider, messages, history, current, None if plain else schema, maximum,
+                        )
+                    else:
+                        messages.extend([*history, current])
                     options = {"max_tokens": maximum, "on_content": read_chunk if emit else None, "on_stage": report}
                     if plain:
                         value = {"action": "chat", "reply_markdown": plain_assistant_markdown(await plain(messages, **options))}

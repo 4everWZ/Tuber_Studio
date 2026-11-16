@@ -119,19 +119,21 @@ class APIProvider:
             self.profile_error = public_error(error)
             raise
 
-    async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
-                        enable_thinking=None, thinking_budget=None, on_content=None):
+    def chat_payload(self, messages, *, enable_thinking=None):
         payload = {
             "model": self.config["model"],
             "messages": single_system_messages(provider_identity_messages(self, messages)),
-            "max_tokens": budget,
-            "stream": False,
         }
         thinking = self.config.get("enable_thinking") if enable_thinking is None else enable_thinking
         if (self.adapter == "llama_cpp" or self.uses_model_card) and thinking is not None:
             if type(thinking) is not bool:
                 raise ValueError("思考设置须为布尔值或None")
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
+        return payload
+
+    async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
+                        enable_thinking=None, thinking_budget=None, on_content=None):
+        payload = self.chat_payload(messages, enable_thinking=enable_thinking) | {"max_tokens": budget, "stream": False}
         if not probe:
             payload["temperature"] = self.config.get(
                 "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7
@@ -213,7 +215,15 @@ class APIProvider:
             if digest in self.counts:
                 self.counts.move_to_end(digest)
                 return self.counts[digest]
-            _, count = await self._complete(normalized, budget=1, probe=True)
+            if self.config.get("prompt_token_endpoint") and all(isinstance(message.get("content"), str) for message in normalized):
+                result = await response_json(
+                    self.client, "POST", "chat/prompt_tokens", payload=self.chat_payload(normalized), timeout=10,
+                )
+                count = result.get("count")
+                if type(count) is not int or count < 1:
+                    raise ValueError("推理端未返回有效的文本 token 计数")
+            else:
+                _, count = await self._complete(normalized, budget=1, probe=True)
             self.counts[digest] = count
             if len(self.counts) > 64:
                 self.counts.popitem(last=False)

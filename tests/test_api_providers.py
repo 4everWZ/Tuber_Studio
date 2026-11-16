@@ -24,6 +24,8 @@ def transport(monkeypatch):
         captured.append(request)
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": "remote-model"} | state.get("model_card", {})]})
+        if request.url.path.endswith("/prompt_tokens"):
+            return httpx.Response(200, json={"count": state["count"]})
         body = json.loads(request.content)
         if request.url.path.endswith("/audio/speech"):
             if state.get("speech_error"):
@@ -306,15 +308,16 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
     state.update(model_card={"max_model_len": 40960}, count=40500, text="原文已读")
     provider = APIProvider(
         settings.data["llm"] | {"model": "remote-model", "context_source": "model_card",
-                                "context_tokens": 12288, "enable_thinking": True},
+                                "context_tokens": 12288, "enable_thinking": True, "prompt_token_endpoint": True},
         "test-key",
     )
     try:
         assert (await provider.health())["server_context_tokens"] == 40960
         messages = [{"role": "user", "content": "请读完原文并复述结尾"}]
         assert await provider.generate_assistant_text(messages, max_tokens=4096) == "原文已读"
+        assert [request.url.path.rsplit("/", 1)[-1] for request in captured] == ["models", "prompt_tokens", "completions"]
         requests = [json.loads(request.content) for request in captured if request.method == "POST"]
-        assert [request["max_tokens"] for request in requests] == [1, 460]
+        assert "max_tokens" not in requests[0] and requests[-1]["max_tokens"] == 460
         assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": True}
         assert requests[-1]["messages"] == messages
         assert all(request.headers["authorization"] == "Bearer test-key" for request in captured)
