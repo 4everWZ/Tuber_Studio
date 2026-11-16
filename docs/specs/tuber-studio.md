@@ -4,7 +4,7 @@
 
 Tuber Studio 优先建设可独立运行的[常驻 Agent 底座](foundation/agent-runtime.md)。大肥鱼通过角色配置和领域适配器接入，覆盖号主对话、刷视频和 B 站社区运营、直播及游戏。各入口共用角色身份、可授权的记忆和持久任务，可跨客户端续接。运营统一启停，按渠道取材、审核、提交与核对回执，视频、评论和私信分别保存进度。新安装先由人工审核，自动发送按渠道开启。游戏同时覆盖模拟和[两款实机](live/game-livestream.md)。
 
-历史 Qwen3.5-9B 部署以电脑持有业务数据库及平台授权，Jetson 提供推理。AGX 的新候选承载 [Omni 推理、原生双工和 Avatar](foundation/omni-deployment.md)，以及可独立运行的 Web 工作台和常驻 Agent。现有业务数据已恢复到 AGX 专用暂存卷，正式接管按同一部署规范验收。Genie 可以作为独立语音服务使用。默认角色为 Q 版鲸鱼娘大肥鱼，工作台可新建、编辑和激活其他卡片。
+历史 Qwen3.5-9B 部署以电脑持有业务数据库及平台授权，Jetson 提供推理。下一阶段以 [Omni 共享推理 API](foundation/omni-deployment.md)服务多个任务与应用，Web 工作台和常驻 Agent 独立运行。现有业务数据已恢复到 AGX 专用暂存卷，正式接管按部署规范验收。Genie 可以作为独立语音服务使用。默认角色为 Q 版鲸鱼娘大肥鱼，工作台可新建、编辑和激活其他卡片。
 
 直播工作台提供节目预览、弹幕、点歌、场景及 OBS 输出。默认采用图片／GIF，Live2D 可选。演唱模型保留挂载接口。完整视频剪辑上传和多角色同台另行实施。P0、P1、P2 标记表示各项要求的优先级。
 
@@ -25,7 +25,7 @@ Tuber Studio 优先建设可独立运行的[常驻 Agent 底座](foundation/agen
 | [角色、记忆与运行时数据](foundation/runtime-and-characters.md) | CHAR、MEM 的身份／关系语义、OC、共享数据及记忆权限。 |
 | [上下文与压缩](foundation/context-and-compaction.md) | 会话窗口、实际容量核验、压缩与恢复。 |
 | [模型、声音与资源](foundation/models-and-audio.md) | AUDIO、Provider、说话与演唱能力边界、声音身份／缓存、模型质量与共驻准入、设备封装。 |
-| [AGX Omni 部署](foundation/omni-deployment.md) | 独立部署仓库、模型与硬件可行性、实时与通用推理、Avatar／媒体协议及实机切换。 |
+| [Omni 共享推理与部署](foundation/omni-deployment.md) | 独立部署仓库、模型与硬件可行性、实时与通用推理、Avatar／媒体协议及实机切换。 |
 | [直播、演出与音乐](live/live-and-media.md) | LIVE／MEDIA、统一事件、调度、播放确认、直播工作台／可拖拽场景、正常点歌与演唱挂载接口、歌词／口型及素材复用。 |
 | [游戏直播](live/game-livestream.md) | 游戏状态、动作、控制权、实机适配及验收。 |
 | [评论运营](operations/comment-operations.md) | OPS、读取／映射／预览、分类、批次、审核／自动模式及发布回执。 |

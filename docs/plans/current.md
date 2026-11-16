@@ -1,6 +1,6 @@
 # 当前工作与待验收项
 
-首要目标是先做可独立运行的通用常驻 Agent 底座，再让大肥鱼接入。号主对话、刷视频和运营、直播、模拟游戏及两款实机都纳入目标。现有运营及设备验收按各自的授权和实测条件继续。 [产品与系统规范](../specs/tuber-studio.md)
+下一阶段先在计划中的 2× RTX 3090 工作站交付可由多个应用复用的共享推理 API，再优先验证可独立运行的通用常驻 Agent。号主对话、刷视频和运营、直播、模拟游戏及两款实机都纳入目标。OBS 和演出链路排在核心服务验收之后。 [产品与系统规范](../specs/tuber-studio.md)
 
 ## 常驻 Agent 与跨端记忆
 
@@ -23,11 +23,11 @@
 
 ## 独立 Omni 部署
 
-两套 Compose 已在 AGX 启动。独立基础设施栈提供 MiniCPM-o 4.5、共享推理网关和 MediaMTX，业务栈提供完整 Web 工作台、Core 和 GIF Avatar 媒体桥。旧 llama.cpp 已停止。正式账号、业务及记录已恢复到专用暂存卷，完整性校验通过。正式切换仍需通过下列准入。历史档已完成短时双工与后台 Agent 共驻、视觉取材请求和远端 OBS 收流，音质复测移后。 [业务 Compose](../../deploy/omni/README.md) · [部署验收](../../evaluations/results/omni-deployment-20261116.md) · [部署契约](../specs/foundation/omni-deployment.md)
+两套 Compose 及网关已在 AGX 实机验证过部分链路。候选引擎在 75 分 11.5 秒的混合测试后失去响应，容器未能重启。工作站建设独立推进。账号和业务快照保留在 AGX 暂存卷及 Windows 本机备份，正式切换尚未执行。 [AGX 实测](../../evaluations/results/omni-deployment-20261116.md) · [业务 Compose](../../deploy/omni/README.md)
 
-1. 当前 AGX 为 JetPack 6／R36.4.7。官方 CUDA 12.9 Tegra 库、重编的 PyTorch 2.13.0 SM 8.7 wheel 和 CPU TorchCodec 已通过容器预检。准入以官方 AWQ、40,960-token Chat 窗口和 4-bit KV 为准。用独立中文样例核对工具回执、来源取材和角色对话，并测原生双工加 Avatar、OBS 和后台任务的持续共驻。CUDA 13 的固定镜像适用于兼容系统。
-2. 在可信 HTTPS 的测试工作台接浏览器双工采集、Avatar 和播放回执。现有 GIF 节目已到达 OBS，继续核对端到端中断和持续播放，并验证 Ditto 及备选驱动。试运行 Remotion 离线产物任务与通用工具，测和节目共驻。
-3. 通过[实机准入](../specs/foundation/omni-deployment.md#实机准入与切换)后按能力切换 AGX 生产模型，验旧入口和回退。业务迁到 AGX 时另做唯一写入者迁移和 Laptop 关机续跑验证，可独立回退业务与模型。
+1. **工作站推理及共享 API。** 在独立部署仓库建立工作站配置，先独立运行引擎与网关，复用 Bearer 鉴权、`omni-default`、模型卡和排队。以官方 AWQ、40,960 的 Chat 窗口、4,096 生成额度和 INT4 KV 为首个复测基线。用两个独立调用方验 Chat Completions 普通／流式、视觉输入、长文语义、结构化结果、超载、取消和持续混合负载。记录实际模型及版本、每卡显存、主机内存、交换、吞吐、首包和排队。Realtime 用独立客户端验证原生能力。 [实机准入](../specs/foundation/omni-deployment.md#实机准入与切换)
+2. **常驻 Agent 与现有业务接入。** 通过同一网关验证 Chats、工具回执、视频取材、运营和游戏，验证关闭浏览器后任务续跑、取消及重启恢复。通过对应能力实测后切业务 Provider。正式数据另走唯一写入者迁移，使用隔离数据验收且平台写入为零。 [常驻 Agent](#常驻-agent-与跨端记忆) · [数据迁移](../specs/foundation/distributed-runtime.md#迁移备份与恢复)
+3. **演出与媒体。** 核心服务验收后，接浏览器双工采集、Avatar 和实际播放回执，再验 OBS、端到端打断、音画同步、持续直播及 Remotion 共驻。 [节目准入](../specs/foundation/omni-deployment.md#实机准入与切换)
 
 - [ ] **Responses 协议待办**。当前部署用 Chat Completions 和 Realtime。后续评估新模型时，若它在现有推理底座的目标版本与部署模式下原生提供 `POST /v1/responses`，再在现有 Provider 层接入并按端点能力选用。用实际回包验证普通响应、流式输出、工具调用与结果回传、取消和错误。Realtime 继续承载双工语音。
 
@@ -65,7 +65,7 @@
 
 评论活动标题已接原评论锚点，动态新稿的楼内摘录显示实际回复对象。受控回归验证无来源的感想可发布、缺证据的事实稿保留待审、私聊仅交接脱敏文字。隔离 Chromium 验证评论锚点及桌面和 420 px 窄屏图卡。 [配图样例](../../evaluations/results/dynamic-comment-excerpt-20261115.png)
 
-大肥鱼素材制作、视频投稿与直播交接的接手顺序见 [项目交接](../handoff.md#下次从这里接)。
+大肥鱼素材制作、视频投稿与直播交接在共享推理和常驻 Agent 的核心验收之后推进，沿用现有素材来源和平台授权。 [部署顺序](#独立-omni-部署)
 
 在现行 9B 上复放同一批来源并记录调用数、实际输入／输出及思考用量、队列等待、取材与生成耗时。确定性工作用数据和规则完成，已取材料与已校验结果优先复用。按真实瓶颈调单次调用、并发和超时，自动批次保持无隐藏累计上限。
 
