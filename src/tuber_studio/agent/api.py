@@ -308,7 +308,7 @@ def register_agent_api(app, settings, runtime, store, comments, require_admin, *
             if _MEMORY_OVERVIEW.fullmatch(data.text):
                 all_items = memory.organized(scope)
                 by_id = {row["id"]: row for row in all_items}
-                matches = [by_id[note["id"]] for group in memory.summary(scope, organized=all_items)
+                matches = [memory.owner_projection(by_id[note["id"]]) for group in memory.summary(scope, organized=all_items)
                            for note in group["notes"]]
             return {"scope": token, "status": "found" if matches else "no_match",
                     "items": [organized_view(row) for row in matches]}

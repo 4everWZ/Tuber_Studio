@@ -28,12 +28,13 @@ class MemorySuggestion(StrictModel):
 
 
 def is_chat_turn(result):
-    action = result.get("memory_intent") or (result.get("submission", {}).get("intent") or {}).get("action")
+    submission = result.get("submission") or {}
+    if submission.get("video_selection") or result.get("card"):
+        return False
+    action = (submission.get("intent") or {}).get("action") or result.get("memory_intent")
     if action:
         return action == "chat"
-    if result.get("submission", {}).get("video_selection"):
-        return False
-    return not result.get("card")
+    return True
 
 
 class MemoryOrganizer:
@@ -169,9 +170,10 @@ class MemoryOrganizer:
         if not reply:
             return None
         fields = ("comment_id", "author_uid", "author_name", "text", "href")
-        references = [{field: item[field] for field in fields} for item in (source, reply)]
+        references = [{field: item[field] for field in fields} | {"kind": kind}
+                      for item, kind in ((source, "comment"), (reply, "published_reply"))]
         return {"key": f"thread:{anchor['resource']}:{anchor['root_id']}", "kind": "experience",
-                "text": source["text"], "references": references, "anchor": anchor, "at": at,
+                "source_kind": "comment", "text": source["text"], "references": references, "anchor": anchor, "at": at,
                 "revision": content_hash(references)}
 
     async def run_once(self):
@@ -224,8 +226,7 @@ class MemoryOrganizer:
             if source["kind"] == "experience":
                 candidates = [row for row in candidates if row["source_ref"] == source["key"]]
             packet.append({"key": f"source_{number}", "kind": source["kind"], "original": source["text"][:800],
-                           "legacy_note": source["legacy"]["anecdote"] if "legacy" in source else "",
-                           "confirmed_reply": (source["references"][1]["text"][:450] if source["kind"] == "experience" else ""),
+                           "has_confirmed_reply": source["kind"] == "experience",
                            "existing": [{"id": row["id"], "topic": row["headline"], "note": row["anecdote"]}
                                         for row in candidates[:4]]})
         messages = [
@@ -238,13 +239,13 @@ class MemoryOrganizer:
                 "同批修改同一偏好时只保存最后一句明确的说法，较早的选 skip。"
                 "experience 中，带来具体发现、笑点、做法或有来有回的互动可以 add；"
                 "只有寒暄、复述或泛泛称赞时 skip。"
-                "note 只归纳原话与已确认回复实际支持的事实。"
-                "每个 source_N 都填写一次。新增或更新时填写 headline（中文简短标题）、note（中文具体内容）、"
-                "tags（主题词数组）。update 必须填该条提供的 existing_id，其余填 null。"
+                "回执只确认回复已送达。每个 source_N 都填写一次。新增或更新时填写 headline（中文主题标签）、"
+                "note（逐字摘录原话中的一个完整句子，保留否定或条件）、tags（主题词数组）。"
+                "update 必须填该条提供的 existing_id，其余填 null。"
                 '例如明确偏好「以后汇报先讲结论」：{"action":"add","existing_id":null,'
-                '"headline":"汇报顺序","note":"运营汇报先说结论。","tags":["运营","汇报"]}。'
-                '例如观众问冷泡茶要放多久，已回复自己试过八小时：{"action":"add","existing_id":null,'
-                '"headline":"冷泡茶的时间","note":"有人问冷泡茶要泡多久，我回了自己试过八小时。","tags":["冷泡茶"]}。'
+                '"headline":"汇报顺序","note":"以后汇报先讲结论","tags":["运营","汇报"]}。'
+                '例如观众原话「冷泡茶要放多久？」且有回复回执：{"action":"add","existing_id":null,'
+                '"headline":"冷泡茶的时间","note":"冷泡茶要放多久？","tags":["冷泡茶"]}。'
                 '例如一次性请求「去看这条视频」：{"action":"skip","existing_id":null,'
                 '"headline":"","note":"","tags":[]}。'
             )},
@@ -277,14 +278,26 @@ class MemoryOrganizer:
         return len(sources)
 
     def _apply(self, scope, source, decision, supplied, visible):
+        if decision and decision.action != "skip":
+            original = source["text"].strip()
+            tags = [tag.strip() for tag in decision.tags if tag.strip() and tag.strip() in original]
+            label = decision.headline.strip()
+            if not label or label not in original:
+                label = next(iter(tags), original)[:40]
+            decision = decision.model_copy(update={"tags": tags, "headline": label})
         if legacy := source.get("legacy"):
             self.runtime.daily_memory.resolve_legacy_private(scope, legacy, decision)
             return
         if source["kind"] == "private":
-            current = self.store.one("SELECT message FROM operator_chat_turns WHERE request_id=?",
-                                     (source["key"].removeprefix("turn:"),))
+            current = self.store.one(
+                "SELECT message,result FROM operator_chat_turns WHERE request_id=? AND character_id=? "
+                "AND character_version=? AND json_extract(result,'$.account_id')=?",
+                (source["key"].removeprefix("turn:"), *scope[1:], scope[0]),
+            )
             if not current or current["message"] != source["text"]:
                 return
+            if not is_chat_turn(json.loads(current["result"])):
+                decision = None
         elif source["kind"] == "experience":
             current = self._public_source(scope, source["anchor"], source["at"])
             if not current or current["revision"] != source["revision"]:

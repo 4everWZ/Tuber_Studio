@@ -18,6 +18,19 @@ def save(memory, text=STORY, *, event="comment:7", char=None, scope=SCOPE, role=
     return memory.record(scope, char or CHAR, event, role, text, **kwargs)
 
 
+def test_operator_reply_remains_a_transcript_without_recallable_claims(memory):
+    character = {"id": "whale", "version": 1}
+    scope = "operator:example"
+    false_reply = "我昨天去了海底邮局，送给小明三张明信片。"
+    identifier = memory.record(scope, character, "unverified-turn", "assistant", false_reply,
+                               kind="operator_private")
+    row = memory.store.one("SELECT text,facts FROM grounded_memory WHERE id=?", (identifier,))
+    assert row == {"text": false_reply, "facts": "[]"}
+    memory.store.execute("UPDATE grounded_memory SET facts=? WHERE id=?",
+                         (json.dumps(extract_facts(false_reply), ensure_ascii=False), identifier))
+    assert memory.retrieve(scope, character, "刚才去了哪里？")["evidence"] == []
+
+
 def test_source_provenance_is_literal_and_fictional(memory):
     source = save(memory)
     result = memory.retrieve(SCOPE, CHAR, "你刚才去了哪里，谁送了你什么？")

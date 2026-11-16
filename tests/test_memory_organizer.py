@@ -125,6 +125,48 @@ def test_memory_summary_proposal_requires_exact_request_text_and_applies_once(se
         assert client.patch(edit, json={"note": proposal["note"]}).status_code == 412
 
 
+def test_legacy_notes_require_review_without_hiding_source_or_explicit_correction(settings):
+    app = create_app(settings)
+    path = "/api/daily-memory"
+    original = "海豹在换毛吗？"
+    unverified = "已经核实八千只在换毛。"
+    with TestClient(app, headers={"Authorization": "Bearer " + settings.admin_token}) as client:
+        runtime = app.state.runtime
+        app.state.browsing.discovery.remember_account("100")
+        scope = runtime.memory_organizer.scope()
+        memory = runtime.daily_memory
+        href = "https://www.bilibili.com/video/BV1d8pU6xEZX#reply40"
+        source = {"key": "event:" + href, "kind": "experience", "source_kind": "comment", "text": original,
+                  "at": time.time(), "references": [{"href": href, "text": original}]}
+        proposal = MemorySuggestion(action="add", existing_id=None, headline="海豹", note=original, tags=["海豹"])
+        with runtime.store.db:
+            assert memory.save_organized(scope, source, proposal, None)
+            before, = memory.organized(scope)
+            runtime.store.db.execute(
+                "UPDATE daily_highlights SET headline=?,anecdote=?,tags=?,"
+                "source_evidence=json_remove(source_evidence,'$.owner_provenance','$.memory_source.kind') WHERE id=?",
+                ("八千只", unverified, json.dumps(["海豹", "八千只"]), before["id"]),
+            )
+        report = client.get(path).raise_for_status().json()
+        assert report["organized"][0]["anecdote"] == unverified
+        assert report["organized"][0]["source"]["references"][0]["text"] == original
+        assert report["summary"][0]["notes"][0]["text"] == original
+        assert not memory.recall_organized(scope, "operator", "八千只")
+        item, = memory.recall_organized(scope, "operator", "海豹")
+        assert (item["headline"], item["anecdote"]) == ("海豹", original)
+        body = {"scope": report["scope"], "action": "ask", "text": "你记得我什么？"}
+        asked, = client.post(path + "/summary", json=body).raise_for_status().json()["items"]
+        assert asked["anecdote"] == original and asked["headline"] == "海豹"
+
+        correction = "号主确认已核对原片段。"
+        edit = f"{path}/organized/{before['id']}?scope={report['scope']}"
+        client.patch(edit, json={"note": correction, "headline": "海豹记录"}).raise_for_status()
+        approved, = client.post(path + "/summary", json=body).raise_for_status().json()["items"]
+        assert (approved["anecdote"], approved["headline"]) == (correction, "海豹记录")
+        shared, = memory.recall_organized(scope, "live", "海豹")
+        assert shared["anecdote"] == f"「{original}」"
+
+
 async def test_switch_blocks_inflight_recall_and_discards_inflight_organization(settings):
     app = create_app(settings)
     runtime = app.state.runtime
@@ -197,6 +239,49 @@ class OrganizerModel:
         return items
 
 
+async def test_organization_cannot_create_memory_from_assistant_output(settings):
+    app = create_app(settings)
+    runtime = app.state.runtime
+    base = runtime.llm
+    scope = runtime.memory_organizer.scope()
+    owner_statement = "以后汇报不要先讲风险，先讲结论。"
+    false_claim = "本轮已经看完两千个视频。"
+    false_inference = "汇报先讲风险。"
+
+    class UnreliableOrganizer(OrganizerModel):
+        async def generate_json(self, messages, schema, *, max_tokens):
+            inputs = json.loads(messages[-1]["content"])
+            assert [item["original"] for item in inputs] == [owner_statement]
+            decisions = await super().generate_json(messages, schema, max_tokens=max_tokens)
+            decisions["source_1"].update(note=false_inference, headline=false_claim, tags=["两千个视频", "汇报"])
+            return decisions
+
+    runtime.llm = UnreliableOrganizer()
+    try:
+        origin = add_turn(runtime, owner_statement, reply_text=false_claim)
+        add_turn(runtime, "核对已观看数量", memory_intent="chat", reply_text=false_claim,
+                 submission={"intent": {"action": "full_video"}}, card={"type": "agent_task"})
+        assert await runtime.memory_organizer.run_once() == 1
+        saved, = runtime.daily_memory.organized(scope)
+        assert saved["source"]["key"] == f"turn:{origin}"
+        assert saved["anecdote"] == owner_statement
+        assert false_claim not in json.dumps(saved, ensure_ascii=False)
+        assert false_inference not in json.dumps(saved, ensure_ascii=False)
+        corrected = runtime.daily_memory.change_organized(scope, saved["id"], note="以后优先汇报风险。")
+        assert corrected["anecdote"] == "以后优先汇报风险。"
+        assert corrected["quote"] == owner_statement
+        previous = {"key": "turn:earlier", "kind": "private", "text": "以后先汇报视频。", "at": saved["source"]["at"]}
+        proposed = MemorySuggestion(action="update", existing_id=saved["id"], headline=saved["headline"],
+                                    note=previous["text"], tags=["汇报"])
+        with runtime.store.db:
+            assert not runtime.daily_memory.save_organized(scope, previous, proposed, saved)
+        assert runtime.daily_memory.organized(scope, item_id=saved["id"])[0]["anecdote"] == corrected["anecdote"]
+    finally:
+        await base.close()
+        await app.state.browsing.close()
+        runtime.store.close()
+
+
 async def test_private_memory_updates_after_worker_restart_and_stays_private(settings):
     app = create_app(settings)
     runtime = app.state.runtime
@@ -254,7 +339,8 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
     scope = runtime.memory_organizer.scope()
     memory = runtime.daily_memory
     resource = "BV1d8pU6xEZX"
-    source = {"key": f"thread:{resource}:40", "kind": "experience", "at": time.time(), "text": "企鹅在排队",
+    source = {"key": f"thread:{resource}:40", "kind": "experience", "source_kind": "comment",
+              "at": time.time(), "text": "企鹅在排队",
               "anchor": {"resource": resource, "root_id": "40", "comment_id": "40"},
               "references": [{"href": f"https://www.bilibili.com/video/{resource}#reply{n}", "comment_id": str(n),
                               "text": text} for n, text in [(40, "企鹅在排队"), (41, "轮到第三只了")]]}
@@ -262,16 +348,24 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
                                 note="轮到第三只企鹅了", tags=["企鹅"])
     try:
         with runtime.store.db:
+            assert not memory.save_organized(scope, source | {"source_kind": "visual"}, proposal, None)
             memory.save_organized(scope, source, proposal, None)
         candidate, = memory.organized(scope)
+        assert candidate["anecdote"] == "企鹅在排队"
+        assert candidate["source"]["references"][1]["text"] == "轮到第三只了"
         assert memory.recall_organized(scope, "comment", "接着说", resource=resource, thread="40")
         assert not memory.recall_organized(scope, "comment", "企鹅", resource=resource, thread="70")
         row, _ = app.state.browsing.repo.create_round(scope[0], runtime.character, BrowsingPolicy().model_dump(), 0, False)
         decision_input = {"thread": {"target": {"bvid": resource, "root": "40", "parent": "40"},
                                      "source": {"comment_id": "40", "text": "企鹅", "author_uid": "51"}}}
         bound = app.state.browsing.decisions._response_actor_data(row, decision_input)
-        assert any("轮到第三只了" in item["text"] for item in bound["own_public_experiences"])
+        assert any("企鹅在排队" in item["text"] for item in bound["own_public_experiences"])
+        assert "轮到第三只了" not in json.dumps(bound["own_public_experiences"], ensure_ascii=False)
+        legacy_ref = {key: candidate[key] for key in ("id", "updated_at")}
+        with pytest.raises(ValueError, match="记忆已变更"):
+            memory.validate_organized(scope, "comment", [legacy_ref])
         source_snapshot = next(row for row in app.state.dynamics._sources() if row["id"] == f"organized:{candidate['id']}")
+        assert "轮到第三只了" not in json.dumps(source_snapshot, ensure_ascii=False)
         dynamic = {"character_id": scope[1], "character_version": scope[2], "sources": [source_snapshot]}
         assert app.state.dynamics._valid_sources(dynamic)
         memory.record_highlight(
@@ -295,7 +389,8 @@ async def test_channel_scope_and_revocation_during_live_generation(settings):
         assert memory.organized(scope, item_id=candidate["id"])[0]["anecdote"] == "号主家里那只叫松果糖。"
 
         async def generate(messages, character, event_id, source_text):
-            assert any("轮到第三只了" in message["content"] for message in messages)
+            assert any("企鹅在排队" in message["content"] for message in messages)
+            assert all("轮到第三只了" not in message["content"] for message in messages)
             assert all("松果糖" not in message["content"] for message in messages)
             memory.change_organized(scope, candidate["id"], delete=True)
             return Reply(spoken_text="轮到第三只企鹅了")
@@ -336,7 +431,7 @@ async def test_public_organizer_saves_one_experience_from_legacy_receipt(setting
         assert await runtime.memory_organizer.run_once() == 1
         candidate, = runtime.daily_memory.organized(scope)
         assert candidate["status"] == "active" and candidate["channels"] == ["live", "comment", "dynamic"]
-        matches = runtime.daily_memory.recall_organized(scope, "operator", "运营汇报")
+        matches = runtime.daily_memory.recall_organized(scope, "operator", "企鹅")
         assert [item["id"] for item in matches] == [candidate["id"]]
         assert [item["text"] for item in candidate["source"]["references"]] == [target["source_text"], "第二只一直往前探头"]
         assert await MemoryOrganizer(runtime).run_once() == 0
@@ -353,7 +448,8 @@ def test_migrate_organized_memory_without_restoring_revoked_public_experience(se
     scope = runtime.memory_organizer.scope()
     memory = runtime.daily_memory
     try:
-        source = {"key": "thread:legacy", "kind": "experience", "at": time.time(), "text": "第三只企鹅",
+        source = {"key": "thread:legacy", "kind": "experience", "source_kind": "comment",
+                  "at": time.time(), "text": "第三只企鹅",
                   "references": [{"href": "https://www.bilibili.com/video/BV1d8pU6xEZX#reply40", "text": "第三只企鹅"}]}
         proposal = MemorySuggestion(action="add", existing_id=None, headline="企鹅", note="第三只企鹅", tags=["企鹅"])
         with store.db:

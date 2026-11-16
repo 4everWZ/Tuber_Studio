@@ -1200,13 +1200,17 @@ class OperatorChat:
         if not memory.preference(scope)["enabled"]:
             return {"reply_text": "记忆已关闭，可在个性化设置启用。", "card": None}
         ref = event["source"]
-        if not ref.get("text") or not ref.get("href"):
-            return {"reply_text": "这件事缺少可核对的原始来源。", "card": None}
+        source_kind = ref.get("kind")
+        if (source_kind not in {"comment", "subtitle"} or not ref.get("text") or not ref.get("href")
+                or source_kind == "comment" and str(ref.get("uid") or "") == scope[0]):
+            return {"reply_text": "这件事缺少可核对的原始字幕或评论。", "card": None}
         anchor = event.get("thread")
         key = f"thread:{anchor['resource']}:{anchor['root_id']}" if anchor else "event:" + ref["href"]
         note = ref["text"][:150].strip()
-        source = {"key": key, "kind": "experience", "text": ref["text"], "at": event.get("at") or time.time(), "anchor": anchor,
-                  "references": [{"href": ref["href"], "text": ref["text"]}]}
+        source = {"key": key, "kind": "experience", "source_kind": source_kind, "text": ref["text"],
+                  "at": event.get("at") or time.time(), "anchor": anchor,
+                  "references": [{"href": ref["href"], "text": ref["text"], "kind": source_kind,
+                                  "author_uid": ref.get("uid"), "author_name": ref.get("author")}]}
         decision = MemorySuggestion(action="add", existing_id=None, headline=event["title"][:40],
                                     note=note, tags=[note[:24]])
         with self.store.db:
@@ -1424,9 +1428,10 @@ class OperatorChat:
         memory = self.runtime.daily_memory
         scope = self.runtime.memory_organizer.scope()
         entries = [
-            (row, [ref["href"] for ref in row["source"].get("references", []) if ref.get("href")])
+            (entry, [ref["href"] for ref in row["source"].get("references", []) if ref.get("href")])
             for row in memory.organized(scope, limit=50)
             if row["memory_kind"] == "experience" and row["status"] == "active"
+            and (entry := memory.owner_projection(row)) is not None
         ]
         for row in self._experience_rows():
             proof = memory._source_evidence(row)

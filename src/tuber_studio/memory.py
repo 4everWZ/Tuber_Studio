@@ -186,10 +186,9 @@ class GroundedMemory:
             "operator_private",
         }:
             raise ValueError("Unsupported memory source kind")
-        extracted = extract_facts(text)
         # Questions/suggestions from viewers cannot establish a character's past.
-        if role != "assistant" or kind in {"role_plan", "derived_reply", "grounded_reply"}:
-            extracted = []
+        extracted = (extract_facts(text) if role == "assistant"
+                     and kind not in {"role_plan", "derived_reply", "grounded_reply", "operator_private"} else [])
         if facts is not None:
             if not isinstance(facts, list):
                 raise ValueError("Facts must be a list of source-supported candidates")
@@ -263,16 +262,12 @@ class GroundedMemory:
             return result
         rows = self.store.all(
             "SELECT * FROM grounded_memory WHERE scope=? AND character_id=? AND character_version=? "
-            "AND kind NOT IN ('derived_reply','grounded_reply') ORDER BY id DESC LIMIT 200",
+            "AND kind NOT IN ('derived_reply','grounded_reply','operator_private') ORDER BY id DESC LIMIT 200",
             (scope, character_id, version),
         )
         if self.source_filter is not None:
             rows = [row for row in rows if self.source_filter(row)]
-        sources = [
-            (row, json.loads(row["facts"]))
-            for row in rows
-            if row["kind"] not in {"derived_reply", "grounded_reply"}
-        ]
+        sources = [(row, json.loads(row["facts"])) for row in rows]
         retrospective = re.search(
             r"刚才|刚刚|上次|上回|之前|先前|那次|那天|那会|去了|去过|去哪里了|"
             r"送了|送给|给了|收到|拿到|得到|\bearlier\b|\bpreviously\b|"
