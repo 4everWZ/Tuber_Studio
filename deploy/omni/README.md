@@ -12,11 +12,29 @@ docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
 curl --fail http://127.0.0.1:9020/healthz
 ```
 
-从 Core 挂载的 `/data/admin-token` 读取首次管理令牌，在工作台登录。选择独立局域网端口时设置 `TUBER_CORE_BIND` 和 `TUBER_CORE_PORT`。可信 HTTPS 入口可在同网络反向代理 Core，`TUBER_CORE_TRUSTED_PROXIES` 用逗号分隔的代理地址或子网填写。HTTPS 页面用于浏览器音视频设备采集。
-
 初次创建数据卷时，Core 用 OpenAI 兼容 Chat Completions 接入 `http://omni-gateway:8000/v1`，上下文采用首测配置的 12,288 tokens，可按服务实报修改。该端点默认用原生 JSON Schema 约束 Agent 的结构化回复，其他已验证服务可在 Provider 配置中设置 `llm.structured_output`。网关钥匙只用于该地址。视觉从设置中选择已验证端点。基础语音沿用预录回退，合成语音沿用独立 Genie 或已验收 TTS 配置。Core 健康检查覆盖应用和数据库启动。推理能力由网关及实际请求核对。
 
 `core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷可用 `TUBER_CORE_MODE=demo` 运行离线演示，或用 `TUBER_CORE_MODE=existing` 要求已有配置。切换已存在的配置通过工作台及部署准入完成。
+
+## 从电脑访问 AGX 工作台
+
+AGX 上的 Core 直接提供完整工作台、静态素材、管理 API、SSE 和 WebSocket。电脑只用浏览器访问，任务和 SQLite 由 AGX 上的这个 Core 实例持有。候选卷的管理令牌、聊天与平台登录各自从该卷读取。
+
+默认保留 AGX 端口在回环地址。在电脑上运行以下命令，将 `agx` 换成实际 SSH 目标，然后打开 [工作台](http://127.0.0.1:8021/)。
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:8021:127.0.0.1:9020 agx
+```
+
+如果 Core 使用了自定义 `TUBER_CORE_PORT`，用实际端口替换上面最后一个 `9020`。SSH 转发经过 Docker 网桥时，工作台会要求登录。在 AGX 上用启动该 Core 的同一 Docker 上下文和 Compose 项目读取当前管理令牌。
+
+```sh
+docker compose -f deploy/omni/app-compose.yml exec -T tuber-core cat /data/admin-token
+```
+
+在转发后的工作台输入令牌。浏览器验收可从对话进入活动，打开自主运营、直播工作台和个性化。登录和后续 API 请求走同一个转发地址。
+
+需要受信任的 HTTPS 入口时，同网络的反向代理可转发到 `http://tuber-core:9020`，保留原始 Host 并支持 SSE 和 WebSocket。`TUBER_CORE_TRUSTED_PROXIES` 填该代理的地址或子网。直接绑定宿主机的访问范围由 `TUBER_CORE_BIND` 控制。
 
 ## GIF Avatar 与 OBS 媒体
 
