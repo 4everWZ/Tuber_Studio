@@ -10,7 +10,7 @@
 
 按[当前计划](plans/current.md#常驻-agent-与跨端记忆)，先用通用助手跑通流式对话、多步工具、持久任务及跨设备恢复，再接大肥鱼的角色、记忆、号主主页及领域能力。
 
-独立 Omni 基础设施 Compose 和业务 Compose 已在 AGX 运行候选实例。Core 自持数据卷并直接提供完整 Web 工作台，可经私有 SSH 转发登录。CUDA 12.9 Tegra 库与重编的 PyTorch 2.13.0 SM 8.7 wheel 通过容器预检，MiniCPM-o 三个阶段加载后实测返回 Chat Completions 正文和 Realtime PCM。GIF Avatar 的节目已到达远端 OBS。当前主机间走中继，用户确认先推进业务功能，远端 OBS 音质留待复测。 [部署验收](../evaluations/results/omni-deployment-20261116.md) · [AGX Omni 部署](specs/foundation/omni-deployment.md) · [业务 Compose](../deploy/omni/README.md)
+两套独立 Compose 已落在 AGX，候选 Core 自持数据卷并直接提供完整 Web 工作台。当前准入候选是 MiniCPM-o 4.5 官方 AWQ、完整 40,960 Chat 窗口及 4-bit KV。Core 从网关模型卡取窗口。前一档已打通 Chat、Realtime PCM、GIF Avatar 和远端 OBS。远端音质复测按用户要求移后。正式 Windows 业务快照已在 AGX 恢复为只供核验的暂存卷，13,260 个文件通过校验，SQLite 完整性检查通过。通过新配置实机准入后再转交唯一写入权。 [部署验收](../evaluations/results/omni-deployment-20261116.md) · [AGX Omni 部署](specs/foundation/omni-deployment.md) · [业务 Compose](../deploy/omni/README.md)
 
 1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)

@@ -23,7 +23,7 @@
 
 ## 独立 Omni 部署
 
-两套 Compose 已在 AGX 启动。独立基础设施栈运行 MiniCPM-o 4.5、共享推理网关和 MediaMTX，业务栈提供完整 Web 工作台、Core 和 GIF Avatar 媒体桥。已完成真实双工语音与后台 Agent 的短时共驻，以及视频帧和评论附件的实际取材请求。远端 OBS 已解码真实节目，音质等待更合适的链路复测。正式业务模型切换还需验收持续共驻及真实业务回放。旧 llama.cpp 已停止。 [业务 Compose](../../deploy/omni/README.md) · [部署验收](../../evaluations/results/omni-deployment-20261116.md) · [部署契约](../specs/foundation/omni-deployment.md)
+两套 Compose 已在 AGX 启动。独立基础设施栈提供 MiniCPM-o 4.5、共享推理网关和 MediaMTX，业务栈提供完整 Web 工作台、Core 和 GIF Avatar 媒体桥。旧 llama.cpp 已停止。正式账号、业务及记录已恢复到专用暂存卷，完整性校验通过。正式切换仍需通过下列准入。历史档已完成短时双工与后台 Agent 共驻、视觉取材请求和远端 OBS 收流，音质复测移后。 [业务 Compose](../../deploy/omni/README.md) · [部署验收](../../evaluations/results/omni-deployment-20261116.md) · [部署契约](../specs/foundation/omni-deployment.md)
 
 1. 当前 AGX 为 JetPack 6／R36.4.7。官方 CUDA 12.9 Tegra 库、重编的 PyTorch 2.13.0 SM 8.7 wheel 和 CPU TorchCodec 已通过容器预检。准入以官方 AWQ、40,960-token Chat 窗口和 4-bit KV 为准。用独立中文样例核对工具回执、来源取材和角色对话，并测原生双工加 Avatar、OBS 和后台任务的持续共驻。CUDA 13 的固定镜像适用于兼容系统。
 2. 在可信 HTTPS 的测试工作台接浏览器双工采集、Avatar 和播放回执。现有 GIF 节目已到达 OBS，继续核对端到端中断和持续播放，并验证 Ditto 及备选驱动。试运行 Remotion 离线产物任务与通用工具，测和节目共驻。
