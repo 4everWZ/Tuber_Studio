@@ -134,6 +134,8 @@ class APIProvider:
     async def _complete(self, messages, *, budget, summary=False, structured=False, probe=False, schema=None,
                         enable_thinking=None, thinking_budget=None, on_content=None):
         payload = self.chat_payload(messages, enable_thinking=enable_thinking) | {"max_tokens": budget, "stream": False}
+        if self.uses_model_card:
+            payload["include_reasoning"] = False
         if not probe:
             payload["temperature"] = self.config.get(
                 "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7
