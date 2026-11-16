@@ -3,7 +3,6 @@ services:
     environment:
       TUBER_CORE_MODE: existing
       TUBER_RUNTIME: /data/business
-      HOME: /data/business
     volumes:
       - business-data:/data
 

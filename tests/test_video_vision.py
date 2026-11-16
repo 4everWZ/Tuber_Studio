@@ -68,7 +68,7 @@ async def omni_provider(runtime):
         "checkpoint": checkpoint, "checkpoint_source": "deployment", "checkpoint_root_verified": True,
         "engine_version": "vLLM-Omni 0.32.0", "engine_version_source": "deployment",
     }
-    registry = {"data": [{"id": "omni-default", "max_model_len": 12288}]}
+    registry = {"data": [{"id": "omni-default", "max_model_len": 40960}]}
     requests = []
 
     async def handle(request):
@@ -95,7 +95,7 @@ async def omni_provider(runtime):
             content, finish = "一张红色轮廓的图", "stop"
         return httpx.Response(200, json={
             "choices": [{"finish_reason": finish, "message": {"content": content}}],
-            "usage": {"prompt_tokens": 100, "completion_tokens": 1 if finish == "length" else 20},
+            "usage": {"prompt_tokens": 38900, "completion_tokens": 1 if finish == "length" else 20},
         })
 
     value.api.client = httpx.AsyncClient(
@@ -109,14 +109,21 @@ async def omni_provider(runtime):
 async def test_omni_video_uses_real_frame_transport_and_verified_identity(omni_provider):
     value, health, _, requests = omni_provider
     assert not value.capabilities()["available"]
+    assert value.capabilities()["context_tokens"] is None
+    assert value.identity()["context_source"] == "model_card"
+    assert "context_tokens" not in value.identity()
+    assert "context_tokens" not in value.api.config
     result = await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "描写图象", deadline=time.time() + 10)
     assert result["frame_observations"] == {"first": "一张红色轮廓的图"}
     assert result["provenance"]["checkpoint"] == health["checkpoint"]
     assert result["provenance"]["model"] == health["model"]
     assert result["provenance"]["engine_version_source"] == "deployment"
+    assert result["provenance"]["max_model_len"] == 40960
     assert value.capabilities()["available"]
     assert value.capabilities()["provenance"] == result["provenance"]
-    assert value.capabilities()["runtime_context_tokens"] == 12288
+    assert value.capabilities()["context_tokens"] == 40960
+    assert value.capabilities()["runtime_context_tokens"] == 40960
+    assert value.config.context_tokens == 12288
     assert not value.capabilities()["admitted"]
     assert any("data:image/png;base64," in json.dumps(request) for request in requests)
     assert requests[-1]["response_format"]["type"] == "json_schema"
@@ -128,7 +135,7 @@ async def test_omni_video_uses_real_frame_transport_and_verified_identity(omni_p
 async def test_omni_video_refuses_unverified_identity_before_generation(omni_provider, mismatch):
     value, health, registry, requests = omni_provider
     if mismatch == "window":
-        registry["data"][0]["max_model_len"] = 8192
+        registry["data"][0]["max_model_len"] = True
     else:
         health[mismatch] = None
     with pytest.raises(VideoVisionAdmissionRequired):
@@ -136,6 +143,22 @@ async def test_omni_video_refuses_unverified_identity_before_generation(omni_pro
     assert not requests
     assert not value.capabilities()["available"]
     assert value.capabilities()["provenance"] is None
+
+
+async def test_omni_video_cannot_continue_when_verified_model_card_window_changes(omni_provider, monkeypatch):
+    value, _, registry, requests = omni_provider
+    runtime_properties = value._runtime_properties
+
+    async def changed_properties():
+        if requests:
+            registry["data"][0]["max_model_len"] = 32768
+        return await runtime_properties()
+
+    monkeypatch.setattr(value, "_runtime_properties", changed_properties)
+    with pytest.raises(VideoVisionAdmissionRequired, match="实际模型、窗口或配置"):
+        await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert len(requests) == 2
+    assert not value.capabilities()["available"]
 
 
 async def test_omni_visual_failure_is_reported_as_missing_evidence(omni_provider):

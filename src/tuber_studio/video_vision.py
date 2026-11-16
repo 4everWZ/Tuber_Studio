@@ -59,9 +59,9 @@ class VideoVisionConfig(StrictModel):
 
     @model_validator(mode="after")
     def valid(self):
-        if self.context_tokens > self.native_context_tokens:
+        if self.adapter == "llama_cpp" and self.context_tokens > self.native_context_tokens:
             raise ValueError("视觉窗口超过已声明的原生上限；禁止静默缩窗")
-        if self.max_output_tokens >= self.context_tokens * 95 // 100:
+        if self.adapter == "llama_cpp" and self.max_output_tokens >= self.context_tokens * 95 // 100:
             raise ValueError("视觉输出预算没有留下输入空间")
         if self.enabled and not self.model.strip():
             raise ValueError("启用视觉须指定真实模型ID")
@@ -107,13 +107,17 @@ class ApiVideoEvidenceProvider:
         )
         if self.config.adapter == "llama_cpp":
             return APIProvider(config | sampling, self._api_key, adapter="llama_cpp")
-        return APIProvider(config | {"structured_output": "json_schema"}, self._api_key)
+        config.pop("context_tokens")
+        config.pop("native_context_tokens")
+        return APIProvider(config | {"structured_output": "json_schema", "context_source": "model_card"}, self._api_key)
 
     def identity(self):
         """Public configuration bound to an external device benchmark record."""
         configuration = self.config.model_dump(exclude={"enabled", "timeout_seconds", "frame_strategy", "adapter"})
         if self.config.adapter == "omni":
-            configuration["adapter"] = "omni"
+            configuration.pop("context_tokens")
+            configuration.pop("native_context_tokens")
+            configuration.update(adapter="omni", context_source="model_card")
         return configuration | {
             "protocol": (
                 VIDEO_EVIDENCE_PROTOCOL
@@ -148,7 +152,7 @@ class ApiVideoEvidenceProvider:
             "max_frames": self.config.max_frames,
             "max_pixels": self.config.max_pixels,
             "max_bytes": self.config.max_bytes,
-            "context_tokens": self.config.context_tokens,
+            "context_tokens": probe.get("context_tokens") if self.config.adapter == "omni" else self.config.context_tokens,
             "timeout_seconds": self.config.timeout_seconds,
             "runtime_context_tokens": probe.get("context_tokens"),
             "reason": "" if configured else "未配置多模态视觉接口",
@@ -215,14 +219,14 @@ class ApiVideoEvidenceProvider:
             raise VideoVisionAdmissionRequired("Omni 网关未报告视觉模型窗口")
         window = next((card.get("max_model_len") for card in cards
                        if isinstance(card, dict) and card.get("id") == self.config.model), None)
-        if type(window) is not int or window < self.config.context_tokens:
-            raise VideoVisionAdmissionRequired("视觉服务实际窗口小于要求或未提供可核验窗口")
+        if type(window) is not int or window < 4096 or self.config.max_output_tokens >= window:
+            raise VideoVisionAdmissionRequired("Omni 模型未提供可核验的视觉窗口或输出预算未留下输入空间")
         return {
             "context_tokens": window,
             "provenance": {key: health.get(key) for key in (
                 "alias", "model", "checkpoint", "checkpoint_source", "checkpoint_root_verified",
                 "engine_version", "engine_version_source",
-            )},
+            )} | {"max_model_len": window},
         }
 
     def _record_omni_observation(self, properties, frame_count):
@@ -357,6 +361,8 @@ class ApiVideoEvidenceProvider:
         async with self.runtime.offline_generation():
             self._check_task(task, deadline)
             props = await self._confirmed_properties(expected, identity)
+            if self.config.adapter == "omni":
+                self.api.adopt_context_window(props["context_tokens"])
             self._check_task(task, deadline)
             before = repository.round(task["round_id"])["budget"].copy() if repository else None
             try:

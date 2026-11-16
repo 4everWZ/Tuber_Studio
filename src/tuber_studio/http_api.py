@@ -144,11 +144,15 @@ async def response_json(client, method, path, *, payload=None, timeout=None):
     return data
 
 
-async def models_health(client, model):
+async def inference_model_card(client, model):
     data = await response_json(client, "GET", "models", timeout=5)
     rows = data.get("data")
-    if not isinstance(rows, list) or not any(
-        isinstance(row, dict) and row.get("id") == model for row in rows
-    ):
-        raise ValueError("API模型列表未包含配置的模型ID")
+    for row in rows if isinstance(rows, list) else ():
+        if isinstance(row, dict) and row.get("id") == model:
+            return row
+    raise ValueError("API模型列表未包含配置的模型ID")
+
+
+async def models_health(client, model):
+    await inference_model_card(client, model)
     return {"available": True, "detail": "API模型可达；未执行生成或容量实测"}

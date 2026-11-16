@@ -163,12 +163,14 @@ def proposal(settings, body):
             select_local_voice(after, data.get("inference_broker", {}))
         after.update(patch)
         if name == "llm":
-            if "structured_output" not in patch and (
+            if (
                 after["kind"] != before.get("kind")
                 or after["base_url"].rstrip("/") != before.get("base_url", "").rstrip("/")
                 or after.get("model") != before.get("model")
             ):
-                after.pop("structured_output", None)
+                if "structured_output" not in patch:
+                    after.pop("structured_output", None)
+                after.pop("context_source", None)
             if "native_context_tokens" in patch and "context_tokens" not in patch:
                 after["context_tokens"] = after["native_context_tokens"]
             normalize_broker_llm(data)

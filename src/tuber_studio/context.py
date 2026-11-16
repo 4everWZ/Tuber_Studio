@@ -63,6 +63,13 @@ class BudgetedSummary:
 
 
 class ContextManager:
+    def effective_llm_config(self):
+        config = self.settings.data["llm"]
+        if getattr(self.provider, "uses_model_card", False):
+            window = self.provider.server_tokens
+            return config | {"context_tokens": window, "native_context_tokens": window}
+        return config
+
     def __init__(
         self,
         settings,
@@ -292,18 +299,19 @@ class ContextManager:
             # report a count. Enter the same full compactor, which owns the
             # upstream overflow-recovery loop, rather than truncating here.
             overflow, count = True, 0
-        config = self.settings.data["llm"]
+        config = self.effective_llm_config()
         output = reply_output_budget(config, mode) if output_tokens is None else output_tokens
         total = count + output
         if overflow or needs_compaction(total, config, row["carried_prefix_tokens"]):
-            if not history:
+            if not history and (config.get("context_source") != "model_card" or overflow or total > limits(config)[1]):
                 raise ContextWindowExceeded("核心设定或当前输入已超窗，没有可压缩历史；请调整输入")
-            # Persist summaries of conversation history, without transient recalled memories.
-            await self._compact(row, prefix, compaction_context, pending, suffix, output_tokens=output)
-            row = self.window(scope, character)
-            history = json.loads(row["history"])
-            messages = self.render(prefix, initial, history, pending, suffix)
-            count = await self.provider.count_tokens(messages)
+            if history:
+                # Persist summaries of conversation history, without transient recalled memories.
+                await self._compact(row, prefix, compaction_context, pending, suffix, output_tokens=output)
+                row = self.window(scope, character)
+                history = json.loads(row["history"])
+                messages = self.render(prefix, initial, history, pending, suffix)
+                count = await self.provider.count_tokens(messages)
         if count + output > limits(config)[1]:
             raise ContextWindowExceeded("压缩后仍超出有效窗口；保留原始记录，不截断核心或当前输入")
         self.store.execute(
@@ -329,7 +337,9 @@ class ContextManager:
                             delivery_sources[source["event_id"]] = source
                     for source in (item.get("delivery_provenance") or {}).get("sources", []):
                         delivery_sources[source["event_id"]] = source
-            config = self.settings.data["llm"]
+            if getattr(self.provider, "uses_model_card", False):
+                await self.provider.ensure_capacity()
+            config = self.effective_llm_config()
             for _ in range(2):
                 passes += 1
                 budget = summary_budget(replacement, config)
@@ -495,8 +505,9 @@ class ContextManager:
             if selected_key
             else None
         )
-        configured = self.settings.data["llm"]["context_tokens"]
-        native = self.settings.data["llm"].get("native_context_tokens", 131072)
+        config = self.effective_llm_config()
+        configured = config["context_tokens"]
+        native = config.get("native_context_tokens", 131072)
         server = self.provider.server_tokens
         return {
             "configured_tokens": configured,
@@ -507,13 +518,13 @@ class ContextManager:
                 and server >= configured >= 4096
                 and native >= configured
                 and not self.provider.profile_error
-                and self.settings.data["llm"]["kind"] == "llama_cpp"
+                and (config["kind"] == "llama_cpp" or getattr(self.provider, "uses_model_card", False))
             ),
             "capacity_source": getattr(
                 self.provider, "capacity_source", "server_verified" if server else "unverified"
             ),
             "token_accounting": getattr(self.provider, "token_accounting", "server_tokenizer"),
-            "retained_user_token_budget": retained_user_budget(self.settings.data["llm"]),
+            "retained_user_token_budget": retained_user_budget(config) if configured else None,
             "active_tokens": row["input_tokens"] if row else 0,
             "compact_count": row["compact_count"] if row else 0,
             "last_compaction_error": row["last_error"] if row else None,
@@ -521,7 +532,7 @@ class ContextManager:
             "compaction_passes_last": row["last_passes"] if row else 0,
             "secondary_threshold_percent": SECOND_PASS_OCCUPANCY_PERCENT,
             "summary_budgets_last": json.loads(row["last_budgets"] or "[]") if row else [],
-            "occupancy_percent": round((row["input_tokens"] if row else 0) * 100 / configured, 2),
+            "occupancy_percent": round((row["input_tokens"] if row else 0) * 100 / configured, 2) if configured else None,
             "profile_error": self.provider.profile_error,
             "scope": row["mode"] if row else scope,
             "oldest_source_at": row["oldest_source_at"] if row else None,

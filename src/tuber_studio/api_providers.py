@@ -4,13 +4,14 @@ import asyncio
 import base64
 import hashlib
 import json
+import time
 from collections import OrderedDict
 from typing import Protocol
 
 from .compaction import ContextWindowExceeded, IncompleteCompaction
 from .config import uses_broker_llm
 from .generation_meter import reserve_generation, settle_generation
-from .http_api import api_client, models_health, response_json
+from .http_api import api_client, inference_model_card, models_health, response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, llama_cpp_sampling
 from .operation_identity import provider_identity_messages
@@ -58,13 +59,48 @@ class APIProvider:
         self.client = api_client(config, api_key)
         self.last_tokens = self.server_tokens = None
         self.profile_error = None
+        self.uses_model_card = config.get("context_source") == "model_card"
+        self.window_observed_at = None
+        if self.uses_model_card:
+            self.capacity_source = "model_card"
         self.counts = OrderedDict()
         self.count_lock = asyncio.Lock()
 
     async def close(self):
         await self.client.aclose()
 
-    async def ensure_capacity(self):
+    def adopt_context_window(self, window):
+        if not self.uses_model_card or type(window) is not int or not 4096 <= window <= 2_147_483_647:
+            raise ValueError("模型卡未实报有效的上下文窗口")
+        if window != self.server_tokens:
+            self.counts.clear()
+        self.server_tokens = window
+        self.capacity_verified = True
+        self.window_observed_at = time.monotonic()
+        self.profile_error = None
+
+    @property
+    def capacity_window(self):
+        if self.uses_model_card:
+            if self.server_tokens is None:
+                raise ValueError("推理端的模型窗口尚不可用")
+            return self.server_tokens
+        return self.config["context_tokens"] * 95 // 100
+
+    async def ensure_capacity(self, *, refresh=False):
+        if self.uses_model_card:
+            if refresh or self.window_observed_at is None or time.monotonic() - self.window_observed_at >= 30:
+                try:
+                    card = await inference_model_card(self.client, self.config["model"])
+                    self.adopt_context_window(card.get("max_model_len"))
+                except Exception as error:
+                    self.server_tokens = self.window_observed_at = None
+                    self.capacity_verified = False
+                    self.profile_error = public_error(error)
+                    self.counts.clear()
+                    raise
+            self.profile_error = None
+            return
         window = self.config["context_tokens"]
         if type(window) is not int or not 4096 <= window <= self.config["native_context_tokens"]:
             self.profile_error = "API窗口超出配置的服务上限"
@@ -73,7 +109,10 @@ class APIProvider:
 
     async def health(self):
         try:
-            await self.ensure_capacity()
+            await self.ensure_capacity(refresh=True)
+            if self.uses_model_card:
+                return {"available": True, "detail": "API模型可达；窗口来自服务实报",
+                        "capacity_source": self.capacity_source, "server_context_tokens": self.server_tokens}
             result = await models_health(self.client, self.config["model"])
             return result | {"capacity_source": self.capacity_source, "server_context_tokens": None}
         except Exception as error:
@@ -89,14 +128,16 @@ class APIProvider:
             "stream": False,
         }
         thinking = self.config.get("enable_thinking") if enable_thinking is None else enable_thinking
-        if self.adapter == "llama_cpp" and thinking is not None:
+        if (self.adapter == "llama_cpp" or self.uses_model_card) and thinking is not None:
             if type(thinking) is not bool:
-                raise ValueError("llama.cpp思考设置须为布尔值或None")
+                raise ValueError("思考设置须为布尔值或None")
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
         if not probe:
             payload["temperature"] = self.config.get(
                 "summary_temperature" if summary else "temperature", 0.2 if summary else 0.7
             )
+            if self.uses_model_card:
+                payload.update({key: self.config[key] for key in ("top_k", "top_p") if key in self.config})
         if self.adapter == "llama_cpp":
             sampling = llama_cpp_sampling(self.config, summary=summary)
             if probe:
@@ -118,7 +159,7 @@ class APIProvider:
         await prepare_model_request()
         reservation = (
             reserve_generation(
-                self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
+                self.capacity_window - budget, budget, conservative_input=True
             )
             if probe
             else None
@@ -180,17 +221,17 @@ class APIProvider:
 
     async def prefill(self, messages):
         count = await self.count_tokens(messages)
-        if count + 1 > self.config["context_tokens"] * 95 // 100:
+        if count + 1 > self.capacity_window:
             raise ContextWindowExceeded("重建原文超出API窗口预算")
         return True
 
     async def summarize(self, messages, *, max_tokens=None):
         budget = self.config.get("compaction_max_tokens", 2048) if max_tokens is None else max_tokens
         count = await self.count_tokens(messages)
-        if count + budget > self.config["context_tokens"] * 95 // 100:
+        if count + budget > self.capacity_window:
             raise ContextWindowExceeded("API压缩输入超窗")
         reservation = reserve_generation(
-            self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
+            self.capacity_window - budget, budget, conservative_input=True
         )
         content, _ = await self._complete(messages, budget=budget, summary=True)
         if not content.strip():
@@ -201,17 +242,17 @@ class APIProvider:
     async def generate(self, messages, character, event_id, source_text=None):
         budget = self.config.get("max_tokens", 1024)
         count = await self.count_tokens(messages)
-        if count + budget > self.config["context_tokens"] * 95 // 100:
+        if count + budget > self.capacity_window:
             raise ContextWindowExceeded("输入超出API窗口预算；禁止静默丢弃历史")
         reservation = reserve_generation(
-            self.config["context_tokens"] * 95 // 100 - budget, budget, conservative_input=True
+            self.capacity_window - budget, budget, conservative_input=True
         )
         content, _ = await self._complete(messages, budget=budget, structured=True)
         reply = validate_reply(content, character, event_id, source_text)
         settle_generation(reservation, self.last_usage)
         return reply
 
-    async def generate_text(self, messages, *, max_tokens):
+    async def generate_text(self, messages, *, max_tokens, on_content=None, use_remaining_window=False):
         """Generate visible natural text with the same real API usage budget."""
         self.last_content = None
         self.last_finish_reason = None
@@ -220,15 +261,17 @@ class APIProvider:
         if type(max_tokens) is not int or max_tokens < 1:
             raise ValueError("文本输出预算须为正整数")
         count = await self.count_tokens(messages)
-        if count + max_tokens > self.config["context_tokens"] * 95 // 100:
+        if use_remaining_window:
+            max_tokens = min(max_tokens, self.capacity_window - count)
+        if max_tokens < 1 or count + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("文本输入超出API窗口预算；禁止静默丢弃数据")
         reservation = reserve_generation(
-            self.config["context_tokens"] * 95 // 100 - max_tokens,
+            self.capacity_window - max_tokens,
             max_tokens,
             conservative_input=True,
         )
-        content, actual = await self._complete(messages, budget=max_tokens)
-        if actual + max_tokens > self.config["context_tokens"] * 95 // 100:
+        content, actual = await self._complete(messages, budget=max_tokens, on_content=on_content)
+        if actual + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("API文本实际计量超窗；未采用结果")
         settle_generation(reservation, self.last_usage)
         if not content.strip():
@@ -259,21 +302,23 @@ class APIProvider:
         ]
         return single_system_messages(provider_identity_messages(self, messages))
 
-    async def generate_json(self, messages, schema, *, max_tokens, on_content=None):
+    async def generate_json(self, messages, schema, *, max_tokens, on_content=None, use_remaining_window=False):
         self.last_content = None
         self.last_finish_reason = None
         self.last_usage = {}
         self.last_content_characters = None
         messages = self.prepare_json_messages(messages, schema, max_tokens=max_tokens)
         count = await self.count_tokens(messages)
-        if count + max_tokens > self.config["context_tokens"] * 95 // 100:
+        if use_remaining_window:
+            max_tokens = min(max_tokens, self.capacity_window - count)
+        if max_tokens < 1 or count + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("结构化输入超出API窗口预算；禁止静默丢弃数据")
         reservation = reserve_generation(
-            self.config["context_tokens"] * 95 // 100 - max_tokens, max_tokens, conservative_input=True
+            self.capacity_window - max_tokens, max_tokens, conservative_input=True
         )
         content, actual = await self._complete(messages, budget=max_tokens, structured=True, schema=schema,
                                                on_content=on_content)
-        if actual + max_tokens > self.config["context_tokens"] * 95 // 100:
+        if actual + max_tokens > self.capacity_window:
             raise ContextWindowExceeded("API结构化实际计量超窗；未采用结果")
         value = parse_json_object(content)
         settle_generation(reservation, self.last_usage)
@@ -282,9 +327,17 @@ class APIProvider:
     async def generate_assistant_json(self, messages, schema, *, max_tokens, on_content=None, on_stage=None):
         if on_stage:
             on_stage("generating")
-        if self.config.get("structured_output") == "json_schema" and on_content is not None:
-            return await self.generate_json(messages, schema, max_tokens=max_tokens, on_content=on_content)
-        return await self.generate_json(messages, schema, max_tokens=max_tokens)
+        return await self.generate_json(
+            messages, schema, max_tokens=max_tokens, use_remaining_window=self.uses_model_card,
+            on_content=on_content if self.config.get("structured_output") == "json_schema" else None,
+        )
+
+    async def generate_assistant_text(self, messages, *, max_tokens, on_content=None, on_stage=None):
+        if on_stage:
+            on_stage("generating")
+        return await self.generate_text(
+            messages, max_tokens=max_tokens, on_content=on_content, use_remaining_window=self.uses_model_card,
+        )
 
 
 class VisionProvider(Protocol):

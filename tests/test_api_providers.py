@@ -23,7 +23,7 @@ def transport(monkeypatch):
     def respond(request):
         captured.append(request)
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": "remote-model"}]})
+            return httpx.Response(200, json={"data": [{"id": "remote-model"} | state.get("model_card", {})]})
         body = json.loads(request.content)
         if request.url.path.endswith("/audio/speech"):
             if state.get("speech_error"):
@@ -297,6 +297,34 @@ async def test_public_text_checks_estimated_and_actual_context(settings, transpo
         with pytest.raises(ContextWindowExceeded):
             await provider.generate_text([{"role": "user", "content": "观察"}], max_tokens=128)
         assert len(captured) == requests
+    finally:
+        await provider.close()
+
+
+async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budget(settings, transport):
+    captured, state = transport
+    state.update(model_card={"max_model_len": 40960}, count=40500, text="原文已读")
+    provider = APIProvider(
+        settings.data["llm"] | {"model": "remote-model", "context_source": "model_card",
+                                "context_tokens": 12288, "enable_thinking": True},
+        "test-key",
+    )
+    try:
+        assert (await provider.health())["server_context_tokens"] == 40960
+        messages = [{"role": "user", "content": "请读完原文并复述结尾"}]
+        assert await provider.generate_assistant_text(messages, max_tokens=4096) == "原文已读"
+        requests = [json.loads(request.content) for request in captured if request.method == "POST"]
+        assert [request["max_tokens"] for request in requests] == [1, 460]
+        assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": True}
+        assert requests[-1]["messages"] == messages
+        assert all(request.headers["authorization"] == "Bearer test-key" for request in captured)
+        state["model_card"] = {"max_model_len": 32768}
+        await provider.ensure_capacity(refresh=True)
+        assert provider.capacity_window == 32768
+        state["model_card"] = {"max_model_len": True}
+        with pytest.raises(ValueError, match="实报"):
+            await provider.ensure_capacity(refresh=True)
+        assert provider.server_tokens is None and not provider.capacity_verified
     finally:
         await provider.close()
 

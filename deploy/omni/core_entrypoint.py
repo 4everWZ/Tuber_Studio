@@ -11,24 +11,29 @@ from tuber_studio.config import Settings, validate_api_key
 from tuber_studio.runtime_authority import acquire_business_writer, read_business_authority
 
 GATEWAY_BASE = "http://omni-gateway:8000/v1"
-DEFAULT_MODEL_CHECKPOINT = "fb09628e98b1f55d8d5b863e0eccfcdd11bff499"
+DEFAULT_MODEL_CHECKPOINT = "927faefa0bce96e557945e106f3b3d8b4d39f4b2"
+
+
+def configure_omni_llm(llm):
+    llm.update(
+        context_source="model_card", structured_output="json_schema", max_tokens=4096,
+        temperature=0.6, top_k=20, top_p=0.95,
+    )
+    llm.setdefault("enable_thinking", True)
 
 
 def configure_model(data, *, omni):
-    window = int(os.environ.get("OMNI_CONTEXT_TOKENS", "12288"))
     data["inference_broker"]["enabled"] = False
     data["llm"].update(
         kind="openai_compatible" if omni else "demo", base_url=GATEWAY_BASE,
-        model=os.environ.get("OMNI_MODEL_ALIAS", "omni-default"), context_tokens=window,
-        native_context_tokens=window, auto_compact_token_limit=window * 9 // 10,
+        model=os.environ.get("OMNI_MODEL_ALIAS", "omni-default"),
     )
     if omni:
         data.pop("work_mode_profiles", None)
-        data["llm"]["structured_output"] = "json_schema"
+        configure_omni_llm(data["llm"])
         data["video_vision"] = {
             "enabled": True, "adapter": "omni", "base_url": GATEWAY_BASE, "model": data["llm"]["model"],
             "model_revision": os.environ.get("OMNI_VISION_CHECKPOINT") or DEFAULT_MODEL_CHECKPOINT,
-            "context_tokens": window, "native_context_tokens": window,
         }
 
 
@@ -49,7 +54,11 @@ class ComposeSettings(Settings):
         llm = self.data["llm"]
         uses_gateway = llm["kind"] == "openai_compatible" and llm["base_url"].rstrip("/") == GATEWAY_BASE
         if uses_gateway:
-            llm.setdefault("structured_output", "json_schema")
+            configure_omni_llm(llm)
+        if self._uses_gateway_vision():
+            self.data["video_vision"]["model_revision"] = (
+                os.environ.get("OMNI_VISION_CHECKPOINT") or DEFAULT_MODEL_CHECKPOINT
+            )
         if self.gateway_key or uses_gateway or self._uses_gateway_vision():
             validate_api_key(self.gateway_key)
 

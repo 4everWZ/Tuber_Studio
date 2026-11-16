@@ -103,6 +103,8 @@ def insert_initial_context_before_last_real_user_or_summary(history, initial_con
 
 def limits(config):
     window = config["context_tokens"]
+    if config.get("context_source") == "model_card":
+        return window * 9 // 10, window
     return (
         min(config.get("auto_compact_token_limit", window * 9 // 10), window * 9 // 10),
         window * config.get("effective_context_window_percent", 95) // 100,

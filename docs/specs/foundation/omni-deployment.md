@@ -1,6 +1,6 @@
 # AGX Omni 部署设计与准入
 
-目标是在 Jetson AGX Orin 64 GB 上集中提供双工音视频交互、多模态推理和可插拔 Avatar。常驻 Agent、其数据库和外部动作权由 [Agent 底座](agent-runtime.md)与[跨主机规范](distributed-runtime.md)定义。推理、渲染和媒体服务可在独立仓库构建和发布。截至 2026-11-15，已核对上游接口、权重清单和硬件资料，候选组合待目标机验证。现有 llama.cpp 9B／视觉及 Genie 是切换前的生产和回退基线。 [现有 AGX 实测](../../../evaluations/results/agx-clean-9b-deployment-20261111.md)
+目标是在 Jetson AGX Orin 64 GB 上集中提供双工音视频交互、多模态推理和可插拔 Avatar。常驻 Agent、其数据库和外部动作权由 [Agent 底座](agent-runtime.md)与[跨主机规范](distributed-runtime.md)定义。推理、渲染和媒体服务在独立仓库发布。当前准入配置使用 MiniCPM-o 4.5 官方 AWQ。旧 llama.cpp 9B／视觉配置已停止并归档。Genie 是独立语音服务。 [AGX 验收记录](../../../evaluations/results/omni-deployment-20261116.md)
 
 ## 可行性判断
 
@@ -14,7 +14,7 @@
 | Orin 与精度 | AGX Orin 是 ARM64、SM 8.7 Ampere，CPU、GPU、渲染和应用共享 64 GB，硬件无原生 FP8 Tensor Core 路径。W8A16 是权重低精度、激活 16 位的候选，须证明同一模型、阶段、内核和架构实际生效。现有 R36.4 镜像规格与 JetPack 7.2／R39 的 SBSA 兼容路线分别检查。NVIDIA 有 R39 上普通 vLLM ARM64 示例，Omni 音视频阶段仍需在本机试装。先用可执行的 BF16／FP16 建基线，再评估受支持的权重量化，记录被量化的阶段和实际回退。 [NVIDIA Orin](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/) · [NVIDIA 硬件精度表](https://docs.nvidia.com/deeplearning/tensorrt/pdf/TensorRT-Support-Matrix-Guide.pdf) · [JetPack 7.2](https://developer.nvidia.com/embedded/jetpack/downloads/archive-7.2) · [Orin vLLM 示例](https://forums.developer.nvidia.com/t/jetpack-7-2-jetson-linux-r39-2-on-jetson-agx-orin-developer-kit-getting-started-and-feedback-thread/372156) · [Omni 量化](https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/quantization/overview/) |
 | Higgs 体验参考 | Boson 的 160 ms 是 Higgs 双工模型的处理切片，其面部由模型输出的视频 latent 驱动。项目目标是边听边说、打断、看屏幕、脸随声音动，以及后台继续工作。音频驱动的外部 Avatar 复现这类交互，端到端延迟由实际浏览器和模型测量，160 ms 用来对照而非预填部署参数。 [Boson Higgs Realtime Duplex](https://www.boson.ai/blog/higgs-realtime-duplex) |
 
-MiniCPM-o 4.5 先用官方原精度权重和单会话建立基线。上游单 GPU 配方同时分配 Thinker、Talker 和 Code2Wav 的内存，还要给 CUDA Graph 和编解码器工作区留余量。AGX 初测以实报可用内存设置各阶段窗口、并发和预算。需要进一步降低占用时，OpenBMB 的 AWQ 权重可作为第二档，独立验证 vLLM-Omni 双工能否加载，并核对语音／视觉模块与对话质量。 [三阶段部署配置](https://github.com/vllm-project/vllm-omni/blob/main/vllm_omni/deploy/minicpmo_4_5.yaml) · [官方 AWQ 权重配置](https://huggingface.co/openbmb/MiniCPM-o-4_5-awq/blob/f0910c0218100d941fad51832f3f9e85a365e927/config.json)
+AGX 的准入配置锁定 OpenBMB MiniCPM-o 4.5 官方 AWQ。Thinker 的 Chat 窗口从 checkpoint 读取，官方值为 40,960 token。Core 采用认证网关模型卡实报值。Thinker 与 Talker 使用 Triton 的逐 token、逐 head 4-bit KV，双工窗口滚动时按实际缓存打包和尺度重算键的位置编码。权重的 AWQ 作用域按官方张量分布限制在 Thinker 的主语言模型。Talker 与 Code2Wav 使用官方资产，实时会话沿用模型插件自身的滑窗。 [三阶段部署配置](https://github.com/vllm-project/vllm-omni/blob/5917730a4b02aedb44d374173cdc1b10484ccd52/vllm_omni/deploy/minicpmo_4_5.yaml) · [官方 AWQ 权重配置](https://huggingface.co/openbmb/MiniCPM-o-4_5-awq/blob/927faefa0bce96e557945e106f3b3d8b4d39f4b2/config.json)
 
 ## 独立仓库与运行拓扑
 
@@ -44,7 +44,7 @@ MiniCPM-o 4.5 先用官方原精度权重和单会话建立基线。上游单 GP
 
 ### 内存与网关模式
 
-首轮共驻目标为 Omni 整体 30 GiB、Avatar 6 GiB，预留约 8 GiB 整机可用内存作为起步余量。该机实报总 RAM 61.37 GiB。`gpu_memory_utilization` 按各阶段配置，不能以单个 0.50 推导整套服务固定占用 32 GiB。先用原精度测单会话与混合双工，分别记录 Thinker、Talker、解码器、KV 和额外工作区，再分配阶段预算、配置并发及选择量化。整机以内存实报和最低可用内存验收。 [AGX 历史实测](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [Omni 阶段内存](https://docs.vllm.ai/projects/vllm-omni/en/v0.32.0/configuration/gpu_memory_utilization/)
+首轮共驻目标为 Omni 整体 30 GiB、Avatar 6 GiB，预留约 8 GiB 整机可用内存。该机实报总 RAM 61.37 GiB。`gpu_memory_utilization` 按阶段配置。Thinker 预留完整 Chat 窗口与原生双工滑窗所需的 4-bit KV，分批预填控制单次计算工作区。直接以官方 AWQ、完整窗口和 4-bit KV 验收，记录 Thinker、Talker、解码器、KV、工作区和整机最低可用内存。 [AGX 历史实测](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [Omni 阶段内存](https://docs.vllm.ai/projects/vllm-omni/en/v0.32.0/configuration/gpu_memory_utilization/)
 
 - **Live Mode** 由直播会话向网关切换并维持。开播前先暂停接收新的重批次，给在途长任务留收尾时间。预留一路直播双工和渲染／编码资源，网关合计所有应用的普通推理并发，先设为 1，混合负载实测通过才放到 2。限制上下文、视觉帧、输出与排队时间，暂停 Remotion 重任务。
 - **Batch Mode** 恢复视频、运营和离线素材任务，按实测逐档提高并发。内存余量下降或队列恶化时收紧。网关控制请求准入，已经启动的计算可否让出资源由目标引擎版本实测。必要时分模型或错峰。 [同引擎并发](https://docs.vllm.ai/projects/vllm-omni/en/latest/serving/realtime_duplex_api/#start-the-server)

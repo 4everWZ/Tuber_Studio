@@ -199,7 +199,9 @@ async def restore_admission(runtime):
         if not profile.get("loaded") and capabilities.get("state") != "active":
             return
     current = await provider._runtime_properties()
-    if not isinstance(current, dict) or current.get("context_tokens", 0) < provider.config.context_tokens:
+    if not isinstance(current, dict) or (
+        provider.config.adapter != "omni" and current.get("context_tokens", 0) < provider.config.context_tokens
+    ):
         return
     if current != value.get("probe", {}).get("properties"):
         return

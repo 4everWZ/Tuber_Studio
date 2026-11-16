@@ -539,7 +539,7 @@ class BrowsingDecisions:
         )
 
     def _capacity_signature(self, config):
-        llm = self.browsing.settings.data["llm"]
+        llm = self.browsing.runtime.context.effective_llm_config()
         return content_hash(
             {
                 "context_tokens": llm["context_tokens"],
@@ -563,8 +563,13 @@ class BrowsingDecisions:
         segments = self.browsing._segments(material)
         presentation = self._content_presentation(material, row)
         output = row["config"]["decision_max_tokens"]
-        context = self.browsing.settings.data["llm"]["context_tokens"]
-        available = min(context // 2, context * 95 // 100 - output)
+        provider = self.browsing.runtime.llm
+        if getattr(provider, "uses_model_card", False):
+            await provider.ensure_capacity()
+            available = provider.capacity_window - output
+        else:
+            context = self.browsing.settings.data["llm"]["context_tokens"]
+            available = min(context // 2, context * 95 // 100 - output)
         if row["config"]["max_input_tokens"]:
             available = min(available, row["config"]["max_input_tokens"] // 2)
         if available <= 0:

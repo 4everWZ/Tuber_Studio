@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import Field, StringConstraints, model_validator
 
+from ..compaction import ContextWindowExceeded
 from ..daily_memory import HIGHLIGHT_ACCOUNT_FILTER
 from ..generation_meter import budgeted_call
 from ..models import StrictModel
@@ -44,7 +45,7 @@ _DYNAMIC_URL = re.compile(r"https://(?:www\.bilibili\.com/opus/|t\.bilibili\.com
 _DYNAMIC_ID = re.compile(r"(?<![0-9])([1-9][0-9]{14,19})(?![0-9])")
 _TIMECODE = re.compile(r"(?<![0-9:])(?:(\d{1,3}):)?(\d{1,4}):([0-5]\d)(?:\.(\d{1,3}))?(?![0-9:])")
 _PART = re.compile(r"(?<![A-Za-z0-9])P\s*([1-9]\d{0,3})(?!\d)", re.I)
-Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 logger = logging.getLogger("uvicorn.error").getChild("operator_chat")
 _EXPERIENCE_SOURCE = (
     "(category='public_incident' OR source_ref LIKE 'operator-public:%' OR source_ref LIKE 'system:downtime:%')"
@@ -385,7 +386,10 @@ class OperatorChat:
 
         report("preparing")
         try:
-            async with asyncio.timeout(150):
+            prepared_provider = self.runtime.llm
+            uses_model_card = getattr(prepared_provider, "uses_model_card", False)
+            deadline = prepared_provider.config.get("prefill_timeout_seconds", 600) if uses_model_card else 150
+            async with asyncio.timeout(deadline):
                 self._check_scope(char, account)
                 memory = self.runtime.daily_memory
                 scope = self.runtime.memory_organizer.scope()
@@ -406,8 +410,11 @@ class OperatorChat:
                 previous = self._previous_card(char, account) if _CONTINUED_REFERENCE.search(data.message) else None
                 schema = AssistantDecision.schema_for_turn(data.message, chat_only=bool(data.intent), previous_card=previous)
                 actions = schema["properties"]["action"]["enum"]
-                prepared_provider = self.runtime.llm
-                plain = getattr(prepared_provider, "generate_assistant_text", None) if actions == ["chat"] else None
+                plain = (
+                    getattr(prepared_provider, "generate_assistant_text", None)
+                    if actions == ["chat"] and (uses_model_card or not hasattr(prepared_provider, "uses_model_card"))
+                    else None
+                )
                 instruction = (
                     f"用{char['name']}的第一人称接住号主最后一句。日常闲聊简短自然，角色的感受、想象和玩笑可以直接说。"
                     "有具体问题先回答，再接梗。闲聊不用追问目的，按需要展开细节。"
@@ -475,6 +482,8 @@ class OperatorChat:
                     self.runtime.validate_memory_delivery(audit)
                 stage = "validated"
                 return decision, audit
+        except ContextWindowExceeded as error:
+            raise HTTPException(422, str(error)) from error
         except (ValueError, TimeoutError, httpx.HTTPError) as error:
             logger.info("operator assistant failure stage=%s category=%s", stage, type(error).__name__)
             raise HTTPException(503, "这轮回复未完成，可以重试。") from error
