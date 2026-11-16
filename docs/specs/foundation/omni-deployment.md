@@ -24,7 +24,7 @@ AGX 的准入配置锁定 OpenBMB MiniCPM-o 4.5 官方 AWQ。Thinker 的 Chat �
 
 | Compose | 服务与职责 |
 | --- | --- |
-| `infra-compose.yml` | 由独立部署仓库维护，常规服务随 Docker 启动。运行 vLLM-Omni、共享推理网关和 MediaMTX。推理网关负责服务级鉴权、排队、全局并发和限流。模型端口只绑定基础设施私网。正式 HTTPS 入口由部署环境提供。 |
+| `infra-compose.yml` | 运行 vLLM-Omni 和共享推理网关。网关负责服务级鉴权、排队、全局并发和限流。模型端口只绑定基础设施私网。正式 HTTPS 入口由部署环境提供。MediaMTX 在节目阶段叠加 `infra-media.compose.yml` 启用。 [推理部署仓库](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy) |
 | `app-compose.yml` | 独立发布与重启，运行 Tuber Studio Core、Avatar Engine、按需 Remotion Worker 及后续应用。只经过网关调用推理。应用版本和数据卷各自持有，Tuber Studio Core 是 Agent、SQLite 和平台权限的唯一业务写入者。 |
 
 | 边界 | 目标接法 |

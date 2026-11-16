@@ -35,7 +35,7 @@
 
 两套 Compose 及网关已在 AGX 实机验证过部分链路。候选引擎在 75 分 11.5 秒的混合测试后失去响应，容器未能重启。工作站建设独立推进。账号和业务快照保留在 AGX 暂存卷及 Windows 本机备份，正式切换尚未执行。 [AGX 实测](../../evaluations/results/omni-deployment-20261116.md) · [业务 Compose](../../deploy/omni/README.md)
 
-1. **工作站推理及共享 API。** 在独立部署仓库建立工作站配置，先独立运行引擎与网关，复用 Bearer 鉴权、`omni-default`、模型卡和排队。以官方 AWQ、40,960 的 Chat 窗口、4,096 生成额度和 INT4 KV 为首个复测基线。用两个独立调用方验 Chat Completions 普通／流式、视觉输入、长文语义、结构化结果、超载、取消和持续混合负载。记录实际模型及版本、每卡显存、主机内存、交换、吞吐、首包和排队。Realtime 用独立客户端验证原生能力。 [实机准入](../specs/foundation/omni-deployment.md#实机准入与切换)
+1. **工作站推理及共享 API。** 在独立部署仓库建立工作站配置，先独立运行引擎与网关，复用 Bearer 鉴权、`omni-default`、模型卡和排队。以官方 AWQ、40,960 的 Chat 窗口、4,096 生成额度和 INT4 KV 为首个复测基线。用两个独立调用方验 Chat Completions 普通／流式、视觉输入、长文语义、结构化结果、超载、取消和持续混合负载。记录实际模型及版本、每卡显存、主机内存、交换、吞吐、首包和排队。Realtime 用独立客户端验证原生能力。 [推理部署仓库](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy) · [实机准入](../specs/foundation/omni-deployment.md#实机准入与切换)
 2. **常驻 Agent 与现有业务接入。** 通过同一网关验证 Chats、工具回执、视频取材、运营和游戏，验证关闭浏览器后任务续跑、取消及重启恢复。通过对应能力实测后切业务 Provider。正式数据另走唯一写入者迁移，使用隔离数据验收且平台写入为零。 [常驻 Agent](#常驻-agent-与跨端记忆) · [数据迁移](../specs/foundation/distributed-runtime.md#迁移备份与恢复)
 3. **演出与媒体。** 核心服务验收后，接浏览器双工采集、Avatar 和实际播放回执，再验 OBS、端到端打断、音画同步、持续直播及 Remotion 共驻。 [节目准入](../specs/foundation/omni-deployment.md#实机准入与切换)
 

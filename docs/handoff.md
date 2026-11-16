@@ -6,7 +6,7 @@
 
 | 仓库 | 接手基线 |
 | --- | --- |
-| `Tuber_Studio_Omni_Deploy` | 本地 `main` 的 `0c6e918` 包含认证网关、`infra-compose.yml` 和固定模型配置。沿用 `omni-gateway`，为工作站新增经核验的运行配置。现有引擎、模型下载与兼容镜像按 AGX ARM64 构建。 |
+| 推理部署 | 独立仓库维护认证网关、`infra-compose.yml` 和固定模型配置。沿用 `omni-gateway`，为工作站新增经核验的运行配置。现有引擎、模型下载与兼容镜像按 AGX ARM64 构建。节目传输使用可选 MediaMTX 覆盖文件。 [Tuber Studio Omni Deploy](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy) |
 | `Tuber_Studio` | 本地 `main` 的 `5c009c4` 记录最后一次 AGX 验收。候选 Core `7bbd881` 已含持久任务、按工具回执交付、排队与执行分开计时、动态窗口及受信记忆召回。业务入口是 `deploy/omni/app-compose.yml`。 [Core 部署](../deploy/omni/README.md) · [中文 Agent 验收](../evaluations/results/agent-grounded-20261116.md) |
 
 ## 工作站的第一项交付

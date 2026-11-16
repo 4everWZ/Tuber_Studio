@@ -1,6 +1,6 @@
 # Tuber Studio Omni 业务部署
 
-应用和基础设施分别启动。应用加入基础设施创建的外部 Docker 网络 `tuber-omni`，以 `omni-gateway:8000` 访问推理，以 `mediamtx` 访问媒体服务器。网关上的 `omni-default` 指向现场核验的模型。默认容器端口 9020 只发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。
+应用和基础设施分别启动。应用加入基础设施创建的外部 Docker 网络 `tuber-omni`，以 `omni-gateway:8000` 访问推理。网关上的 `omni-default` 指向现场核验的模型。默认容器端口 9020 只发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。 [推理部署仓库](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy)
 
 ## Core
 
@@ -42,7 +42,7 @@ docker compose -f deploy/omni/app-compose.yml exec -T tuber-core cat /data/admin
 
 ## GIF Avatar 与 OBS 媒体
 
-启用前分别配置 `secrets/gateway-media.token`、`secrets/media-access.token` 和 `secrets/media-publish.password`。网关把媒体桥的独立令牌登记在 `OMNI_GATEWAY_TOKENS` 的 `media` 字段，节目双工连接建立时进入 Live Mode，断开后恢复网关的手动模式。另两个令牌分别用于访问媒体桥与 MediaMTX 发布。发布用户为 `tuber-publisher`，内部地址为 `rtsp://mediamtx:8554/program`。
+节目阶段先用推理部署仓库的 `infra-media.compose.yml` 启用 MediaMTX。分别配置 `secrets/gateway-media.token`、`secrets/media-access.token` 和 `secrets/media-publish.password`。网关把媒体桥的独立令牌登记在 `OMNI_GATEWAY_TOKENS` 的 `media` 字段，节目双工连接建立时进入 Live Mode，断开后恢复网关的手动模式。另两个令牌分别用于访问媒体桥与 MediaMTX 发布。发布用户为 `tuber-publisher`，内部地址为 `rtsp://mediamtx:8554/program`。
 
 ```sh
 docker compose -f deploy/omni/app-compose.yml --profile media up -d --build --wait
