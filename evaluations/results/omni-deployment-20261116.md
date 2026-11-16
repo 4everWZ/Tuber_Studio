@@ -13,7 +13,9 @@
 | 重编 PyTorch 容器预检 | AGX 导出 PyTorch 2.13.0+cu129 的 SM 8.7 wheel，候选容器实测通过 CUDA 张量、BF16 矩阵乘法、卷积和缩放点积注意力。换用官方 TorchCodec 0.17.0 CPU 解码 wheel 后，vLLM-Omni 和 vLLM 主扩展可导入。 [TorchCodec 官方 wheel 索引](https://download.pytorch.org/whl/cpu/torchcodec/) |
 | AGX 两栈传输 | 四项进程网关、MediaMTX、Core、Avatar 媒体桥启动健康。隔离模拟上游验证 Realtime 帧经网关转发 PCM，节目连接进入 Live Mode，此时 Core 正常完成后台 Agent 任务。实际 MediaMTX 节目输出经 ffprobe 识别 H.264 640×360 和 Opus 48 kHz，WebSocket 正常关闭。测试结束移除模拟上游。 |
 | AGX 到 Windows OBS | Windows OBS Studio 33.0.1 的临时 Browser Source 通过 SSH 端口转发接入 AGX 的 WHEP。信令返回 HTTP 201，ICE／DTLS 连接并选中 TCP 候选，CEF 实际解码 6 个 H.264 640×360 视频帧并收到 12 个 Opus RTP 包。使用同一套 AGX 节目链路及隔离模拟上游，未开播或录制。 |
-| Omni ARM64 镜像与快照 | 用固定 CUDA 12.9 基础镜像构建 Omni 0.32.0 成功，Python 构建检查可导入 CosyVoice2、ONNX Runtime、s3tokenizer 和 torchaudio。固定权重快照落盘并通过清单校验。替换 PyTorch 后还需容器 GPU 运算和模型服务健康证明。 |
-| 自动回归 | 共享网关 6 项测试通过。业务 215 项测试通过，覆盖 Agent、Chats、Provider、视频视觉、直播媒体和游戏。两套 Compose 连同业务可选 profile 通过配置校验。 |
+| Omni ARM64 镜像与快照 | 用固定 CUDA 12.9 基础镜像构建 Omni 0.32.0 成功，Python 构建检查可导入 CosyVoice2、ONNX Runtime、s3tokenizer 和 torchaudio。固定权重快照落盘并通过清单校验。 |
+| MiniCPM-o 真实推理 | Thinker 加载实报 16.83 GiB，固定 4 GiB KV 后三个阶段加载完成。容器启动到健康约六分钟。经网关返回指定 checkpoint，Chat Completions 返回正文及用量，探针耗时 2.94 秒。Realtime 实报 1,000 ms 模型单元，输入 16 kHz PCM 后首段 24 kHz PCM 到达媒体桥的观测耗时为 13.70 秒，包含送入样本的时间。首段 9,600 字节，发出显式打断到引擎确认耗时 13 ms。 |
+| 真实节目与后台首轮 | OBS 经 WHEP 解码 H.264 和 Opus。后台结构化 Chat Completions 省略输出模态，被上游送入 Talker。一条缺少语音条件的请求使 Talker 退出，节目流随之结束。首轮 62 个系统内存样本的最低可用值为 9.94 GiB。网关现对省略或设置为 null 的输出模态发送 `["text"]`，保留显式设定。 |
+| 自动回归 | 共享网关 7 项测试通过。业务 215 项测试通过，覆盖 Agent、Chats、Provider、视频视觉、直播媒体和游戏。两套 Compose 连同业务可选 profile 通过配置校验。 |
 
-模型切换还需同一台 AGX 上通过 SM 8.7 容器实际计算、MiniCPM-o 三阶段装载、真实文字／图像与双工语音、打断和实际播放，并完成 Avatar、OBS 与后台任务的持续混合负载。 [切换准入](../../docs/specs/foundation/omni-deployment.md#实机准入与切换)
+模型切换还需验证真实图像输入、播放器停止时延，以及 Avatar、OBS 和后台任务的持续混合负载。 [切换准入](../../docs/specs/foundation/omni-deployment.md#实机准入与切换)
