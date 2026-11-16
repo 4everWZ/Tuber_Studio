@@ -224,6 +224,7 @@ async def test_explicit_fallback_condition_tracks_video_receipt_without_model_re
 @pytest.mark.parametrize(("model_reply", "expected"), [
     ({"steps": ["web_page", "web_search"]}, "no supplied URL or preceding search"),
     ({"steps": ["web_search", "web_page"], "question": "没有网页地址"}, "PlanningQuestion"),
+    ({"steps": ["web_search", "web_page"]}, None),
     ({"question": "请补充检索主题。"}, None),
 ])
 async def test_planning_requires_sources_before_page_read_or_a_separate_question(settings, monkeypatch, model_reply, expected):
@@ -246,7 +247,30 @@ async def test_planning_requires_sources_before_page_read_or_a_separate_question
                 await tasks.make_plan(goal, catalog)
         else:
             plan = await tasks.make_plan(goal, catalog)
-            assert plan.steps == [] and plan.question == model_reply["question"]
+            assert [step.tool for step in plan.steps] == model_reply.get("steps", [])
+            assert plan.question == model_reply.get("question", "")
+
+
+@pytest.mark.parametrize(("goal", "proposed", "expected"), [
+    ("打开 https://example.com/a，然后查直播。", ["web_page", "live_status", "web_page"], ["web_page", "live_status"]),
+    ("读取 https://example.com/a，失败可重试。", ["web_page", "web_page"], ["web_page", "web_page"]),
+    ("读取 https://example.com/a 和 https://example.com/b。", ["web_page", "web_page"], ["web_page", "web_page"]),
+    ("读取 https://example.com/a，另搜索公告和打开原文。", ["web_page", "web_search", "web_page"],
+     ["web_page", "web_search", "web_page"]),
+])
+async def test_planner_only_collapses_unrequested_single_source_reads(settings, monkeypatch, goal, proposed, expected):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+
+    async def planned(messages, schema, *, max_tokens):
+        return {"steps": proposed.copy()}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
+    catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None}
+               for name, spec in tasks.tools.items()}
+    async with app.router.lifespan_context(app):
+        plan = await tasks.make_plan(goal, catalog)
+        assert [step.tool for step in plan.steps] == expected
 
 
 async def test_approved_game_step_checks_control_and_replays_receipt(settings, monkeypatch):

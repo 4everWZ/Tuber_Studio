@@ -66,6 +66,7 @@ _GAME_PROPOSAL = re.compile(r"(?:准备|提议|安排|拟一)[^，。！？；]{
 _PLAN_LIMIT = re.compile(r"(?:最多|总共只|只|限)\s*(?:读|做|查|执行)?\s*([1-8一二两三四五六七八])\s*(?:步|次|个来源)")
 _NUMERIC_LIMITS = dict(zip("一二两三四五六七八", (1, 2, 2, 3, 4, 5, 6, 7, 8), strict=True))
 _NO_RETRY = re.compile(r"不(?:要|得|再)?重试|不再尝试")
+_REREAD = re.compile(r"反复|重复|重读|重试|重开|重新|再次|再(?:读|打开|查阅|尝试)|多次|[2-9二两三四五六七八九]\s*(?:遍|次)")
 _EXPLICIT_VIDEO_READ = re.compile(
     r"(?:^|[。；，]\s*)(?:请\s*)?(?:先\s*|只读\s*)(?:取材|查看|核对|读取?|看)\s*(?:视频|BV)"
 )
@@ -263,10 +264,15 @@ def create_task_runtime(runtime, store, browsing):
                 sequence.steps.insert(sequence.steps.index("game_status") + 1, "game_action")
         if len(sequence.steps) > maximum:
             raise ValueError("The planned steps exceed the user's explicit limit")
-        if "web_page" in sequence.steps and not available_web_addresses(goal, ()):
+        addresses = available_web_addresses(goal, ())
+        if "web_page" in sequence.steps and not addresses:
             prior = sequence.steps[:sequence.steps.index("web_page")]
             if "web_search" not in prior:
                 raise ValueError("A planned page read has no supplied URL or preceding search")
+        if (len(addresses) == 1 and "web_search" not in sequence.steps and sequence.steps.count("web_page") > 1
+                and (not _REREAD.search(goal) or _NO_RETRY.search(goal))):
+            after_first = sequence.steps.index("web_page") + 1
+            sequence.steps[after_first:] = [tool for tool in sequence.steps[after_first:] if tool != "web_page"]
         options = plan_condition_options(sequence.steps)
         selected = {index: value for index, (_, value) in options.items() if _CONDITION_CUES[value].search(goal)}
         options = {index: values for index, values in options.items() if index not in selected}
@@ -296,7 +302,7 @@ def create_task_runtime(runtime, store, browsing):
             if tool == "web_page" and steps and steps[-1].tool == "web_search":
                 condition = steps[-1].condition
             steps.append(PlannedStep(tool=tool, condition=condition))
-        return TaskPlan(steps=steps, question=sequence.question)
+        return TaskPlan(steps=steps)
 
     async def decide(goal, steps, tools):
         tools = tools.copy()
