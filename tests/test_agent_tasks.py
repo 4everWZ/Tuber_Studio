@@ -3,6 +3,7 @@ import time
 from uuid import uuid4
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
 
@@ -196,20 +197,56 @@ async def test_explicit_fallback_condition_tracks_video_receipt_without_model_re
 
     async def planned(messages, schema, *, max_tokens):
         called.append(schema)
-        return {"steps": ["inspect_video", "web_search", "web_page"]}
+        raise AssertionError("The explicit video/source order does not require model planning")
 
     monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
-    catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None}
+    catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None,
+                      "arguments": spec.arguments.model_json_schema()}
                for name, spec in tasks.tools.items()}
     async with app.router.lifespan_context(app):
-        plan = await tasks.make_plan(f"只读查看 {BV}，如果只有字幕就搜索制作方，再读搜索得到的公告。", catalog)
-        assert len(called) == 1
-        assert "bilibili_owner" not in called[0]["properties"]["steps"]["items"]["enum"]
+        goal = f"只读查看 {BV}，如果只有字幕就搜索制作方，再读搜索得到的公告。"
+        plan = await tasks.make_plan(goal, catalog)
+        assert [step.tool for step in plan.steps] == ["inspect_video", "web_search", "web_page"]
         assert plan.steps[0].condition is None
         assert plan.steps[1].condition == plan.steps[2].condition
         condition = plan.steps[1].condition
         assert condition.evaluate([{"tool": "inspect_video", "result": {"viewing": "subtitles_only"}}]) is True
         assert condition.evaluate([{"tool": "inspect_video", "result": {"viewing": "watched"}}]) is False
+        video = await tasks.decide(goal, [], {"inspect_video": catalog["inspect_video"]})
+        assert video.arguments == {"bvid": BV}
+        link = "https://example.com/announcement"
+        receipts = [{"tool": "web_search", "result": {"links": [link]}}]
+        page = await tasks.decide(goal, receipts, {"web_page": catalog["web_page"]})
+        assert page.arguments == {"web_fetch": link}
+        assert not called
+
+
+@pytest.mark.parametrize(("model_reply", "expected"), [
+    ({"steps": ["web_page", "web_search"]}, "no supplied URL or preceding search"),
+    ({"steps": ["web_search", "web_page"], "question": "没有网页地址"}, "PlanningQuestion"),
+    ({"question": "请补充检索主题。"}, None),
+])
+async def test_planning_requires_sources_before_page_read_or_a_separate_question(settings, monkeypatch, model_reply, expected):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+
+    async def planned(messages, schema, *, max_tokens):
+        executable, clarification = schema["oneOf"]
+        assert executable["required"] == ["steps"] and executable["additionalProperties"] is False
+        assert clarification["required"] == ["question"] and clarification["additionalProperties"] is False
+        return model_reply
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
+    catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None}
+               for name, spec in tasks.tools.items()}
+    async with app.router.lifespan_context(app):
+        goal = "搜索展馆公告并打开找到的页面。"
+        if expected:
+            with pytest.raises(ValueError, match=expected):
+                await tasks.make_plan(goal, catalog)
+        else:
+            plan = await tasks.make_plan(goal, catalog)
+            assert plan.steps == [] and plan.question == model_reply["question"]
 
 
 async def test_approved_game_step_checks_control_and_replays_receipt(settings, monkeypatch):

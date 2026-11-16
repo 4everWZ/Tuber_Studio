@@ -48,8 +48,11 @@ class GameAction(StrictModel):
 
 
 class ToolSequence(StrictModel):
-    steps: list[str] = Field(max_length=MAX_STEPS)
-    question: str = Field(default="", max_length=1000)
+    steps: list[str] = Field(min_length=1, max_length=MAX_STEPS)
+
+
+class PlanningQuestion(StrictModel):
+    question: str = Field(min_length=1, max_length=1000)
 
 
 _HTTPS_LINK = re.compile(r"https://[^\s<>\"'，。！？、；）]+")
@@ -63,6 +66,13 @@ _GAME_PROPOSAL = re.compile(r"(?:准备|提议|安排|拟一)[^，。！？；]{
 _PLAN_LIMIT = re.compile(r"(?:最多|总共只|只|限)\s*(?:读|做|查|执行)?\s*([1-8一二两三四五六七八])\s*(?:步|次|个来源)")
 _NUMERIC_LIMITS = dict(zip("一二两三四五六七八", (1, 2, 2, 3, 4, 5, 6, 7, 8), strict=True))
 _NO_RETRY = re.compile(r"不(?:要|得|再)?重试|不再尝试")
+_EXPLICIT_VIDEO_READ = re.compile(
+    r"(?:^|[。；，]\s*)(?:请\s*)?(?:先\s*|只读\s*)(?:取材|查看|核对|读取?|看)\s*(?:视频|BV)"
+)
+_CONDITIONAL_SEARCH = re.compile(
+    r"^\s*(?:[,，]?\s*(?:没有画面|无画面))?\s*[,，]?\s*(?:就|则|便)?\s*(?:先|请)?\s*(?:搜索|检索|查找|web_search)"
+)
+_READ_AFTER_SEARCH = re.compile(r"(?:再|然后|随后|接着)\s*(?:请)?\s*(?:打开|读取?|查看|web_page)")
 _CONDITION_CUES = {
     "video_has_only_subtitles": re.compile(r"(?:如果|若|只在|只有在|当)[^，。！？；]{0,25}(?:只有字幕|仅有字幕)"),
     "game_has_unwatered_crops": re.compile(r"(?:如果|若|只在|还有|仍有)[^，。！？；]{0,20}(?:没浇水|未浇水|待浇水|需要浇水)"),
@@ -135,6 +145,25 @@ def plan_condition_options(steps):
     return options
 
 
+def explicit_video_research(goal, tools, maximum):
+    if maximum < 3 or set(tools) != {"inspect_video", "web_search", "web_page"}:
+        return None
+    if len(set(_VIDEO_ID.findall(goal))) != 1 or _HTTPS_LINK.search(goal):
+        return None
+    cue = _CONDITION_CUES["video_has_only_subtitles"].search(goal)
+    if not cue or not _EXPLICIT_VIDEO_READ.search(goal, 0, cue.start()):
+        return None
+    search = _CONDITIONAL_SEARCH.match(goal[cue.end():])
+    if not search or not _READ_AFTER_SEARCH.search(goal[cue.end() + search.end():]):
+        return None
+    condition = _RESULT_CONDITIONS["video_has_only_subtitles"]
+    return TaskPlan(steps=[
+        PlannedStep(tool="inspect_video"),
+        PlannedStep(tool="web_search", condition=condition),
+        PlannedStep(tool="web_page", condition=condition),
+    ])
+
+
 def task_catalog(goal, tools):
     scoped = tools.copy()
     game = _GAME_CONTEXT.search(goal)
@@ -200,6 +229,11 @@ def create_task_runtime(runtime, store, browsing):
 
     async def make_plan(goal, tools):
         tools = task_catalog(goal, tools)
+        maximum = MAX_STEPS
+        if cap := _PLAN_LIMIT.search(goal):
+            maximum = _NUMERIC_LIMITS.get(cap[1]) or int(cap[1])
+        if plan := explicit_video_research(goal, tools, maximum):
+            return plan
         messages = [
             {"role": "system", "content": (
                 "steps 只写实现用户完整目标所需的工具名，按用户要求的顺序排列。"
@@ -207,17 +241,19 @@ def create_task_runtime(runtime, store, browsing):
                 "检索公告之后读取正文需要 web_search 和 web_page。用户已经给了网址就直接列 web_page。"
                 "模拟游戏准备动作要列 game_status 和 game_action。只读取局面时列 game_status。"
                 "保留用户的禁用动作和重试限制，避免列出未要求的步骤。"
-                "缺少制定方案所需资料时，steps 为空并填写 question。"
+                "已具备执行条件时只填写 steps。只有关键信息缺失才改填 question。"
             )},
             {"role": "user", "content": dump({"goal": goal, "tools": {name: tool["description"] for name, tool in tools.items()}})},
         ]
-        schema = ToolSequence.model_json_schema()
-        maximum = MAX_STEPS
-        if cap := _PLAN_LIMIT.search(goal):
-            maximum = _NUMERIC_LIMITS.get(cap[1]) or int(cap[1])
-        schema["properties"]["steps"]["maxItems"] = maximum
-        schema["properties"]["steps"]["items"]["enum"] = list(tools)
-        sequence = ToolSequence.model_validate(await request_json(messages, schema))
+        executable = ToolSequence.model_json_schema()
+        executable["properties"]["steps"]["maxItems"] = maximum
+        executable["properties"]["steps"]["items"]["enum"] = list(tools)
+        schema = {"type": "object", "oneOf": [executable, PlanningQuestion.model_json_schema()]}
+        decision = await request_json(messages, schema)
+        if "question" in decision:
+            question = PlanningQuestion.model_validate(decision).question
+            return TaskPlan(steps=[], question=question)
+        sequence = ToolSequence.model_validate(decision)
         if any(name not in tools for name in sequence.steps):
             raise ValueError("Planning returned a tool outside the task catalog")
         if "game_action" in tools and _GAME_CONTEXT.search(goal) and _GAME_PROPOSAL.search(goal):
@@ -227,6 +263,10 @@ def create_task_runtime(runtime, store, browsing):
                 sequence.steps.insert(sequence.steps.index("game_status") + 1, "game_action")
         if len(sequence.steps) > maximum:
             raise ValueError("The planned steps exceed the user's explicit limit")
+        if "web_page" in sequence.steps and not available_web_addresses(goal, ()):
+            prior = sequence.steps[:sequence.steps.index("web_page")]
+            if "web_search" not in prior:
+                raise ValueError("A planned page read has no supplied URL or preceding search")
         options = plan_condition_options(sequence.steps)
         selected = {index: value for index, (_, value) in options.items() if _CONDITION_CUES[value].search(goal)}
         options = {index: values for index, values in options.items() if index not in selected}
@@ -263,12 +303,23 @@ def create_task_runtime(runtime, store, browsing):
         addresses = available_web_addresses(goal, steps)
         if "web_page" in tools:
             if addresses:
+                if len(tools) == 1 and len(addresses) == 1:
+                    return TaskDecision(action="tool", tool="web_page", arguments={"web_fetch": addresses[0]})
                 tools["web_page"] = tools["web_page"] | {"arguments": {
                     "type": "object", "properties": {"web_fetch": {"enum": addresses}},
                     "required": ["web_fetch"], "additionalProperties": False,
                 }}
             else:
                 tools.pop("web_page")
+        if "inspect_video" in tools:
+            videos = list(dict.fromkeys(_VIDEO_ID.findall(goal)))
+            if len(tools) == 1 and len(videos) == 1:
+                return TaskDecision(action="tool", tool="inspect_video", arguments={"bvid": videos[0]})
+            if videos:
+                tools["inspect_video"] = tools["inspect_video"] | {"arguments": {
+                    "type": "object", "properties": {"bvid": {"enum": videos}},
+                    "required": ["bvid"], "additionalProperties": False,
+                }}
         if "game_action" in tools:
             game = observed_game(steps)
             if game in _GAME_ACTIONS:
