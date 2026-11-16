@@ -10,7 +10,7 @@
 
 按[当前计划](plans/current.md#常驻-agent-与跨端记忆)，先用通用助手跑通流式对话、多步工具、持久任务及跨设备恢复，再接大肥鱼的角色、记忆、号主主页及领域能力。
 
-独立 Omni 基础设施 Compose 和业务 Compose 已入 Git。业务 Compose 自持 Core 数据卷，包含已有 GIF Avatar 的媒体桥和可选 Remotion worker 准入。AGX 的两栈传输已用隔离模拟上游核验。CUDA 12.9 兼容库可在 AGX 执行 GPU 内核，预编译 PyTorch 缺少 SM 8.7 内核。模型加载等待同版本源码构建与容器实测。 [部署验收](../evaluations/results/omni-deployment-20261116.md) · [AGX Omni 部署](specs/foundation/omni-deployment.md) · [业务 Compose](../deploy/omni/README.md)
+独立 Omni 基础设施 Compose 和业务 Compose 已入 Git。业务 Compose 自持 Core 数据卷，包含已有 GIF Avatar 的媒体桥和可选 Remotion worker 准入。AGX 的两栈传输已用隔离模拟上游核验。CUDA 12.9 Tegra 库与重编的 PyTorch 2.13.0 SM 8.7 wheel 已通过容器运算和依赖预检。模型服务继续验证三阶段加载、接口和混合负载。 [部署验收](../evaluations/results/omni-deployment-20261116.md) · [AGX Omni 部署](specs/foundation/omni-deployment.md) · [业务 Compose](../deploy/omni/README.md)
 
 1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)
