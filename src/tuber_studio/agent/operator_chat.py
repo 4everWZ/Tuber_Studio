@@ -512,7 +512,7 @@ class OperatorChat:
         except ContextWindowExceeded as error:
             raise HTTPException(422, str(error)) from error
         except (ValueError, TimeoutError, httpx.HTTPError) as error:
-            logger.info("operator assistant failure stage=%s category=%s", stage, type(error).__name__)
+            logger.info("operator assistant failure stage=%s category=%s request_id=%s", stage, type(error).__name__, request_id)
             raise HTTPException(503, "这轮回复未完成，可以重试。") from error
         except asyncio.CancelledError:
             stage = "cancelled"
@@ -520,17 +520,22 @@ class OperatorChat:
         finally:
             ended = time.monotonic()
             usage = getattr(provider, "last_usage", {}) if "generating" in stage_times else {}
+            finish = getattr(provider, "last_finish_reason", None) if "generating" in stage_times else None
+            if finish not in ("stop", "length", "content_filter", "tool_calls"):
+                finish = None
 
             def duration(begin, end):
                 return (stage_times[end] - stage_times[begin]) * 1000 if begin in stage_times and end in stage_times else -1
 
             logger.info(
                 "operator assistant stage=%s context_ms=%.0f preflight_ms=%.0f queue_ms=%.0f capability_ms=%.0f count_ms=%.0f "
-                "model_wait_ms=%.0f first_text_ms=%.0f total_ms=%.0f model_chars=%s prompt_tokens=%s completion_tokens=%s",
+                "model_wait_ms=%.0f first_text_ms=%.0f total_ms=%.0f model_chars=%s prompt_tokens=%s completion_tokens=%s "
+                "finish=%s request_id=%s",
                 stage, duration("preparing", "preflight"), duration("preflight", "queued"), duration("queued", "acquired"),
                 duration("checking_model", "counting"), duration("counting", "generating"),
                 duration("generating", "model_first"), (first_text - started) * 1000 if first_text else -1,
-                (ended - started) * 1000, model_characters, usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                (ended - started) * 1000, model_characters, usage.get("prompt_tokens"), usage.get("completion_tokens"), finish,
+                request_id,
             )
 
     def _visible(self, result, *, historical=False):

@@ -2,9 +2,11 @@
 
 import argparse
 import os
+from copy import deepcopy
 from pathlib import Path
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 from tuber_studio.app import create_app
 from tuber_studio.config import Settings, validate_api_key
@@ -126,4 +128,8 @@ if __name__ == "__main__":
     if parser.parse_args().stage_omni:
         stage_omni()
     else:
-        uvicorn.run(build_app, factory=True, host="0.0.0.0", port=9020, ws="wsproto")
+        log_config = deepcopy(LOGGING_CONFIG)
+        log_config["loggers"]["tuber_studio.agent.operator_chat"] = {
+            "handlers": ["default"], "level": "INFO", "propagate": False,
+        }
+        uvicorn.run(build_app, factory=True, host="0.0.0.0", port=9020, ws="wsproto", log_config=log_config)
