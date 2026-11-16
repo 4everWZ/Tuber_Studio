@@ -35,7 +35,7 @@
 
 Tuber Studio 通过 Provider 和媒体适配器使用独立服务。业务接入、端点替换和业务卷迁移分别验收。历史长文和持续可用性的失败用例继续用于 API 回归。 [业务接入](../../deploy/omni/README.md) · [历史证据](../../evaluations/results/omni-deployment-20261116.md)
 
-1. **共享推理 API。** 配置服务地址、身份和模型别名。用两个独立调用方验 Chat Completions 的普通／流式响应、结构化结果、视觉、长文语义、排队、取消与持续可用性。窗口采用模型卡实报值。Realtime 用独立客户端验证原生能力。 [服务契约](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy/blob/main/docs/api.md) · [接入准入](../specs/foundation/omni-deployment.md#接入验收与切换)
+1. **共享推理 API。** 配置服务地址、身份和模型别名。用两个独立调用方验 Chat Completions 的普通／流式响应、结构化结果、视觉、长文语义、排队、取消与持续可用性。窗口采用模型卡实报值。Realtime 用独立客户端验证原生能力。 [服务契约](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md) · [接入准入](../specs/foundation/omni-deployment.md#接入验收与切换)
 2. **常驻 Agent 与现有业务接入。** 通过同一网关验证 Chats、工具回执、视频取材、运营和游戏，验证关闭浏览器后任务续跑、取消及重启恢复。通过对应能力实测后切业务 Provider。正式数据另走唯一写入者迁移，使用隔离数据验收且平台写入为零。 [常驻 Agent](#常驻-agent-与跨端记忆) · [数据迁移](../specs/foundation/distributed-runtime.md#迁移备份与恢复)
 3. **演出与媒体。** 接入已验的双工与 Avatar 会话 API，核对浏览器采集、打断、音画同步和实际播放回执。核心验收后再接 OBS、节目制作和持续直播。 [节目准入](../specs/foundation/omni-deployment.md#接入验收与切换)
 

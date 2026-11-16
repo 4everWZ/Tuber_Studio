@@ -1,6 +1,6 @@
 # Tuber Studio Omni 业务部署
 
-Tuber Studio 消费已部署的 Omni 推理和 Avatar 服务。业务启动需要服务地址、模型别名及对应凭据。可选节目另需 Avatar 会话和观看入口。引擎、渲染器和媒体服务由各自部署方维护。 [独立推理部署仓库](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy)
+Tuber Studio 消费已部署的 Omni 推理和 Avatar 服务。业务启动需要服务地址、模型别名及对应凭据。可选节目另需 Avatar 会话和观看入口。引擎、渲染器和媒体服务由各自部署方维护。 [独立推理部署仓库](https://github.com/4everWZ/omni-avatar-api)
 
 本仓库的示例 Compose 加入名为 `tuber-omni` 的外部 Docker 网络，可用 `TUBER_OMNI_NETWORK` 指定已创建的网络。示例使用 `omni-gateway:8000` 和默认别名 `omni-default`。Core 的 9020 默认发布到宿主机回环地址，同网络代理可访问 `http://tuber-core:9020`。接入其他服务地址时，在工作台分别配置受支持的 Provider 和对应凭据。示例注入的 Core 网关令牌仅用于预设网关地址。 [配置入口](../../docs/guides/deployment.md#provider与上下文设置)
 

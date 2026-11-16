@@ -1,6 +1,6 @@
 # Omni 与 Avatar API 接入契约
 
-Tuber Studio 通过配置取得服务地址、凭据和模型别名。推理和 Avatar 作为独立服务交付。HTTP 请求和 Realtime WebSocket 握手使用该服务分配的 Bearer 凭据。业务主机持有用户、任务、共享记忆、角色配置、平台授权和工具回执。 [独立服务接口](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy/blob/main/docs/api.md) · [业务数据归属](distributed-runtime.md)
+Tuber Studio 通过配置取得服务地址、凭据和模型别名。推理和 Avatar 作为独立服务交付。HTTP 请求和 Realtime WebSocket 握手使用该服务分配的 Bearer 凭据。业务主机持有用户、任务、共享记忆、角色配置、平台授权和工具回执。 [独立服务接口](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md) · [业务数据归属](distributed-runtime.md)
 
 ## 首版协议与 Provider 边界
 
@@ -17,7 +17,7 @@ Provider 按实际能力选择协议。后续服务原生支持 `/v1/responses` 
 
 私有 Chats 和直播分别获得会话及播放权限。角色资料选择由业务层保存，Avatar 服务负责实际渲染与媒体交付。终端依据时间戳与播放代次呈现音频、字幕及画面，打断时清理旧代次未播内容，渲染不可用时按协商能力继续呈现可用的语音和字幕。
 
-业务历史区分模型生成、媒体传输和客户端确认实际播完。已播台词才凭实际回执加入已说过的历史。节目阶段可把媒体来源接到 OBS，合成、推流和平台直播权限由直播工作区处理。 [媒体接口](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy/blob/main/docs/api.md#avatar-会话与音画) · [播放与回执](../live/live-and-media.md)
+业务历史区分模型生成、媒体传输和客户端确认实际播完。已播台词才凭实际回执加入已说过的历史。节目阶段可把媒体来源接到 OBS，合成、推流和平台直播权限由直播工作区处理。 [媒体接口](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md#avatar-会话与音画) · [播放与回执](../live/live-and-media.md)
 
 <a id="实机准入与切换"></a>
 

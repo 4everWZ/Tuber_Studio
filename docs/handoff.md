@@ -6,7 +6,7 @@
 
 | 仓库 | 接手基线 |
 | --- | --- |
-| Omni + Avatar API | 独立服务仓拥有推理、双工会话与 Avatar 音画。Tuber Studio 通过配置使用服务地址、认证、模型别名及实报能力。 [服务契约](https://github.com/4everWZ/Tuber_Studio_Omni_Deploy/blob/main/docs/api.md) |
+| `omni-avatar-api` | 独立服务仓拥有推理、双工会话与 Avatar 音画。Tuber Studio 通过配置使用服务地址、认证、模型别名及实报能力。 [服务契约](https://github.com/4everWZ/omni-avatar-api/blob/main/docs/api.md) |
 | `Tuber_Studio` | Core 持有任务、记忆、角色和平台权限，已有持久任务、按工具回执交付、区分排队和执行、动态窗口及来源约束召回。业务入口是 `deploy/omni/app-compose.yml`。 [Core 接入](../deploy/omni/README.md) · [中文 Agent 验收](../evaluations/results/agent-grounded-20261116.md) |
 
 ## API 接入的第一项交付
