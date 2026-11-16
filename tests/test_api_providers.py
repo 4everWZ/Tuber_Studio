@@ -1,11 +1,13 @@
 import json
 import wave
 from io import BytesIO
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from tuber_studio.agent.operator_chat import OperatorChat
 from tuber_studio.api_providers import APIProvider, VisionService, create_llm
 from tuber_studio.app import create_app
 from tuber_studio.compaction import ContextWindowExceeded, IncompleteCompaction
@@ -330,6 +332,24 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
         assert provider.server_tokens is None and not provider.capacity_verified
     finally:
         await provider.close()
+
+
+@pytest.mark.parametrize(("latest_size", "expected_history"), [(10, 2), (40950, 0)])
+async def test_omni_chat_reserves_output_without_shortening_current_input(latest_size, expected_history):
+    async def count(messages):
+        return sum(len(message["content"]) for message in messages)
+
+    provider = SimpleNamespace(capacity_window=40960, count_tokens=count)
+    prefix = [{"role": "system", "content": "设定"}]
+    history = [
+        {"role": "user", "content": "甲" * 39000},
+        {"role": "assistant", "content": "收到"},
+        {"role": "user", "content": "还是这里"},
+        {"role": "assistant", "content": "明白"},
+    ]
+    current = {"role": "user", "content": "乙" * latest_size}
+    fitted = await OperatorChat._fit_assistant_history(provider, prefix, history, current, None, 4096)
+    assert fitted == prefix + history[len(history) - expected_history:] + [current]
 
 
 async def test_public_text_parent_budget_denies_completion_before_request(settings, runtime, transport):

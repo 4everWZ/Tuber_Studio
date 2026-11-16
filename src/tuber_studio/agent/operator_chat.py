@@ -353,19 +353,25 @@ class OperatorChat:
 
     @staticmethod
     async def _fit_assistant_history(provider, prefix, history, current, schema, output):
-        async def fits(start):
+        async def count(start):
             candidate = [*prefix, *history[start * 2:], current]
             rendered = provider.prepare_json_messages(candidate, schema, max_tokens=output) if schema else candidate
-            return await provider.count_tokens(rendered) < provider.capacity_window
+            return await provider.count_tokens(rendered)
 
         start, end = 0, len(history) // 2
-        if end and not await fits(0):
-            while start < end:
-                middle = (start + end) // 2
-                if await fits(middle):
-                    end = middle
-                else:
-                    start = middle + 1
+        if end:
+            full = await count(0)
+            limit = provider.capacity_window - output
+            if full > limit:
+                # Leave the normal output budget when history is optional. A
+                # long current message can use the remaining model-card window.
+                limit = max(limit, await count(end))
+                while start < end:
+                    middle = (start + end) // 2
+                    if await count(middle) <= limit:
+                        end = middle
+                    else:
+                        start = middle + 1
         return [*prefix, *history[start * 2:], current]
 
     def _previous_card(self, char, account):
