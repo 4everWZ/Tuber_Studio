@@ -67,13 +67,13 @@ CI 分开运行 Python CPU 测试、独立程序包校验和可选组件的 Node
 
 节点配置位于自身 `runtime/inference-node.json`，保存模型路径、模式、窗口和资源设置。节点凭据来自独立的 `inference-token`。所选引擎使用完整的 `build/bin` 共享库目录。模型、引擎、Genie 包、词典及配套投影器只读挂载，日志和推理缓存写入节点 runtime。容器只发布受认证的节点端口。
 
-AGX 上独立的 llama.cpp CUDA 容器承接当前运营和直播档的语言模型请求，Genie 由配对节点提供。装载检查见[推理与上下文设置](#provider与上下文设置)。
+旧运营和直播档的 llama.cpp CUDA 容器在 AGX 上已停止，历史装载检查保留在[推理与上下文设置](#provider与上下文设置)。Genie 仍由配对节点提供。MiniCPM-o 4.5 的独立基础设施与业务容器按 [Omni 实机准入](../specs/foundation/omni-deployment.md#实机准入与切换)验收后切换。
 
 维护前保存节点配置和容器。回退时使用对应程序、配置和已安装权重，并核对 `/llm/props` 的别名与窗口。更换 Genie 音色时，节点的 `tts.voice_id`、永久音色包与 `tts_infer.yaml` 中的 checkpoint 路径需要对应同一音色。切换后用浏览器试听。
 
 旧分模型路径已退役。仓外脚本将 `/llm/2b/props` 换为 `GET /llm/props`，读取前先用 `GET /health` 确认已选模型。将 `POST /llm/2b/warmup` 换为 `POST /llm/warmup`，请求体使用节点当前模型，默认值为 `{"model":"dafeiyu-qwen35-9b:1.0.0"}`。生成同样在请求体指定模型，继续用 `/tts` 合成语音。工作台读取与已配置节点匹配的旧 LLM 地址时会归一化，下次保存设置时写回。双机升级时先更新 Jetson，再更新业务主机。
 
-OBS使用电脑后端生成的播放器链接，音频直接从电脑媒体目录读取，不经Jetson转发。电脑后端关闭后节点不继续浏览、执行Agent或发送平台消息。代码更新先停对应服务、换程序版本，再用原数据目录和环境启动；回退先核对切换后的新增数据，再变更权威标记，不能直接启动旧副本覆盖进度。
+现有 OBS 播放器链接由电脑后端生成，音频从电脑媒体目录读取。电脑后端负责当前浏览、Agent 和平台任务。Omni 候选使用独立 Core 容器、独立数据卷和 MediaMTX 节目，见[业务 Compose](../../deploy/omni/README.md)。更新时先停对应服务、换程序版本，再用原数据目录和环境启动。回退先核对切换后的新增数据，再变更权威标记。
 
 ## 全本地Jetson可选部署
 
