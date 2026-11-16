@@ -523,6 +523,11 @@ class OperatorChat:
             finish = getattr(provider, "last_finish_reason", None) if "generating" in stage_times else None
             if finish not in ("stop", "length", "content_filter", "tool_calls"):
                 finish = None
+            incomplete = getattr(provider, "last_content", None) if finish == "length" else None
+            if isinstance(incomplete, str):
+                longest_space = max((len(run[0]) for run in re.finditer(r"\s+", incomplete)), default=0)
+                logger.info("operator assistant incomplete nonspace_chars=%s longest_space=%s request_id=%s",
+                            sum(not char.isspace() for char in incomplete), longest_space, request_id)
 
             def duration(begin, end):
                 return (stage_times[end] - stage_times[begin]) * 1000 if begin in stage_times and end in stage_times else -1
