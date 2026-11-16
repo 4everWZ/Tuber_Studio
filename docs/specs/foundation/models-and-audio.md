@@ -1,8 +1,8 @@
 # 模型、声音与资源契约
 
-本规范维护 Provider、声音身份／缓存、设备 Profile 和推理封装；具体设备测量及准入记录由证据文件维护。
+本规范维护业务侧的 Provider、声音身份、缓存、资源状态与验收边界。推理和 Avatar 由独立服务提供，模型装配及设备测量由服务方维护。 [Omni 与 Avatar 接口](omni-deployment.md)
 
-运营和直播默认使用大肥鱼 Qwen3.5-9B。源码模板默认文本模式并关闭直播，独立程序启动器的新安装使用 9B＋Genie 的直播资源预设，资产准备完成后才加载。现行 9B 已验证 AGX 运营，直播首音、同节点共驻和持续负载见[当前计划](../../plans/current.md#直播点歌与部署验收)。声音资源优化以整机峰值 RAM 为首要指标，音质与生成速度须保留 compact 声音后端的至少 90%。外部语音 API 可独立配置。 [瑶瑶语音验收](../../../evaluations/results/yaoyao-v2-voice-20261030.json)
+业务按已配置的 Provider 生成。源码模板默认文本模式并关闭直播，语音试听可选择预录或独立语音服务。具体模型身份、容量和语音能力以已认证端点及实际调用为准。
 
 初始大肥鱼的目标声线为清亮柔软、略带奶气的普通话少女音，避免明显电音／金属感；已接受的声音绑定为yaoyao_sovits_v2，角色设定和形象继续由whale角色卡维护。原素材和实际合成须分别试听；模型版本、干净参考、来源和运行包身份分别核验。声音替换重新验证质量、速度与整机RAM，旧声线的相对试听通过不转移为新声线准入，也不以强行升调代替声音选择。
 
@@ -10,7 +10,7 @@
 
 | ID | 适用范围 | 要求 |
 | --- | --- | --- |
-| AUDIO-01 | 当前 | MUST 可替换 LLMProvider，支持本地 GGUF＋llama.cpp 和操作者配置的 OpenAI-compatible API，业务接口不绑定模型名。 |
+| AUDIO-01 | 当前 | MUST 可替换 LLMProvider，支持操作者配置的 OpenAI-compatible API，保留已有本地 Provider 兼容。业务按实际模型别名和能力取用。 |
 | AUDIO-02 | 回复生成 | MUST 校验回复 schema，仅接受 spoken_text、有限 emotion、有限 animation_id、可选 reply_to，非法字段无工具权。运营摘要与决定使用独立的受限 schema，不混成播报回复。 |
 | AUDIO-03 | 声音接入 | MUST 保留 TTSProvider 与预录路径；外部 API 使用独立声音配置；本地 Genie 推理已接入，新音色、引擎或 Profile 须分别验证。 |
 | AUDIO-04 | 声音接入 | MUST voice_profile 绑定 Provider、模型／权重版本、参考资产或 API voice 及许可；切角色不串声线／缓存。 |
@@ -23,9 +23,9 @@
 
 最小语义接口为 LLMProvider.generate(context,constraints) → StructuredReply，TTSProvider.synthesize(text,voice,options) → AudioArtifact/AudioStream。提交草稿／TTS 前校验完整结束、字数、控制字符、情绪／动作枚举及当前源事件引用；原样复述输入不算有效角色回答。输出不能直接成为 shell、文件操作、HTTP 工具、发布或支付。
 
-运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)。本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断。通用兼容接口默认请求 JSON 对象。已经验证支持原生约束的服务可用 `llm.structured_output=json_schema` 传递同一份 schema，Omni 业务 Compose 默认采用该能力。程序继续校验完整对象和领域规则。输入和输出仍受真实窗口、单次输出与完整结束约束；非直播运营可选择已注册的网页取材工具，不获得任意执行或发布权限。自动批次不额外设置隐藏的累计调用／token上限；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
+运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)。本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断。通用兼容接口默认请求 JSON 对象。服务已验证支持原生约束时可用 `llm.structured_output=json_schema`。Omni 业务 Compose 示例采用 `structural_tag` 传递 JSON Schema 及紧凑输出约束。程序继续校验完整对象和领域规则。输入和输出仍受真实窗口、单次输出与完整结束约束；非直播运营可选择已注册的网页取材工具，不获得任意执行或发布权限。自动批次不额外设置隐藏的累计调用／token上限；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
 
-本地 9B 使用原生聊天模板分离思考和可见正文。Provider 使用 `message.content` 生成台词、正文或摘要。支持独立思考额度的直播接口默认另预留 1,024 tokens 思考空间，台词沿用直播结构与上限。运营默认使用 8,192 输出 tokens，摘要预算独立。未完整结束的运营输出留诊断供继续，未完整结束的直播输出按失败处理。延迟按实际思考设置记录。 [直播推理额度](../live/live-and-media.md#直播推理额度)
+Provider 区分思考和可见正文，台词、对话及摘要使用 `message.content`。思考默认开启并保留设置开关。输出额度按照当前模型、真实窗口和任务配置核算，未完整结束的生成依各场景的失败语义处理。 [直播推理额度](../live/live-and-media.md#直播推理额度)
 
 预录限于允许资产目录，字幕对应实际录音，不冒充动态台词。缓存还覆盖 Provider 和参考音频内容，防止同路径换文件串用。合成失败按配置退回预录／静音且显示原因，不伪造成功。动态TTS的全静音结果必须拒绝，即使上游返回HTTP200；缓存命中也检查，静音缓存删除后重新合成，不能算成功播报。音色持久语义含 ID、Provider、版本、权重、参考资产、许可和有效参数；音频、训练数据、权重及下游用途分别核对，原型允许现有内容不授额外商用权。
 
@@ -45,131 +45,46 @@
 
 ### 外部 API 与视觉
 
-LLM API 使用操作者指定的 Base URL／model 和 OpenAI-compatible Chat Completions。模型列表可达不等于完成生成或容量验证；API 的 native_context_tokens 仅为操作者声明，必须显示为未经本机验证，不能冒称服务端实测上限。计数使用 max_tokens=1 的 usage 探针，要求有效 prompt_tokens；按归一化消息的 digest 最多缓存 64 项，探针会向服务发送上下文且可能额外计费。该探针可因输出限额结束；正式生成与摘要仍必须完整 stop、满足各自结构与语义校验，失败保留原记录，不简化 Codex 上下文压缩核心、不静默截断历史。
+LLM API 使用操作者指定的 Base URL／model 和 OpenAI-compatible Chat Completions。已认证模型卡的 `max_model_len` 表示服务报告的窗口。没有受支持模型卡时，`native_context_tokens` 属操作者声明，界面标明来源。支持时使用同一 Chat 模板的文本计数端点，其他兼容接口使用 `max_tokens=1` 的 usage 探针并读取 `prompt_tokens`。计数按归一化消息最多缓存 64 项，可能向服务发送上下文并额外计费。正式生成与摘要须完整结束、通过结构和语义校验，失败保留原记录供核对。
 
 语音 API 使用独立的 external_api voice_profile，通过 audio/speech 请求 WAV；有效格式、有限大小、非静音和缓存身份仍须检查。其声音身份包括 endpoint、model、API voice 和配置作用域，不能串用本地 GPT-SoVITS 缓存，也不能因设置 API 自动替换角色原 voice_id。操作者须显式选择 API 音色。
 
-未配置视觉端点时，运营工作台显示字幕模式。配置 9B 视觉时使用同版 Q8_0 投影器，视频通过当前视觉 Provider 传入有界的内联图片，记录实际画面或失败原因。模型、投影器、窗口与整机资源在部署时验收，日常取帧使用当前配置。取帧和来源归属见[自主浏览](../operations/autonomous-browsing.md#视觉与管理接口)。
+未配置视觉端点时，运营按字幕取材。配置视觉时，通过当前 Provider 传入有界的内联图片，记录实际画面、来源或失败原因。验收核对服务实报模型、版本、窗口和实际图像能力，日常取帧使用当前配置。取帧和来源归属见[自主浏览](../operations/autonomous-browsing.md#视觉与管理接口)。
 
-LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json，使用 0600 私有权限；管理接口只返回是否已配置，不回显密钥，不把凭证放入模型上下文、公开配置或日志。修改 endpoint 时须重新填写或明确清除对应 key，避免旧凭证发送到新服务；公网 endpoint 使用 HTTPS，禁止跟随重定向泄露凭证。内部 broker token 只用于受控本地 broker，不发送给外部 API。设置修改须经过认证，并在停止直播、无生成作业且自动浏览／回复关闭时原子应用；失败恢复原配置／客户端／本地资源，恢复未确认须可见报错，历史会话保留并按新 Provider 重新计数。
+LLM／TTS／vision 的 API key 独立存放于 runtime/provider-credentials.json，使用 0600 私有权限；管理接口只返回是否已配置，不回显密钥，不把凭证放入模型上下文、公开配置或日志。修改 endpoint 时须重新填写或明确清除对应 key，避免旧凭证发送到新服务；公网 endpoint 使用 HTTPS，禁止跟随重定向泄露凭证。服务管理或内部 broker 令牌仅用于声明的对应端点。设置修改须经过认证，并在停止直播、无生成作业且自动浏览／回复关闭时原子应用；失败恢复原配置／客户端／本地资源，恢复未确认须可见报错，历史会话保留并按新 Provider 重新计数。
 
-### Jetson 推理接口
+### Omni 与 Avatar 能力
 
-默认连接经过配对的本地 Jetson 推理服务。LLM 的 Base URL 使用 `http://<Jetson地址>:9012/llm`。生成和预热可在请求体指定模型，省略时使用当前模型。文本模式可调度指定模型，直播模式固定已选资源。未知模型返回 `422`，直播中请求其他模型返回 `409`。用 `GET /llm/props` 查询实际模型和窗口，用节点的 `GET /health` 查看各资源的驻留状态。兼容生成路径为 `/llm/v1/chat/completions`。外部兼容模型 API 使用服务方给定的前缀及独立凭证。
+推理业务通过已认证的 Chat Completions 和模型卡消费文本、结构化输出及经过验证的多模态输入。原生双工接入按 Realtime 协议确认实际能力，语音、视觉和工具调用分别验证。普通对话和后台任务继续走业务执行与权限边界。指定台词、声音和试听依语音合成 API 或配置的预录资源交付。
 
-语音合成使用独立的 `/tts`，业务端通过 `/api/tts/preview` 提供试听，外部兼容语音服务使用 `audio/speech`。单独保存语音设置时保留 LLM 配置及当前资源模式。工作模式协调 Jetson 上的资源驻留，直播时按现有顺序加载本地语音和直播模型。
-
-### AGX Orin 候选验收
-
-双工 Omni 推理和神经 Avatar 的独立部署、候选能力、共驻与切换条件见 [AGX Omni 部署](omni-deployment.md)。首测 MiniCPM-o 4.5 经网关以 `omni-default` 提供 Chat Completions 与 Realtime，Provider 按实际能力使用。将来仅在目标引擎版本和部署模式验证原生 Responses 后增设相应适配。现行 9B、视觉和 Genie 用于功能和质量对照及回退。
-
-AGX Orin 64 GB 由 CPU 和 GPU 共享内存。现行 9B 档以约 32 GB 共驻预算验收。用目标运营或直播档实际运行，记录权重、配套视觉资产、4-bit K/V、服务模板、实开窗口、整机峰值和换页。 [9B 装配证据](../../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [9B 配对评估](../../../evaluations/results/dafeiyu-clean-9b-20261111.md)
-
-状态探测遵守同一凭证绑定。临时输入的凭证不进入 URL 或日志，保存的凭证仅用于其绑定端点，内部 broker token 仅用于已配对节点的受控路径。检查临时地址使用明确提供给该地址的凭证，或执行无凭证探测。
+Avatar 服务拥有渲染和媒体端点。业务关联会话、声音和字幕的时间线，将渲染就绪、节目发布、解码和播放回执分别记录。语音会话与更换渲染器的验收按实际端点进行。 [Omni 与 Avatar 接口](omni-deployment.md)
 
 ## Profile 选择与准入
 
-运营和直播默认使用 `dafeiyu-qwen35-9b:1.0.0`，配置为 Q4_K_M 主权重、Q8_0 投影器、262,144 上下文及 `q4_0` K/V，默认开启思考。模型读取当前角色卡。本地模型与兼容 API 都可以另行配置。运营 9B 已实测，直播 9B 与 Genie 的共驻和首音待验收。换模型或运行参数后，在实际设备上核对窗口、图像、采样、内存和耗时。 [当前角色卡](runtime-and-characters.md#角色生成方式) · [运营审核回放](../../../evaluations/results/review-agx-mainline-20261111.md)
+Profile 保存已选择的模型、服务地址、实际窗口来源、思考、生成预算与视觉／语音能力。模型和相关资源由服务发布方装配。切换 Provider 或窗口后重新计数，分别验收角色表现、长输入接收和长文语义、结构化输出、真实图像、语音身份及持续共驻。线上能力以实际响应及回执为准。 [角色生成方式](runtime-and-characters.md#角色生成方式) · [微调与评估](../../../tools/training/README.md)
 
-本地从 GGUF 和运行实报核对原生窗口与实际 `n_ctx`，操作者可在 4,096 到所选模型原生上限之间调整。兼容 API 显示操作者声明的远端容量。切换 Provider 或窗口后重新计数，角色、摘要与长输入质量分别验收。已有安装可继续使用显式配置的已装模型。
-
-固定 llama.cpp d749821 的 [KV 类型白名单](https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/common/arg.cpp#L391)没有 2／3 bit 类型；q4_0 与 iq4_nl 的 [块布局](https://github.com/ggml-org/llama.cpp/blob/d749821db3bd587932d1ed57d43626cd552c9909/ggml/src/ggml-common.h#L184)均为每 32 个值 18 字节，即 4.5 bit/value，直接改名不会继续减少 KV 字节。保留 q4_0 默认；显式减小实际窗口可相应减少 KV，但这是容量选择，不是同一 128K 配置下的压缩收益。
-
-模型、量化或精度更换使用同一质量判据，按任务记录事实错配、时延和内存。下一次发布沿用现行 9B、固定基座和独立持出，公开互动另看真实运营结果。更换 Profile 或窗口时分别检查长输入接收、召回、LLM／TTS 共驻、冷／热启动及持续运行。来源缺项诊断见[角色与记忆规范](runtime-and-characters.md#来源记忆与核对线索)。 [微调与评估](../../../tools/training/README.md)
-
-共驻仅表示权重可同时保留，不放开生成并发。默认 active_llm_generations=1、active_tts_jobs=1，需要时串行；直播、评论和试听共享配额，直播高于离线工作。逻辑 subagent 不加载独立驻留模型；外部 API 接入不改变业务生成和提交的并发约束。
+应用、网关和媒体服务分别执行自己的准入与排队。应用继续执行任务时限、业务顺序和暂停／取消约束，角色及逻辑子任务共享已授权的 Provider。共驻验收记录实际并发、排队、退出及重启后的恢复。 [接入验收与切换](omni-deployment.md#接入验收与切换)
 
 ## 工作模式
 
-源码配置模板默认 text，直播功能关闭；独立程序启动器的新安装使用独立Genie／Mock live预设，已有安装保留Operator配置。评论页和其他导航不会隐式改变资源模式或启用声音。使用本地 LLM 时，text 结束直播生产和待播任务、卸载本地 TTS，保留所选 LLM 给评论回复等工作；选择外部 LLM API 时可释放本地推理资源。视觉须另行显式配置，text 名称不表示默认模型具有图像能力。外部语音 API 不依赖本地 live 共驻，也不自动切换角色声音。
+工作台保存经核验的模式和 Provider，显示等待、当前能力、失败或不可用。导航无需改变资源模式。直播启动时验证已选模型、声音及实际播放端。外部语音服务按自己的端点和声音设置运行。预录播放可在动态语音不可用时独立工作。
 
-用户显式选择 live，须让所选本地 LLM 与 TTS 均就绪并共驻，仍受统一生成配额控制；启动／恢复直播先确认加载成功，失败时不启动直播任务。正式 Genie Profile 已验证停止、切text卸载TTS及回live，不能据此推断任意重启或故障恢复均已验收。
-
-切换经过同一资源锁，成功后原子保存 inference_broker.mode；加载、取消、断连或保存失败时尽力恢复原模式与原驻留，不能展示假成功。旧 exclusive 配置只作为 text 兼容输入。text 下不隐式加载本地动态 TTS；本地 GPT-SoVITS／Genie 合成请求要求先通过 live 准入，预录播放不需要 TTS 进程。前端展示切换等待、实际驻留进程与失败；控制权仅属于认证管理接口，不由观众消息或模型台词切换。
-
-冷切直播时为降低 TTS 载入瞬间的峰值，先释放 LLM、等 TTS 完整就绪，再加载 LLM 并确认两者共驻；已热驻留的请求不反复卸载。失败／取消恢复也遵守资源顺序。该内部策略允许切换延迟，不擅自减少当前配置窗口或张量精度，仍须设备实测，不把策略存在当作共驻成功。
-
-compact的TTS生成器完全关闭后再执行上游已有的缓存清理，让已结束帧的临时张量释放；音频块、驻留权重、推理精度与解码步骤保持原样。各后端的冷加载／首句峰值与热态换页分别记录，短程成功不等于长时稳定，也不以一次冷启动换页推断整模型不可用。
-
-本地语音减内存保留固定参考特征预计算和推理精简路线，也可独立比较轻量引擎或局部 INT8。数值保持路线保留当前 v2 声音、动态中文 BERT 和原采样／解码；轻量引擎、量化或精度变化须单独标明条件并重新评估质量，不能以关闭 BERT、换音色或缩小 LLM 窗口冒充相同配置／质量下的优化。参考特征缓存绑定音色版本、参考音频／文本／语言、模型权重、前端与实现版本，任何不匹配须拒绝复用，新 OC 各自建立缓存。
-
-compact 对照后端使用固定参考 NPZ／JSON 缓存，常驻路径跳过 HuBERT，仅保留原始特征实际使用的 22 层 BERT backbone；目标中文执行同一前端和动态 BERT，AR／VITS 解码、权重精度与采样不改变。参考缓存缺失／失效时，由 TTS 监督进程启动固定 argv 的短命预计算子进程，确认退出后才加载精简 pipeline，不在常驻进程中加载后删除 HuBERT。Genie 的完整模型包在ready首次初始化或显式维护阶段准备，不在常驻服务中导出；已有OC按所选voice_id验证并复用其合法Genie包，自动首次生成仅支持默认瑶瑶，未准备的其他声线明确报错，不回退默认声线。compact仍走原参考准备流程，不执行Genie初始化。live冷启动先卸载LLM，完成所选TTS加载、预热和健康检查，再按当前窗口加载LLM；失败、取消或模型异常按既有模式回滚，不静默换后端或互斥模式。
-
-TTS报告就绪前，须在同进程中完成一条固定短中文、显式种子的完整非静音预热合成并结束清理，让动态中文前端及AR／VITS首次初始化发生在LLM未驻留阶段。预热结果丢弃，不产生台词／播放／对话记录，不改变外部请求的默认随机种子；预热失败不就绪。短句预热不替代更长／混语形状和整机峰值验证。
-
-compact 对照路径以nn.Module包装同一原生Text2SemanticDecoder，保留config、top_k和完整model.*权重键，严格加载；不导入Lightning及未用于推理的准确率指标。删除限于已核实的训练包装／指标初始化，不改变推理、注意力、采样或声学解码方法；原版与精简导入模式不在同一进程混用。
-
-compact 与原版的同条件PCM对照及历史协议差异见[设备对照](../../../evaluations/results/compact-live-runtime-20261029.json)；不改旧gold，不从同序一致保证跨协议／任意重复均bitwise确定。
-
-Genie 早期CPU FP32独立加载筛查保留在[历史初筛](../../../evaluations/results/gpt-sovits-inference-floor-20261029.json)，其采样、精度及非共驻条件不等于当前正式后端，也不构成热态内存下限或音质结论。
-
-参考专用的HuBERT、librosa、音频解码和频谱依赖仅在原参考函数中按需导入，已有缓存的常驻路径不主动加载这些组件；音频读取工具仅保留逐字相同的load_audio／clean_path及必要依赖，不由此引入Gradio／Pandas界面和数据表框架。原参考运算与音频解码不改，缓存身份同时覆盖参考处理源文件，不能以绕过参考提取或改特征来省内存。
-
-Operator配置tts.voice_id选择config/voices.json中的一个gpt_sovits音色，缺省取首个；单个TTS进程仅服务该固定参考。不同参考或文字／语言请求明确拒绝，不能串用声音。新OC配置独立voice_id／参考资产并在维护时重载TTS，缓存由相同预计算生命周期建立；不同时加载多个声音模型。运行中已校验输入的配置／文件身份变化必须拒绝旧pipeline并要求重载，完整内容hash在加载时校验，不能每句重复读GB级权重。
-
-优化收益以整机共享RAM为主：相同外部服务状态、模型／KV／窗口和台词下，分别记录冷启动、首句、热态合成的最低MemAvailable及总RAM减可用量、进程RSS、换页与OOM；加载和预计算峰值也要计入，预计算单独标示一次性成本。CUDA张量／reserved和权重文件体积只作解释指标，CPU搬运不等于Jetson整机节省。相同种子下的特征／PCM一致可支持数值保持，量化或其他数值改变仍须试听和稳定性验收，不以文件压缩率推断可共驻。
-
-Genie 优化的速度门槛以原正式compact GPT-SoVITS CUDA后端为基线，另保留Genie未优化条件以解释引擎自身开销；同设备／台词／暖机／调用顺序下比较逐句延迟、首句与RTF。保留90%生成吞吐对应耗时不超过基线的1/0.9；音频时长变化须单独报告。音质至少保留原来90%，须通过配对试听核对读文、音色、自然度与异常；无声检查或单一特征分数不得代替感知质量结论。数值改变候选未完成质量评估不自动提升为默认。固定参考预计算、动态目标中文特征、真实128K与安全边界仍须保持，不能以少算层、关闭BERT或互斥加载满足共驻要求。
+服务的模式切换和资源管理走各自受认证的接口。切换不成功时保留或恢复原有的业务配置并报告实际状态。业务侧对超载保留任务进度，按业务约束限制队列和时限，保留接管、静音、预录或文字等已配置选项。更换能力或降级时显示实际使用的模式及窗口。
 
 ### Genie本地后端契约
 
-`tts.kind=gpt_sovits`继续表示既有v2音色格式；受限的`tts.local_backend`只接受`compact`或`genie_onnx_int8`，不是可执行路径。Genie复用原音色ID、权重和固定参考，新OC使用自己的音色与bundle；兼容API／预录保持各自路径，不以外部Provider绕开本地资源锁。旧compact保留作对照，Genie准备或推理失败不静默切回它。
+已配置的 GPT-SoVITS 或 Genie 音色仍由其 Provider 提供。声音配置和缓存需要绑定实际后端、音色、参考材料及版本。未准备的声音或无效产物显示失败，既有音频和角色声音随对应配置保留。先通过真实试听确认朗读能力和声音身份，再使用于直播。 [历史瑶瑶语音验收](../../../evaluations/results/yaoyao-v2-voice-20261030.json)
 
-Genie工作参考必须预先准备为单声道32kHz WAV；保留来源原文件，其他采样率在离线阶段显式转换，并将工作副本、准确文本和处理方法纳入来源记录。固定特征须从该工作副本重新计算；更换参考后重建声音包，原版／优化后端的配对比较使用同一工作副本。常驻服务不隐式重采样或忽略格式不符。
-
-Genie常驻路径仅加载CPU ORT：原checkpoint的22层中文BERT有效输出使用离线INT8图（132个常量投影整数MatMul），AR首步／续步各97个常量投影整数MatMul，动态注意力仍为浮点，VITS保持FP32。原tokenizer、文字规范化、word2ph与每条未知中文的动态特征保留；纯英文片段沿用原前端合法的零BERT，逐片段验证规范文本、音素、形状与有限值，含汉字的片段仍须动态非零特征。只导入Torch前端工具，不构造Torch BERT或驻留HuBERT。ORT session共享CPU arena，固定单请求和受控线程；转换／量化不在直播进程执行，准备成本与常驻冷峰分别记录。
-
-固定上游Genie模板的AR正态随机采样与原GPT-SoVITS不等价；本地适配恢复Exp(1)、top_k=5、top_p=1、temperature=1、repetition_penalty=1.35、首步EOS屏蔽，以及罚分后greedy EOS检查。每请求seed控制独立PCG64分段／AR／VITS子流；VITS保留标准正态噪声与原0.5系数，不宣称等于Torch同seed序列或跨后端PCM一致。只支持已实现的固定图参数，其他值明确422；seed、原分段间隔可配置。每段至多500步，无停止标志耗尽、取消、空语义或非法token必须失败，不能把参考语义或半条WAV当完成。
-
-输出恢复原v2后处理：各音频段仅在峰值超过1时归一化，各段尾部都追加`max(fragment_interval,0.01)`秒静音（含最后一段，默认0.3），按文本顺序拼接，再乘32768转int16。测量同时保留原声波时长、分段数、静音总时长、最终音频时长与真实合成耗时；加静音降低RTF不代表计算更快，旧无gap实验不改写为同协议结果。
-
-永久bundle位于`runtime/tts/genie/<voice_id>`，由ready首次初始化或显式维护原子创建，拒绝覆盖和路径链接；常驻服务缺包时要求准备，不从实验目录临时凑模型。manifest绑定原权重、参考、前端／采样／量化实现及每个模型图和external数据的内容身份，冷加载完整校验，每句及健康检查仅查小stat，变化拒绝旧pipeline并要求重建／重载。`/docs`只报告实际backend、voice_id和bundle_identity；工作台先确认该身份，再使用含backend及bundle身份的音频缓存，不串用旧compact或其他OC的声音。
-
-CPU／GPU共享RAM之外，设备的R36.4.7还存在[NVIDIA记录的分配限制](https://forums.developer.nvidia.com/t/intermittent-nvmapmemalloc-error-12-and-cuda-allocator-crash-during-pytorch-inference-on-jetson-orin-nano/349752)：MemAvailable充足不保证大块CUDA分配成功。只可对本项目固定模型目录中的干净文件作缓存建议，不全局drop_caches、不改系统／内核安全参数，不把换页维持或分配错误隐藏成共驻成功。
-
-## 单容器封装与推理边界
-
-可选全本地部署使用一个从 Jetson CUDA／PyTorch 环境派生的 tuber-studio 容器，业务后端、受限 broker 和按需 llama／TTS 子进程共享运行环境及项目 runtime 挂载。全本地方式沿用容器内运行环境，无需另设宿主 Docker controller 或 Python venv。默认双机部署的职责和数据归属见[跨主机规范](distributed-runtime.md)。两种模式都不挂载 Docker.sock。
-
-程序交付面向Jetson ARM64／L4T R36.4。Docker镜像只提供CUDA／原生Torch、llama-server、锁定Python依赖及固定Genie转换／图骨架依赖；应用源码、WebUI、角色素材、初始化清单和预设由独立程序包或宿主源码目录只读挂载，数据仍独立持久化。日常代码更新不重建环境镜像，不在启动时安装依赖。
-
-环境标识由依赖声明／锁文件、Dockerfile、TTS依赖及固定Genie源码计算，CI仅在对应env-<指纹>尚未发布时构建；同环境的程序更新复用已有镜像。本地缺少指定镜像才拉取，解析一次ID后所有运行使用--pull=never；依赖不匹配须在替换旧容器前拒绝，不静默升级。环境和程序构建不得依赖旧runtime、生产凭证、模型权重或设备连接。固定镜像与程序版本共同用于回退，不假定数据库自动回退；交付命令与CI由[部署指南](../../guides/deployment.md)维护。
-
-节点／portable 默认准备大肥鱼 9B 主权重和投影器、瑶瑶原始 GPT／SoVITS 与参考、BERT／HuBERT 和 NLTK。独立直播默认加载 9B＋Genie。已保存的 Profile 继续使用显式选中的已装模型或外部服务。资产进入持久 runtime，按固定版本、字节数和 SHA256 校验。`TUBER_HF_BASE` 支持配置 HTTPS 下载源。下载或转换失败时报告实际错误。 [固定下载清单](../../../config/jetson/downloads.json)
-
-下载后由短命准备进程依次完成语音权重净化、参考处理、转换、原采样恢复、INT8 图准备和音色包安装。准备进程结束后先预热 TTS，再按配置加载 LLM。初始化与健康检查使用已安装环境。首次准备成本与冷加载、热态合成分别测量。
-
-重启验证并复用已下载及生成产物，不重复下载／转换，也不覆盖已有studio.json、TTS YAML、令牌或数据库。不可变源资产或声音包身份不符时拒绝并保留原文件，不静默修补；原BERT／HuBERT checkpoint、sanitized权重、参考及NPZ保留声音身份依赖，inode和时间戳在冷启动重新建立签名。镜像不携带生产凭证、数据库、日志、普通缓存或实验环境；新数据目录独立生成私有令牌与空业务数据库。
-
-独立启动器的新安装启用直播资源模式，业务仍为停止，自动运营关闭。已有配置优先。就绪检查读取实际窗口、进程驻留和音色包身份。空数据卷下载、顺序准备、断网复用及业务数据保留曾在此前设备档验证。现行 9B 同节点部署按当前计划复验。 [设备记录](../../../evaluations/results/ready-program-image-20261030.json) · [部署指南](../../guides/deployment.md)
-
-工作台为本地声音计算缓存内容身份时，只可读取已配置gpt_sovits音色的assets或runtime/tts/ref内有效WAV；拒绝绝对路径、穿越、链接和其他runtime／系统文件。该专用读取不扩展通用素材路由，也不给模型或观众文件读取权限。
-
-broker 仅执行固定、已验证的模型／TTS 子进程和允许的推理路径，校验路径、模型别名及真实窗口，不接受用户任意命令／路径。业务输入无进程执行权；内部调用使用独立 token，外部仅接触认证后的工作台／overlay。全局生成锁从加载／推理覆盖到完整响应缓冲结束，取消和失败须清理仍工作的子进程。
-
-本地文本模式先结束非目标资源再加载所选 LLM；直播模式仅在相应Profile准入后保持获准 LLM／TTS 驻留。UI 展示加载等待、活跃／睡眠、错误，并区分模型 native、配置窗口、服务实际窗口和容量验证来源；睡眠状态不决定可用上下文容量，API 配置声明也不等于本机验证。进程 supervisor、镜像构建、退出清理和设备重启恢复均需实际验收，不能从文件存在推断完成。
-
-Jetson加载使用所固定llama.cpp的原生direct-io，避免读GGUF时额外积累文件缓存。启动前可对本项目runtime/models、runtime/tts/weights与pretrained中的模型文件提示释放干净页缓存；限定项目数据目录、关闭文件描述符，不删除权重或改变张量精度，不全局drop_caches、不修改系统内存策略。缓存提示是资源优化，不能替代真实分配／窗口检查；不据一次成功推断长期无换页。
+早期配对接口、封装环境、权重准备、参考处理和设备专用配置保留在 Git 历史，可供已有安装恢复。 [历史模型与语音说明](https://github.com/4everWZ/Tuber_Studio/blob/78517e091c13334a1b81de45668dd923b42df30d/docs/specs/foundation/models-and-audio.md)
 
 ## 设备与降级
 
-| 形态 | 约束 |
-| --- | --- |
-| Orin Nano Super 8GB＋外部OBS | CPU／GPU共享8GB，NVMe放权重／媒体；无NVENC，不要求本机编码。 |
-| Windows／Linux PC | 可开发Mock、角色、评论和单机功能，性能不直接外推Jetson。 |
-| 16GB+ Jetson／其他GPU | 后续更大模型／声音，不改变业务接口。 |
-
-ZRAM／SSD Swap 仅兜底，不以持续换页维持低延迟。过载依次暂停离线 GPU、合并普通消息并缩短回复、优先合法预录、限制主动话题、采用已授权且质量通过的轻量 Profile，保留人工接管；不无限增队列／超时或静默缩小操作者当前配置窗口。操作者可显式选择较小窗口，界面与容量证据须反映实际值。
-
-模型判别实验固定同一批角色短句、中文梗、注入抵抗、跨轮记忆／摘要用例，对比质量、延迟和峰值内存，并按实际 Provider／窗口标注条件。声音验收覆盖冷／热启动、连续100句、TTS交替／共驻、混语及人工试听，记录首包延迟、RTF、稳定性和许可；当前用户接受的三组配对样本不外推到所有读文，完整P1声音验收仍以15–30条短句人工试听。已准入的短程与试听结果不替代持续运行、混合事件负载、真实平台或OBS验收。普通短句实时性与长输入吞吐分别报告。
+切换服务时，按相同来源分别核对当前 Provider 的角色短句、中文语境、跨轮记忆、长文定位和有效结构。声音验收覆盖冷热启动、持续多句、混语和人工试听，记录首音、时长、声音身份、稳定性及许可。普通短句实时性和长输入吞吐分别报告，设备资源记录由实际服务部署验证。
 
 | 验收 ID | 通过条件 |
 | --- | --- |
-| AC-07 | 当前本地／API LLM 返回完整合法结构，非法情绪／动作被拒绝并可见失败／回退；动态 TTS／预录遵守声音、非静音与播放契约，不作为非直播评论的前置。 |
-| AC-08 | 声音接入时切音色不串缓存，API 音色不自动替换角色本地声线，商业配置不直接启用开发专用声音。 |
-
-推理与声音接口参考 [llama.cpp](https://github.com/ggml-org/llama.cpp) 和 [GPT-SoVITS API v2](https://github.com/RVC-Boss/GPT-SoVITS/blob/main/api_v2.py)。设备限制见 [Orin Nano Super](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/nano-super-developer-kit/) 和 [Orin Nano 软件编码](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Multimedia/SoftwareEncodeInOrinNano.html)。
-
+| AC-07 | LLM 返回完整合法结构，可见地处理非法字段、失败和回退。已启用的动态 TTS 或预录遵守声音、非静音和播放契约。非直播评论可独立运行。 |
+| AC-08 | 切音色与缓存按 Provider 和声音版本关联，切换 API 音色须明确选择，商业设置仅使用对应获准的声音。 |
 
 ## 媒体磁盘缓存
 

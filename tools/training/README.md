@@ -1,6 +1,6 @@
 # 大肥鱼 9B 训练、评估与导出
 
-现行运营和直播默认使用同一份大肥鱼 Qwen3.5-9B。已部署版本从 `checkpoint-38` 合并，配套 Q4_K_M 主权重和 Q8_0 视觉投影器。训练选择、离线结果与实机条件分别见[配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md)、[装配记录](../../evaluations/results/agx-clean-9b-deployment-20261111.md)和[运营审核回放](../../evaluations/results/review-agx-mainline-20261111.md)。
+大肥鱼 Qwen3.5-9B 是历史运营和直播的发布基线。从 `checkpoint-38` 合并，配套 Q4_K_M 主权重和 Q8_0 视觉投影器。 [配对评估](../../evaluations/results/dafeiyu-clean-9b-20261111.md) · [历史装配](../../evaluations/results/agx-clean-9b-deployment-20261111.md) · [运营审核回放](../../evaluations/results/review-agx-mainline-20261111.md)
 
 ## 编译与训练
 

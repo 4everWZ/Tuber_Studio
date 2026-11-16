@@ -8,7 +8,7 @@
 
 普通聊天优先流式接话。需要事实时，模型按语义查询人、时间、主题、经历或任务，读到证据再提结论。需要做事时，允许多步取材、执行、检查和调整。耗时工作先保存，再告诉号主它在做什么，聊天可继续。任务完成、需要输入、授权变化或失败时，在私有活动里给结果和续接入口。公开发声使用场景自身的权限、时限和交付回执。拟人表达沿用角色卡，事实及已执行动作可以回查。
 
-[Chats](../tuber-studio.md#号主对话与任务)提供 Higgs 式带 Avatar 的双工语音会话。语音、文字、获准视觉输入与后台任务接入同一 Agent。实时 Provider 负责感知、重叠语音与输出，Agent 负责状态、统一记忆、授权、后台工具和任务结果。原生双工工具可用时接入同一工具校验与审计。也支持由确认后的用户语句把工作交给后台 Agent，结果按任务 ID 回流，挂断或推理断线后从活动恢复。 [AGX Omni 部署](omni-deployment.md) · [Higgs Realtime Duplex](https://www.boson.ai/blog/higgs-realtime-duplex)
+[Chats](../tuber-studio.md#号主对话与任务)提供 Higgs 式带 Avatar 的双工语音会话。语音、文字、获准视觉输入与后台任务接入同一 Agent。实时 Provider 负责感知、重叠语音与输出，Agent 负责状态、统一记忆、授权、后台工具和任务结果。原生双工工具可用时接入同一工具校验与审计。也支持由确认后的用户语句把工作交给后台 Agent，结果按任务 ID 回流，挂断或推理断线后从活动恢复。 [Omni 与 Avatar API](omni-deployment.md) · [Higgs Realtime Duplex](https://www.boson.ai/blog/higgs-realtime-duplex)
 
 目标参照 ChatGPT Dots 公布的持续运行、跨入口接续、多任务、主动查资料、进度查看、纠偏和审批体验，及 ChatGPT 的记忆摘要与控制。产品资料用于确定可观察行为。Tuber Studio 的状态存储、工具权限、终端和模型属于本项目设计。 [Introducing dots](https://openai.com/index/introducing-dots/) · [Meet dots](https://learn.chatgpt.com/docs/dots) · [Dots 权限与活动](https://help.openai.com/en/articles/20001529-dots-privacy-security-and-safety-faqs) · [ChatGPT 记忆整理](https://openai.com/index/chatgpt-memory-dreaming/)
 

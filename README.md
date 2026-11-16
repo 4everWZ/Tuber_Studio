@@ -22,25 +22,21 @@ uv sync --python 3.12
 uv run python -m tuber_studio --port 8020
 ```
 
-Open [the local workbench](http://127.0.0.1:8020). Direct local access opens without a management token; remote access follows the authentication setup in the [deployment guide](docs/guides/deployment.md). Use **Settings → Inference and models** to pair a Jetson or configure another endpoint. **Autonomous operations** contains activity, comment review, private messages, dynamic posts and operations settings. Live production and the character studio remain separate workspaces. The top mode switch controls inference resources.
+Open [the local workbench](http://127.0.0.1:8020). Direct local access opens without a management token. For remote access, follow the authentication setup in the [deployment guide](docs/guides/deployment.md). Set the Provider endpoint and credential under **Settings → Inference and models**. **Autonomous operations** contains activity, comment review, private messages, dynamic posts and operations settings. Live production and the character studio remain separate workspaces.
 
-Under **Character → Voice**, local Jetson speech is the default. An OpenAI-compatible speech endpoint can also supply previews and spoken livestream replies. Demo text and prerecorded audio are available for an offline tour.
+Under **Character → Voice**, configure the speech source for previews and spoken livestream replies. Demo text and prerecorded audio are available for an offline tour.
 
 For Bilibili operations, configure and verify the account under **Settings → Account and permissions**, then save the actions you want under operations settings. Starting autonomous operations uses those permissions. Video discovery, comment replies, private messages and dynamic posts share that one control. The activity view shows daily outcomes across channels. Reading or importing comments, selecting sources, generating and reviewing replies stay in the same comment workbench. See the [operations guide](docs/guides/operations.md) for review, recovery and emergency stop.
 
 ## Deployment
 
-The default product setup keeps business data on a PC and uses a Jetson on the local network for inference. The PC owns the database, platform credentials, task queues, song requests and OBS playback. The Jetson owns model weights and inference caches. Pairing uses the node address and its own credential. Follow the [PC and Jetson guide](docs/guides/deployment.md#电脑业务主机与独立推理节点).
-
-Both operations and live production default to Da-Fei-Yu Qwen3.5-9B GGUF 1.0.0. The fixed release includes a language model and its matching vision projector. The workbench can use other configured providers. [Hugging Face model card](https://huggingface.co/4everImmortality/dafeiyu-qwen35-9b-gguf)
-
-A standalone Jetson installation is also available. It runs the program bundle or a source checkout with a separate reusable environment image and a persistent data directory. See [standalone Jetson setup](docs/guides/deployment.md#全本地jetson可选部署).
+Tuber Studio runs the workbench and Agent, and owns platform credentials, business data, tasks and memory. It uses authenticated endpoints for inference and Avatar media. Configure the address, credential, model alias and capabilities reported by the service. [Business deployment](docs/guides/deployment.md#业务部署与服务接入) · [API integration](docs/specs/foundation/omni-deployment.md)
 
 ## Project status
 
 | Area | Status |
 | --- | --- |
-| Community operations | The AGX operations profile runs a fine-tuned Qwen3.5-9B. A review run covered 30 real videos. Real incoming direct messages and sustained operation remain to be verified. |
+| Community operations | A review run covered 30 real videos. Real incoming direct messages and sustained operation remain to be verified. |
 | Live production | Images and GIFs are the default. OBS tests covered optional Live2D lip sync, mute and GIF fallback. Live platform integration, first-audio latency and sustained mixed load remain open. |
 | Games | Stardew Valley and Plants vs. Zombies have offline simulations. Real-game integration follows the live production phase. |
 
@@ -48,7 +44,7 @@ The [documentation index](docs/README.md) links to the test results and remainin
 
 ## Development
 
-The FastAPI backend and browser workspace live under `src/tuber_studio/`. Deployment entry points are in `tools/deployment/` and `tools/jetson/`. Optional online song requests are in `components/song_requests/`. Use the locked project environment for tests.
+The FastAPI backend and browser workspace live under `src/tuber_studio/`. Optional online song requests are in `components/song_requests/`. Use the locked project environment for tests.
 
 ```sh
 uv sync --locked --group dev --python 3.12
@@ -62,6 +58,6 @@ For a change, run the tests that cover the affected flow. See the [documentation
 
 ## Acknowledgements
 
-Tuber Studio uses Qwen3.5, llama.cpp, GPT-SoVITS and Genie-TTS. See the [Genie-TTS license](third_party/Genie-TTS/LICENSE) and [Codex notices](third_party/openai-codex/NOTICE).
+See the [Genie-TTS license](third_party/Genie-TTS/LICENSE) and [Codex notices](third_party/openai-codex/NOTICE) for bundled third-party materials.
 
 The included Da-Fei-Yu character uses artwork by YunYueSama. Sources and terms are recorded in the [artwork notes](third_party/whale-avatar/UPSTREAM.md), [asset manifest](assets/whale/manifest.json) and [voice profiles](config/voices.json).
