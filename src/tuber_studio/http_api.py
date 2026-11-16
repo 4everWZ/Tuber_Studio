@@ -15,6 +15,14 @@ _TAILSCALE_NETWORKS = (
 )
 
 
+class InferenceQueueBusy(RuntimeError):
+    """The shared gateway rejected the request before sending it to the engine."""
+
+    def __init__(self, retry_after):
+        self.retry_after = retry_after
+        super().__init__("等待共享推理网关准入")
+
+
 class InferenceTransport(httpx.AsyncHTTPTransport):
     """Reconnect before delivery, and replay safe inference reads before headers."""
 
@@ -107,16 +115,20 @@ async def response_bytes(client, method, path, *, payload=None, timeout=None, li
             data.extend(chunk)
             if len(data) > limit:
                 raise ValueError("API响应超过允许大小")
-        if response.status_code == 400:
+        if response.status_code in {400, 429}:
             try:
                 error = json.loads(data).get("error", {})
             except (ValueError, AttributeError):
                 error = {}
-            if isinstance(error, dict) and error.get("code") in {
+            if response.status_code == 400 and isinstance(error, dict) and error.get("code") in {
                 "context_length_exceeded",
                 "context_window_exceeded",
             }:
                 raise ContextWindowExceeded("API报告上下文超窗；保留原始记录")
+            if (response.status_code == 429 and response.request.url.host == "omni-gateway"
+                    and isinstance(error, dict) and error.get("code") == "gateway_busy"):
+                value = response.headers.get("Retry-After", "1")
+                raise InferenceQueueBusy(max(1, min(30, int(value))) if value.isdecimal() and len(value) < 5 else 1)
         response.raise_for_status()
         return bytes(data)
 

@@ -188,7 +188,9 @@ export function initTaskActivity(api, requestId) {
     const result = node("div", null, "chat-task-result");
     if (task.message) {
       renderAssistantAnswer(result, { reply_format: "markdown", reply_text: task.message });
-      if (task.status === "completed") result.prepend(node("p", "助手总结", "hint"));
+      if (["completed", "failed"].includes(task.status) && task.steps.some(step => step.result)) {
+        result.prepend(node("p", "按工具回执交付", "hint"));
+      }
     }
     const steps = node("ol", null, "chat-task-steps");
     for (const step of task.steps) {

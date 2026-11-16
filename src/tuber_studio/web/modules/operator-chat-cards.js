@@ -350,7 +350,7 @@ export function createOperatorCard(root, turn, context) {
     const open = button("查看任务");
     const status = node("p", "", "hint");
     status.setAttribute("role", "status");
-    const summary = node("p", "助手总结", "hint");
+    const summary = node("p", "按工具回执交付", "hint");
     const detail = node("div", null, "chat-task-result");
     let active = true, message = "";
     const update = value => {
@@ -362,7 +362,7 @@ export function createOperatorCard(root, turn, context) {
         renderAssistantAnswer(detail, { reply_format: "markdown", reply_text: message });
       }
       detail.hidden = !message;
-      summary.hidden = value.status !== "completed" || !message;
+      summary.hidden = !["completed", "failed"].includes(value.status) || !value.steps?.some(step => step.result);
     };
     open.onclick = () => context.openTask(data.id);
     root.append(status, summary, detail, open);

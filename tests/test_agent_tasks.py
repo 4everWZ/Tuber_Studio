@@ -7,11 +7,12 @@ from fastapi.testclient import TestClient
 from test_browsing import BV, ControlledPlatform
 
 from tuber_studio.agent import task_tools
-from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool, ToolWait
+from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool, ToolRequest, ToolWait
 from tuber_studio.app import create_app
 from tuber_studio.models import BilibiliOwner, Reply, StrictModel
 from tuber_studio.providers import Audio
 from tuber_studio.store import Store
+from tuber_studio.web_fetch import WebFetchRequest
 
 
 async def until(condition):
@@ -55,7 +56,9 @@ async def test_task_restarts_at_saved_tool_checkpoint(tmp_path):
     second.start()
     try:
         await until(lambda: second.current(identity)["status"] == "completed")
-        assert second.current(identity)["message"] == "核验完成。"
+        task = second.current(identity)
+        assert task["steps"][-1]["result"] == {"confirmed": True}
+        assert "已保存工具回执。" in task["message"]
         assert len(calls) == 2 and calls[0][0] == calls[1][0]
         assert calls[-1][1] == {"remote_id": "receipt"}
     finally:
@@ -74,11 +77,14 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
     async def decide(goal, steps, tools):
         seen.extend(step["result"] for step in steps[-1:])
         if goal == "只返回最终结论":
+            if not steps:
+                return TaskDecision(action="tool", tool="operation_status")
             return TaskDecision(action="finish", message="已按新要求继续。")
         tool = calls[len(steps)]
         return TaskDecision(action="tool", tool=tool, arguments={"bvid": BV} if tool == "inspect_video" else {})
 
     monkeypatch.setattr(tasks, "decide", decide)
+    monkeypatch.setattr(tasks, "make_plan", None)
     # Keep the real domain submission, scope and cancellation and hold the
     # scheduler so the isolated fixture cannot contact the video platform.
     async def idle_scheduler():
@@ -110,7 +116,8 @@ async def test_chat_delegates_across_existing_services_and_cancels_video(setting
             continued = await other.patch(activity_url, json={"revision": 2, "action": "steer", "goal": "只返回最终结论"})
             assert continued.status_code == 200
         await until(lambda: tasks.current(request_id)["status"] == "completed")
-        assert (await owner.get(activity_url)).json()["message"] == "已按新要求继续。"
+        continued = (await owner.get(activity_url)).json()
+        assert continued["message"] == "**自主运营**\n- 未启动"
         app.state.browsing.discovery.remember_account("200")
         assert (await owner.get(activity_url)).status_code == 404
 
@@ -147,6 +154,64 @@ async def test_live_status_reports_native_program_separately_in_tasks_and_chat(s
             assert status["native_program"] == {"state": "idle" if bridge_state == "idle" else "unavailable"}
 
 
+async def test_agent_web_page_is_bound_to_user_or_current_search_receipts(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+    searched = "https://example.com/publisher"
+    incidental = "https://www.bilibili.com/video/BV1Az39sK8T5/?p=1&t=23"
+    calls = []
+
+    async def read(url):
+        calls.append(url)
+        return {"url": url, "excerpt": "来源原文"}
+
+    monkeypatch.setattr(task_tools, "fetch_excerpt", read)
+    request = ToolRequest(str(uuid4()), "打开 https://example.com/direct。", [], None, None, (
+        {"tool": "web_search", "result": {"links": [searched]}},
+        {"tool": "inspect_video", "result": {"findings": [{"url": incidental}]}},
+    ))
+
+    async def decide(messages, schema, *, max_tokens):
+        web = next(choice for choice in schema["oneOf"] if choice["properties"].get("tool") == {"const": "web_page"})
+        assert web["properties"]["arguments"]["properties"]["web_fetch"]["enum"] == [
+            "https://example.com/direct", searched,
+        ]
+        return {"action": "tool", "tool": "web_page", "arguments": {"web_fetch": searched}}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", decide)
+    async with app.router.lifespan_context(app):
+        spec = tasks.tools["web_page"]
+        catalog = {"web_page": {"description": spec.description, "arguments": spec.arguments.model_json_schema()}}
+        result = await tasks.decide(request.goal, request.receipts, catalog)
+        assert result.arguments == {"web_fetch": searched}
+        assert "error" in await spec.run(request, WebFetchRequest(web_fetch=incidental))
+        assert await spec.run(request, WebFetchRequest(web_fetch=searched)) == {"url": searched, "excerpt": "来源原文"}
+        assert calls == [searched]
+
+
+async def test_explicit_fallback_condition_tracks_video_receipt_without_model_reinterpretation(settings, monkeypatch):
+    app = create_app(settings, adapter=ControlledPlatform())
+    tasks = app.state.runtime.tasks
+    called = []
+
+    async def planned(messages, schema, *, max_tokens):
+        called.append(schema)
+        return {"steps": ["inspect_video", "web_search", "web_page"]}
+
+    monkeypatch.setattr(app.state.runtime.llm, "generate_json", planned)
+    catalog = {name: {"description": spec.description, "requires_approval": spec.review is not None}
+               for name, spec in tasks.tools.items()}
+    async with app.router.lifespan_context(app):
+        plan = await tasks.make_plan(f"只读查看 {BV}，如果只有字幕就搜索制作方，再读搜索得到的公告。", catalog)
+        assert len(called) == 1
+        assert "bilibili_owner" not in called[0]["properties"]["steps"]["items"]["enum"]
+        assert plan.steps[0].condition is None
+        assert plan.steps[1].condition == plan.steps[2].condition
+        condition = plan.steps[1].condition
+        assert condition.evaluate([{"tool": "inspect_video", "result": {"viewing": "subtitles_only"}}]) is True
+        assert condition.evaluate([{"tool": "inspect_video", "result": {"viewing": "watched"}}]) is False
+
+
 async def test_approved_game_step_checks_control_and_replays_receipt(settings, monkeypatch):
     app = create_app(settings, adapter=ControlledPlatform())
     runtime = app.state.runtime
@@ -155,11 +220,14 @@ async def test_approved_game_step_checks_control_and_replays_receipt(settings, m
 
     async def decide(goal, steps, tools):
         if not steps:
+            return TaskDecision(action="tool", tool="game_status")
+        if len(steps) == 1:
             return TaskDecision(action="tool", tool="game_action",
                                 arguments={"game": "stardew_valley", "action": "water_crops"})
         return TaskDecision(action="finish", message="游戏已返回实际结果。")
 
     monkeypatch.setattr(tasks, "decide", decide)
+    monkeypatch.setattr(tasks, "make_plan", None)
     async with app.router.lifespan_context(app):
         identity = str(uuid4())
         tasks.create(identity, "请给星露谷作物浇水")
@@ -169,7 +237,7 @@ async def test_approved_game_step_checks_control_and_replays_receipt(settings, m
         game.transfer_control("operator")
         game.transfer_control("studio")
         await tasks.control(identity, 1, "approve", step_id=step["id"])
-        await until(lambda: tasks.current(identity)["status"] == "completed")
+        await until(lambda: tasks.current(identity)["status"] == "failed")
         assert "控制权已变化" in tasks.current(identity)["steps"][-1]["result"]["error"]
         assert game.status()["active_status"]["unwatered_crops"] == initial
 
@@ -230,6 +298,7 @@ def test_agent_live_handoff_requires_approval_and_actual_playback(settings, monk
         return Audio(settings.audio / "agent-test.wav", 1, text)
 
     monkeypatch.setattr(runtime.tasks, "decide", decide)
+    monkeypatch.setattr(runtime.tasks, "make_plan", None)
     monkeypatch.setattr(runtime.llm, "generate", generate)
     monkeypatch.setattr(runtime.voices, "synthesize_live", synthesize)
     identity = str(uuid4())
@@ -261,5 +330,6 @@ def test_agent_live_handoff_requires_approval_and_actual_playback(settings, monk
                 if finished["status"] == "completed":
                     break
                 time.sleep(0.03)
-            assert finished["message"] == "已收到实际播放确认。"
+            assert finished["status"] == "completed"
+            assert "播放器确认播完" in finished["message"] and spoken in finished["message"]
     assert platform.sent == []

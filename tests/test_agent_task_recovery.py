@@ -7,7 +7,16 @@ import pytest
 from fastapi import FastAPI
 
 from tuber_studio.agent.task_api import register_task_api
-from tuber_studio.agent.task_runtime import TaskDecision, TaskRuntime, Tool, ToolWait
+from tuber_studio.agent.task_runtime import (
+    PlannedStep,
+    ReceiptCondition,
+    TaskDecision,
+    TaskPlan,
+    TaskRuntime,
+    Tool,
+    ToolWait,
+)
+from tuber_studio.http_api import response_json
 from tuber_studio.models import StrictModel
 from tuber_studio.store import Store
 
@@ -31,8 +40,10 @@ async def test_control_retries_interrupted_stop_before_resuming(tmp_path, action
 
     async def decide(goal, steps, tools):
         if goal == "新要求":
-            assert steps[-1]["result"] == {"status": "cancelled"}
-            return TaskDecision(action="finish", message="已按新要求核对。")
+            if not steps:
+                return TaskDecision(action="tool", tool="read")
+            assert steps[-1]["result"] == {"confirmed": True}
+            return TaskDecision(action="finish")
         return TaskDecision(action="tool", tool="read")
 
     async def run(request, args):
@@ -46,6 +57,10 @@ async def test_control_retries_interrupted_stop_before_resuming(tmp_path, action
     async def recovered_stop(step, checkpoint):
         stopped.append((step, checkpoint))
         return {"status": "cancelled"}
+
+    async def fresh_read(request, args):
+        assert request.goal == "新要求"
+        return {"confirmed": True}
 
     store = Store(path, [])
     runtime = TaskRuntime(store, lambda: ["owner"], decide)
@@ -67,7 +82,7 @@ async def test_control_retries_interrupted_stop_before_resuming(tmp_path, action
 
     store = Store(path, [])
     runtime = TaskRuntime(store, lambda: ["owner"], decide)
-    runtime.register("read", Tool("Read fixture", StrictModel, run, recovered_stop))
+    runtime.register("read", Tool("Read fixture", StrictModel, fresh_read, recovered_stop))
     runtime.start()
     try:
         result = await wait_status(runtime, identity, target)
@@ -104,15 +119,127 @@ async def test_create_conflict_returns_http_conflict_without_exposing_previous_t
         store.close()
 
 
+@pytest.mark.parametrize("unwatered", [0, 3])
+async def test_saved_plan_resumes_its_condition_and_cannot_select_an_unplanned_tool(tmp_path, unwatered):
+    path = tmp_path / "saved-plan.sqlite3"
+    identity = str(uuid4())
+    prepared = asyncio.Event()
+    calls = []
+
+    class GameTarget(StrictModel):
+        game: str
+
+    async def plan(goal, tools):
+        calls.append("plan")
+        return TaskPlan(steps=[PlannedStep(tool="game_status"), PlannedStep(
+            tool="game_action", condition=ReceiptCondition(tool="game_status", path="state.unwatered_crops",
+                                                            operator="gt", value=0),
+        )])
+
+    async def decide(goal, steps, tools):
+        if not steps:
+            assert list(tools) == ["game_status"]
+            prepared.set()
+            await asyncio.Event().wait()
+        assert list(tools) == ["game_action"]
+        return TaskDecision(action="tool", tool="unplanned")
+
+    async def run(request, args):
+        calls.append("read")
+        return {"simulated": True, "state": {"summary": "真实模拟状态", "unwatered_crops": unwatered}}
+
+    async def act(request, args):
+        calls.append("write")
+        return {"success": True}
+
+    def open_runtime(decider):
+        store = Store(path, [])
+        task = TaskRuntime(store, lambda: ["owner"], decider, plan)
+        task.register("game_status", Tool("Read simulated state", GameTarget, run))
+        task.register("game_action", Tool("Review action", StrictModel, act, review=lambda args: {"target": "模拟"}))
+        task.register("unplanned", Tool("Must never be executed", StrictModel, act))
+        return store, task
+
+    store, task = open_runtime(decide)
+    task.start()
+    try:
+        task.create(identity, "先核对待浇水数量，有需要再准备动作。")
+        async with asyncio.timeout(5):
+            await prepared.wait()
+        assert task.current(identity)["plan_cursor"] == 0
+    finally:
+        await task.close()
+        store.close()
+
+    async def decide_after_restart(goal, steps, tools):
+        if not steps:
+            return TaskDecision(action="tool", tool="game_status", arguments={"game": "stardew_valley"})
+        return await decide(goal, steps, tools)
+
+    store, task = open_runtime(decide_after_restart)
+    task.start()
+    try:
+        result = await wait_status(task, identity, "completed" if not unwatered else "failed")
+        assert calls == ["plan", "read"]
+        assert "真实模拟状态" in result["message"]
+        if not unwatered:
+            assert result["plan"][1]["skipped"] is True
+        else:
+            assert result["plan_cursor"] == 1
+    finally:
+        await task.close()
+        store.close()
+
+
+async def test_agent_waits_after_gateway_rejects_planning_before_admission(tmp_path):
+    attempts, executed = [], []
+
+    def reply(request):
+        attempts.append(request.url.host)
+        return httpx.Response(429, headers={"Retry-After": "1"}, json={"error": {"code": "gateway_busy"}})
+
+    async def plan(goal, tools):
+        if not attempts:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(reply), base_url="http://omni-gateway:8000") as client:
+                await response_json(client, "POST", "/v1/chat/completions", payload={})
+        return TaskPlan(steps=[PlannedStep(tool="operation_status")])
+
+    async def read(request, args):
+        executed.append(request.id)
+        return {"state": "off"}
+
+    store = Store(tmp_path / "busy.sqlite3", [])
+    task = TaskRuntime(store, lambda: ["owner"], None, plan)
+    task.register("operation_status", Tool("Read operations", StrictModel, read))
+    task.start()
+    identity = str(uuid4())
+    try:
+        task.create(identity, "请查询运营状态。")
+        waiting = await wait_status(task, identity, "waiting")
+        assert not waiting["steps"] and not executed and waiting["revision"] == 1
+        completed = await wait_status(task, identity, "completed")
+        assert attempts == ["omni-gateway"] and len(executed) == 1
+        assert completed["message"] == "**自主运营**\n- 未启动"
+    finally:
+        await task.close()
+        store.close()
+
+
 async def test_steering_a_scheduled_task_preserves_due_time(tmp_path):
     store = Store(tmp_path / "tasks.sqlite3", [])
     started = []
 
     async def decide(goal, steps, tools):
+        if steps:
+            return TaskDecision(action="finish")
         started.append(goal)
-        return TaskDecision(action="finish", message="完成。")
+        return TaskDecision(action="tool", tool="read")
+
+    async def read(request, args):
+        return {"confirmed": True}
 
     runtime = TaskRuntime(store, lambda: ["owner"], decide)
+    runtime.register("read", Tool("Read fixture", StrictModel, read))
     scheduled, immediate = str(uuid4()), str(uuid4())
     due = time.time() + 60
     runtime.start()
