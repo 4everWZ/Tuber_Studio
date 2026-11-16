@@ -16,7 +16,7 @@ curl --fail http://127.0.0.1:9020/healthz
 
 `core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷可用 `TUBER_CORE_MODE=demo` 运行离线演示，或用 `TUBER_CORE_MODE=existing` 要求已有配置。切换已存在的配置通过工作台及部署准入完成。
 
-接收现有正式业务时，将已核验快照还原到独立 Docker 卷的 `/data/business`。同用 `-f deploy/omni/app-business-data.compose.yml` 接入 `TUBER_CORE_BUSINESS_VOLUME` 指定的卷。恢复和正式 Core 使用相同容器内路径，数据库的取材引用在恢复时重新绑定。正式数据按迁移工具的 `staged → active` 交接。在 staged 卷运行 `python /opt/tuber/core_entrypoint.py --stage-omni` 可准备模型配置，账号和语音配置原样保留，任务及平台连接由正式 Core 激活后管理。
+接收现有正式业务时，将已核验快照还原到独立 Docker 卷的 `/data/business`。同用 `-f deploy/omni/app-business-data.compose.yml` 接入 `TUBER_CORE_BUSINESS_VOLUME` 指定的卷。恢复和正式 Core 使用相同容器内路径，数据库的取材引用在恢复时重新绑定。正式数据按迁移工具的 `staged → active` 交接。在 staged 卷运行 `python /opt/tuber/core_entrypoint.py --stage-omni` 可准备模型配置并退出旧推理模式档。保留平台账号和现有 TTS 地址，原通过推理节点配对提供的 TTS 凭据绑定到同一地址。任务及平台连接由正式 Core 激活后管理。
 
 ## 从电脑访问 AGX 工作台
 

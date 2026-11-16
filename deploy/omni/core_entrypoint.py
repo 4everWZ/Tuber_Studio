@@ -23,6 +23,7 @@ def configure_model(data, *, omni):
         native_context_tokens=window, auto_compact_token_limit=window * 9 // 10,
     )
     if omni:
+        data.pop("work_mode_profiles", None)
         data["llm"]["structured_output"] = "json_schema"
         data["video_vision"] = {
             "enabled": True, "adapter": "omni", "base_url": GATEWAY_BASE, "model": data["llm"]["model"],
@@ -88,7 +89,14 @@ def stage_omni():
         if Path(os.getenv("TUBER_CONFIG", config)).resolve() != config:
             raise RuntimeError("The staged model profile belongs to the business volume")
         settings = Settings(runtime=runtime)
+        tts = settings.data["tts"]
+        tts_key = settings.broker_key_for(tts["base_url"]) if tts["kind"] == "gpt_sovits" else None
         configure_model(settings.data, omni=True)
+        if tts_key and tts_key != settings.provider_key("tts"):
+            # The unchanged TTS route still uses its paired credential after the
+            # legacy model broker is disabled. The gateway key remains LLM-only.
+            validate_api_key(tts_key)
+            settings.save_keys(settings.provider_keys | {"tts": tts_key})
         settings.save_public(settings.data)
 
 

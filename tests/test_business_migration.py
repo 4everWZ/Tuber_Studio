@@ -141,6 +141,31 @@ def test_omni_profile_switch_is_confined_to_staged_business_data(settings, monke
         assert_business_writer(runtime)
 
 
+def test_staged_omni_retires_legacy_profiles_and_keeps_paired_tts(settings, monkeypatch):
+    from deploy.omni.core_entrypoint import stage_omni
+    from tuber_studio.config import Settings
+
+    runtime = settings.runtime
+    base = "http://192.0.2.1:9000"
+    monkeypatch.setenv("TUBER_RUNTIME", str(runtime))
+    monkeypatch.delenv("TUBER_CONFIG", raising=False)
+    settings.data["inference_broker"].update(enabled=True, base_url=base)
+    settings.data["tts"].update(kind="gpt_sovits", base_url=base + "/tts")
+    settings.data["work_mode_profiles"] = {"offline": {"llm": {"model": "old-profile"}}}
+    settings.save_public(settings.data)
+    (runtime / "inference-token").write_text("fixture-paired-token", encoding="utf-8")
+    monkeypatch.setattr(settings, "provider_keys", {"llm": "old-local-key"})
+    settings.save_keys(settings.provider_keys)
+    migration.set_business_authority(runtime, "staged", migration_id="stage-profile")
+    stage_omni()
+    restored = Settings(runtime=runtime)
+    assert "work_mode_profiles" not in restored.data
+    assert restored.data["tts"]["base_url"] == base + "/tts"
+    assert restored.endpoint_key("tts") == "fixture-paired-token"
+    assert restored.provider_key("llm") == "old-local-key"
+    assert restored.broker_key_for(base + "/llm") is None
+
+
 def test_sqlite_backup_includes_committed_wal_rows(tmp_path):
     source = source_fixture(tmp_path / "source")
     connection = sqlite3.connect(source / "studio.sqlite3")
