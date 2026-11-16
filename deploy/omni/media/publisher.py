@@ -4,6 +4,7 @@ import asyncio
 import os
 from collections import deque
 from pathlib import Path
+from tempfile import TemporaryFile
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from PIL import Image, ImageSequence
@@ -12,7 +13,7 @@ WIDTH, HEIGHT, FPS = 640, 360, 25
 VIDEO_FRAME_BYTES = WIDTH * HEIGHT * 3
 PCM_RATE = 24000
 PCM_PER_FRAME = PCM_RATE * 2 // FPS
-MAX_PENDING = PCM_RATE * 2 * 4
+PLAYBACK_WATERMARK = PCM_RATE * 2 * 4
 
 
 def load_frames(path: Path):
@@ -43,32 +44,57 @@ class ProgramPublisher:
         self.address = address
         self.animations = {False: load_frames(assets / "idle.gif"), True: load_frames(assets / "talking.gif")}
         self.pending = deque()
-        self.pending_bytes = 0
+        self.memory_bytes = 0
         self.proc = None
         self.video = None
         self.task = None
 
-    def push(self, pcm):
+    def push(self, pcm, response_id):
         if not pcm or len(pcm) % 2:
             raise ValueError("invalid PCM16 media payload")
-        if self.pending_bytes + len(pcm) > MAX_PENDING:
-            raise BufferError("program audio is behind realtime")
-        self.pending.append(pcm)
-        self.pending_bytes += len(pcm)
+        # Codec bursts can arrive faster than program time. Spill the queued
+        # PCM beyond the memory watermark so control events remain readable.
+        if self.memory_bytes + len(pcm) <= PLAYBACK_WATERMARK:
+            chunk = memoryview(pcm)
+            self.memory_bytes += len(pcm)
+        else:
+            chunk = TemporaryFile()
+            try:
+                chunk.write(pcm)
+                chunk.seek(0)
+            except BaseException:
+                chunk.close()
+                raise
+        self.pending.append((response_id, chunk, len(pcm)))
 
-    def clear(self):
-        self.pending.clear()
-        self.pending_bytes = 0
+    def clear(self, response_id=None):
+        keep = deque()
+        for owner, chunk, length in self.pending:
+            if response_id is not None and owner != response_id:
+                keep.append((owner, chunk, length))
+            elif isinstance(chunk, memoryview):
+                self.memory_bytes -= len(chunk.obj)
+            else:
+                chunk.close()
+        self.pending = keep
 
     def take(self):
         collected = bytearray()
         while self.pending and len(collected) < PCM_PER_FRAME:
-            chunk = self.pending.popleft()
-            amount = min(len(chunk), PCM_PER_FRAME - len(collected))
-            collected.extend(chunk[:amount])
-            self.pending_bytes -= amount
-            if amount < len(chunk):
-                self.pending.appendleft(chunk[amount:])
+            response_id, chunk, length = self.pending.popleft()
+            amount = min(length, PCM_PER_FRAME - len(collected))
+            if isinstance(chunk, memoryview):
+                collected.extend(chunk[:amount])
+                if amount == length:
+                    self.memory_bytes -= len(chunk.obj)
+                else:
+                    chunk = chunk[amount:]
+            else:
+                collected.extend(chunk.read(amount))
+                if amount == length:
+                    chunk.close()
+            if amount < length:
+                self.pending.appendleft((response_id, chunk, length - amount))
         return bytes(collected).ljust(PCM_PER_FRAME, b"\0"), bool(collected)
 
     async def start(self):
@@ -128,6 +154,7 @@ class ProgramPublisher:
         if self.task:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
+        self.clear()
         if self.video:
             self.video.close()
         if self.proc and self.proc.returncode is None:

@@ -39,6 +39,20 @@ def engine_url():
                        target.path.rstrip("/") + "/v1/realtime", query, ""))
 
 
+async def close_program_session(engine):
+    # The program does not expose native resume. Release the upstream lease
+    # explicitly even when the operator socket or the encoder fails.
+    try:
+        async with asyncio.timeout(5):
+            await engine.send(json.dumps({"type": "session.close"}))
+            async for message in engine:
+                if json.loads(message).get("type") == "session.closed":
+                    return
+    except (TimeoutError, ValueError, websockets.ConnectionClosed):
+        pass
+    log.warning("native program closed without a session receipt")
+
+
 @app.get("/healthz")
 async def health():
     publisher = app.state.program_publisher
@@ -82,11 +96,16 @@ async def session(client: WebSocket):
                     await client.send_json({"type": "error", "error": {"message": "Native duplex was not negotiated"}})
                     await client.close(code=1011)
                     return
-                publisher = ProgramPublisher(url, Path(os.getenv("AVATAR_ASSETS", "/assets/whale")))
-                await publisher.start()
-                app.state.program_publisher = publisher
-                await client.send_json(opened)
-                await relay(client, engine, publisher)
+                closed = False
+                try:
+                    publisher = ProgramPublisher(url, Path(os.getenv("AVATAR_ASSETS", "/assets/whale")))
+                    await publisher.start()
+                    app.state.program_publisher = publisher
+                    await client.send_json(opened)
+                    closed = await relay(client, engine, publisher)
+                finally:
+                    if not closed:
+                        await close_program_session(engine)
                 await client.close(code=1000)
         except WebSocketDisconnect:
             pass
@@ -106,11 +125,15 @@ async def session(client: WebSocket):
 
 async def relay(client, engine, publisher):
     latest = None
-    cancelled = None
+    cancelled = set()
     epoch = -1
 
+    def discard(target):
+        publisher.clear(target)
+        if response_id := target or latest:
+            cancelled.add(response_id)
+
     async def upstream():
-        nonlocal cancelled
         while True:
             event = await client.receive_json()
             if not isinstance(event, dict):
@@ -118,31 +141,30 @@ async def relay(client, engine, publisher):
             kind = event.get("type")
             if kind == "session.update":
                 raise ValueError("media session settings are fixed for the active program")
-            if kind in {"response.cancel", "output_audio_buffer.clear", "barge_in"} or (
+            if kind in {"response.cancel", "input.cancel", "output_audio_buffer.clear", "barge_in"} or (
                 kind == "turn.signal" and event.get("event") == "barge_in"
             ):
-                target = event.get("response_id")
-                if not target or target == latest:
-                    publisher.clear()
-                    cancelled = latest
+                discard(event.get("response_id"))
             await engine.send(json.dumps(event))
 
     async def downstream():
-        nonlocal epoch, latest, cancelled
+        nonlocal epoch, latest
         async for message in engine:
             event = json.loads(message)
             kind = event.get("type")
-            response_id = event.get("response_id")
+            response = event.get("response") or {}
+            response_id = event.get("response_id") or response.get("id")
+            if kind == "response.created" and response_id:
+                latest = response_id
             if (
                 kind == "output_audio_buffer.cleared"
-                or kind == "response.done" and (event.get("response") or {}).get("status") in {"cancelled", "failed"}
-            ) and (not response_id or response_id == latest):
-                publisher.clear()
-                cancelled = latest
+                or kind == "response.done" and response.get("status") in {"cancelled", "failed"}
+            ):
+                discard(response_id)
             if kind == "response.output_audio.delta":
                 metadata = event.get("metadata") or {}
                 new_epoch = metadata.get("epoch", epoch)
-                if new_epoch < epoch or (cancelled and response_id == cancelled):
+                if new_epoch < epoch or response_id in cancelled:
                     continue
                 if new_epoch > epoch:
                     publisher.clear()
@@ -150,14 +172,18 @@ async def relay(client, engine, publisher):
                 if event.get("sample_rate_hz", PCM_RATE) != PCM_RATE or event.get("format", "pcm16") != "pcm16":
                     raise ValueError("unexpected output audio format")
                 latest = response_id
-                publisher.push(base64.b64decode(event["delta"], validate=True))
+                publisher.push(base64.b64decode(event["delta"], validate=True), response_id)
             await client.send_json(event)
+            if kind == "session.closed":
+                return True
 
-    tasks = [asyncio.create_task(upstream()), asyncio.create_task(downstream()), publisher.task]
+    receive = asyncio.create_task(downstream())
+    tasks = [asyncio.create_task(upstream()), receive, publisher.task]
     try:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             task.result()
+        return receive in done and receive.result() is True
     finally:
         for task in tasks:
             task.cancel()
