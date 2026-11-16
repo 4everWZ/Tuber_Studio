@@ -20,7 +20,15 @@ async function loadLocalModelsDropdown(api) {
   }
 }
 
-export function readProviderPayload() {
+function formUsesModelCard(settings) {
+  const llm = settings?.llm;
+  return llm?.context_source === "model_card"
+    && $("llm-kind").value === llm.kind
+    && $("llm-base-url").value.trim() === llm.base_url
+    && $("llm-model").value.trim() === llm.model;
+}
+
+export function readProviderPayload(settings) {
   const integer = (id, title) => {
     const value = Number($(id).value);
     if (!$(id).value.trim() || !Number.isSafeInteger(value) || value < 4096) {
@@ -36,31 +44,30 @@ export function readProviderPayload() {
     return value;
   };
 
-  const native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
-  const context = $("llm-context-tokens").value.trim() ? integer("llm-context-tokens", "上下文窗口") : native;
-  if (context > native) {
-    throw new Error("上下文窗口不能超过模型原生 / 服务声明上限。请按实际服务能力填写。");
-  }
-
   const modelId = ($("llm-model")?.value || "").trim();
   const llmKind = $("llm-kind")?.value || "llama_cpp";
   const llmUrl = ($("llm-base-url")?.value || "").trim();
+  const modelCard = formUsesModelCard(settings);
 
   const payload = {
     llm: {
       kind: llmKind,
       base_url: llmUrl,
       model: modelId,
-      context_tokens: context,
-      native_context_tokens: native,
       operations_max_tokens: boundedInteger("llm-operations-tokens", "运营输出额度", 1, 65536),
     },
     credentials: {},
     clear_credentials: [],
   };
-  if (llmKind === "llama_cpp" && $("llm-enable-thinking")) {
+  if (!modelCard) {
+    const native = integer("llm-native-tokens", "模型原生 / 服务声明上限");
+    const context = $("llm-context-tokens").value.trim() ? integer("llm-context-tokens", "上下文窗口") : native;
+    if (context > native) throw new Error("上下文窗口超过模型原生 / 服务声明上限。");
+    Object.assign(payload.llm, { context_tokens: context, native_context_tokens: native });
+  }
+  if ((llmKind === "llama_cpp" || modelCard) && $("llm-enable-thinking")) {
     payload.llm.enable_thinking = $("llm-enable-thinking").checked;
-    if ($("llm-live-thinking-tokens")) {
+    if (llmKind === "llama_cpp" && $("llm-live-thinking-tokens")) {
       payload.llm.live_thinking_tokens = boundedInteger("llm-live-thinking-tokens", "直播思考额度", 0, 8192);
     }
   }
@@ -98,7 +105,7 @@ export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatu
   $("providers-form").addEventListener("submit", event => {
     event.preventDefault();
     busy(event.submitter, async () => {
-      const payload = readProviderPayload();
+      const payload = readProviderPayload(model.settings);
       saving = true;
       render();
       feedback("正在保存并应用，请等待服务返回…");
@@ -125,7 +132,10 @@ export function initInferenceProvidersUI(model, { api, busy, apply, refreshStatu
     feedback("已恢复当前已保存配置；未提交的密钥输入已清除。");
   });
   $("check-providers-settings").addEventListener("click", event => {
-    busy(event.currentTarget, () => checkProviderConnections(api));
+    busy(event.currentTarget, async () => {
+      await checkProviderConnections(api);
+      await refreshStatus();
+    });
   });
 
   const select = $("llm-model-select");
@@ -220,12 +230,14 @@ export function publicSettings(value, key = "") {
 
 function providerFormFromSettings(settings, status) {
   const llm = settings.llm || {};
+  const modelCard = llm.context_source === "model_card";
+  const observed = status?.context?.capacity_source === "model_card" ? status.context.server_tokens : null;
   const fields = {
     "llm-kind": llm.kind || "llama_cpp",
     "llm-base-url": llm.base_url || "",
     "llm-model": llm.model || "",
-    "llm-context-tokens": llm.context_tokens ?? "",
-    "llm-native-tokens": llm.native_context_tokens ?? status?.context?.native_tokens ?? 131072,
+    "llm-context-tokens": modelCard ? observed ?? "" : llm.context_tokens ?? "",
+    "llm-native-tokens": modelCard ? observed ?? "" : llm.native_context_tokens ?? status?.context?.native_tokens ?? 131072,
     "llm-operations-tokens": llm.operations_max_tokens ?? 8192,
     "llm-live-thinking-tokens": llm.live_thinking_tokens ?? 1024,
   };
@@ -249,7 +261,8 @@ function renderProviderForm(settings, status, dirty, saving) {
     settings ? "已保存配置" : "正在读取已保存配置…";
   $("llm-key-state").textContent = settings?.provider_credentials?.llm ? "已保存密钥" : "未保存密钥";
   const external = $("llm-kind").value === "openai_compatible", demo = $("llm-kind").value === "demo";
-  if ($("llm-enable-thinking")) $("llm-enable-thinking").disabled = external || demo || saving;
+  const modelCard = formUsesModelCard(settings);
+  if ($("llm-enable-thinking")) $("llm-enable-thinking").disabled = (external && !modelCard) || demo || saving;
   if ($("llm-live-thinking-tokens")) $("llm-live-thinking-tokens").disabled = external || demo || saving;
   const outputBudget = $("llm-live-output-budget");
   if (outputBudget) {
@@ -266,12 +279,18 @@ function renderProviderForm(settings, status, dirty, saving) {
   ["llm-base-url", "llm-model", "llm-key", "llm-context-tokens", "llm-native-tokens", "llm-operations-tokens"].forEach(id => {
     $(id).disabled = demo || saving;
   });
+  if (modelCard) {
+    $("llm-context-tokens").disabled = true;
+    $("llm-native-tokens").disabled = true;
+  }
   $("llm-base-url").required = !demo;
   $("llm-model").required = !demo;
   const context = status?.context;
   const native = context?.native_tokens;
   const capacity = context?.server_tokens;
-  $("llm-capacity-help").textContent = external ?
+  $("llm-capacity-help").textContent = modelCard
+    ? capacity ? `推理服务实报窗口 ${tokenCount(capacity)}` : "等待推理服务报告窗口。"
+    : external ?
     "外部服务窗口按提供方的容量填写；保存后用于上下文与输出预算。" :
     [native ? `当前节点报告模型原生容量 ${tokenCount(native)}` : "模型原生容量等待节点报告",
       capacity ? `当前服务窗口 ${tokenCount(capacity)}` : "服务窗口等待节点报告"].join(" · ");
