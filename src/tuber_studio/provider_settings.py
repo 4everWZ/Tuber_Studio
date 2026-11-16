@@ -16,7 +16,7 @@ from .video_vision import ApiVideoEvidenceProvider
 
 FIELDS = {
     "llm": {"kind", "base_url", "model", "context_tokens", "native_context_tokens", "operations_max_tokens",
-            "enable_thinking", "live_thinking_tokens"},
+            "enable_thinking", "live_thinking_tokens", "structured_output"},
     "tts": {"kind", "base_url", "model", "voice"},
     "vision": {"kind", "location", "base_url", "model"},
 }
@@ -163,6 +163,12 @@ def proposal(settings, body):
             select_local_voice(after, data.get("inference_broker", {}))
         after.update(patch)
         if name == "llm":
+            if "structured_output" not in patch and (
+                after["kind"] != before.get("kind")
+                or after["base_url"].rstrip("/") != before.get("base_url", "").rstrip("/")
+                or after.get("model") != before.get("model")
+            ):
+                after.pop("structured_output", None)
             if "native_context_tokens" in patch and "context_tokens" not in patch:
                 after["context_tokens"] = after["native_context_tokens"]
             normalize_broker_llm(data)

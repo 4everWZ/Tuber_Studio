@@ -103,13 +103,16 @@ async def test_external_provider_uses_bearer_and_real_usage_without_broker_heade
         await provider.close()
 
 
-@pytest.mark.parametrize("adapter", ["openai_compatible", "llama_cpp"])
-async def test_structured_schema_is_sent_to_llama_cpp_without_changing_generic_apis(
-    settings, transport, adapter
-):
+@pytest.mark.parametrize(("adapter", "structured_output"), [
+    ("openai_compatible", "json_object"),
+    ("openai_compatible", "json_schema"),
+    ("llama_cpp", "json_object"),
+])
+async def test_structured_schema_uses_the_selected_provider_contract(settings, transport, adapter, structured_output):
     captured, _ = transport
     provider = APIProvider(
-        settings.data["llm"] | {"base_url": "https://api.test/v1", "model": "remote-model"},
+        settings.data["llm"] | {"base_url": "https://api.test/v1", "model": "remote-model",
+                                "structured_output": structured_output},
         adapter=adapter,
     )
     schema = {
@@ -129,6 +132,9 @@ async def test_structured_schema_is_sent_to_llama_cpp_without_changing_generic_a
     expected = {"type": "json_object"}
     if adapter == "llama_cpp":
         expected["schema"] = schema
+    elif structured_output == "json_schema":
+        expected = {"type": "json_schema",
+                    "json_schema": {"name": "structured_reply", "schema": schema, "strict": True}}
     assert posts[-1]["response_format"] == expected
 
 

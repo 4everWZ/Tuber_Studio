@@ -35,7 +35,10 @@ class ComposeSettings(Settings):
         key_file = os.environ.get("OMNI_GATEWAY_TOKEN_FILE")
         self.gateway_key = Path(key_file).read_text(encoding="utf-8").strip() if key_file else ""
         llm = self.data["llm"]
-        if self.gateway_key or llm["kind"] == "openai_compatible" and llm["base_url"].rstrip("/") == GATEWAY_BASE:
+        uses_gateway = llm["kind"] == "openai_compatible" and llm["base_url"].rstrip("/") == GATEWAY_BASE
+        if uses_gateway:
+            llm.setdefault("structured_output", "json_schema")
+        if self.gateway_key or uses_gateway:
             validate_api_key(self.gateway_key)
 
     def provider_key(self, name):

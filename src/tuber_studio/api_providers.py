@@ -106,6 +106,11 @@ class APIProvider:
             payload["response_format"] = {"type": "json_object"}
             if self.adapter == "llama_cpp" and schema is not None:
                 payload["response_format"]["schema"] = schema
+            elif schema is not None and self.config.get("structured_output") == "json_schema":
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": "structured_reply", "schema": schema, "strict": True},
+                }
         if thinking_budget is not None:
             payload.update(thinking_budget_tokens=thinking_budget, reasoning_format="deepseek")
         await prepare_model_request()
@@ -243,8 +248,8 @@ class APIProvider:
 
     def prepare_json_messages(self, messages, schema, *, max_tokens):
         schema_text = json_schema_text(schema, max_tokens)
-        # JSON-object mode is widely supported; do not assume a compatible API
-        # implements json_schema. Domain/source validation stays with the caller.
+        # The prompt also describes the contract for providers that only support
+        # JSON-object mode. Domain and source validation stay with the caller.
         messages = [
             *messages,
             {

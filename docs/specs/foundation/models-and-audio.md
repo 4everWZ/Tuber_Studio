@@ -23,7 +23,7 @@
 
 最小语义接口为 LLMProvider.generate(context,constraints) → StructuredReply，TTSProvider.synthesize(text,voice,options) → AudioArtifact/AudioStream。提交草稿／TTS 前校验完整结束、字数、控制字符、情绪／动作枚举及当前源事件引用；原样复述输入不算有效角色回答。输出不能直接成为 shell、文件操作、HTTP 工具、发布或支付。
 
-运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)；本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断；通用兼容API使用JSON模式与程序schema校验。输入和输出仍受真实窗口、单次输出与完整结束约束；非直播运营可选择已注册的网页取材工具，不获得任意执行或发布权限。自动批次不额外设置隐藏的累计调用／token上限；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
+运营使用独立的 LLMProvider.generate_json(messages,schema,max_tokens)。本地及显式llama.cpp适配均将schema送入服务约束JSON输出，包括视觉观察后的结构化判断。通用兼容接口默认请求 JSON 对象。已经验证支持原生约束的服务可用 `llm.structured_output=json_schema` 传递同一份 schema，Omni 业务 Compose 默认采用该能力。程序继续校验完整对象和领域规则。输入和输出仍受真实窗口、单次输出与完整结束约束；非直播运营可选择已注册的网页取材工具，不获得任意执行或发布权限。自动批次不额外设置隐藏的累计调用／token上限；summary／Codex压缩原接口与算法不变。摘要及动态决定复用当前模型和全局生成锁，不额外加载LLM或TTS。
 
 本地 9B 使用原生聊天模板分离思考和可见正文。Provider 使用 `message.content` 生成台词、正文或摘要。支持独立思考额度的直播接口默认另预留 1,024 tokens 思考空间，台词沿用直播结构与上限。运营默认使用 8,192 输出 tokens，摘要预算独立。未完整结束的运营输出留诊断供继续，未完整结束的直播输出按失败处理。延迟按实际思考设置记录。 [直播推理额度](../live/live-and-media.md#直播推理额度)
 
