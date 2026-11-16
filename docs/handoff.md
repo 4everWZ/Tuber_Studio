@@ -14,17 +14,13 @@
 
 1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)
-3. 实际直播先查 9B 档与 Genie 配对，确认真实播完回执并测首音。和评论、私信一起跑持续负载时，分别记录平台发现、模型排队和发送等待。游戏实机继续沿现有模拟入口验证状态回传和接管。 [当前计划](plans/current.md) · [游戏接入](plans/game-livestream.md)
+3. 直播准入读取 Realtime 会话实报能力、播放器播完回执和首音。和评论、私信共驻时分别记录平台发现、推理排队和发送等待。游戏实机沿现有模拟入口验证状态回传和接管。 [当前计划](plans/current.md) · [游戏接入](plans/game-livestream.md)
 
 ## 运行位置
 
-电脑工作台使用 [本机端口 9020](http://127.0.0.1:9020/)，项目根目录下可重新启动。
+AGX 候选工作台经 SSH 转发访问。两套 Compose 的入口、端口和登录操作见[业务部署](../deploy/omni/README.md)。Windows 原业务资料保留用于授权交接和回退核对。
 
-```powershell
-& tools/deployment/run-business.ps1 -Data runtime -Config runtime/studio.json -Background
-```
-
-更新程序文件后重启原业务进程，再刷新工作台。工作区静态文件可先于运行中的 Python 路由更新。部署验收从实际端口确认 `GET /api/daily-memory/preferences` 和 `GET /api/characters/deleted` 均返回 200，再打开个性化验证开关。评论筛选验收从活动页打开「评论」，核对默认「回复」及两个类型标签。切换「仅读」或「全部」时，主评和楼内回复的新发计数保持一致。
+应用更新通过独立业务 Compose 构建和发布。部署验收从实际端口查询 `GET /api/daily-memory/preferences` 与 `GET /api/characters/deleted`，再打开个性化验证开关。评论筛选从活动页打开「评论」，核对默认「回复」及类型标签。切换「仅读」或「全部」时，主评和楼内回复的新发计数保持一致。
 
 自主运营重启后保持待命，启动时检查原批次及就绪发送的授权。验证运营首页的积压、最老等待、发送延期以及安全收尾。真实平台观察和受控发送范围见[调度验收](../evaluations/results/operations-scheduler-20261114.md)。
 

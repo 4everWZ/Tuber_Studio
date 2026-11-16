@@ -4,7 +4,7 @@
 
 ## 常驻 Agent 与跨端记忆
 
-现有聊天按词面裁剪工具，开放式当天回顾可落到无运营事实的闲聊，查询绑定号主主页也没有对应动作。近期对话遇到工具卡或某些带来源的轮次会中断，工具结果只分发一次。记忆整理主要接受号主发言和已发布评论，管理页按类别展示少量最近条目。现行游戏是两款模拟。 [聊天路由](../../src/tuber_studio/agent/operator_chat.py) · [记忆整理](../../src/tuber_studio/agent/memory_organizer.py) · [摘要实现](../../src/tuber_studio/daily_memory.py) · [现行实测](../../evaluations/results/assistant-memory-20261115.md)
+开放式当天回顾、绑定号主主页和任务交办已进入 Chats 的工具入口。Agent 保存每轮计划、工具回执、进度和审批，交付以本轮回执为依据。共享记忆整理可核验用户原文及公开来源，私聊助手正文和无证据总结保留在各自的原记录。通用语义路由和主题归并仍待扩展。 [聊天路由](../../src/tuber_studio/agent/operator_chat.py) · [记忆整理](../../src/tuber_studio/agent/memory_organizer.py) · [中文回放](../../evaluations/results/agent-grounded-20261116.md)
 
 11 月 15 日的回放核对了指定引用、私聊隔离及流式首字。9B 热空闲与混合负载各 20 条，首字 p50／p95 分别为 2.45／5.50 秒和 3.09／12.42 秒。此数据保留为新旧链路对照。 [回放与性能](../../evaluations/results/assistant-memory-20261115.md)
 
