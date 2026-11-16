@@ -161,6 +161,10 @@ class Settings:
         base = self.data.get(name, {}).get("base_url", "")
         return self.broker_key_for(base) or self.provider_key(name)
 
+    def video_vision_key(self):
+        base = self.data.get("video_vision", {}).get("base_url", "")
+        return self.broker_key_for(base) or self.provider_key("vision")
+
     def broker_key_for(self, base_url):
         broker = self.data.get("inference_broker", {})
         base = broker.get("base_url", "").rstrip("/")

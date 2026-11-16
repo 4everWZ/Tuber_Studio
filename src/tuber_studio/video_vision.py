@@ -12,6 +12,7 @@ import math
 import re
 import time
 from contextlib import nullcontext
+from functools import partial
 from typing import Literal
 from uuid import uuid4
 
@@ -24,7 +25,7 @@ from .http_api import response_json
 from .image_preprocessing import prepare_image
 from .llama_sampling import LlamaCppSampling, live_thinking_budget, supports_live_thinking_budget
 from .models import Reply, StrictModel
-from .providers import validate_reply
+from .providers import public_error, validate_reply
 
 VIDEO_EVIDENCE_PROTOCOL = "sequential_captions_indexed_assessment_v2"
 
@@ -35,6 +36,7 @@ class VideoVisionAdmissionRequired(ValueError):
 
 class VideoVisionConfig(StrictModel):
     enabled: bool = False
+    adapter: Literal["llama_cpp", "omni"] = "llama_cpp"
     base_url: str = "http://127.0.0.1:8080/v1"
     model: str = ""
     model_revision: str = ""
@@ -63,6 +65,8 @@ class VideoVisionConfig(StrictModel):
             raise ValueError("视觉输出预算没有留下输入空间")
         if self.enabled and not self.model.strip():
             raise ValueError("启用视觉须指定真实模型ID")
+        if self.enabled and self.adapter == "omni" and not re.fullmatch("[0-9a-f]{40}", self.model_revision):
+            raise ValueError("Omni 视觉须指定完整的 checkpoint 版本")
         if self.frame_strategy == "joint" and self.max_frames > 8:
             raise ValueError("联合视觉请求最多使用八帧")
         if any(
@@ -93,19 +97,24 @@ class ApiVideoEvidenceProvider:
         if not self.config.enabled:
             return None
         config = self.config.model_dump()
+        sampling = config.pop("sampling")
         config.update(
             {
                 "kind": "openai_compatible",
                 "max_tokens": config["max_output_tokens"],
                 "prefill_timeout_seconds": config["timeout_seconds"],
-                **config.pop("sampling"),
             }
         )
-        return APIProvider(config, self._api_key, adapter="llama_cpp")
+        if self.config.adapter == "llama_cpp":
+            return APIProvider(config | sampling, self._api_key, adapter="llama_cpp")
+        return APIProvider(config | {"structured_output": "json_schema"}, self._api_key)
 
     def identity(self):
         """Public configuration bound to an external device benchmark record."""
-        return self.config.model_dump(exclude={"enabled", "timeout_seconds", "frame_strategy"}) | {
+        configuration = self.config.model_dump(exclude={"enabled", "timeout_seconds", "frame_strategy", "adapter"})
+        if self.config.adapter == "omni":
+            configuration["adapter"] = "omni"
+        return configuration | {
             "protocol": (
                 VIDEO_EVIDENCE_PROTOCOL
                 if self.config.frame_strategy == "sequential"
@@ -129,7 +138,7 @@ class ApiVideoEvidenceProvider:
         configured = self.api is not None
         available = bool(configured and probe.get("images"))
         admitted = bool(available and self._admission)
-        return {
+        result = {
             "available": available,
             "images": configured,
             "admitted": admitted,
@@ -144,10 +153,15 @@ class ApiVideoEvidenceProvider:
             "runtime_context_tokens": probe.get("context_tokens"),
             "reason": "" if configured else "未配置多模态视觉接口",
         }
+        if self.config.adapter == "omni":
+            result["provenance"] = (probe.get("properties") or {}).get("provenance")
+        return result
 
     async def _runtime_properties(self):
         if not self.api:
             raise ValueError("视觉接口未启用")
+        if self.config.adapter == "omni":
+            return await self._omni_properties()
         await self.api.health()
         props = await response_json(
             self.api.client,
@@ -175,6 +189,48 @@ class ApiVideoEvidenceProvider:
             "supports_thinking_budget": props.get("supports_thinking_budget") is True,
             "modalities": props["modalities"],
         }
+
+    async def _omni_properties(self):
+        client = self.api.client
+        timeout = min(20, self.config.timeout_seconds)
+        health, registry = await asyncio.gather(
+            response_json(client, "GET", client.base_url.copy_with(path="/healthz"), timeout=timeout),
+            response_json(client, "GET", "models", timeout=timeout),
+        )
+        model = health.get("model")
+        version = health.get("engine_version")
+        if (
+            health.get("state") != "ready"
+            or health.get("alias") != self.config.model
+            or not isinstance(model, str) or not model.strip()
+            or health.get("configured_model") != model
+            or health.get("checkpoint") != self.config.model_revision
+            or health.get("checkpoint_root_verified") is not True
+            or not isinstance(version, str) or not version.strip()
+            or self.config.runtime_revision and version != self.config.runtime_revision
+        ):
+            raise VideoVisionAdmissionRequired("Omni 网关实报的模型、checkpoint 或引擎版本与视觉配置不符")
+        cards = registry.get("data")
+        if not isinstance(cards, list):
+            raise VideoVisionAdmissionRequired("Omni 网关未报告视觉模型窗口")
+        window = next((card.get("max_model_len") for card in cards
+                       if isinstance(card, dict) and card.get("id") == self.config.model), None)
+        if type(window) is not int or window < self.config.context_tokens:
+            raise VideoVisionAdmissionRequired("视觉服务实际窗口小于要求或未提供可核验窗口")
+        return {
+            "context_tokens": window,
+            "provenance": {key: health.get(key) for key in (
+                "alias", "model", "checkpoint", "checkpoint_source", "checkpoint_root_verified",
+                "engine_version", "engine_version_source",
+            )},
+        }
+
+    def _record_omni_observation(self, properties, frame_count):
+        if self.config.adapter == "omni":
+            self._probe = {
+                "images": True, "properties": properties, "context_tokens": properties["context_tokens"],
+                "tested_frames": frame_count,
+            }
 
     def _validate_frames(self, metadata, frames):
         if not isinstance(frames, list) or not 0 < len(frames) <= self.config.max_frames:
@@ -208,12 +264,12 @@ class ApiVideoEvidenceProvider:
         return identities
 
     @staticmethod
-    def _schema(frame_count, *, joint=False):
+    def _schema(frame_count, *, joint=False, decoder_unique=True):
         properties = {
             "sufficient": {"type": "boolean"},
             "used_frames": {
                 "type": "array",
-                "uniqueItems": True,
+                **({"uniqueItems": True} if decoder_unique else {}),
                 "maxItems": frame_count,
                 "items": {"type": "integer", "minimum": 1, "maximum": frame_count},
             },
@@ -287,16 +343,20 @@ class ApiVideoEvidenceProvider:
         if self._probe and props != self._probe["properties"]:
             self._probe = self._admission = None
 
+    async def _confirmed_properties(self, expected, identity):
+        try:
+            props = await self._runtime_properties()
+        except Exception:
+            self._probe = self._admission = None
+            raise
+        self._check_properties(props, expected, identity)
+        return props
+
     async def _stage(self, task, deadline, identity, expected, repository, operation):
         started = time.monotonic()
         async with self.runtime.offline_generation():
             self._check_task(task, deadline)
-            try:
-                props = await self._runtime_properties()
-            except Exception:
-                self._probe = self._admission = None
-                raise
-            self._check_properties(props, expected, identity)
+            props = await self._confirmed_properties(expected, identity)
             self._check_task(task, deadline)
             before = repository.round(task["round_id"])["budget"].copy() if repository else None
             try:
@@ -379,6 +439,12 @@ class ApiVideoEvidenceProvider:
 
     async def _observe_sequential(self, task, frames, question, deadline, identity, expected, repository):
         captions, stages = [], []
+        caption_schema = {
+            "type": "object", "required": ["caption"], "additionalProperties": False,
+            "properties": {"caption": {"type": "string", "minLength": 1, "maxLength": 4000}},
+        }
+        budget = self.config.max_output_tokens
+        structured_caption = self.config.adapter == "omni"
         for number, frame in enumerate(frames, 1):
             image, preprocessing = await self._image_content(frame)
             messages = [
@@ -397,15 +463,21 @@ class ApiVideoEvidenceProvider:
             ]
             if self.config.image_order == "image_first":
                 messages[0]["content"].reverse()
+            make_caption = (
+                partial(self.api.generate_json, messages, caption_schema, max_tokens=budget) if structured_caption
+                else partial(self.api.generate_text, messages, max_tokens=budget)
+            )
             text, props, stage = await self._stage(
                 task,
                 deadline,
                 identity,
                 expected,
                 repository,
-                lambda: self.api.generate_text(messages, max_tokens=self.config.max_output_tokens),
+                make_caption,
             )
             expected = props
+            if structured_caption:
+                text = text.get("caption")
             if not isinstance(text, str) or not text.strip() or len(text) > 4000:
                 raise ValueError("视觉逐帧观察须为非空且有界的自然文本")
             captions.append({"frame": frame, "text": text})
@@ -452,7 +524,8 @@ class ApiVideoEvidenceProvider:
             expected,
             repository,
             lambda: self.api.generate_json(
-                messages, self._schema(len(captions)), max_tokens=self.config.max_output_tokens
+                messages, self._schema(len(captions), decoder_unique=self.config.adapter == "llama_cpp"),
+                max_tokens=self.config.max_output_tokens,
             ),
         )
         stages.append(stage | {"stage": "assessment"})
@@ -481,7 +554,8 @@ class ApiVideoEvidenceProvider:
             {"role": "user", "content": content},
         ]
         count = len(frames)
-        schema = self._schema(count, joint=True)
+        # Omni's grammar compiler lacks uniqueItems; _bind_assessment checks it for both adapters.
+        schema = self._schema(count, joint=True, decoder_unique=self.config.adapter == "llama_cpp")
         value, props, stage = await self._stage(
             task,
             deadline,
@@ -528,14 +602,10 @@ class ApiVideoEvidenceProvider:
                     task, frames, question, deadline, identity, expected, repository
                 )
                 self._check_task(task, deadline)
-                try:
-                    final_props = await self._runtime_properties()
-                except Exception:
-                    self._probe = self._admission = None
-                    raise
-                self._check_properties(final_props, props, identity)
+                final_props = await self._confirmed_properties(props, identity)
                 self._check_task(task, deadline)
         result = self._bind_assessment(assessment, captions)
+        self._record_omni_observation(final_props, len(frames))
         usage = {
             "final_generation": stages[-1]["generation"],
             "stages": stages,
@@ -549,6 +619,7 @@ class ApiVideoEvidenceProvider:
         return result | {
             "provider_id": self.config.model,
             "version": self.version,
+            **({"provenance": final_props["provenance"]} if self.config.adapter == "omni" else {}),
             "usage": usage,
             "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
             "coverage": {
@@ -574,6 +645,10 @@ class ApiVideoEvidenceProvider:
                 if cancellation in done:
                     raise asyncio.CancelledError
             return await child
+        except httpx.HTTPError as error:
+            if self.config.adapter == "omni":
+                raise VideoVisionAdmissionRequired("Omni 视觉暂不可用 · " + public_error(error)) from error
+            raise
         finally:
             if cancellation is not None:
                 cancellation.cancel()
@@ -688,11 +763,20 @@ class ApiVideoEvidenceProvider:
         }
         repository = self.runtime.browsing_repository if task.get("round_id") else None
         with GenerationMeter(repository, task["round_id"]) if repository else nullcontext():
-            result, _, _ = await self._stage(
+            result, props, _ = await self._stage(
                 task, deadline, identity, None, repository,
                 lambda: self.api.generate_json(messages, schema, max_tokens=min(768, self.config.max_output_tokens)),
             )
-        return result.get("captions") if isinstance(result, dict) else None
+        captions = result.get("captions") if isinstance(result, dict) else None
+        if self.config.adapter == "omni":
+            if not isinstance(captions, list) or len(captions) != count or any(
+                not isinstance(caption, str) or not 0 < len(caption.strip()) <= 1000 for caption in captions
+            ):
+                raise ValueError("Omni 评论附件视觉须返回逐张描述")
+            confirmed = await self._confirmed_properties(props, identity)
+            self._check_task(task, deadline)
+            self._record_omni_observation(confirmed, count)
+        return captions
 
     async def cancel(self, task_id):
         children = list(self._active.get(str(task_id), set()))

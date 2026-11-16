@@ -249,7 +249,7 @@ async def apply_settings(runtime, body):
             if getattr(runtime, "browsing", None) and data.get("video_vision") != settings.data.get("video_vision"):
                 visual_config = data["video_vision"]
                 video = ApiVideoEvidenceProvider(
-                    runtime, visual_config, api_key=staged.broker_key_for(visual_config["base_url"]) or staged.provider_key("vision")
+                    runtime, visual_config, api_key=staged.video_vision_key()
                 )
                 created.append(video)
     except BaseException:

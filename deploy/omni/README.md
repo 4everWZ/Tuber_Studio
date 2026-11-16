@@ -12,7 +12,7 @@ docker compose -f deploy/omni/app-compose.yml up -d --build --wait tuber-core
 curl --fail http://127.0.0.1:9020/healthz
 ```
 
-初次创建数据卷时，Core 用 OpenAI 兼容 Chat Completions 接入 `http://omni-gateway:8000/v1`，上下文采用首测配置的 12,288 tokens，可按服务实报修改。该端点默认用原生 JSON Schema 约束 Agent 的结构化回复，其他已验证服务可在 Provider 配置中设置 `llm.structured_output`。网关钥匙只用于该地址。视觉从设置中选择已验证端点。基础语音沿用预录回退，合成语音沿用独立 Genie 或已验收 TTS 配置。Core 健康检查覆盖应用和数据库启动。推理能力由网关及实际请求核对。
+初次创建数据卷时，Core 用 OpenAI 兼容 Chat Completions 接入 `http://omni-gateway:8000/v1`，上下文采用首测配置的 12,288 tokens，可按服务实报修改。该端点默认用 JSON Schema 约束 Agent 的结构化回复，其他已验证服务可在 Provider 配置中设置 `llm.structured_output`。视频取帧与评论附件也使用同一网关，取材时核对实报模型、checkpoint 和窗口。`OMNI_VISION_CHECKPOINT` 用于初次建卷时锁定视觉权重版本。直播摄像头继续按单独的实机准入执行。基础语音沿用预录回退，合成语音沿用独立 Genie 或已验收 TTS 配置。Core 健康检查覆盖应用和数据库启动。推理能力由网关及实际请求核对。
 
 `core-data` 是 Core 独占的持久卷，保存、备份和迁移步骤沿用 [部署指南](../../docs/guides/deployment.md)。复用已有业务数据时须保有 `studio.json` 及权威写入者记录，`TUBER_CORE_HOSTNAME` 需和迁移时登记的目标一致。初次建卷可用 `TUBER_CORE_MODE=demo` 运行离线演示，或用 `TUBER_CORE_MODE=existing` 要求已有配置。切换已存在的配置通过工作台及部署准入完成。
 

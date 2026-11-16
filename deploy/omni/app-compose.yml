@@ -13,6 +13,7 @@ services:
       TUBER_CORE_MODE: ${TUBER_CORE_MODE:-omni}
       OMNI_MODEL_ALIAS: ${OMNI_MODEL_ALIAS:-omni-default}
       OMNI_CONTEXT_TOKENS: ${OMNI_CONTEXT_TOKENS:-12288}
+      OMNI_VISION_CHECKPOINT: ${OMNI_VISION_CHECKPOINT:-}
       OMNI_GATEWAY_TOKEN_FILE: /run/secrets/omni_gateway_core
       FORWARDED_ALLOW_IPS: ${TUBER_CORE_TRUSTED_PROXIES:-127.0.0.1}
     secrets: [omni_gateway_core]

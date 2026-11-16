@@ -171,8 +171,7 @@ def configured_video_provider(runtime):
     config = runtime.settings.data.get("video_vision", {})
     if not config.get("enabled"):
         return DisabledVideoEvidence()
-    key = runtime.settings.broker_key_for(config["base_url"]) or runtime.settings.provider_key("vision")
-    return ApiVideoEvidenceProvider(runtime, config, api_key=key)
+    return ApiVideoEvidenceProvider(runtime, config, api_key=runtime.settings.video_vision_key())
 
 
 async def restore_admission(runtime):

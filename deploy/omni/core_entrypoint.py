@@ -9,6 +9,7 @@ from tuber_studio.app import create_app
 from tuber_studio.config import Settings, validate_api_key
 
 GATEWAY_BASE = "http://omni-gateway:8000/v1"
+DEFAULT_MODEL_CHECKPOINT = "fb09628e98b1f55d8d5b863e0eccfcdd11bff499"
 
 
 class ComposeSettings(Settings):
@@ -30,6 +31,16 @@ class ComposeSettings(Settings):
                 native_context_tokens=window,
                 auto_compact_token_limit=window * 9 // 10,
             )
+            if mode == "omni":
+                self.data["video_vision"] = {
+                    "enabled": True,
+                    "adapter": "omni",
+                    "base_url": GATEWAY_BASE,
+                    "model": self.data["llm"]["model"],
+                    "model_revision": os.environ.get("OMNI_VISION_CHECKPOINT") or DEFAULT_MODEL_CHECKPOINT,
+                    "context_tokens": window,
+                    "native_context_tokens": window,
+                }
             self.data["tts"]["kind"] = "prerecorded"
             self.save_public(self.data)
         key_file = os.environ.get("OMNI_GATEWAY_TOKEN_FILE")
@@ -38,7 +49,7 @@ class ComposeSettings(Settings):
         uses_gateway = llm["kind"] == "openai_compatible" and llm["base_url"].rstrip("/") == GATEWAY_BASE
         if uses_gateway:
             llm.setdefault("structured_output", "json_schema")
-        if self.gateway_key or uses_gateway:
+        if self.gateway_key or uses_gateway or self._uses_gateway_vision():
             validate_api_key(self.gateway_key)
 
     def provider_key(self, name):
@@ -52,6 +63,19 @@ class ComposeSettings(Settings):
         ):
             return self.gateway_key
         return super().provider_key(name)
+
+    def _uses_gateway_vision(self):
+        vision = self.data.get("video_vision", {})
+        return (
+            vision.get("enabled")
+            and vision.get("adapter") == "omni"
+            and vision.get("base_url", "").rstrip("/") == GATEWAY_BASE
+        )
+
+    def video_vision_key(self):
+        if self._uses_gateway_vision():
+            return self.gateway_key
+        return super().video_vision_key()
 
 
 def build_app():

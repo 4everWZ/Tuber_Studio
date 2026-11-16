@@ -9,7 +9,11 @@ import pytest
 
 from tuber_studio.live.scene import LiveScene
 from tuber_studio.operations.browsing.models import BrowsingPolicy
-from tuber_studio.video_vision import ApiVideoEvidenceProvider, VideoVisionConfig
+from tuber_studio.video_vision import (
+    ApiVideoEvidenceProvider,
+    VideoVisionAdmissionRequired,
+    VideoVisionConfig,
+)
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
@@ -49,6 +53,125 @@ CONFIG = {
     "runtime_profile": "single-slot-q4-kv",
     "max_frames": 2,
 }
+
+
+@pytest.fixture
+async def omni_provider(runtime):
+    checkpoint = "f" * 40
+    value = ApiVideoEvidenceProvider(runtime, {
+        "adapter": "omni", "enabled": True, "model": "omni-default", "model_revision": checkpoint,
+        "base_url": "http://omni-gateway:8000/v1", "context_tokens": 12288, "native_context_tokens": 12288,
+    }, api_key="scoped-service-key")
+    await value.api.client.aclose()
+    health = {
+        "state": "ready", "alias": "omni-default", "model": "MiniCPM-o-4_5", "configured_model": "MiniCPM-o-4_5",
+        "checkpoint": checkpoint, "checkpoint_source": "deployment", "checkpoint_root_verified": True,
+        "engine_version": "vLLM-Omni 0.32.0", "engine_version_source": "deployment",
+    }
+    registry = {"data": [{"id": "omni-default", "max_model_len": 12288}]}
+    requests = []
+
+    async def handle(request):
+        assert request.headers["authorization"] == "Bearer scoped-service-key"
+        if request.url.path == "/healthz":
+            return httpx.Response(200 if health["state"] == "ready" else 503, json=health)
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json=registry)
+        assert request.url.path == "/v1/chat/completions"
+        payload = json.loads(request.content)
+        requests.append(payload)
+        schema = payload.get("response_format", {}).get("json_schema", {}).get("schema")
+        if payload["max_tokens"] == 1:
+            content, finish = None, "length"
+        elif schema and "captions" in schema.get("properties", {}):
+            content, finish = json.dumps({"captions": ["深红轮廓"]}), "stop"
+        elif schema and "caption" in schema.get("properties", {}):
+            content, finish = json.dumps({"caption": "一张红色轮廓的图"}), "stop"
+        elif schema:
+            content, finish = json.dumps({
+                "sufficient": True, "used_frames": [1], "summary": "红色轮廓", "limitations": [],
+            }), "stop"
+        else:
+            content, finish = "一张红色轮廓的图", "stop"
+        return httpx.Response(200, json={
+            "choices": [{"finish_reason": finish, "message": {"content": content}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 1 if finish == "length" else 20},
+        })
+
+    value.api.client = httpx.AsyncClient(
+        base_url="http://omni-gateway:8000/v1", headers={"Authorization": "Bearer scoped-service-key"},
+        transport=httpx.MockTransport(handle),
+    )
+    yield value, health, registry, requests
+    await value.close()
+
+
+async def test_omni_video_uses_real_frame_transport_and_verified_identity(omni_provider):
+    value, health, _, requests = omni_provider
+    assert not value.capabilities()["available"]
+    result = await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "描写图象", deadline=time.time() + 10)
+    assert result["frame_observations"] == {"first": "一张红色轮廓的图"}
+    assert result["provenance"]["checkpoint"] == health["checkpoint"]
+    assert result["provenance"]["model"] == health["model"]
+    assert result["provenance"]["engine_version_source"] == "deployment"
+    assert value.capabilities()["available"]
+    assert value.capabilities()["provenance"] == result["provenance"]
+    assert value.capabilities()["runtime_context_tokens"] == 12288
+    assert not value.capabilities()["admitted"]
+    assert any("data:image/png;base64," in json.dumps(request) for request in requests)
+    assert requests[-1]["response_format"]["type"] == "json_schema"
+    assert "uniqueItems" not in json.dumps(requests[-1]["response_format"])
+    assert all("thinking_budget_tokens" not in request and "reasoning_format" not in request for request in requests)
+
+
+@pytest.mark.parametrize("mismatch", ["checkpoint", "checkpoint_root_verified", "window"])
+async def test_omni_video_refuses_unverified_identity_before_generation(omni_provider, mismatch):
+    value, health, registry, requests = omni_provider
+    if mismatch == "window":
+        registry["data"][0]["max_model_len"] = 8192
+    else:
+        health[mismatch] = None
+    with pytest.raises(VideoVisionAdmissionRequired):
+        await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert not requests
+    assert not value.capabilities()["available"]
+    assert value.capabilities()["provenance"] is None
+
+
+async def test_omni_visual_failure_is_reported_as_missing_evidence(omni_provider):
+    value, health, _, requests = omni_provider
+    health["state"] = "unavailable"
+    with pytest.raises(VideoVisionAdmissionRequired, match="上游HTTP 503"):
+        await value.analyze_video_evidence({"id": "video-1"}, META, FRAMES[:1], "画面", deadline=time.time() + 10)
+    assert not requests
+
+
+async def test_omni_comment_attachments_use_same_schema_and_identity(omni_provider):
+    value, health, _, requests = omni_provider
+    captions = await value.analyze_comment_images({"id": "comment-1"}, FRAMES[:1], deadline=time.time() + 10)
+    assert captions == ["深红轮廓"]
+    assert value.capabilities()["provenance"]["checkpoint"] == health["checkpoint"]
+    assert requests[-1]["response_format"]["type"] == "json_schema"
+    assert "data:image/png;base64," in json.dumps(requests[-1])
+
+
+def test_compose_omni_vision_default_uses_only_its_scoped_service_key(tmp_path, monkeypatch):
+    from deploy.omni.core_entrypoint import GATEWAY_BASE, ComposeSettings
+
+    token_file = tmp_path / "gateway.token"
+    token_file.write_text("scoped-compose-key", encoding="utf-8")
+    monkeypatch.setenv("OMNI_GATEWAY_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("TUBER_RUNTIME", str(tmp_path))
+    monkeypatch.setenv("TUBER_CONFIG", str(tmp_path / "studio.json"))
+    monkeypatch.setenv("TUBER_CORE_MODE", "omni")
+    settings = ComposeSettings()
+    vision = VideoVisionConfig.model_validate(settings.data["video_vision"])
+    assert vision.adapter == "omni" and vision.enabled and vision.base_url == GATEWAY_BASE
+    assert settings.video_vision_key() == "scoped-compose-key"
+    settings.provider_keys["vision"] = "separate-vision-key"
+    assert settings.endpoint_key("vision") == "separate-vision-key"
+    settings.data["video_vision"]["base_url"] = "https://other.example/v1"
+    assert settings.video_vision_key() == "separate-vision-key"
 
 
 @pytest.mark.parametrize("joint", [False, True])
