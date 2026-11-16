@@ -74,11 +74,16 @@ export function initPersonalization(model, api) {
   let recentScope;
   let scopeVersion = 0;
   let readingPreference = 0;
-  let readingReport = 0;
   let readingRecent = 0;
   let savingPreference = false;
   let memoryWriting = false;
   let summaryRequest;
+  let reportRequest;
+
+  function cancelReportLoad() {
+    reportRequest?.abort();
+    reportRequest = undefined;
+  }
 
   function resetSummaryRequest() {
     summaryRequest?.abort();
@@ -163,7 +168,7 @@ export function initPersonalization(model, api) {
     });
   }
   memory.addEventListener("close", () => {
-    readingReport++;
+    cancelReportLoad();
     resetSummaryRequest();
   });
   recent.addEventListener("close", () => { readingRecent++; });
@@ -320,8 +325,11 @@ export function initPersonalization(model, api) {
   };
 
   async function loadReport({ background = false } = {}) {
-    if (background && memoryWriting) return;
-    const read = ++readingReport;
+    if (background && (memoryWriting || reportRequest)) return;
+    cancelReportLoad();
+    const request = new AbortController();
+    const deadline = AbortSignal.timeout(30_000);
+    reportRequest = request;
     if (!background && !report) {
       memoryLoad.hidden = false;
       memoryLoad.textContent = "正在读取记忆摘要…";
@@ -329,8 +337,8 @@ export function initPersonalization(model, api) {
       manager.hidden = true;
     }
     try {
-      const value = await api(endpoint + "?limit=100");
-      if (read !== readingReport || !memory.open) return;
+      const value = await api(endpoint + "?limit=100", { signal: AbortSignal.any([request.signal, deadline]) });
+      if (reportRequest !== request || !memory.open) return;
       if ((preference && preference.scope !== value.scope) || (report && report.scope !== value.scope)) {
         refreshScope();
         return;
@@ -345,8 +353,11 @@ export function initPersonalization(model, api) {
       if (first) showManager(false, false);
       renderReport(value, redraw && !deferRedraw);
     } catch (error) {
-      if (read !== readingReport || !memory.open || (background && report)) return;
-      errorState(memoryLoad, `读取记忆摘要失败：${error.message}`, () => loadReport());
+      if (reportRequest !== request || !memory.open || (background && report)) return;
+      const failure = deadline.aborted ? "读取记忆摘要超时。" : `读取记忆摘要失败：${error.message}`;
+      errorState(memoryLoad, failure, () => loadReport());
+    } finally {
+      if (reportRequest === request) reportRequest = undefined;
     }
   }
 
@@ -553,7 +564,7 @@ export function initPersonalization(model, api) {
   function resetScope() {
     scopeVersion++;
     readingPreference++;
-    readingReport++;
+    cancelReportLoad();
     readingRecent++;
     preference = undefined;
     report = undefined;

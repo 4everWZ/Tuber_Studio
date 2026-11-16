@@ -18,7 +18,7 @@ import {
   updatePermissionCapsule as updateCapsuleModule,
 } from "./modules/operations.js?v=20261114.3";
 import { initCharacterStudioUI } from "./modules/character-studio.js?v=20261115.2";
-import { initPersonalization } from "./modules/personalization.js?v=20261116.1";
+import { initPersonalization } from "./modules/personalization.js?v=20261116.2";
 import {
   selectedThread,
   initCommentsModule,
