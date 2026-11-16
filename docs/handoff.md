@@ -12,6 +12,8 @@
 
 两套独立 Compose 已落在 AGX，候选 Core 自持数据卷并直接提供完整 Web 工作台。当前准入候选是 MiniCPM-o 4.5 官方 AWQ、完整 40,960 Chat 窗口及 4-bit KV。Core 从网关模型卡取窗口。前一档已打通 Chat、Realtime PCM、GIF Avatar 和远端 OBS。远端音质复测按用户要求移后。正式 Windows 业务快照已在 AGX 恢复为只供核验的暂存卷，13,260 个文件通过校验，SQLite 完整性检查通过。通过新配置实机准入后再转交唯一写入权。 [部署验收](../evaluations/results/omni-deployment-20261116.md) · [AGX Omni 部署](specs/foundation/omni-deployment.md) · [业务 Compose](../deploy/omni/README.md)
 
+最新实测中，保留 4,096 生成额度的长 Chats 仍以 `length` 结束。后台任务已验证跨越旧的 120 秒排队边界后按回执交付。同一原生节目持续 75 分 11.5 秒后关闭，引擎在晚发内存压力下停止响应，容器重启未取得退出事件。恢复后先验证同一配置，再查明匿名内存增长，并完成持续运行和长文质量验收。 [终止记录](../evaluations/results/omni-deployment-20261116.md#单会话共驻终止记录)
+
 1. 当前 9B 已在隔离工作台复验普通私聊以及动态端收到的脱敏成品。后续用授权账号核对图文动态在线呈现和真实平台回执，并持续观察关闭记忆、清理原对话时待发稿的状态。 [复验](../evaluations/results/assistant-memory-20261115.md)
 2. 接大肥鱼现有图片、GIF、声音和台词做一条可预览的 Remotion 短片。渲染先输出本地成品，再接 B 站视频投稿和直播素材交接。渲染、发布与播放按同一份已净化素材留来源和结果。 [Remotion Agent Skills](https://github.com/remotion-dev/skills)
 3. 直播准入读取 Realtime 会话实报能力、播放器播完回执和首音。和评论、私信共驻时分别记录平台发现、推理排队和发送等待。游戏实机沿现有模拟入口验证状态回传和接管。 [当前计划](plans/current.md) · [游戏接入](plans/game-livestream.md)
