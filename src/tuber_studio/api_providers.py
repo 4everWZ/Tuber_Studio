@@ -150,14 +150,21 @@ class APIProvider:
             if payload.get("temperature") is None:
                 payload.pop("temperature", None)
         if structured:
-            payload["response_format"] = {"type": "json_object"}
+            contract = self.config.get("structured_output")
             if self.adapter == "llama_cpp" and schema is not None:
-                payload["response_format"]["schema"] = schema
-            elif schema is not None and self.config.get("structured_output") == "json_schema":
+                payload["response_format"] = {"type": "json_object", "schema": schema}
+            elif schema is not None and contract == "json_schema":
                 payload["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {"name": "structured_reply", "schema": schema, "strict": True},
                 }
+            elif schema is not None and contract == "structural_tag":
+                payload["structured_outputs"] = {"structural_tag": json.dumps({
+                    "type": "structural_tag",
+                    "format": {"type": "json_schema", "json_schema": schema, "max_whitespace_cnt": 1},
+                }, ensure_ascii=False, separators=(",", ":"))}
+            else:
+                payload["response_format"] = {"type": "json_object"}
         if thinking_budget is not None:
             payload.update(thinking_budget_tokens=thinking_budget, reasoning_format="deepseek")
         await prepare_model_request()
@@ -339,7 +346,7 @@ class APIProvider:
             on_stage("generating")
         return await self.generate_json(
             messages, schema, max_tokens=max_tokens, use_remaining_window=self.uses_model_card,
-            on_content=on_content if self.config.get("structured_output") == "json_schema" else None,
+            on_content=on_content if self.config.get("structured_output") in {"json_schema", "structural_tag"} else None,
         )
 
 class VisionProvider(Protocol):

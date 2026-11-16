@@ -160,6 +160,7 @@ def test_staged_omni_retires_legacy_profiles_and_keeps_paired_tts(settings, monk
     stage_omni()
     restored = Settings(runtime=runtime)
     assert "work_mode_profiles" not in restored.data
+    assert restored.data["llm"]["structured_output"] == "structural_tag"
     assert restored.data["tts"]["base_url"] == base + "/tts"
     assert restored.endpoint_key("tts") == "fixture-paired-token"
     assert restored.provider_key("llm") == "old-local-key"

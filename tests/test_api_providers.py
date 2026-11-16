@@ -110,6 +110,7 @@ async def test_external_provider_uses_bearer_and_real_usage_without_broker_heade
 @pytest.mark.parametrize(("adapter", "structured_output"), [
     ("openai_compatible", "json_object"),
     ("openai_compatible", "json_schema"),
+    ("openai_compatible", "structural_tag"),
     ("llama_cpp", "json_object"),
 ])
 async def test_structured_schema_uses_the_selected_provider_contract(settings, transport, adapter, structured_output):
@@ -132,7 +133,15 @@ async def test_structured_schema_uses_the_selected_provider_contract(settings, t
     finally:
         await provider.close()
     posts = [json.loads(request.content) for request in captured if request.method == "POST"]
-    assert "response_format" not in posts[0]
+    assert {"response_format", "structured_outputs"}.isdisjoint(posts[0])
+    if structured_output == "structural_tag":
+        assert "response_format" not in posts[-1]
+        tag = json.loads(posts[-1]["structured_outputs"]["structural_tag"])
+        assert tag == {"type": "structural_tag", "format": {
+            "type": "json_schema", "json_schema": schema, "max_whitespace_cnt": 1,
+        }}
+        return
+    assert "structured_outputs" not in posts[-1]
     expected = {"type": "json_object"}
     if adapter == "llama_cpp":
         expected["schema"] = schema
@@ -310,7 +319,8 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
     state.update(model_card={"max_model_len": 40960}, count=40500, text='{"reply_markdown":"原文已读"}')
     provider = APIProvider(
         settings.data["llm"] | {"model": "remote-model", "context_source": "model_card",
-                                "context_tokens": 12288, "enable_thinking": True, "prompt_token_endpoint": True},
+                                "context_tokens": 12288, "enable_thinking": True, "prompt_token_endpoint": True,
+                                "structured_output": "structural_tag"},
         "test-key",
     )
     try:
@@ -322,6 +332,9 @@ async def test_omni_chat_uses_the_reported_full_window_and_remaining_output_budg
         assert [request.url.path.rsplit("/", 1)[-1] for request in captured] == ["models", "prompt_tokens", "completions"]
         requests = [json.loads(request.content) for request in captured if request.method == "POST"]
         assert "max_tokens" not in requests[0] and requests[-1]["max_tokens"] == 460
+        assert {"response_format", "structured_outputs"}.isdisjoint(requests[0])
+        assert "response_format" not in requests[-1]
+        assert json.loads(requests[-1]["structured_outputs"]["structural_tag"])["format"]["json_schema"] == schema
         assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": True}
         assert requests[-1]["messages"] == requests[0]["messages"] and requests[-1]["messages"][-1] == messages[-1]
         assert all(request.headers["authorization"] == "Bearer test-key" for request in captured)

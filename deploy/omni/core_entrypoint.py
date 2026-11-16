@@ -18,7 +18,7 @@ DEFAULT_MODEL_CHECKPOINT = "927faefa0bce96e557945e106f3b3d8b4d39f4b2"
 
 def configure_omni_llm(llm):
     llm.update(
-        context_source="model_card", structured_output="json_schema", prompt_token_endpoint=True, max_tokens=4096,
+        context_source="model_card", structured_output="structural_tag", prompt_token_endpoint=True, max_tokens=4096,
         temperature=0.6, top_k=20, top_p=0.95,
     )
     llm.setdefault("enable_thinking", True)

@@ -114,7 +114,7 @@ class Settings:
             raise ValueError("运营输出额度须为1到65536 tokens，实际生成仍受真实输入与窗口约束")
         if "enable_thinking" in llm and type(llm["enable_thinking"]) is not bool:
             raise ValueError("思考开关须为布尔值")
-        if llm.get("structured_output", "json_object") not in ("json_object", "json_schema"):
+        if llm.get("structured_output", "json_object") not in ("json_object", "json_schema", "structural_tag"):
             raise ValueError("未知结构化输出方式")
         if "live_thinking_tokens" in llm and (
             type(llm["live_thinking_tokens"]) is not int or not 0 <= llm["live_thinking_tokens"] <= 8192

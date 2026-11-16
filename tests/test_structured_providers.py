@@ -141,12 +141,19 @@ async def test_assistant_reuses_verified_capacity_and_rechecks_on_model_change(p
     assert sum(request.url.path.endswith("/props") for request in requests) == 2
 
 
-async def test_api_schema_assistant_streams_content_and_uses_final_accounting(providers):
+@pytest.mark.parametrize("contract", ["json_schema", "structural_tag"])
+async def test_api_schema_assistant_streams_content_and_uses_final_accounting(providers, contract):
     fragments = ['{"entries":[', '"甲"]}']
 
     def respond(payload):
         assert payload["stream_options"] == {"include_usage": True}
-        assert payload["response_format"]["json_schema"]["schema"] == SCHEMA
+        if contract == "structural_tag":
+            assert "response_format" not in payload
+            tag = json.loads(payload["structured_outputs"]["structural_tag"])
+            assert tag["format"]["json_schema"] == SCHEMA
+            assert tag["format"]["max_whitespace_cnt"] == 1
+        else:
+            assert payload["response_format"]["json_schema"]["schema"] == SCHEMA
         packets = [
             {"choices": [{"delta": {"content": part, "reasoning": "内部内容"}, "finish_reason": None}]}
             for part in fragments
@@ -159,7 +166,7 @@ async def test_api_schema_assistant_streams_content_and_uses_final_accounting(pr
         return httpx.Response(200, text=stream, headers={"Content-Type": "text/event-stream"})
 
     provider, requests = await providers("api", stream_response=respond)
-    provider.config["structured_output"] = "json_schema"
+    provider.config["structured_output"] = contract
     seen = []
     assert await provider.generate_assistant_json(MESSAGES, SCHEMA, max_tokens=32, on_content=seen.append) == {
         "entries": ["甲"],
