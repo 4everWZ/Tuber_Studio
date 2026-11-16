@@ -32,7 +32,7 @@ CI 分开运行 Python CPU 测试、独立程序包校验和可选组件的 Node
 
 ## 电脑业务主机与独立推理节点
 
-本节记录现有可安装方案。AGX Omni 仍在实机准备阶段。目标由独立仓库维护 `infra-compose.yml`（vLLM-Omni、共享推理网关、MediaMTX）与可独立发布的 `app-compose.yml`（Tuber Studio Core、Avatar Engine、按需 Remotion Worker 及后续应用）。应用通过网关使用 `omni-default`，按健康状态核对实际模型版本和协议。安装与切换命令待目标设备通过 [Omni 部署设计与准入](../specs/foundation/omni-deployment.md)后发布。
+AGX 独立运行 `infra-compose.yml`（vLLM-Omni、共享推理网关、MediaMTX）与可独立发布的 `app-compose.yml`（Core、Avatar Engine 及可选 Remotion Worker）。应用经网关使用 `omni-default`，按健康状态核对实际模型版本。Web 工作台已在候选环境运行。正式账号、授权与业务数据库迁往 AGX 的专用业务卷，通过验收后接管。 [业务 Compose](../../deploy/omni/README.md) · [Omni 准入](../specs/foundation/omni-deployment.md)
 
 默认部署由电脑运行工作台、平台工具、点歌和 OBS，局域网内 Jetson 提供受认证的推理。业务数据、平台凭据和登录会话保存在电脑，模型、音色模型及推理缓存留在 Jetson。数据归属与恢复见[跨主机规范](../specs/foundation/distributed-runtime.md)。
 
@@ -41,7 +41,9 @@ CI 分开运行 Python CPU 测试、独立程序包校验和可选组件的 Node
     uv sync --python 3.12
     npm --prefix components/song_requests ci --ignore-scripts
 
-迁移采用`tools/deployment/migrate_business.py`。先停止旧业务服务，再依次`inventory`、`snapshot`、`verify`，传输备份并核对其SHA，最后`restore`到新目录。恢复目录初始为staged，先在隔离副本演练，核对原数据、引用文件及未知发送状态；切换时将旧目录标记retired，再在电脑显式激活正式目录。命令参数可用各子命令`--help`查询。不要通过复制单个SQLite文件迁移正在使用WAL的数据。
+迁移采用 `tools/deployment/migrate_business.py`。停止旧业务服务后依次运行 `inventory`、`snapshot` 和 `verify`。用 SSH 把快照传往 AGX 的私有目录，核对传输完整性。使用无网络的恢复容器将快照 `restore` 到正式卷的 `/data/business`，核对账号与登录文件、SQLite、引用路径和未知发送状态。业务目录由 Core 用户 UID/GID 65532 读写。模型、占位工作台、旧发布包和训练历史各自保留原位置。
+
+还原状态为 `staged`。准备正式模型配置后，使用 [业务卷 Compose 覆盖](../../deploy/omni/app-business-data.compose.yml)。按实机准入验收，冻结旧目录的写入并标为 `retired`，在 AGX 把正式业务卷标为 `active`。`--writer-host` 须匹配 `TUBER_CORE_HOSTNAME`。从 AGX 工作台核对实际连接、账号登录状态和原数据，已有待核对提交按原回执处理。回退遵循 [唯一写入者规范](../specs/foundation/distributed-runtime.md#迁移备份与恢复)。
 
 电脑启动示例：
 

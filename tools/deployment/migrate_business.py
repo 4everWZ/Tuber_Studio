@@ -31,7 +31,7 @@ from tuber_studio.runtime_authority import (  # noqa: E402
 )
 
 MODEL_ROOTS = {"models", "engines", "tts", "nltk_data", "cache", "uv-cache", ".nv"}
-RETAINED_ROOTS = {"experiments", "evaluations", "backups", "deployments"}
+RETAINED_ROOTS = {"experiments", "evaluations", "backups", "deployments", "releases", "desktop", "training_data"}
 EPHEMERAL_ROOTS = {".portable-launch", "logs", "song_component", "__pycache__", "tmp"}
 EPHEMERAL_FILES = {
     LOCK_FILE,

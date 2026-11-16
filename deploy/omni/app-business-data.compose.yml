@@ -1,0 +1,13 @@
+services:
+  tuber-core:
+    environment:
+      TUBER_CORE_MODE: existing
+      TUBER_RUNTIME: /data/business
+      HOME: /data/business
+    volumes:
+      - business-data:/data
+
+volumes:
+  business-data:
+    external: true
+    name: ${TUBER_CORE_BUSINESS_VOLUME:?set the separately restored AGX business volume}

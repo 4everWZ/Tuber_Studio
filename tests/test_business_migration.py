@@ -36,6 +36,9 @@ def source_fixture(path):
         "evaluations/old-run/report.json": b"archived-evaluation-do-not-copy",
         "backups/old/studio.sqlite3": b"old-backup-do-not-copy",
         "deployments/old/src/app.py": b"old-source-do-not-copy",
+        "releases/app/program/archive.json": b"old-release-do-not-copy",
+        "desktop/rehearsal/business/admin-token": b"retired-demo-token",
+        "training_data/archive.jsonl": b"historical-corpus-do-not-copy",
         "inference-llm2b.log": b"inference-log-do-not-copy",
         "resource-minicpm-measurement.wav": b"old-test-audio-do-not-copy",
         "singing/output/temporary.wav": b"business-temporary-audio-keep",
@@ -81,6 +84,9 @@ def test_snapshot_restore_keeps_business_identity_credentials_cache_and_unknown_
         "evaluations",
         "backups",
         "deployments",
+        "releases",
+        "desktop",
+        "training_data",
         "inference-llm2b.log",
         "resource-minicpm-measurement.wav",
     ):
@@ -109,6 +115,30 @@ def test_snapshot_restore_keeps_business_identity_credentials_cache_and_unknown_
         assert_business_writer(target)
     assert not (source / "business-authority.json").exists()
     assert (source / "models/main.gguf").is_file()
+
+
+def test_omni_profile_switch_is_confined_to_staged_business_data(settings, monkeypatch):
+    from deploy.omni.core_entrypoint import GATEWAY_BASE, stage_omni
+
+    runtime = settings.runtime
+    monkeypatch.setenv("TUBER_RUNTIME", str(runtime))
+    monkeypatch.delenv("TUBER_CONFIG", raising=False)
+    settings.save_public(settings.data)
+    settings.save_keys({"tts": "retained-provider-key"})
+    before = (runtime / "provider-credentials.json").read_bytes()
+    with pytest.raises(RuntimeError, match="existing staged"):
+        stage_omni()
+    migration.set_business_authority(runtime, "staged", migration_id="stage-profile")
+    stage_omni()
+    value = json.loads(settings.path.read_text(encoding="utf-8"))
+    assert (value["llm"]["kind"], value["llm"]["base_url"], value["llm"]["model"]) == (
+        "openai_compatible", GATEWAY_BASE, "omni-default",
+    )
+    assert value["video_vision"]["adapter"] == "omni"
+    assert value["tts"] == settings.data["tts"]
+    assert (runtime / "provider-credentials.json").read_bytes() == before
+    with pytest.raises(BusinessAuthorityError):
+        assert_business_writer(runtime)
 
 
 def test_sqlite_backup_includes_committed_wal_rows(tmp_path):
