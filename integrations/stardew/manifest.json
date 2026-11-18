@@ -1,0 +1,9 @@
+{
+  "Name": "Tuber Studio isolated farm",
+  "Author": "Tuber Studio",
+  "Version": "1.0.0",
+  "Description": "Local state, verified actions and operator takeover for a task-owned game copy.",
+  "UniqueID": "TuberStudio.IsolatedFarm",
+  "EntryDll": "IsolatedFarm.dll",
+  "MinimumApiVersion": "4.3.2"
+}

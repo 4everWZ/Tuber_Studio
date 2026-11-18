@@ -1,6 +1,6 @@
 # 游戏直播实施计划
 
-游戏属于[常驻 Agent](current.md#常驻-agent-与跨端记忆)的目标范围。先用已有两款模拟验证共用目标、观察、动作、恢复和记忆接口，同时开展实机设计准备。后续按[游戏契约](../specs/live/game-livestream.md)逐款接入和验收，复用角色、推理、语音、账号及 OBS。双机迁移、运营模型和点歌的设备证据见[实装报告](../../evaluations/results/distributed-operations-20261102.md)。
+游戏属于[常驻 Agent](current.md#常驻-agent-与跨端记忆)的目标范围。两款模拟覆盖共用工作台操作，星露谷隔离实机已验证局面读取、单地块农活与人工接管。后续按[游戏契约](../specs/live/game-livestream.md)逐款验收。双机迁移、运营模型和点歌的设备证据见[实装报告](../../evaluations/results/distributed-operations-20261102.md)。
 
 ## 现有离线能力
 
@@ -23,7 +23,7 @@
 
 ## 原需求覆盖与实施入口
 
-两款实机均待接入、实测。原始 v0.2 需求由[游戏规范](../specs/live/game-livestream.md)维护。下表保留原 129 个需求 ID 的责任入口。DR、AR 及 AT-013–016 的非游戏部分参见双机实装报告，游戏部分继续按实机证据验收。
+星露谷 G1 已有隔离存档、真实动作读回和接管证据，G2 的整日规划与持续直播仍待验收。PVZ G4 缺少授权安装。原始 v0.2 需求由[游戏规范](../specs/live/game-livestream.md)维护。下表保留原 129 个需求 ID 的责任入口。[实机取证](../../evaluations/results/stardew-device-20261119.md)
 
 | 原ID | 责任入口 | 阶段／核对重点 |
 | --- | --- | --- |

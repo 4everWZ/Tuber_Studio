@@ -38,6 +38,9 @@ window.InteractiveGamesUI = class {
       if (e.target.id === "game-control") {
         await this.runAction(e.target, () => this.transferGameControl());
       }
+      const deviceAction = e.target.closest("[data-device-action]")?.dataset.deviceAction;
+      if (deviceAction === "refresh") await this.fetchDevice();
+      else if (deviceAction) await this.deviceAction(deviceAction);
 
       if (e.target.id === "dg-start-btn") {
         await this.runAction(e.target, () => this.startDrawGuess());
@@ -68,9 +71,72 @@ window.InteractiveGamesUI = class {
   async refresh() {
     await Promise.all([
       this.fetchGameStatus(),
+      this.fetchDevice(),
       this.fetchDrawGuessStatus(),
       this.fetchRules(),
     ]);
+  }
+
+  async fetchDevice() {
+    const display = document.getElementById("device-state");
+    if (!display) return;
+    clearTimeout(this.deviceTimer);
+    const seq = this.deviceRead = (this.deviceRead || 0) + 1;
+    try {
+      const { online, state, configured } = await this.api("/api/games/device/stardew");
+      if (seq !== this.deviceRead) return;
+      this.device = online ? state : null;
+      if (!configured) display.textContent = "尚未配置实机通信目录";
+      else if (!online) display.textContent = "游戏已断开";
+      else {
+        const f = state.farm;
+        const who = state.owner === "operator" ? "号主控制" : "工坊控制";
+        display.textContent = f ? `${f.save} · ${f.location} (${f.x}, ${f.y}) · ${f.season}第 ${f.day} 天 · ${f.time} · 体力 ${f.stamina} · ${f.money}g · 手持 ${f.inventory[f.slot]?.item || "空"} · ${who}` : `等待进入存档 · ${who}`;
+      }
+      if (configured) this.deviceTimer = setTimeout(() => {
+        if (!display.closest("[hidden]")) this.fetchDevice();
+      }, 2000);
+    } catch (error) {
+      if (seq !== this.deviceRead) return;
+      this.device = null;
+      display.textContent = `实机读取失败：${error.message}`;
+    }
+    for (const button of document.querySelectorAll("[data-device-action]")) {
+      const action = button.dataset.deviceAction;
+      if (action === "refresh") continue;
+      if (action === "takeover") button.disabled = !this.device;
+      else if (action === "release") button.disabled = !this.device || this.deviceBusy;
+      else button.disabled = this.deviceBusy || !this.device?.can_act || this.device.owner !== "studio";
+    }
+  }
+
+  async deviceAction(action) {
+    if (!this.device || (this.deviceBusy && action !== "takeover")) return;
+    const state = this.device;
+    const id = crypto.randomUUID();
+    const base = "/api/games/device/stardew/actions";
+    const result = document.getElementById("device-result");
+    this.deviceBusy = id;
+    result.textContent = "等待游戏读回…";
+    try {
+      const command = { session: state.session, id, epoch: state.epoch, action };
+      if (action.endsWith("_front")) {
+        command.target = state.farm.front.key;
+        command.item = state.farm.inventory[state.farm.slot]?.item;
+      }
+      let receipt = await this.api(base, { method: "POST", body: command });
+      for (let i = 0; receipt.status === "pending" && i < 24; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        receipt = await this.api(`${base}/${state.session}/${id}`);
+      }
+      if (this.deviceBusy === id) result.textContent = receipt.status === "succeeded"
+        ? "游戏已确认。" : `${receipt.status} · ${receipt.reason || id}`;
+    } catch (error) {
+      if (this.deviceBusy === id) result.textContent = `${error.message} · 动作编号 ${id}`;
+    } finally {
+      if (this.deviceBusy === id) this.deviceBusy = null;
+      await this.fetchDevice();
+    }
   }
 
   async fetchGameStatus() {

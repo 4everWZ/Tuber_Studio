@@ -10,7 +10,6 @@
         <span id="live-game-name" class="badge">星露谷物语</span>
       </div>
       <p id="live-game-summary" class="speech-text" style="font-size: 14px;">正在读取模拟状态…</p>
-      <p class="hint">星露谷物语与植物大战僵尸目前为离线模拟。实机状态采集与控制联动为 TBD，尚未接入。</p>
       <p id="live-game-activity" class="hint"></p>
       <div class="actions" style="margin-top: 10px;">
         <button type="button" class="win-btn primary" data-game-switch="stardew_valley">切到《星露谷》</button>
@@ -21,6 +20,22 @@
         <div class="win-subgroup-title">快捷游戏事件注入</div>
         <div id="live-game-actions" class="actions"></div>
       </div>
+    </article>
+
+    <article class="win-group-box">
+      <div class="win-group-title">星露谷物语 · 隔离实机</div>
+      <p id="device-state">正在读取游戏状态…</p>
+      <div class="actions">
+        <button type="button" class="win-btn" data-device-action="refresh">刷新状态</button>
+        <button type="button" class="win-btn" data-device-action="takeover" disabled>人工接管</button>
+        <button type="button" class="win-btn" data-device-action="release" disabled>交回工坊 30 秒</button>
+        <button type="button" class="win-btn" data-device-action="turn_right" disabled>向右转身</button>
+        <button type="button" class="win-btn" data-device-action="next_slot" disabled>下一背包格</button>
+        <button type="button" class="win-btn" data-device-action="till_front" disabled>锄面前土地</button>
+        <button type="button" class="win-btn" data-device-action="plant_front" disabled>播种手中种子</button>
+        <button type="button" class="win-btn" data-device-action="water_front" disabled>浇面前土地</button>
+      </div>
+      <p id="device-result" role="status"></p>
     </article>
 
     <article class="win-group-box" id="live-draw-guess-panel">

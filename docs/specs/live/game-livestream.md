@@ -1,6 +1,6 @@
 # 游戏直播契约
 
-本文维护常驻 Agent 的游戏目标。星露谷与植物大战僵尸已有模拟接口，实机适配和验收待实施。原始 v0.2 需求映射及进度见[游戏实施计划](../../plans/game-livestream.md)。
+本文维护常驻 Agent 的游戏目标。两款游戏均有模拟接口。星露谷另有隔离实机接口，已验证状态、单地块农活、回执与人工接管。PVZ 等待可用的授权安装。[实机接入](../../../integrations/stardew/README.md) · [验收记录](../../../evaluations/results/stardew-device-20261119.md) · [游戏实施计划](../../plans/game-livestream.md)
 
 ## 范围与复用边界
 

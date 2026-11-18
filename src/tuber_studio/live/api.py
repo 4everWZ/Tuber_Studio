@@ -20,6 +20,7 @@ from .media import MAX_UPLOAD, MEDIA_TYPES, MusicSettings, default_scene, inspec
 from .online_songs import SongRequestSettings
 from .options import LiveOptions
 from .studio import room_feed
+from .stardew_device import register_stardew_device
 
 
 class ConfirmSong(StrictModel):
@@ -28,6 +29,7 @@ class ConfirmSong(StrictModel):
 
 
 def register_live_api(app, settings, runtime, require_admin, admin_ok, overlay_ok, same_origin):
+    register_stardew_device(app, require_admin, runtime.tasks)
     media, store = runtime.live.media, runtime.store
     avatar = LiveAvatar(settings)
 
