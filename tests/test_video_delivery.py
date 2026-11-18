@@ -399,8 +399,7 @@ async def test_real_image_inventory_and_caption_do_not_inherit_worker_plot(runti
             return {"title_action": "另拟标题", "fact": props["fact"]["enum"][0]}
         if set(props) == {"title"}:
             assert "enum" not in props["title"]
-            assert content[1]["type"] == "image_url"
-            assert json.loads(content[0]["text"])["已核画面事实"] == ["座椅旁站着一人", "一人站在椅子旁"]
+            assert json.loads(content)["选定的事实锚点"] == "座椅旁站着一人"
             return {"title": "这是登基仪式吗？" if invented_title else "椅子旁站着谁？"}
         assert isinstance(content, list) and "后台推测" not in str(content)
         if "labels" in props:

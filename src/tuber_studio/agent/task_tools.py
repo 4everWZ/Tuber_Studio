@@ -1158,14 +1158,14 @@ def create_task_runtime(runtime, store, browsing):
                 inventories[key] = VisibleFrame.model_validate(observed).model_dump()
             return image
 
-        async def compose_frame_title(facts, image, *, rejected=()):
+        async def compose_frame_title(facts, image, *, rejected_relations=()):
             packet = {"号主本次交办": task["goal"], "已核画面事实": facts,
                       "写作偏好": task.get("owner_writing_preferences", [])}
-            if rejected:
-                packet["本字段已拒主张"] = rejected
+            if rejected_relations:
+                packet["原稿未获依据的关系类型"] = sorted(set(rejected_relations))
             schema = {"type":"object","properties":{"title_action":{"type":"string","enum":["沿用观察原句","另拟标题"]},
                        "fact":{"type":"string","enum":facts}},"required":["title_action","fact"],"additionalProperties":False}
-            if rejected:
+            if rejected_relations:
                 schema["properties"]["requested_form"] = {"type":"string","enum":["名词短语","陈述句","问句","不限"]}
                 schema["required"].append("requested_form")
             choice = await request_json([{"role":"system","content":"为这张主帧编辑素材标题。根据号主要求，判断给出的哪条"
@@ -1176,10 +1176,11 @@ def create_task_runtime(runtime, store, browsing):
             anchor = selected_title({"use_fact":choice["fact"]}, facts)
             title = anchor
             if choice["title_action"] == "另拟标题":
-                packet["选定的事实锚点"] = anchor
-                reply = await request_json([{"role":"system","content":"只写本项标题，按号主要求组织句式并逐项对照所附主帧。"
+                title_packet = {"选定的事实锚点":anchor, "号主本次交办":task["goal"],
+                                "写作偏好":task.get("owner_writing_preferences", [])}
+                reply = await request_json([{"role":"system","content":"为已经核图选定的事实拟标题，按号主要求组织句式。"
                     "标题只用给定锚点能够核实的事实。署名已由作品与投稿字段单列。"},
-                    {"role":"user","content":[{"type":"text","text":dump(packet)}, image]}], ClipTitle.model_json_schema(), max_tokens=budget)
+                    {"role":"user","content":dump(title_packet)}], ClipTitle.model_json_schema(), max_tokens=budget)
                 title = ClipTitle.model_validate(reply).title
             expected = choice.get("requested_form")
             if expected and expected != "不限":
@@ -1399,7 +1400,7 @@ def create_task_runtime(runtime, store, browsing):
                                  if not any(name and name in v for name in disputed)]
                         title_facts[path] = facts
                         if facts and any(r["field"] == path for r in receipts):
-                            fixed[path] = await compose_frame_title(facts, image, rejected=[c["phrase"] for r in receipts
+                            fixed[path] = await compose_frame_title(facts, image, rejected_relations=[c["relation"] for r in receipts
                                 if r["field"] == path for c in r["claims"] if c.get("issue")])
                             del patch_schema["properties"][path]
                             continue
