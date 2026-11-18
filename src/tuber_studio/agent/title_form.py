@@ -7,6 +7,7 @@ from unicodedata import category
 from pydantic import Field
 
 from ..models import StrictModel
+from ..operation_identity import visual_editor_context
 from ..store import dump
 from .task_delivery import DelegationError
 
@@ -52,6 +53,11 @@ class AssertionReview(StrictModel):
     same_relations: bool = Field(strict=True, description="观察是否支持整句中同一主体与客体、谓语方向、否定以及地点的组合。")
 
 
+async def frame_json(call, messages, schema):
+    with visual_editor_context():
+        return await call(messages, schema)
+
+
 async def statement_basis(words, observation, call):
     """Account for the entire assertion, including the setting of a visible object."""
     if words == title_words(observation):
@@ -63,7 +69,7 @@ async def statement_basis(words, observation, call):
          "方向、否定、主体与客体须和观察一致；有新增、颠倒或无法核实的断言时相应项 entailed 为 false。"},
         {"role": "user", "content": dump({"statement": words, "frame_observation": observation})},
     ]
-    review = AssertionReview.model_validate(await call(messages, AssertionReview.model_json_schema()))
+    review = AssertionReview.model_validate(await frame_json(call, messages, AssertionReview.model_json_schema()))
     parts = []
     for part in review.parts:
         bound = bool(part.basis.strip() and part.basis in observation)
@@ -79,6 +85,8 @@ async def statement_basis(words, observation, call):
 
 async def read_title(title, observations, call):
     words = title_words(title)
+    exact = [fact for fact in observations if title_words(fact) == words]
+    observations = exact or observations
     messages = [
         {"role":"system", "content":"独立审读标题文字。按主句语义区分陈述、发问、名词短语及其他。"
          "陈述须对某一主体断言具体状态、属性、位置、关系或动作，主语可以省略。"
@@ -91,7 +99,7 @@ async def read_title(title, observations, call):
     ]
     schema = TitleReading.model_json_schema()
     schema["properties"]["observation"]["enum"] = ["", *observations]
-    reading = TitleReading.model_validate(await call(messages, schema))
+    reading = TitleReading.model_validate(await frame_json(call, messages, schema))
     answer_bound = bool(reading.answer.strip() and reading.answer in reading.observation)
     grounded = bool(reading.supported and reading.observation and reading.observation in observations)
     result = reading.model_dump() | {"core_bound":bool(reading.core.strip() and reading.core in words), "answer_bound":answer_bound}
@@ -143,21 +151,37 @@ class TitleOptions(StrictModel):
     options: list[TitleOption] = Field(min_length=2, max_length=3)
 
 
+async def observed_predicates(details, call):
+    fields = {str(i): fact for i, fact in enumerate(details)}
+    schema = {"type":"object", "properties":{k:{"type":"string"} for k in fields},
+              "required":list(fields), "additionalProperties":False}
+    result = await frame_json(call, [{"role":"system","content":"逐条读已经核实的画面观察。若整条观察已经在陈述一个可见事实，"
+                          "逐字摘录其主句的谓语部分；若只是物件标签或带定语的名词短语，请填空串。"
+                          "不补字，不从别条借谓语。"},
+                         {"role":"user","content":dump({"observations_by_id":fields})}], schema)
+    if set(result) != set(fields):
+        raise DelegationError("主帧观察的谓语审读未覆盖每一条原文。")
+    return {fact: predicate for k,fact in fields.items()
+            if isinstance(predicate := result.get(k), str) and predicate.strip() and predicate in fact}
+
+
 async def grounded_options(details, expected, checks, call):
     """Offer alternative expressions of one observation for the existing field repair."""
+    predicates = await observed_predicates(details, call) if expected == "陈述句" else {}
+    eligible = list(predicates) or details
     messages = [
         {"role":"system","content":"你是私有成果的文字编辑。选同一主帧的一条完整观察作事实依据。"
          "陈述标题优先选已有完整谓语的观察，第一候选沿用完整原句及所需标点。其余候选可调整语序。"
          "实体、关系、方位和场所均须在这条观察内有据。写两至三个符合所给句式与字面约定的标题。"
          + form_instruction(expected)},
-        {"role":"user","content":dump({"frame_details":details, "title_form":expected,
+        {"role":"user","content":dump({"frame_details":eligible, "title_form":expected,
                                       "title_format":[c.model_dump() for c in checks]})},
     ]
     schema = TitleOptions.model_json_schema()
-    schema["properties"]["fact"]["enum"] = details
-    options = TitleOptions.model_validate(await call(messages, schema))
+    schema["properties"]["fact"]["enum"] = eligible
+    options = TitleOptions.model_validate(await frame_json(call, messages, schema))
     fact = options.fact
-    if fact not in details:
+    if fact not in eligible:
         raise DelegationError("标题候选没有选用该主帧的完整观察。")
     measured = []
     chosen = None
@@ -172,4 +196,4 @@ async def grounded_options(details, expected, checks, call):
         if (reading and meets_form(reading, expected, require_grounding=True)
                 and (expected != "问句" or reading["answer_bound"])):
             chosen = title
-    return {"fact":fact, "candidates":measured, "chosen":chosen}
+    return {"fact":fact, "observed_predicates":predicates, "candidates":measured, "chosen":chosen}
