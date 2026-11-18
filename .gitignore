@@ -6,6 +6,8 @@ __pycache__/
 tmp/
 runtime/
 .env
+.env.*
+!.env.example
 .playwright-cli/
 dist/
 *.egg-info/

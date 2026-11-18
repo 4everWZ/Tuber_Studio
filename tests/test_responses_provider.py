@@ -123,7 +123,7 @@ def test_explicit_internal_service_name_does_not_allow_unrelated_http(monkeypatc
 async def test_workstation_function_roundtrip():
     config = {"base_url": os.environ["OMNI_GATEWAY_URL"].rstrip("/") + "/llm/v1",
               "model": os.getenv("OMNI_LLM_MODEL_ALIAS", "llm-default")}
-    key = Path(os.environ["OMNI_GATEWAY_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
+    key = os.getenv("OMNI_STUDIO_TOKEN") or Path(os.environ["OMNI_GATEWAY_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
     async with ResponsesClient(config, key) as client:
         first = await client.create("Look up ticket T-57.", tools=[TOOL], tool_choice={"type": "function", "name": "lookup"})
         assert len(first.calls) == 1 and first.calls[0].arguments == {"ticket": "T-57"}
